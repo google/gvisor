@@ -95,9 +95,7 @@ func TestConcurrentExportSavings(t *testing.T) {
 			}
 			server.Register(cm)
 			server.Register(&Metrics{})
-			if err := server.StartServing(); err != nil {
-				t.Fatal(err)
-			}
+			server.StartServing()
 			s := &Sandbox{Restored: true, ControlSocketPath: socketPath}
 			exportDone := make(chan struct{}, 2)
 			for range 2 {

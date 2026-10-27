@@ -173,12 +173,16 @@ func TestCreateContainerHooksRootFS(t *testing.T) {
 					}
 				}()
 			}
+			// Wait for boot. This also ensures hooks have run.
+			if err == nil {
+				_, err = c.Sandbox.ContainerRuntimeState(c.ID)
+			}
 			if tc.wantError {
 				if err == nil {
-					t.Fatal("container creation succeeded with hooks at the process root")
+					t.Fatal("sandbox booted with hooks at the process root")
 				}
-				// Creation reports a synchronization failure when the gofer exits;
-				// check its log to distinguish rejection from unrelated failures.
+				// The sandbox fails to boot when the gofer exits.
+				// Check its log to distinguish rejection from unrelated failures.
 				out, err := os.ReadFile(filepath.Join(logDir, "gofer.log"))
 				if err != nil {
 					t.Fatal(err)
@@ -192,7 +196,7 @@ func TestCreateContainerHooksRootFS(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("creating container with hooks at a named root: %v", err)
+				t.Fatalf("booting sandbox with hooks at a named root: %v", err)
 			}
 			if out, err := os.ReadFile(marker); err != nil || string(out) != "hook\n" {
 				t.Errorf("hook marker: got %q, err %v; want %q", out, err, "hook\n")

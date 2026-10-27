@@ -591,6 +591,11 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 // Preconditions: c.Saver is locked.
 func (c *Container) startLocked(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
 	if err := c.requireStatus(action, Created); err != nil {
+		if c.Status == Stopped && c.IsSandboxRoot() {
+			if running, runErr := c.IsSandboxRunning(); runErr == nil && !running {
+				return fmt.Errorf("%w: %w", err, sandbox.ExitedBeforeStartError(conf))
+			}
+		}
 		return err
 	}
 
@@ -659,15 +664,22 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 		}
 	}
 	if err != nil {
-		// Treat container as stopped.
+		// Errors reported by the sandbox mean that it was up at *some* point,
+		// even if it exited since.
 		var remoteErr urpc.RemoteError
-		if errors.As(err, &remoteErr) && specutils.IsRootContainer(c.Spec) {
-			if state, stateErr := c.Sandbox.ContainerRuntimeState(c.ID); stateErr == nil && state == sentryapi.RuntimeStateStopped {
-				c.changeStatus(Stopped)
-				if err := c.saveLocked(); err != nil {
-					log.Warningf("Cannot mark container %q as stopped: %v", c.ID, err)
+		switch {
+		case errors.As(err, &remoteErr):
+			// Treat container as stopped.
+			if specutils.IsRootContainer(c.Spec) {
+				if state, stateErr := c.Sandbox.ContainerRuntimeState(c.ID); stateErr == nil && state == sentryapi.RuntimeStateStopped {
+					c.changeStatus(Stopped)
+					if err := c.saveLocked(); err != nil {
+						log.Warningf("Cannot mark container %q as stopped: %v", c.ID, err)
+					}
 				}
 			}
+		case specutils.WaitForNonChildExit(c.Sandbox.Pid.Load(), c.Sandbox.PidIdentity, 100*time.Millisecond) == nil:
+			return fmt.Errorf("%w: %w", err, sandbox.ExitedBeforeStartError(conf))
 		}
 		return err
 	}
