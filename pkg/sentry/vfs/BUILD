@@ -228,6 +228,7 @@ go_test(
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/usermem",
     ],

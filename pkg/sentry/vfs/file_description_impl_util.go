@@ -49,6 +49,11 @@ import (
 // +stateify savable
 type FileDescriptionDefaultImpl struct{}
 
+// CheckSave implements FileDescriptionImpl.CheckSave.
+func (FileDescriptionDefaultImpl) CheckSave() error {
+	return nil
+}
+
 // OnClose implements FileDescriptionImpl.OnClose analogously to
 // file_operations::flush == NULL in Linux.
 func (FileDescriptionDefaultImpl) OnClose(ctx context.Context) error {

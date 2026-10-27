@@ -38,6 +38,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/vfs",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/usermem",
         "//pkg/waiter",

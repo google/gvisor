@@ -347,6 +347,13 @@ func (fd *FileDescription) Impl() FileDescriptionImpl {
 	return fd.impl
 }
 
+// beforeSave is invoked by stateify.
+func (fd *FileDescription) beforeSave() {
+	if err := fd.impl.CheckSave(); err != nil {
+		panic(err)
+	}
+}
+
 // SyncOptions contains options for FileDescriptionImpl.Sync.
 type SyncOptions struct {
 	// DataOnly indicates that only file data (and necessary metadata to read data)
@@ -366,6 +373,13 @@ type SyncOptions struct {
 //
 // FileDescriptionImpl is analogous to Linux's struct file_operations.
 type FileDescriptionImpl interface {
+	// CheckSave returns an error if the file description's current state
+	// prevents checkpointing. Returning nil does not guarantee that the file
+	// description can be serialized.
+	//
+	// Application tasks are stopped during this call.
+	CheckSave() error
+
 	// Release is called when the associated FileDescription reaches zero
 	// references.
 	Release(ctx context.Context)
