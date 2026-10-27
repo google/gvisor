@@ -715,14 +715,27 @@ func mirrorAppRange(ctx context.Context, t *kernel.Task, ar hostarch.AddrRange, 
 		}
 	}
 	if m == 0 {
-		// Reserve a range in our address space.
-		var errno unix.Errno
-		m, _, errno = unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(ar.Length()), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
+		// Reserve a range in our address space. If ar spans at least one whole
+		// huge page, give the mirror the same offset within a huge page as ar,
+		// to preserve alignment for mirrored huge pages.
+		resLen := uintptr(ar.Length())
+		align := false
+		if hugeStart, ok := ar.Start.HugeRoundUp(); ok && hugeStart < ar.End.HugeRoundDown() {
+			if paddedLen := resLen + hostarch.HugePageSize - hostarch.PageSize; resLen < paddedLen {
+				resLen = paddedLen
+				align = true
+			}
+		}
+		res, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, resLen, unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
 		if errno != 0 {
 			return appMirror{}, 0, errno
 		}
-		am.m = m
-		am.len = uintptr(ar.Length())
+		am.m = res
+		am.len = resLen
+		m = res
+		if align {
+			m += hostarch.HugePageOffset(uintptr(ar.Start) - res)
+		}
 		// Mirror application mappings into the reserved range.
 		sentryAddr := m
 		for _, pr := range prs {
