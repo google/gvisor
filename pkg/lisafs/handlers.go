@@ -330,16 +330,16 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 	payloadPos := respMetaSize
 	if err := c.server.withRenameReadLock(func() error {
 		curDir := startDir
+		// newFDs holds the IDs of the FDs created by this walk.
+		newFDs := make([]FDID, 0, len(req.Path))
 		cu := cleanup.Make(func() {
-			// Destroy all newly created FDs until now. Read the new FDIDs from the
-			// payload buffer.
-			buf := comm.PayloadBuf(uint32(maxPayloadSize))[respMetaSize:]
-			var curIno Inode
-			for i := 0; i < int(numInodes); i++ {
-				buf = curIno.UnmarshalBytes(buf)
+			// Destroy all newly created FDs until now. Do not read their IDs back
+			// from the payload buffer, because the client can modify it at any
+			// time.
+			for _, id := range newFDs {
 				// Cleanup runs before withRenameReadLock releases the mutex;
 				// checklocks cannot propagate it into these passed callbacks.
-				c.removeControlFDLocked(curIno.ControlFD) // +checklocksignore
+				c.removeControlFDLocked(id) // +checklocksignore
 			}
 		})
 		defer cu.Clean()
@@ -371,6 +371,7 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 			if err != nil {
 				return err
 			}
+			newFDs = append(newFDs, child.id)
 			// Write inode into payload buffer.
 			i := Inode{ControlFD: child.id, Stat: childStat}
 			i.MarshalUnsafe(payloadBuf[payloadPos:])
