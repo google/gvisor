@@ -47,11 +47,10 @@ const (
 	// tokens, the pool keeps ready for each build on each queue.
 	reservedJobsPerBuild = 10
 
-	// httpShutdownTimeout and stackShutdownTimeout split Cloud Run's 10
-	// second shutdown period between draining requests and deregistering the
-	// stack.
-	httpShutdownTimeout  = 3 * time.Second
-	stackShutdownTimeout = 6 * time.Second
+	// httpShutdownTimeout and stackShutdownTimeout bound draining requests and
+	// deregistering the stack at shutdown.
+	httpShutdownTimeout  = 10 * time.Second
+	stackShutdownTimeout = 10 * time.Second
 
 	failedJobCancelTimeout = 5 * time.Second
 
@@ -74,7 +73,6 @@ type server struct {
 
 	// The following fields are immutable.
 	cfg        config
-	audience   string
 	computeSvc *compute.Service
 }
 
@@ -84,12 +82,8 @@ func newServer(ctx context.Context) *server {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	audience, err := serviceURL(ctx)
-	if err != nil {
-		log.Fatalf("Failed to compute service URL: %v", err)
-	}
 	log.Printf("Expecting agent identity tokens with audience %s, service account %s, project %s",
-		audience, cfg.agentServiceAccount, cfg.project)
+		cfg.serviceURL, cfg.agentServiceAccount, cfg.project)
 
 	// Fetch the Buildkite agent bkToken
 	bkToken, err := accessSecret(ctx, cfg.bkTokenProject, cfg.bkTokenSecret)
@@ -138,7 +132,6 @@ func newServer(ctx context.Context) *server {
 
 	return &server{
 		cfg:                     cfg,
-		audience:                audience,
 		computeSvc:              computeSvc,
 		stack:                   stack,
 		tc:                      tc,
@@ -162,7 +155,7 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing bearer token", http.StatusUnauthorized)
 		return
 	}
-	id, err := verifyInstanceIdentity(r.Context(), s.cfg, idToken, s.audience)
+	id, err := verifyInstanceIdentity(r.Context(), s.cfg, idToken, s.cfg.serviceURL)
 	if err != nil {
 		log.Printf("Rejected agent request: %v", err)
 		http.Error(w, "invalid identity token", http.StatusUnauthorized)
@@ -355,6 +348,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /agent/request_job", s.handleAgentRequestJob)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {})
 	srv := &http.Server{
 		Addr:              ":" + s.cfg.port,
 		Handler:           mux,
@@ -366,7 +360,7 @@ func main() {
 	go s.runBuildkiteCleanupJobsTicker(ctx)
 	go s.runBuildkiteReplenishJobsTicker(ctx)
 
-	// Cloud Run sends SIGTERM to allow for cleanup when the container is killed
+	// When the coordinator VM shuts down, SIGTERM is sent
 	notifyContext, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
 	defer stop()
 	go func() {

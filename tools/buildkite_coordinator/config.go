@@ -27,8 +27,12 @@ import (
 
 // config is the coordinator's configuration.
 type config struct {
-	// port is the port to listen on. Cloud Run sets $PORT.
+	// port is the port to listen on.
 	port string
+
+	// serviceURL is the URL that agents use to reach the coordinator. It is
+	// used for instance identity token audience checks.
+	serviceURL string
 
 	// stackKey is the key of the stack used to register in Buildkite.
 	stackKey string
@@ -76,6 +80,10 @@ func loadConfig(ctx context.Context) (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("failed to get project ID from metadata server: %w", err)
 	}
+	serviceURL := os.Getenv("SERVICE_URL")
+	if serviceURL == "" {
+		return config{}, fmt.Errorf("SERVICE_URL is not set")
+	}
 	agentServiceAccount := os.Getenv("AGENT_SERVICE_ACCOUNT")
 	if agentServiceAccount == "" {
 		return config{}, fmt.Errorf("AGENT_SERVICE_ACCOUNT is not set")
@@ -101,6 +109,7 @@ func loadConfig(ctx context.Context) (config, error) {
 	stackKey := stackKeyPrefix + "-" + idHash[:16]
 	return config{
 		port:                envOr("PORT", "8080"),
+		serviceURL:          serviceURL,
 		stackKey:            stackKey,
 		queues:              queues,
 		trustedAuthors:      trustedAuthors,
@@ -115,7 +124,7 @@ func loadConfig(ctx context.Context) (config, error) {
 	}, nil
 }
 
-// instanceIDHash returns the sha256 hash of the Cloud Run instance's ID.
+// instanceIDHash returns the sha256 hash of the coordinator VM's instance ID.
 func instanceIDHash(ctx context.Context) (string, error) {
 	instanceID, err := metadata.GetWithContext(ctx, "instance/id")
 	if err != nil {
@@ -124,25 +133,6 @@ func instanceIDHash(ctx context.Context) (string, error) {
 	sum := sha256.Sum256([]byte(instanceID))
 	key := hex.EncodeToString(sum[:])
 	return key, nil
-}
-
-// serviceURL returns the coordinator's Cloud Run URL, which has
-// the form https://SERVICE-PROJECT_NUMBER.REGION.run.app.
-func serviceURL(ctx context.Context) (string, error) {
-	service := os.Getenv("K_SERVICE")
-	if service == "" {
-		return "", fmt.Errorf("K_SERVICE is not set")
-	}
-	// Of the form "projects/PROJECT_NUMBER/regions/REGION".
-	region, err := metadata.GetWithContext(ctx, "instance/region")
-	if err != nil {
-		return "", fmt.Errorf("failed to get region from metadata server: %w", err)
-	}
-	parts := strings.Split(region, "/")
-	if len(parts) != 4 || parts[0] != "projects" || parts[2] != "regions" {
-		return "", fmt.Errorf("unexpected region from metadata server: %q", region)
-	}
-	return fmt.Sprintf("https://%s-%s.%s.run.app", service, parts[1], parts[3]), nil
 }
 
 // envOr returns the value of the environment variable key, or def if unset.
