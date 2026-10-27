@@ -15,9 +15,6 @@
 package kernel
 
 import (
-	"fmt"
-	"reflect"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/sentry"
@@ -29,6 +26,11 @@ import (
 
 const (
 	maxSyscallFilterInstructions = 1 << 15
+
+	// seccompCacheableInputSize is the size of the seccomp_data ABI prefix
+	// that holds the syscall number and audit architecture. Reads beyond it
+	// cannot be cached by syscall number.
+	seccompCacheableInputSize = 8
 
 	// uncacheableBPFAction is an invalid seccomp action code.
 	// It is used as a sentinel value in `taskSeccompFilters.cache` to indicate
@@ -225,36 +227,16 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 
 // checkFilterCacheability executes `program` on the given `input`, and
 // checks if its result is cacheable. If it is, it returns that result.
-func checkFilterCacheability(program bpf.Program, input bpf.Input) (uint32, error) {
-	// Look up Nr and Arch fields, we'll use their offsets later
-	// to verify whether they were accessed.
-	sdType := reflect.TypeFor[linux.SeccompData]()
-	nrField, ok := sdType.FieldByName("Nr")
-	if !ok {
-		panic("linux.SeccompData.Nr field not found")
+func checkFilterCacheability(program bpf.Program, input bpf.Input, metrics *bpf.ExecutionMetrics) (uint32, bool) {
+	if err := bpf.InstrumentedExecWithMetrics[bpf.NativeEndian](program, input, metrics); err != nil {
+		return 0, false
 	}
-	archField, ok := sdType.FieldByName("Arch")
-	if !ok {
-		panic("linux.SeccompData.Arch field not found")
-	}
-
-	exec, err := bpf.InstrumentedExec[bpf.NativeEndian](program, input)
-	if err != nil {
-		return 0, err
-	}
-	for offset, accessed := range exec.InputAccessed {
-		if !accessed {
-			continue // Input byte not accessed by the program.
+	for offset, accessed := range metrics.InputAccessed {
+		if accessed && offset >= seccompCacheableInputSize {
+			return 0, false
 		}
-		if uintptr(offset) >= nrField.Offset && uintptr(offset) < nrField.Offset+nrField.Type.Size() {
-			continue // The program accessed the "Nr" field, this is OK.
-		}
-		if uintptr(offset) >= archField.Offset && uintptr(offset) < archField.Offset+archField.Type.Size() {
-			continue // The program accessed the "Arch" field, this is OK.
-		}
-		return 0, fmt.Errorf("program accessed byte at offset %d which is not the sysno or arch field", offset)
 	}
-	return exec.ReturnValue, nil
+	return metrics.ReturnValue, true
 }
 
 // populateCache recomputes `ts.cache` from `ts.filters`.
@@ -262,6 +244,7 @@ func (ts *taskSeccomp) populateCache(t *Task) {
 	ts.cacheAuditNumber = t.image.st.AuditNumber
 	sd := linux.SeccompData{}
 	input := bpf.Input(make([]byte, sd.SizeBytes()))
+	var metrics bpf.ExecutionMetrics
 
 	for sysno := int32(0); sysno <= sentry.MaxSyscallNum; sysno++ {
 		sd.Nr = sysno
@@ -276,8 +259,8 @@ func (ts *taskSeccomp) populateCache(t *Task) {
 		// If any filter is not cacheable, then we cannot cache the result for
 		// this sysno.
 		for i := len(ts.filters) - 1; i >= 0; i-- {
-			result, cacheErr := checkFilterCacheability(ts.filters[i], input)
-			if cacheErr != nil {
+			result, cacheable := checkFilterCacheability(ts.filters[i], input, &metrics)
+			if !cacheable {
 				sysnoIsCacheable = false
 				break
 			}

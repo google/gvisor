@@ -360,7 +360,7 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 
 	// Parent should not signal the now privileged task, undocumented Linux behavior.
 	if r.secureExec {
-		t.parentDeathSignal = 0
+		t.SetParentDeathSignal(0)
 	}
 
 	// Update dumpability using just the old creds, see fs/exec.c:begin_new_exec().
@@ -380,7 +380,7 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 		r.newCreds.FilesystemKGID != oldCreds.FilesystemKGID ||
 		!r.newCreds.PermittedCaps.IsSubsetOf(oldCreds.PermittedCaps) {
 		r.image.MemoryManager.SetDumpability(mm.NotDumpable) // suid_dumpable is not implemented
-		t.parentDeathSignal = 0
+		t.SetParentDeathSignal(0)
 	}
 
 	// Switch to the new process.

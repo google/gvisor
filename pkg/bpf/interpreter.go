@@ -498,14 +498,34 @@ func (e *ExecutionMetrics) markInputRead(offset uint32, bytesRead int) {
 // instrumenting it: recording memory accesses and lines executed.
 // This is slower than Exec, but should return equivalent results.
 func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics, error) {
-	ret := ExecutionMetrics{
-		Coverage:      make([]bool, len(p.instructions)),
-		InputAccessed: make([]bool, len(in)),
+	var metrics ExecutionMetrics
+	err := InstrumentedExecWithMetrics[endian](p, in, &metrics)
+	return metrics, err
+}
+
+// InstrumentedExecWithMetrics executes a BPF program and records its execution
+// metrics in metrics. It resets metrics before execution, reusing its buffers
+// when they have sufficient capacity. Partial metrics are available on error.
+//
+// Preconditions: metrics.Coverage and metrics.InputAccessed must not overlap.
+func InstrumentedExecWithMetrics[endian Endianness](p Program, in Input, metrics *ExecutionMetrics) error {
+	metrics.ReturnValue = 0
+	if metrics.Coverage == nil || cap(metrics.Coverage) < len(p.instructions) {
+		metrics.Coverage = make([]bool, len(p.instructions))
+	} else {
+		metrics.Coverage = metrics.Coverage[:len(p.instructions)]
+		clear(metrics.Coverage)
+	}
+	if metrics.InputAccessed == nil || cap(metrics.InputAccessed) < len(in) {
+		metrics.InputAccessed = make([]bool, len(in))
+	} else {
+		metrics.InputAccessed = metrics.InputAccessed[:len(in)]
+		clear(metrics.InputAccessed)
 	}
 	var m machine
 	var pc int
 	for ; pc < len(p.instructions); pc++ {
-		ret.Coverage[pc] = true
+		metrics.Coverage[pc] = true
 		i := p.instructions[pc]
 		switch i.OpCode {
 		case Ld | Imm | W:
@@ -513,44 +533,44 @@ func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics,
 		case Ld | Abs | W:
 			val, ok := load32[endian](in, i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(i.K, 4)
+			metrics.markInputRead(i.K, 4)
 			m.A = val
 		case Ld | Abs | H:
 			val, ok := load16[endian](in, i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(i.K, 2)
+			metrics.markInputRead(i.K, 2)
 			m.A = uint32(val)
 		case Ld | Abs | B:
 			val, ok := load8(in, i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(i.K, 1)
+			metrics.markInputRead(i.K, 1)
 			m.A = uint32(val)
 		case Ld | Ind | W:
 			val, ok := load32[endian](in, m.X+i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(m.X+i.K, 4)
+			metrics.markInputRead(m.X+i.K, 4)
 			m.A = val
 		case Ld | Ind | H:
 			val, ok := load16[endian](in, m.X+i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(m.X+i.K, 2)
+			metrics.markInputRead(m.X+i.K, 2)
 			m.A = uint32(val)
 		case Ld | Ind | B:
 			val, ok := load8(in, m.X+i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(m.X+i.K, 1)
+			metrics.markInputRead(m.X+i.K, 1)
 			m.A = uint32(val)
 		case Ld | Mem | W:
 			m.A = m.M[int(i.K)]
@@ -565,9 +585,9 @@ func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics,
 		case Ldx | Msh | B:
 			val, ok := load8(in, i.K)
 			if !ok {
-				return ret, Error{InvalidLoad, pc}
+				return Error{InvalidLoad, pc}
 			}
-			ret.markInputRead(i.K, 1)
+			metrics.markInputRead(i.K, 1)
 			m.X = 4 * uint32(val&0xf)
 		case St:
 			m.M[int(i.K)] = m.A
@@ -590,7 +610,7 @@ func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics,
 			m.A /= i.K
 		case Alu | Div | X:
 			if m.X == 0 {
-				return ret, Error{DivisionByZero, pc}
+				return Error{DivisionByZero, pc}
 			}
 			m.A /= m.X
 		case Alu | Or | K:
@@ -616,7 +636,7 @@ func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics,
 			m.A %= i.K
 		case Alu | Mod | X:
 			if m.X == 0 {
-				return ret, Error{DivisionByZero, pc}
+				return Error{DivisionByZero, pc}
 			}
 			m.A %= m.X
 		case Alu | Xor | K:
@@ -642,18 +662,18 @@ func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics,
 		case Jmp | Jset | X:
 			pc += conditionalJumpOffset(i, (m.A&m.X) != 0)
 		case Ret | K:
-			ret.ReturnValue = i.K
-			return ret, nil
+			metrics.ReturnValue = i.K
+			return nil
 		case Ret | A:
-			ret.ReturnValue = m.A
-			return ret, nil
+			metrics.ReturnValue = m.A
+			return nil
 		case Misc | Tax:
 			m.X = m.A
 		case Misc | Txa:
 			m.A = m.X
 		default:
-			return ret, Error{InvalidOpcode, pc}
+			return Error{InvalidOpcode, pc}
 		}
 	}
-	return ret, Error{InvalidEndOfProgram, pc}
+	return Error{InvalidEndOfProgram, pc}
 }

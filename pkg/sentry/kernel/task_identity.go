@@ -243,7 +243,7 @@ func (t *Task) commitIDChange(oldCreds, creds *auth.Credentials) {
 		t.MemoryManager().SetDumpability(mm.NotDumpable)
 
 		// Not documented, but compare Linux's kernel/cred.c:commit_creds().
-		t.parentDeathSignal = 0
+		t.SetParentDeathSignal(0)
 	}
 	t.creds.Store(creds)
 }

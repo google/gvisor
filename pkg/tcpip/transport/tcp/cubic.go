@@ -54,10 +54,13 @@ const (
 // cubicState stores the variables related to TCP CUBIC congestion
 // control algorithm state.
 //
-// See: https://tools.ietf.org/html/rfc8312.
+// See: https://www.rfc-editor.org/rfc/rfc9438.html.
 // +stateify savable
 type cubicState struct {
 	TCPCubicState
+
+	// cwndEpoch is cwnd at the start of the current epoch (RFC 9438 section 4.2).
+	cwndEpoch float64
 
 	// numCongestionEvents tracks the number of congestion events since last
 	// RTO.
@@ -94,23 +97,18 @@ func newCubicCC(s *sender) *cubicState {
 	}
 }
 
-// enterCongestionAvoidance is used to initialize cubic in cases where we exit
-// SlowStart without a real congestion event taking place. This can happen when
-// a connection goes back to slow start due to a retransmit and we exceed the
-// previously lowered ssThresh without experiencing packet loss.
-//
-// Refer: https://tools.ietf.org/html/rfc8312#section-4.8
+// enterCongestionAvoidance starts an epoch at the sender's current window.
+// RFC 9438 sections 4.2 and 4.3 use that window to initialize both curves.
+// As in Linux bictcp_update(), when cwnd reaches or exceeds WMax the
+// curve starts at cwnd with K = 0.
 //
 // +checklocks:c.s.ep.mu
 func (c *cubicState) enterCongestionAvoidance() {
-	// See: https://tools.ietf.org/html/rfc8312#section-4.7 &
-	// https://tools.ietf.org/html/rfc8312#section-4.8
-	if c.numCongestionEvents == 0 {
-		c.K = 0
-		c.T = c.s.ep.stack.Clock().NowMonotonic()
-		c.WLastMax = c.WMax
-		c.WMax = float64(c.s.SndCwnd)
-	}
+	c.cwndEpoch = float64(c.s.SndCwnd)
+	c.K = math.Cbrt(max(c.WMax-c.cwndEpoch, 0) / c.C)
+	c.T = c.s.ep.stack.Clock().NowMonotonic()
+	c.WEst = c.cwndEpoch
+	c.s.SndCAAckCount = 0
 }
 
 // updateHyStart tracks packet round-trip time (rtt) to find a safe threshold
@@ -192,13 +190,20 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 	enterCA := false
 	if newcwnd >= c.s.Ssthresh {
 		newcwnd = c.s.Ssthresh
-		c.s.SndCAAckCount = 0
 		enterCA = true
 	}
 
 	packetsAcked -= newcwnd - c.s.SndCwnd
 	c.s.SndCwnd = newcwnd
 	if enterCA {
+		if c.numCongestionEvents == 0 {
+			c.WMax = float64(c.s.SndCwnd)
+			if c.WLastMax == 0 {
+				// With no prior congestion event, cwnd_prior = cwnd
+				// (RFC 9438 section 4.10).
+				c.WLastMax = c.WMax
+			}
+		}
 		c.enterCongestionAvoidance()
 	}
 	return packetsAcked
@@ -206,15 +211,16 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 
 // Update updates cubic's internal state variables. It must be called on every
 // ACK received.
-// Refer: https://tools.ietf.org/html/rfc8312#section-4
+// Refer: https://www.rfc-editor.org/rfc/rfc9438.html#section-4
 //
 // +checklocks:c.s.ep.mu
 // +checklocksexclude:c.s.rtt.rttMutex
 func (c *cubicState) Update(packetsAcked int, rtt time.Duration, ackTime tcpip.MonotonicTime) {
-	if c.s.Ssthresh == InitialSsthresh && c.s.SndCwnd < c.s.Ssthresh {
+	slowStart := c.s.SndCwnd < c.s.Ssthresh
+	if c.s.Ssthresh == InitialSsthresh && slowStart {
 		c.updateHyStart(rtt, ackTime)
 	}
-	if c.s.SndCwnd < c.s.Ssthresh {
+	if slowStart {
 		packetsAcked = c.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {
 			return
@@ -226,14 +232,14 @@ func (c *cubicState) Update(packetsAcked int, rtt time.Duration, ackTime tcpip.M
 	c.s.SndCwnd = c.getCwnd(packetsAcked, c.s.SndCwnd, srtt)
 }
 
-// cubicCwnd computes the CUBIC congestion window after t seconds from last
-// congestion event.
+// cubicCwnd computes W_cubic at t seconds relative to K (RFC 9438 section 4.2).
+// When an epoch starts above WMax, its starting window is the curve's origin.
 func (c *cubicState) cubicCwnd(t float64) float64 {
-	return c.C*math.Pow(t, 3.0) + c.WMax
+	return c.C*(t*t*t) + max(c.WMax, c.cwndEpoch)
 }
 
 // getCwnd returns the current congestion window as computed by CUBIC.
-// Refer: https://tools.ietf.org/html/rfc8312#section-4
+// Refer: https://www.rfc-editor.org/rfc/rfc9438.html#section-4
 //
 // +checklocks:c.s.ep.mu
 func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int {
@@ -243,25 +249,31 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 	elapsed := c.s.ep.stack.Clock().NowMonotonic().Sub(c.T)
 	elapsedSeconds := elapsed.Seconds()
 
-	// Compute the window as per Cubic after 'elapsed' time
-	// since last congestion event.
 	c.WC = c.cubicCwnd(elapsedSeconds - c.K)
 
-	// Compute the TCP friendly estimate of the congestion window.
-	c.WEst = c.WMax*c.Beta + (3.0*((1.0-c.Beta)/(1.0+c.Beta)))*(elapsedSeconds/srtt.Seconds())
+	// RFC 9438 section 4.3 advances the Reno-friendly estimate from ACKs,
+	// preserving fractional growth independently of the integer window.
+	cwnd := float64(sndCwnd)
+	alpha := 3 * (1 - c.Beta) / (1 + c.Beta)
+	if c.WEst >= c.WLastMax {
+		alpha = 1
+	}
+	c.WEst += alpha * float64(packetsAcked) / cwnd
+	if c.WC < c.WEst {
+		// The absolute estimate already accounts for these ACKs. Do not
+		// spend the same credit again when returning to the cubic region.
+		c.s.SndCAAckCount = 0
+		return max(sndCwnd, int(c.WEst))
+	}
 
 	// In Concave/Convex region of CUBIC, calculate what CUBIC window
 	// will be after 1 RTT and use that to grow congestion window
 	// for every ack.
 	tEst := (elapsed + srtt).Seconds()
 	wtRtt := c.cubicCwnd(tEst - c.K)
-	if c.WC < c.WEst {
-		wtRtt = max(wtRtt, c.WEst)
-	}
 	// Express the target as the number of acknowledged segments needed to
 	// grow cwnd by one. Keeping ACK credit across calls avoids discarding
 	// every sub-segment increase when ACKs arrive individually.
-	cwnd := float64(sndCwnd)
 	acksPerSegment := math.MaxInt
 	if delta := wtRtt - cwnd; delta > 0 {
 		// RFC 9438 section 4.2 bounds new growth credit to half a segment
@@ -328,16 +340,26 @@ func (c *cubicState) fastConvergence() {
 	} else {
 		c.WLastMax = c.WMax
 	}
-	// Recompute k as wMax may have changed.
-	c.K = math.Cbrt(c.WMax * (1 - c.Beta) / c.C)
 }
 
 // PostRecovery implements congestionControl.PostRecovery.
 //
 // +checklocks:c.s.ep.mu
 func (c *cubicState) PostRecovery() {
-	c.T = c.s.ep.stack.Clock().NowMonotonic()
-	c.s.SndCAAckCount = 0
+	c.enterCongestionAvoidance()
+}
+
+// HandleWindowRestart implements congestionControl.HandleWindowRestart.
+//
+// +checklocks:c.s.ep.mu
+func (c *cubicState) HandleWindowRestart() {
+	if c.s.SndCwnd >= c.s.Ssthresh {
+		// Linux tcp_cwnd_restart() updates ssthresh and cubictcp_cwnd_event()
+		// shifts the epoch by the idle time on CA_EVENT_TX_START. Our sender
+		// leaves ssthresh unchanged; if still in congestion avoidance, start
+		// the curve at the reduced window instead (RFC 9438 section 5.8).
+		c.enterCongestionAvoidance()
+	}
 }
 
 // reduceSlowStartThreshold returns new SsThresh as described in

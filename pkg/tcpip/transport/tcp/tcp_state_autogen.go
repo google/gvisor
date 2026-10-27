@@ -121,6 +121,7 @@ func (c *cubicState) StateTypeName() string {
 func (c *cubicState) StateFields() []string {
 	return []string{
 		"TCPCubicState",
+		"cwndEpoch",
 		"numCongestionEvents",
 		"s",
 	}
@@ -132,8 +133,9 @@ func (c *cubicState) beforeSave() {}
 func (c *cubicState) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.TCPCubicState)
-	stateSinkObject.Save(1, &c.numCongestionEvents)
-	stateSinkObject.Save(2, &c.s)
+	stateSinkObject.Save(1, &c.cwndEpoch)
+	stateSinkObject.Save(2, &c.numCongestionEvents)
+	stateSinkObject.Save(3, &c.s)
 }
 
 func (c *cubicState) afterLoad(context.Context) {}
@@ -141,8 +143,9 @@ func (c *cubicState) afterLoad(context.Context) {}
 // +checklocksignore
 func (c *cubicState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.TCPCubicState)
-	stateSourceObject.Load(1, &c.numCongestionEvents)
-	stateSourceObject.Load(2, &c.s)
+	stateSourceObject.Load(1, &c.cwndEpoch)
+	stateSourceObject.Load(2, &c.numCongestionEvents)
+	stateSourceObject.Load(3, &c.s)
 }
 
 func (q *epQueue) StateTypeName() string {
