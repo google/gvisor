@@ -207,6 +207,7 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = [
+        "decommit_restore_test.go",
         "decommit_test.go",
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
@@ -214,8 +215,10 @@ go_test(
     ],
     embed = [":pgalloc"],
     deps = [
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/memutil",
+        "//pkg/safemem",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
         "//pkg/sync",
