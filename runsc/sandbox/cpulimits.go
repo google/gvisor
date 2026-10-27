@@ -164,13 +164,28 @@ func (s *Sandbox) switchCPULimit(from, to cpuPhase) error {
 // its own. If that fails, it stops the sandbox rather than let the application
 // run beyond its OCI spec limit.
 func (s *Sandbox) applyAppCPULimit(from cpuPhase) error {
-	err := s.switchCPULimit(from, cpuPhaseApp)
-	if err == nil {
-		return nil
+	if err := s.switchCPULimit(from, cpuPhaseApp); err != nil {
+		return s.DestroyOverCPULimit(err)
 	}
-	log.Warningf("[Lifecycle CPU] Destroying sandbox %q: could not apply its CPU limit: %v", s.ID, err)
+	return nil
+}
+
+// DestroyOverCPULimit stops the sandbox because `err` prevents runsc from
+// keeping its application within its OCI spec CPU limit.
+func (s *Sandbox) DestroyOverCPULimit(err error) error {
+	log.Warningf("[Lifecycle CPU] Destroying sandbox %q: cannot keep it within its CPU limit: %v", s.ID, err)
 	if destroyErr := s.destroy(); destroyErr != nil {
 		return fmt.Errorf("%w; cannot stop the sandbox: %v", err, destroyErr)
 	}
 	return fmt.Errorf("%w; stopped the sandbox", err)
+}
+
+// MarkCreated clears Creating and applies the application CPU limit. No-op if
+// Creating is not set.
+func (s *Sandbox) MarkCreated() error {
+	if !s.Creating {
+		return nil
+	}
+	s.Creating = false
+	return s.switchCPULimit(cpuPhaseCreation, cpuPhaseApp)
 }
