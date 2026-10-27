@@ -159,15 +159,14 @@ type TCPEndpointID struct {
 //
 // +stateify savable
 type TCPFastRecoveryState struct {
-	// Active if true indicates the endpoint is in fast recovery. The
-	// following fields are only meaningful when Active is true.
+	// Active indicates the endpoint is in fast recovery.
 	Active bool
 
 	// First is the first unacknowledged sequence number being recovered.
 	First seqnum.Value
 
-	// Last is the 'recover' sequence number that indicates the point at
-	// which we should exit recovery barring any timeouts etc.
+	// Last is the highest byte covered by the recovery episode. It remains
+	// meaningful after a retransmission timeout ends fast recovery.
 	Last seqnum.Value
 
 	// MaxCwnd is the maximum value we are permitted to grow the congestion

@@ -447,15 +447,21 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 		return nil
 	}
 
-	fastRetransmit := false
-	if !rc.snd.FastRecovery.Active {
-		rc.snd.cc.HandleLossDetected()
-		rc.snd.enterRecovery()
-		fastRetransmit = true
-	}
-
+	fastRetransmit := rc.snd.enterRACKRecovery()
 	rc.DoRecovery(nil, fastRetransmit)
 	return nil
+}
+
+// enterRACKRecovery reports whether the loss starts a new recovery episode.
+//
+// +checklocks:s.ep.mu
+func (s *sender) enterRACKRecovery() bool {
+	if s.FastRecovery.Active || s.sackRecoveryInterrupted {
+		return false
+	}
+	s.cc.HandleLossDetected()
+	s.enterRecovery()
+	return true
 }
 
 // DoRecovery implements lossRecovery.DoRecovery.

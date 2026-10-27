@@ -189,6 +189,10 @@ type sender struct {
 	// spuriously as described in RFC3522 Section 3.2.
 	spuriousRecovery bool
 
+	// sackRecoveryInterrupted indicates that an RTO ended SACK recovery
+	// but the peer has not cumulatively acknowledged FastRecovery.Last.
+	sackRecoveryInterrupted bool
+
 	// retransmitTS is the timestamp at which the sender sends retransmitted
 	// segment after entering an RTO for the first time as described in
 	// RFC3522 Section 3.2.
@@ -630,7 +634,13 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	//     After a retransmit timeout, record the highest sequence number
 	//     transmitted in the variable recover, and exit the fast recovery
 	//     procedure if applicable.
-	s.FastRecovery.Last = s.SndNxt - 1
+	// If the timeout interrupts SACK recovery, RFC 6675 section 5.1
+	// prohibits another recovery until this flight is acknowledged.
+	// A later timeout must not move that boundary to cover newer data.
+	if !s.sackRecoveryInterrupted {
+		s.FastRecovery.Last = s.SndNxt - 1
+		s.sackRecoveryInterrupted = s.FastRecovery.Active && s.ep.SACKPermitted
+	}
 
 	if s.FastRecovery.Active {
 		// We were attempting fast recovery but were not successful.
@@ -1623,7 +1633,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if (ack-1).InRange(s.SndUna, s.SndNxt) && s.FastRecovery.Last.LessThan(ack) {
 			s.leaveRecovery()
 		}
-	} else {
+	} else if !s.sackRecoveryInterrupted {
 		// Detect loss by counting the duplicates and enter recovery.
 		fastRetransmit = s.detectLoss(rcvdSeg)
 	}
@@ -1751,6 +1761,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if !s.FastRecovery.Active {
 			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT, rcvdSeg.rcvdTime)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
+				s.sackRecoveryInterrupted = false
 				s.state = tcpip.Open
 				// Update RACK when we are exiting fast or RTO
 				// recovery as described in the RFC
@@ -1795,12 +1806,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// After the reorder window is calculated, detect any loss by checking
 		// if the time elapsed after the segments are sent is greater than the
 		// reorder window.
-		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && !s.FastRecovery.Active {
-			// If any segment is marked as lost by
-			// RACK, enter recovery and retransmit
-			// the lost segments.
-			s.cc.HandleLossDetected()
-			s.enterRecovery()
+		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && s.enterRACKRecovery() {
 			fastRetransmit = true
 		}
 
