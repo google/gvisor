@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -39,8 +39,16 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/vfs",
+        "//pkg/state",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "rdmaproxy_test",
+    srcs = ["rdmaproxy_test.go"],
+    embed = [":rdmaproxy"],
+    deps = ["//pkg/state"],
 )

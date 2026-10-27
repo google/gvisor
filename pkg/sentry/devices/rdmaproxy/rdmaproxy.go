@@ -63,6 +63,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -75,6 +76,8 @@ const expectedUverbsABIVersion = 6
 const uverbsClassDir = "/sys/class/infiniband_verbs"
 
 // uverbsDevice implements vfs.Device for /dev/infiniband/uverbs*.
+//
+// +stateify savable
 type uverbsDevice struct {
 	// devName is the device filename, e.g. "uverbs0". Distinct from the
 	// kernel minor number (e.g. 192) used for VFS registration.
@@ -83,6 +86,11 @@ type uverbsDevice struct {
 	// name at Register time. Always non-nil: Register refuses to register a
 	// device whose host PCI driver has no plug-in.
 	driver Driver
+}
+
+// beforeSave is invoked by stateify.
+func (dev *uverbsDevice) beforeSave() {
+	panic(fmt.Errorf("rdmaproxy: /dev/infiniband/%s: %w", dev.devName, state.ErrUnsavable))
 }
 
 // Open implements vfs.Device.Open.
@@ -255,6 +263,11 @@ type uverbsFD struct {
 	pinned pinnedResources
 }
 
+// CheckSave implements vfs.FileDescriptionImpl.CheckSave.
+func (*uverbsFD) CheckSave() error {
+	return fmt.Errorf("rdmaproxy: open uverbs device: %w", state.ErrUnsavable)
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *uverbsFD) Release(ctx context.Context) {
 	fd.pinned.releaseAll(ctx)
@@ -349,6 +362,11 @@ type eventFD struct {
 
 	hostFD int32
 	queue  waiter.Queue
+}
+
+// CheckSave implements vfs.FileDescriptionImpl.CheckSave.
+func (*eventFD) CheckSave() error {
+	return fmt.Errorf("rdmaproxy: open event device: %w", state.ErrUnsavable)
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

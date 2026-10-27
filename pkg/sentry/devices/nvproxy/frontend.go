@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -460,6 +461,11 @@ type dmaBufFDWrapper struct {
 	vfs.NoLockFD
 
 	hostFD int32
+}
+
+// CheckSave implements vfs.FileDescriptionImpl.CheckSave.
+func (*dmaBufFDWrapper) CheckSave() error {
+	return fmt.Errorf("nvproxy: open dma-buf: %w", state.ErrUnsavable)
 }
 
 // HostFD implements vfs.HostFDProvider.HostFD.

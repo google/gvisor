@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -56,6 +57,11 @@ type accelFD struct {
 	// therefore counted in device.openWriteFDs. It is immutable after
 	// initialization.
 	writable bool
+}
+
+// CheckSave implements vfs.FileDescriptionImpl.CheckSave.
+func (*accelFD) CheckSave() error {
+	return fmt.Errorf("tpuproxy: open accel device: %w", state.ErrUnsavable)
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
