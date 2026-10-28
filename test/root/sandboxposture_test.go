@@ -42,6 +42,15 @@ func postureConfig(t *testing.T) *config.Config {
 	if err != nil {
 		t.Fatalf("Building a configuration from flags: %v", err)
 	}
+	if conf.EnableCoreTags {
+		supported, err := sandboxposture.CoreTagsSupported()
+		if err != nil {
+			t.Fatalf("Checking for core scheduling support: %v", err)
+		}
+		if !supported {
+			t.Skip("This kernel does not support core scheduling, or SMT is inactive")
+		}
+	}
 	return conf
 }
 
@@ -101,6 +110,7 @@ func TestSandboxPostureDocker(t *testing.T) {
 		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       extraFDClasses(conf),
 		CgoEnabled:           config.CgoEnabled,
+		CoreTags:             conf.EnableCoreTags,
 		NetNamespaceTarget:   netnsTarget,
 		ChildOfRef:           true, // Ref is shim
 		Ref:                  ref,
@@ -191,6 +201,7 @@ func TestSandboxPostureDo(t *testing.T) {
 		"--network=none",
 		"--platform="+conf.Platform,
 		"--directfs="+strconv.FormatBool(conf.DirectFS),
+		"--enable-core-tags="+strconv.FormatBool(conf.EnableCoreTags),
 		"--root", rootDir,
 		"do", "/bin/sh", "-c", "echo "+readyMarker+"; exec sleep 300")
 	stdout, err := cmd.StdoutPipe()
@@ -257,6 +268,7 @@ func TestSandboxPostureDo(t *testing.T) {
 		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       extraFDClasses(conf),
 		CgoEnabled:           config.CgoEnabled,
+		CoreTags:             conf.EnableCoreTags,
 		// The sandbox is a child of the `runsc do` process this test spawned,
 		// not of the test itself.
 		ChildOfRef: false,

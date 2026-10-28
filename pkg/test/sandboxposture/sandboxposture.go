@@ -126,6 +126,17 @@ const (
 	LimitUnlimited = "unlimited/unlimited"
 )
 
+// Normalized values for `Posture.CoreTag`.
+const (
+	// CoreTagNone means no thread has a core scheduling cookie, or all threads
+	// inherited the reference process's core scheduling cookie.
+	CoreTagNone = "none"
+
+	// CoreTagOwn means all threads share one core scheduling cookie, which the
+	// reference process does not have.
+	CoreTagOwn = "own"
+)
+
 // FD classes reported in `FDTable.Classes`.
 const (
 	FDDirectory = "dir"
@@ -174,6 +185,11 @@ type Posture struct {
 	// Threads reports whether every thread in the process all share the
 	// same process-level credentials, capabilities and seccomp state.
 	Threads Threads
+
+	// CoreTag classifies the core scheduling cookies of the threads of the
+	// process and of its descendants (e.g. systrap stubs), or describes them
+	// if they are mixed.
+	CoreTag string
 
 	// Children counts the process's direct children by command name.
 	// Useful for debugging, not used for comparison.
@@ -384,6 +400,7 @@ type Opts struct {
 	NamespaceTargets map[string]string
 
 	// ProcRoot is the procfs mount to read through. Defaults to "/proc".
+	// Its PID namespace must be the caller's, as `CoreTag` is collected by PID.
 	ProcRoot string
 }
 
@@ -435,6 +452,9 @@ func Collect(opts Opts) (*Posture, error) {
 	}
 	if posture.Threads, err = collectThreads(p, status); err != nil {
 		return nil, fmt.Errorf("collecting per-thread posture: %w", err)
+	}
+	if posture.CoreTag, err = collectCoreTag(p, ref); err != nil {
+		return nil, fmt.Errorf("collecting core tags: %w", err)
 	}
 	if posture.Children, err = collectChildren(p); err != nil {
 		return nil, fmt.Errorf("collecting children: %w", err)
@@ -1434,6 +1454,94 @@ func collectThreads(p *proc, status map[string]string) (Threads, error) {
 	sort.Strings(t.Divergences)
 	t.Uniform = len(t.Divergences) == 0
 	return t, nil
+}
+
+// CoreTagsSupported reports whether this kernel supports core scheduling.
+// It requires CONFIG_SCHED_CORE and active SMT.
+func CoreTagsSupported() (bool, error) {
+	switch _, err := coreTag(0); err {
+	case nil:
+		return true, nil
+	case unix.EINVAL, unix.ENODEV:
+		return false, nil
+	default:
+		return false, fmt.Errorf("cannot get own core tag: %w", err)
+	}
+}
+
+func collectCoreTag(p, ref *proc) (string, error) {
+	supported, err := CoreTagsSupported()
+	if err != nil {
+		return "", err
+	}
+	if !supported {
+		return CoreTagNone, nil
+	}
+	refTag, err := coreTag(ref.pid)
+	if err != nil {
+		return "", fmt.Errorf("cannot get core tag of reference process %d: %w", ref.pid, err)
+	}
+	threads := make(map[uint64]map[string]int) // Tag -> comm -> count.
+	pids := []int{p.pid}
+	for len(pids) > 0 {
+		q := &proc{root: p.root, pid: pids[0]}
+		pids = pids[1:]
+		ents, err := os.ReadDir(q.path("task"))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // Process exited while we were looking at it.
+			}
+			return "", fmt.Errorf("reading %s: %w", q.path("task"), err)
+		}
+		for _, ent := range ents {
+			tid, err := strconv.Atoi(ent.Name())
+			if err != nil {
+				return "", fmt.Errorf("bad thread ID %q in %s", ent.Name(), q.path("task"))
+			}
+			tag, err := coreTag(tid)
+			if err == unix.ESRCH {
+				continue // Thread exited while we were looking at it.
+			}
+			if err != nil {
+				return "", fmt.Errorf("cannot get core tag of thread %d: %w", tid, err)
+			}
+			comm, err := q.read("task", ent.Name(), "comm")
+			if err != nil {
+				comm = "?"
+			}
+			if threads[tag] == nil {
+				threads[tag] = make(map[string]int)
+			}
+			threads[tag][strings.TrimSpace(comm)]++
+			children, err := q.read("task", ent.Name(), "children")
+			if err != nil {
+				continue // Thread exited while we were looking at it.
+			}
+			for c := range strings.FieldsSeq(children) {
+				child, err := strconv.Atoi(c)
+				if err != nil {
+					return "", fmt.Errorf("bad child PID %q of thread %d", c, tid)
+				}
+				pids = append(pids, child)
+			}
+		}
+	}
+	if len(threads) == 1 {
+		for tag := range threads {
+			switch {
+			case tag == 0 || tag == refTag:
+				return CoreTagNone, nil
+			case tag != refTag:
+				return CoreTagOwn, nil
+			}
+		}
+	}
+	var mixed []string
+	for tag, comms := range threads {
+		mixed = append(mixed, fmt.Sprintf("tag %d on %v", tag, comms))
+	}
+	sort.Strings(mixed)
+	return fmt.Sprintf("mixed (reference has tag %d): %s", refTag, strings.Join(mixed, "; ")), nil
 }
 
 func collectChildren(p *proc) (map[string]int, error) {

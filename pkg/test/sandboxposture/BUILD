@@ -11,6 +11,7 @@ go_library(
     srcs = [
         "expected.go",
         "sandboxposture.go",
+        "sandboxposture_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/test/sandboxposture",
     visibility = ["//:sandbox"],
