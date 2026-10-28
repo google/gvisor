@@ -40,11 +40,9 @@ with the format `--overlay2={mount}:{medium}[,size={size}][,metacopy=on|off]`.
 *   `medium`: One of the [backing mediums](#backing-mediums) (`memory`, `self`,
     `dir=...`).
 *   `size`: (Optional) Limit the size of the tmpfs upper layer (e.g., `2g`).
-*   `metacopy`: (Optional, default `off`) With `on`, a chown, chmod, utimes, or
-    xattr change to a lower-layer file copies up only its metadata; its data
-    stays on the lower layer until the file is opened for writing, truncated,
-    or hard linked, as with Linux overlayfs' `metacopy=on`. Only valid with
-    `root`.
+*   `metacopy`: (Optional, default `off`) When `on`, enables Linux-style
+    metacopy. Nondestructive metadata changes (chown, chmod, utime, xattr)
+    cause a metadata-only copy-up. Only valid with `root`.
 
 Examples:
 
@@ -53,8 +51,7 @@ Examples:
 *   `--overlay2=all:memory`: Overlay all mounts with memory-backed tmpfs.
 *   `--overlay2=root:dir=/tmp/overlay`: Overlay the root filesystem with a
     file-backed tmpfs stored in `/tmp/overlay`.
-*   `--overlay2=root:self,metacopy=on`: The default root overlay, copying up
-    only metadata for metadata changes.
+*   `--overlay2=root:self,metacopy=on`: Default overlay with metacopy.
 
 > **Note**: `self` backed rootfs overlay is typically enabled by default in
 > runsc for performance. If you need to propagate rootfs changes to the host
