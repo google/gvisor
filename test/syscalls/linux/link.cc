@@ -16,7 +16,6 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <sched.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -106,10 +105,9 @@ TEST(LinkTest, HardlinkChangeMode) {
   EXPECT_THAT(lstat(newname.c_str(), &stat1), SyscallSucceeds());
   EXPECT_THAT(lstat(oldfile.path().c_str(), &stat2), SyscallSucceeds());
 
-  // Expect inode numbers to be preserved, even with save/restore enabled in
-  // this test. Since file_fd is open, the gofer filesystem should preserve the
-  // inode number across save/restore. Do not use IsSameFile() here because it
-  // disables save/reftore feature.
+  // Expect both names to report the same device and inode numbers, even with
+  // save/restore enabled in this test, since they refer to the same host file.
+  // Do not use IsSameFile() here because it disables save/restore.
 
   EXPECT_EQ(stat1.st_dev, stat2.st_dev);
   EXPECT_EQ(stat1.st_ino, stat2.st_ino);

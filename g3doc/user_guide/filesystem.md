@@ -93,6 +93,16 @@ operations. It communicates with the Gofer process (via RPCs) to perform
 filesystem operations on its behalf. This increases security but comes with a
 performance trade-off.
 
+## Inode numbers
+
+Files on gofer mounts (the rootfs and bind mounts) report their host inode
+numbers. Host device numbers are mapped to sandbox-private device numbers, so
+files on different host filesystems under one mount report different `st_dev`
+values, as with Linux overlayfs. With `--inode-numbers=virtual`, the sandbox
+instead assigns sequential inode numbers and a single device number per mount,
+which costs memory for every file the sandbox has ever seen and a `stat(2)` call
+for every entry returned by `getdents(2)`.
+
 ## Shared root filesystem
 
 The root filesystem is where the image is extracted and is not generally

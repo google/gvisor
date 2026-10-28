@@ -141,6 +141,16 @@ func TestGoferMountDataDirectFS(t *testing.T) {
 	}
 }
 
+func TestGoferMountDataInodeNumbers(t *testing.T) {
+	for _, mode := range []config.InodeNumbers{config.InodeNumbersPassthrough, config.InodeNumbersVirtual} {
+		conf := &config.Config{InodeNumbers: mode}
+		opts := goferMountData(7, config.FileAccessExclusive, conf, false /* suppressDirectFS */)
+		if got, want := slices.Contains(opts, "virtual_inode_numbers"), mode == config.InodeNumbersVirtual; got != want {
+			t.Errorf("--inode-numbers=%v: virtual_inode_numbers option present = %t, want %t (opts=%v)", mode, got, want, opts)
+		}
+	}
+}
+
 func TestCgroupfsCPUDefaults(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

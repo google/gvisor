@@ -2436,6 +2436,58 @@ func TestMountNewDir(t *testing.T) {
 	}
 }
 
+// TestInodeNumbers checks that files on bind mounts report their host inode
+// numbers.
+func TestInodeNumbers(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "ino-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	src := path.Join(dir, "src")
+	if err := os.Mkdir(src, 0777); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	if err := os.WriteFile(path.Join(src, "file"), nil, 0666); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(path.Join(src, "file"), &st); err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	dst := path.Join(dir, "mnt")
+
+	for name, conf := range configs(t, false /* noOverlay */) {
+		for _, directfs := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/directfs=%t", name, directfs), func(t *testing.T) {
+				conf.DirectFS = directfs
+				spec, _ := sleepSpecConf(t)
+				spec.Mounts = append(spec.Mounts, specs.Mount{Destination: dst, Source: src, Type: "bind"})
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+				cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(conf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+				out, err := executeCombinedOutput(conf, cont, nil, "/usr/bin/stat", "-c", "%i", path.Join(dst, "file"))
+				if err != nil {
+					t.Fatalf("stat failed: %v", err)
+				}
+				if got, want := strings.TrimSpace(string(out)), fmt.Sprint(st.Ino); got != want {
+					t.Errorf("inode number of bind-mounted file: got %s, want %s", got, want)
+				}
+			})
+		}
+	}
+}
+
 const (
 	unimplementedCharDevSrc  = "/dev/port"
 	unimplementedCharDevRdev = "1:4"

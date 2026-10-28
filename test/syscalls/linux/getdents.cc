@@ -20,15 +20,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
 
 #include <map>
+#include <set>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -158,6 +158,8 @@ class GetdentsTest : public ::testing::Test {
 
   // Must be overridden with explicit specialization. See below.
   int SyscallNum();
+
+  const std::string& DirPath() const { return dir_.path(); }
 
   int Getdents(LinuxDirentType* dirp, unsigned int count) {
     return RetryEINTR(syscall)(SyscallNum(), fd_.get(), dirp, count);
@@ -293,6 +295,45 @@ TYPED_TEST(GetdentsTest, VerifyEntries) {
   for (auto& kv : found) {
     EXPECT_TRUE(kv.second) << "File not found: " << kv.first;
   }
+}
+
+// Inode numbers from getdents must match stat(2), distinct files must have
+// distinct device and inode numbers, and hard links must share them.
+TYPED_TEST(GetdentsTest, InodeNumbersMatchStat) {
+  typename TestFixture::DirentBufferType dirents(1024);
+
+  constexpr size_t kFiles = 10;
+  this->FillDirectory(kFiles);
+  const std::string dir = this->DirPath();
+  ASSERT_THAT(link(JoinPath(dir, "0").c_str(), JoinPath(dir, "link").c_str()),
+              SyscallSucceeds());
+
+  // Inode numbers of files that are not in use may change across save and
+  // restore.
+  DisableSave ds;
+  std::map<std::string, ino_t> inos;
+  EXPECT_NO_ERRNO(this->ReadDirents(
+      &dirents, [&](typename TestFixture::LinuxDirentType* d) {
+        inos[d->d_name] = d->d_ino;
+        return NoError();
+      }));
+  EXPECT_EQ(inos.size(), kFiles + 3);
+
+  std::set<std::pair<dev_t, ino_t>> seen;
+  for (const auto& [name, ino] : inos) {
+    if (name == "..") {
+      // The parent may be a mount root, whose getdents entry is the root
+      // itself while stat(2) crosses to the underlying directory.
+      continue;
+    }
+    struct stat st;
+    ASSERT_THAT(lstat(JoinPath(dir, name).c_str(), &st), SyscallSucceeds());
+    EXPECT_EQ(ino, st.st_ino) << name;
+    if (name != "link") {
+      EXPECT_TRUE(seen.insert({st.st_dev, st.st_ino}).second) << name;
+    }
+  }
+  EXPECT_EQ(inos["link"], inos["0"]);
 }
 
 TYPED_TEST(GetdentsTest, VerifyPadding) {

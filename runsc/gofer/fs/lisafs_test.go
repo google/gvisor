@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/lisafs/testsuite"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/gofer/fs"
 )
 
@@ -34,11 +35,13 @@ func init() {
 }
 
 // tester implements testsuite.Tester.
-type tester struct{}
+type tester struct {
+	inodeNumbers config.InodeNumbers
+}
 
 // NewConnImpl implements testsuite.Tester.NewServer.
-func (tester) NewConnImpl(t *testing.T) lisafs.ConnectionImpl {
-	return fs.NewConnectionImpl(&fs.Config{})
+func (tr tester) NewConnImpl(t *testing.T) lisafs.ConnectionImpl {
+	return fs.NewConnectionImpl(&fs.Config{InodeNumbers: tr.inodeNumbers})
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.
@@ -59,5 +62,9 @@ func (tester) BindSupported() bool {
 }
 
 func TestFSGofer(t *testing.T) {
-	testsuite.RunAllLocalFSTests(t, tester{})
+	for _, mode := range []config.InodeNumbers{config.InodeNumbersPassthrough, config.InodeNumbersVirtual} {
+		t.Run(mode.String(), func(t *testing.T) {
+			testsuite.RunAllLocalFSTests(t, tester{inodeNumbers: mode})
+		})
+	}
 }

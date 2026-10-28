@@ -119,6 +119,10 @@ type Config struct {
 	// mounts (the rootfs and bind mounts) are handled.
 	CharacterDevicePolicy CharacterDevicePolicy `flag:"character-device-policy"`
 
+	// InodeNumbers controls how inode numbers of files on gofer mounts are
+	// assigned.
+	InodeNumbers InodeNumbers `flag:"inode-numbers"`
+
 	// HostSettings controls how host settings are handled.
 	HostSettings HostSettingsPolicy `flag:"host-settings"`
 
@@ -1218,6 +1222,58 @@ func (p CharacterDevicePolicy) String() string {
 // devices through the gofer.
 func (p CharacterDevicePolicy) AllowsPassthrough() bool {
 	return p != CharDevEmulatedOnly
+}
+
+// InodeNumbers tells how inode numbers of files on gofer mounts (the rootfs
+// and bind mounts) are assigned.
+type InodeNumbers int
+
+const (
+	// InodeNumbersPassthrough reports host inode numbers as is. Host device
+	// numbers are mapped to sandbox-private device numbers, so files on
+	// different host devices under one mount report different device numbers,
+	// as with Linux overlayfs.
+	InodeNumbersPassthrough InodeNumbers = iota
+
+	// InodeNumbersVirtual assigns sandbox-private sequential inode numbers
+	// and a single device number per mount. This requires the sandbox to
+	// remember the host identity of every file it has ever seen, and to
+	// stat(2) every entry returned by getdents(2).
+	InodeNumbersVirtual
+)
+
+func inodeNumbersPtr(v InodeNumbers) *InodeNumbers {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (n *InodeNumbers) Set(v string) error {
+	switch v {
+	case "passthrough":
+		*n = InodeNumbersPassthrough
+	case "virtual":
+		*n = InodeNumbersVirtual
+	default:
+		return fmt.Errorf("invalid inode numbers mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (n *InodeNumbers) Get() any {
+	return *n
+}
+
+// String implements flag.Value.
+func (n InodeNumbers) String() string {
+	switch n {
+	case InodeNumbersPassthrough:
+		return "passthrough"
+	case InodeNumbersVirtual:
+		return "virtual"
+	default:
+		panic(fmt.Sprintf("Invalid inode numbers mode %d", n))
+	}
 }
 
 // OverlayMedium describes how overlay medium is configured.
