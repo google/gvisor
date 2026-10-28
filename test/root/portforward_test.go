@@ -26,7 +26,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +42,7 @@ import (
 )
 
 func TestPortForwardLocalMode(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	server := dockerutil.MakeContainer(ctx, t)
 	defer server.CleanUp(ctx)
 
@@ -54,7 +53,7 @@ func TestPortForwardLocalMode(t *testing.T) {
 		t.Fatalf("failed to create redis server: %v", err)
 	}
 
-	if err := waitUntilServerIsUp(ctx, server, redisPort); err != nil {
+	if err := waitForReply(ctx, server, "PONG", "redis-cli", "--raw", "-p", fmt.Sprint(redisPort), "PING"); err != nil {
 		t.Fatalf("failed to wait for redis server to be up: %v", err)
 	}
 
@@ -106,7 +105,7 @@ func TestPortForwardLocalMode(t *testing.T) {
 }
 
 func TestPortForwardStreamMode(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	sockAddrDir, err := os.MkdirTemp("", "temp-")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -124,7 +123,8 @@ func TestPortForwardStreamMode(t *testing.T) {
 		t.Fatalf("failed to create nginx server: %v", err)
 	}
 
-	if err := waitUntilServerIsUp(ctx, server, nginxPort); err != nil {
+	url := fmt.Sprintf("http://127.0.0.1:%d/", nginxPort)
+	if err := waitForReply(ctx, server, "200", "curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", url); err != nil {
 		t.Fatalf("failed to wait for nginx server to be up: %v", err)
 	}
 
@@ -174,18 +174,18 @@ func getUnusedPort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func waitUntilServerIsUp(ctx context.Context, server *dockerutil.Container, port int) error {
-	// Check the listening socket inside the container without exposing a host port.
+func waitForReply(ctx context.Context, server *dockerutil.Container, want string, command ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
-	reg := regexp.MustCompile(fmt.Sprintf(`0\.0\.0\.0:%d[\s]*0\.0\.0\.0:\*[\s]*LISTEN`, port))
 	return testutil.PollContext(ctx, func() error {
-		out, err := server.Exec(ctx, dockerutil.ExecOpts{}, "netstat", "-l")
-		if reg.MatchString(out) {
-			return nil
+		out, err := server.Exec(ctx, dockerutil.ExecOpts{}, command...)
+		if err != nil {
+			return fmt.Errorf("%s: %w: %s", command[0], err, out)
 		}
-		return fmt.Errorf("could not verify server is up: netstat error: %v, output: %s", err, out)
+		if got := strings.TrimSpace(out); got != want {
+			return fmt.Errorf("%s returned %q, want %q", command[0], got, want)
+		}
+		return nil
 	})
 }
 
