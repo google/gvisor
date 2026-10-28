@@ -8,7 +8,7 @@ change for Google-internal and bazel-compatible rules.
 load("//tools:arch.bzl", "arch_genrule", "arch_transition_impl")
 load("//tools/bazeldefs:cc.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_objcopy = "cc_objcopy", _cc_objdump = "cc_objdump", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _gbenchmark = "gbenchmark", _gbenchmark_internal = "gbenchmark_internal", _grpcpp = "grpcpp", _gtest = "gtest", _select_gtest = "select_gtest")
 load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _COPY_FILE_TOOLCHAINS = "COPY_FILE_TOOLCHAINS", _bool_flag = "bool_flag", _bpf_program = "bpf_program", _build_test = "build_test", _bzl_library = "bzl_library", _copy_file_action = "copy_file_action", _coreutil = "coreutil", _default_net_util = "default_net_util", _expand_template = "expand_template", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_arch = "select_arch", _select_system = "select_system", _short_path = "short_path", _string_flag = "string_flag", _target_emulator = "target_emulator", _version = "version")
-load("//tools/bazeldefs:go.bzl", _cov_available = "cov_available", _gazelle = "gazelle", _go_binary = "go_binary", _go_binary_nogo_dep = "go_binary_nogo_dep", _go_cov = "go_cov", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_imports = "go_imports", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_reset_target = "go_reset_target", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
+load("//tools/bazeldefs:go.bzl", _cov_available = "cov_available", _gazelle = "gazelle", _go_binary = "go_binary", _go_binary_nogo_dep = "go_binary_nogo_dep", _go_cov = "go_cov", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_importpath = "go_importpath", _go_imports = "go_imports", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_reset_target = "go_reset_target", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _tar = "tar")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms", _save_restore_platforms = "save_restore_platforms")
 load("//tools/bazeldefs:tags.bzl", _go_suffixes = "go_suffixes", _local_test_tags = "local_test_tags")
@@ -135,6 +135,34 @@ def calculate_sets(srcs):
         else:
             result[target].append(file)
     return result
+
+def _generate_hostlayout_impl(ctx):
+    args = ctx.actions.args()
+    args.add("-package", ctx.attr.library.label.name)
+    args.add("-importpath", _go_importpath(ctx.attr.library))
+    args.add("-out", ctx.outputs.out)
+    args.add_all(ctx.files.srcs)
+    ctx.actions.run(
+        executable = ctx.executable._generator,
+        arguments = [args],
+        inputs = ctx.files.srcs,
+        outputs = [ctx.outputs.out],
+        mnemonic = "GoHostLayout",
+    )
+
+_generate_hostlayout = rule(
+    implementation = _generate_hostlayout_impl,
+    attrs = {
+        "library": attr.label(mandatory = True),
+        "out": attr.output(mandatory = True),
+        "srcs": attr.label_list(allow_files = [".go"]),
+        "_generator": attr.label(
+            default = "//tools/go_hostlayout:hostlayoutgen",
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
 
 def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_state_pkg = False, marshal = False, marshal_debug = False, nogo = True, hostlayout = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
@@ -297,6 +325,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
     if hostlayout:
         go_host_layout_struct_test(
             go_test_rule_func = _go_test,
+            generate_hostlayout = _generate_hostlayout,
             name = name + "_hostlayout_test",
             srcs = [src for src in srcs if src.endswith(".go")],
             library = ":" + name,
