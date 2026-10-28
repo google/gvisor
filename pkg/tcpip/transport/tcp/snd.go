@@ -611,8 +611,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		return &tcpip.ErrTimeout{}
 	}
 
-	// Set new timeout. The timer will be restarted by the call to sendData
-	// below.
+	// Back off the retransmission or zero-window probe timer.
 	s.RTO *= 2
 	// Cap the RTO as per RFC 1122 4.2.3.1, RFC 6298 5.5
 	if s.RTO > s.maxRTO {
@@ -622,6 +621,13 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	// Cap RTO to remaining time.
 	if s.RTO > remaining {
 		s.RTO = remaining
+	}
+
+	if s.zeroWindowProbing && s.SndUna == s.SndNxt {
+		// The peer has acknowledged all transmitted data. Probe its window
+		// without treating the unsent data as a congestion loss.
+		s.sendZeroWindowProbe()
+		return nil
 	}
 
 	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
