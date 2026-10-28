@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -21,6 +22,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -92,6 +94,38 @@ TEST(FifoTest, Fifo) {
       ASSERT_NO_ERRNO_AND_VALUE(OpenRetryEINTR(fifo.c_str(), O_WRONLY));
   EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));
+}
+
+TEST(FifoTest, HangupDependsOnWhenReaderOpened) {
+  const TempPath fifo(NewTempAbsPath());
+  ASSERT_THAT(mkfifo(fifo.path().c_str(), 0600), SyscallSucceeds());
+  ASSERT_THAT(Open(fifo.path(), O_WRONLY | O_NONBLOCK), PosixErrorIs(ENXIO));
+
+  const FileDescriptor early =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.path(), O_RDONLY | O_NONBLOCK));
+  struct pollfd initial = {early.get(), POLLIN, -1};
+  ASSERT_THAT(poll(&initial, 1, 0), SyscallSucceedsWithValue(0));
+  EXPECT_EQ(initial.revents, 0);
+
+  FileDescriptor writer =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.path(), O_WRONLY | O_NONBLOCK));
+  writer.reset();
+  const FileDescriptor late =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.path(), O_RDONLY | O_NONBLOCK));
+
+  // Only the early reader has seen a writer. Both are polling the same FIFO.
+  struct pollfd readers[] = {{early.get(), POLLIN, 0}, {late.get(), POLLIN, 0}};
+  ASSERT_THAT(poll(readers, std::size(readers), 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(readers[0].revents, POLLHUP);
+  EXPECT_EQ(readers[1].revents, 0);
+
+  writer = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.path(), O_WRONLY | O_NONBLOCK));
+  writer.reset();
+  ASSERT_THAT(poll(readers, std::size(readers), 0),
+              SyscallSucceedsWithValue(2));
+  EXPECT_EQ(readers[0].revents, POLLHUP);
+  EXPECT_EQ(readers[1].revents, POLLHUP);
 }
 
 TEST(FifoTest, FifoOtrunc) {
