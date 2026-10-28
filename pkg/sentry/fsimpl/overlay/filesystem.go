@@ -298,8 +298,12 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		}
 
 		// For non-directory files, only the topmost layer that contains a file
-		// matters.
+		// matters, except that a metacopy file's data is on a lower layer.
 		if !isDir {
+			isRegularFile := stat.Mode&linux.S_IFMT == linux.S_IFREG
+			if isUpper && isRegularFile && fs.opts.Metacopy {
+				lookupErr = fs.lookupMetacopyDataLocked(ctx, child, childVD)
+			}
 			return false
 		}
 
@@ -359,6 +363,51 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	child.parent.Store(parent)
 	child.name = name
 	return child, topLookupLayer, nil
+}
+
+// lookupMetacopyDataLocked adds the lower layer file holding the data of
+// upperVD to child if upperVD is a metacopy file.
+//
+// Preconditions: child is being initialized by fs.lookupLocked().
+func (fs *filesystem) lookupMetacopyDataLocked(ctx context.Context, child *dentry, upperVD vfs.VirtualDentry) error {
+	vfsObj := fs.vfsfs.VirtualFilesystem()
+	upperPop := &vfs.PathOperation{
+		Root:  upperVD,
+		Start: upperVD,
+	}
+	if _, err := vfsObj.GetXattrAt(ctx, fs.creds, upperPop, &vfs.GetXattrOptions{Name: fs.xattrMetacopy}); err != nil {
+		if linuxerr.Equals(linuxerr.ENODATA, err) {
+			return nil
+		}
+		return err
+	}
+	redirect, err := vfsObj.GetXattrAt(ctx, fs.creds, upperPop, &vfs.GetXattrOptions{Name: fs.xattrRedirect, Size: linux.XATTR_SIZE_MAX})
+	if err != nil {
+		ctx.Warningf("overlay.filesystem.lookupMetacopyDataLocked: metacopy file has no redirect: %v", err)
+		return linuxerr.EIO
+	}
+	lowerRoot := fs.opts.LowerRoots[0]
+	lowerPop := &vfs.PathOperation{
+		Root:  lowerRoot,
+		Start: lowerRoot,
+		Path:  fspath.Parse(redirect),
+	}
+	lowerStat, err := vfsObj.StatAt(ctx, fs.creds, lowerPop, &vfs.StatOptions{Mask: linux.STATX_TYPE})
+	if err != nil {
+		ctx.Warningf("overlay.filesystem.lookupMetacopyDataLocked: no file at %q: %v", redirect, err)
+		return linuxerr.EIO
+	}
+	if lowerStat.Mode&linux.S_IFMT != linux.S_IFREG {
+		ctx.Warningf("overlay.filesystem.lookupMetacopyDataLocked: %q is not a regular file", redirect)
+		return linuxerr.EIO
+	}
+	lowerVD, err := vfsObj.GetDentryAt(ctx, fs.creds, lowerPop, &vfs.GetDentryOptions{})
+	if err != nil {
+		return err
+	}
+	child.lowerVDs = append(child.lowerVDs, lowerVD)
+	child.metacopy = atomicbitops.FromBool(true)
+	return nil
 }
 
 // lookupLayerLocked is similar to lookupLocked, but only returns information
@@ -557,7 +606,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	}
 	// Ensure that the parent directory is copied-up so that we can create the
 	// new file in the upper layer.
-	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, ct == createSyntheticMountpoint, false /* skipData */, false /* mayUnlockRenameMu */); err != nil {
+	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, copyUpOptions{forSyntheticMountpoint: ct == createSyntheticMountpoint}); err != nil {
 		return err
 	}
 
@@ -686,7 +735,9 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if old.isDir() {
 			return linuxerr.EPERM
 		}
-		if err := old.copyUpLocked(ctx); err != nil {
+		// Hard links share the upper file, so its data can't stay on the lower
+		// layer for one link's dentry but not the other's.
+		if err := old.copyUpWithDataLocked(ctx); err != nil {
 			return err
 		}
 		vfsObj := fs.vfsfs.VirtualFilesystem()
@@ -970,10 +1021,19 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	}
 
 	layerVD, isUpper := d.topLayerInfo()
+	layerOpts := opts
+	if d.isMetacopy() {
+		// The lower file has the data but not d's mode, against which execute
+		// permission was already checked.
+		layerVD, isUpper = d.lowerVDs[0], false
+		lowerOpts := *opts
+		lowerOpts.FileExec = false
+		layerOpts = &lowerOpts
+	}
 	layerFD, err := rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
 		Root:  layerVD,
 		Start: layerVD,
-	}, opts)
+	}, layerOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -1663,7 +1723,7 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 	if !d.isCopiedUp() && d.isNoopChown(&opts) {
 		return nil
 	}
-	if err := d.copyUpForWriteLocked(ctx); err != nil {
+	if err := d.copyUpForSetStatLocked(ctx, &opts); err != nil {
 		return err
 	}
 	// Changes to d's attributes are serialized by d.copyMu.
@@ -2006,6 +2066,9 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	// Metacopy data copy-up restores security.capability after writing data.
+	d.copyMu.Lock()
+	defer d.copyMu.Unlock()
 	// Notably, we use the caller's creds here rather than the filesystem's creds,
 	// since setting some xattrs includes additional UID/GID and userns-related checks
 	// and translations.
@@ -2062,6 +2125,8 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	d.copyMu.Lock()
+	defer d.copyMu.Unlock()
 	return vfsObj.RemoveXattrAt(ctx, creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
 }
 
