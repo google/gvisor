@@ -52,6 +52,13 @@ single_version_override(
     patches = ["//tools:benchmark-umbrella-exports.patch"],
 )
 
+# Drop the backport when the llvm module includes kernel_headers.configure.
+single_version_override(
+    module_name = "llvm",
+    patch_strip = 1,
+    patches = ["//tools:llvm-linux-header-default.patch"],
+)
+
 ### LLVM
 # TODO: try using "llvm-raw" from BCR
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -90,7 +97,9 @@ crosstool = use_extension("//tools/bazeldefs:extensions/crosstool.bzl", "crossto
 use_repo(crosstool, "crosstool")
 
 ### Linux headers
+# Select current UAPI declarations independently of libc and test platforms.
 kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers")
+kernel_headers.configure(default_version = "6.18")
 use_repo(kernel_headers, "kernel_headers")
 
 ### zlib-ng
