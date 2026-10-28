@@ -96,7 +96,7 @@ func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.Signal
 // in because vsyscalls do not use the values in t.Arch().)
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) linux.BPFAction {
+func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip hostarch.Addr, recheckAfterTrace bool) linux.BPFAction {
 	result := linux.BPFAction(t.evaluateSyscallFilters(sysno, args, ip))
 	// Extract the action using SECCOMP_RET_ACTION_FULL rather than
 	// SECCOMP_RET_ACTION: SECCOMP_RET_ACTION (0x7fff0000) would truncate
@@ -132,6 +132,9 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 		// notify a ptrace()-based tracer prior to executing the system call.
 		// If there is no tracer present, -ENOSYS is returned to userland and
 		// the system call is not executed."
+		if recheckAfterTrace {
+			return linux.SECCOMP_RET_ALLOW
+		}
 		if !t.ptraceSeccomp(result.Data()) {
 			// This useless-looking temporary is needed because Go.
 			tmp := uintptr(unix.ENOSYS)

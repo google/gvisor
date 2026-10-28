@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <elf.h>
 #include <errno.h>
 #include <linux/audit.h>
 #include <linux/bpf_common.h>
@@ -26,8 +27,11 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/ucontext.h>
+#include <sys/uio.h>
+#include <sys/user.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <ucontext.h>
@@ -35,6 +39,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <iterator>
 
 #include "gmock/gmock.h"
@@ -123,6 +128,37 @@ void ApplySeccompFilter(uint32_t sysno, uint32_t filtered_result,
   MaybeSave();
 }
 
+void ApplySeccompArg1Filter(uint32_t sysno, uint32_t a, uint32_t action_a,
+                            uint32_t b, uint32_t action_b) {
+  TEST_PCHECK(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0);
+  MaybeSave();
+
+  struct sock_filter filter[] = {
+      BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 4),
+#if defined(__x86_64__)
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 0, 8),
+#elif defined(__aarch64__)
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0, 8),
+#else
+#error "Unknown architecture"
+#endif
+      BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 0),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, sysno, 0, 5),
+      BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 24),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, a, 0, 1),
+      BPF_STMT(BPF_RET | BPF_K, action_a),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, b, 0, 1),
+      BPF_STMT(BPF_RET | BPF_K, action_b),
+      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
+  };
+  struct sock_fprog prog;
+  prog.len = std::size(filter);
+  prog.filter = filter;
+  TEST_PCHECK(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0) == 0);
+  MaybeSave();
+}
+
 // ApplyUncacheableFilter adds a no-op filter which reads one of the
 // syscall arguments when queried about `sysno`, and returns ALLOW.
 // This purposefully breaks the Linux seccomp cache.
@@ -175,6 +211,87 @@ void RegisterSignalHandler(int signum,
   sa.sa_flags = SA_SIGINFO;
   TEST_PCHECK(sigaction(signum, &sa, nullptr) == 0);
   MaybeSave();
+}
+
+constexpr int kEnosysExitCode = 2;
+constexpr int kUnexpectedResultExitCode = 3;
+
+int64_t RawSyscall(uint64_t sysno, uint64_t arg0, uint64_t arg1) {
+  int64_t ret;
+#if defined(__x86_64__)
+  asm volatile("syscall"
+               : "=a"(ret), "+D"(arg0), "+S"(arg1)
+               : "a"(sysno)
+               : "rcx", "r11", "memory");
+#elif defined(__aarch64__)
+  register uint64_t x8 __asm__("x8") = sysno;
+  register uint64_t x0 __asm__("x0") = arg0;
+  register uint64_t x1 __asm__("x1") = arg1;
+  asm volatile("svc #0" : "+r"(x0), "+r"(x1), "+r"(x8) : : "memory");
+  ret = x0;
+#endif
+  return ret;
+}
+
+void ExitWithSyscallResult(int64_t ret, int64_t expected) {
+  if (ret == expected) {
+    _exit(0);
+  }
+  if (ret == -ENOSYS) {
+    _exit(kEnosysExitCode);
+  }
+  _exit(kUnexpectedResultExitCode);
+}
+
+void ReplaceSyscallArg1(pid_t pid, uint64_t from, uint64_t to) {
+  struct user_regs_struct regs = {};
+#if defined(__x86_64__)
+  ASSERT_THAT(ptrace(PTRACE_GETREGS, pid, 0, &regs), SyscallSucceeds());
+  if (regs.orig_rax != kFilteredSyscall || regs.rsi != from) {
+    return;
+  }
+  regs.rsi = to;
+  ASSERT_THAT(ptrace(PTRACE_SETREGS, pid, 0, &regs), SyscallSucceeds());
+#elif defined(__aarch64__)
+  struct iovec iov = {};
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  if (regs.regs[8] != kFilteredSyscall || regs.regs[1] != from) {
+    return;
+  }
+  regs.regs[1] = to;
+  ASSERT_THAT(ptrace(PTRACE_SETREGSET, pid, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+#endif
+}
+
+void TraceUntilExit(pid_t pid, int options, __ptrace_request request, int stop,
+                    const std::function<bool()>& on_stop, int* status) {
+  ASSERT_THAT(waitpid(pid, status, 0), SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFSTOPPED(*status) && WSTOPSIG(*status) == SIGSTOP)
+      << "status " << *status;
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_EXITKILL | options),
+              SyscallSucceeds());
+  int sig = 0;
+  while (true) {
+    ASSERT_THAT(ptrace(request, pid, 0, sig), SyscallSucceeds());
+    ASSERT_THAT(waitpid(pid, status, 0), SyscallSucceedsWithValue(pid));
+    if (!WIFSTOPPED(*status)) {
+      return;
+    }
+    sig = 0;
+    if (*status >> 8 != stop) {
+      sig = WSTOPSIG(*status);
+      continue;
+    }
+    if (!on_stop()) {
+      ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+      ASSERT_THAT(waitpid(pid, status, 0), SyscallSucceedsWithValue(pid));
+      return;
+    }
+  }
 }
 
 // All of the following tests execute in a subprocess to ensure that each test
@@ -391,6 +508,103 @@ TEST(SeccompTest, RetTraceWithoutPtracerReturnsENOSYS) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "status " << status;
 }
+
+TEST(SeccompTest, FilterChecksEnterStopArgs) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    ApplySeccompArg1Filter(kFilteredSyscall, 1, SECCOMP_RET_ALLOW, 2,
+                           SECCOMP_RET_ERRNO | EPERM);
+    TEST_PCHECK(raise(SIGSTOP) == 0);
+    ExitWithSyscallResult(RawSyscall(kFilteredSyscall, 0, 1), -EPERM);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_NO_FATAL_FAILURE(TraceUntilExit(
+      pid, PTRACE_O_TRACESYSGOOD, PTRACE_SYSCALL, SIGTRAP | 0x80,
+      [&] {
+        ReplaceSyscallArg1(pid, 1, 2);
+        return true;
+      },
+      &status));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+TEST(SeccompTest, FilterRechecksAfterTraceStop) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    ApplySeccompArg1Filter(kFilteredSyscall, 1, SECCOMP_RET_TRACE, 2,
+                           SECCOMP_RET_ERRNO | EPERM);
+    TEST_PCHECK(raise(SIGSTOP) == 0);
+    ExitWithSyscallResult(RawSyscall(kFilteredSyscall, 0, 1), -EPERM);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_NO_FATAL_FAILURE(TraceUntilExit(
+      pid, PTRACE_O_TRACESECCOMP, PTRACE_CONT,
+      SIGTRAP | (PTRACE_EVENT_SECCOMP << 8),
+      [&] {
+        ReplaceSyscallArg1(pid, 1, 2);
+        return true;
+      },
+      &status));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+TEST(SeccompTest, RecheckAllowsSecondTrace) {
+  pid_t const parent = getpid();
+  pid_t const pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    ApplySeccompArg1Filter(SYS_getppid, 1, SECCOMP_RET_TRACE, 2,
+                           SECCOMP_RET_ERRNO | EPERM);
+    TEST_PCHECK(raise(SIGSTOP) == 0);
+    ExitWithSyscallResult(RawSyscall(SYS_getppid, 0, 1), parent);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int seccomp_stops = 0;
+  int status;
+  ASSERT_NO_FATAL_FAILURE(TraceUntilExit(
+      pid, PTRACE_O_TRACESECCOMP, PTRACE_CONT,
+      SIGTRAP | (PTRACE_EVENT_SECCOMP << 8),
+      [&] { return ++seccomp_stops == 1; }, &status));
+  EXPECT_EQ(seccomp_stops, 1);
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+#ifdef __x86_64__
+
+TEST(SeccompTest, FilterChecksEnterStopSyscall) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_ERRNO | EPERM);
+    TEST_PCHECK(raise(SIGSTOP) == 0);
+    ExitWithSyscallResult(RawSyscall(SYS_getppid, 0, 0), -EPERM);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_NO_FATAL_FAILURE(TraceUntilExit(
+      pid, PTRACE_O_TRACESYSGOOD, PTRACE_SYSCALL, SIGTRAP | 0x80,
+      [&] {
+        struct user_regs_struct regs = {};
+        EXPECT_THAT(ptrace(PTRACE_GETREGS, pid, 0, &regs), SyscallSucceeds());
+        if (regs.orig_rax == SYS_getppid) {
+          regs.orig_rax = kFilteredSyscall;
+          EXPECT_THAT(ptrace(PTRACE_SETREGS, pid, 0, &regs), SyscallSucceeds());
+        }
+        return true;
+      },
+      &status));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+#endif  // defined(__x86_64__)
 
 TEST(SeccompTest, RetErrnoReturnsErrno) {
   pid_t const pid = fork();
