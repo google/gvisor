@@ -1184,6 +1184,22 @@ func madviseAddrRange(addr hostarch.Addr, length uint64) (hostarch.AddrRange, er
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
+	return mm.decommit(addr, length, false /* madvFree */)
+}
+
+// MadviseFree implements the semantics of Linux's madvise(MADV_FREE).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) MadviseFree(addr hostarch.Addr, length uint64) error {
+	// MADV_FREE permits the kernel to free the pages at any time, so this
+	// currently decommits them synchronously, as for MADV_DONTNEED.
+	return mm.decommit(addr, length, true /* madvFree */)
+}
+
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) decommit(addr hostarch.Addr, length uint64, madvFree bool) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	ar, err := madviseAddrRange(addr, length)
 	if err != nil {
@@ -1224,6 +1240,12 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	for vseg.Ok() && vseg.Start() < ar.End {
 		vma := vseg.ValuePtr()
 		if vma.mlockMode != memmap.MLockNone {
+			return linuxerr.EINVAL
+		}
+		if madvFree && vma.mappable != nil {
+			// Linux: mm/madvise.c:madvise_free_single_vma() returns EINVAL
+			// if !vma_is_anonymous(vma), which includes shared anonymous
+			// mappings.
 			return linuxerr.EINVAL
 		}
 		vsegAR := vseg.Range().Intersect(ar)

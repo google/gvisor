@@ -76,6 +76,7 @@ const (
 	MADV_SEQUENTIAL   = 2
 	MADV_WILLNEED     = 3
 	MADV_DONTNEED     = 4
+	MADV_FREE         = 8
 	MADV_REMOVE       = 9
 	MADV_DONTFORK     = 10
 	MADV_DOFORK       = 11
