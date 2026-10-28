@@ -34,10 +34,12 @@ go_library(
     deps = [
         "//pkg/fsutil",
         "//pkg/log",
+        "//pkg/sentry/control/controlapi",
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/sinks/null",
         "//pkg/sentry/seccheck/sinks/remote",
+        "//pkg/state",
         "//pkg/state/statefile",
         "//pkg/urpc",
         "//runsc/config",
@@ -49,10 +51,15 @@ go_library(
 go_test(
     name = "sentryapi_test",
     size = "small",
-    srcs = ["mount_hints_test.go"],
+    srcs = [
+        "checkpoint_test.go",
+        "mount_hints_test.go",
+    ],
     embed = [":sentryapi"],
     deps = [
+        "//pkg/sentry/control/controlapi",
         "//pkg/sentry/fsimpl/erofs",
+        "//pkg/state",
         "//runsc/config",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
