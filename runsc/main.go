@@ -20,6 +20,7 @@ package main
 
 import (
 	"gvisor.dev/gvisor/runsc/cli/maincli"
+	_ "gvisor.dev/gvisor/runsc/coretagprime" // Runs at init, before flag parsing.
 	"gvisor.dev/gvisor/runsc/version"
 )
 
