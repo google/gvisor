@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "array.go",
         "bench.go",
+        "graph.go",
         "integer.go",
         "load.go",
         "map.go",
