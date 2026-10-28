@@ -17,6 +17,7 @@ package systrap
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"sync/atomic"
 	"testing"
 
@@ -25,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -39,7 +41,7 @@ const childEnv = "SYSTRAP_TEST_CHILD"
 
 func TestMain(m *testing.M) {
 	switch mode := os.Getenv(childEnv); mode {
-	case "":
+	case "", "hostmmio":
 		cpuid.Initialize()
 		os.Exit(m.Run())
 	case "stuck":
@@ -180,5 +182,67 @@ func TestSpinningQueueLayout(t *testing.T) {
 	queueStart := stubContextQueueRegion + stubContextQueueRegionLen
 	if stubSpinningThreadQueueAddr < queueStart || stubSpinningThreadQueueAddr+sysmsg.SpinningQueueMemSize > stubContextRegion {
 		t.Errorf("spinning queue %#x not in [%#x, %#x)", stubSpinningThreadQueueAddr, queueStart, stubContextRegion)
+	}
+}
+
+func TestHostMMIO(t *testing.T) {
+	// A fresh process gives the source stub its own immutable ioctl policy.
+	if os.Getenv(childEnv) != "hostmmio" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestHostMMIO$")
+		cmd.Env = append(os.Environ(), childEnv+"=hostmmio")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("HostMMIO child: %v\n%s", err, out)
+		}
+		return
+	}
+	p, err := New(platform.Options{
+		HostMMIOIoctlRules: seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(unix.TIOCINQ)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(platform.Options{}); err == nil {
+		t.Fatal("accepted a different process-global ioctl policy")
+	}
+	as, err := p.NewAddressSpace(platform.AddressSpaceOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := as.(*subprocess)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	if _, err := w.Write([]byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	var params [4]byte
+	result, err := s.IoctlFlat(int32(r.Fd()), unix.TIOCINQ, params[:])
+	if err != nil || result.Errno != 0 || hostarch.ByteOrder.Uint32(params[:]) != 3 {
+		t.Fatalf("TIOCINQ: got %+v, %v, %v; want 3 bytes", result, err, params)
+	}
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	if result, err := s.IoctlFlat(int32(null.Fd()), unix.TIOCINQ, params[:]); err != nil || result.Errno != unix.ENOTTY {
+		t.Fatalf("TIOCINQ(/dev/null): got %+v, %v; want untrusted ENOTTY", result, err)
+	}
+	tid := s.syscallThread.thread.tid
+	s.Release()
+	if !s.dead.Load() {
+		t.Fatal("device-bound address space was pooled instead of destroyed")
+	}
+	select {
+	case <-s.requestsDone:
+	default:
+		t.Error("request goroutine remains running after Release")
+	}
+	var status unix.WaitStatus
+	if _, err := unix.Wait4(int(tid), &status, unix.WALL|unix.WNOHANG, nil); err != unix.ECHILD {
+		t.Errorf("syscall thread was not reaped: %v", err)
 	}
 }

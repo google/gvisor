@@ -393,7 +393,7 @@ func (r *restorer) restore(l *Loader) error {
 	r.timer.Reached("specs validated")
 
 	tscOffset, willJumpBackwards := r.computeTSCOffset()
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
+	p, err := createPlatform(l.root.spec, l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -539,7 +539,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	cleanMnts.Release()
 
-	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
+	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l, oldNvidiaDriverVersion)
 	if err != nil {
 		return err
 	}

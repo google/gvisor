@@ -421,6 +421,14 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 
 			case pseg.Ok() && pseg.Start() < vsegAR.End:
 				oldpma := pseg.ValuePtr()
+				if (at.Write || forPin) && oldpma.needCOW && !vseg.Range().IsSupersetOf(pseg.Range()) {
+					// COW masks writable permissions, so a PMA may span VMAs
+					// with different permissions. Resolving COW restores the
+					// current VMA's permissions and must not affect its neighbors.
+					pseg = mm.pmas.Isolate(pseg, vseg.Range())
+					pstart = pmaIterator{} // iterators invalidated
+					oldpma = pseg.ValuePtr()
+				}
 				if (at.Write || forPin) && mm.isPMACopyOnWriteLocked(vseg, pseg) {
 					// Break copy-on-write by copying.
 					if checkInvariants {
