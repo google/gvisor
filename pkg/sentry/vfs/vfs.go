@@ -1062,6 +1062,22 @@ func (vfs *VirtualFilesystem) SetPosixACLAt(ctx context.Context, creds *auth.Cre
 	}
 }
 
+// DrainDentryCache resolves pop and drains unused cached dentries from the
+// containing filesystem, including dentries outside the subtree at pop.
+func (vfs *VirtualFilesystem) DrainDentryCache(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
+	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	if err != nil {
+		return err
+	}
+	fs := vd.Mount().Filesystem()
+	fs.IncRef()
+	// Keep the filesystem alive without pinning the resolved dentry. Releasing
+	// it after the drain could put it back into the cache.
+	vd.DecRef(ctx)
+	defer fs.DecRef(ctx)
+	return fs.impl.DrainDentryCache(ctx)
+}
+
 // SyncAllFilesystems has the semantics of Linux's sync(2).
 func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 	var retErr error

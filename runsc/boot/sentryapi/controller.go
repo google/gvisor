@@ -264,6 +264,15 @@ const ContMgrListTraceSessions = "containerManager.ListTraceSessions"
 // ContMgrProcfsDump dumps sandbox procfs state.
 const ContMgrProcfsDump = "containerManager.ProcfsDump"
 
+// ContMgrDrainDentryCache drains unused dentries for a container path.
+const ContMgrDrainDentryCache = "containerManager.DrainDentryCache"
+
+// DrainDentryCacheArgs identifies a filesystem in a container's init process view.
+type DrainDentryCacheArgs struct {
+	ContainerID string
+	Path        string
+}
+
 // ContMgrMount mounts a filesystem in a container.
 const ContMgrMount = "containerManager.Mount"
 
