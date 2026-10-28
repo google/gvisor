@@ -125,6 +125,17 @@ func TestFromFlags(t *testing.T) {
 	if want := "/run/netproxy.sock"; c.NetworkProxyPath != want || !c.UseNetworkProxy() {
 		t.Errorf("NetworkProxyPath=%q UseNetworkProxy()=%v, want %q and true", c.NetworkProxyPath, c.UseNetworkProxy(), want)
 	}
+
+	if err := testFlags.Lookup("nvproxy-container-cli-path").Value.Set("/usr/local/nvidia/toolkit/nvidia-container-cli"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/usr/local/nvidia/toolkit/nvidia-container-cli"; c.NVProxyContainerCLIPath != want {
+		t.Errorf("NVProxyContainerCLIPath=%q, want %q", c.NVProxyContainerCLIPath, want)
+	}
 }
 
 func TestToFlagsFromFlags(t *testing.T) {
@@ -438,6 +449,13 @@ func TestValidationFail(t *testing.T) {
 				"EXPERIMENTAL-xdp":   "ns",
 			},
 			error: "network-proxy-path flag is incompatible with XDP",
+		},
+		{
+			name: "nvproxy-container-cli-path:relative",
+			flags: map[string]string{
+				"nvproxy-container-cli-path": "bin/nvidia-container-cli",
+			},
+			error: "nvproxy-container-cli-path must be an absolute path",
 		},
 		{
 			name: "platform_device_path:malformed-pair",

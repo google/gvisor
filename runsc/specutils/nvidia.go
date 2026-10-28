@@ -16,6 +16,8 @@ package specutils
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -169,6 +171,35 @@ func ParseNvidiaVisibleDevices(spec *specs.Spec, conf *config.Config) (string, e
 		}
 	}
 	return nvd, nil
+}
+
+// nvidiaContainerCLI is the name of the NVIDIA Container Toolkit CLI binary.
+const nvidiaContainerCLI = "nvidia-container-cli"
+
+// FindNVIDIAContainerCLI returns the path of the nvidia-container-cli binary
+// to use for GPU container setup.
+//
+// If --nvproxy-container-cli-path is set, that path is used after checking
+// that it is an executable regular file. Otherwise, nvidia-container-cli is
+// looked up in PATH. For security reasons, the container's filesystem is never
+// searched.
+func FindNVIDIAContainerCLI(conf *config.Config) (string, error) {
+	if conf.NVProxyContainerCLIPath == "" {
+		cliPath, err := exec.LookPath(nvidiaContainerCLI)
+		if err != nil {
+			return "", fmt.Errorf("failed to locate %s in PATH (set --nvproxy-container-cli-path to use a different location): %w", nvidiaContainerCLI, err)
+		}
+		return cliPath, nil
+	}
+	cliPath := conf.NVProxyContainerCLIPath
+	fi, err := os.Stat(cliPath)
+	if err != nil {
+		return "", fmt.Errorf("--nvproxy-container-cli-path=%q: %w", cliPath, err)
+	}
+	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0111 == 0 {
+		return "", fmt.Errorf("--nvproxy-container-cli-path=%q: not an executable regular file (mode %v)", cliPath, fi.Mode())
+	}
+	return cliPath, nil
 }
 
 // NVProxyDriverCapsAllowed returns the driver capabilities allowed by the

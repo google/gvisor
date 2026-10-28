@@ -401,6 +401,11 @@ type Config struct {
 	// unsupported driver version.
 	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
 
+	// NVProxyContainerCLIPath is the absolute path of the nvidia-container-cli
+	// binary used to set up GPU containers. If empty, nvidia-container-cli is
+	// looked up in PATH.
+	NVProxyContainerCLIPath string `flag:"nvproxy-container-cli-path"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
@@ -636,6 +641,9 @@ func (c *Config) Validate() error {
 	}
 	if unsupported := allowedCaps & ^nvconf.SupportedDriverCaps; unsupported != 0 {
 		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: unsupported capabilities: %v", c.NVProxyAllowedDriverCapabilities, unsupported)
+	}
+	if c.NVProxyContainerCLIPath != "" && !filepath.IsAbs(c.NVProxyContainerCLIPath) {
+		return fmt.Errorf("nvproxy-container-cli-path must be an absolute path, got %q", c.NVProxyContainerCLIPath)
 	}
 	return nil
 }
