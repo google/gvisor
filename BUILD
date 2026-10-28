@@ -230,6 +230,7 @@ go_path(
         "//tools/checklocks",
 
         # Packages that are not dependencies of the above.
+        "//runsc/client",
         "//pkg/sentry/kernel/memevent",
         "//pkg/sentry/socket/plugin/stack",
         "//pkg/tcpip/adapters/gonet",
