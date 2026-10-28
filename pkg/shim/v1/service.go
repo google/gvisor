@@ -395,7 +395,7 @@ func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreReques
 }
 
 func (s *shimRedirector) RegisterTTRPC(server *ttrpc.Server) error {
-	task.RegisterTaskService(server, s)
+	task.RegisterTTRPCTaskService(server, s)
 	api.RegisterTTRPCSandboxService(server, s)
 	return nil
 }
@@ -527,5 +527,18 @@ func (s *shimRedirector) SandboxMetrics(ctx context.Context, req *api.SandboxMet
 		return nil, errgrpc.ToGRPC(err)
 	}
 	resp, err := srv.SandboxMetrics(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// UpdateSandbox implements api.TTRPCSandboxService.UpdateSandbox.
+//
+// +checklocksexclude:s.mu
+func (s *shimRedirector) UpdateSandbox(ctx context.Context, req *api.UpdateSandboxRequest) (*api.UpdateSandboxResponse, error) {
+	log.L.Debugf("UpdateSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.UpdateSandbox(ctx, req)
 	return resp, errgrpc.ToGRPC(err)
 }

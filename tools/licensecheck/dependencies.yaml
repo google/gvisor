@@ -103,10 +103,10 @@
   sha256: 13583c5a312861648449845b709722676a3c9b43396b6b8e9cbe4538feb74ad2
   license: Apache-2.0
 - dependency: cel.dev/expr
-  version: v0.25.1
-  retrieved: "2026-08-27"
-  commit: 7f3c4c513b42d471d0be9439bf5bde38f45f8404
-  sha256: 12652bea2461aa29004d23052d3a08cb5911ab0a652469ef5da6efb37c12ee87
+  version: v0.25.2
+  retrieved: "2026-10-30"
+  commit: cb51b4176013ad19bd00df94be273c322916a620
+  sha256: c39e70b056124141413ba8c80cfca8a5f6becd0c870a4c48788cd15d625db975
   license: Apache-2.0
 - dependency: cloud.google.com/go
   version: v0.123.0
@@ -193,10 +193,10 @@
   sha256: f15f0ca7a3c5a4275d3d560236f178e9d735a084534bf3b685ec5f676806230a
   license: MIT
 - dependency: github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp
-  version: v1.31.0
-  retrieved: "2026-08-27"
-  commit: 316927bd0033e82948538685629172bcc6213562
-  sha256: 60558bb0633e963a442aaf8492162e7bc2a7817fa7b5a07ffe83ebd2ee8463c2
+  version: v1.33.0
+  retrieved: "2026-10-30"
+  commit: 059f723244364dd67f86051b38d67c66094651bd
+  sha256: ace6d62b201e1894e1effea4a5b213a5c96d9945ff6658b0c1ee1e13b251cbcb
   license: Apache-2.0
 - dependency: github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric
   version: v0.55.0
@@ -211,16 +211,16 @@
   sha256: d7f5f7dd65f511941db0dd77c37701ee2cab3540f96896399194f786f5317e5e
   license: Apache-2.0
 - dependency: github.com/Microsoft/go-winio
-  version: v0.6.2
-  retrieved: "2026-08-27"
-  commit: 3c9576c9346a1892dee136329e7e15309e82fb4f
-  sha256: cd007bdb877a578efde2780bf5dd2f57dd557b5b08c3614597b820d0369ebb0f
+  version: v0.6.3-0.20251027160822-ad3df93bed29
+  retrieved: "2026-10-30"
+  commit: ad3df93bed29459e88baf3ece3e167e2f5d922dd
+  sha256: 6507326885292057ef1bf96a9d6a9300b1695f88a49b34f77fcfdf2a219c276c
   license: MIT
 - dependency: github.com/Microsoft/hcsshim
-  version: v0.13.0
-  retrieved: "2026-08-27"
-  commit: 7084bd2fa445d83629a67a91ff4e072517a11f04
-  sha256: 77c127afa2d239d7163c969642fa6015f8d0236672394e3304e5ab41dd8d706c
+  version: v0.15.0-rc.4
+  retrieved: "2026-10-30"
+  commit: 0139e93b46538a4b7f9609783e7e50203c9356bb
+  sha256: 1a6d05fdeefddeb80e3e1823236bdd6b407ac5486532a1367d170c51973c355a
   license: MIT
 - dependency: github.com/cenkalti/backoff
   version: v2.2.1+incompatible
@@ -235,46 +235,46 @@
   sha256: 145a26cdc7c49db566017b807c4989ee7f7ddeb569423e9cb99f995fac3621d3
   license: MIT
 - dependency: github.com/cilium/ebpf
-  version: v0.16.0
-  retrieved: "2026-08-27"
-  commit: 061e86d8f5e99aa6f04d11a3807c8cacdbe7908b
-  sha256: 94f18289e55ece887579f7f3bd5117301c02a4413837fd6b5ff956962c8995cf
+  version: v0.17.3
+  retrieved: "2026-10-30"
+  commit: 159dff1788cbfd31fcf301c9abaca55336596174
+  sha256: 0f36a302eb9f8c176b98991d699cc2d5594a49c3ec77c3063ecdfd3530c7a0b1
   license: MIT
 - dependency: github.com/cncf/xds/go
-  version: v0.0.0-20251210132809-ee656c7534f5
-  retrieved: "2026-08-27"
-  commit: ee656c7534f5d7dc23d44dd611689568f72017a6
-  sha256: cca4463a6b46441356c204b8580aed55a0df97e8289cfc04be7986cdf3a8011c
+  version: v0.0.0-20260202195803-dba9d589def2
+  retrieved: "2026-10-30"
+  commit: dba9d589def2cd10099a3a64887d859188c2f57a
+  sha256: 6f1b8ceaaa6e773dba2595bfe7b75f54d98f901c8f1340d420138095b36778fa
   license: Apache-2.0
 - dependency: github.com/containerd/cgroups/v3
-  version: v3.0.5
-  retrieved: "2026-08-27"
-  commit: bce3c7e5fbf05852294998684293918fcb3f59dd
-  sha256: 8ddceaca7d2b60ed153643610d7c1620a3ef09a769eb2f1c7d3b058d46c1bd83
+  version: v3.1.3
+  retrieved: "2026-10-30"
+  commit: 076b5e0e60bd073ead691caf95a90ac0f2fbec5d
+  sha256: 44f3fecb3be9b7ac3cd7b538dc47e19109607a1b56eb961506eef64c34597cf4
   license: Apache-2.0
 - dependency: github.com/containerd/console
-  version: v1.0.4
-  retrieved: "2026-08-27"
-  commit: 8f6c4e4faef5a326d2cd907097d04c0239ee5e2f
-  sha256: 80c4b1f54a9d827803e9206923b3738baab47ea82e0e2d26b303056ea69d0cf2
+  version: v1.0.5
+  retrieved: "2026-10-30"
+  commit: c8d962180f543ac07c008ecc79a413406ea10c0b
+  sha256: 79f70820b6e0901d405fe742945743e561f9aa3c2ec435f2d18ed5633bd85662
   license: Apache-2.0
 - dependency: github.com/containerd/containerd/api
-  version: v1.10.0
-  retrieved: "2026-08-27"
-  commit: 8b34ce391bd114e080892cccfa956ef3807c207c
-  sha256: 14852596630c8aa392efa6fd619c2c7248456cd6fbab972cadee51c73b67d015
+  version: v1.12.0
+  retrieved: "2026-10-30"
+  commit: c6d0192ebb9da70c39a1b5ef4938e7c41cb0a997
+  sha256: 4ab15ee9c8ffe50c31cdc50cd6ea02f4e761bc7ff7a913092e0a6c6199344a6c
   license: Apache-2.0
 - dependency: github.com/containerd/containerd/v2
-  version: v2.1.5
-  retrieved: "2026-08-27"
-  commit: fcd43222d6b07379a4be9786bda52438f0dd16a1
-  sha256: dffe08911fcd926e4bc7dcd8b106775da61687dc1a3bfe68063721fda84e1cae
+  version: v2.4.2
+  retrieved: "2026-10-30"
+  commit: b7a25261e029d68978bbf290df0a62fc819b3c51
+  sha256: 4e40347c8cd23baf35e773109bd8499948d72f1638eff092ee10ed4f400e9b75
   license: Apache-2.0
 - dependency: github.com/containerd/continuity
-  version: v0.4.5
-  retrieved: "2026-08-27"
-  commit: 44e2adf7e9cd87330f3ad656e7a006ef91ed8c1e
-  sha256: dc5749a7ddf8e6a0e1cb7b59b2bb6421d9b0cd319d9e2811bed3df5f90c77d49
+  version: v0.5.0
+  retrieved: "2026-10-30"
+  commit: ed9828dc553bfc7531268b0a1c9afe466b5abe0b
+  sha256: bc1857ce83f4d08781284557b9b3a31e2044b2c8143c83494ac55ab90cf61a07
   license: Apache-2.0
 - dependency: github.com/containerd/errdefs
   version: v1.0.0
@@ -295,40 +295,40 @@
   sha256: b139b81b236b29613edffca908d29753b9f49a4d2e3ea472e16162b4bfdcdbc2
   license: Apache-2.0
 - dependency: github.com/containerd/go-runc
-  version: v1.1.0
-  retrieved: "2026-08-27"
-  commit: df3c22d088ca919d1943efa8ae0cfc0514da0542
-  sha256: 2b096a08bc0a8c4fce5b57739cac528cc8fbfee993b0a4ddab82195c9aae3ef4
+  version: v1.2.1
+  retrieved: "2026-10-30"
+  commit: 68364566898bcedbf19ac5ff82acbca51546cbc3
+  sha256: f09a4f5721a5f43e5964ffb6dd8e0ff5c4f69a55c28eacf8771bb2419bf5fdf9
   license: Apache-2.0
 - dependency: github.com/containerd/log
-  version: v0.1.0
-  retrieved: "2026-08-27"
-  commit: 0fc1e28871fdf2786e2cc51bbe4133db6547a199
-  sha256: 2008faf206ec820e7fc3d40baba924936c21347dafad4a7ff122fa90e26e57d7
+  version: v0.2.0
+  retrieved: "2026-10-30"
+  commit: 8b5d6538fa1ff6e8ba10d2e4131258f5e662709f
+  sha256: e12cd8035cf414f46e557a7e47e507780ed10e82e2e515c4f3eddd9c6b5839c2
   license: Apache-2.0
 - dependency: github.com/containerd/plugin
-  version: v1.0.0
-  retrieved: "2026-08-27"
-  commit: 19cedbf730bb9ae1c106c4d4df8492bb3d3fb8fd
-  sha256: 14f3b757a16b670ab7415ef2ce0e410054a1d0f7250a739a6aa881699a1aa065
+  version: v1.1.0
+  retrieved: "2026-10-30"
+  commit: eaf7e69731c35651611d5d24dc28638e24ce4d3f
+  sha256: e1f803ef59e9194c5a092c37dd8d34a2e0c7a5c6c7afb6b04c4344b452b73c84
   license: Apache-2.0
 - dependency: github.com/containerd/ttrpc
-  version: v1.2.7
-  retrieved: "2026-08-27"
-  commit: 3b8c8b75577584e412043afb7b561193a4a47d2e
-  sha256: b5bf2d0282ccdeebe0ee6df737ee46e51fa661334a45bf82b91952eff6f8fcea
+  version: v1.2.9
+  retrieved: "2026-10-30"
+  commit: 4b166fb8651537835471d5243c5b174127e70e38
+  sha256: 0165bf2ac92bb7344af6483542592032f10c53cda252bdc5cad68bcd96b5550a
   license: Apache-2.0
 - dependency: github.com/containerd/typeurl/v2
-  version: v2.2.3
-  retrieved: "2026-08-27"
-  commit: 5b047adad57d172afa9654c019fe65bf0540cc4d
-  sha256: aabdf9f00f4381f4bee966af8f7e2faed502b0571f701823d1c1ac0ca9a73189
+  version: v2.3.0
+  retrieved: "2026-10-30"
+  commit: 125f7790c42c52610c44712bdc3a1748f785ae8d
+  sha256: 243aa4979ace10e7aff8300ccc32beb72460fb0afb1c9a51a72b79e0f4e1be22
   license: Apache-2.0
 - dependency: github.com/coreos/go-systemd/v22
-  version: v22.6.0
-  retrieved: "2026-08-27"
-  commit: 8214e15a7a799dc18f0ef8dd788b830f815d7530
-  sha256: 7759d251cb9c2f020d8b7b5fa075653cb11cad4861e3e194bf3484267bbabc2f
+  version: v22.7.0
+  retrieved: "2026-10-30"
+  commit: 4dc4ee60b8394d431f19a3c599040ef758884a27
+  sha256: 25c78b5dae5afa61291a8559328007cc77e60dd6747454af5c83423c26cfdfba
   license: Apache-2.0
 - dependency: github.com/creack/pty
   version: v1.1.24
@@ -367,34 +367,34 @@
   sha256: 039d53ebe64af1aefa0be94ce42c621a17a3052c58ad15e5b3f357529beeaff6
   license: Apache-2.0
 - dependency: github.com/emicklei/go-restful/v3
-  version: v3.11.0
-  retrieved: "2026-08-27"
-  commit: 30bec7807481e62e1e1e59ad57e7f22054806966
-  sha256: fc71c649398fa5d28ac7948d143bc8ac4803c01d24f852b9d50e87724ac8efc8
+  version: v3.13.0
+  retrieved: "2026-10-30"
+  commit: 3fae6e4c6809ebc26315d163196ea7ab8e0685cb
+  sha256: 06bd60484b324de0b8e4366d4ed326db2e1dc730459b46e19a5306a108439c77
   license: MIT
 - dependency: github.com/envoyproxy/go-control-plane/envoy
-  version: v1.36.0
-  retrieved: "2026-08-27"
-  commit: 58535202ab441f4a081410fb8eac61cc35562b32
-  sha256: dc628978da6002143e63a5bfe042c2b50e27bc3a40216f1d443548985f0f6b5a
+  version: v1.37.0
+  retrieved: "2026-10-30"
+  commit: 004b9ec70a4696c9fac559adea646dab4ebf62b7
+  sha256: dea96dd46aa4480f6f5dad6b52b9059d088d06a090968557dafa8cd633f629a2
   license: Apache-2.0
 - dependency: github.com/envoyproxy/protoc-gen-validate
-  version: v1.3.0
-  retrieved: "2026-08-27"
-  commit: 4eb9011f3e6d551d067d87c89f082261164fac31
-  sha256: d91626b3a9a6b6a3b90dd85e92d922444f0a6c225c0caf9395f0abe49fad2aee
+  version: v1.3.3
+  retrieved: "2026-10-30"
+  commit: 92b9a7df69ca9f71bfc492f7a90adf4d36eab569
+  sha256: 83a909ec95b94609da1f610a866e0553dd4ac3a7b485f7dc5c734692fa326754
   license: Apache-2.0
 - dependency: github.com/felixge/httpsnoop
-  version: v1.0.4
-  retrieved: "2026-08-27"
-  commit: c5817c27ec125409c069052fdd171023c353501c
-  sha256: 75aa471311265e9860df0e523400b4650ed0c1a33262786a421f07226792e494
+  version: v1.1.0
+  retrieved: "2026-10-30"
+  commit: 0fc9006be0bfd68ee14bc3db0d58f7c7241892e0
+  sha256: e3405a361843f8e69f64e41b523512925cd50fd5ea108b7912534922c31b00e7
   license: MIT
 - dependency: github.com/fxamacker/cbor/v2
-  version: v2.7.0
-  retrieved: "2026-08-27"
-  commit: 02b69dbb52f4ecf450b3aa5e9a04b7a0b4bf409a
-  sha256: b48771460405bab6896c85e21ebc5ff287d4018c6db5c8d822c55769c80dde03
+  version: v2.9.4
+  retrieved: "2026-10-30"
+  commit: be0da0d020e8e6b6f11ae50aadffebb9a4d9fbaa
+  sha256: e7ed6a1be5e6d17bb123e20d5901fc72d2fc3a8ee384731fbbd697d4e7ce8022
   license: MIT
 - dependency: github.com/go-echarts/go-echarts/v2
   version: v2.3.3
@@ -403,16 +403,16 @@
   sha256: 3967e4665c04306ee8e8254b40d03a7ab565282083d02c67590a88cb59543993
   license: MIT
 - dependency: github.com/go-jose/go-jose/v4
-  version: v4.1.4
-  retrieved: "2026-08-27"
-  commit: 0e59876635f3dbf46d7b5e97b52bb75a3f96e7d9
-  sha256: 06a37b6668012a2dd109a5f71f6ae15387dc808b35d3cf73f5e406e78a17b027
+  version: v4.1.5
+  retrieved: "2026-10-30"
+  commit: b10771e937ddcce419e30fc0c2b9e38464a333d0
+  sha256: 0187ade1d4dd731fc0de8d972aeddd156f8f930e628f1f0badc252e5579db4c8
   license: Apache-2.0
 - dependency: github.com/go-logr/logr
-  version: v1.4.3
-  retrieved: "2026-08-27"
-  commit: 38a1c47ef633fa6b2eee6b8f2e1371ba8626e557
-  sha256: 523d7a3587fe73f61ef41c8bc627f7d7f38de8104d46278154b307e60770ad70
+  version: v1.4.4
+  retrieved: "2026-10-30"
+  commit: 96a9abaa56526dd5d51745e817732a2d61505fb7
+  sha256: 3ab107c1d280ce798eaa744efd595982fa709d4023f3f38d24189827483c1710
   license: Apache-2.0
 - dependency: github.com/go-logr/stdr
   version: v1.2.2
@@ -421,22 +421,88 @@
   sha256: 9dd6893bf700198485ae699640b49bc1efbc6c73b37cb5792a0476e1fd8f7fef
   license: Apache-2.0
 - dependency: github.com/go-openapi/jsonpointer
-  version: v0.21.0
-  retrieved: "2026-08-27"
-  commit: 8b546b950409bd7b131488a88613339cd8937b7f
-  sha256: 8a36ba84f6f6148834875fff96da79fcc2b383ace69cc34d71756b3fa84b9952
+  version: v1.0.0
+  retrieved: "2026-10-30"
+  commit: 94e86086395062d3094c09c01aea3592df0fcba3
+  sha256: 403cc887595921a24880a173862ea95b7c46f0747725d7b75c31165e0647e157
   license: Apache-2.0
 - dependency: github.com/go-openapi/jsonreference
-  version: v0.20.2
-  retrieved: "2026-08-27"
-  commit: 1f158e563669961b8e54817e3ea57978d439ffff
-  sha256: 27afd0bef56453e463eba6093afb04dc08d97b5ad0e15b2266cac867d062ae1b
+  version: v1.0.0
+  retrieved: "2026-10-30"
+  commit: edb350b0a13c936c03de055a3483ea334a50478c
+  sha256: 381714f9c672c76e573155e6e6fb38ab1ccceafba6163d672a52d4460a999f5b
   license: Apache-2.0
 - dependency: github.com/go-openapi/swag
-  version: v0.23.0
-  retrieved: "2026-08-27"
-  commit: 53e32e82f758c8e884819330a87aef294ff10c1f
-  sha256: a604425d0d3ff6936ffd056e86cd776c80e06874ef026e53da528208a986df94
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 974f84d06abf41b07a2746ead15d63fd60e54097d59aaef2e64f48d037dc526a
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/cmdutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 78db276543527cb558989674ce270209df6011240431fcf97b1e70c5bddae7da
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/conv
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 05937194045677859dec6bdb3408ac359294e68e2188bc9a37bed759f2cdb040
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/fileutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 9a155475b4da15cf5375405cad7faa79ec05b29e47ec6eb5fce9640f491b4438
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/jsonutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 6b89134110a6c678522007a7cae3ab24f1ce1be43189a913562dc36a9ed6384d
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/loading
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: a18fe594620951693c40e617782f03163ecf81027d2fb6929c98cd950855fd38
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/mangling
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 394d88863125724f54693ec9d45bd1bba5fda66357e4ea9fac042b081147c72d
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/netutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 6a4137f74a3fb4c41554c5a381dd41de399d3b19e6147b9d530c9b4c97a6716d
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/pools
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 5adc28aefb0f58ae71048e25013a0ca2f38ed527435f18483c1a74053c880208
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/stringutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 304a9c1f952d40ec55ee92ca095b73f3eb54f402b4ec522cf1d717841d8b67f9
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/typeutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: e5872b1ec074f1def37dc53b7d9d58cff9ba44a36f16bc024cf46e29df787f95
+  license: Apache-2.0
+- dependency: github.com/go-openapi/swag/yamlutils
+  version: v0.27.1
+  retrieved: "2026-10-30"
+  commit: c8a41f7226ee09d8f74ac3e9375d071041836b7c
+  sha256: 13c63f3dde3719ad527ce413051a9fa6cb59c0357205f010c3713ad8f21db0da
   license: Apache-2.0
 - dependency: github.com/godbus/dbus/v5
   version: v5.1.0
@@ -457,10 +523,10 @@
   sha256: dd2b73f163c8183941626360196c8f844addd95423d341a0412e1b22d0104ff7
   license: BSD-3-Clause
 - dependency: github.com/golang/groupcache
-  version: v0.0.0-20210331224755-41bb18bfe9da
-  retrieved: "2026-08-27"
-  commit: 41bb18bfe9da
-  sha256: b27034e8fc013627543e1ad098cfc65329f2896df3da5cf3266cc9166f93f3a5
+  version: v0.0.0-20241129210726-2c02b8208cf8
+  retrieved: "2026-10-30"
+  commit: 2c02b8208cf8c02a3e358cb1d9b60950647543fc
+  sha256: 163367355442a630b12b0b452892cd98e99fcfdf7e40b68d358be73479cc1c23
   license: Apache-2.0
 - dependency: github.com/golang/protobuf
   version: v1.5.4
@@ -469,16 +535,16 @@
   sha256: 9a2f43d3eac8ceda506ebbeb4f229254b87235ce90346692a0e233614182190b
   license: BSD-3-Clause
 - dependency: github.com/google/btree
-  version: v1.1.2
-  retrieved: "2026-08-27"
-  commit: 8e29150ba321eef204059de2ab494f179b6cff2c
-  sha256: faee8550c5fffb4ae1dadde5ccaccb13298726f9fad226bb4eed0c03c90a481d
+  version: v1.1.3
+  retrieved: "2026-10-30"
+  commit: aeba20f7a1e1315badec4eca4fdc9f754f5f880a
+  sha256: 11b736bc8252b52fecdf346d3707ccf3a2b6d458ba21b4f843616fc12eeb30b2
   license: Apache-2.0
 - dependency: github.com/google/gnostic-models
-  version: v0.6.8
-  retrieved: "2026-08-27"
-  commit: 577692584cdf09674595bba0c182d0e8a44655d3
-  sha256: 5276180bd184f64676867fc2f64a583175968c507d404be6b7f1261ead229484
+  version: v0.7.0
+  retrieved: "2026-10-30"
+  commit: 82b4ba06c153dcd30e1dbcf93601b3bee5cb3792
+  sha256: 797a05cd73a30624ece79633c4db4631676adc1f30f07a0a7051ab39beca96c8
   license: Apache-2.0
 - dependency: github.com/google/go-cmp
   version: v0.7.0
@@ -601,16 +667,16 @@
   sha256: e64dc58023f4b8c4472d05a44f2719b84d6c2cc364cc682820c9f72b233c9cdc
   license: Apache-2.0
 - dependency: github.com/mdlayher/socket
-  version: v0.5.1
-  retrieved: "2026-08-27"
-  commit: 9c51a391be6c6bc5b7ce52f328497931c5e97733
-  sha256: f0f07bdd9811f8571c7864cf5e0f06d85cfb3edbb254d6094a31e7f1d427e2a2
+  version: v0.6.0
+  retrieved: "2026-10-30"
+  commit: 501098e9308b6c2d2ab9bf1f48a50040c7a86bd9
+  sha256: 0b6d1f9f64462bcf94a8dc7dc9fc0084f35af3434ab67a724464a95d47bc87af
   license: MIT
 - dependency: github.com/mdlayher/vsock
-  version: v1.2.1
-  retrieved: "2026-08-27"
-  commit: 8569e301791e164b669ff36b51035bb1d7c9b3a3
-  sha256: cd25f9f33aa4fb945502351caeeed6994e1f34824cc826ca2daa1b21c45bc0d1
+  version: v1.3.0
+  retrieved: "2026-10-30"
+  commit: ffafd72337a099bdd3828f03a78e19994afb50fd
+  sha256: ba913d18b9506ccc9f1f391a499ca31a74c12fb01c9cf3bdbd218e56e27ad97e
   license: MIT
 - dependency: github.com/moby/docker-image-spec
   version: v1.3.1
@@ -657,10 +723,10 @@
   sha256: 4b96521752263905b26acd41c982be7bfb73d45243d070707e3cdd57f9fb3a91
   license: Apache-2.0
 - dependency: github.com/moby/sys/userns
-  version: v0.1.0
-  retrieved: "2026-08-27"
-  commit: 54475191138bd297c627eb1a59e1e54b953957f1
-  sha256: 24c102bcc418dedc378fbcaa53b10251b35042f2e86bf088f773250064fe3080
+  version: v0.2.1
+  retrieved: "2026-10-30"
+  commit: 42bac34713b7375c322157c79ccf14045c40f74b
+  sha256: fd69e7793f9753dc0e5b6c6f600ebbbf3b613d5356fe862110fe811e6544f746
   license: Apache-2.0
 - dependency: github.com/modern-go/concurrent
   version: v0.0.0-20180306012644-bacd9c7ef1dd
@@ -669,10 +735,10 @@
   sha256: 91ef49599bec459869d94ff3dec128871ab66bd2dfa61041f1e1169f9b4a8073
   license: Apache-2.0
 - dependency: github.com/modern-go/reflect2
-  version: v1.0.2
-  retrieved: "2026-08-27"
-  commit: 2b33151c9bbc5231aea69b8861c540102b087070
-  sha256: f46f41409c2e74293f82cfe6c70b5d582bff8ada0106a7d3ff5706520c50c21c
+  version: v1.0.3-0.20250322232337-35a7c28c31ee
+  retrieved: "2026-10-30"
+  commit: 35a7c28c31ee079903db043180532306a621943a
+  sha256: 49f3fb0f76b1b98b52b5e6e8eab2a48454eab33904b937625941c28138a7fea4
   license: Apache-2.0
 - dependency: github.com/mohae/deepcopy
   version: v0.0.0-20170308212314-bb9b5e7adda9
@@ -699,10 +765,10 @@
   sha256: 3a32eeb459719172947c20be78b5b7293c6ea84f4039184e846f6b676bc19574
   license: Apache-2.0
 - dependency: github.com/opencontainers/runtime-spec
-  version: v1.2.1
-  retrieved: "2026-08-27"
-  commit: 524fc0e1b8ab0180e2fc9abd31837a0f4ed1fd6b
-  sha256: 847dfbbec37aef7d1e14caebacb0ea036ecd22fa84bca96a0da3dfebfc16ef31
+  version: v1.3.0
+  retrieved: "2026-10-30"
+  commit: 92249139eea7161e13745abd4cb6d0ea02a3227a
+  sha256: 09e58e616eb70f2972ed19ada447dd661b298b39777adb0bbd35c94886bdbdf8
   license: Apache-2.0
 - dependency: github.com/pkg/errors
   version: v0.9.1
@@ -729,10 +795,10 @@
   sha256: b5922c5ceedb86debbb05a3c2c78616273c9f45f127dada540dbb1a61d7e0b02
   license: Apache-2.0
 - dependency: github.com/sirupsen/logrus
-  version: v1.9.3
-  retrieved: "2026-08-27"
-  commit: d40e25cd45ed9c6b2b66e6b97573a0413e4c23bd
-  sha256: 4501f4e6b858bfdd997671fcdd2f647a3178b29b6b4d1344caa7c07517121dd0
+  version: v1.10.2
+  retrieved: "2026-10-30"
+  commit: 6d6a132bc03324d4ceb78e1b927f995d014cda20
+  sha256: 73a40737da86682dd536ec2c87dff0f589eeeed81873362b08ed009818747b52
   license: MIT
 - dependency: github.com/spf13/pflag
   version: v1.0.5
@@ -741,16 +807,16 @@
   sha256: fc6e704f2f6a84ddcdce6de0404e5340fa20c8676181bf5d381b17888107ba84
   license: BSD-3-Clause
 - dependency: github.com/spiffe/go-spiffe/v2
-  version: v2.6.0
-  retrieved: "2026-08-27"
-  commit: c6d0af3a4780fcc69132bb8bc5d2bdfcbe5ea42b
-  sha256: b90f378c70e2c985f61893ca20bf3e8258bb4f66920af759276d330513d0d7d6
+  version: v2.7.0
+  retrieved: "2026-10-30"
+  commit: 76b14bd4140aac9bef74b27a77c81333c47feee1
+  sha256: b203c6cee1fb1d324460e6da38e22e5d43c5f1a619f207d9f2751bdbe7da02f6
   license: Apache-2.0
 - dependency: github.com/vishvananda/netlink
-  version: v1.3.1-0.20250303224720-0e7078ed04c8
-  retrieved: "2026-08-27"
-  commit: 0e7078ed04c84cea47daea45be061544e565ec49
-  sha256: e943364458eb30085be77fc1b9ef82e4b29bc9dc78078c0a08a7e80357cb83cf
+  version: v1.3.1
+  retrieved: "2026-10-30"
+  commit: 17daef607c6442d47b0565343cf8a69f985a4cb7
+  sha256: 213c83dcc66cbeca2b83eca59d08649fa5ea96f463a8c014e8d6b6d5e601887e
   license: Apache-2.0
 - dependency: github.com/vishvananda/netns
   version: v0.0.5
@@ -801,66 +867,66 @@
   sha256: a08a16fc0a7041cdb875f47a260a56000632212c85f65a302a043c76380c8335
   license: Apache-2.0
 - dependency: go.opentelemetry.io/contrib/detectors/gcp
-  version: v1.39.0
-  retrieved: "2026-08-27"
-  commit: 9a6a4d7dec6c950b12977cb166e1954bc74e8777
-  sha256: 861471f5354793616a1bf86f40f6bf9e96dd85189e68c7d67cb72332a031b7bd
+  version: v1.44.0
+  retrieved: "2026-10-30"
+  commit: 03b2bcdb54b3dde73c9ff91ae216aec262f6c8f5
+  sha256: 5d071282c30ae2ba273984315615de34bf670216d2adac37137b346f52ac2cb2
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
-  version: v0.67.0
-  retrieved: "2026-08-27"
-  commit: d8dabf67361a4619c353ad0637432f3d0d16ba63
-  sha256: 8d28360aab471b397d81ea1e5e738fd99df97c3ba04b485e7924cd716d6c7cd1
+  version: v0.71.0
+  retrieved: "2026-10-30"
+  commit: c4c6248ec2289133b6a51f554ca9367ece1de8e7
+  sha256: 837540ee3def8b884606cdd9bf616fb9ff7ebb8bb76c0d6423d856ea4ad2c157
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
-  version: v0.67.0
-  retrieved: "2026-08-27"
-  commit: d8dabf67361a4619c353ad0637432f3d0d16ba63
-  sha256: a184e0b582e09004f01272b6f326e2a83b7a40694907fb7bbcd95080e33cc8e7
+  version: v0.71.0
+  retrieved: "2026-10-30"
+  commit: c4c6248ec2289133b6a51f554ca9367ece1de8e7
+  sha256: f518d56b4e820f12904a4501b6c80c79a4d3955f39886b7ef43295f2361dc8e9
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/otel
-  version: v1.43.0
-  retrieved: "2026-08-27"
-  commit: 9276201a64b623606e3eaa0d61ae8ee6d62756c0
-  sha256: 177d24c79e756950c431aa87c1c613bb807cc7fe435260b72c5f675b01651921
+  version: v1.46.0
+  retrieved: "2026-10-30"
+  commit: 58db4c898f5b5594f8ba78f156475bf48486e2f2
+  sha256: 5f1b7d702ee2e6e41880ef279a6c7ecae78f7867f5b3e92a3a87828d472501a9
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/otel/metric
-  version: v1.43.0
-  retrieved: "2026-08-27"
-  commit: 9276201a64b623606e3eaa0d61ae8ee6d62756c0
-  sha256: 3efb5ad706fab815f4b2e8fc89c1656ec8d2403f07edd406c17c2310dd8a08a6
+  version: v1.46.0
+  retrieved: "2026-10-30"
+  commit: 58db4c898f5b5594f8ba78f156475bf48486e2f2
+  sha256: 9dfefa696b083e8d923b4bb531e8c6d38328a1a859c69236434c0b2d36cfc4c4
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/otel/sdk
-  version: v1.43.0
-  retrieved: "2026-08-27"
-  commit: 9276201a64b623606e3eaa0d61ae8ee6d62756c0
-  sha256: cf46abeb516a88a0eb33117103e39fb3161f0db91cd487a84748aae16938e8f2
+  version: v1.46.0
+  retrieved: "2026-10-30"
+  commit: 58db4c898f5b5594f8ba78f156475bf48486e2f2
+  sha256: 3b190b8bd3e596b4f8496a1842898207f21416345c3228ca133231199bbb3e05
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/otel/sdk/metric
-  version: v1.43.0
-  retrieved: "2026-08-27"
-  commit: 9276201a64b623606e3eaa0d61ae8ee6d62756c0
-  sha256: b02c5dded25925d2becf8ea69d446f2eb786a576ab4a7dd8014f3afbd861fc49
+  version: v1.46.0
+  retrieved: "2026-10-30"
+  commit: 58db4c898f5b5594f8ba78f156475bf48486e2f2
+  sha256: df55dfb670650dc4e6ff2ac1e5e116e461bae85b4f11e3aff32c421fe492357c
   license:
     - Apache-2.0
     - BSD-3-Clause
 - dependency: go.opentelemetry.io/otel/trace
-  version: v1.43.0
-  retrieved: "2026-08-27"
-  commit: 9276201a64b623606e3eaa0d61ae8ee6d62756c0
-  sha256: 34fdc70a75e90d68e36caa59b9e800a5de5266118393eaee4489dd0abe3cb62d
+  version: v1.46.0
+  retrieved: "2026-10-30"
+  commit: 58db4c898f5b5594f8ba78f156475bf48486e2f2
+  sha256: 00c882750676e787b00f1c0328d99ed7ad0546e19af86c7af546c1343481c25a
   license:
     - Apache-2.0
     - BSD-3-Clause
@@ -876,6 +942,22 @@
   commit: ""
   sha256: 0077abedf9a4798c50e015045b5cc092b8001be6d994fc59781c4b0d6ae94507
   license: MIT
+- dependency: go.yaml.in/yaml/v2
+  version: v2.4.4
+  retrieved: "2026-10-30"
+  commit: 43b627a9da72517e91dbcf07cd10dfd6618423d8
+  sha256: 1b98a6a498cf255c5f2982d32c74633bc7969770957e98103ac1e14345aa4576
+  license:
+    - Apache-2.0
+    - MIT
+- dependency: go.yaml.in/yaml/v3
+  version: v3.0.5
+  retrieved: "2026-10-30"
+  commit: e16c7af9361b241fa02d91582fb59ce4954d8afc
+  sha256: f2d70caa35f66283aec58b889af8c5f07c374c5934be27a738c1215263e19205
+  license:
+    - Apache-2.0
+    - MIT
 - dependency: golang.org/x/crypto
   version: v0.57.0
   retrieved: "2026-10-07"
@@ -943,10 +1025,10 @@
   sha256: a7b64e003056b6470303f408202098d8f3714a115f23091b8cac85edeb265476
   license: BSD-3-Clause
 - dependency: golang.org/x/time
-  version: v0.15.0
-  retrieved: "2026-08-27"
-  commit: 812b343c8714c317b0dad633efa6d103e554c006
-  sha256: 8cfb20e915fa5d6c3fd264304233f8d71a3385e48a37819239c532ad9da27f84
+  version: v0.16.0
+  retrieved: "2026-10-30"
+  commit: fb013b3d305a26f5ef5350a6eaffc7c87a200383
+  sha256: ac27777be8088859ba3b1bea3648064dc95ff8bac3023b1b059d1ab126dc729e
   license: BSD-3-Clause
 - dependency: golang.org/x/tools
   version: v0.51.0
@@ -973,28 +1055,28 @@
   sha256: a75d9f7ea0d1bba57acec769c848764c866c88f22fe8c0e9b295134d20e5400f
   license: Apache-2.0
 - dependency: google.golang.org/genproto/googleapis/api
-  version: v0.0.0-20260401024825-9d38bb4040a9
-  retrieved: "2026-08-27"
-  commit: 9d38bb4040a9551934095960a7e8521e58594918
-  sha256: 88b3d97eaf60fbc3a67fb3bf0e190cf9a5dc9c8d2b6e3b9cbb80bceb004967bf
+  version: v0.0.0-20260825221802-da73d73af1c5
+  retrieved: "2026-10-30"
+  commit: da73d73af1c5183531788b6e26a2d1ce2c9faab7
+  sha256: 3fd3154433fa2854341abb63f1bc4d834767e59e280dfa7a26fe2c951ea4a830
   license: Apache-2.0
 - dependency: google.golang.org/genproto/googleapis/rpc
-  version: v0.0.0-20260401024825-9d38bb4040a9
-  retrieved: "2026-08-27"
-  commit: 9d38bb4040a9551934095960a7e8521e58594918
-  sha256: 782f7750728f860a0224e85186cf2696f58434d6d0556459c7e236cbcd8ce7c3
+  version: v0.0.0-20260825221802-da73d73af1c5
+  retrieved: "2026-10-30"
+  commit: da73d73af1c5183531788b6e26a2d1ce2c9faab7
+  sha256: fa524d4bd3d27a627e34b376c4f163b3d050142c85f92b4e42bdee988d8275a5
   license: Apache-2.0
 - dependency: google.golang.org/grpc
-  version: v1.80.0
-  retrieved: "2026-08-27"
-  commit: 397e45edaa68f8763773bbaaf539cf7894169cd2
-  sha256: 12b91cdce1bbcd837193ef71c42a09b454bff644e0ddab389a396328c2e41779
+  version: v1.83.2
+  retrieved: "2026-10-30"
+  commit: 030ee8becb20ce4315d6bf2dfa26bdd876169dc4
+  sha256: 84292905a694e17862d15abc123a6f7f7efa9e1e3a77e80120982ff95b2605ea
   license: Apache-2.0
 - dependency: google.golang.org/protobuf
-  version: v1.36.11
-  retrieved: "2026-08-27"
-  commit: 96a179180f0ad6bba9b1e7b6e38d0affb0168e9a
-  sha256: 14983d36c56a814ed91b6d652f2b8f895baba1b84eb43b28a0b132c8637cd274
+  version: v1.36.12
+  retrieved: "2026-10-30"
+  commit: cdd4c5f7406e82462949c7a65defa9f3029c162d
+  sha256: 68f8a3174aff42950fd9bd02c11b45c6986eb8060508d124d1c3dd6bf86b9be6
   license: BSD-3-Clause
 - dependency: google_benchmark
   version: https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
@@ -1015,10 +1097,10 @@
   sha256: 6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5
   license: BSD-3-Clause
 - dependency: gopkg.in/evanphx/json-patch.v4
-  version: v4.12.0
-  retrieved: "2026-08-27"
-  commit: ""
-  sha256: eccb52c37cbf4a38d392101f2b31d424eca68bfebab3de4265d0cf595ca07b51
+  version: v4.13.0
+  retrieved: "2026-10-30"
+  commit: 84a4bb100ade42a86fce2647c95a7dbcbf569cb2
+  sha256: de94747c5023a2c83909845c76acc6b4bfe28b44994207394b5e057f3085625a
   license: BSD-3-Clause
 - dependency: gopkg.in/inf.v0
   version: v0.9.1
@@ -1060,40 +1142,40 @@
     - BSD-3-Clause
     - MIT
 - dependency: k8s.io/api
-  version: v0.32.3
-  retrieved: "2026-08-27"
-  commit: 22c1e39ad8694905cfaad52a473d81f230d61bcb
-  sha256: 649689e30730c65a1ecfef5da339bfdebd9678f6c053c274cedec1923c3b1dcd
+  version: v0.37.0
+  retrieved: "2026-10-30"
+  commit: 34b5cc4a2603a1cdcad4aced5c83808fb7df7bb8
+  sha256: 7451225b8855d93b5b89a6797e2a9b875b2b429cc0720cd782e2d5481a7698e6
   license: Apache-2.0
 - dependency: k8s.io/apimachinery
-  version: v0.32.3
-  retrieved: "2026-08-27"
-  commit: 59e9003f02d6f0c8fff53719a7a0604ec82ee9a9
-  sha256: 2deacae4f8299eb194c465935d016226dbf88c65e1d5e51778b6d3add0a6f7d9
+  version: v0.37.0
+  retrieved: "2026-10-30"
+  commit: 7164e39885ced1e843757da6423a337f6eae75f7
+  sha256: 798a5e971e7f0da7882b1c9c325894486285b956f0b004ba0343d5753d23d76b
   license: Apache-2.0
 - dependency: k8s.io/client-go
-  version: v0.32.3
-  retrieved: "2026-08-27"
-  commit: c106b23895edc59ff05c65770a17e6a6d3caee66
-  sha256: bb5c24908df4dc2b65918635a7cde6709545e5a8c4b36398622050acac880929
+  version: v0.37.0
+  retrieved: "2026-10-30"
+  commit: 28076445520055420e3be4255b4cd27fd19df1f9
+  sha256: e48557de0d71c7fe7365be5f325d033945df0bc55969a30be83a5f7e131835c4
   license: Apache-2.0
 - dependency: k8s.io/klog/v2
-  version: v2.130.1
-  retrieved: "2026-08-27"
-  commit: 75663bb798999a49e3e4c0f2375ed5cca8164194
-  sha256: 262b961175bbe8cf6ecf227d06303df2eb47bfb890e19d516846422f7d406cb9
+  version: v2.140.0
+  retrieved: "2026-10-30"
+  commit: ef4b370a5578b77a401416e4d12f5900cc8850cb
+  sha256: 46fab8686139b04c42f1b44e84c5a162667fbf22628216d5061d95206625a886
   license: Apache-2.0
 - dependency: k8s.io/kube-openapi
-  version: v0.0.0-20241105132330-32ad38e42d3f
-  retrieved: "2026-08-27"
-  commit: 32ad38e42d3faf1ce94eb29f4ea6d763339b258e
-  sha256: f4db322a09b2c6f11a02a1eb592dd61d961816fea50914ecc7539892124fb547
+  version: v0.0.0-20260721132016-d427ff9ee9ad
+  retrieved: "2026-10-30"
+  commit: d427ff9ee9ad05f5da435abbb7c5929cb713ac56
+  sha256: d49441d035de2e04140f634bc3e4055d0ac59a05cd095cbb0717c3e36e16ed4c
   license: Apache-2.0
 - dependency: k8s.io/utils
-  version: v0.0.0-20241104100929-3ea5e8cea738
-  retrieved: "2026-08-27"
-  commit: 3ea5e8cea73810f6d2951b37183cf91e19f63455
-  sha256: 3d787d888485d08fda514dcc2c78461f0ad3dc70d489f0d84fb54e45fbf1deff
+  version: v0.0.0-20260626114624-be93311217bd
+  retrieved: "2026-10-30"
+  commit: be93311217bd4e42d0aa42a5987d08e8f5581ec0
+  sha256: 11b292d2a6f02494c4d543c726426c307ad3901a7a781ab3fabeae40fd647840
   license: Apache-2.0
 - dependency: kythe_release
   version: https://github.com/kythe/kythe/releases/download/v0.0.74/kythe-v0.0.74.tar.gz
@@ -1342,24 +1424,36 @@
   sha256: 20721f63908879c083f94869e618ea8d4ff5edb91ff9a72a2ebee357fdbc352d
   license: Apache-2.0
 - dependency: sigs.k8s.io/json
-  version: v0.0.0-20241010143419-9aa6b5e7a4b3
-  retrieved: "2026-08-27"
-  commit: 9aa6b5e7a4b39ff56593bf75f44924cb195127af
-  sha256: 1b2efd5ae5bc3f0a01106096e23cbf17d36a9d860232cebfb4e3fdb182fa6dee
+  version: v0.0.0-20250730193827-2d320260d730
+  retrieved: "2026-10-30"
+  commit: 2d320260d730f3842fef7b08d9a807bdbc617824
+  sha256: 7cec6eae3e4e4c9c1e0a009eef200740990fafbcb9cab081eb18ce32f6e7a7b9
   license:
     - Apache-2.0
     - BSD-3-Clause
+- dependency: sigs.k8s.io/randfill
+  version: v1.0.0
+  retrieved: "2026-10-30"
+  commit: 1b6128de8ceabf6d20c4d81d770bf439c1494960
+  sha256: 31dbbfc44ce12f78f1b68d6bbeed8526aa73c53243353d44d50b2532c828f5f1
+  license: Apache-2.0
 - dependency: sigs.k8s.io/structured-merge-diff/v4
   version: v4.4.2
   retrieved: "2026-08-27"
   commit: ccf7a061f165cd3feee92af191157c053154d8bc
   sha256: 18858d969f9d0ce09a5ce65e462154f7fcbce628dcefcc718cbbadac202c459d
   license: Apache-2.0
+- dependency: sigs.k8s.io/structured-merge-diff/v6
+  version: v6.4.2
+  retrieved: "2026-10-30"
+  commit: 15d075473efece0367330fd20a7cc2aad2eeb998
+  sha256: 9af2aa83a0a0ddb17f658ee8aad2a1b187450b8c0cac5687f7cc94d27d63112d
+  license: Apache-2.0
 - dependency: sigs.k8s.io/yaml
-  version: v1.4.0
-  retrieved: "2026-08-27"
-  commit: c3772b51db126345efe2dfe4ff8dac83b8141684
-  sha256: ef031ff78ff9b7036e174eef49dfbd77468dc4f0afb73a639b61f8ab3a1cc425
+  version: v1.6.0
+  retrieved: "2026-10-30"
+  commit: 048d724aca2d37ddb5b03c90b5b4550a3a48766d
+  sha256: cf88648a471581817b00a42ee8d24fd73eb0e3503998cf46d8e63787e11e5052
   license:
     - Apache-2.0
     - BSD-3-Clause

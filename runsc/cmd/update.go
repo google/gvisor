@@ -235,7 +235,8 @@ func (u *Update) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		}
 
 		if u.pidsLimit > 0 {
-			r.Pids = &specs.LinuxPids{Limit: u.pidsLimit}
+			r.Pids = &specs.LinuxPids{}
+			setPidsLimit(&r.Pids.Limit, u.pidsLimit)
 		}
 	}
 
@@ -288,4 +289,15 @@ func (u *Update) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 	}
 
 	return subcommands.ExitSuccess
+}
+
+// setPidsLimit sets a LinuxPids.Limit field, which is int64 before
+// runtime-spec v1.3.0 and *int64 from v1.3.0 on.
+func setPidsLimit[T int64 | *int64](dst *T, v int64) {
+	switch d := any(dst).(type) {
+	case *int64:
+		*d = v
+	case **int64:
+		*d = &v
+	}
 }

@@ -692,7 +692,7 @@ func TestPids(t *testing.T) {
 	}{
 		{
 			name: "all",
-			spec: &specs.LinuxPids{Limit: 1},
+			spec: newLinuxPids(1),
 			wants: map[string]string{
 				"pids.max": "1",
 			},
@@ -884,7 +884,7 @@ func TestOptional(t *testing.T) {
 			}{
 				{
 					name: "limit",
-					spec: &specs.LinuxResources{Pids: &specs.LinuxPids{Limit: 1}},
+					spec: &specs.LinuxResources{Pids: newLinuxPids(1)},
 					err:  "Pids.Limit set but pids cgroup controller not found",
 				},
 			},
@@ -1267,5 +1267,22 @@ func TestInstallMissingNetController(t *testing.T) {
 	}
 	if !c.Own["memory"] {
 		t.Errorf("c.Own[\"memory\"] = false, want true")
+	}
+}
+
+// newLinuxPids builds a LinuxPids with the given limit for either
+// runtime-spec layout (Limit int64 or *int64).
+func newLinuxPids(limit int64) *specs.LinuxPids {
+	p := &specs.LinuxPids{}
+	setPidsLimit(&p.Limit, limit)
+	return p
+}
+
+func setPidsLimit[T int64 | *int64](dst *T, v int64) {
+	switch d := any(dst).(type) {
+	case *int64:
+		*d = v
+	case **int64:
+		*d = &v
 	}
 }

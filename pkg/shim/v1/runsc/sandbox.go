@@ -76,3 +76,9 @@ func (s *runscService) SandboxMetrics(ctx context.Context, req *api.SandboxMetri
 	log.L.Debugf("SandboxMetrics (unimplemented), id: %s", req.SandboxID)
 	return nil, errdefs.ErrNotImplemented
 }
+
+// UpdateSandbox applies an update of the sandbox metadata to a running sandbox.
+func (s *runscService) UpdateSandbox(ctx context.Context, req *api.UpdateSandboxRequest) (*api.UpdateSandboxResponse, error) {
+	log.L.Debugf("UpdateSandbox (unimplemented), id: %s", req.SandboxID)
+	return nil, errdefs.ErrNotImplemented
+}
