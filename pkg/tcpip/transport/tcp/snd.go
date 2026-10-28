@@ -1848,17 +1848,18 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 
 	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
 
-	// Every time a packet containing data is sent (including a
-	// retransmission), if SACK is enabled and we are retransmitting data
-	// then use the conservative timer described in RFC6675 Section 6.0,
-	// otherwise follow the standard time described in RFC6298 Section 5.1.
-	if err != nil && seg.payloadSize() != 0 {
-		if s.FastRecovery.Active && seg.xmitCount > 1 && s.ep.SACKPermitted {
-			s.resendTimer.enable(s.RTO)
-		} else {
+	if seg.payloadSize() != 0 {
+		switch {
+		case err != nil:
 			if !s.resendTimer.enabled() {
 				s.resendTimer.enable(s.RTO)
 			}
+		case s.FastRecovery.Active && s.ep.SACKPermitted && seg.xmitCount > 1 && seg == s.writeList.Front():
+			// Allow a full RTO after retransmitting the oldest outstanding
+			// data (RFC 6298, section 5). Retransmitting later holes in SACK
+			// recovery must not postpone the oldest segment's deadline.
+			s.probeTimer.disable()
+			s.resendTimer.enable(s.RTO)
 		}
 	}
 
