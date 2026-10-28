@@ -277,6 +277,36 @@ func TestSandboxEnv(t *testing.T) {
 	}
 }
 
+func TestSandboxExecUser(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx, sandbox.WithNetwork(sandbox.NetworkModeNone))
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	stdout := execOutput(ctx, t, sb, "id")
+	if !strings.Contains(stdout, "uid=0") || !strings.Contains(stdout, "gid=0") {
+		t.Errorf("unexpected user executed command: %s", stdout)
+	}
+
+	uid, gid := uint32(1000), uint32(2000)
+
+	res, err := sb.Exec(ctx, []string{"id"}, sandbox.WithExecUser(uid, gid))
+	if err != nil {
+		t.Fatalf("failed to execute id in sandbox: %v", err)
+	}
+
+	if res.ExitCode != 0 {
+		t.Fatalf("id exited with %d, stderr: %s", res.ExitCode, res.Stderr)
+	}
+
+	if !strings.Contains(res.Stdout, "uid=1000") || !strings.Contains(res.Stdout, "gid=2000") {
+		t.Errorf("unexpected user executed command: %s", res.Stdout)
+	}
+}
+
 func TestSandboxInvalidEnvFormat(t *testing.T) {
 	ctx := context.Background()
 
