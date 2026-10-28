@@ -145,6 +145,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("app-huge-pages", true, "enable use of huge pages for application memory; requires /sys/kernel/mm/transparent_hugepage/shmem_enabled = advise")
 	flagSet.Int("fault-alloc-align-shift", -1, "binary logarithm of allocation size for app page faults on private anonymous mappings")
 	flagSet.Int("fault-copy-align-shift", -1, "binary logarithm of allocation size for app page faults on copy-on-write mappings")
+	flagSet.Var(AppMemoryAccountingCommitted.Ptr(), "app-memory-accounting", "controls application memory accounting behavior. One of: 'committed' (account pages asynchronously after host kernel does), 'allocated' (account pages when allocated in-sandbox).")
 
 	// Flags that control sandbox runtime behavior: FS related.
 	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
