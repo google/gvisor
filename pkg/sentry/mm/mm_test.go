@@ -16,8 +16,10 @@ package mm
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
@@ -32,6 +34,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -1079,4 +1083,125 @@ func TestSealedMapping(t *testing.T) {
 	}
 	defer mm2.DecUsers(ctx)
 	wantError(t, linuxerr.EPERM, "child MUnmap(sealed)", mm2.MUnmap(ctx, sealedAddr, pageSize))
+}
+
+// gatedReaderAt blocks reads past offset from until `gate` is closed.
+type gatedReaderAt struct {
+	io.ReaderAt
+	from int64
+	gate chan struct{}
+}
+
+// ReadAt implements `io.ReaderAt.ReadAt`.
+func (g *gatedReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off+int64(len(p)) > g.from {
+		<-g.gate
+	}
+	return g.ReaderAt.ReadAt(p, off)
+}
+
+func newTestMemoryFile(t *testing.T) *pgalloc.MemoryFile {
+	memfd, err := memutil.CreateMemFD("mm-test-memory", 0)
+	if err != nil {
+		t.Fatalf("CreateMemFD: got err %v, want nil", err)
+	}
+	memfile := os.NewFile(uintptr(memfd), "mm-test-memory")
+	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
+		DisableMemoryAccounting: true,
+	})
+	if err != nil {
+		memfile.Close()
+		t.Fatalf("NewMemoryFile: got err %v, want nil", err)
+	}
+	t.Cleanup(mf.Destroy)
+	return mf
+}
+
+// TestIODuringAsyncPageLoad tests that I/O to part of a pma whose pages are
+// being loaded asynchronously does not wait for the rest of the pma to load.
+func TestIODuringAsyncPageLoad(t *testing.T) {
+	const (
+		size  = 2 * asyncLoadMapUnit
+		gated = asyncLoadMapUnit
+	)
+	ctx := contexttest.Context(t)
+
+	src := newTestMemoryFile(t)
+	fr, err := src.Allocate(size, pgalloc.AllocOpts{Kind: usage.Anonymous})
+	if err != nil {
+		t.Fatalf("Allocate got err %v want nil", err)
+	}
+	if _, err := unix.Pwrite(src.FD(), bytes.Repeat([]byte{1}, size), int64(fr.Start)); err != nil {
+		t.Fatalf("Pwrite got err %v want nil", err)
+	}
+	var metadata, pages bytes.Buffer
+	saveDone := make(chan error, 1)
+	apfs, err := pgalloc.StartAsyncPagesFileSave(stateio.NewIOWriter(&pages, 1<<20, 1, 1), func(err error) { saveDone <- err })
+	if err != nil {
+		t.Fatalf("StartAsyncPagesFileSave got err %v want nil", err)
+	}
+	if err := src.SaveTo(ctx, &metadata, &pgalloc.SaveOpts{PagesFile: apfs}); err != nil {
+		t.Fatalf("SaveTo got err %v want nil", err)
+	}
+	apfs.MemoryFilesDone()
+	if err := <-saveDone; err != nil {
+		t.Fatalf("async page save got err %v want nil", err)
+	}
+
+	mf := newTestMemoryFile(t)
+	gate := make(chan struct{})
+	loadDone := make(chan error, 1)
+	apfl, err := pgalloc.StartAsyncPagesFileLoad(stateio.NewIOReader(&gatedReaderAt{bytes.NewReader(pages.Bytes()), gated, gate}, 1<<20, 1, 2), func(err error) { loadDone <- err }, nil, pgalloc.AsyncPagesFileLoadOpts{})
+	if err != nil {
+		t.Fatalf("StartAsyncPagesFileLoad got err %v want nil", err)
+	}
+	if err := mf.LoadFrom(ctx, &metadata, &pgalloc.LoadOpts{PagesFile: apfl}); err != nil {
+		t.Fatalf("LoadFrom got err %v want nil", err)
+	}
+	apfl.MemoryFilesDone()
+
+	// Map the restored pages with a single pma.
+	mm := testMemoryManager(ctx, t)
+	mm.mf = mf // mm has no mappings yet.
+	defer mm.DecUsers(ctx)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   size,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	ar := hostarch.AddrRange{addr, addr + size}
+	mm.activeMu.Lock()
+	mm.pmas.Insert(mm.pmas.FindGap(ar.Start), ar, pma{
+		file:           mf,
+		off:            fr.Start,
+		translatePerms: hostarch.AnyAccess,
+		effectivePerms: hostarch.ReadWrite,
+		maxPerms:       hostarch.AnyAccess,
+		private:        true,
+	})
+	mm.addRSSLocked(ar)
+	mm.activeMu.Unlock()
+
+	timer := time.AfterFunc(10*time.Second, func() {
+		t.Errorf("CopyIn waited for pages past offset %#x", gated)
+		close(gate)
+	})
+	b := make([]byte, 8)
+	_, err = mm.CopyIn(ctx, addr+pageSizeAddr, b, usermem.IOOpts{})
+	if timer.Stop() {
+		close(gate)
+	}
+	if err := <-loadDone; err != nil {
+		t.Errorf("async page load got err %v want nil", err)
+	}
+	if err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	if want := bytes.Repeat([]byte{1}, len(b)); !bytes.Equal(b, want) {
+		t.Errorf("CopyIn got %v want %v", b, want)
+	}
 }
