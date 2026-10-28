@@ -44,6 +44,9 @@ func fdbasedLinkEqual(a, b sentryapi.FDBasedLink) bool {
 	if a.MTU != b.MTU {
 		return false
 	}
+	if a.Multicast != b.Multicast {
+		return false
+	}
 	if a.QDisc != b.QDisc {
 		return false
 	}
@@ -118,6 +121,9 @@ func loopbackLinksEqual(a, b []sentryapi.LoopbackLink) bool {
 	}
 	for i := range a {
 		if a[i].Name != b[i].Name {
+			return false
+		}
+		if a[i].Multicast != b[i].Multicast {
 			return false
 		}
 		if len(a[i].Addresses) != len(b[i].Addresses) {
@@ -313,6 +319,62 @@ func defaultLoopbackLinks() []sentryapi.LoopbackLink {
 	}
 }
 
+func TestCollectLinksAndRoutes_Multicast(t *testing.T) {
+	requireRoot(t)
+	for _, test := range []struct {
+		name      string
+		multicast bool
+	}{
+		{name: "disabled", multicast: false},
+		{name: "enabled", multicast: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			veth := setupVethInterface(t, "testveth0", "10.0.0.1", 24, 32)
+			setupLoopback(t)
+			lo, err := netlink.LinkByName("lo")
+			if err != nil {
+				t.Fatalf("LinkByName(lo): %v", err)
+			}
+			for _, link := range []netlink.Link{veth, lo} {
+				setMulticast := netlink.LinkSetMulticastOff
+				if test.multicast {
+					setMulticast = netlink.LinkSetMulticastOn
+				}
+				if err := setMulticast(link); err != nil {
+					t.Fatalf("setting multicast=%t on %s: %v", test.multicast, link.Attrs().Name, err)
+				}
+			}
+			for _, xdp := range []config.XDP{{Mode: config.XDPModeOff}, {Mode: config.XDPModeNS}} {
+				args, err := collectLinksAndRoutes(&config.Config{XDP: xdp}, false)
+				if err != nil {
+					t.Fatalf("collectLinksAndRoutes(%+v): %v", xdp, err)
+				}
+				if got, want := len(args.LoopbackLinks), 1; got != want {
+					t.Fatalf("len(LoopbackLinks) = %d, want %d; links = %+v", got, want, args.LoopbackLinks)
+				}
+				if got := args.LoopbackLinks[0].Multicast; got != test.multicast {
+					t.Errorf("loopback Multicast = %t, want %t", got, test.multicast)
+				}
+				if xdp.Mode == config.XDPModeOff {
+					if got, want := len(args.FDBasedLinks), 1; got != want {
+						t.Fatalf("len(FDBasedLinks) = %d, want %d; links = %+v", got, want, args.FDBasedLinks)
+					}
+					if got := args.FDBasedLinks[0].Multicast; got != test.multicast {
+						t.Errorf("FD-based Multicast = %t, want %t", got, test.multicast)
+					}
+				} else {
+					if got, want := len(args.XDPLinks), 1; got != want {
+						t.Fatalf("len(XDPLinks) = %d, want %d; links = %+v", got, want, args.XDPLinks)
+					}
+					if got := args.XDPLinks[0].Multicast; got != test.multicast {
+						t.Errorf("XDP Multicast = %t, want %t", got, test.multicast)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 	requireRoot(t)
 	link := setupVethInterface(t, "testveth0", "10.0.0.1", 24, 32)
@@ -333,6 +395,7 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -472,6 +535,7 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: veth0Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -489,6 +553,7 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 		},
 		{
 			Name:        "testveth1",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: veth1Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -563,6 +628,7 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: veth0Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -739,6 +805,7 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: vethLink.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
