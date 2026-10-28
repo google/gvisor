@@ -922,12 +922,17 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 	return info
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocks:t.tg.pidns.owner.mu
+// +checklocksexclude:t.tg.signalHandlers.mu
 func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.FieldSet, *pb.ExitNotifyParentInfo) {
 	fields := seccheck.Global.GetFieldSet(seccheck.PointExitNotifyParent)
 
+	// The group exit status can change until tg.exiting is set.
+	t.tg.signalHandlers.mu.Lock()
+	exitStatus := int32(t.tg.exitStatus)
+	t.tg.signalHandlers.mu.Unlock()
 	info := &pb.ExitNotifyParentInfo{
-		ExitStatus: int32(t.tg.exitStatus),
+		ExitStatus: exitStatus,
 	}
 	if !fields.Context.Empty() {
 		info.ContextData = &pb.ContextData{}
