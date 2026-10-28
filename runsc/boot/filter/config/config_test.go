@@ -132,6 +132,7 @@ func TestOptionsConfigKey(t *testing.T) {
 	// change the value of `Options.Key`.
 	var varsFields = map[string]mutateFn{
 		"ControllerFD": func(opt *Options) { opt.ControllerFD++ },
+		"ProcSelfFD":   func(opt *Options) { opt.ProcSelfFD++ },
 		"VendorSyscalls": func(opt *Options) {
 			sn := make(precompiledseccomp.VarSyscallNumbers, len(opt.VendorSyscalls))
 			for name, sysno := range opt.VendorSyscalls {

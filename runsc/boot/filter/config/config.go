@@ -39,6 +39,7 @@ type Options struct {
 	HostNetwork           bool
 	HostNetworkRawSockets bool
 	HostFilesystem        bool
+	ProcSelfFD            uint32
 	ProfileEnable         bool
 	NVProxy               bool
 	NVProxyCaps           nvconf.DriverCaps
@@ -139,6 +140,9 @@ func (opt Options) Vars() precompiledseccomp.Values {
 	vars := precompiledseccomp.Values{
 		controllerFDVarName: opt.ControllerFD,
 	}
+	if opt.HostFilesystem {
+		vars[procSelfFDVarName] = opt.ProcSelfFD
+	}
 	vars.SetUint64(selfPIDVarName, uint64(os.Getpid()))
 	for varName, value := range opt.Platform.Variables() {
 		vars[varName] = value
@@ -171,7 +175,7 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 		s.Merge(profileFilters())
 	}
 	if opt.HostFilesystem {
-		s.Merge(hostFilesystemFilters())
+		s.Merge(hostFilesystemFilters(vars))
 	}
 	if opt.NVProxy {
 		s.Merge(nvproxy.Filters(opt.NVProxyCaps))
