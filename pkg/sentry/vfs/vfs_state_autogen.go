@@ -1167,8 +1167,7 @@ func (fl *FileLocks) StateTypeName() string {
 
 func (fl *FileLocks) StateFields() []string {
 	return []string{
-		"bsd",
-		"posix",
+		"locks",
 	}
 }
 
@@ -1177,16 +1176,44 @@ func (fl *FileLocks) beforeSave() {}
 // +checklocksignore
 func (fl *FileLocks) StateSave(stateSinkObject state.Sink) {
 	fl.beforeSave()
-	stateSinkObject.Save(0, &fl.bsd)
-	stateSinkObject.Save(1, &fl.posix)
+	locksValue := fl.saveLocks()
+	_ = (*fileLocks)(locksValue)
+	stateSinkObject.SaveValue(0, locksValue)
 }
 
 func (fl *FileLocks) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (fl *FileLocks) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &fl.bsd)
-	stateSourceObject.Load(1, &fl.posix)
+	stateSourceObject.LoadValue(0, new(*fileLocks), func(y any) { fl.loadLocks(ctx, y.(*fileLocks)) })
+}
+
+func (f *fileLocks) StateTypeName() string {
+	return "pkg/sentry/vfs.fileLocks"
+}
+
+func (f *fileLocks) StateFields() []string {
+	return []string{
+		"bsd",
+		"posix",
+	}
+}
+
+func (f *fileLocks) beforeSave() {}
+
+// +checklocksignore
+func (f *fileLocks) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.bsd)
+	stateSinkObject.Save(1, &f.posix)
+}
+
+func (f *fileLocks) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *fileLocks) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.bsd)
+	stateSourceObject.Load(1, &f.posix)
 }
 
 func (m *mountLockFlags) StateTypeName() string {
@@ -2406,6 +2433,7 @@ func init() {
 	state.Register((*Watch)(nil))
 	state.Register((*Event)(nil))
 	state.Register((*FileLocks)(nil))
+	state.Register((*fileLocks)(nil))
 	state.Register((*mountLockFlags)(nil))
 	state.Register((*Mount)(nil))
 	state.Register((*umountRecursiveOptions)(nil))
