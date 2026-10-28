@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// gvisor-sentry-prewarmer grows its host file descriptor table, then execs
-// the binary it inherited at FD `SENTRY_EXE_FD`, handing it its own argv and
+// gvisor-sentry-prewarmer grows its host file descriptor table, creates the
+// Sentry's core scheduling cookie if core tagging is enabled, then execs the
+// binary it inherited at FD `SENTRY_EXE_FD`, handing it its own argv and
 // environment unchanged.
 // It runs just before the Sentry, and is meant to be invoked as such by
 // `runsc`, with the Sentry binary at FD `SENTRY_EXE_FD` and the Sentry's argv:
@@ -54,6 +55,18 @@
 
 #include <asm/unistd.h>   // __NR_* syscall numbers for the target arch.
 #include <linux/fcntl.h>  // F_* and FD_* fcntl constants, O_* flags, AT_*.
+#include <linux/prctl.h>  // PR_SCHED_CORE*.
+
+// Absent from older kernel headers.
+#ifndef PR_SCHED_CORE
+#define PR_SCHED_CORE 62
+#endif
+#ifndef PR_SCHED_CORE_CREATE
+#define PR_SCHED_CORE_CREATE 1
+#endif
+#ifndef PR_SCHED_CORE_SCOPE_THREAD
+#define PR_SCHED_CORE_SCOPE_THREAD 0
+#endif
 
 // The FD at which runsc hands this program the Sentry binary to exec.
 // Must match `sentryExeFD` in `runsc/sandbox/sandbox.go`.
@@ -77,6 +90,10 @@
 // to the FD table (which isn't that much, but I write this because the
 // previous value of this constant was committing this exact wastefulness).
 #define PREWARM_MIN_FD (STARTING_STDIO_FD + 2)
+
+// The flag that enables core tagging, as serialized by `config.Config.ToFlags`
+// in `runsc/config/flags.go`.
+#define CORE_TAGS_FLAG "--enable-core-tags=true"
 
 // Raw 3- and 5-argument syscall functions.
 #if defined(__x86_64__)
@@ -167,6 +184,33 @@ static void prewarm_fdtable(void) {
   }
 }
 
+static int streq(const char* a, const char* b) {
+  while (*a != '\0' && *a == *b) {
+    a++;
+    b++;
+  }
+  return *a == *b;
+}
+
+// Creates a core scheduling cookie if `CORE_TAGS_FLAG` appears in the flags.
+// Doing it in the prewarmer avoids an RCU stall vs doing it in Go in a
+// multithreaded context.
+static void enable_core_tags(char** argv) {
+  for (char** arg = argv; *arg != 0 && !streq(*arg, "boot"); arg++) {
+    if (!streq(*arg, CORE_TAGS_FLAG)) {
+      continue;
+    }
+    if (sys5(__NR_prctl, PR_SCHED_CORE, PR_SCHED_CORE_CREATE, 0,
+             PR_SCHED_CORE_SCOPE_THREAD, 0) < 0) {
+      write_stderr(
+          "gvisor-sentry-prewarmer: cannot create core scheduling cookie. "
+          "Core tagging requires host Linux >= 5.14 with CONFIG_SCHED_CORE.\n");
+      sys_exit(1);
+    }
+    return;
+  }
+}
+
 // Called by `_start` with a pointer to the initial process stack, which per
 // the Linux ABI holds: `argc`, `argv[0..argc-1]`, NULL, `envp`, NULL.
 __attribute__((noreturn, used)) void prewarmer_main(long* stack) {
@@ -181,6 +225,7 @@ __attribute__((noreturn, used)) void prewarmer_main(long* stack) {
     sys_exit(1);
   }
   prewarm_fdtable();
+  enable_core_tags(argv);
   sys5(__NR_execveat, SENTRY_EXE_FD, (long)"", (long)argv, (long)envp,
        AT_EMPTY_PATH);
   write_stderr("gvisor-sentry-prewarmer: exec of the Sentry binary failed\n");

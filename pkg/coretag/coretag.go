@@ -52,3 +52,8 @@ func Enable() (uint64, error) {
 	}
 	return getCoreTag(tid)
 }
+
+// Get returns the core tag of the calling thread, or 0 if it has none.
+func Get() (uint64, error) {
+	return getCoreTag(0)
+}
