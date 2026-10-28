@@ -78,6 +78,7 @@ go_library(
         "filesystem.go",
         "keys.go",
         "nvproxy.go",
+        "save_restore.go",
         "subtasks.go",
         "subtasks_inode_refs.go",
         "task.go",
@@ -135,6 +136,7 @@ go_test(
     name = "proc_test",
     size = "small",
     srcs = [
+        "tasks_sys_lazy_test.go",
         "tasks_sys_test.go",
         "tasks_test.go",
     ],
@@ -145,6 +147,7 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/inet",

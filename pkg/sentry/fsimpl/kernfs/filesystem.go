@@ -320,12 +320,52 @@ func (fs *Filesystem) Release(ctx context.Context) {
 	}
 	fs.mu.Lock()
 	root.releaseKeptDentriesLocked(ctx)
-	for fs.cachedDentriesLen != 0 {
-		fs.evictCachedDentryLocked(ctx)
-	}
+	fs.evictAllCachedDentriesLocked(ctx)
 	fs.mu.Unlock()
 	// Drop ref acquired in Dentry.InitRoot().
 	root.DecRef(ctx)
+}
+
+// EvictCachedDentries evicts all dentries that are only kept alive by the
+// dentry cache, except for dentries with inotify watches.
+func (fs *Filesystem) EvictCachedDentries(ctx context.Context) {
+	fs.mu.Lock()
+	defer fs.processDeferredDecRefs(ctx)
+	defer fs.mu.Unlock()
+	// Inotify watches don't hold a reference on their target, so a watched
+	// dentry can be cached with no references. Evicting it may destroy its
+	// inode along with its watches, so set it aside and cache it again below.
+	var watched dentryList
+	for fs.cachedDentriesLen != 0 {
+		d := fs.cachedDentries.Back()
+		if d.refs.Load() == 0 && !d.VFSDentry().IsDead() && d.inode.Watches().Size() > 0 {
+			fs.cachedDentries.Remove(d)
+			fs.cachedDentriesLen--
+			d.cached = false
+			watched.PushBack(d)
+			continue
+		}
+		d.evictLocked(ctx)
+	}
+	// Cache watched dentries as most recently used, so that they are the last
+	// to be evicted if the cache overflows.
+	for !watched.Empty() {
+		d := watched.Front()
+		watched.Remove(d)
+		fs.cachedDentries.PushFront(d)
+		fs.cachedDentriesLen++
+		d.cached = true
+	}
+}
+
+// Preconditions:
+//   - fs.mu must be locked for writing.
+func (fs *Filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
+	// Evicting a dentry can add its parent to the cache, so loop until the
+	// cache is empty.
+	for fs.cachedDentriesLen != 0 {
+		fs.evictCachedDentryLocked(ctx)
+	}
 }
 
 // releaseKeptDentriesLocked recursively drops all dentry references created by
