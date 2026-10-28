@@ -25,12 +25,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"runtime/metrics"
 	"strings"
 	"testing"
 	"time"
@@ -79,20 +81,36 @@ const (
 // BenchmarkCheckpointFile reports various benchmark metrics about a
 // checkpointed kernel.
 func BenchmarkCheckpointFile(b *testing.B) {
-	if !testutil.IsCheckpointSupported() {
-		b.Skip("Checkpoint is not supported on this runtime.")
-	}
-	if rt := dockerutil.Runtime(); rt == "" || rt == "runc" {
-		b.Skip("The checkpoint file benchmark requires runsc.")
-	}
-	machine, err := harness.GetMachine()
-	if err != nil {
-		b.Fatalf("failed to get machine: %v", err)
-	}
-	defer machine.CleanUp()
 	ctx := context.Background()
-
-	stateFile, sizes, names, mounts := checkpointNginx(ctx, b, machine)
+	var (
+		stateFile     []byte
+		sizes         map[string]int64
+		names, mounts []string
+	)
+	if *checkpointDir != "" {
+		var err error
+		stateFile, sizes, names, mounts, err = readCheckpointDir(*checkpointDir)
+		if err != nil {
+			b.Fatalf("failed to read checkpoint directory: %v", err)
+		}
+	} else {
+		if !testutil.IsCheckpointSupported() {
+			b.Skip("Checkpoint is not supported on this runtime.")
+		}
+		gvisor, err := dockerutil.IsGVisorRuntime(ctx)
+		if err != nil {
+			b.Fatalf("failed to check runtime: %v", err)
+		}
+		if !gvisor {
+			b.Skip("The checkpoint file benchmark requires runsc.")
+		}
+		machine, err := harness.GetMachine()
+		if err != nil {
+			b.Fatalf("failed to get machine: %v", err)
+		}
+		defer machine.CleanUp()
+		stateFile, sizes, names, mounts = checkpointNginx(ctx, b, machine)
+	}
 	ctx = restoreContext(b, names, mounts)
 	// Tasks create their platform contexts when they are loaded.
 	sys, err := systrap.New(platform.Options{})
@@ -101,58 +119,215 @@ func BenchmarkCheckpointFile(b *testing.B) {
 	}
 	plat := stubPlatform{sys}
 
-	b.Run("Decode", func(b *testing.B) {
+	// DecodeGC decodes the kernel as runsc restore does, with garbage
+	// collection enabled. It reports the garbage collections during the
+	// decoding, their stop-the-world pause time, the peak heap, and the heap
+	// retained once decoding is done (by the kernel, and by any state kept by
+	// the state package).
+	b.Run("DecodeGC", func(b *testing.B) {
 		b.ReportAllocs()
-		var cpu time.Duration
+		var (
+			cpu                  time.Duration
+			gcs, pauseNs         uint64
+			liveBytes, peakBytes int64
+		)
+		b.ResetTimer()
+		b.StopTimer()
 		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			ctx, cleanup := withHostFDs(b, ctx, names)
-			b.StartTimer()
-			cpu += cpuTime(b, func() error {
-				_, err := loadKernel(ctx, plat, stateFile)
-				return err
-			})
-			b.StopTimer()
-			cleanup()
-			b.StartTimer()
+			func() {
+				ctx, cleanup := withHostFDs(b, ctx, names)
+				defer cleanup()
+				runtime.GC()
+				var before, after runtime.MemStats
+				runtime.ReadMemStats(&before)
+				stop := sampleHeapPeak()
+				defer stop()
+				cpu0 := processCPU(b)
+				b.StartTimer()
+				k, err := loadKernel(ctx, plat, stateFile, true)
+				b.StopTimer()
+				cpu += processCPU(b) - cpu0
+				peakBytes += stop()
+				if err != nil {
+					b.Fatal(err)
+				}
+				runtime.ReadMemStats(&after)
+				gcs += uint64(after.NumGC - before.NumGC)
+				pauseNs += after.PauseTotalNs - before.PauseTotalNs
+				runtime.GC()
+				runtime.ReadMemStats(&after)
+				liveBytes += max(int64(after.HeapAlloc)-int64(before.HeapAlloc), 0)
+				runtime.KeepAlive(k)
+			}()
 		}
-		b.ReportMetric(float64(cpu.Nanoseconds())/float64(b.N), "cpu-ns")
-		b.ReportMetric(float64(sizes[checkpointfiles.StateFileName]), "state-file-B")
-		b.ReportMetric(float64(sizes[checkpointfiles.PagesFileName]), "pages-file-B")
-		b.ReportMetric(float64(sizes[checkpointfiles.PagesMetadataFileName]), "pages-metadata-B")
-		var total int64
-		for _, size := range sizes {
-			total += size
-		}
-		b.ReportMetric(float64(total), "checkpoint-total-B")
+		n := float64(b.N)
+		b.ReportMetric(float64(cpu.Nanoseconds())/n, "cpu-ns")
+		b.ReportMetric(float64(gcs)/n, "gcs/op")
+		b.ReportMetric(float64(pauseNs)/n, "gc-pause-ns/op")
+		b.ReportMetric(float64(peakBytes)/n, "heap-peak-B")
+		b.ReportMetric(float64(liveBytes)/n, "heap-live-B")
 	})
-	b.Run("Encode", func(b *testing.B) {
-		b.ReportAllocs()
-		var cpu time.Duration
-		var encodedBytes int64
-		for i := 0; i < b.N; i++ {
+
+	for _, mode := range []struct {
+		// suffix is appended to the sub-benchmark names.
+		suffix string
+		// statefile is true if the state file is written and read
+		// as runsc does: through statefile.NewWriter with runsc's
+		// default metadata, and directly from statefile.NewReader.
+		// Otherwise, the encoding is written to a counting writer
+		// and read through a bufio.Reader.
+		statefile bool
+	}{
+		{suffix: ""},
+		{suffix: "Statefile", statefile: true},
+	} {
+		b.Run("Decode"+mode.suffix, func(b *testing.B) {
+			b.ReportAllocs()
+			var cpu time.Duration
+			b.ResetTimer()
 			b.StopTimer()
-			ctx, cleanup := withHostFDs(b, ctx, names)
-			// This kernel is only partially restored.
-			// Acceptable for purposes of benchmarking pkg/state alone.
-			k, err := loadKernel(ctx, plat, stateFile)
-			if err != nil {
-				b.Fatal(err)
+			for i := 0; i < b.N; i++ {
+				func() {
+					ctx, cleanup := withHostFDs(b, ctx, names)
+					defer cleanup()
+					cpu += cpuTime(b, func() error {
+						_, err := loadKernel(ctx, plat, stateFile, mode.statefile)
+						return err
+					})
+				}()
 			}
-			w := &countingWriter{}
-			b.StartTimer()
-			cpu += cpuTime(b, func() error {
-				_, err := state.Save(ctx, w, k)
-				return err
-			})
+			b.ReportMetric(float64(cpu.Nanoseconds())/float64(b.N), "cpu-ns")
+			b.ReportMetric(float64(sizes[checkpointfiles.StateFileName]), "state-file-B")
+			b.ReportMetric(float64(sizes[checkpointfiles.PagesFileName]), "pages-file-B")
+			b.ReportMetric(float64(sizes[checkpointfiles.PagesMetadataFileName]), "pages-metadata-B")
+			var total int64
+			for _, size := range sizes {
+				total += size
+			}
+			b.ReportMetric(float64(total), "checkpoint-total-B")
+		})
+		b.Run("Encode"+mode.suffix, func(b *testing.B) {
+			b.ReportAllocs()
+			var cpu time.Duration
+			var encodedBytes int64
+			b.ResetTimer()
 			b.StopTimer()
-			encodedBytes = w.n
-			cleanup()
-			b.StartTimer()
+			for i := 0; i < b.N; i++ {
+				func() {
+					ctx, cleanup := withHostFDs(b, ctx, names)
+					defer cleanup()
+					// This kernel is only partially restored.
+					// Acceptable for purposes of benchmarking pkg/state alone.
+					k, err := loadKernel(ctx, plat, stateFile, false)
+					if err != nil {
+						b.Fatal(err)
+					}
+					w := &countingWriter{}
+					cpu += cpuTime(b, func() error {
+						if !mode.statefile {
+							_, err := state.Save(ctx, w, k)
+							return err
+						}
+						return saveKernel(ctx, w, k)
+					})
+					encodedBytes = w.n
+				}()
+			}
+			b.ReportMetric(float64(cpu.Nanoseconds())/float64(b.N), "cpu-ns")
+			b.ReportMetric(float64(encodedBytes), "encoded-kernel-B")
+		})
+	}
+}
+
+// checkpointDir is a directory containing a checkpoint, as an alternative to
+// checkpointing nginx with docker.
+var checkpointDir = flag.String("checkpoint-dir", "", "directory containing a checkpoint taken by a runsc built from the same tree, and a "+checkpointSpecName+" file listing the names and mounts of its containers; if set, docker is not used")
+
+// checkpointSpecName is the name of the file in checkpointDir describing the
+// containers of the checkpoint.
+const checkpointSpecName = "spec.json"
+
+// checkpointSpec describes the containers of a checkpoint in checkpointDir.
+type checkpointSpec struct {
+	// Names are the names that runsc may give the containers.
+	Names []string `json:"names"`
+	// Mounts are the destinations of the containers' root and mounts.
+	Mounts []string `json:"mounts"`
+}
+
+// readCheckpointDir reads a checkpoint from dir, which contains the files of
+// a checkpoint and a checkpointSpecName file.
+func readCheckpointDir(dir string) (stateFile []byte, sizes map[string]int64, names, mounts []string, err error) {
+	data, err := os.ReadFile(filepath.Join(dir, checkpointSpecName))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	var spec checkpointSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("parsing %s: %w", checkpointSpecName, err)
+	}
+	sizes = make(map[string]int64)
+	for name := range checkpointFileNames {
+		fi, err := os.Stat(filepath.Join(dir, name))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, nil, nil, nil, err
 		}
-		b.ReportMetric(float64(cpu.Nanoseconds())/float64(b.N), "cpu-ns")
-		b.ReportMetric(float64(encodedBytes), "encoded-kernel-B")
-	})
+		sizes[name] = fi.Size()
+	}
+	stateFile, err = os.ReadFile(filepath.Join(dir, checkpointfiles.StateFileName))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return stateFile, sizes, spec.Names, spec.Mounts, nil
+}
+
+// TestCheckpointFileRoundTrip decodes the kernel from the checkpoint in
+// checkpointDir, and checks that it can be encoded and decoded again, twice.
+func TestCheckpointFileRoundTrip(t *testing.T) {
+	if *checkpointDir == "" {
+		t.Skip("--checkpoint-dir is not set")
+	}
+	stateFile, _, names, mounts, err := readCheckpointDir(*checkpointDir)
+	if err != nil {
+		t.Fatalf("failed to read checkpoint directory: %v", err)
+	}
+	sys, err := systrap.New(platform.Options{})
+	if err != nil {
+		t.Fatalf("failed to create platform: %v", err)
+	}
+	plat := stubPlatform{sys}
+	data := stateFile
+	var sizes []int
+	for i := 0; i < 3; i++ {
+		ctx, cleanup := withHostFDs(t, restoreContext(t, names, mounts), names)
+		// Alternate between reading through a bufio.Reader and directly.
+		k, err := loadKernel(ctx, plat, data, i%2 == 1)
+		if err != nil {
+			t.Fatalf("round %d: %v", i, err)
+		}
+		var buf bytes.Buffer
+		w, err := statefile.NewWriter(&buf, nil, nil)
+		if err != nil {
+			t.Fatalf("statefile.NewWriter: %v", err)
+		}
+		fs := k.FeatureSet()
+		if _, err := state.Save(ctx, w, &fs); err != nil {
+			t.Fatalf("round %d: saving the CPUID feature set: %v", i, err)
+		}
+		if _, err := state.Save(ctx, w, k); err != nil {
+			t.Fatalf("round %d: saving the kernel: %v", i, err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatalf("closing the state file: %v", err)
+		}
+		cleanup()
+		data = buf.Bytes()
+		sizes = append(sizes, len(data))
+	}
+	t.Logf("State file sizes: original %d, re-encoded %v", len(stateFile), sizes)
 }
 
 // checkpointNginx checkpoints an idle nginx container, and returns the
@@ -254,7 +429,7 @@ func containerSpec(id string) (names, mounts []string, err error) {
 
 // restoreContext returns a context with the memory files that the kernel's
 // objects use when they are loaded and saved.
-func restoreContext(b *testing.B, names, mounts []string) context.Context {
+func restoreContext(b testing.TB, names, mounts []string) context.Context {
 	b.Helper()
 	newMF := func(id checkpoint.ResourceID) *pgalloc.MemoryFile {
 		fd, err := memutil.CreateMemFD("checkpointfile", 0)
@@ -286,7 +461,7 @@ func restoreContext(b *testing.B, names, mounts []string) context.Context {
 
 // withHostFDs returns ctx with host file descriptors for the standard I/O of
 // containers with the given names.
-func withHostFDs(b *testing.B, ctx context.Context, names []string) (context.Context, func()) {
+func withHostFDs(b testing.TB, ctx context.Context, names []string) (context.Context, func()) {
 	b.Helper()
 	fdmap := make(map[checkpoint.ResourceID]int)
 	var fds []int
@@ -355,13 +530,19 @@ func waitQuiescent(ctx context.Context, container *dockerutil.Container) error {
 	return nil
 }
 
-// loadKernel decodes the kernel from the state file data.
-func loadKernel(ctx context.Context, plat platform.Platform, data []byte) (*kernel.Kernel, error) {
+// loadKernel decodes the kernel from the state file data. If direct is true,
+// it reads from the statefile.Reader directly, as runsc restore does;
+// otherwise, it reads through a bufio.Reader.
+func loadKernel(ctx context.Context, plat platform.Platform, data []byte, direct bool) (*kernel.Kernel, error) {
 	sr, _, err := statefile.NewReader(io.NopCloser(bytes.NewReader(data)), nil)
 	if err != nil {
 		return nil, fmt.Errorf("statefile.NewReader: %w", err)
 	}
-	r := bufio.NewReader(sr)
+	defer sr.Close()
+	var r io.Reader = sr
+	if !direct {
+		r = bufio.NewReader(sr)
+	}
 	var fs cpuid.FeatureSet
 	if _, err := state.Load(ctx, r, &fs); err != nil {
 		return nil, fmt.Errorf("loading the CPUID feature set: %w (the benchmark must be built from the same tree as the runtime)", err)
@@ -374,27 +555,82 @@ func loadKernel(ctx context.Context, plat platform.Platform, data []byte) (*kern
 	return k, nil
 }
 
+// saveKernel encodes the CPUID feature set and the kernel to w through
+// statefile.NewWriter, with the metadata of runsc checkpoint's defaults, as
+// Kernel.SaveTo does.
+func saveKernel(ctx context.Context, w io.Writer, k *kernel.Kernel) error {
+	wc, err := statefile.NewWriter(w, nil, statefile.CompressionLevelDefault.ToMetadata())
+	if err != nil {
+		return fmt.Errorf("statefile.NewWriter: %w", err)
+	}
+	fs := k.FeatureSet()
+	if _, err := state.Save(ctx, wc, &fs); err != nil {
+		return fmt.Errorf("saving the CPUID feature set: %w", err)
+	}
+	if _, err := state.Save(ctx, wc, k); err != nil {
+		return fmt.Errorf("saving the kernel: %w", err)
+	}
+	return wc.Close()
+}
+
 // cpuTime runs fn with automatic garbage collection disabled, and returns the
 // process CPU time it used. It collects garbage first, so that every call
 // starts from the same heap state. Thus, ns/op and cpu-ns exclude garbage
-// collection.
+// collection. The benchmark timer must be stopped on entry and remains stopped
+// on return.
 // B/op and allocs/op show the allocation pressure that causes it.
 func cpuTime(b *testing.B, fn func() error) time.Duration {
 	b.Helper()
-	b.StopTimer()
 	runtime.GC()
 	gcPercent := debug.SetGCPercent(-1)
-	b.StartTimer()
 	cpu0 := processCPU(b)
-	err := fn()
-	cpu1 := processCPU(b)
-	b.StopTimer()
-	debug.SetGCPercent(gcPercent)
 	b.StartTimer()
+	err := fn()
+	b.StopTimer()
+	cpu1 := processCPU(b)
+	debug.SetGCPercent(gcPercent)
 	if err != nil {
 		b.Fatal(err)
 	}
 	return cpu1 - cpu0
+}
+
+// sampleHeapPeak samples the size of heap objects until the returned
+// function is called, which returns the peak growth above the initial baseline.
+func sampleHeapPeak() func() int64 {
+	const name = "/memory/classes/heap/objects:bytes"
+	samples := []metrics.Sample{{Name: name}}
+	metrics.Read(samples)
+	baseline := samples[0].Value.Uint64()
+	done := make(chan struct{})
+	result := make(chan int64, 1)
+	go func() {
+		peak := baseline
+		ticker := time.NewTicker(100 * time.Microsecond)
+		defer ticker.Stop()
+		for {
+			metrics.Read(samples)
+			peak = max(peak, samples[0].Value.Uint64())
+			select {
+			case <-done:
+				metrics.Read(samples)
+				peak = max(peak, samples[0].Value.Uint64())
+				result <- int64(peak - baseline)
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	var stopped bool
+	var delta int64
+	return func() int64 {
+		if !stopped {
+			stopped = true
+			close(done)
+			delta = <-result
+		}
+		return delta
+	}
 }
 
 // processCPU returns the user and system CPU time of the process.
@@ -464,5 +700,9 @@ func TestMain(m *testing.M) {
 	// Loading tasks' floating point state uses the host's CPUID,
 	// expected by the kernel load machinery.
 	cpuid.Initialize()
+	// Initialize the FD notifier as Kernel.LoadFrom does, since the
+	// checkpoint may not have any host FDs to register with it.
+	fdnotifier.Pause()
+	fdnotifier.Resume()
 	os.Exit(m.Run())
 }
