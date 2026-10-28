@@ -33,7 +33,7 @@ import (
 func WaitUntilContainerServing(ctx context.Context, machine Machine, container *dockerutil.Container, port int) error {
 	var logger testutil.DefaultLogger = "util"
 	netcat := machine.GetNativeContainer(ctx, logger)
-	defer netcat.CleanUp(ctx)
+	defer netcat.CleanUp(context.WithoutCancel(ctx))
 
 	cmd := fmt.Sprintf("while ! wget -q --spider http://%s:%d; do true; done", "server", port)
 	_, err := netcat.Run(ctx, dockerutil.RunOpts{
