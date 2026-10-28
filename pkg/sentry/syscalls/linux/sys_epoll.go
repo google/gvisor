@@ -82,37 +82,42 @@ func EpollCtl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	fd := args[2].Int()
 	eventAddr := args[3].Pointer()
 
+	// Linux: fs/eventpoll.c:SYSCALL_DEFINE4(epoll_ctl) copies in the event
+	// for every op except EPOLL_CTL_DEL before looking up either fd.
+	var event linux.EpollEvent
+	if op != linux.EPOLL_CTL_DEL {
+		if _, err := event.CopyIn(t, eventAddr); err != nil {
+			return 0, nil, err
+		}
+	}
+
 	epfile := t.GetFile(epfd)
 	if epfile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer epfile.DecRef(t)
-	ep, ok := epfile.Impl().(*vfs.EpollInstance)
-	if !ok {
-		return 0, nil, linuxerr.EINVAL
-	}
 	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
-	if epfile == file {
+	// Linux: fs/eventpoll.c:do_epoll_ctl() returns EPERM for every op if the
+	// target does not support poll, then EINVAL if epfd is the target or is
+	// not an epoll instance.
+	if !file.Epollable() {
+		return 0, nil, linuxerr.EPERM
+	}
+	ep, ok := epfile.Impl().(*vfs.EpollInstance)
+	if !ok || epfile == file {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	var event linux.EpollEvent
 	switch op {
 	case linux.EPOLL_CTL_ADD:
-		if _, err := event.CopyIn(t, eventAddr); err != nil {
-			return 0, nil, err
-		}
 		return 0, nil, ep.AddInterest(file, fd, event)
 	case linux.EPOLL_CTL_DEL:
 		return 0, nil, ep.DeleteInterest(file, fd)
 	case linux.EPOLL_CTL_MOD:
-		if _, err := event.CopyIn(t, eventAddr); err != nil {
-			return 0, nil, err
-		}
 		return 0, nil, ep.ModifyInterest(file, fd, event)
 	default:
 		return 0, nil, linuxerr.EINVAL
