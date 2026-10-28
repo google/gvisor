@@ -400,8 +400,8 @@ func TestFindAllocatable64K(t *testing.T) {
 			// Build the fake MemoryFile.
 			f := &MemoryFile{
 				opts: MemoryFileOpts{
-					ExpectHugepages:         true,
-					DisableMemoryAccounting: true,
+					ExpectHugepages:  true,
+					MemoryAccounting: MemoryAccountingDisabled,
 				},
 			}
 			f.initFields()

@@ -47,6 +47,55 @@ const (
 	existingReleasing // or sub-releasing
 )
 
+// newFindAllocatableTestMemoryFile creates a MemoryFile for testing
+// findAllocatableAndMarkUsed, with no backing file and the given initial
+// chunk and page state.
+func newFindAllocatableTestMemoryFile(t *testing.T, mode MemoryAccountingMode, chunkHuge []bool, existing []existingSegment) *MemoryFile {
+	t.Helper()
+	f := &MemoryFile{
+		opts: MemoryFileOpts{
+			ExpectHugepages:  true,
+			MemoryAccounting: mode,
+		},
+	}
+	f.initFields()
+	chunks := make([]chunkInfo, len(chunkHuge))
+	for i, huge := range chunkHuge {
+		chunks[i].huge = huge
+		chunkFR := memmap.FileRange{uint64(i) * chunkSize, uint64(i+1) * chunkSize}
+		if huge {
+			f.unfreeHuge.RemoveRange(chunkFR)
+		} else {
+			f.unfreeSmall.RemoveRange(chunkFR)
+		}
+	}
+	f.chunks.Store(&chunks)
+	for _, es := range existing {
+		f.forEachChunk(memmap.FileRange{es.start, es.end}, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+			unwaste, unfree := &f.unwasteSmall, &f.unfreeSmall
+			if chunk.huge {
+				unwaste, unfree = &f.unwasteHuge, &f.unfreeHuge
+			}
+			switch es.state {
+			case existingUsed:
+				unfree.InsertRange(chunkFR, unfreeInfo{refs: 1})
+			case existingWaste:
+				unfree.InsertRange(chunkFR, unfreeInfo{refs: 0})
+				unwaste.RemoveRange(chunkFR)
+			case existingReleasing:
+				unfree.InsertRange(chunkFR, unfreeInfo{refs: 0})
+			default:
+				t.Fatalf("existingSegment %+v has unknown state", es)
+			}
+			f.memAcct.InsertRange(chunkFR, memAcctInfo{
+				wasteOrReleasing: es.state != existingUsed,
+			})
+			return true
+		})
+	}
+	return f
+}
+
 func TestFindAllocatable(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -350,46 +399,6 @@ func TestFindAllocatable(t *testing.T) {
 			want:    chunkSize - 2*hugepage,
 		},
 		{
-			name:      "non-recycling bottom-up small allocation skips waste pages",
-			chunkHuge: []bool{false},
-			existing: []existingSegment{
-				{0, page, existingWaste},
-			},
-			length: page,
-			want:   page,
-		},
-		{
-			name:      "non-recycling top-down small allocation skips waste pages",
-			chunkHuge: []bool{false},
-			existing: []existingSegment{
-				{chunkSize - page, chunkSize, existingWaste},
-			},
-			length: page,
-			dir:    TopDown,
-			want:   chunkSize - 2*page,
-		},
-		{
-			name:      "non-recycling bottom-up huge allocation skips waste pages",
-			chunkHuge: []bool{true},
-			existing: []existingSegment{
-				{0, hugepage, existingWaste},
-			},
-			length: hugepage,
-			huge:   true,
-			want:   hugepage,
-		},
-		{
-			name:      "non-recycling top-down huge allocation skips waste pages",
-			chunkHuge: []bool{true},
-			existing: []existingSegment{
-				{chunkSize - hugepage, chunkSize, existingWaste},
-			},
-			length: hugepage,
-			huge:   true,
-			dir:    TopDown,
-			want:   chunkSize - 2*hugepage,
-		},
-		{
 			name:      "recycling bottom-up small allocation recycles waste pages",
 			chunkHuge: []bool{false},
 			existing: []existingSegment{
@@ -609,48 +618,7 @@ func TestFindAllocatable(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			// Build the fake MemoryFile.
-			f := &MemoryFile{
-				opts: MemoryFileOpts{
-					ExpectHugepages:         true,
-					DisableMemoryAccounting: true,
-				},
-			}
-			f.initFields()
-			chunks := make([]chunkInfo, len(test.chunkHuge))
-			for i, huge := range test.chunkHuge {
-				chunks[i].huge = huge
-				chunkFR := memmap.FileRange{uint64(i) * chunkSize, uint64(i+1) * chunkSize}
-				if huge {
-					f.unfreeHuge.RemoveRange(chunkFR)
-				} else {
-					f.unfreeSmall.RemoveRange(chunkFR)
-				}
-			}
-			f.chunks.Store(&chunks)
-			for _, es := range test.existing {
-				f.forEachChunk(memmap.FileRange{es.start, es.end}, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-					unwaste, unfree := &f.unwasteSmall, &f.unfreeSmall
-					if chunk.huge {
-						unwaste, unfree = &f.unwasteHuge, &f.unfreeHuge
-					}
-					switch es.state {
-					case existingUsed:
-						unfree.InsertRange(chunkFR, unfreeInfo{refs: 1})
-					case existingWaste:
-						unfree.InsertRange(chunkFR, unfreeInfo{refs: 0})
-						unwaste.RemoveRange(chunkFR)
-					case existingReleasing:
-						unfree.InsertRange(chunkFR, unfreeInfo{refs: 0})
-					default:
-						t.Fatalf("existingSegment %+v has unknown state", es)
-					}
-					f.memAcct.InsertRange(chunkFR, memAcctInfo{
-						wasteOrReleasing: es.state != existingUsed,
-					})
-					return true
-				})
-			}
+			f := newFindAllocatableTestMemoryFile(t, MemoryAccountingDisabled, test.chunkHuge, test.existing)
 
 			// Perform the test allocation.
 			alloc := allocState{
@@ -664,6 +632,181 @@ func TestFindAllocatable(t *testing.T) {
 			if test.recycle {
 				alloc.opts.Mode = AllocateCallerIndirectCommit
 				alloc.willCommit = true
+			}
+			fr, err := f.findAllocatableAndMarkUsed(&alloc)
+			if err != nil {
+				t.Fatalf("findAllocatableAndMarkUsed(%+v): failed: %v, want: %#x\n%v", alloc, err, test.want, f)
+			}
+			if fr.Start != test.want {
+				t.Errorf("findAllocatableAndMarkUsed(%+v): got: start=%#x, want: %#x\n%v", alloc, fr.Start, test.want, f)
+			}
+			if wantEnd := test.want + test.length; fr.End != wantEnd {
+				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
+			}
+		})
+	}
+}
+
+func TestFindAllocatableUncommittedWaste(t *testing.T) {
+	requireUsageInit(t)
+	for _, test := range []struct {
+		name string
+		mode MemoryAccountingMode
+		// Initial state:
+		chunkHuge []bool
+		existing  []existingSegment
+		// Allocation parameters:
+		length uint64
+		huge   bool
+		dir    Direction
+		// Expected outcome:
+		want uint64
+	}{
+		{
+			name:      "MemoryAccountingCommitted: bottom-up small allocation skips waste pages",
+			mode:      MemoryAccountingCommitted,
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{0, page, existingWaste},
+			},
+			length: page,
+			want:   page,
+		},
+		{
+			name:      "MemoryAccountingAllocated: bottom-up small allocation recycles waste pages",
+			mode:      MemoryAccountingAllocated,
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{0, page, existingWaste},
+			},
+			length: page,
+			want:   0,
+		},
+		{
+			name:      "MemoryAccountingDisabled: bottom-up small allocation recycles waste pages",
+			mode:      MemoryAccountingDisabled,
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{0, page, existingWaste},
+			},
+			length: page,
+			want:   0,
+		},
+		{
+			name:      "MemoryAccountingCommitted: top-down small allocation skips waste pages",
+			mode:      MemoryAccountingCommitted,
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{chunkSize - page, chunkSize, existingWaste},
+			},
+			length: page,
+			dir:    TopDown,
+			want:   chunkSize - 2*page,
+		},
+		{
+			name:      "MemoryAccountingAllocated: top-down small allocation recycles waste pages",
+			mode:      MemoryAccountingAllocated,
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{chunkSize - page, chunkSize, existingWaste},
+			},
+			length: page,
+			dir:    TopDown,
+			want:   chunkSize - page,
+		},
+		{
+			name:      "MemoryAccountingDisabled: top-down small allocation recycles waste pages",
+			mode:      MemoryAccountingDisabled,
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{chunkSize - page, chunkSize, existingWaste},
+			},
+			length: page,
+			dir:    TopDown,
+			want:   chunkSize - page,
+		},
+		{
+			name:      "MemoryAccountingCommitted: bottom-up huge allocation skips waste pages",
+			mode:      MemoryAccountingCommitted,
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{0, hugepage, existingWaste},
+			},
+			length: hugepage,
+			huge:   true,
+			want:   hugepage,
+		},
+		{
+			name:      "MemoryAccountingAllocated: bottom-up huge allocation recycles waste pages",
+			mode:      MemoryAccountingAllocated,
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{0, hugepage, existingWaste},
+			},
+			length: hugepage,
+			huge:   true,
+			want:   0,
+		},
+		{
+			name:      "MemoryAccountingDisabled: bottom-up huge allocation recycles waste pages",
+			mode:      MemoryAccountingDisabled,
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{0, hugepage, existingWaste},
+			},
+			length: hugepage,
+			huge:   true,
+			want:   0,
+		},
+		{
+			name:      "MemoryAccountingCommitted: top-down huge allocation skips waste pages",
+			mode:      MemoryAccountingCommitted,
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{chunkSize - hugepage, chunkSize, existingWaste},
+			},
+			length: hugepage,
+			huge:   true,
+			dir:    TopDown,
+			want:   chunkSize - 2*hugepage,
+		},
+		{
+			name:      "MemoryAccountingAllocated: top-down huge allocation recycles waste pages",
+			mode:      MemoryAccountingAllocated,
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{chunkSize - hugepage, chunkSize, existingWaste},
+			},
+			length: hugepage,
+			huge:   true,
+			dir:    TopDown,
+			want:   chunkSize - hugepage,
+		},
+		{
+			name:      "MemoryAccountingDisabled: top-down huge allocation recycles waste pages",
+			mode:      MemoryAccountingDisabled,
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{chunkSize - hugepage, chunkSize, existingWaste},
+			},
+			length: hugepage,
+			huge:   true,
+			dir:    TopDown,
+			want:   chunkSize - hugepage,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFindAllocatableTestMemoryFile(t, test.mode, test.chunkHuge, test.existing)
+
+			// Perform the test allocation.
+			alloc := allocState{
+				length: test.length,
+				opts: AllocOpts{
+					Huge: test.huge,
+					Dir:  test.dir,
+					Mode: AllocateUncommitted,
+				},
+				huge: test.huge,
 			}
 			fr, err := f.findAllocatableAndMarkUsed(&alloc)
 			if err != nil {

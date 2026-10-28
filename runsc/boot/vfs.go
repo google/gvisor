@@ -1231,7 +1231,7 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 		DecommitOnDestroy: true,
 		// Pages of a disk backed file are host page cache for that file, which
 		// the host may drop at any time, not memory held by the sandbox.
-		DisableMemoryAccounting: true,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
 		// sentry's seccomp filters don't allow the mmap(2) syscalls that
 		// hostmm.IMAWorkAroundForMemFile() uses. Users of private memory files
 		// are expected to have performed the work around outside the sandbox.

@@ -437,8 +437,8 @@ func restoreContext(b testing.TB, names, mounts []string) context.Context {
 			b.Fatalf("failed to create memory file: %v", err)
 		}
 		mf, err := pgalloc.NewMemoryFile(os.NewFile(uintptr(fd), "checkpointfile"), pgalloc.MemoryFileOpts{
-			DisableMemoryAccounting: true,
-			ResourceID:              id,
+			MemoryAccounting: pgalloc.MemoryAccountingDisabled,
+			ResourceID:       id,
 		})
 		if err != nil {
 			b.Fatalf("failed to create memory file: %v", err)

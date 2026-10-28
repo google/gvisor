@@ -45,7 +45,7 @@ func Context(tb testing.TB) context.Context {
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
-		DisableMemoryAccounting: true,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
 	})
 	if err != nil {
 		memfile.Close()

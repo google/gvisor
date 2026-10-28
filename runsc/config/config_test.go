@@ -336,6 +336,11 @@ func TestInvalidFlags(t *testing.T) {
 			value: "invalid",
 			error: "invalid netgofer mode",
 		},
+		{
+			name:  "app-memory-accounting",
+			value: "invalid",
+			error: "invalid memory accounting mode",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)

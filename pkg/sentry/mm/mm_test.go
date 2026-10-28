@@ -695,7 +695,7 @@ func testMemoryManagerWithExhaustibleMemory(ctx context.Context, t *testing.T) (
 	}
 	memfile := os.NewFile(uintptr(memfd), name)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
-		DisableMemoryAccounting: true,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
 	})
 	if err != nil {
 		memfile.Close()
@@ -1107,7 +1107,7 @@ func newTestMemoryFile(t *testing.T) *pgalloc.MemoryFile {
 	}
 	memfile := os.NewFile(uintptr(memfd), "mm-test-memory")
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
-		DisableMemoryAccounting: true,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
 	})
 	if err != nil {
 		memfile.Close()

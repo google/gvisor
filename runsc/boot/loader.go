@@ -857,7 +857,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create memory file.
-	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP)
+	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP, memoryAccountingMode(args.Conf.AppMemoryAccounting))
 	if err != nil {
 		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
@@ -1273,22 +1273,38 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 	return plat, nil
 }
 
+func memoryAccountingMode(m config.AppMemoryAccounting) pgalloc.MemoryAccountingMode {
+	switch m {
+	case config.AppMemoryAccountingCommitted:
+		return pgalloc.MemoryAccountingCommitted
+	case config.AppMemoryAccountingAllocated:
+		return pgalloc.MemoryAccountingAllocated
+	default:
+		panic(fmt.Sprintf("unknown config.AppMemoryAccounting: %v", m))
+	}
+}
+
 func memoryManagerOpts(conf *config.Config) mm.MemoryManagerOpts {
 	opts := mm.MemoryManagerOpts{
 		FaultAllocAlignShift: conf.FaultAllocAlignShift,
 		FaultCopyAlignShift:  conf.FaultCopyAlignShift,
 	}
-	// These are consistent with legacy behavior.
+	defaultAlignShift := hostarch.HugePageShift // legacy behavior
+	if conf.AppMemoryAccounting == config.AppMemoryAccountingAllocated {
+		// Since all allocated memory is accounted as used, reduce allocation
+		// sizes to reduce memory bloat.
+		defaultAlignShift = min(defaultAlignShift, 16) // 64KiB, arbitrary
+	}
 	if opts.FaultAllocAlignShift < 0 {
-		opts.FaultAllocAlignShift = hostarch.HugePageShift
+		opts.FaultAllocAlignShift = defaultAlignShift
 	}
 	if opts.FaultCopyAlignShift < 0 {
-		opts.FaultCopyAlignShift = hostarch.HugePageShift
+		opts.FaultCopyAlignShift = defaultAlignShift
 	}
 	return opts
 }
 
-func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
+func createMemoryFile(appHugePages bool, hostTHP HostTHP, memAcctMode pgalloc.MemoryAccountingMode) (*pgalloc.MemoryFile, error) {
 	const memfileName = "runsc-memory"
 	memfd, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
@@ -1297,6 +1313,7 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 
 	mfopts := pgalloc.MemoryFileOpts{
+		MemoryAccounting: memAcctMode,
 		// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
 		// there are memory cgroups specified, because at this point we're already
 		// in a mount namespace in which the relevant cgroupfs is not visible.
