@@ -27,6 +27,8 @@
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
@@ -36,8 +38,10 @@
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 using ::testing::AnyOf;
+using ::testing::Eq;
 
 namespace gvisor {
 namespace testing {
@@ -653,6 +657,47 @@ TEST(Renameat2Test, ExchangeWithAncestorDirectory) {
   EXPECT_THAT(renameat2(AT_FDCWD, deep_descendant.path().c_str(), AT_FDCWD,
                         ancestor.path().c_str(), RENAME_EXCHANGE),
               SyscallFailsWithErrno(EINVAL));
+}
+
+// getcwd() must return either the old or the new path of a working directory
+// that is concurrently exchanged with another directory.
+TEST(Renameat2Test, ExchangeConcurrentWithGetcwd) {
+  SKIP_IF(!RenameExchangeSupported());
+  const DisableSave ds;  // Too many syscalls.
+
+  const auto parent =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  // The names have different lengths, so a getcwd() that observes an
+  // inconsistent name also returns a path with an unexpected length.
+  const std::string short_path = JoinPath(parent.path(), "a");
+  const std::string long_path =
+      JoinPath(parent.path(), std::string(NAME_MAX, 'b'));
+  ASSERT_THAT(mkdir(short_path.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(long_path.c_str(), 0755), SyscallSucceeds());
+
+  const std::string old_cwd = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
+  ASSERT_THAT(chdir(short_path.c_str()), SyscallSucceeds());
+  const auto restore_cwd =
+      Cleanup([&] { EXPECT_THAT(chdir(old_cwd.c_str()), SyscallSucceeds()); });
+
+  // getcwd() returns a canonical path, which can differ from short_path if the
+  // test temporary directory path contains symbolic links.
+  const std::string want_short = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
+  const std::string want_long =
+      JoinPath(Dirname(want_short), Basename(long_path));
+
+  constexpr absl::Duration kRuntime = absl::Seconds(3);
+  ScopedThread exchanger([&] {
+    for (auto start = absl::Now(); absl::Now() - start < kRuntime;) {
+      ASSERT_THAT(renameat2(AT_FDCWD, short_path.c_str(), AT_FDCWD,
+                            long_path.c_str(), RENAME_EXCHANGE),
+                  SyscallSucceeds());
+    }
+  });
+  for (auto start = absl::Now(); absl::Now() - start < kRuntime;) {
+    const std::string cwd = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
+    ASSERT_THAT(cwd, AnyOf(Eq(want_short), Eq(want_long)));
+  }
 }
 
 }  // namespace
