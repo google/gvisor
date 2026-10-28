@@ -323,8 +323,15 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 	// Replica never reads in packet mode.
 	n, pushed, notifyEcho, err := l.inQueue.read(ctx, dst, l, false /* packet */)
 	isCanon := l.termios.LEnabled(linux.ICANON)
+	// In non-canonical mode with MIN=0 and TIME=0, POSIX makes read(2) return
+	// immediately with whatever is available, which is 0 bytes when there is no
+	// input. Programs such as btop read in a loop that relies on this.
+	pollRead := !isCanon && l.termios.ControlCharacters[linux.VMIN] == 0 && l.termios.ControlCharacters[linux.VTIME] == 0
 	l.termiosMu.RUnlock()
 	if err != nil {
+		if pollRead && linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+			return 0, nil
+		}
 		return 0, err
 	}
 	if n > 0 {
@@ -341,8 +348,8 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 	if notifyEcho {
 		l.masterWaiter.Notify(waiter.ReadableEvents)
 	}
-	if !pushed && isCanon {
-		return 0, nil // EOF
+	if !pushed && (isCanon || pollRead) {
+		return 0, nil // EOF, or a polling read with nothing to return
 	}
 
 	return 0, linuxerr.ErrWouldBlock
