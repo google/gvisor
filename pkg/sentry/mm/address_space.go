@@ -46,6 +46,12 @@ func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
 	return nil
 }
 
+// asyncLoadMapUnit bounds the ranges that are mapped at once while async page
+// loading is in progress, in order to avoid calling
+// platform.AddressSpace.MapFile() => mf.DataFD() or mf.MapInternal() with
+// unnecessarily large ranges, resulting in unnecessarily long waits.
+const asyncLoadMapUnit = 32 << 20
+
 // mapASLocked maps addresses in ar into mm.as.
 //
 // Preconditions:
@@ -82,11 +88,7 @@ func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar h
 		// Limit the range we map to ar, aligned to mapUnit.
 		setMapUnit(mapUnit)
 	} else if mf, ok := pseg.ValuePtr().file.(*pgalloc.MemoryFile); ok && mf.IsAsyncLoading() {
-		// Impose an arbitrary mapUnit in order to avoid calling
-		// platform.AddressSpace.MapFile() => mf.DataFD() or mf.MapInternal()
-		// with unnecessarily large ranges, resulting in unnecessarily long
-		// waits.
-		setMapUnit(32 << 20)
+		setMapUnit(asyncLoadMapUnit)
 	}
 	if checkInvariants {
 		if !mapAR.IsSupersetOf(ar) {

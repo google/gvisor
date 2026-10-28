@@ -786,16 +786,16 @@ func (mm *MemoryManager) getIOMappingsLocked(pseg pmaIterator, ar hostarch.AddrR
 	}
 
 	if ar.End <= pseg.End() {
-		// Since only one pma is involved, we can use pma.internalMappings
+		// Since only one pma is involved, we can return its internal mappings
 		// directly, avoiding a slice allocation.
-		if err := pseg.getInternalMappingsLocked(); err != nil {
+		ims, err := pseg.getInternalMappingsLocked(ar)
+		if err != nil {
 			if _, ok := err.(memmap.BufferedIOFallbackErr); ok {
 				goto slowPath
 			}
 			return safemem.BlockSeq{}, nil, err
 		}
-		offset := uint64(ar.Start - pseg.Start())
-		return pseg.ValuePtr().internalMappings.DropFirst64(offset).TakeFirst64(uint64(ar.Length())), nil, nil
+		return ims, nil, nil
 	}
 
 slowPath:
@@ -872,10 +872,9 @@ func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at ho
 func (mm *MemoryManager) getIOMappingsTrackedLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, ims []safemem.Block, t *ioBufTracker, unbufBytes uint64) ([]safemem.Block, *ioBufTracker, uint64, error) {
 	for {
 		pmaAR := ar.Intersect(pseg.Range())
-		if err := pseg.getInternalMappingsLocked(); err == nil {
-			// Iterate the subset of the PMA's cached internal mappings that
-			// correspond to pmaAR, and append them to ims.
-			for pims := pseg.ValuePtr().internalMappings.DropFirst64(uint64(pmaAR.Start - pseg.Start())).TakeFirst64(uint64(pmaAR.Length())); !pims.IsEmpty(); pims = pims.Tail() {
+		if pims, err := pseg.getInternalMappingsLocked(pmaAR); err == nil {
+			// Append the internal mappings that correspond to pmaAR to ims.
+			for ; !pims.IsEmpty(); pims = pims.Tail() {
 				ims = append(ims, pims.Head())
 			}
 			unbufBytes += uint64(pmaAR.Length())
