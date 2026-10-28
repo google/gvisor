@@ -313,6 +313,7 @@ func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *stru
 		return err
 	}
 	log.Debugf("Container started, cid: %s", args.CID)
+	cm.l.releaseStartupHeapWhenIdle()
 	return nil
 }
 
@@ -612,6 +613,7 @@ func (cm *containerManager) onRestoreDone(s sentryapi.Savings) {
 	cm.l.mu.Unlock()
 	cm.l.restoreDone.Broadcast()
 	cm.restorer = nil
+	cm.l.releaseStartupHeapWhenIdle()
 }
 
 func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, reply *sentryapi.RestoreReply) (retErr error) {

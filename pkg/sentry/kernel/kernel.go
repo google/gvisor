@@ -1892,6 +1892,45 @@ func (k *Kernel) WaitForTaskActivity(stop <-chan struct{}) bool {
 	}
 }
 
+// WaitForIdle blocks until no task has run for at least d, while the kernel
+// is not paused.
+//
+// The kernel is idle when the CPU clock ticker stops, which happens at the
+// first CPU clock tick at which no task is running. So WaitForIdle may return
+// up to one CPU clock tick later than d after the last task stops running. A
+// kernel that is not started is idle.
+//
+// +checklocksexclude:k.runningTasksMu
+func (k *Kernel) WaitForIdle(d time.Duration) {
+	timer := time.NewTimer(d)
+	timer.Stop()
+	for {
+		k.runningTasksMu.Lock()
+		for k.cpuClockTickerRunning {
+			k.cpuClockTickerStopCond.Wait()
+		}
+		// No task is running. incRunningTasks closes this channel, with
+		// runningTasksMu locked, when a task starts running.
+		activity := k.taskActivityCh
+		k.runningTasksMu.Unlock()
+
+		timer.Reset(d)
+		select {
+		case <-activity:
+			timer.Stop()
+			continue
+		case <-timer.C:
+		}
+		if k.IsPaused() {
+			// All tasks are stopped, which makes the kernel idle until
+			// it is resumed.
+			k.WaitForTaskActivity(nil)
+			continue
+		}
+		return
+	}
+}
+
 // WaitExited blocks until all tasks in k have exited. No tasks can be created
 // after WaitExited returns.
 //
