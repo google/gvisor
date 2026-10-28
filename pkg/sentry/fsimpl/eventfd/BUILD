@@ -34,9 +34,11 @@ go_test(
     embed = [":eventfd"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/hostarch",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

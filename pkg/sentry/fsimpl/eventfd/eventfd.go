@@ -60,6 +60,7 @@ type EventFileDescription struct {
 	semMode bool
 
 	// hostfd is the backing host eventfd, or -1 if none is installed.
+	// A reference to vfsfd keeps an installed fd open after mu is released.
 	//
 	// +checklocks:mu
 	hostfd int
@@ -134,19 +135,28 @@ func (efd *EventFileDescription) HostFD() (int, error) {
 		flags |= linux.EFD_SEMAPHORE
 	}
 
-	fd, _, errno := unix.Syscall(unix.SYS_EVENTFD2, uintptr(efd.val), uintptr(flags), 0)
-	if errno != 0 {
-		return -1, errno
+	// eventfd2 accepts a 32-bit initial value, but writes can raise the
+	// counter above that before a device asks for a host fd.
+	initVal := uint32(efd.val)
+	fd, err := unix.Eventfd(uint(initVal), flags)
+	if err != nil {
+		return -1, err
 	}
-
-	if err := fdnotifier.AddFD(int32(fd), &efd.queue); err != nil {
-		if closeErr := unix.Close(int(fd)); closeErr != nil {
+	if rest := efd.val - uint64(initVal); rest != 0 {
+		err = hostWrite(fd, rest)
+	}
+	if err == nil {
+		err = fdnotifier.AddFD(int32(fd), &efd.queue)
+	}
+	if err != nil {
+		if closeErr := unix.Close(fd); closeErr != nil {
 			log.Warningf("close(%d) eventfd failed: %v", fd, closeErr)
 		}
 		return -1, err
 	}
 
-	efd.hostfd = int(fd)
+	efd.val = 0
+	efd.hostfd = fd
 	efd.sentryOwnedHostfd = true
 	return efd.hostfd, nil
 }
@@ -247,11 +257,10 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 	return err
 }
 
-// +checklocks:efd.mu
-func (efd *EventFileDescription) hostWriteLocked(val uint64) error {
+func hostWrite(fd int, val uint64) error {
 	var buf [8]byte
 	hostarch.ByteOrder.PutUint64(buf[:], val)
-	_, err := unix.Write(efd.hostfd, buf[:])
+	_, err := unix.Write(fd, buf[:])
 	if err == unix.EWOULDBLOCK {
 		return linuxerr.ErrWouldBlock
 	}
@@ -280,10 +289,9 @@ func (efd *EventFileDescription) Signal(val uint64) error {
 	}
 
 	efd.mu.Lock()
-
-	if efd.hostfd >= 0 {
-		defer efd.mu.Unlock()
-		return efd.hostWriteLocked(val)
+	if fd := efd.hostfd; fd >= 0 {
+		efd.mu.Unlock()
+		return hostWrite(fd, val)
 	}
 
 	// We only allow writes that won't cause the value to go over the max
