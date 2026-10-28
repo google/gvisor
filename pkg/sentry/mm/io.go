@@ -626,10 +626,14 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 	// mm.mappingMu.
 	mm.activeMu.RLock()
 	if pseg := mm.existingPMAsLocked(ar, at, ignorePermissions, true /* needInternalMappings */); pseg.Ok() {
-		defer mm.activeMu.RUnlock()
-		n, err := f(mm.internalMappingsLocked(pseg, ar))
-		// Do not convert errors returned by f to EFAULT.
-		return int64(n), err
+		// On failure, fall back to the slow path, which handles partial
+		// success.
+		if ims, err := mm.internalMappingsLocked(pseg, ar); err == nil {
+			defer mm.activeMu.RUnlock()
+			n, err := f(ims)
+			// Do not convert errors returned by f to EFAULT.
+			return int64(n), err
+		}
 	}
 	mm.activeMu.RUnlock()
 
@@ -708,10 +712,14 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 	// mm.mappingMu.
 	mm.activeMu.RLock()
 	if mm.existingVecPMAsLocked(ars, at, ignorePermissions, true /* needInternalMappings */) {
-		defer mm.activeMu.RUnlock()
-		n, err := f(mm.vecInternalMappingsLocked(ars))
-		// Do not convert errors returned by f to EFAULT.
-		return int64(n), err
+		// On failure, fall back to the slow path, which handles partial
+		// success.
+		if ims, err := mm.vecInternalMappingsLocked(ars); err == nil {
+			defer mm.activeMu.RUnlock()
+			n, err := f(ims)
+			// Do not convert errors returned by f to EFAULT.
+			return int64(n), err
+		}
 	}
 	mm.activeMu.RUnlock()
 

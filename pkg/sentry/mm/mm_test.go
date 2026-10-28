@@ -1186,14 +1186,28 @@ func TestIODuringAsyncPageLoad(t *testing.T) {
 	mm.addRSSLocked(ar)
 	mm.activeMu.Unlock()
 
+	// I/O to pages past offset gated waits until gate is closed, but should
+	// not block concurrent I/O to other pages.
+	gatedErr := make(chan error, 1)
+	go func() {
+		_, err := mm.CopyIn(ctx, addr+gated+pageSizeAddr, make([]byte, 8), usermem.IOOpts{})
+		gatedErr <- err
+	}()
 	timer := time.AfterFunc(10*time.Second, func() {
 		t.Errorf("CopyIn waited for pages past offset %#x", gated)
 		close(gate)
 	})
 	b := make([]byte, 8)
-	_, err = mm.CopyIn(ctx, addr+pageSizeAddr, b, usermem.IOOpts{})
+	for end := time.Now().Add(100 * time.Millisecond); time.Now().Before(end); {
+		if _, err = mm.CopyIn(ctx, addr+pageSizeAddr, b, usermem.IOOpts{}); err != nil {
+			break
+		}
+	}
 	if timer.Stop() {
 		close(gate)
+	}
+	if err := <-gatedErr; err != nil {
+		t.Errorf("CopyIn past offset %#x got err %v want nil", gated, err)
 	}
 	if err := <-loadDone; err != nil {
 		t.Errorf("async page load got err %v want nil", err)
