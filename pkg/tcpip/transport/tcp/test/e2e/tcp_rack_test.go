@@ -970,6 +970,106 @@ func TestRACKCheckReorderWindow(t *testing.T) {
 	}
 }
 
+// TestRACKReorderingWindowPersistence counts loss recoveries, not ACKs, after
+// a DSACK inflates the reordering window (RFC 8985, section 6.2, step 4).
+func TestRACKReorderingWindowPersistence(t *testing.T) {
+	clock := faketime.NewManualClock()
+	states := make(chan tcp.TCPSenderState, 4)
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      mtu,
+		Clock:    clock,
+		Probe: func(s *tcp.TCPEndpointState) {
+			select {
+			case states <- s.Sender:
+			default:
+			}
+		},
+	})
+	defer c.Cleanup()
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.CreateConnectedWithSACKPermittedOption(c)
+	c.EP.SocketOptions().SetDelayOption(false)
+
+	// Each write is a separate segment; observe the original transmissions
+	// and the retransmission of the hole in each four-segment flight.
+	const rtt = 100 * time.Millisecond
+	data := make([]byte, (1+4+16+4)*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	sent := 0
+	send := func() {
+		t.Helper()
+		piece := data[sent : sent+maxPayload]
+		if n, err := c.EP.Write(bytes.NewReader(piece), tcpip.WriteOptions{}); err != nil || n != int64(len(piece)) {
+			t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(piece))
+		}
+		c.ReceiveAndCheckPacket(data, sent, maxPayload)
+		sent += maxPayload
+	}
+	ack := func(offset int, sacks ...header.SACKBlock) tcp.TCPSenderState {
+		t.Helper()
+		c.SendAckWithSACK(seqnum.Value(context.TestInitialSequenceNumber).Add(1), offset, sacks)
+		select {
+		case s := <-states:
+			if want := c.IRS.Add(1 + seqnum.Size(offset)); s.SndUna != want {
+				t.Fatalf("SndUna = %d, want %d", s.SndUna, want)
+			}
+			return s
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for ACK at offset %d", offset)
+			return tcp.TCPSenderState{}
+		}
+	}
+	recoverFlight := func(dsack bool) tcp.TCPSenderState {
+		t.Helper()
+		start := sent
+		for range 4 {
+			send()
+		}
+		clock.Advance(rtt)
+		seq := c.IRS.Add(1 + seqnum.Size(start))
+		var state tcp.TCPSenderState
+		for i := 2; i <= 4; i++ {
+			state = ack(start, header.SACKBlock{Start: seq.Add(maxPayload), End: seq.Add(seqnum.Size(i * maxPayload))})
+		}
+		if !state.FastRecovery.Active {
+			t.Fatal("three SACKs did not enter fast recovery")
+		}
+		c.ReceiveAndCheckPacket(data, start, maxPayload)
+		if dsack {
+			state = ack(sent, header.SACKBlock{Start: seq, End: seq.Add(maxPayload)})
+		} else {
+			state = ack(sent)
+		}
+		if state.FastRecovery.Active || state.RACKState.DSACKSeen != dsack {
+			t.Fatalf("after recovery: active=%t, DSACK=%t, want false, %t", state.FastRecovery.Active, state.RACKState.DSACKSeen, dsack)
+		}
+		return state
+	}
+
+	// Establish a nonzero SRTT; RACK bounds its reordering window by SRTT.
+	send()
+	clock.Advance(rtt)
+	ack(sent)
+	state := recoverFlight(true)
+	if r := state.RACKState; r.ReoWndIncr != 2 || r.ReoWndPersist != 16 || r.ReoWnd != rtt/2 {
+		t.Fatalf("DSACK on recovery exit: multiplier=%d, persistence=%d, window=%s; want 2, 16, %s", r.ReoWndIncr, r.ReoWndPersist, r.ReoWnd, rtt/2)
+	}
+	for range 16 {
+		send()
+		clock.Advance(rtt)
+		state = ack(sent)
+	}
+	if r := state.RACKState; r.ReoWndIncr != 2 || r.ReoWndPersist != 16 || r.ReoWnd != rtt/2 {
+		t.Errorf("after 16 ordinary ACKs: multiplier=%d, persistence=%d, window=%s; want 2, 16, %s", r.ReoWndIncr, r.ReoWndPersist, r.ReoWnd, rtt/2)
+	}
+	if r := recoverFlight(false).RACKState; r.ReoWndIncr != 2 || r.ReoWndPersist != 15 {
+		t.Errorf("after one DSACK-free recovery: multiplier=%d, persistence=%d; want 2, 15", r.ReoWndIncr, r.ReoWndPersist)
+	}
+}
+
 func TestRACKWithDuplicateACK(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
