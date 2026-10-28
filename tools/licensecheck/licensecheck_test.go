@@ -17,7 +17,10 @@ package licensecheck
 import (
 	"bytes"
 	_ "embed"
+	"errors"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -411,5 +414,294 @@ func TestCheckPolicy(t *testing.T) {
 	}
 	if len(problems) != 5 {
 		t.Errorf("CheckPolicy returned %d problems, want 5: %v", len(problems), problems)
+	}
+}
+
+func TestLicenseSourceIdentity(t *testing.T) {
+	const artifact = "https://github.com/example/builder/releases/download/v1/tool.tar.gz"
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	const source = "https://raw.githubusercontent.com/example/upstream/" + commit + "/COPYING"
+	const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	for _, test := range []struct {
+		name     string
+		url      string
+		hash     string
+		source   string
+		goModule bool
+		wantErr  bool
+	}{
+		{name: "pinned", url: artifact, hash: hash, source: source},
+		{name: "automatic", url: artifact, hash: hash},
+		{name: "changed artifact", url: artifact + "?changed", hash: hash, source: source, wantErr: true},
+		{name: "changed digest", url: artifact, hash: strings.Repeat("a", 64), source: source, wantErr: true},
+		{name: "unpinned artifact", url: artifact, source: source, wantErr: true},
+		{name: "mutable notice", url: artifact, hash: hash, source: strings.ReplaceAll(source, commit, "main"), wantErr: true},
+		{name: "notice traversal", url: artifact, hash: hash, source: strings.ReplaceAll(source, "/COPYING", "/../main/COPYING"), wantErr: true},
+		{name: "encoded traversal", url: artifact, hash: hash, source: strings.ReplaceAll(source, "/COPYING", "/%2e%2e/main/COPYING"), wantErr: true},
+		{name: "go module", url: artifact, hash: hash, source: source, goModule: true, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := dep{name: "tool", kind: kindArchive, url: test.url, sha256: test.hash}
+			if test.goModule {
+				d.kind = kindGoModule
+			}
+			e := Entry{Version: artifact, SHA256: hash, LicenseSource: test.source}
+			got, err := licenseSourceCommit(d, e)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("licenseSourceCommit = %q, %v; want error %t", got, err, test.wantErr)
+			}
+			if !test.wantErr && test.source != "" && got != commit {
+				t.Fatalf("licenseSourceCommit = %q, want %q", got, commit)
+			}
+		})
+	}
+}
+
+func TestVerifyLicenseSource(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	d := dep{name: "tool", kind: kindArchive, url: "https://example.com/tool.tar.gz", sha256: strings.Repeat("a", 64)}
+	e := Entry{Dependency: d.name, Version: d.url, SHA256: d.sha256, Retrieved: "2026-10-17", Commit: commit, License: Licenses{gpl2}, LicenseSource: "https://raw.githubusercontent.com/example/upstream/" + commit + "/COPYING"}
+	if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 0 {
+		t.Fatalf("verifyProblems = %v, want a valid explicit notice", problems)
+	}
+	e.Commit = strings.Repeat("b", 40)
+	if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 1 || !strings.Contains(problems[0], "license_source commit") {
+		t.Fatalf("verifyProblems = %v, want mismatched notice commit", problems)
+	}
+	e.LicenseSource = "https://raw.githubusercontent.com/example/upstream/main/COPYING"
+	if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 1 || !strings.Contains(problems[0], "pinned to a full commit") {
+		t.Fatalf("verifyProblems = %v, want unpinned notice error", problems)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestReadRepoMapping(t *testing.T) {
+	origMakeMod := makeMod
+	defer func() { makeMod = origMakeMod }()
+
+	makeMod = func(args ...string) (string, error) {
+		return "", errors.New("boom")
+	}
+	if _, err := readRepoMapping(""); err == nil {
+		t.Fatal("readRepoMapping succeeded on makeMod error")
+	}
+
+	makeMod = func(args ...string) (string, error) {
+		return "no json here", nil
+	}
+	if _, err := readRepoMapping("hub"); err == nil || !strings.Contains(err.Error(), "no repository mapping JSON") {
+		t.Fatalf("readRepoMapping = %v, want missing JSON error", err)
+	}
+
+	makeMod = func(args ...string) (string, error) {
+		return "{invalid json", nil
+	}
+	if _, err := readRepoMapping("hub"); err == nil || !strings.Contains(err.Error(), "cannot parse repository mapping") {
+		t.Fatalf("readRepoMapping = %v, want parse error", err)
+	}
+}
+
+func TestEnumerateAndFetchQemuLicenseSource(t *testing.T) {
+	origMakeMod := makeMod
+	origHTTPClient := httpClient
+	defer func() {
+		makeMod = origMakeMod
+		httpClient = origHTTPClient
+	}()
+
+	const (
+		depName  = "qemu_user_prebuilt_linux_amd64_aarch64"
+		artifact = "https://github.com/hermeticbuild/rules_qemu/releases/download/v0.3.0/qemu.tar.zst"
+		sha      = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		commit   = "0123456789abcdef0123456789abcdef01234567"
+		source   = "https://raw.githubusercontent.com/qemu/qemu/" + commit + "/COPYING"
+		gpl2Text = "GNU GENERAL PUBLIC LICENSE Version 2, June 1991"
+	)
+
+	dir := t.TempDir()
+	goModPath := filepath.Join(dir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte("module gvisor.dev/gvisor\n\ngo 1.23\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	yamlPath := filepath.Join(dir, "dependencies.yaml")
+	paths := Paths{GoMod: goModPath, YAML: yamlPath}
+
+	graphJSON := `{"dependencies":[],"extensionUsages":[{"key":"@@rules_qemu+//qemu/extension:qemu.bzl%qemu","used_repos":["qemu_user_toolchains"]}]}`
+	showRepoOut := "## @@rules_qemu++qemu+arm:\nhttp_archive(\n  urls = [\"" + artifact + "\"],\n  sha256 = \"" + sha + "\",\n)\n"
+
+	for _, tc := range []struct {
+		name    string
+		rootMap string
+		rootErr error
+		hubMap  string
+		hubErr  error
+		wantErr string
+	}{
+		{
+			name:    "root mapping error",
+			rootErr: errors.New("root dump failed"),
+			wantErr: "root dump failed",
+		},
+		{
+			name:    "missing hub",
+			rootMap: `{}`,
+			wantErr: "QEMU user toolchain repository is not imported",
+		},
+		{
+			name:    "hub mapping error",
+			rootMap: `{"qemu_user_toolchains":"rules_qemu++qemu+hub"}`,
+			hubErr:  errors.New("hub dump failed"),
+			wantErr: "hub dump failed",
+		},
+		{
+			name:    "empty user archives",
+			rootMap: `{"qemu_user_toolchains":"rules_qemu++qemu+hub"}`,
+			hubMap:  `{"qemu_system_data_prebuilt_linux_amd64":"rules_qemu++qemu+fw"}`,
+			wantErr: "exposes no emulator archives",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			makeMod = func(args ...string) (string, error) {
+				switch args[0] {
+				case "graph":
+					return graphJSON, nil
+				case "dump_repo_mapping":
+					if args[1] == "''" {
+						return tc.rootMap, tc.rootErr
+					}
+					return tc.hubMap, tc.hubErr
+				default:
+					return showRepoOut, nil
+				}
+			}
+			if _, err := enumerate(paths); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("enumerate() = %v, want error containing %q", err, tc.wantErr)
+			}
+		})
+	}
+
+	makeMod = func(args ...string) (string, error) {
+		switch args[0] {
+		case "graph":
+			return graphJSON, nil
+		case "dump_repo_mapping":
+			if args[1] == "''" {
+				return `{"qemu_user_toolchains":"rules_qemu++qemu+hub"}`, nil
+			}
+			return `{"` + depName + `":"rules_qemu++qemu+arm"}`, nil
+		case "show_repo":
+			return showRepoOut, nil
+		default:
+			return "", errors.New("unexpected makeMod call")
+		}
+	}
+
+	seed := []Entry{{
+		Dependency:    depName,
+		Version:       artifact,
+		Retrieved:     "2026-10-17",
+		Commit:        commit,
+		SHA256:        sha,
+		License:       Licenses{gpl2},
+		LicenseSource: source,
+	}}
+	if err := writeEntries(yamlPath, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	// Successful Fetch preserves LicenseSource and classifies the upstream notice.
+	httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != source {
+				return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(""))}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(gpl2Text)),
+			}, nil
+		}),
+	}
+	if err := Fetch(paths); err != nil {
+		t.Fatalf("Fetch() = %v, want nil", err)
+	}
+	got, err := readEntries(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].LicenseSource != source || !slices.Equal(got[0].License, Licenses{gpl2}) {
+		t.Fatalf("readEntries after Fetch = %+v, want preserved LicenseSource and GPL-2.0-only", got)
+	}
+
+	// Failing notice classification fails Fetch while keeping the explicit entry on disk.
+	httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("unrecognized license text")),
+			}, nil
+		}),
+	}
+	if err := Fetch(paths); err == nil {
+		t.Fatal("Fetch() succeeded on unclassified notice, want error")
+	}
+	got, err = readEntries(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].LicenseSource != source {
+		t.Fatalf("readEntries after failed Fetch = %+v, want preserved explicit entry", got)
+	}
+
+	// HTTP failure on explicit notice also fails closed.
+	httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(""))}, nil
+		}),
+	}
+	if _, err := fetchLicense(dep{name: depName, kind: kindArchive, url: artifact, sha256: sha}, seed[0]); err == nil {
+		t.Fatal("fetchLicense() succeeded on 404 notice, want error")
+	}
+	// Invalid license_source fails before HTTP.
+	badEntry := seed[0]
+	badEntry.LicenseSource = "https://example.com/bad"
+	if _, err := fetchLicense(dep{name: depName, kind: kindArchive, url: artifact, sha256: sha}, badEntry); err == nil {
+		t.Fatal("fetchLicense() succeeded on invalid license_source, want error")
+	}
+}
+
+func TestQemuUserRepoRefs(t *testing.T) {
+	// A public hub maps indirect repos that the root module cannot import by
+	// apparent name. Firmware and system tools are outside this user-mode audit.
+	mapping := map[string]string{
+		"qemu_user_prebuilt_linux_amd64_aarch64": "rules_qemu++qemu+arm",
+		"qemu_user_prebuilt_linux_arm64_x86_64":  "rules_qemu++qemu+x86",
+		"qemu_user_toolchains":                   "rules_qemu++qemu+hub",
+		"qemu_system_data_prebuilt_linux_amd64":  "rules_qemu++qemu+firmware",
+		"qemu_img_prebuilt_linux_amd64":          "rules_qemu++qemu+img",
+	}
+	got, err := qemuUserRepoRefs(mapping)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []repoRef{
+		{"@@rules_qemu++qemu+arm", "qemu_user_prebuilt_linux_amd64_aarch64"},
+		{"@@rules_qemu++qemu+x86", "qemu_user_prebuilt_linux_arm64_x86_64"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("qemuUserRepoRefs() = %v, want %v", got, want)
+	}
+	for _, invalid := range []map[string]string{
+		{},
+		{"qemu_user_toolchains": "rules_qemu++qemu+hub"},
+		{"qemu_user_prebuilt_linux_amd64_aarch64": ""},
+	} {
+		if _, err := qemuUserRepoRefs(invalid); err == nil {
+			t.Errorf("qemuUserRepoRefs(%v) succeeded, want missing archive identity error", invalid)
+		}
 	}
 }
