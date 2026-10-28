@@ -16,7 +16,6 @@
 // programs.
 package main
 
-// The example import is replaced by the genrule or removed in fastbuild mode.
 import (
 	_ "embed"
 	"fmt"
@@ -26,7 +25,6 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
-	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp/example" // REPLACED_IMPORT_THIS_IS_A_LOAD_BEARING_COMMENT
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -47,10 +45,6 @@ var (
 	output      = flag.String("out", "/dev/stdout", "output file")
 	packageName = flag.String("package", "", "output package name")
 )
-
-// loadProgramsFn loads seccomp programs to be precompiled.
-// It may be nil when it is stubbed out in fastbuild mode.
-var loadProgramsFn = example.PrecompiledPrograms // PROGRAMS_FUNC_THIS_IS_A_LOAD_BEARING_COMMENT
 
 func main() {
 	flag.Parse()
