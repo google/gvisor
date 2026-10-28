@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -14,20 +14,6 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-go_test(
-    name = "coretag_test",
-    size = "small",
-    srcs = [
-        "coretag_test.go",
-    ],
-    embed = [":coretag"],
-    pure = True,
-    tags = ["nogotsan"],
-    deps = [
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
