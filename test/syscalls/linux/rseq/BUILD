@@ -2,57 +2,55 @@
 # depend on libc, which might use rseq itself.
 
 load("//tools:arch.bzl", "select_arch")
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain")
+load("//tools:defs.bzl", "cc_binary", "cc_library")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 
-genrule(
-    name = "rseq_binary",
+cc_binary(
+    name = "rseq",
+    testonly = True,
     srcs = [
         "critical.h",
-        "critical_amd64.S",
-        "critical_arm64.S",
         "rseq.cc",
         "syscalls.h",
-        "start_amd64.S",
-        "start_arm64.S",
         "test.h",
         "types.h",
         "uapi.h",
+    ] + select_arch(
+        amd64 = [
+            "critical_amd64.S",
+            "start_amd64.S",
+        ],
+        arm64 = [
+            "critical_arm64.S",
+            "start_arm64.S",
+        ],
+        no_match_error = "unsupported architecture",
+    ),
+    copts = [
+        "-Wall",
+        "-Werror",
+        "-O2",
+        "-ffreestanding",
+        "-fno-exceptions",
+        "-fno-stack-protector",
     ],
-    outs = ["rseq"],
-    cmd = "$(CC) " +
-          "$(CC_FLAGS) " +
-          "-I. " +
-          "-Wall " +
-          "-Werror " +
-          "-O2 " +
-          "-std=c++17 " +
-          "-static " +
-          "-nostdlib " +
-          "-ffreestanding " +
-          "-fno-exceptions " +
-          "-o " +
-          "$(location rseq) " +
-          select_arch(
-              amd64 = "$(location critical_amd64.S) $(location start_amd64.S) ",
-              arm64 = "$(location critical_arm64.S) $(location start_arm64.S) ",
-              no_match_error = "unsupported architecture",
-          ) +
-          "$(location rseq.cc)",
-    toolchains = [
-        cc_toolchain,
-        ":no_pie_cc_flags",
+    features = [
+        "-coverage",
+        "-default_link_flags",
+        "-pie",
     ],
+    link_extra_lib = None,
+    linkopts = [
+        "-static",
+        "-nostdlib",
+    ],
+    linkstatic = True,
+    stamp = 0,
     visibility = ["//:sandbox"],
-)
-
-cc_flags_supplier(
-    name = "no_pie_cc_flags",
-    features = ["-pie"],
 )
 
 cc_library(
