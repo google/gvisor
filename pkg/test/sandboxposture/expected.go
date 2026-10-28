@@ -208,6 +208,7 @@ type ExpectedOpts struct {
 	NetNamespaceTarget   string
 	CgoEnabled           bool
 	GoDebug              string
+	CoreTags             bool
 
 	// Cgroup is whether `runsc` put the sandbox in a cgroup.
 	Cgroup bool
@@ -250,7 +251,15 @@ func Expected(opts ExpectedOpts) *Posture {
 		FDs:        expectedFDs(opts),
 		Attrs:      expectedAttrs(opts, applyCaps, newUserNS),
 		Threads:    Threads{Uniform: true},
+		CoreTag:    expectedCoreTag(opts),
 	}
+}
+
+func expectedCoreTag(opts ExpectedOpts) string {
+	if opts.CoreTags {
+		return CoreTagOwn
+	}
+	return CoreTagNone
 }
 
 func expectedCreds(applyCaps bool) Credentials {

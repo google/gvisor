@@ -48,6 +48,9 @@ type postureCase struct {
 
 	// fdLimit, when non-zero, is passed as --fdlimit.
 	fdLimit int
+
+	// coreTags is passed as --enable-core-tags.
+	coreTags bool
 }
 
 // TestBootPosture checks the Sentry process (`boot`)'s security posture.
@@ -65,6 +68,7 @@ func TestBootPosture(t *testing.T) {
 		{name: "no_directfs_hostinet", directfs: false, network: config.NetworkHost},
 		{name: "kvm", directfs: true, network: config.NetworkSandbox, platform: "kvm", extraFDClasses: sandboxposture.KVMFDClasses()},
 		{name: "fdlimit", directfs: true, network: config.NetworkSandbox, fdLimit: postureFDLimit},
+		{name: "coretags", directfs: true, network: config.NetworkSandbox, coreTags: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testBootPosture(t, tc)
@@ -85,6 +89,15 @@ func testBootPosture(t *testing.T, tc postureCase) {
 		}
 		f.Close()
 	}
+	if tc.coreTags {
+		supported, err := sandboxposture.CoreTagsSupported()
+		if err != nil {
+			t.Fatalf("Checking for core scheduling support: %v", err)
+		}
+		if !supported {
+			t.Skip("This kernel does not support core scheduling, or SMT is inactive")
+		}
+	}
 	isHostNetwork := tc.network == config.NetworkHost
 
 	conf := testutil.TestConfig(t)
@@ -96,6 +109,7 @@ func testBootPosture(t *testing.T, tc postureCase) {
 	if tc.fdLimit != 0 {
 		conf.FDLimit = tc.fdLimit
 	}
+	conf.EnableCoreTags = tc.coreTags
 	// testutil.TestConfig sets this so that tests can run without privileges.
 	// Undo it here since we do want to test the non-test case.
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = false
@@ -164,6 +178,7 @@ func testBootPosture(t *testing.T, tc postureCase) {
 		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       tc.extraFDClasses,
 		CgoEnabled:           config.CgoEnabled,
+		CoreTags:             conf.EnableCoreTags,
 		// We call container.New directly below, so we are the sandbox parent
 		// (unlike when the containerd shim is in the middle).
 		ChildOfRef: true,
