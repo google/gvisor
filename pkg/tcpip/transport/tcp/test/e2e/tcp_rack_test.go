@@ -472,9 +472,8 @@ func TestNoTLPOnSACK(t *testing.T) {
 	}
 }
 
-// TestRACKOnePacketTailLoss tests the trivial case of a tail loss of only one
-// packet. The probe should itself repairs the loss instead of having to go
-// into any recovery.
+// TestRACKOnePacketTailLoss tests that the probe repairs the loss without a
+// second retransmission.
 func TestRACKOnePacketTailLoss(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
@@ -492,6 +491,15 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	c.ReceiveAndCheckPacketWithOptions(data, 2*maxPayload, maxPayload, e2e.TSOptionSize)
 	bytesRead += maxPayload
 	c.SendAck(seq, bytesRead)
+
+	// Only an ACK for subsequent data establishes that the probe repaired
+	// the loss. The first ACK could still be followed by a duplicate ACK.
+	data = append(data, 42)
+	if _, err := c.EP.Write(bytes.NewReader(data[bytesRead:]), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("writing data after the probe: %v", err)
+	}
+	c.ReceiveAndCheckPacketWithOptions(data, bytesRead, 1, e2e.TSOptionSize)
+	c.SendAck(seq, bytesRead+1)
 
 	metricPollFn := func() error {
 		tcpStats := c.Stack().Stats().TCP
