@@ -198,3 +198,49 @@ func BenchmarkDecoding(b *testing.B) {
 		}
 	}
 }
+
+// benchGraphNodes is the number of nodes of the graphs of BenchmarkGraph.
+const benchGraphNodes = 20000
+
+// BenchmarkGraphSave saves a large random graph.
+func BenchmarkGraphSave(b *testing.B) {
+	root := randomGraph(1, graphOptions{nodes: benchGraphNodes, all: true})
+	b.ReportAllocs()
+	var n int
+	for b.Loop() {
+		w := countingWriter{}
+		if _, err := state.Save(context.Background(), &w, root); err != nil {
+			b.Fatalf("save failed: %v", err)
+		}
+		n = w.n
+	}
+	b.ReportMetric(float64(n), "encoded-B")
+}
+
+// BenchmarkGraphLoad loads a large random graph.
+func BenchmarkGraphLoad(b *testing.B) {
+	var buf bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf, randomGraph(1, graphOptions{nodes: benchGraphNodes, all: true})); err != nil {
+		b.Fatalf("save failed: %v", err)
+	}
+	b.ReportAllocs()
+	var r bytes.Reader
+	for b.Loop() {
+		r.Reset(buf.Bytes())
+		var root gRoot
+		if _, err := state.Load(context.Background(), &r, &root); err != nil {
+			b.Fatalf("load failed: %v", err)
+		}
+	}
+}
+
+// countingWriter counts the bytes written to it.
+type countingWriter struct {
+	n int
+}
+
+// Write implements io.Writer.Write.
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.n += len(p)
+	return len(p), nil
+}
