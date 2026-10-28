@@ -213,6 +213,7 @@ go_test(
     ],
     embed = [":pgalloc"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/sentry/memmap",
