@@ -113,17 +113,18 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 	// driverByLeaf maps a leaf PCI function path to its kernel driver name
 	// (from the DRIVER= line of the leaf's uevent). Used to synthesize the
 	// device/driver symlink and /sys/bus/pci/drivers tree that libfabric's
-	// EFA provider resolves during device discovery.
+	// EFA provider resolves during device discovery and nvidia-smi uses.
 	driverByLeaf := map[string]string{}
+	leafSet := make(map[string]bool, len(snap.Devices))
 	for i := range snap.Devices {
-		leaf := snap.Devices[i].LeafPCI
-		for _, n := range snap.PCINodes {
-			if n.Path != leaf {
-				continue
-			}
+		leafSet[snap.Devices[i].LeafPCI] = true
+	}
+	for _, n := range snap.PCINodes {
+		if leafSet[n.Path] || rdma.IsGPUClass(n.Attrs["class"]) {
 			for _, line := range strings.Split(n.Attrs["uevent"], "\n") {
 				if drv, ok := strings.CutPrefix(line, "DRIVER="); ok && rdma.SafeName(drv) {
-					driverByLeaf[leaf] = drv
+					driverByLeaf[n.Path] = drv
+					break
 				}
 			}
 		}
@@ -254,18 +255,25 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 	}
 	devicesTree, ok := root.children["devices"]
 	if !ok {
-		return nil, fmt.Errorf("RDMA snapshot contains no devices/ paths")
+		if len(snap.PCINodes) == 0 && len(snap.Devices) == 0 {
+			return out, nil
+		}
+		return nil, fmt.Errorf("sysfs snapshot contains no devices/ paths")
 	}
 	for name, sub := range devicesTree.children {
 		out.devices[name] = fs.buildRDMADir(ctx, creds, sub)
 	}
 
-	out.class["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, fs.symlinkFarm(ctx, creds, classIB))
-	uverbsEntries := fs.symlinkFarm(ctx, creds, classUverbs)
-	if snap.VerbsABIVersion != "" {
-		uverbsEntries["abi_version"] = fs.newStaticFile(ctx, creds, defaultSysMode, snap.VerbsABIVersion)
+	if len(classIB) > 0 {
+		out.class["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, fs.symlinkFarm(ctx, creds, classIB))
 	}
-	out.class["infiniband_verbs"] = fs.newDir(ctx, creds, defaultSysDirMode, uverbsEntries)
+	if len(classUverbs) > 0 || snap.VerbsABIVersion != "" {
+		uverbsEntries := fs.symlinkFarm(ctx, creds, classUverbs)
+		if snap.VerbsABIVersion != "" {
+			uverbsEntries["abi_version"] = fs.newStaticFile(ctx, creds, defaultSysMode, snap.VerbsABIVersion)
+		}
+		out.class["infiniband_verbs"] = fs.newDir(ctx, creds, defaultSysDirMode, uverbsEntries)
+	}
 	if len(classNet) > 0 {
 		out.class["net"] = fs.newDir(ctx, creds, defaultSysDirMode, fs.symlinkFarm(ctx, creds, classNet))
 	}
