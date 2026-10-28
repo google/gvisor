@@ -101,7 +101,8 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// See: https://www.rfc-editor.org/rfc/rfc8985.html#section-6.2, step 2.
 	if seg.xmitCount > 1 {
 		if ackSeg.parsedOptions.TS && ackSeg.parsedOptions.TSEcr != 0 {
-			if ackSeg.parsedOptions.TSEcr < rc.snd.ep.tsVal(seg.xmitTime) {
+			retransmitTS := rc.snd.ep.tsVal(seg.xmitTime)
+			if seqnum.Value(ackSeg.parsedOptions.TSEcr).LessThan(seqnum.Value(retransmitTS)) {
 				return
 			}
 		}
