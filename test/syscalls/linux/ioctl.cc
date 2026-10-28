@@ -419,6 +419,33 @@ TEST_P(IoctlTestSIOCGIFCONF, ValidateLoopbackIsPresent) {
   ASSERT_TRUE(found_loopback);
 }
 
+TEST_P(IoctlTestSIOCGIFCONF, LargeCallerBuffersSucceed) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  for (int buffer_size : {65535, 65536, 65537}) {
+    SCOPED_TRACE(buffer_size);
+    std::vector<char> buffer(buffer_size);
+    struct ifconf ifconf = {};
+    ifconf.ifc_len = buffer_size;
+    ifconf.ifc_buf = buffer.data();
+
+    ASSERT_THAT(ioctl(fd->get(), SIOCGIFCONF, &ifconf), SyscallSucceeds());
+    ASSERT_GE(ifconf.ifc_len, 0);
+    ASSERT_LE(ifconf.ifc_len, buffer_size);
+    ASSERT_EQ(ifconf.ifc_len % sizeof(ifreq), 0);
+
+    const auto* ifrs = reinterpret_cast<const ifreq*>(buffer.data());
+    bool found_loopback = false;
+    for (size_t i = 0; i < ifconf.ifc_len / sizeof(ifreq); ++i) {
+      if (strcmp(ifrs[i].ifr_name, "lo") == 0) {
+        found_loopback = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_loopback);
+  }
+}
+
 std::vector<SocketKind> IoctlSocketTypes() {
   return {SimpleSocket(AF_UNIX, SOCK_STREAM, 0),
           SimpleSocket(AF_UNIX, SOCK_DGRAM, 0),
