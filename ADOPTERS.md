@@ -255,4 +255,5 @@ networking between devices and servers.
 
 ### [Wordfully](https://wordfully.ai)
 
-Wordfully uses gVisor to isolate containerized backend workloads.
+Wordfully provides grammar checking, rephrasing, and tone suggestions. It uses
+gVisor to isolate containerized backend workloads.
