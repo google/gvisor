@@ -28,23 +28,45 @@ import "gvisor.dev/gvisor/pkg/bpf"
 // Generate these branches separately for the two programs we compare.
 // Reaching an instruction in one program must not count as covering that
 // instruction in the other.
-{{define "body"}}	covered := execution.Coverage
-	switch len(covered) {
-{{range .}}	case {{.Length}}:
-		if covered[{{.Index}}] {
-			fuzzee.coverage[{{.Index}}].Store(true)
-		}
-{{if .Index}}		fallthrough
-{{end}}{{end}}	}
+const coverageBlockSize = {{.BlockSize}}
+
+// Visit blocks and their instructions from the end of the program towards
+// the start. Each block sees the same prefix lengths as the original switch.
+func countExecutedLines(covered []bool, fuzzee *Fuzzee, blocks []func([]bool, *Fuzzee)) {
+	if len(covered) > bpf.MaxInstructions {
+		return
+	}
+	for len(covered) != 0 {
+		block := (len(covered) - 1) / coverageBlockSize
+		blocks[block](covered, fuzzee)
+		covered = covered[:block*coverageBlockSize]
+	}
+}
+
+{{define "blocks"}}[...]func([]bool, *Fuzzee){
+{{range .Blocks}}	func(covered []bool, fuzzee *Fuzzee) {
+		switch len(covered) {
+{{range .}}		case {{.Length}}:
+			if covered[{{.Index}}] {
+				fuzzee.coverage[{{.Index}}].Store(true)
+			}
+{{if .Fallthrough}}			fallthrough
+{{end}}{{end}}		}
+	},
+{{end}}}
 {{- end}}
 // countExecutedLinesProgram1 converts coverage data of the first BPF program
 // to Go coverage data.
 func countExecutedLinesProgram1(execution bpf.ExecutionMetrics, fuzzee *Fuzzee) {
-{{template "body" .}}
+	countExecutedLines(execution.Coverage, fuzzee, coverageProgram1[:])
 }
+
+var coverageProgram1 = {{template "blocks" .}}
 
 // countExecutedLinesProgram2 converts coverage data of the second BPF
 // program to Go coverage data.
 func countExecutedLinesProgram2(execution bpf.ExecutionMetrics, fuzzee *Fuzzee) {
-{{template "body" .}}
+	countExecutedLines(execution.Coverage, fuzzee, coverageProgram2[:])
 }
+
+var coverageProgram2 = {{template "blocks" .}}

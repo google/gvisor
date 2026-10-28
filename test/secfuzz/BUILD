@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -26,6 +26,14 @@ go_library(
         "//pkg/seccomp",
         "//pkg/sync",
     ],
+)
+
+go_test(
+    name = "secfuzz_test",
+    size = "small",
+    srcs = ["coverage_test.go"],
+    embed = [":secfuzz"],
+    deps = ["//pkg/bpf"],
 )
 
 run_binary(

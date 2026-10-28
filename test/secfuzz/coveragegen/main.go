@@ -34,15 +34,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Fall through from the length of the BPF program down to instruction 0.
-	type instruction struct{ Length, Index int }
-	cases := make([]instruction, bpf.MaxInstructions)
-	for i := range cases {
-		length := len(cases) - i
-		cases[i] = instruction{Length: length, Index: length - 1}
+	// Bound the compiler's control-flow graph for each generated function.
+	const blockSize = 64
+	type instruction struct {
+		Length, Index int
+		Fallthrough   bool
+	}
+	data := struct {
+		BlockSize int
+		Blocks    [][]instruction
+	}{BlockSize: blockSize}
+	for first := 0; first < bpf.MaxInstructions; first += blockSize {
+		end := min(first+blockSize, bpf.MaxInstructions)
+		block := make([]instruction, 0, end-first)
+		for length := end; length > first; length-- {
+			block = append(block, instruction{
+				Length: length, Index: length - 1, Fallthrough: length > first+1,
+			})
+		}
+		data.Blocks = append(data.Blocks, block)
 	}
 	var source bytes.Buffer
-	if err := tmpl.Execute(&source, cases); err != nil {
+	if err := tmpl.Execute(&source, data); err != nil {
 		log.Fatal(err)
 	}
 	if err := os.WriteFile(os.Args[2], source.Bytes(), 0644); err != nil {
