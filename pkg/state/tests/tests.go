@@ -65,6 +65,10 @@ func checkEqual(root, loadedValue any) bool {
 	return false
 }
 
+// isomorphicCheck, if set, returns an error if the object graphs rooted at
+// the two given pointers are not isomorphic. It is set by the tests.
+var isomorphicCheck func(a, b any) error
+
 // runTestCases runs a test for each object in objects.
 func runTestCases(t *testing.T, shouldFail bool, prefix string, objects []any) {
 	t.Helper()
@@ -126,6 +130,13 @@ func runTestCases(t *testing.T, shouldFail bool, prefix string, objects []any) {
 			// Everything went okay. Is that good?
 			if shouldFail {
 				t.Fatalf("This test was expected to fail, but didn't.")
+			}
+
+			// Check that aliasing was preserved as well.
+			if isomorphicCheck != nil {
+				if err := isomorphicCheck(saveObjectPtr.Interface(), loadObjectPtr.Interface()); err != nil {
+					t.Fatalf("Graphs are not isomorphic: %v\n\toriginal: %#v\n\tloaded:   %#v", err, root, loadedValue)
+				}
 			}
 			t.Logf("Load stats:\n%s", loadStats.String())
 

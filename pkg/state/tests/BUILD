@@ -33,6 +33,7 @@ go_test(
         "bool_test.go",
         "float_test.go",
         "integer_test.go",
+        "isomorphism_test.go",
         "load_test.go",
         "map_test.go",
         "register_test.go",
