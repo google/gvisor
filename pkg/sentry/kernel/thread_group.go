@@ -164,8 +164,9 @@ type ThreadGroup struct {
 
 	// exitStatus is the thread group's exit status.
 	//
-	// While exiting is false, exitStatus is protected by the signal mutex.
 	// When exiting becomes true, exitStatus becomes immutable.
+	//
+	// +checklocks:signalHandlers.mu
 	exitStatus linux.WaitStatus
 
 	// terminationSignal is the signal that this thread group's leader will
