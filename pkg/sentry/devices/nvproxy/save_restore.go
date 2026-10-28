@@ -33,6 +33,9 @@ type saveRestoreGoogleContextID int
 const (
 	// CtxDeviceRemapping is a Context.Value key for a DeviceRemapping.
 	CtxDeviceRemapping saveRestoreGoogleContextID = iota
+	// CtxContainerUVMModes is a Context.Value key for a map[string]bool of
+	// container UVM modes selected from the destination host before loading.
+	CtxContainerUVMModes
 )
 
 // DeviceRemappingFromContext returns the DeviceRemapping associated with ctx,
@@ -193,6 +196,7 @@ func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 		panic(fmt.Sprintf("driver version %q not found in abis map", nvp.version))
 	}
 	nvp.abi = abiEntry.cons()
+	nvp.containerUVMModes = ctx.Value(CtxContainerUVMModes).(map[string]bool)
 	if dr := DeviceRemappingFromContext(ctx); dr != nil {
 		// Remap frontendFDs to their new frontendDevices.
 		// frontendFD.vfsfd.VirtualDentry() will still point to the original
@@ -322,11 +326,19 @@ func (fd *frontendFD) afterLoad(ctx goContext.Context) {
 
 // beforeSave is invoked by stateify.
 func (fd *uvmFD) beforeSave() {
-	// no-op
+	if fd.applicationMMInitialized.Load() {
+		panic("nvproxy: checkpointing UVM bound to an application host mm is unsupported")
+	}
 }
 
 // afterLoad is invoked by stateify.
 func (fd *uvmFD) afterLoad(ctx goContext.Context) {
+	modes := ctx.Value(CtxContainerUVMModes).(map[string]bool)
+	var ok bool
+	fd.applicationMM, ok = modes[fd.containerName]
+	if !ok {
+		panic(fmt.Sprintf("nvproxy: restored UVM mode is not configured for container %q", fd.containerName))
+	}
 	fd.hostFD = openHostDevFileForRestore(ctx, "nvidia-uvm", fd.dev.nvp.useDevGofer, fd.containerName, fd.vfsfd.StatusFlags())
 	if err := fdnotifier.AddFD(fd.hostFD, &fd.queue); err != nil {
 		panic(fmt.Sprintf("fdnotifier.AddFD(%d) failed for UVM device: %v", fd.hostFD, err))

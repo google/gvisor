@@ -14,6 +14,8 @@
 
 package systrap
 
+import "gvisor.dev/gvisor/pkg/hostarch"
+
 // syscallSentryMessage is a shared message that can be changed only from the
 // Sentry and a stub process can only read it.
 type syscallSentryMessage struct {
@@ -30,4 +32,8 @@ type syscallSentryMessage struct {
 // Attention: It can be compromised by user threads.
 type syscallStubMessage struct {
 	ret uint64
+
+	// ioctlParams contains only application-controlled data. Translated host
+	// file descriptors and Sentry pointers must never be placed here.
+	ioctlParams [hostarch.MinPageSize - 8]byte
 }

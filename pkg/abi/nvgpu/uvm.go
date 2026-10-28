@@ -61,6 +61,7 @@ const (
 	UVM_TOOLS_FLUSH_EVENTS                = 67
 	UVM_ALLOC_SEMAPHORE_POOL              = 68
 	UVM_PAGEABLE_MEM_ACCESS_ON_GPU        = 70
+	UVM_POPULATE_PAGEABLE                 = 71
 	UVM_VALIDATE_VA_RANGE                 = 72
 	UVM_CREATE_EXTERNAL_RANGE             = 73
 	UVM_MM_INITIALIZE                     = 75
@@ -833,6 +834,25 @@ func (p *UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS) GetStatus() uint32 {
 
 // SetStatus implements HasStatus.SetStatus.
 func (p *UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
+type UVM_POPULATE_PAGEABLE_PARAMS struct {
+	_        structs.HostLayout
+	Base     uint64
+	Length   uint64
+	Flags    uint32
+	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_POPULATE_PAGEABLE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_POPULATE_PAGEABLE_PARAMS) SetStatus(status uint32) {
 	p.RMStatus = status
 }
 

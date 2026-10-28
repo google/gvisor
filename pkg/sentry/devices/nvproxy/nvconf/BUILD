@@ -9,6 +9,7 @@ go_library(
     srcs = [
         "caps.go",
         "hostdriver_unsafe.go",
+        "hostgpu_unsafe.go",
         "hostsettings.go",
         "nvconf.go",
         "version.go",
