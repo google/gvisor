@@ -88,10 +88,13 @@ func (sfd *SignalFileDescription) Mask() linux.SignalSet {
 // SetMask sets the signal mask.
 func (sfd *SignalFileDescription) SetMask(mask linux.SignalSet) {
 	sfd.mu.Lock()
-	defer sfd.mu.Unlock()
 	sfd.target.SignalUnregister(&sfd.entry)
 	sfd.entry.Init(sfd, waiter.EventMask(mask))
 	sfd.target.SignalRegister(&sfd.entry)
+	sfd.mu.Unlock()
+
+	// A signal that was already pending may now be readable.
+	sfd.queue.Notify(waiter.EventIn)
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.

@@ -3076,6 +3076,7 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:multiprocess_util",
