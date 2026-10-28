@@ -148,10 +148,13 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("overlay", false, "DEPRECATED: use --overlay2=all:memory to achieve the same effect")
 	flagSet.Var(defaultOverlay2(), flagOverlay2, "wrap mounts with overlayfs. Format is\n"+
 		"* 'none' to turn overlay mode off\n"+
-		"* {mount}:{medium}[,size={size}], where\n"+
+		"* {mount}:{medium}[,size={size}][,metacopy=on|off], where\n"+
 		"    'mount' can be 'root' or 'all'\n"+
 		"    'medium' can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created\n"+
-		"    'size' optional parameter overrides default overlay upper layer size\n")
+		"    'size' optional parameter overrides default overlay upper layer size\n"+
+		"    'metacopy=on' makes the root overlay copy up only metadata for chown/chmod/utimes/xattr changes,\n"+
+		"        leaving file data on the lower layer until the file is opened for writing, like Linux overlayfs\n"+
+		"        (root mount only, default off)\n")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 	flagSet.Var(charDevicePolicyPtr(CharDevEmulatedOnly), "character-device-policy", "controls how character device files on gofer mounts (rootfs and bind mounts) are handled. 'emulated-only' serves devices implemented by the sentry and fails opens of other devices with ENXIO (default and more secure); 'prefer-emulated' serves sentry-implemented devices from the sentry and opens the rest through the host; 'passthrough' opens all of them through the host. Values: emulated-only|prefer-emulated|passthrough, default: emulated-only")

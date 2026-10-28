@@ -1287,6 +1287,10 @@ type Overlay2 struct {
 	// Empty means use default.
 	// Size is applied to each overlay independently and not shared by overlays.
 	size string
+	// metacopy makes the root overlay copy up only metadata when a regular
+	// file's metadata changes, like Linux overlayfs' metacopy=on. See
+	// overlay.FilesystemOptions.Metacopy.
+	metacopy bool
 }
 
 func defaultOverlay2() *Overlay2 {
@@ -1295,11 +1299,14 @@ func defaultOverlay2() *Overlay2 {
 }
 
 func setOverlay2Err(v string) error {
-	return fmt.Errorf("expected format is --overlay2={mount}:{medium}[,size={size}], got %q", v)
+	return fmt.Errorf("expected format is --overlay2={mount}:{medium}[,size={size}][,metacopy=on|off], got %q", v)
 }
 
-// `--overlay2=...` param `size=`.
-const overlay2SizeEq = "size="
+// `--overlay2=...` params `size=` and `metacopy=`.
+const (
+	overlay2SizeEq     = "size="
+	overlay2MetacopyEq = "metacopy="
+)
 
 // Set implements flag.Value. Set(String()) should be idempotent.
 // On error, the receiver is unchanged.
@@ -1334,15 +1341,22 @@ func (o *Overlay2) Set(v string) error {
 		return err
 	}
 
-	if len(parts) == 2 {
-		sizeArg := parts[1]
-		size, cut := strings.CutPrefix(sizeArg, overlay2SizeEq)
-		if !cut {
+	for _, opt := range parts[1:] {
+		if size, ok := strings.CutPrefix(opt, overlay2SizeEq); ok {
+			next.size = size
+			continue
+		}
+		switch opt {
+		case overlay2MetacopyEq + "on":
+			next.metacopy = true
+		case overlay2MetacopyEq + "off":
+			next.metacopy = false
+		default:
 			return setOverlay2Err(v)
 		}
-		next.size = size
-	} else if len(parts) > 2 {
-		return setOverlay2Err(v)
+	}
+	if next.metacopy && next.subMounts {
+		return fmt.Errorf("--overlay2 metacopy=on applies only to the root mount, got %q", v)
 	}
 
 	*o = next
@@ -1369,12 +1383,14 @@ func (o Overlay2) String() string {
 		panic("invalid state of subMounts = true and rootMount = false")
 	}
 
-	var sizeSuffix string
+	res += ":" + o.medium.String()
 	if o.size != "" {
-		sizeSuffix = fmt.Sprintf(",%s%s", overlay2SizeEq, o.size)
+		res += "," + overlay2SizeEq + o.size
 	}
-
-	return res + ":" + o.medium.String() + sizeSuffix
+	if o.metacopy {
+		res += "," + overlay2MetacopyEq + "on"
+	}
+	return res
 }
 
 // Enabled returns true if the overlay option is enabled for any mounts.
@@ -1396,6 +1412,12 @@ func (o *Overlay2) RootOverlaySize() string {
 		return ""
 	}
 	return o.size
+}
+
+// RootOverlayMetacopy returns whether the root overlay copies up only
+// metadata on metadata changes.
+func (o *Overlay2) RootOverlayMetacopy() bool {
+	return o.rootMount && o.metacopy
 }
 
 // SubMountOverlayMedium returns the overlay medium config of submounts.
