@@ -314,6 +314,9 @@ func (f *ClientFD) SetStat(ctx context.Context, stat *linux.Statx) (uint32, erro
 }
 
 // WalkMultiple makes the Walk RPC with multiple path components.
+//
+// If the server's response is inconsistent with names (see validWalkResp),
+// then all control FDs in the response are closed and EIO is returned.
 func (f *ClientFD) WalkMultiple(ctx context.Context, names []string) (WalkStatus, []Inode, error) {
 	req := WalkReq{
 		DirFD: f.fd,
@@ -324,7 +327,33 @@ func (f *ClientFD) WalkMultiple(ctx context.Context, names []string) (WalkStatus
 	ctx.UninterruptibleSleepStart()
 	err := f.client.SndRcvMessage(Walk, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
 	ctx.UninterruptibleSleepFinish()
-	return resp.Status, resp.Inodes, err
+	if err != nil {
+		return resp.Status, resp.Inodes, err
+	}
+	if !validWalkResp(&resp, len(names)) {
+		log.Warningf("invalid Walk response for %d path components: status = %s, got %d inodes", len(names), walkStatusToString(resp.Status), len(resp.Inodes))
+		for i := range resp.Inodes {
+			f.client.CloseFD(ctx, resp.Inodes[i].ControlFD, false /* flush */)
+		}
+		return resp.Status, nil, unix.EIO
+	}
+	return resp.Status, resp.Inodes, nil
+}
+
+// validWalkResp returns true if resp is consistent with a Walk RPC for
+// numNames path components, as produced by WalkHandler: a successful walk
+// returns one inode per path component, and a walk that terminates early
+// returns fewer inodes than path components. Callers rely on this to index
+// into the requested path components and the returned inodes.
+func validWalkResp(resp *WalkResp, numNames int) bool {
+	switch resp.Status {
+	case WalkSuccess:
+		return len(resp.Inodes) == numNames
+	case WalkComponentDoesNotExist, WalkComponentSymlink:
+		return len(resp.Inodes) < numNames
+	default:
+		return false
+	}
 }
 
 // Walk makes the Walk RPC with just one path component to walk.
