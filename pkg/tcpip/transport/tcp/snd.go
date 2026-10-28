@@ -1653,6 +1653,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		return
 	}
 
+	var exitedRecovery bool
 	// Ignore ack if it doesn't acknowledge any new data.
 	if (ack - 1).InRange(s.SndUna, s.SndNxt) {
 		s.DupAckCount = 0
@@ -1751,13 +1752,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if !s.FastRecovery.Active {
 			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT, rcvdSeg.rcvdTime)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
+				// RACK counts completed recoveries, not subsequent
+				// ACKs that advance the send window while open.
+				exitedRecovery = s.inRecovery()
 				s.state = tcpip.Open
-				// Update RACK when we are exiting fast or RTO
-				// recovery as described in the RFC
-				// draft-ietf-tcpm-rack-08 Section-7.2 Step 4.
-				if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-					s.rc.exitRecovery()
-				}
 				s.reorderTimer.disable()
 			}
 		}
@@ -1790,7 +1788,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 		//	* Upon receiving an ACK:
 		//	* Step 4: Update RACK reordering window
-		s.rc.updateRACKReorderWindow()
+		s.rc.updateRACKReorderWindow(exitedRecovery)
 
 		// After the reorder window is calculated, detect any loss by checking
 		// if the time elapsed after the segments are sent is greater than the
