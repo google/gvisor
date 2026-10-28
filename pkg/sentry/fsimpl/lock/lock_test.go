@@ -667,7 +667,7 @@ func TestSetLock(t *testing.T) {
 			l := fill(test.before)
 
 			r := LockRange{Start: test.start, End: test.end}
-			err := l.lock(test.uid, 0 /* ownerPID */, test.lockType, r, false)
+			err := l.lock(test.uid, 0 /* ownerPID */, test.lockType, r)
 			var got []entry
 			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 				got = append(got, entry{
@@ -695,7 +695,7 @@ func TestFileLocksFirstUse(t *testing.T) {
 	ctx := context.Background()
 	r := LockRange{End: LockEOF}
 	locks.UnlockRegion(1, r)
-	if got := locks.TestRegion(ctx, 1, WriteLock, r, false).Type; got != unix.F_UNLCK {
+	if got := locks.TestRegion(ctx, 1, WriteLock, r).Type; got != unix.F_UNLCK {
 		t.Fatalf("query on unused file: got %d, want F_UNLCK", got)
 	}
 	locks.mu.Lock()
@@ -705,14 +705,14 @@ func TestFileLocksFirstUse(t *testing.T) {
 		t.Fatal("unlock or query allocated a lock tree")
 	}
 
-	if err := locks.LockRegion(ctx, 1, 42, WriteLock, r, false, false); err != nil {
+	if err := locks.LockRegion(ctx, 1, 42, WriteLock, r, false); err != nil {
 		t.Fatalf("first write lock: %v", err)
 	}
-	if got := locks.TestRegion(ctx, 2, ReadLock, r, false); got.Type != unix.F_WRLCK || got.PID != 42 {
+	if got := locks.TestRegion(ctx, 2, ReadLock, r); got.Type != unix.F_WRLCK || got.PID != 42 {
 		t.Fatalf("query from another owner: got %+v, want write lock held by PID 42", got)
 	}
 	locks.UnlockRegion(1, r)
-	if got := locks.TestRegion(ctx, 2, ReadLock, r, false).Type; got != unix.F_UNLCK {
+	if got := locks.TestRegion(ctx, 2, ReadLock, r).Type; got != unix.F_UNLCK {
 		t.Errorf("query after unlock: got %d, want F_UNLCK", got)
 	}
 }
