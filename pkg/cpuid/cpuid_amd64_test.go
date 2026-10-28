@@ -323,7 +323,7 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-func TestNormalizeHidesAMX(t *testing.T) {
+func TestUnsetAMXStatic(t *testing.T) {
 	amx := []Feature{X86FeatureAMX_BF16, X86FeatureAMX_TILE, X86FeatureAMX_INT8}
 	s := make(Static)
 	for _, f := range append([]Feature{X86FeatureXSAVE}, amx...) {
@@ -335,8 +335,15 @@ func TestNormalizeHidesAMX(t *testing.T) {
 	s.Set(avx, Out{Eax: 256, Ebx: 576})
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}, Out{Eax: 64, Ebx: 2752})
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}, Out{Eax: 8192, Ebx: 2816})
+	tileInfo := []In{{Eax: uint32(amxTileInfo)}, {Eax: uint32(amxTileInfo), Ecx: 1}, {Eax: uint32(amxTMULInfo)}}
+	s.Set(tileInfo[0], Out{Eax: 1})
+	s.Set(tileInfo[1], Out{Eax: 0x04002000, Ebx: 0x00080040, Ecx: 0x10})
+	s.Set(tileInfo[2], Out{Ebx: 0x4010})
 
-	fs := s.ToFeatureSet()
+	if fs := s.ToFeatureSet(); !fs.HasFeature(X86FeatureAMX_TILE) {
+		t.Errorf("ToFeatureSet hid %v", X86FeatureAMX_TILE)
+	}
+	fs := s.ToFeatureSet().UnsetAMX()
 	for _, f := range amx {
 		if fs.HasFeature(f) {
 			t.Errorf("%v is advertised", f)
@@ -353,6 +360,32 @@ func TestNormalizeHidesAMX(t *testing.T) {
 			t.Errorf("AMX subleaf %d: got %+v, want zero", i, got)
 		}
 	}
+	for _, in := range tileInfo {
+		if got := fs.Query(in); got != (Out{}) {
+			t.Errorf("AMX tile information %+v: got %+v, want zero", in, got)
+		}
+	}
+}
+
+func TestAMXTileInfo(t *testing.T) {
+	fs := HostFeatureSet().Fixed()
+	if !fs.HasFeature(X86FeatureAMX_TILE) {
+		t.Skip("host does not support AMX")
+	}
+	maxPalette := native(In{Eax: uint32(amxTileInfo)}).Eax
+	if maxPalette == 0 {
+		t.Fatalf("host advertises AMX but reports no tile palettes")
+	}
+	for i := uint32(0); i <= maxPalette; i++ {
+		in := In{Eax: uint32(amxTileInfo), Ecx: i}
+		if got, want := fs.Query(in), native(in); got != want {
+			t.Errorf("tile information %+v: got %+v, want %+v", in, got, want)
+		}
+	}
+	in := In{Eax: uint32(amxTMULInfo)}
+	if got, want := fs.Query(in), native(in); got != want {
+		t.Errorf("TMUL information: got %+v, want %+v", got, want)
+	}
 }
 
 func TestUnsetFSGSBASE(t *testing.T) {
@@ -366,5 +399,52 @@ func TestUnsetFSGSBASE(t *testing.T) {
 	out := guestFeatures.Query(In{Eax: 7, Ecx: 0})
 	if out.Ebx&1 != 0 {
 		t.Errorf("UnsetFSGSBASE failed: CPUID.(EAX=7, ECX=0).EBX bit 0 (FSGSBASE) should be 0, got %x", out.Ebx)
+	}
+}
+
+func TestUnsetAMX(t *testing.T) {
+	guestFeatures := HostFeatureSet().UnsetAMX()
+
+	for _, f := range []Feature{X86FeatureAMX_TILE, X86FeatureAMX_INT8, X86FeatureAMX_BF16} {
+		if guestFeatures.HasFeature(f) {
+			t.Errorf("UnsetAMX failed: %v should be disabled", f)
+		}
+	}
+
+	out := guestFeatures.Query(In{Eax: uint32(xSaveInfo)})
+	if mask := uint64(out.Eax) & (XCR0AmxCfgMask | XCR0AmxDataMask); mask != 0 {
+		t.Errorf("UnsetAMX failed: CPUID.(EAX=0xd, ECX=0).EAX AMX bits should be 0, got %#x", mask)
+	}
+}
+
+func TestIntersectAMX(t *testing.T) {
+	hostFeatures := HostFeatureSet()
+	allowed := make(map[Feature]struct{})
+	for f := range allFeatures {
+		if hostFeatures.HasFeature(f) {
+			allowed[f] = struct{}{}
+		}
+	}
+
+	fs, err := hostFeatures.Intersect(allowed)
+	if err != nil {
+		t.Fatalf("Intersect failed: %v", err)
+	}
+	if got, want := fs.ValidXCR0Mask(), hostFeatures.ValidXCR0Mask(); got != want {
+		t.Errorf("Intersect with all host features: ValidXCR0Mask got %#x, want %#x", got, want)
+	}
+
+	delete(allowed, X86FeatureAMX_TILE)
+	fs, err = hostFeatures.Intersect(allowed)
+	if err != nil {
+		t.Fatalf("Intersect failed: %v", err)
+	}
+	if mask := fs.ValidXCR0Mask() & (XCR0AmxCfgMask | XCR0AmxDataMask); mask != 0 {
+		t.Errorf("Intersect without amx_tile: ValidXCR0Mask AMX bits should be 0, got %#x", mask)
+	}
+	for _, f := range []Feature{X86FeatureAMX_INT8, X86FeatureAMX_BF16} {
+		if fs.HasFeature(f) {
+			t.Errorf("Intersect without amx_tile: %v should be disabled", f)
+		}
 	}
 }

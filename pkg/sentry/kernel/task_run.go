@@ -191,6 +191,8 @@ func (app *runApp) execute(t *Task) taskRunState {
 		}
 	}
 
+	t.syncFPStateSize()
+
 	// We're about to switch to the application again. If there's still an
 	// unhandled SyscallRestartErrno that wasn't translated to an EINTR,
 	// restart the syscall that was interrupted. If there's a saved signal

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <asm/prctl.h>
+#include <cpuid.h>
 #include <setjmp.h>  // IWYU pragma: keep
 #include <signal.h>
 #include <sys/mman.h>
@@ -49,6 +50,24 @@
 // glibc does not provide a prototype for arch_prctl() so declare it here.
 extern "C" int arch_prctl(int code, uintptr_t addr);
 
+// AMX-related arch_prctl() codes and xfeature indices, which may be absent from
+// older <asm/prctl.h>. See Linux's arch/x86/include/uapi/asm/prctl.h.
+#ifndef ARCH_GET_XCOMP_SUPP
+#define ARCH_GET_XCOMP_SUPP 0x1021
+#endif
+#ifndef ARCH_GET_XCOMP_PERM
+#define ARCH_GET_XCOMP_PERM 0x1022
+#endif
+#ifndef ARCH_REQ_XCOMP_PERM
+#define ARCH_REQ_XCOMP_PERM 0x1023
+#endif
+#ifndef XFEATURE_XTILECFG
+#define XFEATURE_XTILECFG 17
+#endif
+#ifndef XFEATURE_XTILEDATA
+#define XFEATURE_XTILEDATA 18
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -70,6 +89,16 @@ ABSL_ATTRIBUTE_NOINLINE T RawSyscall() {
 }
 
 pid_t RawGetpid() { return RawSyscall<SYS_getpid, 0, pid_t>(); }
+
+// CpuidHasAMXTile returns true if CPUID advertises the AMX-TILE feature
+// (CPUID leaf 7, subleaf 0, EDX bit 24).
+bool CpuidHasAMXTile() {
+  uint32_t eax, ebx, ecx, edx;
+  if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+    return false;
+  }
+  return (edx & (1u << 24)) != 0;
+}
 
 TEST(ArchPrctlTest, GetSetFS) {
   uintptr_t orig;
@@ -1042,6 +1071,52 @@ TEST(ArchPrctlTest, SigillAtRevertedPatchSiteIsDelivered) {
     EXPECT_EQ(reverted_patch_site_sigill_ip.load(),
               reinterpret_cast<uintptr_t>(code + offset));
   }
+}
+
+// AMX (Advanced Matrix Extensions), gvisor.dev/issue/9896.
+//
+// Workloads that see AMX-TILE in CPUID (e.g. oneDNN) enable it with
+// arch_prctl(). On a native host without AMX kernel support the tests skip;
+// gVisor must not skip, since it only advertises AMX where it supports it.
+
+TEST(ArchPrctlTest, AmxGetXcompSupp) {
+  SKIP_IF(!CpuidHasAMXTile());
+
+  unsigned long supp = 0;
+  int ret = arch_prctl(ARCH_GET_XCOMP_SUPP, reinterpret_cast<uintptr_t>(&supp));
+  // On a native host without AMX kernel support, this call fails; there is
+  // nothing to test. Under gVisor it must succeed because AMX is advertised.
+  SKIP_IF(ret != 0 && !IsRunningOnGvisor());
+
+  ASSERT_THAT(ret, SyscallSucceeds());
+  EXPECT_NE(supp & (1UL << XFEATURE_XTILECFG), 0UL)
+      << "ARCH_GET_XCOMP_SUPP must advertise XTILECFG, got " << std::hex << supp;
+  EXPECT_NE(supp & (1UL << XFEATURE_XTILEDATA), 0UL)
+      << "ARCH_GET_XCOMP_SUPP must advertise XTILEDATA, got " << std::hex
+      << supp;
+}
+
+TEST(ArchPrctlTest, AmxReqXcompPermEnablesTileData) {
+  SKIP_IF(!CpuidHasAMXTile());
+
+  unsigned long supp = 0;
+  int supp_ret =
+      arch_prctl(ARCH_GET_XCOMP_SUPP, reinterpret_cast<uintptr_t>(&supp));
+  SKIP_IF(supp_ret != 0 && !IsRunningOnGvisor());
+  ASSERT_THAT(supp_ret, SyscallSucceeds());
+
+  // Requesting permission for XTILEDATA must succeed and must then be reflected
+  // in ARCH_GET_XCOMP_PERM. This is irreversible and process-wide, which is
+  // fine within a dedicated test process.
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+
+  unsigned long perm = 0;
+  ASSERT_THAT(arch_prctl(ARCH_GET_XCOMP_PERM, reinterpret_cast<uintptr_t>(&perm)),
+              SyscallSucceeds());
+  EXPECT_NE(perm & (1UL << XFEATURE_XTILEDATA), 0UL)
+      << "XTILEDATA permission not granted after ARCH_REQ_XCOMP_PERM, perm="
+      << std::hex << perm;
 }
 
 }  // namespace

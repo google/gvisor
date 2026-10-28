@@ -36,6 +36,11 @@
 #define X86_TRAP_PF 14
 #endif
 
+#ifndef ARCH_REQ_XCOMP_PERM
+#define ARCH_REQ_XCOMP_PERM 0x1023
+#endif
+#define XFEATURE_XTILEDATA 18
+
 // TODO(b/271631387): These globals are shared between AMD64 and ARM64; move to
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
@@ -194,6 +199,66 @@ static bool is_syscall_patching_disabled(struct thread_context* ctx) {
   return __export_disable_syscall_patching != 0 || ctx->gs_used_by_app != 0;
 }
 
+// asm/sigcontext.h conflicts with signal.h.
+struct __fpx_sw_bytes {
+  uint32_t magic1;
+  uint32_t extended_size;
+  uint64_t xfeatures;
+  uint32_t xstate_size;
+  uint32_t padding[7];
+};
+
+struct __fpstate {
+  uint16_t cwd;
+  uint16_t swd;
+  uint16_t twd;
+  uint16_t fop;
+  uint64_t rip;
+  uint64_t rdp;
+  uint32_t mxcsr;
+  uint32_t mxcsr_mask;
+  uint32_t st_space[32];
+  uint32_t xmm_space[64];
+  uint32_t reserved2[12];
+  struct __fpx_sw_bytes sw_reserved;
+};
+
+// ctx_fp_len returns the number of bytes of ctx->fpstate in use, leaving room
+// for FP_XSTATE_MAGIC2.
+static uint32_t ctx_fp_len(struct thread_context* ctx) {
+  uint32_t max = __export_arch_state.thread_context_size - FPSTATE_OFFSET -
+                 FP_XSTATE_MAGIC2_SIZE;
+  uint32_t len = atomic_load(&ctx->fp_len);
+  if (len > max) {
+    len = max;
+  }
+  return len;
+}
+
+// Tile configuration with palette 1 and a single 1x64-byte tile.
+static const uint8_t amx_warmup_tilecfg[64] = {[0] = 1, [16] = 64, [48] = 1};
+
+// amx_enable makes the current thread able to run contexts with AMX state. The
+// host kernel grants AMX permission per thread group, which is per sysmsg
+// thread here, and enlarges a thread's fpstate only when it first uses tile
+// data. Until then, it would restore a larger sigframe as FX state only.
+static void amx_enable(struct sysmsg* sysmsg) {
+  long ret = __syscall(__NR_arch_prctl, ARCH_REQ_XCOMP_PERM,
+                       XFEATURE_XTILEDATA, 0, 0, 0, 0);
+  if (ret != 0) {
+    panic(STUB_ERROR_ARCH_PRCTL, ret);
+  }
+  // The incoming context's FP state is restored after this.
+  asm volatile(
+      ".byte 0xc4, 0xe2, 0x78, 0x49, 0x00\n"  // ldtilecfg (%rax)
+      ".byte 0xc4, 0xe2, 0x7b, 0x49, 0xc0\n"  // tilezero %tmm0
+      ".byte 0xc4, 0xe2, 0x78, 0x49, 0xc0\n"  // tilerelease
+      :
+      : "a"(amx_warmup_tilecfg)
+      : "memory");
+  sysmsg->amx_ready = 1;
+}
+
 // switch_context_amd64 is a wrapper of switch_context() which does checks
 // specific to amd64.
 struct thread_context* switch_context_amd64(
@@ -226,11 +291,14 @@ struct thread_context* switch_context_amd64(
   if (old_ctx != ctx || ctx->last_thread_id != sysmsg->thread_id) {
     ctx->fpstate_changed = 1;
   }
+  if (!sysmsg->amx_ready && ctx_fp_len(ctx) > __export_arch_state.fp_len) {
+    amx_enable(sysmsg);
+  }
   return ctx;
 }
 
 static void prep_fpstate_for_sigframe(void* buf, uint32_t user_size,
-                                      bool use_xsave);
+                                      uint64_t xfeatures, bool use_xsave);
 
 void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
   ucontext_t* ucontext = _ucontext;
@@ -298,8 +366,15 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
     }
     ctx->err = 0;
     gregs_to_ptregs(ucontext, &ctx->ptregs);
-    memcpy(ctx->fpstate, (uint8_t*)ucontext->uc_mcontext.fpregs,
-           __export_arch_state.fp_len);
+    struct __fpstate* fpregs = (void*)ucontext->uc_mcontext.fpregs;
+    uint32_t fp_len = ctx_fp_len(ctx);
+    // Don't read past the host's frame if it is smaller than the context.
+    if (__export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE &&
+        fpregs->sw_reserved.magic1 == FP_XSTATE_MAGIC1 &&
+        fpregs->sw_reserved.xstate_size < fp_len) {
+      fp_len = fpregs->sw_reserved.xstate_size;
+    }
+    memcpy(ctx->fpstate, (uint8_t*)fpregs, fp_len);
   }
 
   switch (signo) {
@@ -409,7 +484,7 @@ restore:
 
   if (atomic_load(&ctx->fpstate_changed) || is_syscall_patching_disabled(ctx)) {
     prep_fpstate_for_sigframe(
-        ctx->fpstate, __export_arch_state.fp_len,
+        ctx->fpstate, ctx_fp_len(ctx), atomic_load(&ctx->xfeatures),
         __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
     ucontext->uc_mcontext.fpregs = (void*)ctx->fpstate;
   }
@@ -532,40 +607,16 @@ void verify_offsets_amd64() {
 #undef PTREGS_OFFSET
 }
 
-// asm/sigcontext.h conflicts with signal.h.
-struct __fpx_sw_bytes {
-  uint32_t magic1;
-  uint32_t extended_size;
-  uint64_t xfeatures;
-  uint32_t xstate_size;
-  uint32_t padding[7];
-};
-
-struct __fpstate {
-  uint16_t cwd;
-  uint16_t swd;
-  uint16_t twd;
-  uint16_t fop;
-  uint64_t rip;
-  uint64_t rdp;
-  uint32_t mxcsr;
-  uint32_t mxcsr_mask;
-  uint32_t st_space[32];
-  uint32_t xmm_space[64];
-  uint32_t reserved2[12];
-  struct __fpx_sw_bytes sw_reserved;
-};
-
 // The kernel expects to see some additional info in an FPU state. More details
 // can be found in arch/x86/kernel/fpu/signal.c:check_xstate_in_sigframe.
 static void prep_fpstate_for_sigframe(void* buf, uint32_t user_size,
-                                      bool use_xsave) {
+                                      uint64_t xfeatures, bool use_xsave) {
   struct __fpstate* fpstate = buf;
   struct __fpx_sw_bytes* sw_bytes = &fpstate->sw_reserved;
 
   sw_bytes->magic1 = FP_XSTATE_MAGIC1;
   sw_bytes->extended_size = user_size + FP_XSTATE_MAGIC2_SIZE;
-  sw_bytes->xfeatures = ~(0ULL) ^ (XCR0_DISABLED_MASK);
+  sw_bytes->xfeatures = xfeatures;
   sw_bytes->xstate_size = user_size;
   *(uint32_t*)(buf + user_size) = use_xsave ? FP_XSTATE_MAGIC2 : 0;
 }

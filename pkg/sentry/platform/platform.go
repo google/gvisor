@@ -54,6 +54,10 @@ type Platform interface {
 	// is supported.
 	HaveGlobalMemoryBarrier() bool
 
+	// SupportsAMX returns true if Contexts returned by this Platform save and
+	// restore AMX state.
+	SupportsAMX() bool
+
 	// MapUnit returns the alignment used for optional mappings into this
 	// platform's AddressSpaces. Higher values indicate lower per-page costs
 	// for AddressSpace.MapFile. As a special case, a MapUnit of 0 indicates

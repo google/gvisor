@@ -33,9 +33,10 @@ var SighandlerBlob []byte
 // ArchState defines variables specific to the architecture being
 // used.
 type ArchState struct {
-	xsaveMode uint32
-	fpLen     uint32
-	fsgsbase  uint32
+	xsaveMode         uint32
+	fpLen             uint32
+	fsgsbase          uint32
+	threadContextSize uint32
 }
 
 // The linux kernel does not allow using xsavec from userspace, so we are limited
@@ -52,8 +53,10 @@ func (s *ArchState) Init() {
 	fs := cpuid.HostFeatureSet()
 
 	fpLenUint, _ := fs.ExtendedStateSize()
-	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+	// This is the default length; contexts with AMX state use a larger one.
 	s.fpLen = uint32(fpLenUint - fs.AMXExtendedStateSize())
+	// The full XSAVE area plus FP_XSTATE_MAGIC2.
+	s.threadContextSize = threadContextSize(fpLenUint + 4)
 	if fs.UseXsaveopt() {
 		s.xsaveMode = xsaveopt
 	} else if fs.UseXsave() {
@@ -78,6 +81,7 @@ func (s *ArchState) String() string {
 	fmt.Fprintf(&b, " xsaveMode %d", s.xsaveMode)
 	fmt.Fprintf(&b, " fsgsbase %d", s.fsgsbase)
 	fmt.Fprintf(&b, " fpLen %d", s.fpLen)
+	fmt.Fprintf(&b, " threadContextSize %d", s.threadContextSize)
 	b.WriteString(" }")
 
 	return b.String()

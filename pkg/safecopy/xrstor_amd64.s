@@ -42,7 +42,10 @@ TEXT ·checkXstate(SB),NOSPLIT|NOFRAME,$0-26
 	FSTCW	cw+24(FP)
 
 	MOVQ addr+0(FP), DI
-	MOVL $0xffffffff, AX
+	// All components except AMX tile data (bit 18). Sentry threads lack AMX
+	// permission, so loading it would raise #NM (SIGILL), not a recoverable
+	// fault.
+	MOVL $0xfffbffff, AX
 	MOVL $0xffffffff, DX
 	XRSTOR64 (DI)
 

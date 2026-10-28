@@ -115,7 +115,10 @@ func Init(fs cpuid.FeatureSet) {
 	hasLA57 = fs.HasFeature(cpuid.X86FeatureLA57)
 	validXCR0Mask = uintptr(fs.ValidXCR0Mask())
 	if hasXSAVE {
-		XCR0DisabledMask := uintptr((1 << 9) | (1 << 17) | (1 << 18))
+		XCR0DisabledMask := uintptr(1 << 9)
+		if amx := cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask; fs.ValidXCR0Mask()&amx != amx {
+			XCR0DisabledMask |= uintptr(amx)
+		}
 		localXCR0 = xgetbv(0) &^ XCR0DisabledMask
 	}
 }

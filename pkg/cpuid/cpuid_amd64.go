@@ -466,16 +466,13 @@ func (fs FeatureSet) AMXExtendedStateSize() uint {
 
 // ValidXCR0Mask returns the valid bits in control register XCR0.
 //
-// Always exclude AMX bits, because we do not support it.
-// TODO(gvisor.dev/issues/9896): Implement AMX Support.
-//
 //go:nosplit
 func (fs FeatureSet) ValidXCR0Mask() uint64 {
 	if !fs.HasFeature(X86FeatureXSAVE) {
 		return 0
 	}
 	ax, _, _, dx := fs.query(xSaveInfo)
-	return (uint64(dx)<<32 | uint64(ax)) &^ (XCR0AmxCfgMask | XCR0AmxDataMask)
+	return uint64(dx)<<32 | uint64(ax)
 }
 
 // UseXsave returns the choice of fp state saving instruction.
@@ -544,4 +541,33 @@ func (fs FeatureSet) UnsetFSGSBASE() FeatureSet {
 	sfs := s.ToFeatureSet()
 	sfs.hwCap = fs.hwCap
 	return sfs
+}
+
+// UnsetAMX unsets AMX, including its XCR0 bits, for platforms that cannot save
+// and restore AMX state.
+func (fs FeatureSet) UnsetAMX() FeatureSet {
+	s := fs.ToStatic()
+	unsetAMX(s)
+	sfs := s.ToFeatureSet()
+	sfs.hwCap = fs.hwCap
+	return sfs
+}
+
+// unsetAMX removes the AMX features, their XCR0 bits, their state component
+// subleaves and the AMX tile and TMUL information leaves from s.
+func unsetAMX(s Static) {
+	X86FeatureAMX_TILE.Unset(s)
+	X86FeatureAMX_INT8.Unset(s)
+	X86FeatureAMX_BF16.Unset(s)
+	in := In{Eax: uint32(xSaveInfo)}
+	out := s.Query(in)
+	out.Eax &^= uint32(XCR0AmxCfgMask | XCR0AmxDataMask)
+	s.Set(in, out)
+	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})
+	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent})
+	for in := range s {
+		if fn := cpuidFunction(in.Eax); fn == amxTileInfo || fn == amxTMULInfo {
+			delete(s, in)
+		}
+	}
 }

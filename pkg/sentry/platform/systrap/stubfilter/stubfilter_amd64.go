@@ -48,6 +48,7 @@ func stubProcessArchRules() []seccomp.RuleSet {
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_REQ_XCOMP_PERM), seccomp.EqualTo(linux.XFEATURE_XTILEDATA)},
 				},
 			}),
 			Action: seccomp.Allow,
@@ -101,6 +102,15 @@ func sysmsgThreadArchRules(vars precompiledseccomp.Values) []seccomp.RuleSet {
 					seccomp.PerArg{
 						seccomp.EqualTo(linux.ARCH_GET_GS),
 						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.GreaterThan(stubStart), // rip
+					},
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.ARCH_REQ_XCOMP_PERM),
+						seccomp.EqualTo(linux.XFEATURE_XTILEDATA),
 						seccomp.AnyValue{},
 						seccomp.AnyValue{},
 						seccomp.AnyValue{},

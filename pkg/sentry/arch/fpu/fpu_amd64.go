@@ -67,18 +67,22 @@ const (
 	FXSAVE_AREA_SIZE = 512
 )
 
-// LINT.IfChange
 const (
 	// SupportedXFeatureStates contains all xfeatures supported right now.
 	//
-	// TODO(gvisor.dev/issues/9896): Implement AMX support.
 	// TODO(gvisor.dev/issues/10087): Implement PKRU support.
 	SupportedXFeatureStates = cpuid.XSAVEFeatureX87 |
 		cpuid.XSAVEFeatureSSE |
 		cpuid.XSAVEFeatureAVX |
 		cpuid.XSAVEFeatureAVX512op |
 		cpuid.XSAVEFeatureAVX512zmm0 |
-		cpuid.XSAVEFeatureAVX512zmm16
+		cpuid.XSAVEFeatureAVX512zmm16 |
+		cpuid.XCR0AmxCfgMask |
+		cpuid.XCR0AmxDataMask
+
+	// DefaultXFeatureStates contains the supported xfeatures other than AMX,
+	// which is only used after arch_prctl(ARCH_REQ_XCOMP_PERM).
+	DefaultXFeatureStates = SupportedXFeatureStates &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 
 	// ignoredXFeatureStates contains those xfeatures that may be
 	// present in a buffer but are safe to skip during restore.
@@ -90,17 +94,13 @@ const (
 		cpuid.XSAVEFeaturePKRU
 )
 
-// LINT.ThenChange(../../platform/systrap/sysmsg/sysmsg_offsets.h)
-
 // initX86FPState (defined in asm files) sets up initial state.
 func initX86FPState(data *byte, useXsave bool)
 
 func newX86FPStateSlice() State {
 	maxsize, align := cpuid.HostFeatureSet().ExtendedStateSize()
-	// We need capacity to be large enough to hold AMX bytes because of
-	// ptrace. PTRACE_SETREGSET/GETREGSET assume that AMX portions should
-	// always be used.
-	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+	// Capacity covers AMX state, which EnableAMX extends into and which
+	// PTRACE_GETREGSET/SETREGSET always include.
 	capacity := maxsize + FP_XSTATE_MAGIC2_SIZE
 	size := maxsize - cpuid.HostFeatureSet().AMXExtendedStateSize()
 	// Always use at least 4096 bytes.
@@ -134,9 +134,31 @@ func NewState() State {
 
 // Fork creates and returns an identical copy of the x86 floating point state.
 func (s *State) Fork() State {
-	n := newX86FPStateSlice()
+	n := newX86FPStateSlice()[:len(*s)]
 	copy(n, *s)
 	return n
+}
+
+// amxStateLen returns the length of a State that holds AMX tile data state.
+func amxStateLen() int {
+	maxsize, _ := cpuid.HostFeatureSet().ExtendedStateSize()
+	return int(maxsize) + FP_XSTATE_MAGIC2_SIZE
+}
+
+// HasAMX returns true if s is large enough to hold AMX tile data state.
+func (s State) HasAMX() bool {
+	return len(s) >= amxStateLen()
+}
+
+// EnableAMX extends s to hold AMX tile data state, if it does not already.
+func (s *State) EnableAMX() {
+	n := amxStateLen()
+	if len(*s) >= n {
+		return
+	}
+	f := (*s)[:n]
+	clear(f[len(*s)-FP_XSTATE_MAGIC2_SIZE:])
+	*s = f
 }
 
 // Reset resets s to its initial state.
@@ -157,10 +179,10 @@ var (
 func InitHostState() {
 	initHostStateOnce.Do(func() {
 		featureSet := cpuid.HostFeatureSet()
-		hostXCR0Mask = featureSet.ValidXCR0Mask()
+		// Sentry threads never use AMX.
+		hostXCR0Mask = featureSet.ValidXCR0Mask() &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 		hostUseXsave = featureSet.UseXsave()
 		hostFPSize, _ = featureSet.ExtendedStateSize()
-		// TODO(gvisor.dev/issues/9896): Implement AMX Support.
 		hostFPSize = hostFPSize - featureSet.AMXExtendedStateSize()
 	})
 }
@@ -300,6 +322,10 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 	if len(f) >= minXstateBytes {
 		// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
 		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:]) &^ ignoredXFeatureStates
+		if !f.HasAMX() {
+			// As in Linux, tile data is not restored without permission.
+			xstateBV &^= cpuid.XCR0AmxDataMask
+		}
 		allowedMask := featureSet.ValidXCR0Mask() & SupportedXFeatureStates
 		if disallowedXstateBV := xstateBV &^ allowedMask; disallowedXstateBV != 0 {
 			// FIXME: b/478302010, b/478302512: If the app is using features
@@ -390,6 +416,9 @@ func (s *State) AfterLoad() {
 	// smaller state component bitmap. Intel SDM Volume 1 Chapter 13 has
 	// more info.
 	*s = NewState()
+	if len(old) > len(s.Slice()) {
+		s.EnableAMX()
+	}
 
 	// x86FPState always contains all the FP state supported by the host.
 	// We may have come from a newer machine that supports additional state

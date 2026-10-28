@@ -58,6 +58,8 @@ const (
 	_                                                               // Function 0xc is reserved.
 	xSaveInfo                     cpuidFunction = 0xd               // Returns information about extended state management.
 	xSaveInfoSub                  cpuidFunction = 0xd | (0x1 << 32) // Returns information about extended state management (Sub-leaf).
+	amxTileInfo                   cpuidFunction = 0x1d              // Returns AMX tile palette information. Intel only.
+	amxTMULInfo                   cpuidFunction = 0x1e              // Returns AMX TMUL information. Intel only.
 )
 
 const xSaveInfoNumLeaves = 64 // Maximum number of xSaveInfo leaves.
@@ -92,6 +94,8 @@ var allowedBasicFunctions = [...]bool{
 	intelCacheDescriptors:         true,
 	intelDeterministicCacheParams: true,
 	xSaveInfo:                     true,
+	amxTileInfo:                   true,
+	amxTMULInfo:                   true,
 }
 
 var allowedExtendedFunctions = [...]bool{
@@ -187,6 +191,10 @@ func (fs FeatureSet) Intersect(allowedFeatures map[Feature]struct{}) (FeatureSet
 				hs.Remove(f)
 			}
 		}
+	}
+	// The other AMX features, and AMX state, are unusable without AMX-TILE.
+	if _, ok := allowedFeatures[X86FeatureAMX_TILE]; !ok {
+		unsetAMX(hs)
 	}
 
 	return hs.ToFeatureSet(), nil
