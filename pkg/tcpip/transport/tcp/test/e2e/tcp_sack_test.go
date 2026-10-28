@@ -750,91 +750,131 @@ func checkReceivedPacket(t *testing.T, c *context.Context, tcpHdr header.TCP, by
 }
 
 func buildTSOptionFromHeader(tcpHdr header.TCP) []byte {
-	parsedOpts := tcpHdr.ParsedOptions()
-	tsOpt := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
-	header.EncodeTSOption(parsedOpts.TSEcr+1, parsedOpts.TSVal, tsOpt[2:])
-	return tsOpt[:]
+	opts := tcpHdr.ParsedOptions()
+	return timestampOption(opts.TSEcr+1, opts.TSVal)
+}
+
+func timestampOption(tsVal, tsEcr uint32) []byte {
+	opt := [tsOptionSize]byte{header.TCPOptionNOP, header.TCPOptionNOP}
+	header.EncodeTSOption(tsVal, tsEcr, opt[2:])
+	return opt[:]
 }
 
 func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
-	probeDone := make(chan struct{})
-	probe := func(s *tcp.TCPEndpointState) {
-		if s.Sender.RetransmitTS == 0 {
-			t.Fatalf("RetransmitTS did not get updated, got: 0 want > 0")
-		}
-		if !s.Sender.SpuriousRecovery {
-			t.Fatalf("Spurious recovery was not detected")
-		}
-		close(probeDone)
+	zeroEcho := func(h header.TCP) []byte {
+		return timestampOption(h.ParsedOptions().TSEcr+1, 0)
 	}
+	for _, tc := range []struct {
+		name         string
+		negotiateTS  bool
+		ackOptions   func(header.TCP) []byte
+		wantSpurious bool
+	}{
+		{name: "timestamps", negotiateTS: true, ackOptions: buildTSOptionFromHeader, wantSpurious: true},
+		{name: "no_timestamps"},
+		{name: "missing_timestamp", negotiateTS: true},
+		{name: "zero_echo", negotiateTS: true, ackOptions: zeroEcho},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testSpuriousRecoveryWithRTO(t, tc.negotiateTS, tc.ackOptions, tc.wantSpurious)
+		})
+	}
+}
 
+func testSpuriousRecoveryWithRTO(t *testing.T, timestamps bool, ackOptions func(header.TCP) []byte, wantSpurious bool) {
+	// Only one data ACK is injected. The probe runs after the sender processes it.
+	observed := make(chan *tcp.TCPEndpointState, 1)
+	probe := func(s *tcp.TCPEndpointState) {
+		select {
+		case observed <- s:
+		default:
+		}
+	}
 	c := context.NewWithProbe(t, uint32(mtu), probe)
 	defer c.Cleanup()
 
 	e2e.SetStackSACKPermitted(t, c, true)
-	e2e.CreateConnectedWithSACKAndTS(c)
-	numPackets := 5
+	c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{SACKPermitted: true, TS: timestamps})
+	c.EP.SocketOptions().SetDelayOption(false)
+
+	const numPackets = 5
 	data := make([]byte, numPackets*maxPayload)
 	for i := range data {
 		data[i] = byte(i)
 	}
-	// Write the data.
-	var r bytes.Reader
-	r.Reset(data)
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %s", err)
-	}
-
 	var options []byte
-	var bytesRead uint32
-	for i := 0; i < numPackets; i++ {
+	for i := range numPackets {
+		// Without timestamp options a single large write would produce larger segments.
+		offset := i * maxPayload
+		piece := data[offset : offset+maxPayload]
+		if n, err := c.EP.Write(bytes.NewReader(piece), tcpip.WriteOptions{}); err != nil || n != int64(len(piece)) {
+			t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(piece))
+		}
 		b := c.GetPacket()
 		defer b.Release()
 		tcpHdr := header.TCP(header.IPv4(b.AsSlice()).Payload())
-		checkReceivedPacket(t, c, tcpHdr, bytesRead, b, data)
-
-		// Get options only for the first packet. This will be sent with
-		// the ACK to indicate the acknowledgement is for the original
-		// packet.
-		if i == 0 && c.TimeStampEnabled {
-			options = buildTSOptionFromHeader(tcpHdr)
+		if got := len(tcpHdr.Payload()); got != len(piece) {
+			t.Fatalf("segment payload = %d bytes, want %d", got, len(piece))
 		}
-		bytesRead += uint32(len(tcpHdr.Payload()))
+		checkReceivedPacket(t, c, tcpHdr, uint32(offset), b, data)
+		if got := tcpHdr.ParsedOptions().TS; got != timestamps {
+			t.Fatalf("segment timestamp option = %t, want %t", got, timestamps)
+		}
+		if i == 0 && ackOptions != nil {
+			options = ackOptions(tcpHdr)
+		}
 	}
 
-	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	// Expect #5 segment with TLP.
-	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, tsOptionSize)
-
-	// Expect #1 segment because of RTO.
-	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
-
+	// Expect segment 5 as a tail loss probe, then segment 1 on RTO.
+	optlen := 0
+	if timestamps {
+		optlen = tsOptionSize
+	}
+	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, optlen)
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, optlen)
 	info := tcpip.TCPInfoOption{}
 	if err := c.EP.GetSockOpt(&info); err != nil {
 		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
 	}
-
 	if info.CcState != tcpip.RTORecovery {
 		t.Fatalf("Loss recovery did not happen, got: %v want: %v", info.CcState, tcpip.RTORecovery)
 	}
 
-	// Acknowledge the data.
-	rcvWnd := seqnum.Size(30000)
+	ack := c.IRS.Add(1 + maxPayload)
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: c.Port,
 		Flags:   header.TCPFlagAck,
-		SeqNum:  seq,
-		AckNum:  c.IRS.Add(1 + seqnum.Size(maxPayload)),
-		RcvWnd:  rcvWnd,
+		SeqNum:  seqnum.Value(context.TestInitialSequenceNumber).Add(1),
+		AckNum:  ack,
+		RcvWnd:  30000,
 		TCPOpts: options,
 	})
-
-	// Wait for the probe function to finish processing the
-	// ACK before the test completes.
-	<-probeDone
-
-	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */, 1 /* numSpuriousRTO */)
+	select {
+	case s := <-observed:
+		if got := s.Sender.SndUna; got != ack {
+			t.Fatalf("probe SndUna = %d, want ACK %d", got, ack)
+		}
+		if wantSpurious && s.Sender.RetransmitTS == 0 {
+			t.Error("RetransmitTS was not recorded")
+		}
+		if got := s.Sender.SpuriousRecovery; got != wantSpurious {
+			t.Errorf("SpuriousRecovery = %t, want %t", got, wantSpurious)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the ACK probe")
+	}
+	want := uint64(0)
+	if wantSpurious {
+		want = 1
+	}
+	stats := c.Stack().Stats().TCP
+	if got := stats.SpuriousRecovery.Value(); got != want {
+		t.Errorf("SpuriousRecovery counter = %d, want %d", got, want)
+	}
+	if got := stats.SpuriousRTORecovery.Value(); got != want {
+		t.Errorf("SpuriousRTORecovery counter = %d, want %d", got, want)
+	}
 }
 
 func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
