@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestMountTableLookupEmpty(t *testing.T) {
@@ -233,6 +234,39 @@ func (s *mountTestSystem) mountState(mnt *Mount) (bool, *Mount) {
 	s.vfs.lockMounts()
 	defer s.vfs.unlockMounts(s.ctx)
 	return mnt.umounted, mnt.parent()
+}
+
+func TestMountPromiseResolvedAfterRegister(t *testing.T) {
+	s := newMountTestSystem(t)
+	defer s.destroy()
+	point := newMountTestDentry()
+	defer point.DecRef(s.ctx)
+	mnt := s.mount(s.root.Mount(), point, false /* locked */)
+	rp := s.vfs.getResolvingPath(s.creds, s.popAt(s.root.Mount(), point))
+	defer rp.Release(s.ctx)
+
+	var mp mountPromise
+	e, ch := waiter.NewChannelEntry(waiter.EventOut)
+	mp.wq.EventRegister(&e)
+	defer mp.wq.EventUnregister(&e)
+	// The resolver publishes the mount before notifying registered waiters.
+	mp.resolved.Store(true)
+	if err := s.vfs.waitOnMountPromise(s.ctx, rp, &mp, ch); err != nil {
+		t.Fatal(err)
+	}
+	if got := rp.Mount(); got != mnt {
+		t.Errorf("rp.Mount() = %p, want %p", got, mnt)
+	}
+	if got := rp.Start(); got != mnt.root {
+		t.Errorf("rp.Start() = %p, want %p", got, mnt.root)
+	}
+	select {
+	case _, open := <-ch:
+		if !open {
+			t.Fatal("lookup closed a registered waiter channel")
+		}
+	default:
+	}
 }
 
 // TestPartlyUmountedMountKeepsMountpointRef tests that VFS holds a reference
