@@ -947,7 +947,7 @@ steps:
     command: make benchmark-platforms  BENCHMARKS_SUITE=usage BENCHMARKS_TARGETS=test/benchmarks/base:usage_test
   - <<: *benchmarks
     label: ":speedboat: Startup benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
+    command: make benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test BENCHMARKS_OPTIONS=-test.benchtime=30x
   - <<: *benchmarks_nodocker
     label: ":stopwatch: OCI Lifecycle benchmarks"
     command: make benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=oci_lifecycle BENCHMARKS_TARGETS=runsc/container:lifecycle_benchmark_test
