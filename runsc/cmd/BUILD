@@ -69,6 +69,7 @@ go_library(
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot/sentryapi",
+        "//runsc/client",
         "//runsc/cmd/metricserver/metricservercmd",
         "//runsc/cmd/nvproxy",
         "//runsc/cmd/sandboxsetup",
