@@ -15,6 +15,7 @@
 package seccheck
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -101,4 +102,35 @@ func TestPointRegistrationFields(t *testing.T) {
 
 		})
 	}
+}
+
+// BenchmarkInitialize measures the cost of Initialize from scratch, and
+// reports the heap size that Points retains.
+func BenchmarkInitialize(b *testing.B) {
+	saved := Points
+	defer func() { Points = saved }()
+	initialize := func() {
+		Points = map[string]PointDesc{}
+		genericInit()
+		archInit()
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		initialize()
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(retainedBytes(func() { Points = nil }, initialize)), "retained-B")
+}
+
+// retainedBytes returns how much the live heap grows when build runs, after
+// reset drops the result of previous runs.
+func retainedBytes(reset, build func()) int64 {
+	reset()
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	build()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	return int64(after.HeapAlloc) - int64(before.HeapAlloc)
 }
