@@ -24,3 +24,29 @@ type benchStruct struct {
 func (b *benchStruct) afterLoad(context.Context) {
 	// Do nothing, just force scheduling.
 }
+
+// benchAdopted is first discovered through a pointer, then as an array element.
+//
+// +stateify savable
+type benchAdopted struct {
+	Value int64
+	saves *int `state:"nosave"`
+}
+
+func (b *benchAdopted) beforeSave() {
+	if b.saves != nil {
+		*b.saves++
+	}
+}
+
+// +stateify savable
+type benchAdoptionParent struct {
+	Values []benchAdopted
+	Next   *benchAdoptionParent
+}
+
+// +stateify savable
+type benchAdoption struct {
+	Pointers []*benchAdopted
+	Parent   *benchAdoptionParent
+}
