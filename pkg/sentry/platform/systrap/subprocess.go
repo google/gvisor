@@ -94,10 +94,16 @@ type thread struct {
 	logPrefix atomic.Pointer[string]
 }
 
-// requestThread is used to request a new sysmsg thread. A thread identifier will
-// be sent into the thread channel.
+// requestThread is used to request a new sysmsg thread.
 type requestThread struct {
-	thread chan *thread
+	thread chan threadCreationResult
+}
+
+// threadCreationResult contains exactly one of thread and err. Only a
+// cloneRejectedError is safe to retry after binding UVM to this address space.
+type threadCreationResult struct {
+	thread *thread
+	err    error
 }
 
 // requestStub is used to request a new stub process.
@@ -132,6 +138,8 @@ type subprocess struct {
 
 	// requests is used to signal creation of new threads.
 	requests chan any
+	// requestsDone is closed when the request goroutine exits.
+	requestsDone chan struct{}
 
 	// sysmsgInitRegs is used to reset sysemu regs.
 	sysmsgInitRegs arch.Registers
@@ -152,6 +160,8 @@ type subprocess struct {
 	// threadContextRegion defines the ThreadContext memory region start
 	// within the sentry address space.
 	threadContextRegion uintptr
+	threadContextRange  memmap.FileRange
+	contextQueueRange   memmap.FileRange
 
 	// memoryFile is used to allocate a sysmsg stack which is shared between a
 	// stub process and the Sentry.
@@ -187,6 +197,15 @@ type subprocess struct {
 
 	// dead indicates whether the subprocess is alive or not.
 	dead atomicbitops.Bool
+
+	// uvmInitialized prevents recycling an mm that the NVIDIA driver may
+	// still reference through an open UVM file after the application exits.
+	uvmInitialized atomicbitops.Bool
+
+	// uvmUnsafe prevents binding UVM after a failed sysmsg thread creation
+	// may have left aliases of recycled stack backing in this mm.
+	// Protected by syscallThreadMu.
+	uvmUnsafe bool
 }
 
 var seccompNotifyIsSupported = false
@@ -233,7 +252,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 func handlePtraceSyscallRequestError(req any, format string, values ...any) {
 	switch req := req.(type) {
 	case requestThread:
-		req.thread <- nil
+		req.thread <- threadCreationResult{err: fmt.Errorf(format, values...)}
 	case requestStub:
 		req.done <- nil
 	}
@@ -249,7 +268,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	if s.dead.Load() {
 		switch req := req.(type) {
 		case requestThread:
-			req.thread <- nil
+			req.thread <- threadCreationResult{err: errDeadSubprocess}
 		case requestStub:
 			req.done <- nil
 		}
@@ -258,7 +277,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := s.syscallThread.attach(); err != nil {
-		handlePtraceSyscallRequestError(req, err.Error())
+		handlePtraceSyscallRequestError(req, "%v", err)
 		return
 	}
 	defer s.syscallThread.detach()
@@ -269,7 +288,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	case requestThread:
 		t, err := ptraceThread.clone()
 		if err != nil {
-			handlePtraceSyscallRequestError(req, "error initializing thread: %v", err)
+			r.thread <- threadCreationResult{err: err}
 			return
 		}
 
@@ -334,7 +353,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		t.detach()
 
 		// Return the thread.
-		r.thread <- t
+		r.thread <- threadCreationResult{thread: t}
 	case requestStub:
 		t, err := ptraceThread.createStub()
 		if err != nil {
@@ -376,6 +395,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	// Ready.
 	sp := &subprocess{
 		requests:          requests,
+		requestsDone:      make(chan struct{}),
 		faultedContexts:   make(map[*platformContext]struct{}),
 		sysmsgStackPool:   pool.Pool{Start: 0, Limit: uint64(maxChildThreads)},
 		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
@@ -398,14 +418,13 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	}
 
 	go func() { // S/R-SAFE: Platform-related.
+		defer close(sp.requestsDone)
 
 		// Wait for requests to create threads.
 		for req := range requests {
 			sp.handlePtraceSyscallRequest(req)
 		}
 
-		// Requests should never be closed.
-		panic("unreachable")
 	}()
 
 	sp.unmap()
@@ -460,6 +479,7 @@ func (s *subprocess) mapSharedRegions() {
 	}
 
 	s.contextQueue = contextQueue
+	s.contextQueueRange = contextQueueFR
 
 	// Map thread context region into the sentry.
 	threadContextFR, err := s.memoryFile.Allocate(uint64(stubContextRegionLen), opts)
@@ -490,6 +510,7 @@ func (s *subprocess) mapSharedRegions() {
 	}
 
 	s.threadContextRegion = sentryThreadContextRegionAddr
+	s.threadContextRange = threadContextFR
 }
 
 func (s *subprocess) mapPrivateRegions() {
@@ -521,11 +542,17 @@ func (s *subprocess) unmap() {
 func (s *subprocess) Release() {
 	if s.alive() {
 		s.unmap()
+	} else if s.uvmInitialized.Load() {
+		panic("cannot release an unexpectedly dead UVM address space")
 	}
 	s.DecRef(s.release)
 }
 
 func (s *subprocess) release() {
+	if s.uvmInitialized.Load() && s.alive() {
+		s.destroyUVM()
+		return
+	}
 	if s.alive() {
 		globalPool.markAvailable(s)
 		return
@@ -570,6 +597,11 @@ func (s *subprocess) kill() {
 	// complete before killing.
 	s.aliveMu.Lock()
 	defer s.aliveMu.Unlock()
+	if s.uvmInitialized.Load() {
+		// UVM may pin this mm after its tasks die. Losing the syscall thread
+		// would prevent removing aliases before their backing is reused.
+		panic("cannot recover from unexpected UVM address space death")
+	}
 
 	if s.syscallThread != nil && s.syscallThread.thread != nil {
 		s.syscallThread.thread.kill()
@@ -794,7 +826,7 @@ func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 
 		sig, err := t.wait(stopped)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("ptrace wait failed: %w", err)
 		}
 		if sig == unix.SIGTRAP {
 			// Reached syscall-enter-stop.
@@ -1100,6 +1132,9 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 		unix.SYS_MUNMAP,
 		arch.SyscallArgument{Value: uintptr(addr)},
 		arch.SyscallArgument{Value: uintptr(length)})
+	if err == errDeadSubprocess && s.uvmInitialized.Load() {
+		panic("cannot unmap an unexpectedly dead UVM address space")
+	}
 	if err != nil && err != errDeadSubprocess {
 		// We never expect this to happen.
 		panic(fmt.Sprintf("munmap(%x, %x)) failed: %v", addr, length, err))
@@ -1139,19 +1174,39 @@ func (s *subprocess) createSysmsgThread() error {
 	return s.withAliveRLock(s.createSysmsgThreadLocked)
 }
 
+// markSysmsgThreadCreationFailed must precede recycling any stack backing or
+// stack ID after a failed creation. UVM can retain aliases in this mm, so an
+// already-bound mm cannot recover and an unbound mm must never bind later.
+func (s *subprocess) markSysmsgThreadCreationFailed() {
+	s.syscallThreadMu.Lock()
+	defer s.syscallThreadMu.Unlock()
+	if s.uvmInitialized.Load() {
+		panic("cannot recover from failed thread creation in a UVM address space")
+	}
+	s.uvmUnsafe = true
+}
+
 // +checklocksread:s.aliveMu
 func (s *subprocess) createSysmsgThreadLocked() error {
 	// Create a new seccomp process.
 	var r requestThread
-	r.thread = make(chan *thread)
+	r.thread = make(chan threadCreationResult)
 	s.requests <- r
-	p := <-r.thread
-	if p == nil {
-		return fmt.Errorf("createSysmsgThread: failed to get clone")
+	result := <-r.thread
+	if (result.thread == nil) == (result.err == nil) {
+		panic("invalid sysmsg thread creation result")
 	}
+	if result.err != nil {
+		if _, rejected := result.err.(cloneRejectedError); !rejected {
+			s.markSysmsgThreadCreationFailed()
+		}
+		return fmt.Errorf("createSysmsgThread: failed to get clone: %w", result.err)
+	}
+	p := result.thread
 	success := false
 	defer func() {
 		if !success {
+			s.markSysmsgThreadCreationFailed()
 			s.sysmsgStackPool.Put(p.sysmsgStackID)
 		}
 	}()
@@ -1185,6 +1240,7 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	}
 	defer func() {
 		if !success {
+			s.markSysmsgThreadCreationFailed()
 			s.memoryFile.DecRef(fr)
 		}
 	}()

@@ -495,21 +495,22 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		var ar hostarch.AddrRange
 		var err error
 		vseg, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
-			Length:          newSize - oldSize,
-			MappingIdentity: vma.id,
-			Mappable:        vma.mappable,
-			Offset:          newOffset,
-			Addr:            oldEnd,
-			Fixed:           true,
-			Perms:           vma.realPerms,
-			MaxPerms:        vma.maxPerms,
-			Private:         vma.private,
-			GrowsDown:       vma.growsDown,
-			Stack:           vma.isStack,
-			EagerForkCopy:   vma.eagerForkCopy,
-			MLockMode:       vma.mlockMode,
-			Name:            vma.name,
-			NameMut:         vma.nameMut,
+			Length:                newSize - oldSize,
+			MappingIdentity:       vma.id,
+			Mappable:              vma.mappable,
+			Offset:                newOffset,
+			Addr:                  oldEnd,
+			Fixed:                 true,
+			Perms:                 vma.realPerms,
+			MaxPerms:              vma.maxPerms,
+			Private:               vma.private,
+			GrowsDown:             vma.growsDown,
+			Stack:                 vma.isStack,
+			EagerForkCopy:         vma.eagerForkCopy,
+			RequirePlatformEffect: vma.requirePlatformEffect,
+			MLockMode:             vma.mlockMode,
+			Name:                  vma.name,
+			NameMut:               vma.nameMut,
 		}, droppedIDs)
 		if err == nil {
 			if mlockMode == memmap.MLockEager {

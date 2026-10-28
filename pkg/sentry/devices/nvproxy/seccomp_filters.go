@@ -110,7 +110,7 @@ func uvmIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(nvgpu.UVM_TOOLS_WRITE_PROCESS_MEMORY), nvconf.ValidCapabilities},
 		{seccomp.EqualTo(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_UNMAP_EXTERNAL), compUtil},
-		{seccomp.EqualTo(nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU), nvconf.CapVideo},
+		{seccomp.EqualTo(nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU), compUtil | nvconf.CapVideo},
 		{seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_VALIDATE_VA_RANGE), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_CREATE_EXTERNAL_RANGE), compUtil},
