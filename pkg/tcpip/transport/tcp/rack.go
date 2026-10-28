@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -318,7 +319,9 @@ func (rc *rackControl) updateRACKReorderWindow() {
 	//   RACK.rtt_seq = SND.NXT
 	//   RACK.reo_wnd_persist = 16
 	if dsackSeen {
-		rc.ReoWndIncr++
+		if rc.ReoWndIncr < math.MaxUint8 {
+			rc.ReoWndIncr++
+		}
 		dsackSeen = false
 		rc.RTTSeq = snd.SndNxt
 		rc.ReoWndPersist = tcpRACKRecoveryThreshold
