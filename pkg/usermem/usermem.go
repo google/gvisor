@@ -124,6 +124,14 @@ type IO interface {
 	LoadUint32(ctx context.Context, addr hostarch.Addr, opts IOOpts) (uint32, error)
 }
 
+// IterativeCopyOutFrom permits a source to be read in multiple calls while
+// copying into application memory. Sources passed to this interface must
+// advance after each successful ReadToBlocks call. The regular IO.CopyOutFrom
+// contract continues to call the source at most once.
+type IterativeCopyOutFrom interface {
+	CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts, chunkSize int64) (int64, error)
+}
+
 // IOOpts contains options applicable to all IO methods.
 type IOOpts struct {
 	// If IgnorePermissions is true, application-defined memory protections set
@@ -502,6 +510,18 @@ func (s IOSequence) ZeroOut(ctx context.Context, toZero int64) (int64, error) {
 // Preconditions: Same as IO.CopyOutFrom.
 func (s IOSequence) CopyOutFrom(ctx context.Context, src safemem.Reader) (int64, error) {
 	return s.IO.CopyOutFrom(ctx, s.Addrs, src, s.Opts)
+}
+
+// CopyOutFromIter allows src.ReadToBlocks to be called more than once, with
+// each call copying at most chunkSize bytes. IO implementations without an
+// iterative path retain the regular CopyOutFrom behavior.
+//
+// Preconditions: chunkSize > 0; src advances after successful reads.
+func (s IOSequence) CopyOutFromIter(ctx context.Context, src safemem.Reader, chunkSize int64) (int64, error) {
+	if iter, ok := s.IO.(IterativeCopyOutFrom); ok {
+		return iter.CopyOutFromIter(ctx, s.Addrs, src, s.Opts, chunkSize)
+	}
+	return s.CopyOutFrom(ctx, src)
 }
 
 // CopyInTo invokes s.CopyInTo over s.Addrs.

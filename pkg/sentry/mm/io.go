@@ -338,6 +338,55 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 	return mm.withVecInternalMappings(ctx, ars, hostarch.Write, opts.IgnorePermissions, src.ReadToBlocks)
 }
 
+// CopyOutFromIter implements usermem.IterativeCopyOutFrom. Preparing writable
+// mappings in bounded windows avoids repeatedly taking activeMu for writing
+// as each chunk reaches previously untouched application memory, without
+// populating the entire destination before source data is available.
+// Individual copies release activeMu between chunks, allowing unrelated
+// mapping operations to progress during a large read.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts, chunkSize int64) (int64, error) {
+	if chunkSize <= 0 || ars.NumBytes() <= chunkSize {
+		return mm.CopyOutFrom(ctx, ars, src, opts)
+	}
+	var ok bool
+	ars, ok = mm.checkIOVec(ars)
+	if !ok {
+		return 0, linuxerr.EFAULT
+	}
+
+	const maxPrepareBytes = 16 << 20
+	var done int64
+	for ars.NumBytes() != 0 {
+		window := ars.TakeFirst64(min(ars.NumBytes(), maxPrepareBytes))
+		// If preparation fails, let the regular copy determine the read count
+		// and error for the remaining destination.
+		for remaining := window; !remaining.IsEmpty(); remaining = remaining.Tail() {
+			ar := remaining.Head()
+			if ar.Length() == 0 {
+				continue
+			}
+			if n, err := mm.EnsurePMAsExist(ctx, ar.Start, int64(ar.Length()), opts); err != nil || n != int64(ar.Length()) {
+				n, err := mm.CopyOutFrom(ctx, ars, src, opts)
+				return done + n, err
+			}
+		}
+		for window.NumBytes() != 0 {
+			chunk := window.TakeFirst64(chunkSize)
+			n, err := mm.CopyOutFrom(ctx, chunk, src, opts)
+			done += n
+			if err != nil || n < chunk.NumBytes() {
+				return done, err
+			}
+			window = window.DropFirst64(n)
+			ars = ars.DropFirst64(n)
+		}
+	}
+	return done, nil
+}
+
 // CopyInTo implements usermem.IO.CopyInTo.
 //
 // +checklocksexclude:mm.mappingMu

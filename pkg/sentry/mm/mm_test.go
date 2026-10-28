@@ -215,6 +215,106 @@ func TestIOAfterUnmap(t *testing.T) {
 	}
 }
 
+type advancingTestReader struct {
+	data  []byte
+	calls int
+}
+
+func (r *advancingTestReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
+	r.calls++
+	n, err := safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(r.data)))
+	r.data = r.data[n:]
+	return n, err
+}
+
+func TestCopyOutFromIter(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	const size = 8 << 20
+	const chunkSize = 4 << 20
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   size,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := bytes.Repeat([]byte{0x5a}, size)
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + size})
+	regular := &advancingTestReader{data: data}
+	if n, err := mm.CopyOutFrom(ctx, ars, regular, usermem.IOOpts{}); n != size || err != nil || regular.calls != 1 {
+		t.Fatalf("regular copy: n=%d err=%v calls=%d", n, err, regular.calls)
+	}
+	iter := &advancingTestReader{data: data}
+	if n, err := mm.CopyOutFromIter(ctx, ars, iter, usermem.IOOpts{}, chunkSize); n != size || err != nil || iter.calls != 2 {
+		t.Fatalf("iterative copy: n=%d err=%v calls=%d", n, err, iter.calls)
+	}
+	got := make([]byte, size)
+	if n, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); n != size || err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("copied data differs: n=%d err=%v", n, err)
+	}
+	invalid := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + size + pageSizeAddr})
+	fallback := &advancingTestReader{data: append(bytes.Clone(data), 0x7f)}
+	if n, err := mm.CopyOutFromIter(ctx, invalid, fallback, usermem.IOOpts{}, chunkSize); n != size || !linuxerr.Equals(linuxerr.EFAULT, err) || fallback.calls != 1 {
+		t.Fatalf("unmapped tail: n=%d err=%v calls=%d", n, err, fallback.calls)
+	}
+}
+
+func TestCopyOutFromIterBoundsPreparation(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	size := uint64(32<<20) + pageSize
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   size,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + hostarch.Addr(size)})
+	empty := &advancingTestReader{}
+	mm.activeMu.RLock()
+	initialRSS := mm.curRSS
+	mm.activeMu.RUnlock()
+	if n, err := mm.CopyOutFromIter(ctx, ars, empty, usermem.IOOpts{}, 4<<20); n != 0 || err != nil || empty.calls != 1 {
+		t.Fatalf("empty source: n=%d err=%v calls=%d", n, err, empty.calls)
+	}
+	mm.activeMu.RLock()
+	rss := mm.curRSS
+	mm.activeMu.RUnlock()
+	// Anonymous PMAs may extend to the hugepage boundaries around the window.
+	if rss-initialRSS > (16<<20)+2*hostarch.HugePageSize {
+		t.Fatalf("empty source populated %d bytes of destination", rss-initialRSS)
+	}
+}
+
+func TestCopyOutFromIterFaultAfterPreparedWindow(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	const size = 16 << 20
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   size,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + size + pageSizeAddr})
+	src := &advancingTestReader{data: bytes.Repeat([]byte{0x5a}, int(size+pageSize))}
+	if n, err := mm.CopyOutFromIter(ctx, ars, src, usermem.IOOpts{}, 4<<20); n != size || !linuxerr.Equals(linuxerr.EFAULT, err) || src.calls != 4 {
+		t.Fatalf("unmapped second window: n=%d err=%v calls=%d", n, err, src.calls)
+	}
+}
+
 // TestIOAfterMProtect tests IO interaction with mprotect permissions.
 func TestIOAfterMProtect(t *testing.T) {
 	ctx := contexttest.Context(t)
