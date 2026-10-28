@@ -1060,6 +1060,85 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreInodeNumbers checks that files on a bind mount keep
+// their device and inode numbers across checkpoint/restore.
+func TestCheckpointRestoreInodeNumbers(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+	src := filepath.Join(dir, "src")
+	if err := os.Mkdir(src, 0777); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "file"), nil, 0666); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	dst := filepath.Join(dir, "mnt")
+	file := filepath.Join(dst, "file")
+
+	spec, conf := sleepSpecConf(t)
+	// Keep the file open so that its dentry is checkpointed.
+	spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + file + "; exec sleep 1000"}
+	spec.Mounts = append(spec.Mounts, specs.Mount{Destination: dst, Source: src, Type: "bind"})
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if err := waitForProcessCount(cont, 1); err != nil {
+		t.Fatal(err)
+	}
+	before, err := executeCombinedOutput(conf, cont, nil, "/usr/bin/stat", "-c", "%d %i", file)
+	if err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+		t.Fatalf("error checkpointing container to file: %v", err)
+	}
+
+	// Destroy the original container to restore it in place.
+	cont.Destroy()
+	cont = nil
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	after, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", file)
+	if err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("device and inode numbers changed across restore: before %q, after %q", before, after)
+	}
+}
+
 // TestCheckpointRestoreEROFS does the checkpoint/restore test on each platform using
 // an EROFS image as the rootfs.
 func TestCheckpointRestoreEROFS(t *testing.T) {

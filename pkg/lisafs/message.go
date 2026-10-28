@@ -1693,7 +1693,9 @@ func (g *Getdents64Req) String() string {
 	return fmt.Sprintf("Getdents64Req{DirFD: %d, Count: %d}", g.DirFD, g.Count)
 }
 
-// Dirent64 is analogous to struct linux_dirent64.
+// Dirent64 is analogous to struct linux_dirent64. DevMinor and DevMajor are
+// the device numbers of the entry's file, or zero if the server does not
+// report them.
 type Dirent64 struct {
 	Ino      primitive.Uint64
 	DevMinor primitive.Uint32

@@ -130,6 +130,7 @@ func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 		inode: &inode{
 			fs:         fs,
 			ino:        fs.nextIno(),
+			devMinor:   fs.devMinor,
 			mode:       atomicbitops.FromUint32(uint32(opts.mode)),
 			uid:        atomicbitops.FromUint32(uint32(opts.kuid)),
 			gid:        atomicbitops.FromUint32(uint32(opts.kgid)),
