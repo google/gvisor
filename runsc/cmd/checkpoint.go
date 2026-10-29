@@ -16,20 +16,29 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
+	statepkg "gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/sandbox"
+)
+
+// Exit codes for checkpoints that failed because of the sandbox's state.
+const (
+	checkpointUnsavableExitCode    = 3
+	checkpointCudaNotReadyExitCode = 4
 )
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
@@ -65,7 +74,8 @@ func (*Checkpoint) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Checkpoint) Usage() string {
-	return "checkpoint [flags] <container id> - save current state of container.\n"
+	return "checkpoint [flags] <container id> - save current state of container.\n" +
+		"Exit status 3 indicates the sandbox holds state that cannot be saved; exit status 4 indicates a CUDA device was not ready for checkpointing.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
@@ -133,10 +143,32 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 	}
 
 	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {
+		if ws, ok := checkpointStateExitStatus(err); ok {
+			util.Errorf("checkpoint failed: %v", err)
+			// cli.Run exits with the process status in args[1] only when the
+			// command returns ExitSuccess, so an expected checkpoint-state
+			// failure is reported as internal success carrying a nonzero
+			// process exit code.
+			*args[1].(*unix.WaitStatus) = ws
+			return subcommands.ExitSuccess
+		}
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 
 	return subcommands.ExitSuccess
+}
+
+// checkpointStateExitStatus converts an expected checkpoint-state error to
+// its process exit status in unix.WaitStatus encoding.
+func checkpointStateExitStatus(err error) (unix.WaitStatus, bool) {
+	switch {
+	case errors.Is(err, statepkg.ErrUnsavable):
+		return unix.WaitStatus(checkpointUnsavableExitCode << 8), true
+	case errors.Is(err, controlapi.ErrCudaNotReady):
+		return unix.WaitStatus(checkpointCudaNotReadyExitCode << 8), true
+	default:
+		return 0, false
+	}
 }
 
 // CheckpointCompression represents checkpoint image writer behavior. The

@@ -15,6 +15,8 @@
 package nvproxy
 
 import (
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -22,7 +24,48 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/state"
 )
+
+func TestUnsavableObject(t *testing.T) {
+	clientHandle := nvgpu.Handle{Val: 1}
+	objectHandle := nvgpu.Handle{Val: 2}
+	nvp := &nvproxy{
+		clients: make(map[nvgpu.Handle]*rootClient),
+	}
+	client := &rootClient{
+		resources: make(map[nvgpu.Handle]*object),
+	}
+	client.object = object{
+		nvp:    nvp,
+		client: client,
+		class:  nvgpu.NV01_ROOT_CLIENT,
+		handle: clientHandle,
+		impl:   client,
+	}
+	nvp.clients[clientHandle] = client
+	client.resources[clientHandle] = &client.object
+
+	unsavable := &miscObject{}
+	unsavable.object = object{
+		nvp:    nvp,
+		client: client,
+		class:  nvgpu.ClassID(0x1234),
+		handle: objectHandle,
+		impl:   unsavable,
+	}
+	client.resources[objectHandle] = &unsavable.object
+
+	if _, err := state.Save(t.Context(), io.Discard, nvp); !errors.Is(err, state.ErrUnsavable) {
+		t.Fatalf("state.Save = %v, want errors.Is(err, state.ErrUnsavable)", err)
+	} else if got := err.Error(); !strings.Contains(got, objectHandle.String()) || !strings.Contains(got, unsavable.class.String()) {
+		t.Errorf("state.Save error = %q, want object handle %q and class %q", got, objectHandle.String(), unsavable.class.String())
+	}
+	delete(client.resources, objectHandle)
+	if _, err := state.Save(t.Context(), io.Discard, nvp); err != nil {
+		t.Fatalf("state.Save without unsavable object: %v", err)
+	}
+}
 
 func TestInit(t *testing.T) {
 	// Test that initializing all driverABI works (does not panic or anything).

@@ -41,6 +41,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
@@ -6409,6 +6410,52 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 	}
 
 	checkpointOpts.SaveRestoreExecContainerID = cont.ID
+
+	// A checkpoint whose state file cannot be written fails after the save
+	// hook completes. The failed save must synchronously run the resume hook
+	// and leave the application running.
+	devFull, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("error opening /dev/full: %v", err)
+	}
+	defer devFull.Close()
+	saveOpts := &controlapi.SaveOpts{
+		Resume: checkpointOpts.Resume,
+		ExecOpts: controlapi.SaveRestoreExecOpts{
+			Argv:        checkpointOpts.SaveRestoreExecArgv,
+			Timeout:     checkpointOpts.SaveRestoreExecTimeout,
+			ContainerID: checkpointOpts.SaveRestoreExecContainerID,
+		},
+	}
+	saveOpts.Files = []*os.File{devFull}
+	// UDS connect fails for socket paths of length >= UNIX_PATH_MAX. Open
+	// the path and connect through its /proc/self/fd link instead.
+	socketFile, err := os.OpenFile(cont.Sandbox.GetControlSocketPath(), unix.O_PATH, 0)
+	if err != nil {
+		t.Fatalf("error opening the sandbox control socket: %v", err)
+	}
+	defer socketFile.Close()
+	ctrlClient, err := client.ConnectTo(fmt.Sprintf("/proc/self/fd/%d", socketFile.Fd()))
+	if err != nil {
+		t.Fatalf("error connecting to the sandbox control socket: %v", err)
+	}
+	defer ctrlClient.Close()
+	if err := ctrlClient.Call(sentryapi.ContMgrCheckpoint, saveOpts, nil); err == nil {
+		t.Fatal("checkpoint with state file on /dev/full succeeded, want a write failure")
+	} else if !strings.Contains(err.Error(), "no space left on device") {
+		t.Fatalf("checkpoint with state file on /dev/full failed with %q, want a write failure", err)
+	}
+	// The failed save completed the save hook, so the resume hook must have
+	// already run when the failure is reported.
+	const wantAfterFailure = "save\nresume\n"
+	if got, err := os.ReadFile(hookLog); err != nil || string(got) != wantAfterFailure {
+		t.Fatalf("save/restore binary invocations after failed checkpoint: got %q (err %v), want %q", got, err, wantAfterFailure)
+	}
+	// The application must still be running.
+	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
+		t.Fatalf("application is not running after failed checkpoint: ws=%v, err=%v", ws, err)
+	}
+
 	var lastImage string
 	for i := 0; i < 2; i++ {
 		lastImage = imageDir(fmt.Sprintf("image%d", i))
@@ -6417,7 +6464,7 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 		}
 		// Wait for the resume hook before starting another checkpoint so that
 		// the save and resume hooks cannot run concurrently.
-		wantHookLog(strings.Repeat("save\nresume\n", i+1))
+		wantHookLog(strings.Repeat("save\nresume\n", i+2))
 	}
 	cont.Destroy()
 
@@ -6451,7 +6498,7 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 	if err := cont2.Checkpoint(conf, imageDir("image-restored"), checkpointOpts); err != nil {
 		t.Fatalf("checkpoint after restore failed: %v", err)
 	}
-	wantHookLog("save\nresume\nsave\nresume\nrestore\nsave\nresume\n")
+	wantHookLog("save\nresume\nsave\nresume\nsave\nresume\nrestore\nsave\nresume\n")
 }
 
 func TestMarkerFile(t *testing.T) {
