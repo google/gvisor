@@ -38,6 +38,13 @@ type segment struct {
 	off, len int
 }
 
+// segmentRefs is the index in graphEncodeState.refs of the first target
+// referenced in the non-empty segment at off.
+type segmentRefs struct {
+	off int
+	ref int32
+}
+
 // elemRange is a range of array elements [start, end).
 type elemRange struct {
 	start, end uintptr
@@ -78,6 +85,9 @@ type encObject struct {
 	isArray   bool
 	isMap     bool
 	state     objectState
+	// dead is set during save when all references to a root object came from
+	// absorbed encodings that were later superseded.
+	dead bool
 
 	// parent is the object that absorbed this object, or -1.
 	parent    int32
@@ -217,6 +227,7 @@ type splice struct {
 	ti    *typeInfo
 	count uintptr
 	seg   segment
+	used  bool
 }
 
 // traversalKey identifies a containment check.
@@ -260,10 +271,21 @@ type graphEncodeState struct {
 	traversals map[traversalKey]bool
 
 	// splices are the encodings to reuse while encoding the current work,
-	// sorted by address. spliceAt is the address of the next splice.
-	splices   []splice
-	spliceIdx int
-	spliceAt  uintptr
+	// sorted by address. [spliceLo, spliceLo+spliceSpan) bounds the addresses
+	// of remaining unused splices (spliceSpan == 0 when none remain).
+	splices              []splice
+	spliceLo, spliceSpan uintptr
+
+	// refs are the targets referenced in out, in order. segRefs indexes
+	// refs by the non-empty segments of out, which are created in order and
+	// cover it. They are kept outside of segments to keep encObject small.
+	refs      []int32
+	segRefs   []segmentRefs
+	liveBits  []bool
+	liveQueue []int32
+	// refMarks marks targets with refStamp, for pruneUnreachable.
+	refMarks []uint32
+	refStamp uint32
 
 	types typeTable
 
@@ -296,8 +318,6 @@ var graphDummyAddr = sync.OnceValue(func() uintptr {
 	return reflect.ValueOf(new(struct{})).Pointer()
 })
 
-const noSplice = ^uintptr(0)
-
 // graphEncodeStatePool holds encodeStates for reuse, which avoids growing their
 // buffers and maps for each Save.
 var graphEncodeStatePool sync.Pool
@@ -318,8 +338,9 @@ func newGraphEncodeState(ctx context.Context, root *typeInfo) *graphEncodeState 
 		maps:         make(map[unsafe.Pointer]int32),
 		blockEntries: make([]blockEntry, 0, targets),
 		queue:        make([]work, 0, targets),
+		refs:         make([]int32, 0, targets),
+		segRefs:      make([]segmentRefs, 0, targets),
 		traversals:   make(map[traversalKey]bool),
-		spliceAt:     noSplice,
 		out:          encBuf{b: make([]byte, 0, max(bytes, 4<<10))},
 	}
 	es.byAddr.init(targets)
@@ -415,7 +436,8 @@ const maxPooledSlots = 1 << 18
 func (es *graphEncodeState) release() {
 	if cap(es.out.b)+cap(es.final.b)+cap(es.binaryBuf) > maxPooledBytes ||
 		len(es.byAddr.slots)+len(es.blocks.slots) > maxPooledSlots ||
-		cap(es.blockEntries)+cap(es.queue) > maxPooledSlots {
+		cap(es.blockEntries)+cap(es.queue) > maxPooledSlots ||
+		cap(es.refs)+cap(es.segRefs) > maxPooledSlots {
 		return
 	}
 	es.ctx = nil
@@ -439,8 +461,14 @@ func (es *graphEncodeState) release() {
 		es.traversals = make(map[traversalKey]bool)
 	}
 	es.splices = es.splices[:0]
-	es.spliceIdx = 0
-	es.spliceAt = noSplice
+	es.spliceLo = 0
+	es.spliceSpan = 0
+	es.refs = es.refs[:0]
+	es.segRefs = es.segRefs[:0]
+	es.refStamp = 0
+	es.refMarks = es.refMarks[:0]
+	es.liveBits = es.liveBits[:0]
+	es.liveQueue = es.liveQueue[:0]
 	es.types.reset()
 	es.binaryBuf = es.binaryBuf[:0]
 	es.coverBuf = es.coverBuf[:0]
