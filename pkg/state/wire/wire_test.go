@@ -74,9 +74,9 @@ func TestArrayPayloadWireRoundTrip(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var original bytes.Buffer
-			Save(&Writer{Writer: &original}, &Array{Contents: test.values})
-			parsed := Load(&Reader{Reader: bytes.NewReader(original.Bytes())}).(*Array)
-			if got, want := len(parsed.Contents), len(test.values); got != want {
+			Save(&Writer{Writer: &original}, &ObjectArray{Contents: test.values})
+			parsed := Load(&Reader{Reader: bytes.NewReader(original.Bytes())}).(Array)
+			if got, want := parsed.Len(), len(test.values); got != want {
 				t.Fatalf("array length = %d, want %d", got, want)
 			}
 			// Compare bytes, including signaling NaNs that DeepEqual cannot
@@ -148,7 +148,7 @@ func TestEmptyCollections(t *testing.T) {
 			var values []Object
 			switch test.tag {
 			case typeArray:
-				values = value.(*Array).Contents
+				values = value.(*ObjectArray).Contents
 			case typeMultipleObjects:
 				values = *value.(*multipleObjects)
 			case typeMap:
@@ -222,7 +222,7 @@ func TestStructFieldWireForms(t *testing.T) {
 
 func TestObjectOwnership(t *testing.T) {
 	field := FieldName("Value")
-	want := &Array{Contents: []Object{
+	want := &ObjectArray{Contents: []Object{
 		&Ref{Root: 7, Dots: []Dot{Index(257), &field}, Type: &TypeSpecArray{Count: 8, Type: TypeID(3)}},
 		&Ref{Root: 9, Dots: []Dot{Index(0)}, Type: &TypeSpecPointer{Type: TypeID(4)}},
 	}}
@@ -235,7 +235,7 @@ func TestObjectOwnership(t *testing.T) {
 			Type: &TypeSpecPointer{Type: TypeID(4)},
 		})
 	}
-	reuse := &Array{Contents: make([]Object, 257)}
+	reuse := &ObjectArray{Contents: make([]Object, 257)}
 	for i := range reuse.Contents {
 		reuse.Contents[i] = Uint(i & 1)
 	}
@@ -250,7 +250,7 @@ func TestObjectOwnership(t *testing.T) {
 	var buf bytes.Buffer
 	w := Writer{Writer: &buf}
 	Save(&w, &parent)
-	Save(&w, &Array{Contents: []Object{&text, &text, &text}})
+	Save(&w, &ObjectArray{Contents: []Object{&text, &text, &text}})
 	Save(&w, reuse)
 	// Full-width reference metadata and more than 255 path elements must
 	// survive both field-name and index paths in successive records.
@@ -271,19 +271,19 @@ func TestObjectOwnership(t *testing.T) {
 	encoded := buf.Bytes()
 	r := Reader{Reader: &buf}
 	first := Load(&r).(*Struct)
-	retained := (*first.Field(1)).(*Array)
+	retained := (*first.Field(1)).(Array)
 	retainedText := string(*(*first.Field(2)).(*String))
 	retainedMap := (*first.Field(3)).(*Map)
 	// Keep only a nested subtree and text while reading unrelated records.
 	// Their lifetime must not depend on the reader or its input storage.
 	Load(&r)
 	// A large scalar array follows reference metadata and a short record.
-	reused := Load(&r).(*Array)
-	if got, want := len(reused.Contents), len(reuse.Contents); got != want {
+	reused := Load(&r).(Array)
+	if got, want := reused.Len(), len(reuse.Contents); got != want {
 		t.Fatalf("reused length = %d, want %d", got, want)
 	}
 	for i := range reuse.Contents {
-		if got, want := uint64(reused.Contents[i].(Uint)), uint64(i&1); got != want {
+		if got, want := uint64(reused.Element(i).(Uint)), uint64(i&1); got != want {
 			t.Fatalf("reused element %d = %d, want %d", i, got, want)
 		}
 	}
@@ -303,11 +303,11 @@ func TestObjectOwnership(t *testing.T) {
 		t.Fatalf("following value = %d, want %d", got, want)
 	}
 	clear(encoded)
-	if got, want := len(retained.Contents), len(want.Contents); got != want {
+	if got, want := retained.Len(), len(want.Contents); got != want {
 		t.Fatalf("owned subtree length = %d, want %d", got, want)
 	}
 	for i, expected := range want.Contents {
-		if got, want := retained.Contents[i].(*Ref), expected.(*Ref); !reflect.DeepEqual(got, want) {
+		if got, want := retained.Element(i).(*Ref), expected.(*Ref); !reflect.DeepEqual(got, want) {
 			t.Errorf("owned reference %d = %#v, want %#v", i, got, want)
 		}
 	}
@@ -335,13 +335,13 @@ func TestSchemaOwnership(t *testing.T) {
 	}
 	var saved bytes.Buffer
 	writer := Writer{Writer: &saved}
-	array := &Array{}
+	array := &ObjectArray{}
 	for _, schema := range schemas {
 		array.Contents = append(array.Contents, schema)
 	}
 	Save(&writer, array)
-	parsed := Load(&Reader{Reader: &saved}).(*Array)
-	retained := parsed.Contents[0].(*Type)
+	parsed := Load(&Reader{Reader: &saved}).(Array)
+	retained := parsed.Element(0).(*Type)
 
 	// A later record may parse a complete nested schema before failing.
 	// It must not return that partial record or overwrite retained metadata.
@@ -362,7 +362,7 @@ func TestSchemaOwnership(t *testing.T) {
 		t.Errorf("retained schema = %+v, want %+v", got, want)
 	}
 	for i, schema := range schemas {
-		if got, want := parsed.Contents[i].(*Type), schema; !reflect.DeepEqual(got, want) {
+		if got, want := parsed.Element(i).(*Type), schema; !reflect.DeepEqual(got, want) {
 			t.Errorf("owned schema %d = %+v, want %+v", i, got, want)
 		}
 	}

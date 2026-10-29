@@ -18,8 +18,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 func init() {
@@ -106,5 +109,71 @@ func TestLazyValidation(t *testing.T) {
 	_, err := Save(t.Context(), &buf, &duplicateFieldType{})
 	if err == nil || !strings.Contains(err.Error(), "duplicate field") {
 		t.Fatalf("Save = %v, want duplicate field error", err)
+	}
+}
+
+func TestArrayPartialStores(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		values []wire.Object
+		target any
+		want   any
+	}{
+		{"signed", []wire.Object{wire.Int(7), wire.Int(128), wire.Int(9)}, &[3]int8{99, 99, 99}, [3]int8{7, -128, 99}},
+		{"unsigned", []wire.Object{wire.Uint(7), wire.Uint(256), wire.Uint(9)}, &[3]uint8{99, 99, 99}, [3]uint8{7, 0, 99}},
+		{"float", []wire.Object{wire.Float64(7), wire.Float64(1 + 1e-10), wire.Float64(9)}, &[3]float32{99, 99, 99}, [3]float32{7, 1, 99}},
+		{"complex", []wire.Object{new(wire.Complex128(7)), new(wire.Complex128(complex(1, 1+1e-10))), new(wire.Complex128(9))}, &[3]complex64{99, 99, 99}, [3]complex64{7, 1 + 1i, 99}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var saved bytes.Buffer
+			writer := wire.Writer{Writer: &saved}
+			if err := WriteHeader(&writer, 1, true); err != nil {
+				t.Fatal(err)
+			}
+			wire.Save(&writer, wire.Uint(1))
+			wire.Save(&writer, &wire.ObjectArray{Contents: test.values})
+			if _, err := Load(t.Context(), &saved, test.target); err == nil || !strings.Contains(err.Error(), "truncated") {
+				t.Fatalf("Load = %v, want truncation error", err)
+			}
+			if got, want := reflect.ValueOf(test.target).Elem().Interface(), test.want; !reflect.DeepEqual(got, want) {
+				t.Errorf("partial destination = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestArrayDestinationFlags(t *testing.T) {
+	private := struct{ values [2]int64 }{values: [2]int64{17, 29}}
+	slice := []int64{17, 29}
+	for _, test := range []struct {
+		name    string
+		target  reflect.Value
+		wantErr string
+	}{
+		{"read_only", reflect.ValueOf(&private).Elem().Field(0), "array element of type int64 is not settable"},
+		{"unaddressable_array", reflect.ValueOf([2]int64{17, 29}), "array element of type int64 is not settable"},
+		{"unaddressable_slice", reflect.ValueOf(slice), ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Use the public parser so this exercises its actual typed payload.
+			var saved bytes.Buffer
+			wire.Save(&wire.Writer{Writer: &saved}, &wire.ObjectArray{Contents: []wire.Object{wire.Int(7), wire.Int(11)}})
+			encoded := wire.Load(&wire.Reader{Reader: &saved})
+			var ds decodeState
+			err := safely(func() { ds.decodeObject(nil, test.target, encoded) })
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("restore error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+	if got, want := private.values, [2]int64{17, 29}; got != want {
+		t.Errorf("read-only destination = %v, want %v", got, want)
+	}
+	if got, want := slice, []int64{7, 11}; !reflect.DeepEqual(got, want) {
+		t.Errorf("slice destination = %v, want %v", got, want)
 	}
 }

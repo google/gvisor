@@ -129,16 +129,16 @@ func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, 
 		return strings.Join(items, tabs), true // No zero value.
 	case *wire.Slice:
 		return fmt.Sprintf("%s{len:%d,cap:%d}", p.formatRef(&x.Ref, graph), x.Length, x.Capacity), x.Capacity != 0
-	case *wire.Array:
-		if len(x.Contents) == 0 {
+	case wire.Array:
+		if x.Len() == 0 {
 			return "[]", false
 		}
-		items := make([]string, 0, len(x.Contents)+2)
+		items := make([]string, 0, x.Len()+2)
 		zeros := make([]string, 0) // used to eliminate zero entries.
 		items = append(items, "[")
 		tabs := "\n" + strings.Repeat("\t", depth)
-		for i := 0; i < len(x.Contents); i++ {
-			item, ok := p.format(graph, depth+1, x.Contents[i])
+		for i := 0; i < x.Len(); i++ {
+			item, ok := p.format(graph, depth+1, x.Element(i))
 			if !ok {
 				zeros = append(zeros, fmt.Sprintf("\t%s,", item))
 				continue
@@ -153,7 +153,7 @@ func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, 
 			items = append(items, fmt.Sprintf("\t... (%d zeros),", len(zeros)))
 		}
 		items = append(items, "]")
-		return strings.Join(items, tabs), len(zeros) < len(x.Contents)
+		return strings.Join(items, tabs), len(zeros) < x.Len()
 	case *wire.Struct:
 		tag := fmt.Sprintf("g%dt%d", graph, x.TypeID)
 		spec := p.typeSpecs[tag]
