@@ -401,6 +401,16 @@ func (r *restorer) restore(l *Loader) error {
 		log.Warningf("Platform %q does not support TSC offsetting; host TSC is behind snapshot base cycle, timestamps will go backwards", l.root.conf.Platform)
 	}
 
+	// Calibrating the clocks takes two samples. Take the first sample now,
+	// so that the second sample, which the kernel takes when it starts to
+	// use the clocks once loaded, completes the calibration. This lets the
+	// application read the time through the VDSO, without system calls, as
+	// soon as it resumes, rather than up to ApproxUpdateInterval later.
+	//
+	// The platform is created first, as it can change the TSC domain.
+	clocks := time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(l.root.spec, l.root.conf))
+	clocks.Update(false)
+
 	// Start the old watchdog before replacing it with a new one below.
 	l.watchdog.Start()
 
@@ -549,7 +559,6 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	// Load the state.
-	clocks := time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(l.root.spec, l.root.conf))
 	r.timer.Reached("loading kernel")
 	if r.extractRootFsMode {
 		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, clocks, r.rootFsOutputTar); err != nil {
