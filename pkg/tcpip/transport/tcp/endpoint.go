@@ -2054,12 +2054,10 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		for _, cc := range availCC {
 			if *v == tcpip.CongestionControlOption(cc) {
 				e.LockUser()
-				state := e.EndpointState()
-				e.cc = *v
 				e.ccSetBySockOpt = true
-				switch state {
-				case StateEstablished:
-					if e.EndpointState() == state {
+				if e.cc != *v {
+					e.cc = *v
+					if e.EndpointState().connected() {
 						e.snd.cc = e.snd.initCongestionControl(e.cc)
 					}
 				}

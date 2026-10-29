@@ -711,3 +711,52 @@ func TestHyStartAckTrainUsesIngressTime(t *testing.T) {
 		}
 	}
 }
+
+// TestCongestionControlSwitchACKCredit exercises the shared sender credit
+// with two genuinely different growth thresholds.
+func TestCongestionControlSwitchACKCredit(t *testing.T) {
+	t.Run("cubic_to_reno", func(t *testing.T) {
+		const rtt = 10 * time.Millisecond
+		clock := faketime.NewManualClock()
+		c := newTestCubic(t, clock, rtt)
+		c.s.ep.mu.Lock()
+		defer c.s.ep.mu.Unlock()
+		c.HandleLossDetected()
+		c.s.leaveRecovery()
+		// At the old maximum, two full flights can earn CUBIC credit
+		// without increasing the integer window.
+		clock.Advance(time.Duration(c.K * float64(time.Second)))
+		c.Update(c.s.SndCwnd, rtt, clock.NowMonotonic())
+		window := c.s.SndCwnd
+		for range 2 {
+			clock.Advance(rtt)
+			c.Update(window, rtt, clock.NowMonotonic())
+		}
+		if c.s.SndCwnd != window || c.s.SndCAAckCount < 2*window {
+			t.Fatalf("CUBIC plateau: window %d -> %d with %d credits, want at least two windows", window, c.s.SndCwnd, c.s.SndCAAckCount)
+		}
+		c.s.cc = c.s.initCongestionControl(ccReno)
+		c.s.cc.Update(1, rtt, clock.NowMonotonic())
+		if got, count := c.s.SndCwnd, c.s.SndCAAckCount; got != window+1 || count != 1 {
+			t.Errorf("first Reno ACK: window/credit = %d/%d, want %d/1", got, count, window+1)
+		}
+	})
+	t.Run("reno_to_cubic", func(t *testing.T) {
+		const rtt = 10 * time.Millisecond
+		clock := faketime.NewManualClock()
+		c := newTestCubic(t, clock, rtt)
+		c.s.ep.mu.Lock()
+		defer c.s.ep.mu.Unlock()
+		c.s.Ssthresh = c.s.SndCwnd
+		c.s.cc = c.s.initCongestionControl(ccReno)
+		c.s.cc.Update(3, rtt, clock.NowMonotonic())
+		window := c.s.SndCwnd
+		if c.s.SndCAAckCount != 3 {
+			t.Fatalf("Reno accumulated %d credits, want 3", c.s.SndCAAckCount)
+		}
+		c.s.cc = c.s.initCongestionControl(ccCubic)
+		if c.s.SndCwnd != window || c.s.SndCAAckCount != 3 {
+			t.Errorf("new CUBIC window/credit = %d/%d, want %d/3", c.s.SndCwnd, c.s.SndCAAckCount, window)
+		}
+	})
+}
