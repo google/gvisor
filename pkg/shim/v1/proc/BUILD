@@ -50,6 +50,7 @@ go_test(
     srcs = [
         "init_kill_test.go",
         "init_state_test.go",
+        "init_test.go",
         "update_test.go",
         "utils_test.go",
     ],
