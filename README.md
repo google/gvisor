@@ -161,8 +161,19 @@ See [GOVERNANCE.md](GOVERNANCE.md) for project governance information.
 See [ADOPTERS.md](ADOPTERS.md) for a list of known production users and
 adopters.
 
+Join us on the [CNCF Slack][cncf-slack] workspace: use
+[#gvisor][slack-gvisor] for questions and discussion, and
+[#gvisor-dev][slack-gvisor-dev] for development and contribution. Before you
+can join the channels, you must be a member of the CNCF Slack workspace:
+
+1.  Get an invitation from the self-service page at
+    [slack.cncf.io][cncf-slack-invite].
+2.  Accept the invitation that you get in your email.
+3.  Join the [#gvisor][slack-gvisor] and [#gvisor-dev][slack-gvisor-dev]
+    channels.
+
 The [gvisor-users mailing list][gvisor-users-list] and
-[gvisor-dev mailing list][gvisor-dev-list] are good starting points for
+[gvisor-dev mailing list][gvisor-dev-list] are also good starting points for
 questions and discussion.
 
 ## Security Policy
@@ -178,6 +189,8 @@ See [Releases](g3doc/release.md).
 See [Contributing.md](CONTRIBUTING.md).
 
 [bazel]: https://bazel.build
+[cncf-slack]: https://cloud-native.slack.com
+[cncf-slack-invite]: https://slack.cncf.io/
 [docker]: https://www.docker.com
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-dev]: https://gvisor.dev
@@ -185,4 +198,6 @@ See [Contributing.md](CONTRIBUTING.md).
 [linux]: https://en.wikipedia.org/wiki/Linux_kernel_interfaces
 [oci]: https://www.opencontainers.org
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
+[slack-gvisor]: https://cloud-native.slack.com/archives/C0CCKLKSN31
+[slack-gvisor-dev]: https://cloud-native.slack.com/archives/C0CCZ4S4V62
 [bazelisk]: https://github.com/bazelbuild/bazelisk
