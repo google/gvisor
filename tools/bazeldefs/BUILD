@@ -32,7 +32,10 @@ bzl_library(
     name = "go_bzl",
     srcs = ["go.bzl"],
     visibility = ["//visibility:private"],
-    deps = [":defs_bzl"],
+    deps = [
+        ":defs_bzl",
+        "@with_cfg.bzl//:with_cfg",
+    ],
 )
 
 # Keep Go's pure/cgo mode in its build settings, not the target platform:
