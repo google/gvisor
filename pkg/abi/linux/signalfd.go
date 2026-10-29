@@ -48,5 +48,5 @@ type SignalfdSiginfo struct {
 	STime   uint64
 	Addr    uint64
 	AddrLSB uint16
-	_       [48]uint8 `marshal:"unaligned"`
+	_       [46]uint8 `marshal:"unaligned"`
 }
