@@ -1324,10 +1324,10 @@
   sha256: d20c951960ed77cb7b341c2a59488534e494d5ad1d30c4818c736d57772a9fef
   license: Apache-2.0
 - dependency: rules_python
-  version: https://github.com/bazel-contrib/rules_python/releases/download/2.0.2/rules_python-2.0.2.tar.gz
-  retrieved: "2026-10-06"
-  commit: 6aad8828e82667cda09ff449862a5a8559bee27b
-  sha256: 2119ca04726066c53b8f1ff42dffa090ea7f3e42a75679f1cfda937406cf7753
+  version: https://github.com/bazel-contrib/rules_python/releases/download/2.4.5/rules_python-2.4.5.tar.gz
+  retrieved: "2026-10-29"
+  commit: 1a96d8178c22f0787fe35d37c1d9978ca6271f9b
+  sha256: 05088402fa356af097064dbccd7082a061171ef39fbd748fab946e9775f46a16
   license: Apache-2.0
 - dependency: rules_qemu
   version: https://github.com/hermeticbuild/rules_qemu/releases/download/v0.3.0/rules_qemu-v0.3.0.tar.gz
