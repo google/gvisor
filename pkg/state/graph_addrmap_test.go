@@ -15,9 +15,94 @@
 package state
 
 import (
+	"context"
 	"math/rand"
+	"reflect"
 	"testing"
+	"unsafe"
 )
+
+func TestSliceOfArraysInteriorPointer(t *testing.T) {
+	elemTI := typeInfoOf(reflect.TypeFor[[2]int]())
+	ptrElemTI := typeInfoOf(reflect.TypeFor[[2][2]int]())
+
+	t.Run("SliceThenPtr", func(t *testing.T) {
+		s := make([][2]int, 3)
+		p := (*[2][2]int)(s[0:2])
+		es := newGraphEncodeState(context.Background(), elemTI)
+		defer es.release()
+		es.sliceTarget(unsafe.Pointer(unsafe.SliceData(s)), elemTI, uintptr(len(s)), uintptr(cap(s)))
+		es.ptrTarget(unsafe.Pointer(p), ptrElemTI)
+	})
+
+	t.Run("PtrThenSlice", func(t *testing.T) {
+		s := make([][2]int, 3)
+		p := (*[2][2]int)(s[0:2])
+		es := newGraphEncodeState(context.Background(), elemTI)
+		defer es.release()
+		es.ptrTarget(unsafe.Pointer(p), ptrElemTI)
+		es.sliceTarget(unsafe.Pointer(unsafe.SliceData(s)), elemTI, uintptr(len(s)), uintptr(cap(s)))
+	})
+
+	t.Run("SameRangeSliceThenPtrThenOverlappingSlice", func(t *testing.T) {
+		backing := make([][2]int, 3)
+		s1 := backing[0:2:2]
+		p := (*[2][2]int)(s1)
+		s2 := backing[1:3:3]
+		es := newGraphEncodeState(context.Background(), elemTI)
+		defer es.release()
+		es.sliceTarget(unsafe.Pointer(unsafe.SliceData(s1)), elemTI, uintptr(len(s1)), uintptr(cap(s1)))
+		es.ptrTarget(unsafe.Pointer(p), ptrElemTI)
+		es.sliceTarget(unsafe.Pointer(unsafe.SliceData(s2)), elemTI, uintptr(len(s2)), uintptr(cap(s2)))
+	})
+
+	t.Run("AllPermutationsOverlappingArrayPtrAndSlices", func(t *testing.T) {
+		type stepKind int
+		const (
+			stepS1 stepKind = iota
+			stepPtr
+			stepS2
+		)
+		perms := [][]stepKind{
+			{stepS1, stepPtr, stepS2},
+			{stepS1, stepS2, stepPtr},
+			{stepPtr, stepS1, stepS2},
+			{stepPtr, stepS2, stepS1},
+			{stepS2, stepS1, stepPtr},
+			{stepS2, stepPtr, stepS1},
+			{stepPtr, stepS2},
+			{stepS2, stepPtr},
+		}
+		for _, perm := range perms {
+			backing := make([][2]int, 3)
+			s1 := backing[0:2:2]
+			p := (*[2][2]int)(s1)
+			s2 := backing[1:3:3]
+			es := newGraphEncodeState(context.Background(), elemTI)
+			for _, st := range perm {
+				switch st {
+				case stepS1:
+					es.sliceTarget(unsafe.Pointer(unsafe.SliceData(s1)), elemTI, uintptr(len(s1)), uintptr(cap(s1)))
+				case stepPtr:
+					es.ptrTarget(unsafe.Pointer(p), ptrElemTI)
+				case stepS2:
+					es.sliceTarget(unsafe.Pointer(unsafe.SliceData(s2)), elemTI, uintptr(len(s2)), uintptr(cap(s2)))
+				}
+			}
+			es.release()
+		}
+	})
+
+	t.Run("OverlappingArrayPointersOnly", func(t *testing.T) {
+		backing := make([][2]int, 3)
+		p1 := (*[2][2]int)(backing[0:2])
+		p2 := (*[2][2]int)(backing[1:3])
+		es := newGraphEncodeState(context.Background(), elemTI)
+		defer es.release()
+		es.ptrTarget(unsafe.Pointer(p1), ptrElemTI)
+		es.ptrTarget(unsafe.Pointer(p2), ptrElemTI)
+	})
+}
 
 func TestAddrMap(t *testing.T) {
 	r := rand.New(rand.NewSource(1))

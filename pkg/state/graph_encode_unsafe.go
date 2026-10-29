@@ -78,6 +78,9 @@ type encObject struct {
 	isArray   bool
 	isMap     bool
 	state     objectState
+	// dead is set during save when all references to a root object came from
+	// absorbed encodings that were later superseded.
+	dead bool
 
 	// parent is the object that absorbed this object, or -1.
 	parent    int32
