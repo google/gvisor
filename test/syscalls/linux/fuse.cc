@@ -19,6 +19,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
@@ -53,6 +54,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
+#include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -136,6 +138,46 @@ void RunFuseServer(
     SCOPED_TRACE(absl::StrFormat("FUSE opcode %u", in.opcode));
     if (!respond(fd.get(), in)) break;
   }
+}
+
+TEST(FuseTest, EpollAfterAbort) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto opts =
+      absl::StrFormat("fd=%d,user_id=%d,group_id=%d,rootmode=40000", fd.get(),
+                      getuid(), getgid());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "fuse", dir.path(), "fuse", MS_NODEV | MS_NOSUID, opts, MNT_DETACH));
+  FuseInit(fd.get());
+  ASSERT_FALSE(::testing::Test::HasFatalFailure());
+
+  const auto mounts = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  auto ctl = std::find_if(mounts.begin(), mounts.end(), [](const auto& entry) {
+    return entry.fstype == "fusectl";
+  });
+  SKIP_IF(ctl == mounts.end());
+  auto fs = std::find_if(mounts.begin(), mounts.end(), [&](const auto& entry) {
+    return entry.mount_point == dir.path();
+  });
+  ASSERT_NE(fs, mounts.end());
+  const FileDescriptor abort_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(
+      absl::StrFormat("%s/%d/abort", ctl->mount_point, fs->minor), O_WRONLY));
+  ASSERT_THAT(write(abort_fd.get(), "1", 1), SyscallSucceedsWithValue(1));
+
+  // Mounting the same device again must not replace its aborted connection.
+  auto second_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto second_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("fuse", second_dir.path(), "fuse",
+                                      MS_NODEV | MS_NOSUID, opts, MNT_DETACH));
+  const FileDescriptor ep = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(
+      RegisterEpollFD(ep.get(), fd.get(), EPOLLIN | EPOLLONESHOT, 0));
+  epoll_event event = {};
+  ASSERT_THAT(epoll_wait(ep.get(), &event, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(static_cast<uint32_t>(event.events),
+            static_cast<uint32_t>(EPOLLERR));
 }
 
 TEST(FuseTest, RejectBadInit) {
