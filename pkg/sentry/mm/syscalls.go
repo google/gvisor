@@ -602,7 +602,15 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	if limitAS := limits.FromContext(ctx).Get(limits.AS).Cur; newUsageAS > limitAS {
 		return 0, linuxerr.ENOMEM
 	}
-
+	if oldSize != 0 {
+		mm.activeMu.Lock()
+		mm.revokeTransientPinLeasesLocked(oldAR)
+		err := mm.detachTransientPinPMAsLocked(ctx, oldAR)
+		mm.activeMu.Unlock()
+		if err != nil {
+			return 0, err
+		}
+	}
 	if vma := vseg.ValuePtr(); vma.mappable != nil {
 		// Inform the Mappable, if any, of the new mapping.
 		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.canWriteMappableLocked()); err != nil {
@@ -685,7 +693,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 //
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
-func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
+func (mm *MemoryManager) MProtect(ctx context.Context, addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	if addr.RoundDown() != addr {
 		return linuxerr.EINVAL
@@ -740,13 +748,19 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 		mm.pmas.MergeInsideRange(ar)
 		mm.pmas.MergeOutsideRange(ar)
 	}()
-	pseg := mm.pmas.LowerBoundSegment(ar.Start)
 	var didUnmapAS bool
 	for {
 		// Check for permission validity before splitting vmas, for consistency
 		// with Linux.
 		if !vseg.ValuePtr().maxPerms.SupersetOf(effectivePerms) {
 			return linuxerr.EACCES
+		}
+		if !effectivePerms.Write {
+			part := vseg.Range().Intersect(ar)
+			mm.revokeTransientPinLeasesLocked(part)
+			if err := mm.detachTransientPinPMAsLocked(ctx, part); err != nil {
+				return err
+			}
 		}
 		vseg = mm.vmas.Isolate(vseg, ar)
 
@@ -764,6 +778,7 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 		}
 
 		// Propagate vma permission changes to pmas.
+		pseg := mm.pmas.LowerBoundSegment(vseg.Start())
 		for pseg.Ok() && pseg.Start() < vseg.End() {
 			if pseg.Range().Overlaps(vseg.Range()) {
 				pseg = mm.pmas.Isolate(pseg, vseg.Range())
@@ -1201,6 +1216,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	}
 	mm.activeMu.Lock()
 	defer mm.activeMu.Unlock()
+	mm.revokeTransientPinLeasesLocked(ar)
 
 	// This is invalidateLocked(invalidatePrivate=true, invalidateShared=true),
 	// but:
@@ -1236,8 +1252,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 		}
 		for pseg.Ok() && pseg.Start() < vsegAR.End {
 			pma := pseg.ValuePtr()
-			if vma.mappable == nil && pma.huge && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
-				psegAR := pseg.Range().Intersect(vsegAR)
+			psegAR := pseg.Range().Intersect(vsegAR)
+			hugeWithoutTransientPins := pma.huge && !mm.transientPinOverlapsLocked(pseg.fileRangeOf(psegAR))
+			if vma.mappable == nil && hugeWithoutTransientPins && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
 				if !psegAR.IsHugePageAligned() {
 					firstHugeStart := psegAR.Start.HugeRoundDown()
 					firstHugeEnd := firstHugeStart + hostarch.Addr(hostarch.HugePageSize)

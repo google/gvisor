@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cstring>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -42,6 +43,34 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+TEST(PreadvTest, LargeRegularFileReadPastEOF) {
+  constexpr size_t kSize = 80 << 20;
+  constexpr size_t kFirstVectorSize = 40 << 20;
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  ASSERT_THAT(ftruncate(fd.get(), kSize), SyscallSucceeds());
+  const char markers[] = {'a', 'b'};
+  ASSERT_THAT(
+      PwriteFd(fd.get(), markers, sizeof(markers), kFirstVectorSize - 1),
+      SyscallSucceedsWithValue(sizeof(markers)));
+
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kSize + kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  std::memset(m.ptr(), '?', kSize + kPageSize);
+  struct iovec iov[2] = {
+      {m.ptr(), kFirstVectorSize},
+      {static_cast<char*>(m.ptr()) + kFirstVectorSize,
+       kSize - kFirstVectorSize + kPageSize},
+  };
+  ASSERT_THAT(preadv(fd.get(), iov, 2, 0), SyscallSucceedsWithValue(kSize));
+  std::string expected(kSize, '\0');
+  expected[kFirstVectorSize - 1] = markers[0];
+  expected[kFirstVectorSize] = markers[1];
+  EXPECT_EQ(std::memcmp(m.ptr(), expected.data(), kSize), 0);
+  EXPECT_EQ(static_cast<char*>(m.ptr())[kSize], '?');
+}
 
 // Stress copy-on-write. Attempts to reproduce b/38430174.
 TEST(PreadvTest, MMConcurrencyStress) {
