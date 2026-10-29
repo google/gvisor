@@ -2584,6 +2584,12 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 			}
 		}
 		e.segmentQueue.mu.Unlock()
+		// Restore the negotiated segment size on the new route even when its
+		// MTU permits the same size as before.
+		e.snd.gso = e.gso.Type != stack.GSONone
+		if e.snd.gso {
+			e.gso.MSS = uint16(e.snd.MaxPayloadSize)
+		}
 		e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
 		e.setEndpointState(StateEstablished)
 		// Set the new auto tuned send buffer size after entering
@@ -3338,6 +3344,7 @@ func (e *Endpoint) initHostGSO() {
 }
 
 func (e *Endpoint) initGSO() {
+	e.gso = stack.GSO{}
 	if e.route.HasHostGSOCapability() {
 		e.initHostGSO()
 	} else if e.route.HasGVisorGSOCapability() {
