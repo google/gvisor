@@ -781,6 +781,104 @@ func TestCloseReleasesStopFDs(t *testing.T) {
 	}
 }
 
+// chanNetworkDispatcher reports the payload size of every delivered packet on
+// ch. Unlike fakeNetworkDispatcher, it is safe to use from processor
+// goroutines.
+type chanNetworkDispatcher struct {
+	ch chan int
+}
+
+func (d *chanNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	d.ch <- pkt.Data().Size()
+}
+
+func (*chanNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {}
+
+// reattachTestPacket is an IPv4 packet with TCP ports, so that it can be
+// delivered by an endpoint without an Ethernet header.
+var reattachTestPacket = []byte{
+	0x45, 0, 0, 24, // Version/IHL, DSCP/ECN, total length.
+	0, 0, 0, 0, // ID, flags and fragment offset.
+	64, byte(header.TCPProtocolNumber), 0, 0, // TTL, protocol, checksum.
+	192, 168, 0, 1, // Src addr.
+	192, 168, 0, 2, // Dst addr.
+	0, 80, 0, 81, // TCP source and destination ports.
+}
+
+// TestReattachAfterDetach checks that an endpoint can be reattached after
+// detaching.
+func TestReattachAfterDetach(t *testing.T) {
+	for _, mode := range []PacketDispatchMode{Readv, RecvMMsg} {
+		for _, processors := range []int{1, 4} {
+			t.Run(fmt.Sprintf("mode=%d/processors=%d", mode, processors), func(t *testing.T) {
+				fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
+				if err != nil {
+					t.Fatalf("Socketpair = %v", err)
+				}
+				defer unix.Close(fds[0])
+				defer unix.Close(fds[1])
+				ep, err := New(&Options{
+					FDs:                  []int{fds[0]},
+					MTU:                  1500,
+					PacketDispatchMode:   mode,
+					ProcessorsPerChannel: processors,
+				})
+				if err != nil {
+					t.Fatalf("New(mode=%d) = %v", mode, err)
+				}
+				defer ep.Close()
+				for i := 0; i < 3; i++ {
+					d := &chanNetworkDispatcher{ch: make(chan int, 1)}
+					ep.Attach(d)
+					if _, err := unix.Write(fds[1], reattachTestPacket); err != nil {
+						t.Fatalf("attachment %d: Write = %v", i, err)
+					}
+					select {
+					case got := <-d.ch:
+						if want := len(reattachTestPacket); got != want {
+							t.Errorf("attachment %d: delivered packet size = %d, want %d", i, got, want)
+						}
+					case <-time.After(10 * time.Second):
+						t.Fatalf("attachment %d: no packet delivered", i)
+					}
+					ep.Attach(nil)
+				}
+			})
+		}
+	}
+}
+
+// TestSetNICStack moves a NIC between two network namespaces.
+func TestSetNICStack(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
+	if err != nil {
+		t.Fatalf("Socketpair = %v", err)
+	}
+	defer unix.Close(fds[0])
+	defer unix.Close(fds[1])
+	ep, err := New(&Options{FDs: []int{fds[0]}, MTU: 1500, PacketDispatchMode: Readv})
+	if err != nil {
+		t.Fatalf("New = %v", err)
+	}
+	src := stack.New(stack.Options{})
+	defer src.Destroy()
+	dst := stack.New(stack.Options{})
+	defer dst.Destroy()
+	if err := src.CreateNIC(1, ep); err != nil {
+		t.Fatalf("CreateNIC = %v", err)
+	}
+	// Moving the NIC detaches the link endpoint from src and attaches it to
+	// a new NIC in dst.
+	id, tcpipErr := src.SetNICStack(1, dst)
+	if tcpipErr != nil {
+		t.Fatalf("SetNICStack = %v", tcpipErr)
+	}
+	// Removing the NIC from dst detaches the endpoint a second time.
+	if err := dst.RemoveNIC(id); err != nil {
+		t.Fatalf("RemoveNIC = %v", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
