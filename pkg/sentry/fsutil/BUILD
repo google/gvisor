@@ -158,11 +158,13 @@ go_test(
     size = "small",
     srcs = [
         "dirty_set_test.go",
+        "mmap_cached_file_test.go",
     ],
     embed = [":fsutil"],
     deps = [
         "//pkg/hostarch",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usage",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

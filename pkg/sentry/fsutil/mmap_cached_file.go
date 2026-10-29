@@ -62,18 +62,33 @@ type MmapCachedFile struct {
 	// mappings maps chunk start offsets to mappings of those chunks.
 	// +checklocks:mapsMu
 	mappings map[uint64]mapping `state:"nosave"`
+
+	// retained is the set of chunk start offsets in mappings with no
+	// referenced pages.
+	// +checklocks:mapsMu
+	retained map[uint64]struct{} `state:"nosave"`
 }
+
+// maxRetainedChunks is the maximum number of chunk mappings, across all
+// MmapCachedFiles, that are kept while none of their pages are referenced.
+// Reusing a mapping avoids creating a new one when the same pages are mapped
+// again, which on the KVM platform also avoids faulting every page into the
+// guest again.
+var maxRetainedChunks int64 = 4096
+
+// retainedChunks is the number of chunk mappings kept while none of their
+// pages are referenced.
+var retainedChunks atomicbitops.Int64
 
 // chunkShift returns the binary log of the chunk size, which is the huge page
 // size. It is not a constant since the huge page size is only known at runtime
 // on some architectures.
 //
-// TODO: In addition to compounding the repeated remapping problem
-// described in MmapCachedFile.DecRef, this small chunk size may contribute
-// to host VMA exhaustion. Consider increasing chunkShift. (But note that
-// larger values of chunkShift increase the speed with which applications
-// can consume sentry's address space, since only one byte per chunk needs
-// to be touched to cause the whole chunk to be mapped.)
+// TODO: This small chunk size may contribute to host VMA exhaustion.
+// Consider increasing chunkShift. (But note that larger values of chunkShift
+// increase the speed with which applications can consume sentry's address
+// space, since only one byte per chunk needs to be touched to cause the whole
+// chunk to be mapped.)
 func chunkShift() uint {
 	return hostarch.HugePageShift
 }
@@ -108,6 +123,11 @@ func (f *MmapCachedFile) SetFD(fd int) {
 }
 
 func (f *MmapCachedFile) close() {
+	f.mapsMu.Lock()
+	for chunkStart, m := range f.mappings {
+		f.unmapAndRemove(chunkStart, m)
+	}
+	f.mapsMu.Unlock()
 	if fd := f.fd.RacyLoad(); fd >= 0 {
 		unix.Close(int(fd))
 		f.fd.RacyStore(-1)
@@ -169,6 +189,14 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 			// Would overflow.
 			panic(fmt.Sprintf("fsutil.MmapCachedFile.IncRef(%v): adding %d page references to chunk %#x, which has %d page references", fr, pgs, chunkStart, refs))
 		}
+		if refs == 0 {
+			f.mapsMu.Lock()
+			if _, ok := f.retained[chunkStart]; ok {
+				delete(f.retained, chunkStart)
+				retainedChunks.Add(-1)
+			}
+			f.mapsMu.Unlock()
+		}
 		f.refs[chunkStart] = refs + pgs
 		chunkStart += chunkSize()
 		if chunkStart >= fr.End || chunkStart == 0 {
@@ -210,14 +238,16 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
 			f.refs[chunkStart] = refs - pgs
 		case refs == pgs:
 			delete(f.refs, chunkStart)
-			// TODO: Unmapping here generally means that mappings of host FDs
-			// will be unmapped when there are no application VMAs mapping f,
-			// e.g. between process executions, which may be expensive for some
-			// workloads. Consider retaining mappings until f.close() instead.
-			// This would also let us drop Add/RemoveMapping.
 			f.mapsMu.Lock()
 			if m, ok := f.mappings[chunkStart]; ok {
-				f.unmapAndRemove(chunkStart, m)
+				if !f.mappableReleased && tryRetainChunk() {
+					if f.retained == nil {
+						f.retained = make(map[uint64]struct{})
+					}
+					f.retained[chunkStart] = struct{}{}
+				} else {
+					f.unmapAndRemove(chunkStart, m)
+				}
 			}
 			f.mapsMu.Unlock()
 		case refs < pgs:
@@ -244,6 +274,20 @@ func (f *MmapCachedFile) unmapAndRemove(chunkStart uint64, m mapping) {
 		log.Warningf("fsutil.MmapCachedFile: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
 	}
 	delete(f.mappings, chunkStart)
+	if _, ok := f.retained[chunkStart]; ok {
+		delete(f.retained, chunkStart)
+		retainedChunks.Add(-1)
+	}
+}
+
+// tryRetainChunk reserves one of maxRetainedChunks, returning false if none
+// are left.
+func tryRetainChunk() bool {
+	if retainedChunks.Add(1) <= maxRetainedChunks {
+		return true
+	}
+	retainedChunks.Add(-1)
+	return false
 }
 
 // MapInternal implements memmap.File.MapInternal.
