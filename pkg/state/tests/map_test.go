@@ -261,6 +261,7 @@ func TestMapLoadHookReceivers(t *testing.T) {
 		{"array values", map[int][1]mapLoadHook{1: {{1}}, 2: {{2}}}},
 		{"interface keys", map[any]int{mapLoadHook{1}: 1, mapLoadHook{2}: 2}},
 		{"interface values", map[int]any{1: mapLoadHook{1}, 2: mapLoadHook{2}}},
+		{"map passed to LoadValue", mapLoadSnapshot{map[mapLoadHook]int{{1}: 1}, mapLoadHook{2}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// Both hooks run after the map entries have been decoded. If
