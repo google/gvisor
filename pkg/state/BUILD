@@ -73,6 +73,7 @@ go_library(
         "encode_unsafe.go",
         "graph_addrmap.go",
         "graph_buf_unsafe.go",
+        "graph_typeinfo_unsafe.go",
         "ods_list.go",
         "state.go",
         "state_norace.go",

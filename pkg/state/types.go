@@ -296,12 +296,26 @@ var globalTypeDatabase = map[string]reflect.Type{}
 // reverseTypeDatabase holds immutable metadata indexed by the original type.
 var reverseTypeDatabase = map[reflect.Type]wire.Type{}
 
+// noHooksTypes contains types registered with RegisterNoHooks.
+var noHooksTypes = map[reflect.Type]bool{}
+
+// binaryTypes maps types registered with registerBinary to their names.
+var binaryTypes = map[reflect.Type]string{}
+
 // Release releases references to global type databases.
 // Must only be called in contexts where they will definitely never be used,
 // in order to save memory.
 func Release() {
 	globalTypeDatabase = nil
 	reverseTypeDatabase = nil
+	noHooksTypes = nil
+	binaryTypes = nil
+	typeInfosMu.Lock()
+	typeInfos = nil
+	typeInfoCount = 0
+	typeInfoSlab = nil
+	slotsSlab = nil
+	typeInfosMu.Unlock()
 }
 
 // binaryObject is a value with a self-contained binary representation.
@@ -338,19 +352,61 @@ func loadBinary(value binaryObject, name string, s Source) {
 // critical path. Enable it only in race-enabled builds.
 var eagerTypeInfo = raceEnabled
 
+// StructType is implemented by pointers to struct types with state methods.
+type StructType interface {
+	Type
+	SaverLoader
+}
+
+// RegisterStruct registers a struct type, like Register. Passing the type as
+// a StructType makes the interface table of StructType for the type static,
+// so that the state package does not build it at run time.
+//
+// This must be called on init and only done once.
+func RegisterStruct(t StructType) {
+	registerStruct(t, false)
+}
+
+// RegisterNoHooks registers a struct type whose StateSave and StateLoad
+// methods save and load its fields, and do nothing else, like RegisterStruct.
+// The state package may save values of the type without calling these
+// methods.
+//
+// This must be called on init and only done once.
+func RegisterNoHooks(t StructType) {
+	registerStruct(t, true)
+}
+
+func registerStruct(t StructType, noHooks bool) {
+	typ := reflect.TypeOf(t)
+	if typ == nil || typ.Kind() != reflect.Ptr {
+		Failf("RegisterStruct must be called on pointers")
+	}
+	typ = typ.Elem()
+	if noHooks {
+		noHooksTypes[typ] = true
+	}
+	if eagerTypeInfo {
+		Register(t)
+		return
+	}
+	// Unlike Register, this does not convert t to Type, which would look up
+	// an itab at run time.
+	registerName(typ, t.StateTypeName())
+}
+
 // Register registers a type.
 //
 // This must be called on init and only done once. Registration lets Load
 // reconstruct concrete types held in interfaces without a preceding Save.
 func Register(t Type) {
 	typ := reflect.TypeOf(t)
+	if typ == nil || typ.Kind() != reflect.Ptr {
+		Failf("Register must be called on pointers")
+	}
 	if !eagerTypeInfo {
 		registerName(typ.Elem(), t.StateTypeName())
 		return
-	}
-	// Register must always be called on pointers.
-	if typ.Kind() != reflect.Ptr {
-		Failf("Register must be called on pointers")
 	}
 	typ = typ.Elem()
 	fields := t.StateFields()
@@ -384,6 +440,7 @@ func Register(t Type) {
 // Metadata is always published eagerly, since it does not implement `Type`.
 func registerBinary(value binaryObject) {
 	typ := reflect.TypeOf(value).Elem()
+	binaryTypes[typ] = typ.PkgPath() + "." + typ.Name()
 	registerInfo(typ, wire.Type{
 		Name:   typ.PkgPath() + "." + typ.Name(),
 		Fields: []string{"value"},
