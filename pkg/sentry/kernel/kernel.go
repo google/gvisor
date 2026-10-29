@@ -872,6 +872,11 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 	}
 
 	parallelMFSave := pagesMetadata != nil
+	// MemoryFiles saved by the sentry checkpoint are not those read
+	// by filesystem checkpoints (see filterMFsToSave), so they can be released
+	// during saving if the sandbox exits afterward.
+	// See pgalloc.SaveOpts.ReleaseAfterWrite.
+	releaseAfterWrite := !resume
 	var (
 		mfSaveWg  sync.WaitGroup
 		mfSaveErr error
@@ -881,7 +886,7 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 		mfSaveWg.Add(1)
 		go func() {
 			defer mfSaveWg.Done()
-			mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages, resume) // transfers ownership
+			mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages, resume, releaseAfterWrite) // transfers ownership
 		}()
 		pagesCleanup.Release()
 		// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
@@ -925,7 +930,7 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 	if fsOpts != nil {
 		fsSaveStart := time.Now()
 		for i := range fsOpts.Bundles {
-			if err := k.fsSaveLocked(ctx, &fsOpts.Bundles[i], fsOpts.RunscVersion, mfsToSave, matchCtxs[i]); err != nil {
+			if err := k.fsSaveLocked(ctx, &fsOpts.Bundles[i], fsOpts.RunscVersion, mfsToSave, mfsToSaveActual, matchCtxs[i]); err != nil {
 				return fmt.Errorf("failed to save split filesystem bundle %d: %w", i, err)
 			}
 		}
@@ -946,7 +951,7 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 			return mfSaveErr
 		}
 	} else {
-		mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages, resume)
+		mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages, resume, false /* releaseAfterWrite */)
 		if mfSaveErr != nil {
 			return mfSaveErr
 		}
@@ -973,8 +978,10 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 // and MemoryFile state will be saved to w. Otherwise, pagesMetadata and
 // pagesFile must be non-nil, saveMemoryFiles takes ownership of both
 // pagesMetadata and pagesFile (even if it returns a non-nil error), and
-// MemoryFile state will be saved to pagesMetadata and pagesFile.
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages, resume bool) error {
+// MemoryFile state will be saved to pagesMetadata and pagesFile. If
+// releaseAfterWrite is true, pages written to pagesFile are released from
+// their MemoryFiles.
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages, resume, releaseAfterWrite bool) error {
 	memoryStart := time.Now()
 
 	pmw := w
@@ -1009,6 +1016,7 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 			asyncPageSaveWg.Wait()
 		})
 		mfOpts.PagesFile = apfs
+		mfOpts.ReleaseAfterWrite = releaseAfterWrite
 	}
 
 	if err := k.mf.SaveTo(ctx, pmw, &mfOpts); err != nil {

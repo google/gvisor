@@ -142,9 +142,9 @@ func (q *LinuxQueue) Wait(cs []Completion, minCompletions int) ([]Completion, er
 			}
 			if head != origHead {
 				atomic.StoreUint32(&ring.Head, head)
-				if minCompletions <= 0 {
-					return cs, nil
-				}
+			}
+			if minCompletions <= 0 {
+				return cs, nil
 			}
 		}
 		n, _, e := unix.Syscall6(unix.SYS_IO_GETEVENTS, q.ctxID, uintptr(minCompletions), uintptr(len(q.ioevs)), uintptr(unsafe.Pointer(unsafe.SliceData(q.ioevs))), 0 /* timeout */, 0 /* unused */)

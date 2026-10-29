@@ -183,6 +183,17 @@ type SaveOpts struct {
 	// returns, so SaveTo() may leave zero pages that are already committed on
 	// the host in place rather than decommit them.
 	ExitAfterSaving bool
+
+	// If ReleaseAfterWrite is true and PagesFile is not nil, MemoryFile
+	// pages are decommitted once SaveTo has scanned past them and all
+	// writes to PagesFile of pages before them have completed. This avoids
+	// holding memory for saved pages until the sandbox exits, and amortizes
+	// decommit syscalls by releasing contiguous ranges.
+	//
+	// ReleaseAfterWrite may only be set if the MemoryFile will not be used
+	// after SaveTo returns (no resume after save) and if
+	// nothing allocates from it while SaveTo is in progress.
+	ReleaseAfterWrite bool
 }
 
 // SaveTo writes f's state to the given stream.
@@ -219,9 +230,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 			}
 		}
 		amfs = &asyncMemoryFileSave{
-			f:  f,
-			pf: opts.PagesFile,
-			sf: sf,
+			f:                 f,
+			pf:                opts.PagesFile,
+			sf:                sf,
+			releaseAfterWrite: opts.ReleaseAfterWrite,
 		}
 	}
 
@@ -695,6 +707,35 @@ type AsyncPagesFileSave struct {
 	// ops stores all apsOps.
 	ops []apsOp
 
+	// written tracks writes for MemoryFiles with releaseAfterWrite set that
+	// have been enqueued but not yet passed to advanceWritten, in the order
+	// in which they were enqueued. writtenHead is the number of entries that
+	// have ever been removed from the front of written.
+	//
+	// Since MemoryFile.SaveTo() inserts ranges into unsaved in increasing
+	// order of offset for each MemoryFile, after scanning all pages before
+	// them, and writes are enqueued in unsaved order, writes for each
+	// MemoryFile appear in written in increasing order of offset. Thus,
+	// when an entry is removed from written, all pages in its MemoryFile
+	// before the end of its write have been scanned by MemoryFile.SaveTo().
+	// See asyncMemoryFileSave.doneUpTo.
+	written     []apsWritten
+	writtenHead uint64
+
+	// releasing contains asyncMemoryFileSaves for which doneUpTo >
+	// releasedUpTo. releasableBytes is the number of bytes written for
+	// MemoryFiles with releaseAfterWrite set since the last call to
+	// releaseWritten.
+	releasing       []*asyncMemoryFileSave
+	releasableBytes uint64
+
+	// Statistics for releasing pages after writing. releaseCalls is the
+	// number of decommit syscalls made, releasedBytes is the number of bytes
+	// that they spanned, and releaseDur is the total time spent in them.
+	releaseCalls  uint64
+	releasedBytes uint64
+	releaseDur    time.Duration
+
 	// If err is not nil, it is the error that has terminated async page
 	// saving. Note that unlike AsyncPagesFileLoad.err(),
 	// AsyncPagesFileSave.err is never returned to application syscalls and
@@ -715,11 +756,45 @@ type asyncMemoryFileSave struct {
 	f  *MemoryFile
 	pf *AsyncPagesFileSave
 	sf stateio.SourceFile
+
+	// releaseAfterWrite is initially SaveOpts.ReleaseAfterWrite, and is reset
+	// if releasing pages fails.
+	releaseAfterWrite bool
+
+	// If releaseAfterWrite is true, doneUpTo is the end of the last write
+	// for this MemoryFile removed from AsyncPagesFileSave.written. No
+	// further writes will read pages before doneUpTo, thus, all pages before
+	// doneUpTo can be released.
+	//
+	// releasedUpTo is the offset before which all pages have been released.
+	// releasedUpTo is huge page-aligned until saving is complete, since
+	// decommitting part of a huge page requires the host to split it, which
+	// is more expensive than freeing it whole.
+	//
+	// inReleasing is true if this asyncMemoryFileSave is in
+	// AsyncPagesFileSave.releasing.
+	doneUpTo     uint64
+	releasedUpTo uint64
+	inReleasing  bool
 }
 
 type apsRange struct {
 	amfs *asyncMemoryFileSave
 	memmap.FileRange
+}
+
+// apsWritten is the type of entries in AsyncPagesFileSave.written.
+type apsWritten struct {
+	amfs *asyncMemoryFileSave
+
+	// end is the end of the last MemoryFile range written by the write.
+	end uint64
+
+	// total is the number of bytes written by the write.
+	total uint64
+
+	// done is true if the write has completed.
+	done bool
 }
 
 // apsOp tracks async page save state corresponding to a single AIO write
@@ -736,6 +811,11 @@ type apsOp struct {
 
 	// iovecs contains mappings of frs.
 	iovecs []unix.Iovec
+
+	// If inWritten is true, the operation was added to
+	// AsyncPagesFileSave.written at index writtenIdx.
+	inWritten  bool
+	writtenIdx uint64
 }
 
 // StartAsyncPagesFileSave constructs asynchronous saving state for the pages
@@ -805,6 +885,15 @@ func (apfs *AsyncPagesFileSave) enqueueCurOp() {
 
 	apfs.qavail--
 	apfs.curOp = nil
+	op.inWritten = op.amfs.releaseAfterWrite
+	if op.inWritten {
+		op.writtenIdx = apfs.writtenHead + uint64(len(apfs.written))
+		apfs.written = append(apfs.written, apsWritten{
+			amfs:  op.amfs,
+			end:   op.frs[len(op.frs)-1].End,
+			total: op.total,
+		})
+	}
 	if len(op.frs) == 1 && len(op.iovecs) == 1 {
 		// Perform a non-vectorized write to save an indirection (and possible
 		// userspace-to-kernelspace copy) in the AsyncWriter implementation.
@@ -835,6 +924,9 @@ func (apfs *AsyncPagesFileSave) enqueueRange(mfr apsRange) uint64 {
 		}
 		n := apfs.combine(mfr)
 		if n > 0 {
+			if apfs.curOp.total == apfs.maxWriteBytes {
+				apfs.enqueueCurOp()
+			}
 			return n
 		}
 		// Flush the existing (conflicting) op and try again with a new one.
@@ -988,6 +1080,7 @@ func (apfs *AsyncPagesFileSave) main() {
 		if !apfs.canEnqueue() {
 			panic("main loop invariant failed")
 		}
+		qavailBefore := apfs.qavail
 		apfs.mu.Lock()
 		apfs.aw.Reserve(apfs.saveOff)
 		for !apfs.unsaved.Empty() {
@@ -1022,7 +1115,16 @@ func (apfs *AsyncPagesFileSave) main() {
 		}
 
 		if apfs.qavail == maxParallel {
-			// We are out of work to do.
+			// We are out of work to do. If we've accumulated a full batch of
+			// releasable pages, release them before waiting for more work.
+			// Don't release smaller batches. If MemoryFile.SaveTo() is
+			// producing ranges more slowly than writes complete, we get here
+			// after almost every write, and releasing on every visit would
+			// defeat batching. At most apsReleaseBatchBytes are held as a
+			// result, and all remaining pages are released when saving is complete.
+			if apfs.releasableBytes >= apsReleaseBatchBytes {
+				apfs.releaseWritten(false /* final */)
+			}
 			ev := apfs.stStatus.Wait()
 			if ev&apsSTPending != 0 {
 				// We may have raced with MemoryFile.SaveTo() inserting into
@@ -1035,6 +1137,9 @@ func (apfs *AsyncPagesFileSave) main() {
 					// Enqueue and complete the final write before finalizing.
 					continue
 				}
+				// All writes have completed, and no MemoryFile will enqueue
+				// further writes, so release all remaining written pages.
+				apfs.releaseWritten(true /* final */)
 				if err := apfs.aw.Finalize(); err != nil {
 					apfs.err = fmt.Errorf("stateio.AsyncWriter.Finalize failed: %w", err)
 					return
@@ -1048,24 +1153,44 @@ func (apfs *AsyncPagesFileSave) main() {
 				apfs.mu.Unlock()
 				bandwidthTotal := float64(bytesTotal) * 1e-6 / durTotal.Seconds()
 				bandwidthFull := float64(bytesFull) * 1e-6 / durFull.Seconds()
-				log.Infof("Async page saving completed in %s (%d bytes, %.3f MB/s); queue full for %s (%d bytes, %.3f MB/s)",
+				log.Infof("Async page saving completed in %s (%d bytes, %.3f MB/s); queue full for %s (%d bytes, %.3f MB/s); released %d bytes in %d syscalls taking %s",
 					durTotal.Round(time.Millisecond),
 					bytesTotal,
 					bandwidthTotal,
 					durFull.Round(time.Millisecond),
 					bytesFull,
-					bandwidthFull)
+					bandwidthFull,
+					apfs.releasedBytes,
+					apfs.releaseCalls,
+					apfs.releaseDur.Round(time.Microsecond))
 				return
 			}
 			panic(fmt.Sprintf("unknown events in stStatus: %#x", ev))
 		}
 
+		completions = completions[:0]
+		if apfs.releasableBytes >= apsReleaseBatchBytes {
+			if apfs.qavail < qavailBefore {
+				// Ensure newly-enqueued writes are submitted (non-blocking)
+				// before releasing pages so their work overlaps.
+				var err error
+				completions, err = apfs.aw.Wait(completions, 0 /* minCompletions */)
+				if err != nil {
+					apfs.err = fmt.Errorf("stateio.AsyncWriter.Wait failed: %w", err)
+					return
+				}
+			}
+			apfs.releaseWritten(false /* final */)
+		}
+
 		// Wait for any number of writes to complete.
-		var err error
-		completions, err = apfs.aw.Wait(completions[:0], 1 /* minCompletions */)
-		if err != nil {
-			apfs.err = fmt.Errorf("stateio.AsyncWriter.Wait failed: %w", err)
-			return
+		if len(completions) < maxParallel-apfs.qavail {
+			var err error
+			completions, err = apfs.aw.Wait(completions, max(1-len(completions), 0) /* minCompletions */)
+			if err != nil {
+				apfs.err = fmt.Errorf("stateio.AsyncWriter.Wait failed: %w", err)
+				return
+			}
 		}
 
 		// Process completions.
@@ -1088,9 +1213,87 @@ func (apfs *AsyncPagesFileSave) main() {
 			if full {
 				apfs.bytesFull += op.total
 			}
+			if op.inWritten {
+				apfs.written[op.writtenIdx-apfs.writtenHead].done = true
+			}
 		}
 		apfs.mu.Unlock()
+		apfs.advanceWritten()
 	}
+}
+
+// apsReleaseBatchBytes is the number of bytes of written MemoryFile ranges
+// that async page saving accumulates before releasing them. Releasing pages in
+// batches amortizes the cost of each decommit syscall over more pages.
+var apsReleaseBatchBytes uint64 = 8 << 20
+
+// advanceWritten removes writes at the front of apfs.written that have
+// completed, advancing their MemoryFiles' doneUpTo.
+func (apfs *AsyncPagesFileSave) advanceWritten() {
+	n := 0
+	for n < len(apfs.written) && apfs.written[n].done {
+		w := &apfs.written[n]
+		amfs := w.amfs
+		if amfs.releaseAfterWrite {
+			amfs.doneUpTo = w.end
+			apfs.releasableBytes += w.total
+			if !amfs.inReleasing {
+				amfs.inReleasing = true
+				apfs.releasing = append(apfs.releasing, amfs)
+			}
+		}
+		n++
+	}
+	if n == 0 {
+		return
+	}
+	// Shift remaining entries to the front of apfs.written to reuse its
+	// capacity.
+	m := copy(apfs.written, apfs.written[n:])
+	clear(apfs.written[m:])
+	apfs.written = apfs.written[:m]
+	apfs.writtenHead += uint64(n)
+}
+
+// releaseWritten releases pages before doneUpTo for all MemoryFiles in
+// apfs.releasing, using a single decommit syscall per MemoryFile. If final is
+// false, it does not release partial huge pages for MemoryFiles that expect
+// huge pages, since writes may still complete within them.
+func (apfs *AsyncPagesFileSave) releaseWritten(final bool) {
+	apfs.releasableBytes = 0
+	j := 0
+	for _, amfs := range apfs.releasing {
+		end := amfs.doneUpTo
+		if !final && amfs.f.opts.ExpectHugepages {
+			end = hostarch.HugePageRoundDown(end)
+		}
+		if amfs.releaseAfterWrite && end > amfs.releasedUpTo {
+			fr := memmap.FileRange{Start: amfs.releasedUpTo, End: end}
+			start := gohacks.Nanotime()
+			err := amfs.f.decommitFile(fr)
+			apfs.releaseDur += time.Duration(gohacks.Nanotime() - start)
+			apfs.releaseCalls++
+			if err != nil {
+				// The pages have already been saved, so this only means that
+				// memory is released later, when the MemoryFile is destroyed.
+				// Don't retry for subsequent writes.
+				log.Warningf("Async page saving: decommitting MemoryFile(%p) pages %v after write failed, no longer releasing pages after write: %v", amfs.f, fr, err)
+				amfs.releaseAfterWrite = false
+			} else {
+				apfs.releasedBytes += fr.Length()
+				amfs.releasedUpTo = end
+			}
+		}
+		if amfs.releaseAfterWrite && amfs.releasedUpTo < amfs.doneUpTo {
+			// Keep the unreleased partial huge page for a later call.
+			apfs.releasing[j] = amfs
+			j++
+		} else {
+			amfs.inReleasing = false
+		}
+	}
+	clear(apfs.releasing[j:])
+	apfs.releasing = apfs.releasing[:j]
 }
 
 // LoadOpts provides options to MemoryFile.LoadFrom().
