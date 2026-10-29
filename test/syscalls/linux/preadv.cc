@@ -72,6 +72,42 @@ TEST(PreadvTest, LargeRegularFileReadPastEOF) {
   EXPECT_EQ(static_cast<char*>(m.ptr())[kSize], '?');
 }
 
+TEST(PreadvTest, LargeTmpfsReadAcrossVectors) {
+  constexpr size_t kSize = 12 << 20;
+  constexpr size_t kFirstVectorSize = 5 << 20;
+  const int raw_fd = syscall(SYS_memfd_create, "large-preadv", 0);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  const FileDescriptor fd(raw_fd);
+
+  std::string data(kSize, '\0');
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<char>(i % 251);
+  }
+  ASSERT_THAT(PwriteFd(fd.get(), data.data(), data.size(), 0),
+              SyscallSucceedsWithValue(kSize));
+
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  struct iovec iov[2] = {
+      {m.ptr(), kFirstVectorSize},
+      {static_cast<char*>(m.ptr()) + kFirstVectorSize,
+       kSize - kFirstVectorSize},
+  };
+  ASSERT_THAT(preadv(fd.get(), iov, 2, 0), SyscallSucceedsWithValue(kSize));
+  EXPECT_EQ(std::memcmp(m.ptr(), data.data(), kSize), 0);
+
+  ASSERT_THAT(preadv(fd.get(), iov, 2, kSize - kFirstVectorSize),
+              SyscallSucceedsWithValue(kFirstVectorSize));
+  EXPECT_EQ(std::memcmp(m.ptr(), data.data() + kSize - kFirstVectorSize,
+                        kFirstVectorSize),
+            0);
+  // The short second read must leave the second vector unchanged.
+  EXPECT_EQ(
+      std::memcmp(static_cast<char*>(m.ptr()) + kFirstVectorSize,
+                  data.data() + kFirstVectorSize, kSize - kFirstVectorSize),
+      0);
+}
+
 // Stress copy-on-write. Attempts to reproduce b/38430174.
 TEST(PreadvTest, MMConcurrencyStress) {
   // Fill a one-page file with zeroes (the contents don't really matter).

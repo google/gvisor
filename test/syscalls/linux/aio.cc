@@ -170,6 +170,33 @@ TEST_F(AIOTest, BasicWrite) {
   EXPECT_STREQ(verify_buf, kData);
 }
 
+TEST_F(AIOTest, TmpfsReadPastChunkAlignedEOF) {
+  constexpr size_t kSize = 8 << 20;
+  const int raw_fd = syscall(SYS_memfd_create, "aio-tmpfs-eof", 0);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  const FileDescriptor fd(raw_fd);
+  const std::string data(kSize, 'x');
+  ASSERT_THAT(pwrite(fd.get(), data.data(), data.size(), 0),
+              SyscallSucceedsWithValue(kSize));
+
+  std::string buf(kSize + kPageSize, '?');
+  struct iovec iov = {buf.data(), buf.size()};
+  ASSERT_THAT(SetupContext(128), SyscallSucceeds());
+  struct iocb cb = CreateCallback();
+  cb.aio_fildes = fd.get();
+  cb.aio_lio_opcode = IOCB_CMD_PREADV;
+  cb.aio_buf = reinterpret_cast<uint64_t>(&iov);
+  cb.aio_nbytes = 1;
+  struct iocb* cbs[] = {&cb};
+  ASSERT_THAT(Submit(1, cbs), SyscallSucceedsWithValue(1));
+
+  struct io_event events[1];
+  ASSERT_THAT(GetEvents(1, 1, events, nullptr), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(events[0].res, kSize);
+  EXPECT_EQ(std::memcmp(buf.data(), data.data(), kSize), 0);
+  EXPECT_EQ(buf[kSize], '?');
+}
+
 TEST_F(AIOTest, BadWrite) {
   // Create a pipe and immediately close the read end.
   int pipefd[2];
