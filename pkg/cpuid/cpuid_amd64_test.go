@@ -18,9 +18,14 @@
 package cpuid
 
 import (
+	"bytes"
+	"context"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 // makeFatureSet creates a new FeatureSet.
@@ -366,5 +371,74 @@ func TestUnsetFSGSBASE(t *testing.T) {
 	out := guestFeatures.Query(In{Eax: 7, Ecx: 0})
 	if out.Ebx&1 != 0 {
 		t.Errorf("UnsetFSGSBASE failed: CPUID.(EAX=7, ECX=0).EBX bit 0 (FSGSBASE) should be 0, got %x", out.Ebx)
+	}
+}
+
+func TestStaticMarshal(t *testing.T) {
+	for _, s := range []Static{
+		{},
+		{In{Eax: 7, Ecx: 1}: Out{Eax: 0xffffffff, Ebx: 1, Ecx: 2, Edx: 3}},
+		HostFeatureSet().ToStatic(),
+	} {
+		b := s.marshal()
+		if len(b) != len(s)*staticEntrySize {
+			t.Errorf("marshal of %d entries is %d bytes, want %d", len(s), len(b), len(s)*staticEntrySize)
+		}
+		got, err := unmarshalStatic(b)
+		if err != nil {
+			t.Fatalf("unmarshalStatic failed: %v", err)
+		}
+		if !maps.Equal(got, s) {
+			t.Errorf("unmarshalStatic(marshal(%v)) = %v", s, got)
+		}
+		if !bytes.Equal(s.marshal(), b) {
+			t.Errorf("marshal is not deterministic")
+		}
+	}
+	if _, err := unmarshalStatic(make([]byte, staticEntrySize+1)); err == nil {
+		t.Errorf("unmarshalStatic accepted a bad length")
+	}
+	if _, err := unmarshalStatic(make([]byte, 2*staticEntrySize)); err == nil {
+		t.Errorf("unmarshalStatic accepted duplicate keys")
+	}
+}
+
+func TestFeatureSetSaveLoad(t *testing.T) {
+	roundTrip := func(t *testing.T, fs FeatureSet) FeatureSet {
+		t.Helper()
+		var buf bytes.Buffer
+		if _, err := state.Save(context.Background(), &buf, &fs); err != nil {
+			t.Fatalf("Save failed: %v", err)
+		}
+		var got FeatureSet
+		if _, err := state.Load(context.Background(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+		return got
+	}
+
+	fs := HostFeatureSet().Fixed()
+	got := roundTrip(t, fs)
+	if !maps.Equal(got.Function.(Static), fs.Function.(Static)) {
+		t.Errorf("loaded function differs: got %v, want %v", got.Function, fs.Function)
+	}
+	if got.hwCap != fs.hwCap {
+		t.Errorf("loaded hwCap differs: got %v, want %v", got.hwCap, fs.hwCap)
+	}
+
+	// Zero FeatureSet preserves nil Function.
+	if zero := roundTrip(t, FeatureSet{}); zero.Function != nil {
+		t.Errorf("zero FeatureSet Function = %v, want nil", zero.Function)
+	}
+
+	// Non-Static HostFeatureSet and unnormalized Static normalize on Save/Load.
+	if nativeGot := roundTrip(t, HostFeatureSet()); !maps.Equal(nativeGot.Function.(Static), fs.Function.(Static)) {
+		t.Errorf("HostFeatureSet round-trip differs from Fixed()")
+	}
+	unnorm := make(Static)
+	unnorm.Add(X86FeatureXSAVE)
+	unnorm.Add(X86FeatureAMX_TILE)
+	if amxGot := roundTrip(t, FeatureSet{Function: unnorm}); amxGot.HasFeature(X86FeatureAMX_TILE) {
+		t.Errorf("AMX feature was not normalized out on Load")
 	}
 }
