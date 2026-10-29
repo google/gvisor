@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/gohacks"
@@ -28,6 +29,97 @@ type statEntry struct {
 	total time.Duration
 }
 
+// collectStats is set by CollectStats.
+var collectStats atomic.Bool
+
+// CollectStats enables or disables the collection of per-type timing
+// statistics by the graph engine's Save and Load, which is costly.
+func CollectStats(enable bool) {
+	collectStats.Store(enable)
+}
+
+type graphStats struct {
+	used    bool
+	enabled bool
+	objects int
+	bytes   int
+	elapsed int64
+	byType  map[*typeInfo]*statEntry
+	stack   []*typeInfo
+	last    int64
+}
+
+func (s *graphStats) init() {
+	s.byType = make(map[*typeInfo]*statEntry)
+	s.last = gohacks.Nanotime()
+	s.stack = append(s.stack, nil)
+}
+
+func (s *graphStats) sample(ti *typeInfo) {
+	now := gohacks.Nanotime()
+	e, ok := s.byType[ti]
+	if !ok {
+		e = &statEntry{}
+		s.byType[ti] = e
+	}
+	e.total += time.Duration(now - s.last)
+	s.last = now
+}
+
+func (s *graphStats) start(ti *typeInfo) {
+	s.sample(s.stack[len(s.stack)-1])
+	s.stack = append(s.stack, ti)
+}
+
+func (s *graphStats) done() {
+	ti := s.stack[len(s.stack)-1]
+	s.sample(ti)
+	s.byType[ti].count++
+	s.stack = s.stack[:len(s.stack)-1]
+}
+
+func (s *graphStats) String() string {
+	summary := fmt.Sprintf("%d objects, %d bytes, %v", s.objects, s.bytes, time.Duration(s.elapsed))
+	if len(s.byType) == 0 {
+		return summary
+	}
+	ss := make([]sliceEntry, 0, len(s.byType))
+	for ti, e := range s.byType {
+		name := "state.default"
+		if ti != nil {
+			name = ti.typ.String()
+		}
+		ss = append(ss, sliceEntry{name: name, entry: e})
+	}
+	sort.Slice(ss, func(i, j int) bool {
+		return ss[i].entry.total > ss[j].entry.total
+	})
+	var (
+		buf   bytes.Buffer
+		count uint
+		total time.Duration
+	)
+	buf.WriteString(summary)
+	buf.WriteString("\n")
+	fmt.Fprintf(&buf, "% 16s | % 8s | % 16s | %s\n", "total", "count", "per", "type")
+	buf.WriteString("-----------------+----------+------------------+----------------\n")
+	for _, se := range ss {
+		if se.entry.count == 0 {
+			continue
+		}
+		count += se.entry.count
+		total += se.entry.total
+		per := se.entry.total / time.Duration(se.entry.count)
+		fmt.Fprintf(&buf, "% 16s | %8d | % 16s | %s\n",
+			se.entry.total, se.entry.count, per, se.name)
+	}
+	buf.WriteString("-----------------+----------+------------------+----------------\n")
+	if count > 0 {
+		fmt.Fprintf(&buf, "% 16s | % 8d | % 16s | [all]", total, count, total/time.Duration(count))
+	}
+	return buf.String()
+}
+
 // Stats tracks encode / decode timing.
 //
 // This currently provides a meaningful String function and no other way to
@@ -35,6 +127,8 @@ type statEntry struct {
 //
 // All exported receivers accept nil.
 type Stats struct {
+	graph graphStats
+
 	// byType contains a breakdown of time spent by type.
 	//
 	// This is indexed *directly* by typeID, including zero.
@@ -105,6 +199,9 @@ type sliceEntry struct {
 
 // String returns a table representation of the stats.
 func (s *Stats) String() string {
+	if s.graph.used {
+		return s.graph.String()
+	}
 	// Build a list of stat entries.
 	ss := make([]sliceEntry, 0, len(s.byType))
 	for id := 0; id < len(s.names); id++ {
