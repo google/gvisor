@@ -116,6 +116,11 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	}
 	isDir := ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory
 	inoKey := inoKeyFromStatx(&ino.Stat)
+	devMinor, err := fs.devMinorFromKey(inoKey)
+	if err != nil {
+		fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
+		return nil, err
+	}
 	// Common case. Performance hack which is used to allocate the dentry
 	// and its inode together in the heap. This will help reduce allocations and memory
 	// fragmentation. This is more cache friendly too.
@@ -141,6 +146,7 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
+					devMinor:  devMinor,
 					rdevMajor: ino.Stat.RdevMajor,
 					rdevMinor: ino.Stat.RdevMinor,
 					mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
@@ -628,23 +634,8 @@ func (i *lisafsInode) statfs(ctx context.Context) (linux.Statfs, error) {
 
 func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions, d *dentry) error {
 	i.controlFD = i.fs.client.NewFD(inode.ControlFD)
-
-	// Gofers do not preserve inoKey across checkpoint/restore, so:
-	//
-	//	- We must assume that the remote filesystem did not change in a way that
-	//		would invalidate dentries, since we can't revalidate dentries by
-	//		checking inoKey.
-	//
-	//	- We need to associate the new inoKey with the existing i.ino.
-	i.inoKey = inoKeyFromStatx(&inode.Stat)
-	i.fs.inoMu.Lock()
-	i.fs.inoByKey[i.inoKey] = i.ino
-	i.fs.inoMu.Unlock()
-	// inodeByKey contains non-directory inodes only.
-	if !d.isDir() {
-		i.fs.inodeMu.Lock()
-		i.fs.inodeByKey[i.inoKey] = &i.inode
-		i.fs.inodeMu.Unlock()
+	if err := i.restoreInoKey(inoKeyFromStatx(&inode.Stat)); err != nil {
+		return err
 	}
 
 	// Check metadata stability before updating metadata.

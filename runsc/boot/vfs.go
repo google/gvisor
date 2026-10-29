@@ -406,6 +406,9 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config, suppr
 	if conf.CharacterDevicePolicy.AllowsPassthrough() {
 		opts = append(opts, "char_device_policy="+conf.CharacterDevicePolicy.String())
 	}
+	if conf.InodeNumbers == config.InodeNumbersVirtual {
+		opts = append(opts, "virtual_inode_numbers")
+	}
 	return opts
 }
 

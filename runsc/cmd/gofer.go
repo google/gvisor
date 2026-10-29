@@ -481,6 +481,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		HostUDS:            conf.GetHostUDS(),
 		HostFifo:           conf.HostFifo,
 		CharDevicePolicy:   conf.CharacterDevicePolicy,
+		InodeNumbers:       conf.InodeNumbers,
 		DonateMountPointFD: conf.DirectFS,
 		RUID:               ruid,
 		EUID:               euid,
