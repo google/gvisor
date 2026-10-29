@@ -17,6 +17,8 @@ package state
 import (
 	"reflect"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 // arrayFromSlice constructs a new pointer to the slice data.
@@ -33,4 +35,66 @@ func arrayFromSlice(obj reflect.Value) reflect.Value {
 		arr.Elem().Slice(obj.Len(), obj.Cap()).Clear()
 	}
 	return arr
+}
+
+// captureArray returns a typed copy of a primitive array, or false
+// for other element kinds. Unaddressable arrays (from interfaces or map values)
+// are copied once to obtain an address.
+func (es *encodeState) captureArray(obj reflect.Value) (wire.Object, bool) {
+	if !obj.CanAddr() {
+		switch obj.Type().Elem().Kind() {
+		case reflect.Bool,
+			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+			reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.String:
+			// Interface and map values can supply an unaddressable array.
+			// Obtain a typed address once instead of boxing its elements.
+			local := reflect.New(obj.Type()).Elem()
+			local.Set(obj)
+			obj = local
+		default:
+			return nil, false
+		}
+	}
+	var captured wire.Object
+	length := obj.Len()
+	switch obj.Type().Elem().Kind() {
+	case reflect.Bool:
+		captured = wire.CaptureBoolArray(unsafe.Slice((*bool)(obj.Addr().UnsafePointer()), length))
+	case reflect.Int:
+		captured = wire.CaptureIntArray(unsafe.Slice((*int)(obj.Addr().UnsafePointer()), length))
+	case reflect.Int8:
+		captured = wire.CaptureIntArray(unsafe.Slice((*int8)(obj.Addr().UnsafePointer()), length))
+	case reflect.Int16:
+		captured = wire.CaptureIntArray(unsafe.Slice((*int16)(obj.Addr().UnsafePointer()), length))
+	case reflect.Int32:
+		captured = wire.CaptureIntArray(unsafe.Slice((*int32)(obj.Addr().UnsafePointer()), length))
+	case reflect.Int64:
+		captured = wire.CaptureIntArray(unsafe.Slice((*int64)(obj.Addr().UnsafePointer()), length))
+	case reflect.Uint:
+		captured = wire.CaptureUintArray(unsafe.Slice((*uint)(obj.Addr().UnsafePointer()), length))
+	case reflect.Uint8:
+		captured = wire.CaptureUintArray(unsafe.Slice((*uint8)(obj.Addr().UnsafePointer()), length))
+	case reflect.Uint16:
+		captured = wire.CaptureUintArray(unsafe.Slice((*uint16)(obj.Addr().UnsafePointer()), length))
+	case reflect.Uint32:
+		captured = wire.CaptureUintArray(unsafe.Slice((*uint32)(obj.Addr().UnsafePointer()), length))
+	case reflect.Uint64:
+		captured = wire.CaptureUintArray(unsafe.Slice((*uint64)(obj.Addr().UnsafePointer()), length))
+	case reflect.Uintptr:
+		captured = wire.CaptureUintArray(unsafe.Slice((*uintptr)(obj.Addr().UnsafePointer()), length))
+	case reflect.Float32:
+		captured = wire.CaptureFloat32Array(unsafe.Slice((*float32)(obj.Addr().UnsafePointer()), length))
+	case reflect.Float64:
+		captured = wire.CaptureFloat64Array(unsafe.Slice((*float64)(obj.Addr().UnsafePointer()), length))
+	case reflect.Complex64:
+		captured = wire.CaptureComplex64Array(unsafe.Slice((*complex64)(obj.Addr().UnsafePointer()), length))
+	case reflect.Complex128:
+		captured = wire.CaptureComplex128Array(unsafe.Slice((*complex128)(obj.Addr().UnsafePointer()), length))
+	case reflect.String:
+		captured = wire.CaptureStringArray(unsafe.Slice((*string)(obj.Addr().UnsafePointer()), length))
+	default:
+		return nil, false
+	}
+	return captured, true
 }
