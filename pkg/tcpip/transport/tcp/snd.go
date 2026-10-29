@@ -862,9 +862,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				available = limit
 			}
 
-			// nextTooBig indicates that the next segment was too
-			// large to entirely fit in the current segment. It
-			// would be possible to split the next segment and merge
+			// It would be possible to split the next segment and merge
 			// the portion that fits, but unexpectedly splitting
 			// segments can have user visible side-effects which can
 			// break applications. For example, RFC 7766 section 8
@@ -872,17 +870,17 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			// should be sent in the same TCP segment to avoid
 			// triggering bugs in poorly written DNS
 			// implementations.
-			var nextTooBig bool
 			for nSeg := seg.Next(); nSeg != nil && nSeg.payloadSize() != 0; nSeg = seg.Next() {
 				if seg.payloadSize()+nSeg.payloadSize() > available {
-					nextTooBig = true
 					break
 				}
 				seg.merge(nSeg)
 				s.writeList.Remove(nSeg)
 				nSeg.DecRef()
 			}
-			if !nextTooBig {
+			// Only the last write can wait for more data to coalesce.
+			// In particular, a FIN queued behind it must not wait.
+			if seg.Next() == nil {
 				nagle := s.Outstanding > 0 && s.ep.ops.GetDelayOption() &&
 					s.SndUna.LessThan(s.smallSegmentEnd) && !s.SndNxt.LessThan(s.smallSegmentEnd)
 				cork := s.ep.ops.GetCorkOption()
