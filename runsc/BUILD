@@ -7,6 +7,13 @@ package(
     licenses = ["notice"],
 )
 
+# Direct imports of main.go, shared by its normal, race, and coverage binaries.
+MAIN_DEPS = [
+    "//runsc/cli/maincli",
+    "//runsc/coretagprime",
+    "//runsc/version",
+]
+
 go_binary(
     name = "runsc",
     srcs = ["main.go"],
@@ -18,11 +25,7 @@ go_binary(
     # not on this target directly.
     visibility = ["//:__subpackages__"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
-    deps = [
-        "//runsc/cli/maincli",
-        "//runsc/coretagprime",
-        "//runsc/version",
-    ],
+    deps = MAIN_DEPS,
 )
 
 go_binary(
@@ -69,11 +72,7 @@ go_binary(
         "//visibility:public",
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
-    deps = [
-        "//runsc/cli/maincli",
-        "//runsc/coretagprime",
-        "//runsc/version",
-    ],
+    deps = MAIN_DEPS,
 )
 
 deps_test(
@@ -158,46 +157,29 @@ sh_test(
 
 go_cov(
     name = "runsc_coverage",
-    srcs = [
-        "main.go",
-        "//:go.mod",
-        "//:go.sum",
-        "//:gopath",
-        "//tools:build_cover.sh",
-        "//tools:go-allow-internal.patch",
+    srcs = ["main.go"],
+    out = "runsc_cov",
+    gotags = [
+        "kcov",
+        "opensource",
     ],
-    outs = ["runsc_cov"],
-    cmd =
-        "\"$(location //tools:build_cover.sh)\" " +
-        "\"$(location //runsc:runsc_cov)\" " +
-        "\"$(location //:gopath)\" " +
-        "\"$(location //:go.mod)\" " +
-        "\"$(location //:go.sum)\" " +
-        "\"$(location main.go)\" " +
-        "\"$(location //tools:go-allow-internal.patch)\" " +
-        "\"false\" ",
+    pure = True,
+    race = "off",
     visibility = ["//debian:__pkg__"],
+    deps = MAIN_DEPS,
 )
 
 go_cov(
     name = "runsc_race_coverage",
-    srcs = [
-        "main.go",
-        "//:go.mod",
-        "//:go.sum",
-        "//:gopath",
-        "//tools:build_cover.sh",
-        "//tools:go-allow-internal.patch",
+    srcs = ["main.go"],
+    out = "runsc_race_cov",
+    gotags = [
+        "kcov",
+        "lockdep",
+        "opensource",
     ],
-    outs = ["runsc_race_cov"],
-    cmd =
-        "\"$(location //tools:build_cover.sh)\" " +
-        "\"$(location //runsc:runsc_race_cov)\" " +
-        "\"$(location //:gopath)\" " +
-        "\"$(location //:go.mod)\" " +
-        "\"$(location //:go.sum)\" " +
-        "\"$(location main.go)\" " +
-        "\"$(location //tools:go-allow-internal.patch)\" " +
-        "\"true\" ",
+    race = "on",
+    static = True,
     visibility = ["//debian:__pkg__"],
+    deps = MAIN_DEPS,
 )
