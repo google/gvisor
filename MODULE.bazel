@@ -279,6 +279,26 @@ img_pull(
     tag = "1.31.1",
 )
 
+# Pin the existing architecture-specific Tomcat 8.0 images. The ARM64 image
+# remains at 8.0.52; the AMD64 image is 8.0.53.
+img_pull(
+    name = "test_tomcat_amd64",
+    digest = "sha256:47274bc304687e21217ca6a33e3244c43c6d5cfaceade76c4b478023f2aca3b2",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/tomcat",
+    tag = "8.0",
+)
+
+img_pull(
+    name = "test_tomcat_arm64",
+    digest = "sha256:4f6ab20a775c1582d1a25f1487a0d50f45eca32a8c0ec7eb135de2507026e0b1",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "arm64v8/tomcat",
+    tag = "8.0",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
