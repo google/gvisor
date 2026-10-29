@@ -3260,12 +3260,7 @@ func (e *Endpoint) elapsed(now tcpip.MonotonicTime, tsEcr uint32) time.Duration 
 // if the SYN options indicate that the SACK option was negotiated and the TCP
 // stack is configured to enable TCP SACK option.
 func (e *Endpoint) maybeEnableSACKPermitted(synOpts header.TCPSynOptions) {
-	var v tcpip.TCPSACKEnabled
-	if err := e.stack.TransportProtocolOption(ProtocolNumber, &v); err != nil {
-		// Stack doesn't support SACK. So just return.
-		return
-	}
-	if bool(v) && synOpts.SACKPermitted {
+	if synOpts.SACKPermitted && e.protocol.sackPermitted() {
 		e.SACKPermitted = true
 		e.stack.TransportProtocolOption(ProtocolNumber, &e.tcpRecovery)
 	}
