@@ -315,6 +315,7 @@ func Release() {
 	typeInfoCount = 0
 	typeInfoSlab = nil
 	slotsSlab = nil
+	itabs = nil
 	typeInfosMu.Unlock()
 }
 
@@ -469,6 +470,7 @@ func registerName(typ reflect.Type, name string) {
 		}
 	}
 	globalTypeDatabase[name] = typ
+	fingerprint.Store(0)
 }
 
 // validateTypeInfo checks that a type has a name and unique, non-empty field
