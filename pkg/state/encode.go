@@ -16,6 +16,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 
@@ -834,6 +835,22 @@ func (es *encodeState) Save(obj reflect.Value) {
 // byte length. When this is set on a length header in the stream, it may be
 // decoded appropriately.
 const objectFlag uint64 = 1 << 63
+
+// graphObjectFlag indicates that the header precedes a graph-engine stream of
+// length bytes, rather than a legacy wire-engine object stream.
+const graphObjectFlag uint64 = 1 << 62
+
+// writeGraphHeader writes a header for a graph-engine object stream of length
+// bytes.
+func writeGraphHeader(w *wire.Writer, length uint64) error {
+	if length&(objectFlag|graphObjectFlag) != 0 {
+		return fmt.Errorf("impossibly huge length: %d", length)
+	}
+	length |= objectFlag | graphObjectFlag
+	return safely(func() {
+		wire.SaveUint(w, length)
+	})
+}
 
 // WriteHeader writes a header.
 //
