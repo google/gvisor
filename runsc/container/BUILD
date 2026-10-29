@@ -127,6 +127,13 @@ go_test(
 )
 
 go_test(
+    name = "gofer_env_test",
+    srcs = ["gofer_env_test.go"],
+    embed = [":container"],
+    deps = ["//runsc/config"],
+)
+
+go_test(
     name = "serialization_test",
     srcs = ["serialization_test.go"],
     deps = [

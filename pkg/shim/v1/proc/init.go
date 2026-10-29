@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -39,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 const (
@@ -46,8 +49,12 @@ const (
 	statusRunning = "running"
 )
 
-// runscTimeout bounds Kill, KillAll, Stats and Status, so a wedged sandbox cannot hold p.mu forever.
-var runscTimeout = 30 * time.Second
+var (
+	runscTimeout              = 30 * time.Second
+	runscLongOperationTimeout = 5 * time.Minute
+	errRunscTimeout           = fmt.Errorf("runsc operation timed out: %w", context.DeadlineExceeded)
+	unmountRootfs             = mount.UnmountAll
+)
 
 // Init represents an initial process for a container.
 type Init struct {
@@ -58,7 +65,7 @@ type Init struct {
 	// the right order when invoked in separate go routines.  This is the
 	// case within the shim implementation as it makes use of the reaper
 	// interface.
-	mu sync.Mutex
+	mu runtimeMutex
 
 	waitBlock chan struct{}
 
@@ -87,6 +94,15 @@ type Init struct {
 	// mounts under /var/lib/kubelet/pods/<uid>. Note that this is distinct from
 	// containerd's SandboxID.
 	K8sPodUID string
+
+	// sandboxPidfd pins the sandbox process identity. It is only populated for
+	// the sandbox task and is used when explicit SIGKILL --all times out.
+	sandboxPidfdMu sync.Mutex
+	sandboxPidfd   int
+	ioWaitOnce     sync.Once
+	ioDone         chan struct{}
+	ioCloseOnce    sync.Once
+	rootfsCleanup  utils.Cleanup
 }
 
 // NewRunsc returns a new runsc instance for a process.
@@ -108,11 +124,13 @@ func NewRunsc(root, path, namespace, runtime string, config map[string]string, s
 // New returns a new init process.
 func New(id string, runtime *runsccmd.Runsc, stdio stdio.Stdio) *Init {
 	p := &Init{
-		id:        id,
-		runtime:   runtime,
-		stdio:     stdio,
-		status:    0,
-		waitBlock: make(chan struct{}),
+		id:           id,
+		runtime:      runtime,
+		stdio:        stdio,
+		status:       0,
+		waitBlock:    make(chan struct{}),
+		sandboxPidfd: -1,
+		ioDone:       make(chan struct{}),
 	}
 	p.initState = &createdState{p: p}
 	return p
@@ -120,6 +138,9 @@ func New(id string, runtime *runsccmd.Runsc, stdio stdio.Stdio) *Init {
 
 // Create the process with the provided config.
 func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
+	ctx, cancelRuntime := context.WithTimeoutCause(ctx, runscLongOperationTimeout, errRunscTimeout)
+	defer cancelRuntime()
+
 	var socket *runc.Socket
 	if r.Terminal {
 		if socket, err = runc.NewTempConsoleSocket(); err != nil {
@@ -153,6 +174,19 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	if err := p.runtime.Create(ctx, r.ID, r.Bundle, opts); err != nil {
 		return p.runtimeError(err, "OCI runtime create failed")
 	}
+	pid, err := runc.ReadPidFile(pidFile)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve OCI runtime container pid: %w", err)
+	}
+	p.pid = pid
+	if p.Sandbox {
+		p.pinSandboxPidfd(ctx)
+		defer func() {
+			if err != nil {
+				p.closeSandboxPidfd()
+			}
+		}()
+	}
 	if r.Stdin != "" {
 		sc, err := fifo.OpenFifo(context.Background(), r.Stdin, unix.O_WRONLY|unix.O_NONBLOCK, 0)
 		if err != nil {
@@ -174,16 +208,123 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		}
 		p.console = console
 	} else if !hasNoIO(r) {
-		if err := copyPipes(ctx, p.io, r.Stdin, r.Stdout, r.Stderr, &p.wg); err != nil {
+		if err := copyPipes(ctx, p.io, r.Stdin, r.Stdout, r.Stderr, &p.wg, &p.closers); err != nil {
 			return fmt.Errorf("failed to start io pipe copy: %w", err)
 		}
 	}
-	pid, err := runc.ReadPidFile(pidFile)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve OCI runtime container pid: %w", err)
-	}
-	p.pid = pid
 	return nil
+}
+
+func (p *Init) pinSandboxPidfd(ctx context.Context) {
+	fd, err := unix.PidfdOpen(p.pid, 0)
+	if err != nil {
+		log.G(ctx).WithError(err).Warnf("Cannot pin sandbox process %d; timed-out sandbox termination will fail closed", p.pid)
+		return
+	}
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", p.pid))
+	args := strings.Split(string(cmdline), "\x00")
+	matchingBundle := false
+	for _, arg := range args {
+		if bundle, ok := strings.CutPrefix(arg, "--bundle="); ok {
+			expected, expectedErr := os.Stat(p.Bundle)
+			actual, actualErr := os.Stat(bundle)
+			matchingBundle = expectedErr == nil && actualErr == nil && os.SameFile(expected, actual)
+			break
+		}
+	}
+	matchingExe := p.sandboxExecutableMatches()
+	poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	n, pollErr := unix.Poll(poll, 0)
+	if err != nil || pollErr != nil || n != 0 || filepath.Base(args[0]) != "runsc-sandbox" || !matchingBundle || !matchingExe {
+		_ = unix.Close(fd)
+		log.G(ctx).Warnf("Cannot verify sandbox process %d for container %q; timed-out sandbox termination will fail closed", p.pid, p.id)
+		return
+	}
+	p.sandboxPidfdMu.Lock()
+	p.sandboxPidfd = fd
+	p.sandboxPidfdMu.Unlock()
+}
+
+func (p *Init) sandboxExecutableMatches() bool {
+	command := p.runtime.Command
+	if command == "" {
+		command = runsccmd.DefaultCommand
+	}
+	path, err := exec.LookPath(command)
+	if err != nil {
+		return false
+	}
+	actual, err := os.Stat(fmt.Sprintf("/proc/%d/exe", p.pid))
+	if err != nil {
+		return false
+	}
+	matches := func(path string) bool {
+		expected, err := os.Stat(path)
+		return err == nil && os.SameFile(expected, actual)
+	}
+	if matches(path) {
+		return true
+	}
+	// runsc resolves sidecars relative to its actual executable, not argv[0].
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	dir, err := gvisorbinaries.DirForExecutable(path)
+	return err == nil && (matches(filepath.Join(dir, gvisorbinaries.GvisorSentry.Name)) || matches(filepath.Join(dir, gvisorbinaries.GvisorSentryPluginStack.Name)))
+}
+
+// lockRuntime gives the lock wait and the runsc call one shared deadline.
+// Client cancellation is observed while waiting, so abandoned ttrpc handlers
+// cannot pile up behind one wedged sandbox.
+func (p *Init) lockRuntime(parent context.Context) (context.Context, func(), error) {
+	return p.lockRuntimeFor(parent, runscTimeout)
+}
+
+func (p *Init) lockRuntimeFor(parent context.Context, timeout time.Duration) (context.Context, func(), error) {
+	return lockRuntimeFor(&p.mu, parent, timeout)
+}
+
+// runtimeMutex is a zero-value, context-aware lock for runtime and state calls.
+type runtimeMutex struct {
+	once  sync.Once
+	token chan struct{}
+}
+
+func (m *runtimeMutex) acquire(ctx context.Context) error {
+	m.once.Do(func() { m.token = make(chan struct{}, 1) })
+	select {
+	case m.token <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *runtimeMutex) Lock() {
+	_ = m.acquire(context.Background())
+}
+
+func (m *runtimeMutex) Unlock() {
+	<-m.token
+}
+
+func lockRuntimeFor(mu *runtimeMutex, parent context.Context, timeout time.Duration) (context.Context, func(), error) {
+	ctx, cancel := context.WithTimeoutCause(parent, timeout, errRunscTimeout)
+	if err := mu.acquire(ctx); err != nil {
+		cause := context.Cause(ctx)
+		cancel()
+		return nil, nil, cause
+	}
+	if err := context.Cause(ctx); err != nil {
+		mu.Unlock() // +checklocksforce: semaphore acquisition succeeded above.
+		cancel()
+		return nil, nil, err
+	}
+	return ctx, func() {
+		mu.Unlock() // +checklocksforce: releases the successful semaphore acquisition.
+		cancel()
+	}, nil
 }
 
 // Wait waits for the process to exit.
@@ -217,11 +358,11 @@ func (p *Init) ExitedAt() time.Time {
 
 // Status returns the status of the process.
 func (p *Init) Status(ctx context.Context) (string, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
-	defer cancel()
+	ctx, unlock, err := p.lockRuntime(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 
 	return p.initState.State(ctx)
 }
@@ -247,7 +388,10 @@ func (p *Init) state(ctx context.Context) (string, error) {
 				if retryErr == nil {
 					return p.convertStatus(c.Status), nil
 				}
-				return statusRunning, nil
+				if strings.Contains(retryErr.Error(), "does not exist") {
+					return statusStopped, nil
+				}
+				return "", p.runtimeError(retryErr, "OCI runtime state failed")
 			}
 			if strings.Contains(err.Error(), "does not exist") {
 				return statusStopped, nil
@@ -268,8 +412,11 @@ func (p *Init) state(ctx context.Context) (string, error) {
 
 // Start starts the init process.
 func (p *Init) Start(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	ctx, unlock, err := p.lockRuntimeFor(ctx, runscLongOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	return p.initState.Start(ctx, nil /* restoreConf */)
 }
@@ -297,7 +444,7 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 		status, err := p.runtime.Wait(context.Background(), p.id)
 		if err != nil {
 			log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
-			p.KillAll(ctx)
+			p.KillAll(context.Background())
 			status = InternalErrorCode
 		}
 		ExitCh <- Exit{
@@ -314,18 +461,40 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 
 // Restore restores the container from a snapshot.
 func (p *Init) Restore(ctx context.Context, conf *extension.RestoreConfig) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	ctx, unlock, err := p.lockRuntimeFor(ctx, runscLongOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	return p.initState.Start(ctx, conf)
 }
 
 // CheckpointSandbox checkpoints the sandbox.
 func (p *Init) CheckpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	return p.Checkpoint(ctx, func(ctx context.Context, _ *runsccmd.Runsc) error {
+		return p.initState.CheckpointSandbox(ctx, opts)
+	})
+}
 
-	return p.initState.CheckpointSandbox(ctx, opts)
+// Checkpoint serializes a checkpoint operation with lifecycle changes.
+func (p *Init) Checkpoint(ctx context.Context, call func(context.Context, *runsccmd.Runsc) error) error {
+	return p.runtimeCall(ctx, runscLongOperationTimeout, call)
+}
+
+// RuntimeCall runs a bounded operation under the process lifecycle lock.
+func (p *Init) RuntimeCall(ctx context.Context, call func(context.Context, *runsccmd.Runsc) error) error {
+	return p.runtimeCall(ctx, runscTimeout, call)
+}
+
+func (p *Init) runtimeCall(ctx context.Context, timeout time.Duration, call func(context.Context, *runsccmd.Runsc) error) error {
+	ctx, unlock, err := p.lockRuntimeFor(ctx, timeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	return call(ctx, p.runtime)
 }
 
 func (p *Init) checkpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
@@ -349,21 +518,40 @@ func (p *Init) setExited(status int) {
 	log.L.Debugf("Setting status: %d", status)
 	p.exited = time.Now()
 	p.status = status
+	p.closeExitedSandboxPidfd()
 	p.Platform.ShutdownConsole(context.Background(), p.console)
 	close(p.waitBlock)
 }
 
 // Delete deletes the init process.
 func (p *Init) Delete(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	defer p.closeExitedSandboxPidfd()
+	ctx, unlock, err := p.lockRuntime(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	return p.initState.Delete(ctx)
 }
 
 func (p *Init) delete(ctx context.Context) error {
-	p.killAllLocked(ctx)
-	p.wg.Wait()
+	killErr := p.killAllLocked(ctx)
+	if cause := context.Cause(ctx); cause != nil {
+		p.closeIO()
+		if killErr != nil {
+			p.killSandboxAfterTimeout(cause, "Delete")
+		}
+		return cause
+	}
+	if err := p.waitForIO(ctx); err != nil {
+		p.closeIO()
+		return err
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		p.closeIO()
+		return cause
+	}
 
 	var err error
 	if p.FuseAbort {
@@ -380,6 +568,10 @@ func (p *Init) delete(ctx context.Context) error {
 	} else {
 		err = p.runtime.Delete(ctx, p.id, nil)
 	}
+	if err != nil && errors.Is(context.Cause(ctx), errRunscTimeout) {
+		p.closeIO()
+		p.killSandboxAfterTimeout(context.Cause(ctx), "Delete")
+	}
 	if err != nil {
 		// ignore errors if a runtime has already deleted the process
 		// but we still hold metadata and pipes
@@ -392,19 +584,88 @@ func (p *Init) delete(ctx context.Context) error {
 			err = p.runtimeError(err, "failed to delete task")
 		}
 	}
-	if p.io != nil {
-		for _, c := range p.closers {
-			c.Close()
-		}
-		p.io.Close()
+	p.closeIO()
+	if err == nil {
+		p.closeSandboxPidfd()
 	}
-	if err2 := mount.UnmountAll(p.Rootfs, 0); err2 != nil {
+	unmount, rootfs := unmountRootfs, p.Rootfs
+	if err2 := p.rootfsCleanup.Run(ctx, utils.CleanupLockPath(p.runtime.Root, p.id), func() error { return unmount(rootfs, 0) }); err2 != nil {
 		log.G(ctx).WithError(err2).Warn("failed to cleanup rootfs mount")
 		if err == nil {
 			err = fmt.Errorf("failed rootfs umount: %w", err2)
 		}
 	}
 	return err
+}
+
+func (p *Init) waitForIO(ctx context.Context) error {
+	p.ioWaitOnce.Do(func() {
+		go func() {
+			p.wg.Wait()
+			close(p.ioDone)
+		}()
+	})
+	select {
+	case <-p.ioDone:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+func (p *Init) closeIO() {
+	p.ioCloseOnce.Do(func() {
+		for _, c := range p.closers {
+			_ = c.Close()
+		}
+		if p.io != nil {
+			_ = p.io.Close()
+		}
+	})
+}
+
+func (p *Init) killSandboxAfterTimeout(cause error, operation string) {
+	if !p.Sandbox || !errors.Is(cause, errRunscTimeout) {
+		return
+	}
+	p.sandboxPidfdMu.Lock()
+	defer p.sandboxPidfdMu.Unlock()
+	if p.sandboxPidfd < 0 {
+		return
+	}
+	if err := unix.PidfdSendSignal(p.sandboxPidfd, unix.SIGKILL, nil, 0); err != nil {
+		log.L.WithError(err).Errorf("Failed to terminate unresponsive sandbox %q after %s timed out", p.id, operation)
+		return
+	}
+	log.L.Errorf("Terminated unresponsive sandbox %q after its %s exceeded %v", p.id, operation, runscTimeout)
+	p.closeSandboxPidfdLocked()
+}
+
+// Init exit metadata does not prove that the shared sandbox process has exited.
+func (p *Init) closeExitedSandboxPidfd() {
+	p.sandboxPidfdMu.Lock()
+	defer p.sandboxPidfdMu.Unlock()
+	if p.sandboxPidfd < 0 {
+		return
+	}
+	poll := []unix.PollFd{{Fd: int32(p.sandboxPidfd), Events: unix.POLLIN}}
+	if n, err := unix.Poll(poll, 0); err == nil && n != 0 {
+		p.closeSandboxPidfdLocked()
+	}
+}
+
+func (p *Init) closeSandboxPidfd() {
+	p.sandboxPidfdMu.Lock()
+	defer p.sandboxPidfdMu.Unlock()
+	p.closeSandboxPidfdLocked()
+}
+
+func (p *Init) closeSandboxPidfdLocked() {
+	if p.sandboxPidfd < 0 {
+		return
+	}
+	_ = unix.Close(p.sandboxPidfd)
+	p.sandboxPidfd = -1
 }
 
 // Resize resizes the init processes console.
@@ -427,10 +688,24 @@ func (p *Init) resize(ws console.WinSize) error {
 
 // Kill kills the init process.
 func (p *Init) Kill(ctx context.Context, signal uint32, all bool) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	ctx, unlock, err := p.lockRuntime(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
-	return p.initState.Kill(ctx, signal, all)
+	err = p.initState.Kill(ctx, signal, all)
+	if err != nil {
+		p.killSandboxAfterExplicitKillTimeout(context.Cause(ctx), signal, all)
+	}
+	return err
+}
+
+func (p *Init) killSandboxAfterExplicitKillTimeout(cause error, signal uint32, all bool) {
+	if unix.Signal(signal) != unix.SIGKILL || !all {
+		return
+	}
+	p.killSandboxAfterTimeout(cause, "explicit SIGKILL --all")
 }
 
 func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
@@ -457,9 +732,17 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 			stateCtx, stateCancel := context.WithTimeout(ctx, 1*time.Second)
 			state, err = p.initState.State(stateCtx)
 			stateCancel()
-			if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			if err != nil && errors.Is(stateCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 				log.L.Warningf("State query for container %q wedged in Kernel.Pause; aborting FUSE connections", p.id)
 				p.abortFuse()
+				if p.Sandbox && unix.Signal(signal) == unix.SIGKILL && all {
+					// A timed-out state query cannot prove that the sandbox has exited.
+					err := p.killRuntime(ctx, int(signal), &runsccmd.KillOpts{All: true})
+					if err != nil && ctx.Err() != nil {
+						return context.Cause(ctx)
+					}
+					return err
+				}
 				state = statusStopped
 			}
 		} else {
@@ -478,7 +761,11 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 		if killErr == nil {
 			return nil
 		}
-		time.Sleep(backoff)
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-time.After(backoff):
+		}
 		backoff *= 2
 	}
 	return p.runtimeError(killErr, "kill timeout")
@@ -487,17 +774,23 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 // KillAll kills all processes belonging to the init process. If
 // `runsc kill --all` returns error, assume the container has already stopped.
 func (p *Init) KillAll(context context.Context) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.killAllLocked(context)
+	ctx, unlock, err := p.lockRuntime(context)
+	if err != nil {
+		log.L.Warningf("Cannot lock container %q for KillAll: %v", p.id, err)
+		return
+	}
+	defer unlock()
+	_ = p.killAllLocked(ctx)
 }
 
-func (p *Init) killAllLocked(ctx context.Context) {
+func (p *Init) killAllLocked(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
 	defer cancel()
 	if err := p.killRuntime(ctx, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
 		log.L.Warningf("Ignoring error killing container %q: %v", p.id, err)
+		return err
 	}
+	return nil
 }
 
 func (p *Init) killRuntime(ctx context.Context, signal int, opts *runsccmd.KillOpts) error {
@@ -537,8 +830,11 @@ func (p *Init) Runtime() *runsccmd.Runsc {
 
 // Exec returns a new child process.
 func (p *Init) Exec(ctx context.Context, path string, r *ExecConfig) (extension.Process, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	ctx, unlock, err := p.lockRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	return p.initState.Exec(ctx, path, r)
 }
@@ -569,19 +865,22 @@ func (p *Init) exec(path string, r *ExecConfig) (extension.Process, error) {
 }
 
 func (p *Init) Stats(ctx context.Context, id string) (*runc.Stats, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
-	defer cancel()
+	ctx, unlock, err := p.lockRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	return p.initState.Stats(ctx, id)
 }
 
 // Update applies resource changes from JSON LinuxResources in the protobuf Any.
 func (p *Init) Update(ctx context.Context, r *google_protobuf.Any) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	ctx, unlock, err := p.lockRuntime(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	if r == nil {
 		return fmt.Errorf("resources are required: %w", errdefs.ErrInvalidArgument)
