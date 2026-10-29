@@ -28,7 +28,7 @@ func (fs *FeatureSet) beforeSave() {}
 func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	FunctionValue := fs.saveFunction()
-	_ = (Static)(FunctionValue)
+	_ = ([]byte)(FunctionValue)
 	stateSinkObject.SaveValue(0, FunctionValue)
 	stateSinkObject.Save(1, &fs.hwCap)
 }
@@ -38,7 +38,7 @@ func (fs *FeatureSet) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *FeatureSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fs.hwCap)
-	stateSourceObject.LoadValue(0, new(Static), func(y any) { fs.loadFunction(ctx, y.(Static)) })
+	stateSourceObject.LoadValue(0, new([]byte), func(y any) { fs.loadFunction(ctx, y.([]byte)) })
 }
 
 func (i *In) StateTypeName() string {

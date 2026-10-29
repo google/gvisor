@@ -17,11 +17,14 @@
 
 package cpuid
 
-import "context"
+import (
+	"cmp"
+	"encoding/binary"
+	"fmt"
+	"slices"
+)
 
 // Static is a static CPUID function.
-//
-// +stateify savable
 type Static map[In]Out
 
 // Fixed converts the FeatureSet to a fixed set.
@@ -93,11 +96,6 @@ func (s Static) ToFeatureSet() FeatureSet {
 	return FeatureSet{ns, hwCap{}}
 }
 
-// afterLoad calls normalize.
-func (s Static) afterLoad(context.Context) {
-	s.normalize()
-}
-
 // normalize normalizes extended state information.
 func (s Static) normalize() {
 	// AMX is not supported, so hide it from applications.
@@ -140,4 +138,57 @@ func (s Static) Set(in In, out Out) {
 func (s Static) Query(in In) Out {
 	in.normalize()
 	return s[in]
+}
+
+// staticEntrySize is the size of a Static entry in the form of
+// Static.marshal.
+const staticEntrySize = 6 * 4
+
+// marshal returns s as In.Eax, In.Ecx, Out.Eax, Out.Ebx, Out.Ecx and Out.Edx
+// little-endian uint32s for each entry, sorted by input.
+func (s Static) marshal() []byte {
+	return s.appendMarshal(make([]byte, 0, len(s)*staticEntrySize))
+}
+
+// appendMarshal appends the marshaled entries of s to b.
+//
+// This is how FeatureSet saves Static functions: encoding and decoding the map
+// itself (two structs per entry) is much more expensive.
+func (s Static) appendMarshal(b []byte) []byte {
+	ins := make([]In, 0, len(s))
+	for in := range s {
+		ins = append(ins, in)
+	}
+	slices.SortFunc(ins, func(a, b In) int {
+		return cmp.Or(cmp.Compare(a.Eax, b.Eax), cmp.Compare(a.Ecx, b.Ecx))
+	})
+	for _, in := range ins {
+		out := s[in]
+		for _, v := range [...]uint32{in.Eax, in.Ecx, out.Eax, out.Ebx, out.Ecx, out.Edx} {
+			b = binary.LittleEndian.AppendUint32(b, v)
+		}
+	}
+	return b
+}
+
+// unmarshalStatic is the inverse of Static.marshal.
+func unmarshalStatic(b []byte) (Static, error) {
+	if len(b)%staticEntrySize != 0 {
+		return nil, fmt.Errorf("invalid static CPUID function length %d", len(b))
+	}
+	s := make(Static, len(b)/staticEntrySize)
+	var prev In
+	for i := 0; len(b) > 0; i, b = i+1, b[staticEntrySize:] {
+		var v [6]uint32
+		for j := range v {
+			v[j] = binary.LittleEndian.Uint32(b[4*j:])
+		}
+		in := In{Eax: v[0], Ecx: v[1]}
+		if i > 0 && cmp.Or(cmp.Compare(prev.Eax, in.Eax), cmp.Compare(prev.Ecx, in.Ecx)) >= 0 {
+			return nil, fmt.Errorf("unsorted or duplicate CPUID input %+v after %+v", in, prev)
+		}
+		prev = in
+		s[in] = Out{Eax: v[2], Ebx: v[3], Ecx: v[4], Edx: v[5]}
+	}
+	return s, nil
 }

@@ -279,6 +279,8 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	fs.opts.fd = fd
 	fs.inoByKey = make(map[inoKey]uint64)
 	fs.inodeByKey = make(map[inoKey]*inode)
+	prevDevMinors := fs.devMinorByHostDev
+	fs.devMinorByHostDev = make(map[uint64]uint32, len(prevDevMinors))
 
 	if err := fs.restoreRoot(ctx, &opts); err != nil {
 		return vfs.PrependErrMsg("failed to restore root", err)
@@ -349,6 +351,8 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 			delete(dirsToDelete, leafD)
 		}
 	}
+
+	fs.releaseDevMinors(prevDevMinors)
 
 	// Discard state only required during restore.
 	fs.savedDeletedOpenDentries = nil
