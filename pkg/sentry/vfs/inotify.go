@@ -69,26 +69,33 @@ type Inotify struct {
 	// becomes readable or writable.
 	queue waiter.Queue
 
-	// evMu *only* protects the events list. We need a separate lock while
-	// queuing events: using mu may violate lock ordering, since at that point
-	// the calling goroutine may already hold Watches.mu.
+	// evMu protects the events list and serialization scratch buffer. A
+	// separate lock is needed while queuing events: using mu may violate lock
+	// ordering, since the calling goroutine may already hold Watches.mu.
 	evMu inotifyEventMutex `state:"nosave"`
 
-	// A list of pending events for this inotify instance. Protected by evMu.
+	// A list of pending events for this inotify instance.
+	//
+	// +checklocks:evMu
 	events eventList
 
 	// A scratch buffer, used to serialize inotify events. Allocate this
-	// ahead of time for the sake of performance. Protected by evMu.
+	// ahead of time for the sake of performance.
+	//
+	// +checklocks:evMu
 	scratch []byte
 
-	// mu protects the fields below.
 	mu inotifyMutex `state:"nosave"`
 
 	// nextWatchMinusOne is used to allocate watch descriptors on this Inotify
 	// instance. Note that Linux starts numbering watch descriptors from 1.
+	//
+	// +checklocks:mu
 	nextWatchMinusOne int32
 
 	// Map from watch descriptors to watch objects.
+	//
+	// +checklocks:mu
 	watches map[int32]*Watch
 }
 
@@ -299,7 +306,9 @@ func (i *Inotify) queueEvent(ev *Event) {
 
 // newWatchLocked creates and adds a new watch to target.
 //
-// Precondition: i.mu must be locked. ws must be the watch set for target d.
+// Precondition: ws must be the watch set for target d.
+//
+// +checklocks:i.mu
 func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
 	w := &Watch{
 		owner:  i,
@@ -315,9 +324,9 @@ func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
 	return w
 }
 
-// newWatchIDLocked allocates and returns a new watch descriptor.
+// nextWatchIDLocked allocates and returns a new watch descriptor.
 //
-// Precondition: i.mu must be locked.
+// +checklocks:i.mu
 func (i *Inotify) nextWatchIDLocked() int32 {
 	i.nextWatchMinusOne++
 	return i.nextWatchMinusOne
@@ -392,11 +401,12 @@ func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 //
 // +stateify savable
 type Watches struct {
-	// mu protects the fields below.
 	mu sync.RWMutex `state:"nosave"`
 
 	// ws is the map of active watches in this collection, keyed by the inotify
 	// instance id of the owner.
+	//
+	// +checklocks:mu
 	ws map[uint64]*Watch
 }
 
