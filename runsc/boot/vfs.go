@@ -837,6 +837,9 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	overlayOpts.GetFilesystemOptions.InternalData = overlay.FilesystemOptions{
 		UpperRoot:  upperRootVD,
 		LowerRoots: []vfs.VirtualDentry{lowerRootVD},
+		Metacopy:   conf.Overlay2.RootOverlayMetacopy() && dst == "/",
+
+		MetacopyMinSize: conf.Overlay2.RootOverlayMetacopyMinSize(),
 	}
 	return &overlayOpts, cu.Release(), nil
 }

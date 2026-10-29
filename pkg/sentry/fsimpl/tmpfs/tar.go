@@ -343,6 +343,13 @@ func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 	return fs.tarWrite(ctx, outFD, tarDefaultWriterCallbacks{})
 }
 
+// TarUpperLayerWithData is like TarUpperLayer, except that writeData is called
+// first for each regular file with the file's xattrs. If it returns true, it
+// has written the file's data to w in place of the file's own data.
+func (fs *filesystem) TarUpperLayerWithData(ctx context.Context, outFD *os.File, writeData func(ctx context.Context, xattrs map[string]string, w io.Writer) (bool, error)) error {
+	return fs.tarWrite(ctx, outFD, tarDataWriterCallbacks{writeData: writeData})
+}
+
 func (fs *filesystem) tarWrite(ctx context.Context, dst io.Writer, cb tarWriterCallbacks) error {
 	tw := tar.NewWriter(dst)
 
@@ -508,6 +515,24 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
 	defer putRegularFileReadWriter(rw)
 	if _, err := io.Copy(tw, safemem.ToIOReader{Reader: rw}); err != nil {
 		return fmt.Errorf("failed to write file content to tar: %w", err)
+	}
+	return nil
+}
+
+// tarDataWriterCallbacks implements tarWriterCallbacks by writing regular file
+// contents from writeData if it handles the file.
+type tarDataWriterCallbacks struct {
+	tarDefaultWriterCallbacks
+	writeData func(ctx context.Context, xattrs map[string]string, w io.Writer) (bool, error)
+}
+
+func (cb tarDataWriterCallbacks) regularFileWrite(ctx context.Context, rf *regularFile, tw *tar.Writer) error {
+	handled, err := cb.writeData(ctx, rf.inode.xattrs.RawXattrs(), tw)
+	if err != nil {
+		return err
+	}
+	if !handled {
+		return cb.tarDefaultWriterCallbacks.regularFileWrite(ctx, rf, tw)
 	}
 	return nil
 }
