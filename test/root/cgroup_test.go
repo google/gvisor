@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
+	"gvisor.dev/gvisor/runsc/sandbox"
 )
 
 // procPath returns a path in procfs. This is usually just `/proc + path components`, but may be
@@ -676,5 +677,92 @@ func TestSystemdCgroupJoinTwice(t *testing.T) {
 	// Joining a cgroup twice should not produce an error.
 	if _, err := cgroups.Join(); err != nil {
 		t.Fatalf("Join(): got error rejoining cgroup: %v", err)
+	}
+}
+
+func TestGoferGOMAXPROCS(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name      string
+		cpuQuota  int64
+		cpuPeriod int64
+		wantCap   int
+	}{
+		{
+			name:    "unlimited",
+			wantCap: 8,
+		},
+		{
+			name:      "cpu_quota",
+			cpuQuota:  25000,
+			cpuPeriod: 100000,
+			wantCap:   2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := dockerutil.MakeContainer(ctx, t)
+			defer d.CleanUp(ctx)
+
+			conf, hostconf, _, err := d.ConfigsFrom(ctx, dockerutil.RunOpts{
+				Image: "basic/alpine",
+			}, "sleep", "10000")
+			if err != nil {
+				t.Fatalf("Cannot get container config: %v", err)
+			}
+			hostconf.Resources.CPUQuota = tc.cpuQuota
+			hostconf.Resources.CPUPeriod = tc.cpuPeriod
+
+			if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
+				t.Fatalf("create failed with: %v", err)
+			}
+			if err := d.Start(ctx); err != nil {
+				t.Fatalf("start failed with: %v", err)
+			}
+
+			// The gofer runs under Docker's cgroup hierarchy, not the test's.
+			sandPID, err := d.SandboxPid(ctx)
+			if err != nil {
+				t.Fatalf("SandboxPid: %v", err)
+			}
+			parentCgPID := sandPID
+			if !cgroup.IsOnlyV2() {
+				parentCgPID, err = getParentPID(sandPID)
+				if err != nil {
+					t.Fatalf("cannot get parent of %d: %v", sandPID, err)
+				}
+			}
+			parentCg, _ := cgroup.NewFromPid(parentCgPID, false /* useSystemd */)
+			baseCPUs, _ := sandbox.CalculateCPUNum(parentCg, nil, true /* cpuNumFromQuota */)
+			wantProcsStr := strconv.Itoa(max(1, min(baseCPUs, tc.wantCap)))
+			for _, goferPID := range findGoferPIDs(ctx, t, d) {
+				checkGoferMaxProcsEnv(t, goferPID, wantProcsStr)
+			}
+		})
+	}
+}
+
+// checkGoferMaxProcsEnv checks the GOMAXPROCS and GODEBUG set in the
+// environment of gofer process pid.
+func checkGoferMaxProcsEnv(t *testing.T, pid int, wantProcs string) {
+	t.Helper()
+	rawEnv, err := os.ReadFile(procPath(strconv.Itoa(pid), "environ"))
+	if err != nil {
+		t.Fatalf("reading environ of gofer %d: %v", pid, err)
+	}
+	var gomaxprocsVals, godebugVals []string
+	for _, entry := range strings.Split(strings.TrimSuffix(string(rawEnv), "\x00"), "\x00") {
+		if v, ok := strings.CutPrefix(entry, "GOMAXPROCS="); ok {
+			gomaxprocsVals = append(gomaxprocsVals, v)
+		}
+		if v, ok := strings.CutPrefix(entry, "GODEBUG="); ok {
+			godebugVals = append(godebugVals, v)
+		}
+	}
+	if len(gomaxprocsVals) != 1 || gomaxprocsVals[0] != wantProcs {
+		t.Errorf("gofer %d GOMAXPROCS = %v, want [%s]", pid, gomaxprocsVals, wantProcs)
+	}
+	if len(godebugVals) != 1 || !strings.HasSuffix(godebugVals[0], "containermaxprocs=0,updatemaxprocs=0") {
+		t.Errorf("gofer %d GODEBUG = %v, want single entry ending with containermaxprocs=0,updatemaxprocs=0", pid, godebugVals)
 	}
 }

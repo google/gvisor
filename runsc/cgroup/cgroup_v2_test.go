@@ -756,3 +756,58 @@ func TestOwnsCPULimit(t *testing.T) {
 		t.Errorf("OwnsCPULimit() = false for a cgroup created by Install")
 	}
 }
+
+func TestNewSelf(t *testing.T) {
+	t.Run("v2 preserves leaf cgroup path", func(t *testing.T) {
+		root := t.TempDir()
+		leaf := "user.slice/runsc.scope"
+		leafDir := filepath.Join(root, leaf)
+		if err := os.MkdirAll(leafDir, 0o755); err != nil {
+			t.Fatalf("os.MkdirAll(): %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(leafDir, "cpu.max"), []byte("50000 100000\n"), 0o644); err != nil {
+			t.Fatalf("os.WriteFile(cpu.max): %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(leafDir, "cpuset.cpus.effective"), []byte("0-3\n"), 0o644); err != nil {
+			t.Fatalf("os.WriteFile(cpuset.cpus.effective): %v", err)
+		}
+
+		cg, err := newSelf(map[string]string{cgroup2Key: leaf}, true /* isV2 */, root)
+		if err != nil {
+			t.Fatalf("newSelf() failed: %v", err)
+		}
+		if got, want := cg.MakePath(""), leafDir; got != want {
+			t.Errorf("MakePath() = %q, want %q", got, want)
+		}
+		if quota, err := cg.CPUQuota(); err != nil || quota != 50000 {
+			t.Errorf("CPUQuota() = (%d, %v), want (50000, nil)", quota, err)
+		}
+		if period, err := cg.CPUPeriod(); err != nil || period != 100000 {
+			t.Errorf("CPUPeriod() = (%d, %v), want (100000, nil)", period, err)
+		}
+		if cpus, err := cg.NumCPU(); err != nil || cpus != 4 {
+			t.Errorf("NumCPU() = (%d, %v), want (4, nil)", cpus, err)
+		}
+	})
+
+	t.Run("v2 missing cgroup2 entry fails", func(t *testing.T) {
+		if _, err := newSelf(map[string]string{}, true /* isV2 */, t.TempDir()); err != ErrInvalidGroupPath {
+			t.Errorf("newSelf() error = %v, want %v", err, ErrInvalidGroupPath)
+		}
+	})
+
+	t.Run("v1 preserves controller paths", func(t *testing.T) {
+		oldRoot := cgroupRoot()
+		root := t.TempDir()
+		cgroupRootInternal = root
+		t.Cleanup(func() { cgroupRootInternal = oldRoot })
+
+		cg, err := newSelf(map[string]string{"cpu": "docker/leaf"}, false /* isV2 */, root)
+		if err != nil {
+			t.Fatalf("newSelf() failed: %v", err)
+		}
+		if got, want := cg.MakePath("cpu"), filepath.Join(root, "cpu/docker/leaf"); got != want {
+			t.Errorf("MakePath(cpu) = %q, want %q", got, want)
+		}
+	})
+}

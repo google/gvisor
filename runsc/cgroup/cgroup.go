@@ -417,6 +417,34 @@ func NewFromPid(pid int, useSystemd bool) (Cgroup, error) {
 	return new(strconv.Itoa(pid), "", useSystemd)
 }
 
+// NewSelf loads the cgroup of the current process for inspection. Unlike
+// NewFromPid, it preserves the leaf cgroup path on cgroup v2 rather than
+// resolving its parent directory.
+func NewSelf() (Cgroup, error) {
+	parents, err := loadPaths("self")
+	if err != nil {
+		return nil, fmt.Errorf("finding current cgroups: %w", err)
+	}
+	return newSelf(parents, IsOnlyV2(), cgroupRoot())
+}
+
+func newSelf(parents map[string]string, isV2 bool, root string) (Cgroup, error) {
+	if isV2 {
+		p, ok := parents[cgroup2Key]
+		if !ok {
+			return nil, ErrInvalidGroupPath
+		}
+		return &cgroupV2{
+			Mountpoint: root,
+			Path:       p,
+		}, nil
+	}
+	return &cgroupV1{
+		Parents: parents,
+		Own:     make(map[string]bool),
+	}, nil
+}
+
 // LikelySystemdPath returns true if the path looks like a systemd path. This is
 // by no means an exhaustive check, it's just a useful proxy for logging a
 // warning.

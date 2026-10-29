@@ -461,7 +461,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			mountsFile      *os.File
 		)
 		if !args.NoRootContainer {
-			ioFiles, goferFilestores, devIOFile, mountsFile, err = c.createGoferProcess(conf, specFile, mountHints, args.Attached, cloneIntoCgroupFD)
+			ioFiles, goferFilestores, devIOFile, mountsFile, err = c.createGoferProcess(conf, specFile, mountHints, args.Attached, cloneIntoCgroupFD, containerCgroup, cpuLimits)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
 			}
@@ -612,6 +612,12 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
 		subStarted := false
+		// c.Sandbox is a copy taken when this subcontainer was created, and
+		// Update only changes the root container's state.
+		cpuLimits := c.Sandbox.CPULimits
+		if root, loadErr := Load(c.Saver.RootDir, FullID{SandboxID: c.Sandbox.ID, ContainerID: c.Sandbox.ID}, LoadOpts{Exact: true, SkipCheck: true, ReadOnly: true}); loadErr == nil {
+			cpuLimits = root.Sandbox.CPULimits
+		}
 		err = cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
 			specFile, err := specutils.CopySpec(c.Spec)
@@ -619,7 +625,7 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 				return fmt.Errorf("cannot copy spec file: %w", err)
 			}
 			defer specFile.Close()
-			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, specFile, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
+			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, specFile, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD, c.Sandbox.CgroupJSON.Cgroup, cpuLimits)
 			if err != nil {
 				return err
 			}
@@ -1644,33 +1650,80 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 	return nil
 }
 
+// goferMaxProcs caps the gofer's GOMAXPROCS. One gofer process serves all of a
+// container's mounts (up to 4 flipcall channels plus 1 socket handler per
+// active lisafs mount, and none steady-state under directfs).
+const goferMaxProcs = 8
+
+// goferGOMAXPROCS returns the GOMAXPROCS value for a gofer running in `cg`.
+// It always honors the CPU quota, regardless of --cpu-num-from-quota, which
+// only affects the application.
+func goferGOMAXPROCS(cg cgroup.Cgroup, limits *sandbox.CPULimits) int {
+	return goferGOMAXPROCSWithSelf(cg, limits, cgroup.NewSelf)
+}
+
+func goferGOMAXPROCSWithSelf(cg cgroup.Cgroup, limits *sandbox.CPULimits, selfCg func() (cgroup.Cgroup, error)) int {
+	if cg != nil {
+		n, err := sandbox.CalculateCPUNum(cg, limits, true /* cpuNumFromQuota */)
+		if err != nil {
+			log.Warningf("Failed to calculate gofer CPU count from cgroup, using %d: %v", n, err)
+		}
+		return max(1, min(n, goferMaxProcs))
+	}
+
+	// Without a container cgroup, the gofer stays in runsc's own cgroup. If it
+	// can't be loaded, size the gofer from the host CPUs.
+	self, err := selfCg()
+	if err != nil {
+		log.Debugf("Failed to load current cgroup for gofer CPU count, using host CPUs: %v", err)
+		self = nil
+	}
+	n, err := sandbox.CalculateCPUNum(self, limits, true /* cpuNumFromQuota */)
+	if err != nil {
+		log.Debugf("Failed to calculate gofer CPU count from current cgroup, using %d: %v", n, err)
+	}
+	return max(1, min(n, goferMaxProcs))
+}
+
 // goferEnv returns the environment of the gofer process, given environ, the
 // environment of this process.
-func goferEnv(conf *config.Config, environ []string) []string {
-	// Don't forward GOMAXPROCS defaults that apply to this process (in
-	// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
-	// v1.service.newCommand()).
-	env := slices.DeleteFunc(slices.Clone(environ), func(e string) bool { return strings.HasPrefix(e, "GOMAXPROCS=") })
-	if conf.ProfileEnable {
-		return env
-	}
-	// Heap profiles can only be collected from the gofer with --profile.
-	// Without it, don't sample heap allocations: each sampled allocation
-	// site costs a stack unwind and a profiling bucket that is never freed.
-	// Later GODEBUG settings take precedence over earlier ones, so put
-	// memprofilerate=0 first to let an inherited setting override it.
-	const noHeapSampling = "memprofilerate=0"
-	for i, e := range env {
-		if v, ok := strings.CutPrefix(e, "GODEBUG="); ok {
-			if v == "" {
-				env[i] = "GODEBUG=" + noHeapSampling
-			} else {
-				env[i] = "GODEBUG=" + noHeapSampling + "," + v
-			}
-			return env
+func goferEnv(conf *config.Config, environ []string, gomaxprocs int) []string {
+	env := make([]string, 0, len(environ)+2)
+	var existingGoDebug string
+	hasGoDebug := false
+	for _, e := range environ {
+		// Don't forward GOMAXPROCS defaults that apply to this process (in
+		// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
+		// v1.service.newCommand()).
+		if strings.HasPrefix(e, "GOMAXPROCS=") {
+			continue
 		}
+		if val, ok := strings.CutPrefix(e, "GODEBUG="); ok {
+			// Go only reads the first GODEBUG variable in the environment.
+			if !hasGoDebug {
+				existingGoDebug = val
+				hasGoDebug = true
+			}
+			continue
+		}
+		env = append(env, e)
 	}
-	return append(env, "GODEBUG="+noHeapSampling)
+	godebug := "GODEBUG="
+	if !conf.ProfileEnable {
+		// Heap profiles can only be collected from the gofer with --profile.
+		// Without it, don't sample heap allocations: each sampled allocation
+		// site costs a stack unwind and a profiling bucket that is never freed.
+		// Later GODEBUG settings take precedence over earlier ones, so put
+		// memprofilerate=0 first to let an inherited setting override it.
+		godebug += "memprofilerate=0,"
+	}
+	if existingGoDebug != "" {
+		godebug += existingGoDebug + ","
+	}
+	// Put containermaxprocs=0,updatemaxprocs=0 last so inherited GODEBUG
+	// cannot re-enable Go's cgroup CPU reader/poller inside the chroot.
+	godebug += "containermaxprocs=0,updatemaxprocs=0"
+	return append(env, godebug, "GOMAXPROCS="+strconv.Itoa(gomaxprocs))
 }
 
 // createGoferProcess returns an IO file list and a mounts file on success.
@@ -1678,7 +1731,7 @@ func goferEnv(conf *config.Config, environ []string) []string {
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File, cg cgroup.Cgroup, cpuLimits *sandbox.CPULimits) ([]*os.File, []*os.File, *os.File, *os.File, error) {
 	rootfsHint, err := sentryapi.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1763,7 +1816,7 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 
 	// Start with the general config flags.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
-	cmd.Env = goferEnv(conf, os.Environ())
+	cmd.Env = goferEnv(conf, os.Environ(), goferGOMAXPROCS(cg, cpuLimits))
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from session. Otherwise, signals sent to the foreground process
 		// will also be forwarded by this process, resulting in duplicate signals.

@@ -106,6 +106,33 @@ func TestChrootGofer(t *testing.T) {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
+	// This where the root directory is mapped on the host and that's where the
+	// gofer must have chroot'd to.
+	root := "/root"
+
+	for _, goferPID := range findGoferPIDs(ctx, t, d) {
+		// Check that gofer is chroot'ed.
+		chroot, err := filepath.EvalSymlinks(procPath(strconv.Itoa(goferPID), "root"))
+		if err != nil {
+			t.Fatalf("error resolving /proc/<pid>/root symlink: %v", err)
+		}
+		if root != chroot {
+			t.Errorf("gofer chroot is wrong, want: %q, got: %q", root, chroot)
+		}
+
+		path, err := filepath.EvalSymlinks(procPath(strconv.Itoa(goferPID), "cwd"))
+		if err != nil {
+			t.Fatalf("error resolving /proc/<pid>/cwd symlink: %v", err)
+		}
+		if root != path {
+			t.Errorf("gofer current dir is wrong, want: %q, got: %q", root, path)
+		}
+	}
+}
+
+func findGoferPIDs(ctx context.Context, t *testing.T, d *dockerutil.Container) []int {
+	t.Helper()
+
 	// It's tricky to find gofers. Get sandbox PID first, then find parent. From
 	// parent get all immediate children, and sort them out by what they are.
 	sandPID, err := d.SandboxPid(ctx)
@@ -178,27 +205,5 @@ func TestChrootGofer(t *testing.T) {
 	if len(goferPIDs) == 0 {
 		t.Fatalf("Found no gofer children of runsc parent PID %d", parentPID)
 	}
-
-	// This where the root directory is mapped on the host and that's where the
-	// gofer must have chroot'd to.
-	root := "/root"
-
-	for _, goferPID := range goferPIDs {
-		// Check that gofer is chroot'ed.
-		chroot, err := filepath.EvalSymlinks(procPath(strconv.Itoa(goferPID), "root"))
-		if err != nil {
-			t.Fatalf("error resolving /proc/<pid>/root symlink: %v", err)
-		}
-		if root != chroot {
-			t.Errorf("gofer chroot is wrong, want: %q, got: %q", root, chroot)
-		}
-
-		path, err := filepath.EvalSymlinks(procPath(strconv.Itoa(goferPID), "cwd"))
-		if err != nil {
-			t.Fatalf("error resolving /proc/<pid>/cwd symlink: %v", err)
-		}
-		if root != path {
-			t.Errorf("gofer current dir is wrong, want: %q, got: %q", root, path)
-		}
-	}
+	return goferPIDs
 }

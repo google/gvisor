@@ -18,6 +18,8 @@ package maincli
 import (
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cli"
+	// Configure GOMAXPROCS and initial GOGC during package init.
+	_ "gvisor.dev/gvisor/runsc/cli/maxprocs"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/cmd/alias"
 	"gvisor.dev/gvisor/runsc/cmd/profile"
