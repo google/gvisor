@@ -100,27 +100,23 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 	mp.wq.EventRegister(&e)
 	defer mp.wq.EventUnregister(&e)
 
-	var (
-		path string
-		err  error
-	)
-	// Unblock waiter entries that were created after this mount promise was
-	// resolved by a racing thread.
+	// Resolution may have raced with registering the waiter.
 	if mp.resolved.Load() {
-		close(ch)
-	} else {
-		root := RootFromContext(ctx)
-		defer root.DecRef(ctx)
-		path, err = vfs.PathnameReachable(ctx, root, vd)
-		if err != nil {
-			panic(fmt.Sprintf("could not reach %v from root", rp.Component()))
-		}
-		if path == "" {
-			log.Warningf("Attempting to block for a mount promise on an empty path.")
-			return nil
-		}
-		eventchannel.Emit(&epb.SentryMountPromiseBlockEvent{Path: path})
+		vfs.updateResolvingPathForMountPromise(ctx, rp)
+		return nil
 	}
+
+	root := RootFromContext(ctx)
+	defer root.DecRef(ctx)
+	path, err := vfs.PathnameReachable(ctx, root, vd)
+	if err != nil {
+		panic(fmt.Sprintf("could not reach %v from root", rp.Component()))
+	}
+	if path == "" {
+		log.Warningf("Attempting to block for a mount promise on an empty path.")
+		return nil
+	}
+	eventchannel.Emit(&epb.SentryMountPromiseBlockEvent{Path: path})
 
 	var timeoutCh <-chan time.Time
 	if mp.opts.Timeout > 0 {
