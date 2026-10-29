@@ -30,7 +30,7 @@ env:
 priority: ${PRIORITY:-0}
 
 agents:
-  queue: "default"
+  queue: "untrusted"
 
 steps:
   # Run smoke tests before the other tests.
