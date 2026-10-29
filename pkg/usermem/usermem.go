@@ -76,6 +76,11 @@ type IO interface {
 	//		any preceding locks in the lock order.
 	CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts) (int64, error)
 
+	// CopyOutFromIter is like CopyOutFrom, but may call src.ReadToBlocks
+	// multiple times. src must advance by the number of bytes returned by
+	// each call. chunkSize is a suggested maximum size for each call.
+	CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts, chunkSize int64) (int64, error)
+
 	// CopyInTo copies ars.NumBytes() bytes from the memory mapped at ars to
 	// dst. It returns the number of bytes copied. CopyInTo may return a
 	// partial copy without an error iff dst.WriteFromBlocks returns a partial
@@ -122,14 +127,6 @@ type IO interface {
 	//		following locks in the lock order.
 	//	* addr must be aligned to a 4-byte boundary.
 	LoadUint32(ctx context.Context, addr hostarch.Addr, opts IOOpts) (uint32, error)
-}
-
-// IterativeCopyOutFrom permits a source to be read in multiple calls while
-// copying into application memory. Sources passed to this interface must
-// advance after each successful ReadToBlocks call. The regular IO.CopyOutFrom
-// contract continues to call the source at most once.
-type IterativeCopyOutFrom interface {
-	CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts, chunkSize int64) (int64, error)
 }
 
 // IOOpts contains options applicable to all IO methods.
@@ -512,16 +509,11 @@ func (s IOSequence) CopyOutFrom(ctx context.Context, src safemem.Reader) (int64,
 	return s.IO.CopyOutFrom(ctx, s.Addrs, src, s.Opts)
 }
 
-// CopyOutFromIter allows src.ReadToBlocks to be called more than once, with
-// each call copying at most chunkSize bytes. IO implementations without an
-// iterative path retain the regular CopyOutFrom behavior.
+// CopyOutFromIter invokes s.IO.CopyOutFromIter over s.Addrs.
 //
-// Preconditions: chunkSize > 0; src advances after successful reads.
+// Preconditions: Same as IO.CopyOutFromIter.
 func (s IOSequence) CopyOutFromIter(ctx context.Context, src safemem.Reader, chunkSize int64) (int64, error) {
-	if iter, ok := s.IO.(IterativeCopyOutFrom); ok {
-		return iter.CopyOutFromIter(ctx, s.Addrs, src, s.Opts, chunkSize)
-	}
-	return s.CopyOutFrom(ctx, src)
+	return s.IO.CopyOutFromIter(ctx, s.Addrs, src, s.Opts, chunkSize)
 }
 
 // CopyInTo invokes s.CopyInTo over s.Addrs.

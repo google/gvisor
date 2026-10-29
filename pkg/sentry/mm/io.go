@@ -338,7 +338,7 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 	return mm.withVecInternalMappings(ctx, ars, hostarch.Write, opts.IgnorePermissions, src.ReadToBlocks)
 }
 
-// CopyOutFromIter implements usermem.IterativeCopyOutFrom. Preparing writable
+// CopyOutFromIter implements usermem.IO.CopyOutFromIter. Preparing writable
 // mappings in bounded windows avoids repeatedly taking activeMu for writing
 // as each chunk reaches previously untouched application memory, without
 // populating the entire destination before source data is available.

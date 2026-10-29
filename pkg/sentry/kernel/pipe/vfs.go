@@ -441,6 +441,13 @@ func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq,
 	return total, nil
 }
 
+// CopyOutFromIter implements usermem.IO.CopyOutFromIter.
+//
+// Preconditions: fd.pipe.mu must be locked.
+func (fd *VFSPipeFD) CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts, chunkSize int64) (int64, error) {
+	return fd.CopyOutFrom(ctx, ars, src, opts)
+}
+
 // SwapUint32 implements usermem.IO.SwapUint32.
 func (fd *VFSPipeFD) SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
 	// How did a pipe get passed as the virtual address space to futex(2)?

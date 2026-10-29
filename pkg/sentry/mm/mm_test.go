@@ -279,15 +279,11 @@ func TestCopyOutFromIterBoundsPreparation(t *testing.T) {
 	}
 	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + hostarch.Addr(size)})
 	empty := &advancingTestReader{}
-	mm.activeMu.RLock()
-	initialRSS := mm.curRSS
-	mm.activeMu.RUnlock()
+	initialRSS := mm.ResidentSetSize()
 	if n, err := mm.CopyOutFromIter(ctx, ars, empty, usermem.IOOpts{}, 4<<20); n != 0 || err != nil || empty.calls != 1 {
 		t.Fatalf("empty source: n=%d err=%v calls=%d", n, err, empty.calls)
 	}
-	mm.activeMu.RLock()
-	rss := mm.curRSS
-	mm.activeMu.RUnlock()
+	rss := mm.ResidentSetSize()
 	// Anonymous PMAs may extend to the hugepage boundaries around the window.
 	if rss-initialRSS > (16<<20)+2*hostarch.HugePageSize {
 		t.Fatalf("empty source populated %d bytes of destination", rss-initialRSS)

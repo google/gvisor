@@ -72,6 +72,11 @@ func (b *BytesIO) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, sr
 	return int64(n), rngErr
 }
 
+// CopyOutFromIter implements IO.CopyOutFromIter.
+func (b *BytesIO) CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts, chunkSize int64) (int64, error) {
+	return b.CopyOutFrom(ctx, ars, src, opts)
+}
+
 // CopyInTo implements IO.CopyInTo.
 func (b *BytesIO) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts IOOpts) (int64, error) {
 	srcs, rngErr := b.blocksFromAddrRanges(ars)
