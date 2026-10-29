@@ -59,6 +59,16 @@ func TestFloat(t *testing.T) {
 	))))
 }
 
+func TestSignedZero(t *testing.T) {
+	neg := math.Copysign(0, -1)
+	runTestCases(t, false, "", []any{
+		neg,
+		complex(0, neg),
+		[]float64{neg, 1}[:1],
+		[]complex128{complex(neg, 0), 1}[:1],
+	})
+}
+
 const onlyDouble float64 = 1.0000000000000002
 
 func TestFloatTruncation(t *testing.T) {

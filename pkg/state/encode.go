@@ -17,6 +17,7 @@ package state
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
 
@@ -622,46 +623,42 @@ func (es *encodeState) encodeInterface(obj reflect.Value, dest *wire.Object) {
 	es.encodeObject(obj, encodeAsValue, &i.Value)
 }
 
-// isPrimitive returns true if this is a primitive object, or a composite
-// object composed entirely of primitives.
-func isPrimitiveZero(typ reflect.Type) bool {
-	switch typ.Kind() {
-	case reflect.Ptr:
-		// Pointers are always treated as primitive types because we
-		// won't encode directly from here. Returning true here won't
-		// prevent the object from being encoded correctly.
-		return true
-	case reflect.Bool:
-		return true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+// isFloatingZero reports whether a float, a complex number, or an array of
+// either has only positive zero components. Value.IsZero treats either sign
+// as zero, but omitting negative zero changes the restored value.
+func isFloatingZero(obj reflect.Value) bool {
+	switch obj.Kind() {
+	case reflect.Array:
+		for i := 0; i < obj.Len(); i++ {
+			if !isFloatingZero(obj.Index(i)) {
+				return false
+			}
+		}
 		return true
 	case reflect.Float32, reflect.Float64:
-		return true
-	case reflect.Complex64, reflect.Complex128:
-		return true
-	case reflect.String:
-		return true
-	case reflect.Slice:
-		// The slice itself a primitive, but not necessarily the array
-		// that points to. This is similar to a pointer.
-		return true
-	case reflect.Array:
-		// We cannot treat an array as a primitive, because it may be
-		// composed of structures or other things with side-effects.
-		return isPrimitiveZero(typ.Elem())
-	case reflect.Interface:
-		// Since we now that this type is the zero type, the interface
-		// value must be zero. Therefore this is primitive.
-		return true
+		return math.Float64bits(obj.Float()) == 0
+	default:
+		c := obj.Complex()
+		return math.Float64bits(real(c)) == 0 && math.Float64bits(imag(c)) == 0
+	}
+}
+
+// isPrimitiveZero reports whether obj can be encoded as wire.Nil.
+func isPrimitiveZero(obj reflect.Value) bool {
+	typ := obj.Type()
+	for typ.Kind() == reflect.Array {
+		typ = typ.Elem()
+	}
+	switch typ.Kind() {
+	case reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
+		return isFloatingZero(obj)
 	case reflect.Struct:
+		// Even zero-valued structs must run their savers.
 		return false
-	case reflect.Map:
-		// The isPrimitiveZero function is called only on zero-types to
-		// see if it's safe to serialize. Since a zero map has no
-		// elements, it is safe to treat as a primitive.
-		return true
+	case reflect.Ptr, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.String, reflect.Slice, reflect.Interface, reflect.Map:
+		return obj.IsZero()
 	default:
 		Failf("unknown type %q", typ.Name())
 	}
@@ -685,7 +682,7 @@ const (
 
 // encodeObject encodes an object.
 func (es *encodeState) encodeObject(obj reflect.Value, how encodeStrategy, dest *wire.Object) {
-	if how == encodeDefault && isPrimitiveZero(obj.Type()) && obj.IsZero() {
+	if how == encodeDefault && isPrimitiveZero(obj) {
 		*dest = wire.Nil{}
 		return
 	}
