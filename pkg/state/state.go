@@ -245,6 +245,20 @@ func (s Source) LoadValue(slot int, objPtr any, fn func(any)) {
 	s.internal.load(slot, o, true, func() { fn(o.Elem().Interface()) })
 }
 
+// ValueLoader is implemented by the generated code of structs with fields
+// saved through values (see Source.LoadValueTo).
+type ValueLoader interface {
+	// StateLoadValue loads the value of the field in the given slot.
+	StateLoadValue(ctx context.Context, slot int, value any)
+}
+
+// AfterLoader is implemented by the generated code of structs with afterLoad
+// methods (see Source.AfterLoadTo).
+type AfterLoader interface {
+	// StateAfterLoad calls the afterLoad method.
+	StateAfterLoad(ctx context.Context)
+}
+
 // AfterLoad schedules a function execution when all objects have been
 // allocated and their automated loading and customized load logic have been
 // executed. fn will not be executed until all of current object's
