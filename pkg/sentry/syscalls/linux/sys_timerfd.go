@@ -44,8 +44,10 @@ func TimerfdCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 	switch clockID {
 	case linux.CLOCK_REALTIME:
 		clock = t.Kernel().RealtimeClock()
-	case linux.CLOCK_MONOTONIC, linux.CLOCK_BOOTTIME:
+	case linux.CLOCK_MONOTONIC:
 		clock = t.Kernel().MonotonicClock()
+	case linux.CLOCK_BOOTTIME:
+		clock = t.Kernel().BoottimeClock()
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}

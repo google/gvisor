@@ -47,6 +47,8 @@ struct params {
   int64_t monotonic_raw_base_cycles;
   int64_t monotonic_raw_base_ref;
   uint64_t monotonic_raw_frequency;
+
+  int64_t boottime_offset;
 };
 
 // Returns a pointer to the global parameter page.
@@ -163,6 +165,38 @@ int ClockMonotonic(struct timespec* ts) {
 
   *ts = ns_to_timespec(
       compute_time(base_ref, base_cycles, frequency, now_cycles));
+  return 0;
+}
+
+// ClockBoottime() is the VDSO implementation of clock_gettime(CLOCK_BOOTTIME).
+int ClockBoottime(struct timespec* ts) {
+  struct params* params = get_params();
+  uint64_t seq;
+  uint64_t ready;
+  int64_t base_ref;
+  int64_t base_cycles;
+  uint64_t frequency;
+  int64_t offset;
+  int64_t now_cycles;
+
+  do {
+    seq = read_seqcount_begin(&params->seq_count);
+    ready = params->monotonic_ready;
+    base_ref = params->monotonic_base_ref;
+    base_cycles = params->monotonic_base_cycles;
+    frequency = params->monotonic_frequency;
+    offset = params->boottime_offset;
+    now_cycles = cycle_clock();
+  } while (read_seqcount_retry(&params->seq_count, seq));
+
+  if (!ready) {
+    // The sandbox kernel ensures that we won't compute a time later than this
+    // once the params are ready.
+    return sys_clock_gettime(CLOCK_BOOTTIME, ts);
+  }
+
+  *ts = ns_to_timespec(
+      compute_time(base_ref, base_cycles, frequency, now_cycles) + offset);
   return 0;
 }
 

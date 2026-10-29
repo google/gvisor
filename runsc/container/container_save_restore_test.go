@@ -393,6 +393,121 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreClocks verifies that CLOCK_MONOTONIC does not count the
+// time that the sandbox spends checkpointed, so that a sleep pending at
+// checkpoint time keeps the time it had left, while CLOCK_REALTIME and
+// CLOCK_BOOTTIME do count it.
+func TestCheckpointRestoreClocks(t *testing.T) {
+	const (
+		sleepDuration        = 4 * time.Second
+		checkpointedDuration = 8 * time.Second
+	)
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+	// Skip overlay because test requires writing to host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp failed: %v", err)
+			}
+			defer os.RemoveAll(dir)
+			if err := os.Chmod(dir, 0777); err != nil {
+				t.Fatalf("error chmoding dir: %q, %v", dir, err)
+			}
+			beforePath := filepath.Join(dir, "before")
+			afterPath := filepath.Join(dir, "after")
+
+			// Record the clocks around a sleep(1), which glibc implements
+			// with a relative CLOCK_REALTIME clock_nanosleep(2). Rename the
+			// files into place so that they are never read partially
+			// written.
+			script := fmt.Sprintf("%[1]s clocks > %[2]s.tmp && mv %[2]s.tmp %[2]s && sleep %[4]d && %[1]s clocks > %[3]s.tmp && mv %[3]s.tmp %[3]s",
+				app, beforePath, afterPath, int(sleepDuration.Seconds()))
+			spec := testutil.NewSpecWithArgs("bash", "-c", script)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+			if err := waitForFileExist(beforePath); err != nil {
+				t.Fatalf("error waiting for %q: %v", beforePath, err)
+			}
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+				t.Fatalf("error checkpointing container: %v", err)
+			}
+			if _, err := os.Stat(afterPath); err == nil {
+				t.Fatalf("sleep finished before checkpoint")
+			}
+			cont.Destroy()
+
+			time.Sleep(checkpointedDuration)
+
+			cont2, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont2.Destroy()
+			if err := cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+				t.Fatalf("error restoring container: %v", err)
+			}
+			if err := waitForFileExist(afterPath); err != nil {
+				t.Fatalf("error waiting for %q: %v", afterPath, err)
+			}
+
+			readClocks := func(path string) (realtime, monotonic, boottime time.Duration) {
+				b, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatalf("error reading %q: %v", path, err)
+				}
+				if _, err := fmt.Sscan(string(b), &realtime, &monotonic, &boottime); err != nil {
+					t.Fatalf("error parsing %q from %q: %v", b, path, err)
+				}
+				return realtime, monotonic, boottime
+			}
+			realtime1, monotonic1, boottime1 := readClocks(beforePath)
+			realtime2, monotonic2, boottime2 := readClocks(afterPath)
+			realtime := realtime2 - realtime1
+			monotonic := monotonic2 - monotonic1
+			boottime := boottime2 - boottime1
+			t.Logf("Elapsed time: CLOCK_REALTIME %v, CLOCK_MONOTONIC %v, CLOCK_BOOTTIME %v", realtime, monotonic, boottime)
+
+			// The sleep resumed with the time it had left: it neither
+			// expired on restore, nor counted the time spent checkpointed.
+			if monotonic < sleepDuration || monotonic >= checkpointedDuration {
+				t.Errorf("CLOCK_MONOTONIC advanced by %v during the sleep, want in [%v, %v)", monotonic, sleepDuration, checkpointedDuration)
+			}
+			// The difference also includes the time between the checkpoint
+			// and restore requests and the actual checkpoint and restore.
+			if got := realtime - monotonic; got < checkpointedDuration {
+				t.Errorf("CLOCK_REALTIME advanced by %v more than CLOCK_MONOTONIC, want at least %v", got, checkpointedDuration)
+			}
+			if got := boottime - monotonic; got < checkpointedDuration {
+				t.Errorf("CLOCK_BOOTTIME advanced by %v more than CLOCK_MONOTONIC, want at least %v", got, checkpointedDuration)
+			}
+			if diff := boottime - realtime; diff < -time.Second || diff > time.Second {
+				t.Errorf("CLOCK_BOOTTIME advanced by %v, want within 1s of CLOCK_REALTIME's %v", boottime, realtime)
+			}
+		})
+	}
+}
+
 // TestCheckpointCPUFeaturesMetadata verifies that the checkpoint metadata
 // records the sandbox's CPU features, matching the CPUID FeatureSet saved in
 // the state file.

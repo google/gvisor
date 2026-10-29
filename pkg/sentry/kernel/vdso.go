@@ -46,6 +46,10 @@ type vdsoParams struct {
 	monotonicRawBaseCycles int64
 	monotonicRawBaseRef    int64
 	monotonicRawFrequency  uint64
+
+	// boottimeOffset is the offset of CLOCK_BOOTTIME from CLOCK_MONOTONIC.
+	// It is valid if monotonicReady is set.
+	boottimeOffset int64
 }
 
 // VDSOParamPage manages a VDSO parameter page.

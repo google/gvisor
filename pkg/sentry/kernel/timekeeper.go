@@ -60,6 +60,9 @@ type Timekeeper struct {
 	// monotonicClock is a ktime.Clock based on timekeeper's Monotonic.
 	monotonicClock *timekeeperClock
 
+	// boottimeClock is a ktime.Clock based on timekeeper's Boottime.
+	boottimeClock *timekeeperClock
+
 	// monotonicRawClock is a ktime.Clock based on timekeeper's MonotonicRaw.
 	// It is non-nil only when the clock source tracks a distinct
 	// CLOCK_MONOTONIC_RAW; otherwise CLOCK_MONOTONIC_RAW aliases
@@ -76,6 +79,24 @@ type Timekeeper struct {
 	// It is set only once, by SetClocks.
 	monotonicOffset int64 `state:"nosave"`
 
+	// boottimeOffset is the offset of boot time from monotonic time, which
+	// is the total time that the sandbox has spent checkpointed. Linux
+	// similarly adds the time that the system spends suspended to
+	// CLOCK_BOOTTIME, but not to CLOCK_MONOTONIC.
+	//
+	// It only changes in Resume after restore.
+	boottimeOffset int64
+
+	// restoring is true from SetClocks after restore until Resume, while
+	// the restored kernel does not run yet. During this time, monotonic and
+	// boot time stay at their values at save time, saveMonotonic and
+	// saveBoottime, and the VDSO does not serve them.
+	restoring atomicbitops.Bool `state:"nosave"`
+
+	// saveBoottime is the value of boot time at the time of save. It is
+	// only valid while restoring is true.
+	saveBoottime int64 `state:"nosave"`
+
 	// monotonicLowerBound is the lowerBound for monotonic time.
 	monotonicLowerBound atomicbitops.Int64 `state:"nosave"`
 
@@ -88,16 +109,14 @@ type Timekeeper struct {
 	//
 	// It is only valid if restored is non-nil.
 	//
-	// It is only used in SetClocks after restore to compute the new
-	// monotonicOffset.
+	// It is only used after restore, to compute the new monotonicOffset.
 	saveMonotonic int64
 
 	// saveRealtime is the value of the realtime clock at the time of save.
 	//
 	// It is only valid if restored is non-nil.
 	//
-	// It is only used in SetClocks after restore to compute the new
-	// monotonicOffset.
+	// It is only used after restore, to compute the new boottimeOffset.
 	saveRealtime int64
 
 	// mu protects destruction with stop and wg.
@@ -168,6 +187,7 @@ func NewTimekeeper() *Timekeeper {
 	t.afterFuncSchedulerWakeCh = make(chan struct{}, 1)
 	t.realtimeClock = &timekeeperClock{tk: &t, c: sentrytime.Realtime}
 	t.monotonicClock = &timekeeperClock{tk: &t, c: sentrytime.Monotonic}
+	t.boottimeClock = &timekeeperClock{tk: &t, c: sentrytime.Boottime}
 	return &t
 }
 
@@ -200,6 +220,13 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 		t.afterFuncSchedulerWakeCh = make(chan struct{}, 1)
 	}
 
+	// In a restored sentry, monotonic and boot time stay at their values at
+	// save time until the kernel resumes; see Resume.
+	if t.restored != nil {
+		t.saveBoottime = t.saveMonotonic + t.boottimeOffset
+		t.restoring.Store(true)
+	}
+
 	t.clocks = c
 
 	// Serve CLOCK_MONOTONIC_RAW as a distinct clock iff the clock source
@@ -210,41 +237,19 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 		t.monotonicRawClock = &timekeeperClock{tk: t, c: sentrytime.MonotonicRaw}
 	}
 
-	// Compute the offset of the monotonic clock from the base Clocks.
-	//
-	// In a fresh (not restored) sentry, monotonic time starts at zero.
-	//
-	// In a restored sentry, monotonic time jumps forward by approximately
-	// the same amount as real time. There are no guarantees here, we are
-	// just making a best-effort attempt to make it appear that the app
-	// was simply not scheduled for a long period, rather than that the
-	// real time clock was changed.
-	//
-	// If real time went backwards, it remains the same.
-	wantMonotonic := int64(0)
-
-	nowMonotonic, err := t.clocks.GetTime(sentrytime.Monotonic)
-	if err != nil {
-		panic("Unable to get current monotonic time: " + err.Error())
-	}
-
-	nowRealtime, err := t.clocks.GetTime(sentrytime.Realtime)
-	if err != nil {
-		panic("Unable to get current realtime: " + err.Error())
-	}
-
-	if t.restored != nil {
-		wantMonotonic = t.saveMonotonic
-		elapsed := nowRealtime - t.saveRealtime
-		if elapsed > 0 {
-			wantMonotonic += elapsed
-		}
-	}
-
-	t.monotonicOffset = wantMonotonic - nowMonotonic
-
 	if t.restored == nil {
+		// In a fresh (not restored) sentry, monotonic time starts at zero.
+		nowMonotonic, err := t.clocks.GetTime(sentrytime.Monotonic)
+		if err != nil {
+			panic("Unable to get current monotonic time: " + err.Error())
+		}
+		t.monotonicOffset = -nowMonotonic
+
 		// Hold on to the initial "boot" time.
+		nowRealtime, err := t.clocks.GetTime(sentrytime.Realtime)
+		if err != nil {
+			panic("Unable to get current realtime: " + err.Error())
+		}
 		t.bootTime = ktime.FromNanoseconds(nowRealtime)
 	}
 
@@ -277,11 +282,12 @@ func (t *Timekeeper) update(parked bool) {
 		res := t.clocks.Update(parked)
 
 		var p vdsoParams
-		if res.MonotonicOk {
+		if res.MonotonicOk && !t.restoring.Load() {
 			p.monotonicReady = 1
 			p.monotonicBaseCycles = int64(res.Monotonic.BaseCycles)
 			p.monotonicBaseRef = int64(res.Monotonic.BaseRef) + t.monotonicOffset
 			p.monotonicFrequency = res.Monotonic.Frequency
+			p.boottimeOffset = t.boottimeOffset
 		}
 		if res.RealtimeOk {
 			p.realtimeReady = 1
@@ -457,12 +463,16 @@ func (t *Timekeeper) Pause() {
 	t.activeAfterFuncs.Wait()
 }
 
-// Resume restarts clock parameter updates and the AfterFunc scheduler.
+// Resume restarts clock parameter updates and the AfterFunc scheduler. After
+// restore, it also lets monotonic and boot time run again; see endRestore.
 func (t *Timekeeper) Resume(params *VDSOParamPage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	t.startUpdater(params)
+	if t.restoring.Load() {
+		t.endRestore()
+	}
 	// Resynchronize the pausable clock with the current monotonic time and
 	// restart the background AfterFunc scheduler goroutine.
 	nsec, err := t.GetTime(sentrytime.Monotonic)
@@ -471,6 +481,43 @@ func (t *Timekeeper) Resume(params *VDSOParamPage) {
 	}
 	t.pausableClock.Store(ktime.FromNanoseconds(nsec))
 	t.startAfterFuncSchedulerLocked()
+}
+
+// endRestore computes the offsets of monotonic and boot time from the base
+// Clocks after restore, when the restored kernel resumes, and makes them
+// available.
+//
+// Monotonic time continues from its value at save time: like CLOCK_MONOTONIC
+// across a Linux system suspend, it does not count the time that the sandbox
+// spent checkpointed, or restoring. Otherwise, every timer and timeout pending
+// at save time would expire at once on restore, regardless of how long it had
+// left to run.
+//
+// Boot time does count this time, as CLOCK_BOOTTIME does across a system
+// suspend: it jumps forward by approximately the same amount as real time. If
+// real time went backwards, it remains the same.
+//
+// Preconditions: t.restoring is true. The updater is running.
+func (t *Timekeeper) endRestore() {
+	t.updateMu.Lock()
+	defer t.updateMu.Unlock()
+
+	nowMonotonic, err := t.clocks.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic("Unable to get current monotonic time: " + err.Error())
+	}
+	nowRealtime, err := t.clocks.GetTime(sentrytime.Realtime)
+	if err != nil {
+		panic("Unable to get current realtime: " + err.Error())
+	}
+	t.monotonicOffset = t.saveMonotonic - nowMonotonic
+	if elapsed := nowRealtime - t.saveRealtime; elapsed > 0 {
+		t.boottimeOffset += elapsed
+	}
+	t.restoring.Store(false)
+
+	// Publish the new offsets to the VDSO before the application resumes.
+	t.update(t.updaterState.Load() == updaterParked)
 }
 
 // TSCSnapshot returns the clock source's realtime base point in the guest TSC
@@ -497,6 +544,16 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 	if c == sentrytime.MonotonicRaw && t.monotonicRawClock == nil {
 		c = sentrytime.Monotonic
 	}
+	boottime := c == sentrytime.Boottime
+	if boottime {
+		c = sentrytime.Monotonic
+	}
+	if c == sentrytime.Monotonic && t.restoring.Load() {
+		if boottime {
+			return t.saveBoottime, nil
+		}
+		return t.saveMonotonic, nil
+	}
 
 	// update the calibration if needed and keep the timekeeper calibrated
 	// during the read
@@ -520,6 +577,9 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 			if t.monotonicLowerBound.CompareAndSwap(oldLowerBound, now) {
 				break
 			}
+		}
+		if boottime {
+			now += t.boottimeOffset
 		}
 	}
 	return now, err

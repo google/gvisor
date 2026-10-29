@@ -29,6 +29,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/logging.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -144,6 +145,19 @@ INSTANTIATE_TEST_SUITE_P(ClockGettime, MonotonicClockTest,
                                            CLOCK_MONOTONIC_COARSE,
                                            CLOCK_MONOTONIC_RAW, CLOCK_BOOTTIME),
                          PrintClockId);
+
+// CLOCK_BOOTTIME is CLOCK_MONOTONIC plus the time that the system spent
+// suspended (or, in gVisor, that the sandbox spent checkpointed).
+TEST(ClockGettime, BoottimeIsAtLeastMonotonic) {
+  for (int i = 0; i < 2; i++) {
+    // Read CLOCK_MONOTONIC first, so that a correct CLOCK_BOOTTIME can only
+    // be later.
+    const int64_t monotonic = clock_gettime_nsecs(CLOCK_MONOTONIC);
+    const int64_t boottime = clock_gettime_nsecs(CLOCK_BOOTTIME);
+    EXPECT_GE(boottime, monotonic);
+    MaybeSave();
+  }
+}
 
 TEST(ClockGettime, UnimplementedReturnsEINVAL) {
   SKIP_IF(!IsRunningOnGvisor());

@@ -53,7 +53,7 @@ PosixErrorOr<FileDescriptor> TimerfdCreate(int clockid, int flags) {
 // - Because clock_gettime(CLOCK_MONOTONIC) is implemented through the VDSO,
 // it technically uses a closely-related, but distinct, time domain from the
 // CLOCK_MONOTONIC used to trigger timerfd expirations. The same applies to
-// CLOCK_BOOTTIME which is an alias for CLOCK_MONOTONIC.
+// CLOCK_BOOTTIME.
 absl::Duration TimerSlack() { return absl::Milliseconds(500); }
 
 class TimerfdTest : public ::testing::TestWithParam<int> {};

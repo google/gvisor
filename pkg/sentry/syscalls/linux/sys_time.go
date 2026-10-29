@@ -125,15 +125,13 @@ func getClock(t *kernel.Task, clockID int32) (ktime.Clock, error) {
 		return t.Kernel().RealtimeClock(), nil
 	case linux.CLOCK_MONOTONIC_RAW:
 		return t.Kernel().MonotonicRawClock(), nil
-	case linux.CLOCK_MONOTONIC, linux.CLOCK_MONOTONIC_COARSE,
-		linux.CLOCK_BOOTTIME:
-		// CLOCK_BOOTTIME is internally mapped to CLOCK_MONOTONIC, as:
-		//	- CLOCK_BOOTTIME should behave as CLOCK_MONOTONIC while also
-		//		including suspend time.
-		//	- gVisor has no concept of suspend/resume.
-		//	- CLOCK_MONOTONIC already includes save/restore time, which is
-		//		the closest to suspend time.
+	case linux.CLOCK_MONOTONIC, linux.CLOCK_MONOTONIC_COARSE:
 		return t.Kernel().MonotonicClock(), nil
+	case linux.CLOCK_BOOTTIME:
+		// Unlike CLOCK_MONOTONIC, CLOCK_BOOTTIME counts the time that the
+		// sandbox spends checkpointed, as it counts the time that the
+		// system spends suspended on Linux.
+		return t.Kernel().BoottimeClock(), nil
 	case linux.CLOCK_PROCESS_CPUTIME_ID:
 		return t.ThreadGroup().CPUClock(), nil
 	case linux.CLOCK_THREAD_CPUTIME_ID:

@@ -18,6 +18,7 @@
 #include <sys/syscall.h>
 #include <sys/sysinfo.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -69,6 +70,31 @@ TEST(SysinfoTest, UptimeIncreasingValue) {
   struct sysinfo s2 = {};
   EXPECT_THAT(sysinfo(&s2), SyscallSucceedsWithValue(0));
   EXPECT_LT(s.uptime, s2.uptime);
+}
+
+// The uptime is CLOCK_BOOTTIME, which Linux rounds up to the second.
+TEST(SysinfoTest, UptimeIsBoottime) {
+  struct timespec before, after;
+  struct sysinfo s = {};
+  ASSERT_THAT(clock_gettime(CLOCK_BOOTTIME, &before), SyscallSucceeds());
+  ASSERT_THAT(sysinfo(&s), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(clock_gettime(CLOCK_BOOTTIME, &after), SyscallSucceeds());
+  EXPECT_GE(s.uptime, before.tv_sec);
+  EXPECT_LE(s.uptime, after.tv_sec + 1);
+}
+
+TEST(SysinfoTest, UptimeRoundsUp) {
+  for (int i = 0; i < 10; i++) {
+    struct timespec before;
+    struct sysinfo s = {};
+    ASSERT_THAT(clock_gettime(CLOCK_BOOTTIME, &before), SyscallSucceeds());
+    if (before.tv_nsec == 0) {
+      continue;
+    }
+    ASSERT_THAT(sysinfo(&s), SyscallSucceedsWithValue(0));
+    EXPECT_GT(s.uptime, before.tv_sec);
+    absl::SleepFor(absl::Milliseconds(10));
+  }
 }
 
 TEST(SysinfoTest, FreeRamSaneValue) {
