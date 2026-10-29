@@ -74,8 +74,6 @@ bzl_library(
 
 exports_files([
     "benchmark-umbrella-exports.patch",
-    "build_cover.sh",
-    "go-allow-internal.patch",
     "llvm-linux-header-default.patch",
 ])
 
