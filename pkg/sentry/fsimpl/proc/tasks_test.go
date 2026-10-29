@@ -860,3 +860,32 @@ func TestSysNetIPv4FileModes(t *testing.T) {
 		}
 	}
 }
+
+func TestSysFsAIO(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{path: "/proc/sys/fs/aio-max-nr", want: "65536\n"},
+		{path: "/proc/sys/fs/aio-nr", want: "0\n"},
+	} {
+		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, s.PathOpAtRoot(tc.path), &vfs.OpenOptions{})
+		if err != nil {
+			t.Errorf("OpenAt(%q) failed: %v", tc.path, err)
+			continue
+		}
+		buf := make([]byte, 64)
+		n, err := fd.Read(s.Ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+		fd.DecRef(s.Ctx)
+		if err != nil && err != io.EOF {
+			t.Errorf("Read(%q) failed: %v", tc.path, err)
+			continue
+		}
+		if got := string(buf[:n]); got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
