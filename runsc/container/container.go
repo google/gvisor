@@ -1644,6 +1644,35 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 	return nil
 }
 
+// goferEnv returns the environment of the gofer process, given environ, the
+// environment of this process.
+func goferEnv(conf *config.Config, environ []string) []string {
+	// Don't forward GOMAXPROCS defaults that apply to this process (in
+	// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
+	// v1.service.newCommand()).
+	env := slices.DeleteFunc(slices.Clone(environ), func(e string) bool { return strings.HasPrefix(e, "GOMAXPROCS=") })
+	if conf.ProfileEnable {
+		return env
+	}
+	// Heap profiles can only be collected from the gofer with --profile.
+	// Without it, don't sample heap allocations: each sampled allocation
+	// site costs a stack unwind and a profiling bucket that is never freed.
+	// Later GODEBUG settings take precedence over earlier ones, so put
+	// memprofilerate=0 first to let an inherited setting override it.
+	const noHeapSampling = "memprofilerate=0"
+	for i, e := range env {
+		if v, ok := strings.CutPrefix(e, "GODEBUG="); ok {
+			if v == "" {
+				env[i] = "GODEBUG=" + noHeapSampling
+			} else {
+				env[i] = "GODEBUG=" + noHeapSampling + "," + v
+			}
+			return env
+		}
+	}
+	return append(env, "GODEBUG="+noHeapSampling)
+}
+
 // createGoferProcess returns an IO file list and a mounts file on success.
 // The IO file list consists of image files and/or socket files to connect to
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
@@ -1734,10 +1763,7 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 
 	// Start with the general config flags.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
-	// Don't forward GOMAXPROCS defaults that apply to this process (in
-	// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
-	// v1.service.newCommand()).
-	cmd.Env = slices.DeleteFunc(os.Environ(), func(env string) bool { return strings.HasPrefix(env, "GOMAXPROCS=") })
+	cmd.Env = goferEnv(conf, os.Environ())
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from session. Otherwise, signals sent to the foreground process
 		// will also be forwarded by this process, resulting in duplicate signals.
