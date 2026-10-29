@@ -303,6 +303,35 @@ func TestCubicRTOPreservesPriorWindow(t *testing.T) {
 	}
 }
 
+func TestCubicApplicationLimitedTime(t *testing.T) {
+	for _, reset := range []bool{false, true} {
+		window := func(pause time.Duration) int {
+			clock := faketime.NewManualClock()
+			const rtt = 100 * time.Millisecond
+			c := newTestCubic(t, clock, rtt)
+			c.s.ep.mu.Lock()
+			defer c.s.ep.mu.Unlock()
+			c.HandleLossDetected()
+			c.s.leaveRecovery()
+			clock.Advance(rtt)
+			c.SetApplicationLimited(true)
+			clock.Advance(pause / 2)
+			if reset {
+				// Recovery may start a new epoch while the flow is paused.
+				c.PostRecovery()
+			}
+			clock.Advance(pause / 2)
+			c.SetApplicationLimited(false)
+			clock.Advance(rtt)
+			c.Update(c.s.SndCwnd, rtt, clock.NowMonotonic())
+			return c.s.SndCwnd
+		}
+		if got, want := window(10*time.Second), window(0); got != want {
+			t.Errorf("first full-window ACK after an application pause (reset=%t): cwnd = %d, want %d", reset, got, want)
+		}
+	}
+}
+
 func TestCubicWindowRestartPreservesPeak(t *testing.T) {
 	for _, recovery := range []string{"fast", "timeout"} {
 		t.Run(recovery, func(t *testing.T) {
