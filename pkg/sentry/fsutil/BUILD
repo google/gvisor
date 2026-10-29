@@ -21,6 +21,25 @@ declare_mutex(
     prefix = "maps",
 )
 
+declare_mutex(
+    name = "chunk_cache_mutex",
+    out = "chunk_cache_mutex.go",
+    package = "fsutil",
+    prefix = "chunkCache",
+)
+
+go_template_instance(
+    name = "chunk_list",
+    out = "chunk_list.go",
+    package = "fsutil",
+    prefix = "chunk",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*cachedChunk",
+        "Linker": "*cachedChunk",
+    },
+)
+
 go_template_instance(
     name = "dirty_set_impl",
     out = "dirty_set_impl.go",
@@ -111,6 +130,8 @@ go_template_instance(
 go_library(
     name = "fsutil",
     srcs = [
+        "chunk_cache_mutex.go",
+        "chunk_list.go",
         "dirty_set.go",
         "dirty_set_impl.go",
         "file_range_set.go",
