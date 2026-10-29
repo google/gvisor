@@ -126,6 +126,7 @@ func Load(ctx context.Context, r io.Reader, rootPtr any) (Stats, error) {
 // Sink is used for Type.StateSave.
 type Sink struct {
 	internal objectEncoder
+	graph    graphStructEncoder
 }
 
 // Save adds the given object to the map.

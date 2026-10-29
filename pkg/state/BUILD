@@ -75,6 +75,7 @@ go_library(
         "graph_buf_unsafe.go",
         "graph_encode_objects_unsafe.go",
         "graph_encode_unsafe.go",
+        "graph_encode_values_unsafe.go",
         "graph_typecache_unsafe.go",
         "graph_typeinfo_unsafe.go",
         "ods_list.go",
