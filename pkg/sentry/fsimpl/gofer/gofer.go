@@ -2307,6 +2307,19 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool) error {
 	// O_TRUNC unconditionally requires us to obtain a new handle (opened with
 	// O_TRUNC).
+	if !trunc {
+		// Handles are only ever upgraded while the inode is alive, so a check
+		// under the read lock suffices in the common case where the current
+		// handles are sufficient. Avoid taking handleMu for writing, which
+		// would serialize concurrent opens and block I/O on the file.
+		d.inode.handleMu.RLock()
+		canReuseCurHandle := (!read || d.inode.isReadHandleOk()) && (!write || d.inode.isWriteHandleOk())
+		d.inode.handleMu.RUnlock()
+		if canReuseCurHandle {
+			return nil
+		}
+	}
+
 	d.inode.handleMu.Lock()
 	needNewHandle := (read && !d.inode.isReadHandleOk()) || (write && !d.inode.isWriteHandleOk()) || trunc
 	if !needNewHandle {
