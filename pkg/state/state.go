@@ -220,6 +220,7 @@ type SaverLoader interface {
 // Source is used for Type.StateLoad.
 type Source struct {
 	internal objectDecoder
+	graph    graphStructDecoder
 }
 
 // Load loads the given object passed as a pointer..
