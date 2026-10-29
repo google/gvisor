@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -195,6 +196,32 @@ func TestSyntheticMountpointCreation(t *testing.T) {
 	}
 	if err := s.VFS.MkdirAt(s.Ctx, s.Creds, s.PathOpAtRoot("/proc/ordinary"), &vfs.MkdirOptions{Mode: 0755}); !linuxerr.Equals(linuxerr.ENOENT, err) {
 		t.Errorf("MkdirAt(/proc/ordinary): got %v, want ENOENT", err)
+	}
+}
+
+func TestSyntheticTaskMountpointCreation(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	k := kernel.KernelFromContext(s.Ctx)
+	tg := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	task, err := testutil.CreateTask(s.Ctx, "mountpoint", tg, s.MntNs, s.Root, s.Root)
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	pid := k.RootPIDNamespace().IDOfTask(task)
+	withoutOverride := s.Creds.Fork()
+	withoutOverride.EffectiveCaps &^= auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE)
+	for _, parent := range []string{fmt.Sprintf("/proc/%d", pid), fmt.Sprintf("/proc/%d/task/%d", pid, pid)} {
+		name := parent + "/mountpoint"
+		if err := s.VFS.MakeSyntheticMountpoint(s.Ctx, name, s.Root, withoutOverride); !errors.Is(err, linuxerr.EACCES) {
+			t.Errorf("MakeSyntheticMountpoint(%q) without CAP_DAC_OVERRIDE: got %v, want EACCES", name, err)
+		}
+		if err := s.VFS.MakeSyntheticMountpoint(s.Ctx, name, s.Root, s.Creds); err != nil {
+			t.Fatalf("MakeSyntheticMountpoint(%q): %v", name, err)
+		}
+		d := s.GetDentryOrDie(s.PathOpAtRoot(name))
+		d.DecRef(s.Ctx)
 	}
 }
 
