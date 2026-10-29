@@ -106,7 +106,7 @@ maintainers:
     github: etienneperot
     affiliation: Google
     started: 2020-11-18
-    status: ACTIVE
+    status: HIATUS_SINCE:2026-10-28
     areas: [benchmarks, kubernetes, metrics, oci, release_pipeline, runsc, seccomp, website]
   - name: Lucas Manning
     github: manninglucas
