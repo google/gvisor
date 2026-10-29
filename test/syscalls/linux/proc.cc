@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/auxv.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -1615,6 +1616,49 @@ TEST(ProcCpuinfo, DeniesWriteRoot) {
     EXPECT_THAT(pwrite(fd, "x", 1, 123), SyscallFails());
   }
 }
+
+#if defined(__aarch64__)
+// On arm64, /proc/cpuinfo and AT_HWCAP both come from elf_hwcap, so the
+// Features line must name exactly the HWCAP bits that getauxval(AT_HWCAP)
+// reports. Names are hwcap_str in arch/arm64/kernel/cpuinfo.c, indexed by bit.
+TEST(ProcCpuinfo, FeaturesMatchAtHwcap) {
+  static const char* const kHwcapNames[32] = {
+      "fp",       "asimd", "evtstrm", "aes",    "pmull",   "sha1",
+      "sha2",     "crc32", "atomics", "fphp",   "asimdhp", "cpuid",
+      "asimdrdm", "jscvt", "fcma",    "lrcpc",  "dcpop",   "sha3",
+      "sm3",      "sm4",   "asimddp", "sha512", "sve",     "asimdfhm",
+      "dit",      "uscat", "ilrcpc",  "flagm",  "ssbs",    "sb",
+      "paca",     "pacg",
+  };
+
+  std::string proc_cpuinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cpuinfo"));
+  absl::flat_hash_set<std::string> features;
+  bool found = false;
+  for (absl::string_view line : absl::StrSplit(proc_cpuinfo, '\n')) {
+    if (!absl::StartsWith(line, "Features")) {
+      continue;
+    }
+    std::pair<absl::string_view, absl::string_view> split =
+        absl::StrSplit(line, absl::MaxSplits(':', 1));
+    for (absl::string_view name :
+         absl::StrSplit(split.second, ' ', absl::SkipWhitespace())) {
+      features.insert(std::string(name));
+    }
+    found = true;
+    break;
+  }
+  ASSERT_TRUE(found) << proc_cpuinfo;
+
+  const unsigned long hwcap = getauxval(AT_HWCAP);  // NOLINT
+  for (int bit = 0; bit < 32; bit++) {
+    EXPECT_EQ(features.contains(kHwcapNames[bit]), (hwcap & (1UL << bit)) != 0)
+        << "feature " << kHwcapNames[bit] << " (HWCAP bit " << bit
+        << "), AT_HWCAP=" << absl::StrFormat("%#x", hwcap) << ", cpuinfo:\n"
+        << proc_cpuinfo;
+  }
+}
+#endif  // defined(__aarch64__)
 
 // Cpuinfo should not change across save/restore.
 TEST(ProcCpuinfo, Stable) {

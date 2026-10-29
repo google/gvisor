@@ -32,6 +32,7 @@ go_test(
     size = "small",
     srcs = [
         "cpuid_amd64_test.go",
+        "cpuid_arm64_test.go",
         "cpuid_test.go",
     ],
     embed = [":cpuid"],
