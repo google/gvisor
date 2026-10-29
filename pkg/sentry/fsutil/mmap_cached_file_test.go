@@ -66,20 +66,33 @@ func numMappings(f *MmapCachedFile) int {
 	return len(f.mappings)
 }
 
+func isMapped(f *MmapCachedFile, chunkStart uint64) bool {
+	f.mapsMu.Lock()
+	defer f.mapsMu.Unlock()
+	_, ok := f.mappings[chunkStart]
+	return ok
+}
+
+func chunkCacheLen() int {
+	chunkCache.mu.Lock()
+	defer chunkCache.mu.Unlock()
+	return chunkCache.len
+}
+
 func TestMmapCachedFileReusesUnreferencedMapping(t *testing.T) {
 	f := newTestMmapCachedFile(t, 1)
-	before := retainedChunks.Load()
+	before := chunkCacheLen()
 
 	addr := mapChunk(t, f, 0)
 	unmapChunk(f, 0)
-	if got := retainedChunks.Load() - before; got != 1 {
-		t.Errorf("retained chunks after unmap: got %d, want 1", got)
+	if got := chunkCacheLen() - before; got != 1 {
+		t.Errorf("cached chunks after unmap: got %d, want 1", got)
 	}
 	if got := mapChunk(t, f, 0); got != addr {
 		t.Errorf("remapped chunk address: got %#x, want %#x", got, addr)
 	}
-	if got := retainedChunks.Load() - before; got != 0 {
-		t.Errorf("retained chunks after remap: got %d, want 0", got)
+	if got := chunkCacheLen() - before; got != 0 {
+		t.Errorf("cached chunks after remap: got %d, want 0", got)
 	}
 
 	unmapChunk(f, 0)
@@ -87,23 +100,50 @@ func TestMmapCachedFileReusesUnreferencedMapping(t *testing.T) {
 	if got := numMappings(f); got != 0 {
 		t.Errorf("mappings after release: got %d, want 0", got)
 	}
-	if got := retainedChunks.Load() - before; got != 0 {
-		t.Errorf("retained chunks after release: got %d, want 0", got)
+	if got := chunkCacheLen() - before; got != 0 {
+		t.Errorf("cached chunks after release: got %d, want 0", got)
 	}
 }
 
-func TestMmapCachedFileRetainLimit(t *testing.T) {
-	oldMax := maxRetainedChunks
-	maxRetainedChunks = retainedChunks.Load() + 1
-	defer func() { maxRetainedChunks = oldMax }()
-	f := newTestMmapCachedFile(t, 2)
+func TestMmapCachedFileEvictsLeastRecentlyUnreferenced(t *testing.T) {
+	oldMax, oldBatch := maxCachedChunks, chunkCacheEvictBatch
+	maxCachedChunks, chunkCacheEvictBatch = chunkCacheLen()+2, 0
+	defer func() { maxCachedChunks, chunkCacheEvictBatch = oldMax, oldBatch }()
+	f := newTestMmapCachedFile(t, 3)
+	a, b, c := uint64(0), chunkSize(), 2*chunkSize()
 
-	mapChunk(t, f, 0)
-	mapChunk(t, f, chunkSize())
-	unmapChunk(f, 0)
-	unmapChunk(f, chunkSize())
+	mapChunk(t, f, a)
+	mapChunk(t, f, b)
+	mapChunk(t, f, c)
+	unmapChunk(f, a)
+	unmapChunk(f, b)
+	mapChunk(t, f, a)
+	unmapChunk(f, a)
+	unmapChunk(f, c)
+	if !isMapped(f, a) || isMapped(f, b) || !isMapped(f, c) {
+		t.Errorf("mapped chunks: got a=%t b=%t c=%t, want a=true b=false c=true", isMapped(f, a), isMapped(f, b), isMapped(f, c))
+	}
+
+	f.MappableRelease()
+	if got := numMappings(f); got != 0 {
+		t.Errorf("mappings after release: got %d, want 0", got)
+	}
+}
+
+func TestMmapCachedFileEvictsInBatches(t *testing.T) {
+	oldMax, oldBatch := maxCachedChunks, chunkCacheEvictBatch
+	maxCachedChunks, chunkCacheEvictBatch = chunkCacheLen()+2, 1
+	defer func() { maxCachedChunks, chunkCacheEvictBatch = oldMax, oldBatch }()
+	f := newTestMmapCachedFile(t, 3)
+
+	for i := uint64(0); i < 3; i++ {
+		mapChunk(t, f, i*chunkSize())
+	}
+	for i := uint64(0); i < 3; i++ {
+		unmapChunk(f, i*chunkSize())
+	}
 	if got := numMappings(f); got != 1 {
-		t.Errorf("mappings over the limit: got %d, want 1", got)
+		t.Errorf("mappings after overflow: got %d, want 1", got)
 	}
 
 	f.MappableRelease()
@@ -114,7 +154,7 @@ func TestMmapCachedFileRetainLimit(t *testing.T) {
 
 func TestMmapCachedFileUnmapsAfterRelease(t *testing.T) {
 	f := newTestMmapCachedFile(t, 1)
-	before := retainedChunks.Load()
+	before := chunkCacheLen()
 
 	mapChunk(t, f, 0)
 	f.MappableRelease()
@@ -122,7 +162,7 @@ func TestMmapCachedFileUnmapsAfterRelease(t *testing.T) {
 	if got := numMappings(f); got != 0 {
 		t.Errorf("mappings: got %d, want 0", got)
 	}
-	if got := retainedChunks.Load() - before; got != 0 {
-		t.Errorf("retained chunks: got %d, want 0", got)
+	if got := chunkCacheLen() - before; got != 0 {
+		t.Errorf("cached chunks: got %d, want 0", got)
 	}
 }
