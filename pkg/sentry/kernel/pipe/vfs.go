@@ -42,9 +42,7 @@ type VFSPipe struct {
 
 // NewVFSPipe returns an initialized VFSPipe.
 func NewVFSPipe(isNamed bool, sizeBytes int64) *VFSPipe {
-	var vp VFSPipe
-	initPipe(&vp.pipe, isNamed, sizeBytes)
-	return &vp
+	return &VFSPipe{pipe: newPipe(isNamed, sizeBytes)}
 }
 
 // Pipe returns the underlying Pipe object.
@@ -263,7 +261,6 @@ func (fd *VFSPipeFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, a
 
 // PipeSize implements fcntl(F_GETPIPE_SZ).
 func (fd *VFSPipeFD) PipeSize() int64 {
-	// Inline Pipe.FifoSize() since we don't have a fs.File.
 	fd.pipe.mu.Lock()
 	defer fd.pipe.mu.Unlock()
 	return fd.pipe.max
@@ -482,15 +479,17 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 	}
 
 	firstLocked, secondLocked := lockTwoPipes(dst.pipe, src.pipe)
+	srcs, srcErr := src.pipe.readableBlocksLocked(0, count)
 	n, err := dst.pipe.writeLocked(count, func(dsts safemem.BlockSeq) (uint64, error) {
-		n, err := src.pipe.peekLocked(0, int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) {
-			return safemem.CopySeq(dsts, srcs)
-		})
-		if n > 0 && removeFromSrc {
-			src.pipe.consumeLocked(n)
+		// Report source errors only after writeLocked has checked the destination.
+		if srcErr != nil {
+			return 0, srcErr
 		}
-		return uint64(n), err
+		return safemem.CopySeq(dsts, srcs)
 	})
+	if n > 0 && removeFromSrc {
+		src.pipe.consumeLocked(n)
+	}
 	secondLocked.mu.NestedUnlock(pipeLockPipe)
 	firstLocked.mu.Unlock()
 
