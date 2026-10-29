@@ -266,6 +266,26 @@ img_pull(
     tag = "3.11.5",
 )
 
+# Both benchmark manifests come from the official alpine:3.24.3 index:
+# sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+img_pull(
+    name = "benchmark_alpine_amd64",
+    digest = "sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/alpine",
+    tag = "3.24.3",
+)
+
+img_pull(
+    name = "benchmark_alpine_arm64",
+    digest = "sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/alpine",
+    tag = "3.24.3",
+)
+
 img_pull(
     name = "test_busybox",
     digest = "sha256:95cf004f559831017cdf4628aaf1bb30133677be8702a8c5f2994629f637a209",
