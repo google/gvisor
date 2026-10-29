@@ -287,6 +287,30 @@ TEST(TimerfdClockRealtimeTest, ClockRealtime) {
   EXPECT_EQ(1, val);
 }
 
+// A relative CLOCK_REALTIME timer measures its duration with CLOCK_MONOTONIC,
+// so that changes to the realtime clock, such as when the sandbox is
+// checkpointed and restored while the timer is armed, do not affect it.
+TEST(TimerfdClockRealtimeTest, RelativeClockRealtimeMeasuresMonotonicTime) {
+  constexpr absl::Duration kDelay = absl::Seconds(2);
+
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_REALTIME, 0));
+  struct timespec before, after;
+  ASSERT_THAT(clock_gettime(CLOCK_MONOTONIC, &before), SyscallSucceeds());
+  struct itimerspec its = {};
+  its.it_value = absl::ToTimespec(kDelay);
+  ASSERT_THAT(timerfd_settime(tfd.get(), /* flags = */ 0, &its, nullptr),
+              SyscallSucceeds());
+  MaybeSave();
+
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
+  ASSERT_THAT(clock_gettime(CLOCK_MONOTONIC, &after), SyscallSucceeds());
+  EXPECT_EQ(1, val);
+  EXPECT_GE(absl::TimeFromTimespec(after) - absl::TimeFromTimespec(before),
+            kDelay);
+}
+
 // Same as the above ClockRealtime test but expresses the input as an absolute
 // time value rather than an interval.
 TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtime) {

@@ -233,6 +233,15 @@ func ClockNanosleep(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (
 		return 0, nil, clockNanosleepUntil(t, c, ktime.FromTimespec(req), 0, false)
 	}
 
+	// As on Linux, measure relative CLOCK_REALTIME sleeps with
+	// CLOCK_MONOTONIC, so that discontinuous changes to the realtime clock,
+	// such as its jump forward on restore, do not change their duration.
+	// glibc implements nanosleep(3), and thus sleep(3) and usleep(3), with
+	// relative CLOCK_REALTIME sleeps.
+	if clockID == linux.CLOCK_REALTIME {
+		c = t.Kernel().MonotonicClock()
+	}
+
 	dur := time.Duration(req.ToNsecCapped()) * time.Nanosecond
 	return 0, nil, clockNanosleepUntil(t, c, c.Now().Add(dur), rem, true)
 }

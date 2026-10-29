@@ -40,7 +40,7 @@ func TimerfdCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 		fileFlags |= linux.O_NONBLOCK
 	}
 
-	var clock ktime.Clock
+	var clock ktime.SampledClock
 	switch clockID {
 	case linux.CLOCK_REALTIME:
 		clock = t.Kernel().RealtimeClock()
@@ -94,11 +94,19 @@ func TimerfdSettime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (
 	if _, err := newVal.CopyIn(t, newValAddr); err != nil {
 		return 0, nil, err
 	}
-	newS, err := ktime.SettingFromItimerspec(newVal, flags&linux.TFD_TIMER_ABSTIME != 0, tfd.Clock())
+	// As on Linux, relative CLOCK_REALTIME timers run on CLOCK_MONOTONIC, so
+	// that discontinuous changes to the realtime clock, such as its jump
+	// forward on restore, do not change their duration.
+	abs := flags&linux.TFD_TIMER_ABSTIME != 0
+	c := tfd.Clock()
+	if !abs && c == t.Kernel().RealtimeClock() {
+		c = t.Kernel().MonotonicClock()
+	}
+	newS, err := ktime.SettingFromItimerspec(newVal, abs, c)
 	if err != nil {
 		return 0, nil, err
 	}
-	tm, oldS := tfd.SetTime(newS)
+	tm, oldS := tfd.SetTime(c, newS)
 	if oldValAddr != 0 {
 		oldVal := ktime.ItimerspecFromSetting(tm, oldS)
 		if _, err := oldVal.CopyOut(t, oldValAddr); err != nil {
