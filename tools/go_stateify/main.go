@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -28,14 +29,16 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/tools/imports"
 	"gvisor.dev/gvisor/tools/constraintutil"
 )
 
 var (
-	fullPkg  = flag.String("fullpkg", "", "fully qualified output package")
-	imports  = flag.String("imports", "", "extra imports for the output file")
-	output   = flag.String("output", "", "output file")
-	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
+	goTool       = flag.String("go", "", "Go executable for resolving generated imports")
+	fullPkg      = flag.String("fullpkg", "", "fully qualified output package")
+	extraImports = flag.String("imports", "", "extra imports for the output file")
+	output       = flag.String("output", "", "output file")
+	statePkg     = flag.String("statepkg", "", "state import package; defaults to empty")
 )
 
 // resolveTypeName returns a qualified type name.
@@ -177,7 +180,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if len(flag.Args()) == 0 {
+	if *goTool == "" || flag.NArg() == 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -186,21 +189,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Open the output file.
-	var (
-		outputFile *os.File
-		err        error
-	)
-	if *output == "" || *output == "-" {
-		outputFile = os.Stdout
-	} else {
-		outputFile, err = os.OpenFile(*output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening output %q: %v", *output, err)
-		}
-		defer outputFile.Close()
+	var outputFile bytes.Buffer
+	generate(&outputFile)
+	if err := writeSource(outputFile.Bytes()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
+}
 
+func generate(outputFile *bytes.Buffer) {
 	// Set the statePrefix for below, depending on the import.
 	statePrefix := ""
 	if *statePkg != "" {
@@ -239,8 +236,8 @@ func main() {
 		if *statePkg != "" {
 			fmt.Fprintf(outputFile, "	\"%s\"\n", *statePkg)
 		}
-		if *imports != "" {
-			for _, i := range strings.Split(*imports, ",") {
+		if *extraImports != "" {
+			for _, i := range strings.Split(*extraImports, ",") {
 				fmt.Fprintf(outputFile, "	\"%s\"\n", i)
 			}
 		}
@@ -521,4 +518,31 @@ func main() {
 		}
 		fmt.Fprintf(outputFile, "}\n")
 	}
+}
+
+// writeSource fixes the generated imports and writes the formatted Go file.
+func writeSource(src []byte) error {
+	// Set PATH here rather than in ctx.actions.run(env=...) because we need
+	// the action's runtime working directory to build an absolute entry.
+	// goimports locates "go" via os/exec.LookPath("go"), which refuses to
+	// execute commands found via a relative PATH entry.
+	//
+	// See https://pkg.go.dev/os/exec#hdr-Executables_in_the_current_directory.
+	goPath, err := filepath.Abs(*goTool)
+	if err != nil {
+		return err
+	}
+	if err := os.Setenv("PATH", filepath.Dir(goPath)); err != nil {
+		return err
+	}
+
+	src, err = imports.Process(*output, src, nil)
+	if err != nil {
+		return err
+	}
+	if *output == "" || *output == "-" {
+		_, err := os.Stdout.Write(src)
+		return err
+	}
+	return os.WriteFile(*output, src, 0644)
 }
