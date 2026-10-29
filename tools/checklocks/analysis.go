@@ -760,6 +760,49 @@ func directInvocation(inst ssa.Instruction, fn ssa.Value) bool {
 	}
 }
 
+// synchronousCallbackArgument reports whether callback is passed as an
+// argument to a standard-library slices function that invokes it
+// synchronously. These functions do not retain the callback, so it is safe to
+// analyze it with the caller's lock state.
+func synchronousCallbackArgument(call *ssa.Call, callback ssa.Value) bool {
+	fn := call.Common().StaticCallee()
+	if fn == nil {
+		return false
+	}
+	obj, ok := fn.Object().(*types.Func)
+	if !ok || obj.Pkg() == nil || obj.Pkg().Path() != "slices" {
+		return false
+	}
+
+	// Keep this list explicit: only functions whose contract guarantees
+	// synchronous callback invocation may borrow the caller's lock state.
+	var callbackIndex int
+	switch obj.Name() {
+	case "CompactFunc", "ContainsFunc", "DeleteFunc", "IndexFunc",
+		"IsSortedFunc", "MaxFunc", "MinFunc", "SortFunc", "SortStableFunc",
+		"SortedFunc", "SortedStableFunc":
+		callbackIndex = 1
+	case "BinarySearchFunc", "CompareFunc", "EqualFunc":
+		callbackIndex = 2
+	default:
+		return false
+	}
+	return callbackIndex < len(call.Common().Args) && call.Common().Args[callbackIndex] == callback
+}
+
+// checkSynchronousCallback analyzes a closure argument using the lock state at
+// the call site. Lock changes inside the callback are not propagated back to
+// the caller, since a callback may execute zero or multiple times.
+func (pc *passContext) checkSynchronousCallback(callback *ssa.MakeClosure, lff *lockFunctionFacts, ls *lockState) {
+	clfn := callback.Fn.(*ssa.Function)
+	clls := ls.fork()
+	for i, fv := range clfn.FreeVars {
+		clls.bind(fv, callback.Bindings[i])
+	}
+	nlff := lockFunctionFacts{Ignore: lff.Ignore}
+	pc.checkFunction(nil, clfn, &nlff, clls, true /* force */)
+}
+
 // checkEscapedFunction checks a function without borrowing its caller's locks,
 // even if an earlier inline invocation already analyzed it with those locks.
 func (pc *passContext) checkEscapedFunction(fn *ssa.Function, lff *lockFunctionFacts) {
@@ -869,6 +912,11 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 			pc.checkFieldAccess(x, x.X, x.Field, ls, isWrite(x))
 		}
 	case *ssa.Call:
+		for _, arg := range x.Common().Args {
+			if callback, ok := arg.(*ssa.MakeClosure); ok && synchronousCallbackArgument(x, callback) {
+				pc.checkSynchronousCallback(callback, lff, ls)
+			}
+		}
 		pc.checkCall(x, lff, ls)
 	case *ssa.Defer:
 		ls.pushDefer(x)
@@ -879,17 +927,22 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 	case *ssa.MakeClosure:
 		if refs := x.Referrers(); refs != nil {
 			var (
-				calls    int
-				nonCalls int
+				localCalls int
+				escapes    int
 			)
 			for _, ref := range *refs {
 				if directInvocation(ref, x) {
-					calls++
-				} else {
-					nonCalls++
+					localCalls++
+					continue
 				}
+				call, ok := ref.(*ssa.Call)
+				if ok && synchronousCallbackArgument(call, x) {
+					localCalls++
+					continue
+				}
+				escapes++
 			}
-			if calls > 0 && nonCalls == 0 {
+			if localCalls > 0 && escapes == 0 {
 				return nil, nil
 			}
 		}
