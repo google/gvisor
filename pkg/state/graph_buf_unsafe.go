@@ -19,6 +19,7 @@ import (
 	"math"
 	"reflect"
 	"slices"
+	"sync"
 	"unsafe"
 )
 
@@ -75,9 +76,11 @@ func add(p unsafe.Pointer, off uintptr) unsafe.Pointer {
 	return unsafe.Add(p, off)
 }
 
-// zeroSized is the address used for pointers to zero-sized values that are
-// not within another object.
-var zeroSized [1]byte
+// zeroSizedPtr returns the runtime address used for standalone zero-sized
+// allocations (matching Go's runtime.zerobase and wire's dummyAddr).
+var zeroSizedPtr = sync.OnceValue(func() unsafe.Pointer {
+	return reflect.New(reflect.TypeFor[struct{}]()).UnsafePointer()
+})
 
 // encBuf is an append-only output buffer.
 type encBuf struct {
