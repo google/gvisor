@@ -349,9 +349,6 @@ func (p *protocol) StateFields() []string {
 		"stack",
 		"icmpRateLimitedTypes",
 		"defaultTTL",
-		"ids",
-		"hashIV",
-		"idTS",
 		"fragmentation",
 		"options",
 		"allowExternalLoopbackTraffic",
@@ -368,14 +365,11 @@ func (p *protocol) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &p.stack)
 	stateSinkObject.Save(1, &p.icmpRateLimitedTypes)
 	stateSinkObject.Save(2, &p.defaultTTL)
-	stateSinkObject.Save(3, &p.ids)
-	stateSinkObject.Save(4, &p.hashIV)
-	stateSinkObject.Save(5, &p.idTS)
-	stateSinkObject.Save(6, &p.fragmentation)
-	stateSinkObject.Save(7, &p.options)
-	stateSinkObject.Save(8, &p.allowExternalLoopbackTraffic)
-	stateSinkObject.Save(9, &p.multicastRouteTable)
-	stateSinkObject.Save(10, &p.multicastForwardingDisp)
+	stateSinkObject.Save(3, &p.fragmentation)
+	stateSinkObject.Save(4, &p.options)
+	stateSinkObject.Save(5, &p.allowExternalLoopbackTraffic)
+	stateSinkObject.Save(6, &p.multicastRouteTable)
+	stateSinkObject.Save(7, &p.multicastForwardingDisp)
 }
 
 // +checklocksignore
@@ -383,14 +377,11 @@ func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(0, &p.stack)
 	stateSourceObject.Load(1, &p.icmpRateLimitedTypes)
 	stateSourceObject.Load(2, &p.defaultTTL)
-	stateSourceObject.Load(3, &p.ids)
-	stateSourceObject.Load(4, &p.hashIV)
-	stateSourceObject.Load(5, &p.idTS)
-	stateSourceObject.Load(6, &p.fragmentation)
-	stateSourceObject.Load(7, &p.options)
-	stateSourceObject.Load(8, &p.allowExternalLoopbackTraffic)
-	stateSourceObject.Load(9, &p.multicastRouteTable)
-	stateSourceObject.Load(10, &p.multicastForwardingDisp)
+	stateSourceObject.Load(3, &p.fragmentation)
+	stateSourceObject.Load(4, &p.options)
+	stateSourceObject.Load(5, &p.allowExternalLoopbackTraffic)
+	stateSourceObject.Load(6, &p.multicastRouteTable)
+	stateSourceObject.Load(7, &p.multicastForwardingDisp)
 	stateSourceObject.AfterLoad(func() { p.afterLoad(ctx) })
 }
 
