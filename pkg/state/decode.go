@@ -553,14 +553,23 @@ func (ds *decodeState) decodeObject(ods *objectDecodeState, obj reflect.Value, e
 			Failf("unsigned integer truncated from %v to %v", uint64(x), obj.Uint())
 		}
 	case wire.Float32:
-		obj.SetFloat(float64(x))
+		if x != x && obj.Kind() == reflect.Float32 {
+			bits := x
+			obj.Set(scalarStorage(&bits, obj.Type()))
+		} else {
+			obj.SetFloat(float64(x))
+		}
 	case wire.Float64:
 		obj.SetFloat(float64(x))
 		if !isFloatEq(obj.Float(), float64(x)) {
 			Failf("floating point number truncated from %v to %v", float64(x), obj.Float())
 		}
 	case *wire.Complex64:
-		obj.SetComplex(complex128(*x))
+		if hasNaNComponent(*x) && obj.Kind() == reflect.Complex64 {
+			obj.Set(scalarStorage(x, obj.Type()))
+		} else {
+			obj.SetComplex(complex128(*x))
+		}
 	case *wire.Complex128:
 		obj.SetComplex(complex128(*x))
 		if !isComplexEq(obj.Complex(), complex128(*x)) {
