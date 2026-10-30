@@ -674,7 +674,7 @@ type pid2 struct {
 
 func (*pid2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
 	if spec != nil && spec.Pids != nil {
-		return []dbus.Property{newProp("TasksMax", uint64(spec.Pids.Limit))}, nil
+		return []dbus.Property{newProp("TasksMax", uint64(pidsLimit(spec.Pids.Limit)))}, nil
 	}
 	return []dbus.Property{}, nil
 }
@@ -684,7 +684,7 @@ func (*pid2) set(spec *specs.LinuxResources, path string) error {
 		return nil
 	}
 
-	if val := numToStr(spec.Pids.Limit); val != "" {
+	if val := numToStr(pidsLimit(spec.Pids.Limit)); val != "" {
 		return setValue(path, "pids.max", val)
 	}
 

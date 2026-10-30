@@ -362,9 +362,7 @@ func TestInstallCompatDirSpecFiles(t *testing.T) {
 			Period: &cpuPeriod,
 			Shares: &cpuShares,
 		},
-		Pids: &specs.LinuxPids{
-			Limit: pidsLimit,
-		},
+		Pids: newLinuxPids(pidsLimit),
 	}
 	if err := cg.installCompatDir(res); err != nil {
 		t.Fatalf("installCompatDir(res) error: %v", err)

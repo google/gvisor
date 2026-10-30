@@ -1098,18 +1098,33 @@ func (*pids) optional() bool {
 }
 
 func (*pids) skip(spec *specs.LinuxResources) error {
-	if spec != nil && spec.Pids != nil && spec.Pids.Limit > 0 {
+	if spec != nil && spec.Pids != nil && pidsLimit(spec.Pids.Limit) > 0 {
 		return fmt.Errorf("Pids.Limit set but pids cgroup controller not found")
 	}
 	return nil
 }
 
 func (*pids) set(spec *specs.LinuxResources, path string) error {
-	if spec == nil || spec.Pids == nil || spec.Pids.Limit <= 0 {
+	if spec == nil || spec.Pids == nil || pidsLimit(spec.Pids.Limit) <= 0 {
 		return nil
 	}
-	val := strconv.FormatInt(spec.Pids.Limit, 10)
+	val := strconv.FormatInt(pidsLimit(spec.Pids.Limit), 10)
 	return setValue(path, "pids.max", val)
+}
+
+// pidsLimit returns the PID limit, or 0 if unset. runtime-spec v1.3.0 changed
+// LinuxPids.Limit from int64 to *int64; accepting both keeps this package
+// building against either version.
+func pidsLimit[T int64 | *int64](limit T) int64 {
+	switch l := any(limit).(type) {
+	case int64:
+		return l
+	case *int64:
+		if l != nil {
+			return *l
+		}
+	}
+	return 0
 }
 
 type hugeTLB struct{}

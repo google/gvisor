@@ -71,7 +71,7 @@ func newSandboxContainer(b *testing.B, containerd *shimutils.MockContainerd, arg
 // startSleepingSandbox creates and starts a sandbox container running "sleep 100"
 // for benchmarks that measure operations on an already-running sandbox. The returned cleanup
 // function kills and deletes the sandbox and cleans up MockContainerd.
-func startSleepingSandbox(b *testing.B, conf *config.Config) (*shimutils.MockContainerd, task.TaskService, string, func()) {
+func startSleepingSandbox(b *testing.B, conf *config.Config) (*shimutils.MockContainerd, task.TTRPCTaskService, string, func()) {
 	b.Helper()
 	containerd := shimutils.NewMockContainerdForBenchmark(b, conf)
 	cu := cleanup.Make(containerd.Cleanup)
