@@ -76,7 +76,8 @@ type Timekeeper struct {
 	// monotonicOffset is the offset to apply to the monotonic clock output
 	// from clocks.
 	//
-	// It is set only once, by SetClocks.
+	// It is set only once: by SetClocks in a fresh (not restored) sentry, or
+	// by endRestore when a restored sentry resumes.
 	monotonicOffset int64 `state:"nosave"`
 
 	// boottimeOffset is the offset of boot time from monotonic time, which

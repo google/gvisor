@@ -257,7 +257,9 @@ func (t *SampledTimer) SetWithClock(c SampledClock, s Setting, f func()) (Time, 
 	newNow := now
 	if oldC := t.clock; oldC != c {
 		oldC.EventUnregister(&t.entry)
-		c.EventRegister(&t.entry)
+		if err := c.EventRegister(&t.entry); err != nil {
+			panic(err)
+		}
 		t.clockSeq.BeginWrite()
 		t.clock = c
 		t.clockSeq.EndWrite()
@@ -285,7 +287,9 @@ func (t *SampledTimer) SetClock(c SampledClock, s Setting) {
 	t.setting = s
 	if oldC := t.clock; oldC != c {
 		oldC.EventUnregister(&t.entry)
-		c.EventRegister(&t.entry)
+		if err := c.EventRegister(&t.entry); err != nil {
+			panic(err)
+		}
 		t.clockSeq.BeginWrite()
 		t.clock = c
 		t.clockSeq.EndWrite()
