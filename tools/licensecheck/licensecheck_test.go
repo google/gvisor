@@ -417,6 +417,86 @@ func TestCheckPolicy(t *testing.T) {
 	}
 }
 
+func TestFetchArtifactAudit(t *testing.T) {
+	const (
+		commit = "778dd2254be47d7d9e039a8c412032ad18126941"
+		host   = "https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.1/codeql-bundle-linux64.tar.gz"
+		hash   = "1d380f79896ededc654c7b21fafb3360136f1aeb678ad4df4df9af3910c6b815"
+		source = "https://raw.githubusercontent.com/github/codeql-cli-binaries/" + commit + "/LICENSE.md"
+	)
+	cli := License("LicenseRef-CodeQL-Bundle-2.27.1")
+	for _, tc := range []struct {
+		name             string
+		licenses         Licenses
+		url, sha, notice string
+		duplicate        bool
+		wantErr          string
+	}{
+		{name: "custom bundle", licenses: Licenses{cli, mit}, url: host, sha: hash},
+		{name: "changed URL", licenses: Licenses{cli}, url: host + "?new", sha: hash, wantErr: "was audited at"},
+		{name: "changed SHA", licenses: Licenses{cli}, url: host, sha: strings.Repeat("a", 64), wantErr: "was audited with sha256"},
+		{name: "invalid SHA", licenses: Licenses{cli}, url: host, sha: "abcd", wantErr: "requires a pinned SHA256"},
+		{name: "invalid reference", licenses: Licenses{"LicenseRef-Code_QL"}, url: host, sha: hash, wantErr: "unknown license"},
+		{name: "misspelled reference", licenses: Licenses{"LicenceRef-CodeQL"}, url: host, sha: hash, wantErr: "unknown license"},
+		{name: "reference and source", licenses: Licenses{cli}, url: host, sha: hash, notice: source, wantErr: "LicenseRef cannot be combined with license_source"},
+		{name: "invalid explicit source", licenses: Licenses{cli}, url: host, sha: hash, notice: "https://example.com/LICENSE", wantErr: "license_source must identify"},
+		{name: "duplicate entries", licenses: Licenses{cli}, url: host, sha: hash, duplicate: true, wantErr: "duplicate entry"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := Paths{YAML: filepath.Join(t.TempDir(), "dependencies.yaml")}
+			e := Entry{Dependency: "bundle", Version: host, SHA256: hash, Retrieved: "2026-10-02", License: tc.licenses, LicenseSource: tc.notice}
+			if tc.notice != "" {
+				e.Commit = commit
+			}
+			entries := []Entry{e}
+			if tc.duplicate {
+				entries = append(entries, e)
+			}
+			if err := writeEntries(p.YAML, entries); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(p.YAML)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previousHTTP := httpClient
+			t.Cleanup(func() { httpClient = previousHTTP })
+			httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				t.Errorf("unexpected repository request: %s", req.URL)
+				body := "Permission is hereby granted, free of charge"
+				if req.URL.Host == "api.github.com" {
+					body = commit
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})}
+			d := dep{name: e.Dependency, kind: kindArchive, url: tc.url, sha256: tc.sha}
+			err = fetch(p, []dep{d})
+			if tc.wantErr == "" && err != nil || tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("fetch() = %v, want error containing %q", err, tc.wantErr)
+			}
+			after, err := os.ReadFile(p.YAML)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Errorf("fetch changed the audit:\n%s", after)
+			}
+		})
+	}
+}
+
+func TestArtifactLicensePolicy(t *testing.T) {
+	e := Entry{Dependency: "bundle", License: Licenses{"LicenseRef-CodeQL-Bundle-2.27.1"}}
+	policy := &Policy{AllowedLicenses: []License{mit}}
+	if problems := CheckPolicy([]Entry{e}, policy); len(problems) != 1 || !strings.Contains(problems[0], "no exception") {
+		t.Fatalf("CheckPolicy() = %v, want a missing exception", problems)
+	}
+	policy.Exceptions = []Exception{{Dependency: e.Dependency, License: e.License, ExceptionRationale: "Reviewed for this use."}}
+	if problems := CheckPolicy([]Entry{e}, policy); len(problems) != 0 {
+		t.Fatalf("CheckPolicy() = %v, want no problems", problems)
+	}
+}
+
 func TestLicenseSourceIdentity(t *testing.T) {
 	const artifact = "https://github.com/example/builder/releases/download/v1/tool.tar.gz"
 	const commit = "0123456789abcdef0123456789abcdef01234567"
