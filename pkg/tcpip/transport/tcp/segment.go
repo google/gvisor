@@ -74,13 +74,19 @@ type segment struct {
 	parsedOptions  header.TCPOptions
 	options        []byte `state:".([]byte)"`
 	hasNewSACKInfo bool
-	rcvdTime       tcpip.MonotonicTime
+
+	// A transmit queue entry may be split without sending a packet. Its
+	// wire units still start on the original MSS grid; only the rightmost
+	// child owns the final short unit.
+	truncatedTail bool
+	gsoMSS        uint16
+	gsoStart      seqnum.Value
+	rcvdTime      tcpip.MonotonicTime
 	// xmitTime is the last transmit time of this segment.
 	xmitTime  tcpip.MonotonicTime
 	xmitCount uint32
-
 	// acked indicates if the segment has already been SACKed.
-	acked bool
+	acked bool `state:"nosave"`
 
 	// dataMemSize is the memory used by pkt initially. The value is used for
 	// memory accounting in the receive buffer instead of pkt.MemSize() because
@@ -90,6 +96,9 @@ type segment struct {
 
 	// lost indicates if the segment is marked as lost by RACK.
 	lost bool
+	// sackCredit is the number of this entry's wire units in SackedOut.
+	// The SACK scoreboard is discarded on restore.
+	sackCredit uint32 `state:"nosave"`
 }
 
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
@@ -161,6 +170,11 @@ func (s *segment) clone() *segment {
 	t.rcvdTime = s.rcvdTime
 	t.xmitTime = s.xmitTime
 	t.xmitCount = s.xmitCount
+	t.acked = s.acked
+	t.lost = s.lost
+	t.gsoMSS = s.gsoMSS
+	t.gsoStart = s.gsoStart
+	t.truncatedTail = s.truncatedTail
 	t.ep = s.ep
 	t.qFlags = s.qFlags
 	t.dataMemSize = s.dataMemSize
