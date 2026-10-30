@@ -461,14 +461,17 @@ void CheckCorkedFIN(const SocketPairKind& kind, bool close_sender) {
   int expired_before_fin = 0;
   int ties = 0;
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
-    auto control = ASSERT_NO_ERRNO_AND_VALUE(kind.Create());
-    auto sender = ASSERT_NO_ERRNO_AND_VALUE(kind.Create());
-    for (int fd : {control->first_fd(), sender->first_fd()}) {
+    auto cork = [&](int fd) {
       ASSERT_THAT(setsockopt(fd, IPPROTO_TCP, TCP_CORK, &kSockOptOn,
                              sizeof(kSockOptOn)),
                   SyscallSucceeds());
       ASSERT_THAT(WriteFd(fd, &kByte, 1), SyscallSucceedsWithValue(1));
-    }
+    };
+    auto control = ASSERT_NO_ERRNO_AND_VALUE(kind.Create());
+    ASSERT_NO_FATAL_FAILURE(cork(control->first_fd()));
+    // Establish the second connection after arming the control timer.
+    auto sender = ASSERT_NO_ERRNO_AND_VALUE(kind.Create());
+    ASSERT_NO_FATAL_FAILURE(cork(sender->first_fd()));
 
     // The control was corked first. Its timeout tells us whether the test
     // process was scheduled in time to distinguish the FIN from auto-flush.
@@ -499,7 +502,12 @@ void CheckCorkedFIN(const SocketPairKind& kind, bool close_sender) {
     EXPECT_EQ(received, kByte);
     ASSERT_THAT(ReadFd(sender->second_fd(), &received, 1),
                 SyscallSucceedsWithValue(0));
-    return;
+    ready = RetryEINTR(poll)(peers, 1, 0);
+    ASSERT_THAT(ready, SyscallSucceeds());
+    if (ready == 0) {
+      return;
+    }
+    ++ties;
   }
   FAIL() << "FIN never flushed before the older cork: "
          << (kAttempts - expired_before_fin - ties) << " control first, "
