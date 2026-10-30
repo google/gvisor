@@ -54,7 +54,7 @@ func (udpMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (udpMarshaler) unmarshal(_ IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (udpMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTUDP {
 		return nil, fmt.Errorf("buf has insufficient size for UDP match: %d", len(buf))
 	}

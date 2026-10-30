@@ -67,7 +67,7 @@ func (ownerMarshalerV1) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (ownerMarshalerV1) unmarshal(mapper IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (ownerMarshalerV1) unmarshal(mapper IDMapper, _ *stack.Stack, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTOwnerMatchInfo {
 		return nil, fmt.Errorf("buf has insufficient size for owner match: %d", len(buf))
 	}
