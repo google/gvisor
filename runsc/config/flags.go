@@ -192,6 +192,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
+	flagSet.Var(StateEngineWire.Ptr(), "state-engine", "selects the state serialization engine used when saving checkpoints: wire (default) or graph.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")
@@ -354,6 +355,10 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 		if isFlagExplicitlySet(flagSet, name) {
 			conf.explicitlySet[name] = struct{}{}
 		}
+	}
+	if _, ok := conf.explicitlySet["state-engine"]; ok {
+		v := conf.StateEngine
+		conf.cliStateEngine = &v
 	}
 
 	if len(conf.RootDir) == 0 {
@@ -558,6 +563,26 @@ func getVal(field reflect.Value) string {
 	default:
 		panic("unknown type " + field.Kind().String())
 	}
+}
+
+// IsFlagExplicitlySet reports whether the given flag name was explicitly set on
+// the command line when this Config was created via NewFromFlags.
+func (c *Config) IsFlagExplicitlySet(name string) bool {
+	if c.explicitlySet == nil {
+		return false
+	}
+	_, ok := c.explicitlySet[name]
+	return ok
+}
+
+// CLIStateEngine returns the --state-engine policy explicitly passed on the
+// command line when this Config was created via NewFromFlags, unaffected by
+// subsequent OCI annotation or bundle overrides.
+func (c *Config) CLIStateEngine() (StateEnginePolicy, bool) {
+	if c.cliStateEngine == nil {
+		return 0, false
+	}
+	return *c.cliStateEngine, true
 }
 
 // IsFlagSafeToOverride returns true if the given flag name is in the override

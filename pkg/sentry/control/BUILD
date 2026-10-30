@@ -96,6 +96,7 @@ go_test(
     srcs = [
         "fs_test.go",
         "proc_test.go",
+        "state_test.go",
     ],
     embed = [":control"],
     deps = [
@@ -104,10 +105,17 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/control/controlapi",
+        "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/watchdog",
+        "//pkg/state",
+        "//pkg/state/statefile",
+        "//pkg/state/wire",
+        "//pkg/urpc",
         "//pkg/usermem",
     ],
 )

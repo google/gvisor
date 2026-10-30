@@ -24,10 +24,376 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+func runCombinedOutput(cmd *exec.Cmd) ([]byte, error) {
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := testutil.RunCmd(cmd)
+	return buf.Bytes(), err
+}
+
+func runRunsc(args ...string) ([]byte, error) {
+	return runCombinedOutput(exec.Command(specutils.ExePath, args...))
+}
+
+func dumpCheckpointText(t *testing.T, imgPath string) string {
+	t.Helper()
+	out, err := runRunsc("statefile", imgPath)
+	if err != nil {
+		t.Fatalf("runsc statefile %s failed: %v\n%s", imgPath, err, out)
+	}
+	return string(out)
+}
+
+func TestStatefile(t *testing.T) {
+	stop := testutil.StartReaper()
+	defer stop()
+
+	for _, tc := range []struct {
+		name   string
+		engine config.StateEnginePolicy
+		want   string
+	}{
+		{name: "graph", engine: config.StateEngineGraph, want: "g1r0 = kernel.Kernel{"},
+		{name: "wire", engine: config.StateEngineWire, want: ".Kernel]{"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			conf.Network = config.NetworkNone
+			conf.StateEngine = tc.engine
+			spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("SetupContainer: %v", err)
+			}
+			defer cleanup()
+
+			c, err := container.New(conf, container.Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			})
+			if err != nil {
+				t.Fatalf("container.New: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("c.Start: %v", err)
+			}
+
+			ckptDir := t.TempDir()
+			if err := c.Checkpoint(conf, ckptDir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+				t.Fatalf("c.Checkpoint: %v", err)
+			}
+			imgPath := filepath.Join(ckptDir, checkpointfiles.StateFileName)
+
+			if out, err := runRunsc("statefile", "-list", imgPath); err != nil {
+				t.Fatalf("statefile -list failed: %v\n%s", err, out)
+			} else if !strings.Contains(string(out), sentryapi.CPUFeaturesKey) {
+				t.Errorf("statefile -list output %q missing %q", out, sentryapi.CPUFeaturesKey)
+			}
+
+			txtPath := filepath.Join(ckptDir, "dump.txt")
+			if out, err := runRunsc("statefile", "-output="+txtPath, imgPath); err != nil {
+				t.Fatalf("statefile dump failed: %v\n%s", err, out)
+			}
+			if data, err := os.ReadFile(txtPath); err != nil {
+				t.Fatalf("ReadFile(%s): %v", txtPath, err)
+			} else if !strings.Contains(string(data), tc.want) {
+				t.Errorf("statefile dump missing %q (len=%d)", tc.want, len(data))
+			}
+
+			// Verify global debug flags do not pollute stdout across execSentry, and
+			// extra FDs (such as /proc/self/fd/3) survive execSentry.
+			imgFile, err := os.Open(imgPath)
+			if err != nil {
+				t.Fatalf("os.Open(%s): %v", imgPath, err)
+			}
+			defer imgFile.Close()
+			var stdout, stderr bytes.Buffer
+			cmd := exec.Command(specutils.ExePath, "--debug", "--alsologtostderr", "statefile", "/proc/self/fd/3")
+			cmd.ExtraFiles = []*os.File{imgFile}
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("statefile via /proc/self/fd/3 failed: %v\nstderr:\n%s", err, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Errorf("stdout from /proc/self/fd/3 dump missing %q", tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckpointStateEngineFlag(t *testing.T) {
+	stop := testutil.StartReaper()
+	defer stop()
+
+	t.Run("override_default_wire_with_graph", func(t *testing.T) {
+		conf := testutil.TestConfig(t)
+		conf.Network = config.NetworkNone
+		spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+		_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("SetupContainer: %v", err)
+		}
+		defer cleanup()
+
+		c, err := container.New(conf, container.Args{
+			ID:        testutil.RandomContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		})
+		if err != nil {
+			t.Fatalf("container.New: %v", err)
+		}
+		defer c.Destroy()
+		if err := c.Start(conf); err != nil {
+			t.Fatalf("c.Start: %v", err)
+		}
+
+		// Override the default wire engine at checkpoint time via CLI flag.
+		graphDir := t.TempDir()
+		graphArgs := append(conf.ToFlags(), "--state-engine=graph", "checkpoint", "--compression=flate-best-speed", "--leave-running", "--image-path="+graphDir, c.ID)
+		if out, err := runRunsc(graphArgs...); err != nil {
+			t.Fatalf("runsc --state-engine=graph checkpoint failed: %v\n%s", err, out)
+		}
+		graphDump := dumpCheckpointText(t, filepath.Join(graphDir, checkpointfiles.StateFileName))
+		if !strings.Contains(graphDump, "g1r0 = kernel.Kernel{") {
+			t.Errorf("runsc --state-engine=graph checkpoint wrote wire format instead of graph format")
+		}
+
+		// Subsequent checkpoint without --state-engine must continue using the
+		// sandbox's boot-time default (wire).
+		wireDir := t.TempDir()
+		wireArgs := append(conf.ToFlags(), "checkpoint", "--compression=flate-best-speed", "--image-path="+wireDir, c.ID)
+		if out, err := runRunsc(wireArgs...); err != nil {
+			t.Fatalf("runsc checkpoint failed: %v\n%s", err, out)
+		}
+		wireDump := dumpCheckpointText(t, filepath.Join(wireDir, checkpointfiles.StateFileName))
+		if !strings.Contains(wireDump, ".Kernel]{") || strings.Contains(wireDump, "g1r0 = kernel.Kernel{") {
+			t.Errorf("runsc checkpoint without --state-engine did not use boot-time wire engine")
+		}
+	})
+
+	t.Run("override_boot_graph_and_preserve_boot_default", func(t *testing.T) {
+		conf := testutil.TestConfig(t)
+		conf.Network = config.NetworkNone
+		conf.StateEngine = config.StateEngineGraph
+		spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+		_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("SetupContainer: %v", err)
+		}
+		defer cleanup()
+
+		c, err := container.New(conf, container.Args{
+			ID:        testutil.RandomContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		})
+		if err != nil {
+			t.Fatalf("container.New: %v", err)
+		}
+		defer c.Destroy()
+		if err := c.Start(conf); err != nil {
+			t.Fatalf("c.Start: %v", err)
+		}
+
+		// Build CLI flags without an explicit --state-engine flag.
+		cliConf := *conf
+		cliConf.StateEngine = config.StateEngineWire
+		baseFlags := cliConf.ToFlags()
+
+		// Explicit --state-engine=wire overrides boot-time graph engine.
+		wireDir := t.TempDir()
+		wireArgs := append(append([]string(nil), baseFlags...), "--state-engine=wire", "checkpoint", "--compression=flate-best-speed", "--leave-running", "--image-path="+wireDir, c.ID)
+		if out, err := runRunsc(wireArgs...); err != nil {
+			t.Fatalf("runsc --state-engine=wire checkpoint failed: %v\n%s", err, out)
+		}
+		wireDump := dumpCheckpointText(t, filepath.Join(wireDir, checkpointfiles.StateFileName))
+		if !strings.Contains(wireDump, ".Kernel]{") || strings.Contains(wireDump, "g1r0 = kernel.Kernel{") {
+			t.Errorf("runsc --state-engine=wire checkpoint wrote graph format instead of wire format")
+		}
+
+		// Omitting --state-engine on checkpoint preserves boot-time graph engine.
+		graphDir := t.TempDir()
+		graphArgs := append(append([]string(nil), baseFlags...), "checkpoint", "--compression=flate-best-speed", "--image-path="+graphDir, c.ID)
+		if out, err := runRunsc(graphArgs...); err != nil {
+			t.Fatalf("runsc checkpoint failed: %v\n%s", err, out)
+		}
+		graphDump := dumpCheckpointText(t, filepath.Join(graphDir, checkpointfiles.StateFileName))
+		if !strings.Contains(graphDump, "g1r0 = kernel.Kernel{") {
+			t.Errorf("runsc checkpoint without --state-engine overrode boot-time graph engine with wire format")
+		}
+	})
+}
+
+func flagsWithoutStateEngine(conf *config.Config) []string {
+	raw := conf.ToFlags()
+	out := make([]string, 0, len(raw))
+	for _, fl := range raw {
+		if !strings.HasPrefix(fl, "--state-engine=") && fl != "--state-engine" {
+			out = append(out, fl)
+		}
+	}
+	return out
+}
+
+func TestCheckpointStateEngineAnnotationsAndSubcommand(t *testing.T) {
+	stop := testutil.StartReaper()
+	defer stop()
+
+	t.Run("override_annotated_boot_graph_with_wire", func(t *testing.T) {
+		conf := testutil.TestConfig(t)
+		conf.Network = config.NetworkNone
+		conf.AllowFlagOverride = true
+		spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+		spec.Annotations = map[string]string{
+			"dev.gvisor.flag.state-engine": "graph",
+		}
+		_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("SetupContainer: %v", err)
+		}
+		defer cleanup()
+
+		cid := testutil.RandomContainerID()
+		baseFlags := flagsWithoutStateEngine(conf)
+		runArgs := append(append([]string(nil), baseFlags...), "--state-engine=wire", "run", "--detach", "--bundle="+bundleDir, cid)
+		runCmd := exec.Command(specutils.ExePath, runArgs...)
+		runCmd.Stdout = os.Stdout
+		runCmd.Stderr = os.Stderr
+		if err := testutil.RunCmd(runCmd); err != nil {
+			t.Fatalf("runsc run --detach failed: %v", err)
+		}
+		defer func() {
+			delArgs := append(append([]string(nil), baseFlags...), "delete", "--force", cid)
+			if out, err := runRunsc(delArgs...); err != nil {
+				t.Errorf("runsc delete --force failed: %v\n%s", err, out)
+			}
+		}()
+
+		for _, tc := range []struct {
+			name string
+			args func(dir string) []string
+		}{
+			{
+				name: "top_level_flag",
+				args: func(dir string) []string {
+					return append(append([]string(nil), baseFlags...), "--state-engine=wire", "checkpoint", "--compression=flate-best-speed", "--leave-running", "--image-path="+dir, cid)
+				},
+			},
+			{
+				name: "subcommand_flag",
+				args: func(dir string) []string {
+					return append(append([]string(nil), baseFlags...), "checkpoint", "--state-engine=wire", "--compression=flate-best-speed", "--leave-running", "--image-path="+dir, cid)
+				},
+			},
+		} {
+			wireDir := t.TempDir()
+			if out, err := runRunsc(tc.args(wireDir)...); err != nil {
+				t.Fatalf("runsc checkpoint (%s) failed: %v\n%s", tc.name, err, out)
+			}
+			wireDump := dumpCheckpointText(t, filepath.Join(wireDir, checkpointfiles.StateFileName))
+			if !strings.Contains(wireDump, ".Kernel]{") || strings.Contains(wireDump, "g1r0 = kernel.Kernel{") {
+				t.Errorf("runsc checkpoint (%s) wrote graph format instead of wire format when container has dev.gvisor.flag.state-engine=graph annotation", tc.name)
+			}
+		}
+
+		// Subsequent checkpoint without --state-engine must continue using the
+		// annotation-configured boot-time graph engine.
+		graphDir := t.TempDir()
+		graphArgs := append(append([]string(nil), baseFlags...), "checkpoint", "--compression=flate-best-speed", "--image-path="+graphDir, cid)
+		if out, err := runRunsc(graphArgs...); err != nil {
+			t.Fatalf("runsc checkpoint failed: %v\n%s", err, out)
+		}
+		graphDump := dumpCheckpointText(t, filepath.Join(graphDir, checkpointfiles.StateFileName))
+		if !strings.Contains(graphDump, "g1r0 = kernel.Kernel{") {
+			t.Errorf("runsc checkpoint without --state-engine did not preserve annotated boot-time graph engine")
+		}
+	})
+
+	t.Run("override_annotated_boot_wire_with_graph", func(t *testing.T) {
+		conf := testutil.TestConfig(t)
+		conf.Network = config.NetworkNone
+		conf.AllowFlagOverride = true
+		spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+		spec.Annotations = map[string]string{
+			"dev.gvisor.flag.state-engine": "wire",
+		}
+		_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("SetupContainer: %v", err)
+		}
+		defer cleanup()
+
+		cid := testutil.RandomContainerID()
+		baseFlags := flagsWithoutStateEngine(conf)
+		runArgs := append(append([]string(nil), baseFlags...), "--state-engine=graph", "run", "--detach", "--bundle="+bundleDir, cid)
+		runCmd := exec.Command(specutils.ExePath, runArgs...)
+		runCmd.Stdout = os.Stdout
+		runCmd.Stderr = os.Stderr
+		if err := testutil.RunCmd(runCmd); err != nil {
+			t.Fatalf("runsc run --detach failed: %v", err)
+		}
+		defer func() {
+			delArgs := append(append([]string(nil), baseFlags...), "delete", "--force", cid)
+			if out, err := runRunsc(delArgs...); err != nil {
+				t.Errorf("runsc delete --force failed: %v\n%s", err, out)
+			}
+		}()
+
+		for _, tc := range []struct {
+			name string
+			args func(dir string) []string
+		}{
+			{
+				name: "top_level_flag",
+				args: func(dir string) []string {
+					return append(append([]string(nil), baseFlags...), "--state-engine=graph", "checkpoint", "--compression=flate-best-speed", "--leave-running", "--image-path="+dir, cid)
+				},
+			},
+			{
+				name: "subcommand_flag",
+				args: func(dir string) []string {
+					return append(append([]string(nil), baseFlags...), "checkpoint", "--state-engine=graph", "--compression=flate-best-speed", "--leave-running", "--image-path="+dir, cid)
+				},
+			},
+		} {
+			graphDir := t.TempDir()
+			if out, err := runRunsc(tc.args(graphDir)...); err != nil {
+				t.Fatalf("runsc checkpoint (%s) failed: %v\n%s", tc.name, err, out)
+			}
+			graphDump := dumpCheckpointText(t, filepath.Join(graphDir, checkpointfiles.StateFileName))
+			if !strings.Contains(graphDump, "g1r0 = kernel.Kernel{") {
+				t.Errorf("runsc checkpoint (%s) wrote wire format instead of graph format when container has dev.gvisor.flag.state-engine=wire annotation", tc.name)
+			}
+		}
+
+		// Subsequent checkpoint without --state-engine must continue using the
+		// annotation-configured boot-time wire engine.
+		wireDir := t.TempDir()
+		wireArgs := append(append([]string(nil), baseFlags...), "checkpoint", "--compression=flate-best-speed", "--image-path="+wireDir, cid)
+		if out, err := runRunsc(wireArgs...); err != nil {
+			t.Fatalf("runsc checkpoint failed: %v\n%s", err, out)
+		}
+		wireDump := dumpCheckpointText(t, filepath.Join(wireDir, checkpointfiles.StateFileName))
+		if !strings.Contains(wireDump, ".Kernel]{") || strings.Contains(wireDump, "g1r0 = kernel.Kernel{") {
+			t.Errorf("runsc checkpoint without --state-engine did not preserve annotated boot-time wire engine")
+		}
+	})
+}
 
 func writeSyntheticStatefile(t *testing.T, path string, metadata map[string]string, payload []byte) []byte {
 	t.Helper()

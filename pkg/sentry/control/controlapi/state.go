@@ -81,6 +81,11 @@ type SaveOpts struct {
 	// remote filesystems should refresh metadata during save so that restore
 	// can validate file sizes and/or modification timestamps.
 	ValidateMetadata bool `json:"validate_metadata"`
+
+	// GraphEngine, when non-nil, overrides the process-wide state engine used
+	// for this checkpoint operation. When nil, the sandbox's configured state
+	// engine is used.
+	GraphEngine *bool `json:"graph_engine,omitempty"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary

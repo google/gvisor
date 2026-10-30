@@ -132,6 +132,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",
         "//pkg/sighandling",
+        "//pkg/state",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/tcpip",

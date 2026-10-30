@@ -128,6 +128,7 @@ go_test(
         "//pkg/log",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/test/sandboxposture",

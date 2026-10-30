@@ -37,6 +37,8 @@ var fakeFlagValues = [...]string{
 	"0 0 1,100000 100000 65536",
 	"lisafs:self,lisafs:none",
 	"/foo",
+	"wire",
+	"graph",
 }
 
 func dupFlag(t *testing.T, cmd subcommands.Command, flagName string) *flag.Flag {

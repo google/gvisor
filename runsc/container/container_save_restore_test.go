@@ -399,6 +399,9 @@ func TestCheckpointRestore(t *testing.T) {
 func TestCheckpointCPUFeaturesMetadata(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
+			// Use the wire engine because this test decodes cpuid.FeatureSet
+			// directly in-process without linking all Sentry state types.
+			conf.StateEngine = config.StateEngineWire
 			spec, _ := sleepSpecConf(t)
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {

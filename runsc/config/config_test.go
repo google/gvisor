@@ -1277,3 +1277,52 @@ func TestSandboxCPUPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestIsFlagExplicitlySet(t *testing.T) {
+	var zero Config
+	if zero.IsFlagExplicitlySet("state-engine") {
+		t.Errorf("zero Config reported state-engine as explicitly set")
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "omitted", args: nil, want: false},
+		{name: "explicit_default", args: []string{"--state-engine=wire"}, want: true},
+		{name: "explicit_non_default", args: []string{"--state-engine=graph"}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+			RegisterFlags(flagSet)
+			if err := flagSet.Parse(tc.args); err != nil {
+				t.Fatalf("flagSet.Parse(%v): %v", tc.args, err)
+			}
+			conf, err := NewFromFlags(flagSet)
+			if err != nil {
+				t.Fatalf("NewFromFlags: %v", err)
+			}
+			if got := conf.IsFlagExplicitlySet("state-engine"); got != tc.want {
+				t.Errorf("IsFlagExplicitlySet(\"state-engine\") = %v, want %v", got, tc.want)
+			}
+			cliVal, cliOK := conf.CLIStateEngine()
+			if cliOK != tc.want {
+				t.Fatalf("CLIStateEngine() ok = %v, want %v", cliOK, tc.want)
+			}
+			if tc.want {
+				wantBeforeOverride := conf.StateEngine
+				other := "graph"
+				if wantBeforeOverride == StateEngineGraph {
+					other = "wire"
+				}
+				if err := conf.Override(flagSet, "state-engine", other, true); err != nil {
+					t.Fatalf("conf.Override: %v", err)
+				}
+				if got, ok := conf.CLIStateEngine(); !ok || got != cliVal || got != wantBeforeOverride {
+					t.Errorf("CLIStateEngine() after Override = (%v, %v), want (%v, true)", got, ok, wantBeforeOverride)
+				}
+			}
+		})
+	}
+}
