@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/pretty"
 )
 
 // saveBytes saves the graph rooted at root.
@@ -458,4 +459,282 @@ func TestRootZeroFields(t *testing.T) {
 	if got != want {
 		t.Errorf("Load of non-zero fields: got %+v, want %+v", got, want)
 	}
+}
+
+type gReverseOrderStruct struct {
+	lo gSpliceChild
+	hi gSpliceChild
+}
+
+func (*gReverseOrderStruct) StateTypeName() string {
+	return "pkg/state/tests.gReverseOrderStruct"
+}
+
+func (*gReverseOrderStruct) StateFields() []string {
+	return []string{"hi", "lo"}
+}
+
+func (r *gReverseOrderStruct) StateSave(s state.Sink) {
+	s.Save(0, &r.hi)
+	s.Save(1, &r.lo)
+}
+
+func (r *gReverseOrderStruct) StateLoad(_ context.Context, s state.Source) {
+	s.Load(0, &r.hi)
+	s.Load(1, &r.lo)
+}
+
+func init() {
+	state.RegisterStruct((*gReverseOrderStruct)(nil))
+}
+
+func forEachEngine(t *testing.T, fn func(t *testing.T)) {
+	t.Helper()
+	for _, tc := range []struct {
+		name  string
+		graph bool
+	}{
+		{name: "wire", graph: false},
+		{name: "graph", graph: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prev := state.GraphEngineEnabled()
+			state.EnableGraphEngine(tc.graph)
+			defer state.EnableGraphEngine(prev)
+			fn(t)
+		})
+	}
+}
+
+func TestAbsorbedInlineStructSplices(t *testing.T) {
+	t.Run("SkippedConvertedAndManualFields", func(t *testing.T) {
+		forEachEngine(t, func(t *testing.T) {
+			container := &gSpliceContainer{
+				converted: gSpliceChild{val: 7, tag: "orig-conv"},
+				manual:    gSpliceChild{val: 50, tag: "orig-manual"},
+				normal:    gSpliceChild{val: 99, tag: "kept"},
+				mid:       gSpliceMid{child: gSpliceChild{val: 12, tag: "orig-mid"}, extra: 5},
+				seed:      5,
+			}
+			// Discover and encode interior inlineStruct pointers (&converted,
+			// &manual, &normal) before container itself is discovered via deeper
+			// node all[0].
+			root := &gRoot{
+				any: [3]*gSpliceChild{&container.converted, &container.manual, &container.normal},
+				all: []*gNode{{iface: container}},
+			}
+			var buf bytes.Buffer
+			if _, err := state.Save(t.Context(), &buf, root); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			if state.GraphEngineEnabled() && container.normal.beforeSaveCalls != 1 {
+				t.Errorf("normal.beforeSaveCalls = %d, want 1", container.normal.beforeSaveCalls)
+			}
+			var out bytes.Buffer
+			if err := pretty.PrintText(&out, bytes.NewReader(buf.Bytes())); err != nil {
+				t.Fatalf("PrintText: %v", err)
+			}
+			var got gRoot
+			if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			ptrs := got.any.([3]*gSpliceChild)
+			gotContainer := got.all[0].iface.(*gSpliceContainer)
+			if ptrs[0] != &gotContainer.converted || ptrs[1] != &gotContainer.manual || ptrs[2] != &gotContainer.normal {
+				t.Fatalf("interior pointers did not alias container fields")
+			}
+			if gotContainer.converted.val != 7 || gotContainer.manual.val != 50 || gotContainer.normal.val != 99 || gotContainer.normal.tag != "kept" {
+				t.Errorf("unexpected restored fields: %+v", gotContainer)
+			}
+		})
+	})
+
+	t.Run("ReverseAddressOrderSaverLoader", func(t *testing.T) {
+		forEachEngine(t, func(t *testing.T) {
+			rev := &gReverseOrderStruct{
+				lo: gSpliceChild{val: 11, tag: "lo"},
+				hi: gSpliceChild{val: 22, tag: "hi"},
+			}
+			root := &gRoot{
+				any: [2]*gSpliceChild{&rev.lo, &rev.hi},
+				all: []*gNode{{iface: rev}},
+			}
+			var buf bytes.Buffer
+			if _, err := state.Save(t.Context(), &buf, root); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			if state.GraphEngineEnabled() {
+				if rev.lo.beforeSaveCalls != 1 || rev.hi.beforeSaveCalls != 1 {
+					t.Errorf("beforeSaveCalls = (%d, %d), want (1, 1)", rev.lo.beforeSaveCalls, rev.hi.beforeSaveCalls)
+				}
+			}
+			var got gRoot
+			if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			ptrs := got.any.([2]*gSpliceChild)
+			gotRev := got.all[0].iface.(*gReverseOrderStruct)
+			if ptrs[0] != &gotRev.lo || ptrs[1] != &gotRev.hi {
+				t.Fatalf("interior pointers did not alias reverse-order struct fields")
+			}
+			if gotRev.lo.val != 11 || gotRev.hi.val != 22 {
+				t.Errorf("got (%+v, %+v), want (11, 22)", gotRev.lo, gotRev.hi)
+			}
+		})
+	})
+}
+
+func TestAbsorbedSupersededReferencesPruned(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(true)
+	defer state.EnableGraphEngine(prev)
+
+	t.Run("BeforeSaveFlushesMap", func(t *testing.T) {
+		holder := &gCacheFlushHolder{
+			cachedMap: map[string]int64{"stale": 123},
+			saved:     42,
+		}
+		root := &gCacheFlushRoot{
+			mp:   &holder.cachedMap,
+			node: &gNode{iface: holder},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(buf.Bytes())); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		var got gCacheFlushRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotHolder := got.node.iface.(*gCacheFlushHolder)
+		if got.mp != &gotHolder.cachedMap || gotHolder.cachedMap != nil || gotHolder.saved != 42 {
+			t.Errorf("unexpected restored state: mp=%p &cachedMap=%p holder=%+v", got.mp, &gotHolder.cachedMap, gotHolder)
+		}
+	})
+
+	t.Run("BeforeSaveFlushesInexactSlice", func(t *testing.T) {
+		holder := &gCacheFlushHolder{
+			cachedIfaces: []gIface{&gNode{id: 77}},
+			saved:        42,
+		}
+		root := &gCacheFlushRoot{
+			ip:   &holder.cachedIfaces,
+			node: &gNode{iface: holder},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(buf.Bytes())); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		var got gCacheFlushRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotHolder := got.node.iface.(*gCacheFlushHolder)
+		if got.ip != &gotHolder.cachedIfaces || gotHolder.cachedIfaces != nil || gotHolder.saved != 42 {
+			t.Errorf("unexpected restored state: ip=%p &cachedIfaces=%p holder=%+v", got.ip, &gotHolder.cachedIfaces, gotHolder)
+		}
+	})
+
+	t.Run("BeforeSaveFlushesDeadObjectAfterLoad", func(t *testing.T) {
+		holder := &gCacheFlushHolder{
+			cachedDead: &gDeadLeaf{val: 999},
+			saved:      42,
+		}
+		root := &gCacheFlushRoot{
+			dp:   &holder.cachedDead,
+			node: &gNode{iface: holder},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		deadLoads := 0
+		ctx := context.WithValue(t.Context(), gDeadAfterLoadKey{}, &deadLoads)
+		var got gCacheFlushRoot
+		if _, err := state.Load(ctx, bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if deadLoads != 0 {
+			t.Errorf("unreachable dead leaf ran afterLoad %d times, want 0", deadLoads)
+		}
+		gotHolder := got.node.iface.(*gCacheFlushHolder)
+		if got.dp != &gotHolder.cachedDead || gotHolder.cachedDead != nil || gotHolder.saved != 42 {
+			t.Errorf("unexpected restored state: dp=%p &cachedDead=%p holder=%+v", got.dp, &gotHolder.cachedDead, gotHolder)
+		}
+	})
+
+	t.Run("ValueSavedMapFieldAbsorbed", func(t *testing.T) {
+		holder := &gValueMapHolder{m: map[string]int64{"k": 55}}
+		root := &gRoot{
+			any: &holder.m,
+			all: []*gNode{{iface: holder}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(buf.Bytes())); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotMPtr := got.any.(*map[string]int64)
+		gotHolder := got.all[0].iface.(*gValueMapHolder)
+		if gotMPtr != &gotHolder.m || gotHolder.m["k"] != 55 {
+			t.Errorf("gotMPtr=%p &holder.m=%p m=%v", gotMPtr, &gotHolder.m, gotHolder.m)
+		}
+	})
+
+	t.Run("SplicedThenDiscardedMapRef", func(t *testing.T) {
+		container := &gSpliceContainer{
+			normal: gSpliceChild{val: 9},
+			mid: gSpliceMid{
+				child: gSpliceChild{
+					val: 20,
+					m:   map[string]int64{"orphan": 1},
+				},
+				extra: 3,
+			},
+			seed: 3,
+		}
+		root := &gRoot{
+			any: &container.mid.child,
+			all: []*gNode{{
+				iface: &container.mid,
+				next:  &gNode{iface: container},
+			}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(buf.Bytes())); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotChildPtr := got.any.(*gSpliceChild)
+		gotMidPtr := got.all[0].iface.(*gSpliceMid)
+		gotContainer := got.all[0].next.iface.(*gSpliceContainer)
+		if gotChildPtr != &gotContainer.mid.child || gotMidPtr != &gotContainer.mid {
+			t.Fatalf("interior pointers did not alias container.mid")
+		}
+		if gotContainer.mid.child.val != 20 || gotContainer.mid.extra != 3 {
+			t.Errorf("unexpected mid: %+v", gotContainer.mid)
+		}
+	})
 }

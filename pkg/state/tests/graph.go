@@ -469,6 +469,104 @@ func randomAny(r *rand.Rand, nodes []*gNode, pick func() *gNode) any {
 }
 
 // +stateify savable
+type gSpliceChild struct {
+	val             int64
+	tag             string
+	m               map[string]int64
+	beforeSaveCalls int `state:"nosave"`
+}
+
+func (c *gSpliceChild) beforeSave() {
+	c.beforeSaveCalls++
+}
+
+// +stateify savable
+type gSpliceMid struct {
+	child gSpliceChild
+	extra int64
+}
+
+// +stateify savable
+type gSpliceContainer struct {
+	converted gSpliceChild `state:".(int64)"`
+	manual    gSpliceChild `state:"manual"`
+	normal    gSpliceChild
+	mid       gSpliceMid `state:".(int64)"`
+	seed      int64
+}
+
+func (s *gSpliceContainer) saveConverted() int64 {
+	return s.converted.val + 100
+}
+
+func (s *gSpliceContainer) loadConverted(_ context.Context, v int64) {
+	s.converted = gSpliceChild{val: v - 100, tag: "converted"}
+}
+
+func (s *gSpliceContainer) saveMid() int64 {
+	return s.mid.child.val + s.mid.extra
+}
+
+func (s *gSpliceContainer) loadMid(_ context.Context, v int64) {
+	s.mid = gSpliceMid{
+		child: gSpliceChild{val: v - s.seed, tag: "mid"},
+		extra: s.seed,
+	}
+}
+
+func (s *gSpliceContainer) afterLoad(context.Context) {
+	s.manual = gSpliceChild{val: s.seed * 10, tag: "manual"}
+}
+
+// +stateify savable
+type gDeadLeaf struct {
+	val int64
+}
+
+func (d *gDeadLeaf) afterLoad(ctx context.Context) {
+	if countPtr, ok := ctx.Value(gDeadAfterLoadKey{}).(*int); ok {
+		*countPtr++
+	}
+}
+
+type gDeadAfterLoadKey struct{}
+
+// +stateify savable
+type gCacheFlushHolder struct {
+	cachedMap    map[string]int64
+	cachedIfaces []gIface
+	cachedDead   *gDeadLeaf
+	saved        int64
+}
+
+func (h *gCacheFlushHolder) beforeSave() {
+	h.cachedMap = nil
+	h.cachedIfaces = nil
+	h.cachedDead = nil
+}
+
+// +stateify savable
+type gCacheFlushRoot struct {
+	mp   *map[string]int64
+	ip   *[]gIface
+	dp   **gDeadLeaf
+	node *gNode
+}
+
+// +stateify savable
+type gValueMapHolder struct {
+	m map[string]int64 `state:".(int64)"`
+}
+
+func (h *gValueMapHolder) saveM() int64 {
+	return h.m["k"]
+}
+
+func (h *gValueMapHolder) loadM(_ context.Context, v int64) {
+	h.m = map[string]int64{"k": v}
+}
+
+// +stateify savable
 type gBytesRoot struct {
 	b   [1]byte
 	arr [3]byte

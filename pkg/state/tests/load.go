@@ -14,7 +14,11 @@
 
 package tests
 
-import "context"
+import (
+	"context"
+
+	"gvisor.dev/gvisor/pkg/state"
+)
 
 // +stateify savable
 type genericContainer struct {
@@ -67,4 +71,64 @@ type branchingCycle struct {
 	reachable   *branchingCycle
 	waitFor     *branchingCycle `state:"wait"`
 	alsoWaitFor *branchingCycle `state:"wait"`
+}
+
+// +stateify savable
+type sliceValueRes struct {
+	name string
+}
+
+// +stateify savable
+type sliceValueRef struct {
+	target *valueLoadStruct
+}
+
+// +stateify savable
+type sliceValueElem struct {
+	res    string           `state:".(sliceValueRes)"`
+	ref    *valueLoadStruct `state:".(sliceValueRef)"`
+	ready  bool             `state:"nosave"`
+	refSet bool             `state:"nosave"`
+}
+
+func (e *sliceValueElem) saveRes() sliceValueRes {
+	if e.res == "" {
+		state.Failf("sliceValueElem saved before loadRes ran")
+	}
+	return sliceValueRes{name: e.res}
+}
+
+func (e *sliceValueElem) loadRes(_ context.Context, r sliceValueRes) {
+	e.res = r.name
+	e.ready = true
+}
+
+func (e *sliceValueElem) saveRef() sliceValueRef {
+	if e.ref == nil {
+		state.Failf("sliceValueElem saved before loadRef ran")
+	}
+	return sliceValueRef{target: e.ref}
+}
+
+func (e *sliceValueElem) loadRef(_ context.Context, r sliceValueRef) {
+	e.ref = r.target
+	e.refSet = true
+}
+
+// +stateify savable
+type sliceValueHolder struct {
+	items []sliceValueElem `state:".([]sliceValueElem)"`
+}
+
+func (h *sliceValueHolder) saveItems() []sliceValueElem {
+	return append([]sliceValueElem(nil), h.items...)
+}
+
+func (h *sliceValueHolder) loadItems(_ context.Context, items []sliceValueElem) {
+	for _, it := range items {
+		if !it.ready || !it.refSet {
+			state.Failf("sliceValueHolder.loadItems ran before element LoadValue callbacks")
+		}
+	}
+	h.items = append([]sliceValueElem(nil), items...)
 }

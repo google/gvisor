@@ -45,6 +45,7 @@ go_test(
     embed = [":tests"],
     deps = [
         "//pkg/state",
+        "//pkg/state/pretty",
         "//pkg/state/wire",
     ],
 )

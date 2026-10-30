@@ -40,6 +40,10 @@ func TestLoadHooks(t *testing.T) {
 		&sliceContainer{v: []any{&valueLoadStruct{v: 1}}},
 		&mapContainer{v: map[int]any{0: &afterLoadStruct{v: 1}}},
 		&mapContainer{v: map[int]any{0: &valueLoadStruct{v: 1}}},
+		&sliceValueHolder{items: []sliceValueElem{
+			{res: "a", ref: &valueLoadStruct{v: 10}, ready: true, refSet: true},
+			{res: "b", ref: &valueLoadStruct{v: 20}, ready: true, refSet: true},
+		}},
 	})
 }
 
