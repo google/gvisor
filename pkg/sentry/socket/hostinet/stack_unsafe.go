@@ -33,7 +33,7 @@ func queryInterfaceFeatures(interfaces map[int32]inet.Interface) error {
 
 	for idx, nic := range interfaces {
 		var ifr linux.IFReq
-		copy(ifr.IFName[:], nic.Name)
+		ifr.SetName(nic.Name)
 		var gfeatures linux.EthtoolGFeatures
 		// Each feature block is sufficient to query 32 features, the linux
 		// kernel today supports upto 64 features per device. Technically it

@@ -30,6 +30,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -56,6 +57,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -392,11 +394,13 @@ TEST_F(TuntapTest, CreateInterface) {
   ifr.ifr_flags = IFF_TAP;
   // Empty ifr.ifr_name. Let kernel assign.
 
-  EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr), SyscallSucceedsWithValue(0));
+  EXPECT_EQ(ifr.ifr_flags, IFF_TAP);
 
   struct ifreq ifr_get = {};
-  EXPECT_THAT(ioctl(fd.get(), TUNGETIFF, &ifr_get),
+  ASSERT_THAT(ioctl(fd.get(), TUNGETIFF, &ifr_get),
               SyscallSucceedsWithValue(0));
+  EXPECT_STREQ(ifr.ifr_name, ifr_get.ifr_name);
 
   std::string ifname = ifr_get.ifr_name;
   EXPECT_THAT(ifname, ::testing::StartsWith("tap"));
@@ -404,6 +408,25 @@ TEST_F(TuntapTest, CreateInterface) {
               IsPosixErrorOkAndHolds(::testing::Contains(ifname)));
   fd.reset();
   EXPECT_THAT(GetLinkByName(ifname), PosixErrorIs(ENOENT));
+}
+
+TEST_F(TuntapTest, SetIffReadOnlyRequest) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  auto request = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(sizeof(struct ifreq), PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  auto* ifr = static_cast<struct ifreq*>(request.ptr());
+  ifr->ifr_flags = IFF_TUN;
+  ASSERT_THAT(mprotect(request.ptr(), request.len(), PROT_READ),
+              SyscallSucceedsWithValue(0));
+
+  // The copy back to the caller fails after the interface is attached.
+  EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, ifr), SyscallFailsWithErrno(EFAULT));
+  struct ifreq attached = {};
+  ASSERT_THAT(ioctl(fd.get(), TUNGETIFF, &attached),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(attached.ifr_name, ::testing::StartsWith("tun"));
 }
 
 TEST_F(TuntapTest, CreatePersistentInterface) {

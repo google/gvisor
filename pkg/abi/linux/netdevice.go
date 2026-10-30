@@ -60,10 +60,12 @@ func (ifr *IFReq) Name() string {
 	return string(ifr.IFName[:])
 }
 
-// SetName sets the name.
+// SetName stores a NUL-terminated name. SIOCGIFNAME and TUNSETIFF also
+// terminate the last byte of the field without padding the whole field.
 func (ifr *IFReq) SetName(name string) {
-	n := copy(ifr.IFName[:], []byte(name))
-	clear(ifr.IFName[n:])
+	n := copy(ifr.IFName[:IFNAMSIZ-1], name)
+	ifr.IFName[n] = 0
+	ifr.IFName[IFNAMSIZ-1] = 0
 }
 
 // SizeOfIFReq is the binary size of an IFReq struct (40 bytes).
