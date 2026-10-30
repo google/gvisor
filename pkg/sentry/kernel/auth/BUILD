@@ -54,6 +54,13 @@ declare_mutex(
     prefix = "userNamespace",
 )
 
+declare_mutex(
+    name = "key_quota_mutex",
+    out = "key_quota_mutex.go",
+    package = "auth",
+    prefix = "keyQuota",
+)
+
 declare_rwmutex(
     name = "keyset_mutex",
     out = "keyset_mutex.go",
@@ -75,6 +82,8 @@ go_library(
         "id_map_range.go",
         "id_map_set.go",
         "key.go",
+        "key_quota.go",
+        "key_quota_mutex.go",
         "keyset_mutex.go",
         "user_namespace.go",
         "user_namespace_mutex.go",
@@ -100,7 +109,10 @@ go_library(
 
 go_test(
     name = "auth_test",
-    srcs = ["capability_set_test.go"],
+    srcs = [
+        "capability_set_test.go",
+        "key_quota_test.go",
+    ],
     embed = [":auth"],
     deps = [
         "//pkg/abi/linux",
