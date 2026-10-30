@@ -20,7 +20,7 @@ bazel_dep(name = "grpc", version = "1.84.0", repo_name = "com_github_grpc_grpc")
 
 # gRPC's older minimum imports a removed Google APIs extension repository.
 bazel_dep(name = "envoy_api", version = "0.0.0-20260130-84e8436")
-bazel_dep(name = "protobuf", version = "35.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "37.0-rc1", repo_name = "com_google_protobuf")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "abseil-cpp", version = "20260817.0", repo_name = "com_google_absl")
 bazel_dep(name = "googletest", version = "1.18.0", repo_name = "com_google_googletest")
@@ -34,6 +34,14 @@ bazel_dep(name = "cel-spec", version = "0.25.1")
 
 governance = use_extension("//governance/tools/maintainers:repositories.bzl", "governance")
 use_repo(governance, "governance_areas")
+
+# Protobuf 37 separates the C++ reflection headers used by gRPC 1.84.
+single_version_override(
+    module_name = "grpc",
+    patch_strip = 1,
+    patches = ["//tools:grpc_upb_reflection_cc.patch"],
+    version = "1.84.0",
+)
 
 single_version_override(
     module_name = "rules_go",
