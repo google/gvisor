@@ -68,9 +68,8 @@ func putDentrySlice(ds *[]*dentry) {
 	dentrySlicePool.Put(ds)
 }
 
-// renameMuRUnlockAndCheckDrop calls fs.renameMu.RUnlock(), then calls
-// dentry.checkDropLocked on all dentries in *dsp with fs.renameMu locked for
-// writing.
+// renameMuRUnlockAndCheckDrop calls fs.renameMu.RUnlock(), then caches or
+// destroys the dentries in *dsp that have no references.
 //
 // dsp is a pointer-to-pointer since defer evaluates its arguments immediately,
 // but dentry slices are allocated lazily, and it's much easier to say "defer
@@ -83,23 +82,7 @@ func (fs *filesystem) renameMuRUnlockAndCheckDrop(ctx context.Context, dsp **[]*
 	if *dsp == nil {
 		return
 	}
-	ds := **dsp
-	// Only go through calling dentry.checkDropLocked() (which requires
-	// re-locking renameMu) if we actually have any dentries with zero refs.
-	checkAny := false
-	for i := range ds {
-		if ds[i].refs.Load() == 0 {
-			checkAny = true
-			break
-		}
-	}
-	if checkAny {
-		fs.renameMu.Lock()
-		for _, d := range ds {
-			d.checkDropLocked(ctx)
-		}
-		fs.renameMu.Unlock()
-	}
+	fs.cacheOrDrop(ctx, **dsp)
 	putDentrySlice(*dsp)
 }
 
@@ -230,8 +213,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			Root:  childVD,
 			Start: childVD,
 		}
+		// STATX_NLINK is not required, but tells whether an upper file has other
+		// hard links; see dentry.hardLinked.
 		stat, err := vfsObj.StatAt(ctx, fs.creds, childPop, &vfs.StatOptions{
-			Mask: mask,
+			Mask: mask | linux.STATX_NLINK,
 		})
 		if err != nil {
 			lookupErr = err
@@ -295,6 +280,9 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
 			child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
 			child.ino = atomicbitops.FromUint64(stat.Ino)
+			if isUpper && !isDir && (stat.Mask&linux.STATX_NLINK == 0 || stat.Nlink > 1) {
+				child.hardLinked.Store(true)
+			}
 		}
 
 		// For non-directory files, only the topmost layer that contains a file
@@ -710,6 +698,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			}
 			return err
 		}
+		old.hardLinked.Store(true)
 		old.watches.Notify(withDropList(ctx, ds), "", linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	})
