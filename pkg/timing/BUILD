@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -14,4 +14,12 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/log",
     ],
+)
+
+go_test(
+    name = "timing_test",
+    size = "small",
+    srcs = ["timing_test.go"],
+    embed = [":timing"],
+    deps = ["@com_github_google_go_cmp//cmp:go_default_library"],
 )

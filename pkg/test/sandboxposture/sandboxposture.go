@@ -1136,8 +1136,9 @@ func parseLimits(s string) (map[string]string, error) {
 	return out, nil
 }
 
-// ignoredEnvRegExp matches the start-time env variable `runsc` uses.
-var ignoredEnvRegExp = regexp.MustCompile(`^(RUNSC_START_TIME_NANOS=\d+|GVISOR_ENFORCE_RELEASE=.*)$`)
+// ignoredEnvRegExp matches the start-time and re-exec-time env variables
+// `runsc` uses.
+var ignoredEnvRegExp = regexp.MustCompile(`^(RUNSC_(START|REEXEC)_TIME_NANOS=\d+|GVISOR_ENFORCE_RELEASE=.*)$`)
 
 const envGOMAXPROCSPrefix = "GOMAXPROCS="
 

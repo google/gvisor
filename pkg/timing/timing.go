@@ -17,7 +17,9 @@
 package timing
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -586,6 +588,90 @@ func (t *Timer) End() {
 	if peakRunningChildren > 0 {
 		log.Infof("Timer for %s: All child timelines have ended.", t.root.name)
 	}
+}
+
+// ExportedTimeline is the JSON-encodable form of a Timeline and its children.
+// See Timer.Export.
+type ExportedTimeline struct {
+	Name  string    `json:"name"`
+	Start time.Time `json:"start"`
+
+	// MidPoints are in the order they were recorded, which is not necessarily
+	// chronological (see Timeline.ReachedAt).
+	MidPoints []ExportedMidPoint `json:"midpoints,omitempty"`
+
+	End      time.Time          `json:"end"`
+	Children []ExportedTimeline `json:"children,omitempty"`
+
+	// InvalidReason is non-empty if the Timeline was invalidated.
+	InvalidReason string `json:"invalidReason,omitempty"`
+}
+
+// ExportedMidPoint is the JSON-encodable form of a MidPoint.
+type ExportedMidPoint struct {
+	Name string    `json:"name"`
+	When time.Time `json:"when"`
+}
+
+// Reached returns when the Timeline reached the midpoint with the given name.
+func (e *ExportedTimeline) Reached(name string) (time.Time, error) {
+	for _, mid := range e.MidPoints {
+		if mid.Name == name {
+			return mid.When, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("timeline %q did not reach midpoint %q", e.Name, name)
+}
+
+// export returns the Timeline and its descendants as an ExportedTimeline.
+// All of them must have ended.
+func (s *Timeline) export() ExportedTimeline {
+	e := ExportedTimeline{
+		Name:          s.name,
+		Start:         s.start,
+		End:           s.end,
+		InvalidReason: s.invalidReason,
+	}
+	if len(s.midpoints) > 0 {
+		e.MidPoints = make([]ExportedMidPoint, len(s.midpoints))
+		for i, mid := range s.midpoints {
+			e.MidPoints[i] = ExportedMidPoint{Name: mid.name, When: mid.when}
+		}
+	}
+	if len(s.children) > 0 {
+		e.Children = make([]ExportedTimeline, len(s.children))
+		for i, child := range s.children {
+			e.Children[i] = child.export()
+		}
+	}
+	return e
+}
+
+// Export returns the Timer's Timelines in JSON-encodable form. It is the
+// machine-readable counterpart of Log: like Log, it ends the Timer first
+// (waiting for all child Timelines to end), but unlike Log it includes invalid
+// Timelines (see ExportedTimeline.InvalidReason).
+func (t *Timer) Export() *ExportedTimeline {
+	if t == nil {
+		return nil
+	}
+	t.End()
+	e := t.root.export()
+	return &e
+}
+
+// ReadExportedTimeline reads an ExportedTimeline that was encoded as JSON (see
+// Timer.Export) from the file at path.
+func ReadExportedTimeline(path string) (*ExportedTimeline, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var e ExportedTimeline
+	if err := json.Unmarshal(data, &e); err != nil {
+		return nil, fmt.Errorf("decoding timeline in %s: %w", path, err)
+	}
+	return &e, nil
 }
 
 // Log pretty-prints timing information for the root Timeline of the Timer.

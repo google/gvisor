@@ -468,6 +468,7 @@ func TestSandboxProcessEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = regexp.MustCompile("(^|\x00)RUNSC_START_TIME_NANOS=\\d+\x00").ReplaceAll(got, []byte("$1"))
+	got = regexp.MustCompile("(^|\x00)RUNSC_REEXEC_TIME_NANOS=\\d+\x00").ReplaceAll(got, []byte("$1"))
 	got = regexp.MustCompile("(^|\x00)GVISOR_ENFORCE_RELEASE=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
 	got = regexp.MustCompile("(^|\x00)TMPDIR=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
 	godebug := regexp.QuoteMeta("GODEBUG=" + sandboxposture.GoDebug(conf.Platform))

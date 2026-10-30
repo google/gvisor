@@ -15,12 +15,9 @@
 package container
 
 import (
-	"cmp"
 	"fmt"
 	"io"
 	"os"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -45,59 +42,21 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// benchmarkConfig holds a sub-benchmark name and its runtime configuration.
-type benchmarkConfig struct {
-	name string
-	conf *config.Config
-}
-
 // benchmarkConfigs returns configurations for testing across platforms (defaults to systrap),
 // sorted by sub-benchmark name.
-func benchmarkConfigs(b *testing.B) []benchmarkConfig {
+func benchmarkConfigs(b *testing.B) []testutil.PlatformConfig {
 	// Only read in runsc flag after flags are parsed (e.g. after m.Run() is called).
 	if err := testutil.ConfigureExePath(); err != nil {
 		b.Fatalf("ConfigureExePath: %v", err)
 	}
-	var ps []string
-	for _, p := range strings.Split(*testPlatforms, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			ps = append(ps, p)
-		}
-	}
-	ps = slices.DeleteFunc(ps, func(s string) bool {
-		return s == "runc" || s == "ptrace"
-	})
-	if len(ps) == 0 {
-		b.Skipf("no supported platforms to benchmark (test_platforms=%q)", *testPlatforms)
-	}
-
-	var cs []benchmarkConfig
-	// Non-overlay versions.
-	for _, p := range ps {
-		c := testutil.ConfigForBenchmark(b)
-		c.Overlay2.Set("none")
-		c.Platform = p
-		cs = append(cs, benchmarkConfig{name: p, conf: c})
-	}
-
-	// Overlay versions. These use "root:self", the runsc default.
-	for _, p := range ps {
-		c := testutil.ConfigForBenchmark(b)
-		c.Overlay2.Set("root:self")
-		c.Platform = p
-		cs = append(cs, benchmarkConfig{name: p + "_overlay", conf: c})
-	}
-	slices.SortFunc(cs, func(a, b benchmarkConfig) int {
-		return cmp.Compare(a.name, b.name)
-	})
-	return cs
+	return testutil.PlatformConfigs(b, *testPlatforms, func() *config.Config { return testutil.ConfigForBenchmark(b) })
 }
 
 // BenchmarkOCICreate benchmarks container creation.
 func BenchmarkOCICreate(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -135,8 +94,8 @@ func BenchmarkOCICreate(b *testing.B) {
 // BenchmarkOCIStart benchmarks starting a created container.
 func BenchmarkOCIStart(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -206,8 +165,8 @@ func startSleepingContainer(b *testing.B, conf *config.Config) (*Container, func
 // BenchmarkOCIPause benchmarks pausing a running container.
 func BenchmarkOCIPause(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -235,8 +194,8 @@ func BenchmarkOCIPause(b *testing.B) {
 // BenchmarkOCIResume benchmarks resuming a paused container.
 func BenchmarkOCIResume(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -268,8 +227,8 @@ func BenchmarkOCIResume(b *testing.B) {
 // container teardown.
 func BenchmarkOCIKill(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -297,8 +256,8 @@ func BenchmarkOCIKill(b *testing.B) {
 // BenchmarkOCIDestroy benchmarks destroying an already-exited container.
 func BenchmarkOCIDestroy(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -354,8 +313,8 @@ const readyMsg = "ready"
 // producing output, but not exit or teardown.
 func BenchmarkTimeToReady(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -429,8 +388,8 @@ func BenchmarkTimeToReady(b *testing.B) {
 // container.
 func BenchmarkEndToEnd(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
-			conf := bc.conf
+		b.Run(bc.Name, func(b *testing.B) {
+			conf := bc.Conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration

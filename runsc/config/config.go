@@ -222,6 +222,10 @@ type Config struct {
 	// upon sandbox termination.
 	FinalMetricsLog string `flag:"final-metrics-log"`
 
+	// BootTimesLog is the file to which the startup timeline of the sandbox
+	// (see timing.Timer.Export) is written, as JSON, when the sandbox starts.
+	BootTimesLog string `flag:"boot-times-log"`
+
 	// ProfilingMetrics is a comma separated list of metric names which are
 	// going to be written to the ProfilingMetricsLog file from within the
 	// sentry in CSV format. ProfilingMetrics will be snapshotted at a rate

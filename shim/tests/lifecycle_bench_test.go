@@ -15,14 +15,11 @@
 package shim_test
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -52,45 +49,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// benchmarkConfig holds a sub-benchmark name and its runtime configuration.
-type benchmarkConfig struct {
-	name string
-	conf *config.Config
-}
-
 // benchmarkConfigs returns configurations for testing across platforms (defaults to systrap),
 // sorted by sub-benchmark name.
-func benchmarkConfigs(b *testing.B) []benchmarkConfig {
-	var ps []string
-	for _, p := range strings.Split(*platforms, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			ps = append(ps, p)
-		}
-	}
-	ps = slices.DeleteFunc(ps, func(s string) bool {
-		return s == "runc" || s == "ptrace"
-	})
-	if len(ps) == 0 {
-		b.Skipf("no supported platforms to benchmark (test_platforms=%q)", *platforms)
-	}
-
-	var cs []benchmarkConfig
-	for _, p := range ps {
-		c := testutil.ConfigForBenchmark(b)
-		c.Overlay2.Set("none")
-		c.Platform = p
-		cs = append(cs, benchmarkConfig{name: p, conf: c})
-	}
-	for _, p := range ps {
-		c := testutil.ConfigForBenchmark(b)
-		c.Overlay2.Set("root:self")
-		c.Platform = p
-		cs = append(cs, benchmarkConfig{name: p + "_overlay", conf: c})
-	}
-	slices.SortFunc(cs, func(a, b benchmarkConfig) int {
-		return cmp.Compare(a.name, b.name)
-	})
-	return cs
+func benchmarkConfigs(b *testing.B) []testutil.PlatformConfig {
+	return testutil.PlatformConfigs(b, *platforms, func() *config.Config { return testutil.ConfigForBenchmark(b) })
 }
 
 // newSandboxContainer creates and returns a newly configured sandbox container. It does not start
@@ -159,13 +121,13 @@ func startSleepingSandbox(b *testing.B, conf *config.Config) (*shimutils.MockCon
 // and establishing a TTRPC connection over its Unix domain socket.
 func BenchmarkShimStart(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "sleep", "100")
 
@@ -190,13 +152,13 @@ func BenchmarkShimStart(b *testing.B) {
 // has not yet started.
 func BenchmarkShimCreate(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "sleep", "100")
 					if err := containerd.StartShim(b, sandbox); err != nil {
@@ -239,13 +201,13 @@ func BenchmarkShimCreate(b *testing.B) {
 // container. This does not measure application execution time.
 func BenchmarkShimContainerStart(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "sleep", "100")
 					if err := containerd.StartShim(b, sandbox); err != nil {
@@ -292,13 +254,13 @@ func BenchmarkShimContainerStart(b *testing.B) {
 // BenchmarkShimPause benchmarks pausing a running container via the shim.
 func BenchmarkShimPause(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					_, shim, id, cleanup := startSleepingSandbox(b, bc.conf)
+					_, shim, id, cleanup := startSleepingSandbox(b, bc.Conf)
 					defer cleanup()
 					ctx := b.Context()
 
@@ -322,13 +284,13 @@ func BenchmarkShimPause(b *testing.B) {
 // BenchmarkShimResume benchmarks resuming a paused container via the shim.
 func BenchmarkShimResume(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					_, shim, id, cleanup := startSleepingSandbox(b, bc.conf)
+					_, shim, id, cleanup := startSleepingSandbox(b, bc.Conf)
 					defer cleanup()
 					ctx := b.Context()
 					if _, err := shim.Pause(ctx, &task.PauseRequest{ID: id}); err != nil {
@@ -355,13 +317,13 @@ func BenchmarkShimResume(b *testing.B) {
 // the shim. Container exit and teardown happen outside the measured time.
 func BenchmarkShimKill(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					_, shim, id, cleanup := startSleepingSandbox(b, bc.conf)
+					_, shim, id, cleanup := startSleepingSandbox(b, bc.Conf)
 					defer cleanup()
 					ctx := b.Context()
 
@@ -390,13 +352,13 @@ const readyMsg = "ready"
 // BenchmarkShimDelete benchmarks deleting an already-exited container via the shim.
 func BenchmarkShimDelete(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "echo", readyMsg)
 					if err := containerd.StartShim(b, sandbox); err != nil {
@@ -442,13 +404,13 @@ func BenchmarkShimDelete(b *testing.B) {
 // an already-started shim daemon.
 func BenchmarkShimTimeToReady(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "echo", readyMsg)
 					fifoDir, err := os.MkdirTemp(testutil.TmpDir(), "shim-fifo-")
@@ -520,13 +482,13 @@ func BenchmarkShimTimeToReady(b *testing.B) {
 // include shim daemon spawn and shutdown time.
 func BenchmarkShimEndToEnd(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "echo", readyMsg)
 					if err := containerd.StartShim(b, sandbox); err != nil {
@@ -574,13 +536,13 @@ func BenchmarkShimEndToEnd(b *testing.B) {
 // workload container inside an existing pod.
 func BenchmarkShimSubcontainerEndToEnd(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd, shim, sandboxID, cleanup := startSleepingSandbox(b, bc.conf)
+					containerd, shim, sandboxID, cleanup := startSleepingSandbox(b, bc.Conf)
 					defer cleanup()
 					subSpec := shimutils.NewContainerSpec(sandboxID, []string{"echo", readyMsg})
 					subcontainer, err := shimutils.NewContainer(subSpec, containerd)
@@ -633,13 +595,13 @@ func BenchmarkShimSubcontainerEndToEnd(b *testing.B) {
 // cold shim daemon spawn (StartShim -> Create -> Start -> Exit -> Delete).
 func BenchmarkShimEndToEndCold(b *testing.B) {
 	for _, bc := range benchmarkConfigs(b) {
-		b.Run(bc.name, func(b *testing.B) {
+		b.Run(bc.Name, func(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
 			for i := 0; i < b.N; i++ {
 				func() {
-					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.conf)
+					containerd := shimutils.NewMockContainerdForBenchmark(b, bc.Conf)
 					defer containerd.Cleanup()
 					sandbox := newSandboxContainer(b, containerd, "echo", readyMsg)
 					ctx := b.Context()

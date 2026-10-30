@@ -17,6 +17,7 @@ package sentrycmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -196,6 +197,10 @@ type Boot struct {
 	// termination.
 	finalMetricsFD int
 
+	// bootTimesFD is a file descriptor to write the startup timeline of the
+	// sandbox to, as JSON, when the sandbox starts (see timing.Timer.Export).
+	bootTimesFD int
+
 	// profilingMetricsFD is a file descriptor to write Sentry metrics data to.
 	profilingMetricsFD int
 
@@ -321,6 +326,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
 	f.IntVar(&b.finalMetricsFD, "final-metrics-log-fd", -1, "file descriptor to write metrics to upon sandbox termination.")
+	f.IntVar(&b.bootTimesFD, "boot-times-log-fd", -1, "file descriptor to write the startup timeline of the sandbox to, as JSON, when the sandbox starts.")
 	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
 	f.BoolVar(&b.profilingMetricsLossy, "profiling-metrics-fd-lossy", false, "if true, treat the sentry profiling metrics FD as lossy and write a checksum to it.")
 
@@ -745,6 +751,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		NoRootContainer:          b.noRootContainer,
 		StartupTimer:             timer,
 	}
+	timer.Reached("creating loader")
 	l, err := boot.New(bootArgs)
 	if err != nil {
 		util.Fatalf("creating loader: %v", err)
@@ -798,6 +805,21 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Wait for the start signal from runsc.
 	l.WaitForStartSignal()
 	timer.Reached("start signal received")
+
+	if b.bootTimesFD != -1 {
+		// Write the startup timeline before Run tells `runsc start` that the
+		// sandbox has started, so that the file is complete by the time
+		// `runsc start` returns.
+		l.PostStartCallback = func() {
+			bootTimesFile := os.NewFile(uintptr(b.bootTimesFD), "boot times file")
+			if err := json.NewEncoder(bootTimesFile).Encode(timer.Export()); err != nil {
+				log.Warningf("Failed to write boot times: %v", err)
+			}
+			if err := bootTimesFile.Close(); err != nil {
+				log.Warningf("Failed to close boot times file: %v", err)
+			}
+		}
+	}
 
 	// Run the application and wait for it to finish.
 	if err := l.Run(); err != nil {

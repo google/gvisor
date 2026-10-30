@@ -173,3 +173,71 @@ go_test(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+
+# Functional test for --boot-times-log.
+go_test(
+    name = "boot_test",
+    size = "medium",
+    srcs = [
+        "boot_bench_test.go",
+        "boot_test.go",
+    ],
+    # Only run the default platform for the tsan test, which should
+    # be compatible. For non-tsan builds, run all platforms.
+    args = select({
+        "//conditions:default": [
+            "--test_platforms=%s" % ",".join([p for (p, tags) in platforms.items() if "manual" not in tags]) or default_platform,
+        ],
+        "//tools:gotsan": [
+            "--test_platforms=%s" % default_platform,
+        ],
+    }),
+    data = [
+        "//:release",
+        "//test/cmd/test_app",
+    ],
+    embed = [":container"],
+    tags = ["requires-kvm"],
+    deps = [
+        "//pkg/log",
+        "//pkg/test/testutil",
+        "//pkg/timing",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+# Raw sandbox boot benchmarks.
+go_test(
+    name = "boot_benchmark_test",
+    size = "large",
+    srcs = ["boot_bench_test.go"],
+    args = [
+        "-test.bench=.",
+        "-test.run=^$$",
+        "-test.benchtime=30x",  # A fixed iteration count.
+        "-test.v",
+        "--test_platforms=kvm,systrap",
+    ],
+    data = [
+        "//:release",
+        "//test/cmd/test_app",
+    ],
+    embed = [":container"],
+    tags = [
+        "manual",
+        "notap",
+        "requires-kvm",
+    ],
+    deps = [
+        "//pkg/log",
+        "//pkg/test/testutil",
+        "//pkg/timing",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)

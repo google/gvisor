@@ -952,6 +952,9 @@ steps:
     label: ":stopwatch: OCI Lifecycle benchmarks"
     command: make benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=oci_lifecycle BENCHMARKS_TARGETS=runsc/container:lifecycle_benchmark_test
   - <<: *benchmarks_nodocker
+    label: ":stopwatch: Boot Lifecycle benchmarks"
+    command: make benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=boot_lifecycle BENCHMARKS_TARGETS=runsc/container:boot_benchmark_test
+  - <<: *benchmarks_nodocker
     label: ":stopwatch: Shim Lifecycle benchmarks"
     command: make benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=shim_lifecycle BENCHMARKS_TARGETS=shim/tests:lifecycle_benchmark_test
   - <<: *benchmarks

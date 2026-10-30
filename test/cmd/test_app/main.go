@@ -46,6 +46,7 @@ func main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(new(capability), "")
 	subcommands.Register(new(chardevCheck), "")
+	subcommands.Register(new(echo), "")
 	subcommands.Register(new(execFromThread), "")
 	subcommands.Register(new(fdReceiver), "")
 	subcommands.Register(new(fdSender), "")
@@ -478,6 +479,32 @@ func (c *gvisorDetect) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	}
 	fmt.Println("running with non-gVisor kernel")
 	return subcommands.ExitStatus(c.exitCodeOnNotGVisor)
+}
+
+type echo struct{}
+
+// Name implements subcommands.Command.Name.
+func (*echo) Name() string {
+	return "echo"
+}
+
+// Synopsis implements subcommands.Command.Synopsis.
+func (*echo) Synopsis() string {
+	return "prints its arguments to stdout"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*echo) Usage() string {
+	return "echo [args...]"
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (*echo) SetFlags(*flag.FlagSet) {}
+
+// Execute implements subcommands.Command.Execute.
+func (*echo) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	fmt.Println(strings.Join(f.Args(), " "))
+	return subcommands.ExitSuccess
 }
 
 type forkBomb struct {
