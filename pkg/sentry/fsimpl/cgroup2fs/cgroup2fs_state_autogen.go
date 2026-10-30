@@ -880,6 +880,7 @@ func (m *memory) StateFields() []string {
 		"detached",
 		"maxBytes",
 		"highBytes",
+		"oomGroup",
 	}
 }
 
@@ -894,6 +895,7 @@ func (m *memory) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &m.detached)
 	stateSinkObject.Save(4, &m.maxBytes)
 	stateSinkObject.Save(5, &m.highBytes)
+	stateSinkObject.Save(6, &m.oomGroup)
 }
 
 func (m *memory) afterLoad(context.Context) {}
@@ -906,6 +908,7 @@ func (m *memory) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(3, &m.detached)
 	stateSourceObject.Load(4, &m.maxBytes)
 	stateSourceObject.Load(5, &m.highBytes)
+	stateSourceObject.Load(6, &m.oomGroup)
 }
 
 func (me *memoryEvents) StateTypeName() string {
@@ -1006,6 +1009,31 @@ func (mh *memoryHigh) afterLoad(context.Context) {}
 // +checklocksignore
 func (mh *memoryHigh) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mh.m)
+}
+
+func (mo *memoryOOMGroup) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroup2fs.memoryOOMGroup"
+}
+
+func (mo *memoryOOMGroup) StateFields() []string {
+	return []string{
+		"m",
+	}
+}
+
+func (mo *memoryOOMGroup) beforeSave() {}
+
+// +checklocksignore
+func (mo *memoryOOMGroup) StateSave(stateSinkObject state.Sink) {
+	mo.beforeSave()
+	stateSinkObject.Save(0, &mo.m)
+}
+
+func (mo *memoryOOMGroup) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (mo *memoryOOMGroup) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mo.m)
 }
 
 func (p *pids) StateTypeName() string {
@@ -1218,6 +1246,7 @@ func init() {
 	state.RegisterNoHooks((*memoryCurrent)(nil))
 	state.RegisterNoHooks((*memoryMax)(nil))
 	state.RegisterNoHooks((*memoryHigh)(nil))
+	state.RegisterNoHooks((*memoryOOMGroup)(nil))
 	state.RegisterNoHooks((*pids)(nil))
 	state.RegisterNoHooks((*pidsEvents)(nil))
 	state.RegisterNoHooks((*pidsEventsLocal)(nil))
