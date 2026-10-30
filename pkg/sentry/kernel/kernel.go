@@ -419,6 +419,19 @@ type Kernel struct {
 	// used by processes.
 	MaxFDLimit atomicbitops.Int32
 
+	// PanicTimeout, PanicOnOops, PanicOnOOM and OvercommitMemory hold the
+	// kernel.panic, kernel.panic_on_oops, vm.panic_on_oom and
+	// vm.overcommit_memory sysctls. Like Linux, they are kernel-wide and
+	// default to 0 (Linux's defaults with CONFIG_PANIC_TIMEOUT=0 and
+	// CONFIG_PANIC_ON_OOPS=n). They are only stored: the sentry has no
+	// kernel panic, oops or OOM killer, and never refuses a mapping for lack
+	// of commit charge, so it behaves as if vm.overcommit_memory were 1
+	// whatever the value.
+	PanicTimeout     atomicbitops.Int32
+	PanicOnOops      atomicbitops.Int32
+	PanicOnOOM       atomicbitops.Int32
+	OvercommitMemory atomicbitops.Int32
+
 	// devGofers maps containers (using its name) to its device gofer client.
 	//
 	// +checklocks:devGofersMu
