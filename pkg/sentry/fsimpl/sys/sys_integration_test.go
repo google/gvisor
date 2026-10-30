@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -76,27 +77,97 @@ func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 }
 
 func TestReadCPUFile(t *testing.T) {
-	s := newTestSystem(t, "" /*pciTestDir*/)
-	defer s.Destroy()
-	k := kernel.KernelFromContext(s.Ctx)
-	maxCPUCores := k.ApplicationCores()
+	for _, tc := range []struct {
+		cores int
+		want  string
+	}{
+		{cores: 1, want: "0\n"},
+		{cores: 2, want: "0-1\n"},
+		{cores: 5, want: "0-4\n"},
+	} {
+		t.Run(fmt.Sprintf("cores=%d", tc.cores), func(t *testing.T) {
+			defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(tc.cores))
+			s := newTestSystem(t, "" /*pciTestDir*/)
+			defer s.Destroy()
+			if got := kernel.KernelFromContext(s.Ctx).ApplicationCores(); got != uint(tc.cores) {
+				t.Fatalf("ApplicationCores() = %d, want %d", got, tc.cores)
+			}
 
-	expected := fmt.Sprintf("0-%d\n", maxCPUCores-1)
+			for _, fname := range []string{"online", "possible", "present"} {
+				p := fmt.Sprintf("devices/system/cpu/%s", fname)
+				got, err := readTestFile(s, p)
+				if err != nil {
+					t.Fatalf("reading %q: %v", p, err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("%q returned unexpected data:\n--- want\n+++ got\n%v", p, diff)
+				}
+			}
+		})
+	}
+}
 
-	for _, fname := range []string{"online", "possible", "present"} {
-		pop := s.PathOpAtRoot(fmt.Sprintf("devices/system/cpu/%s", fname))
-		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
-		if err != nil {
-			t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
-		}
-		defer fd.DecRef(s.Ctx)
-		content, err := s.ReadToEnd(fd)
-		if err != nil {
-			t.Fatalf("Read failed: %v", err)
-		}
-		if diff := cmp.Diff(expected, content); diff != "" {
-			t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
-		}
+func TestCPUTopology(t *testing.T) {
+	for _, tc := range []struct {
+		cores    int
+		fullMask string
+		fullList string
+	}{
+		{cores: 1, fullMask: "1\n", fullList: "0\n"},
+		{cores: 2, fullMask: "3\n", fullList: "0-1\n"},
+		{cores: 5, fullMask: "1f\n", fullList: "0-4\n"},
+	} {
+		t.Run(fmt.Sprintf("cores=%d", tc.cores), func(t *testing.T) {
+			defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(tc.cores))
+			s := newTestSystem(t, "" /*pciTestDir*/)
+			defer s.Destroy()
+			if got := kernel.KernelFromContext(s.Ctx).ApplicationCores(); got != uint(tc.cores) {
+				t.Fatalf("ApplicationCores() = %d, want %d", got, tc.cores)
+			}
+
+			for i := 0; i < tc.cores; i++ {
+				dir := fmt.Sprintf("/devices/system/cpu/cpu%d/topology", i)
+				oneMask := fmt.Sprintf("%0*x\n", (tc.cores+3)/4, uint32(1)<<i)
+				oneList := fmt.Sprintf("%d\n", i)
+				files := map[string]string{
+					"cluster_cpus":         oneMask,
+					"cluster_cpus_list":    oneList,
+					"cluster_id":           fmt.Sprintf("%d\n", i),
+					"core_cpus":            oneMask,
+					"core_cpus_list":       oneList,
+					"core_id":              fmt.Sprintf("%d\n", i),
+					"core_siblings":        tc.fullMask,
+					"core_siblings_list":   tc.fullList,
+					"package_cpus":         tc.fullMask,
+					"package_cpus_list":    tc.fullList,
+					"physical_package_id":  "0\n",
+					"thread_siblings":      oneMask,
+					"thread_siblings_list": oneList,
+				}
+				if runtime.GOARCH == "amd64" {
+					files["die_cpus"] = tc.fullMask
+					files["die_cpus_list"] = tc.fullList
+					files["die_id"] = "0\n"
+				}
+
+				types := make(map[string]testutil.DirentType)
+				for name := range files {
+					types[name] = linux.DT_REG
+				}
+				s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot(dir)), types)
+
+				for name, want := range files {
+					p := path.Join(dir, name)
+					got, err := readTestFile(s, p)
+					if err != nil {
+						t.Fatalf("reading %q: %v", p, err)
+					}
+					if got != want {
+						t.Errorf("%q contains %q, want %q", p, got, want)
+					}
+				}
+			}
+		})
 	}
 }
 
