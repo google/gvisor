@@ -441,6 +441,11 @@ type Config struct {
 	// Config was constructed. Nil when the Config was not initialized from a FlagSet.
 	explicitlySet map[string]struct{}
 
+	// cliStateEngine records the --state-engine policy explicitly passed on the
+	// command line when this Config was constructed via NewFromFlags, before any
+	// OCI annotation or bundle overrides run.
+	cliStateEngine *StateEnginePolicy
+
 	// ReproduceNAT, when true, tells runsc to scrape the host network
 	// namespace's NAT iptables and reproduce it inside the sandbox.
 	ReproduceNAT bool `flag:"reproduce-nat"`
@@ -494,6 +499,9 @@ type Config struct {
 
 	// AllowConnectedOnSave allows network connections to stay established on save.
 	AllowConnectedOnSave bool `flag:"allow-connected-on-save"`
+
+	// StateEngine selects the state serialization engine used when saving checkpoints.
+	StateEngine StateEnginePolicy `flag:"state-engine"`
 
 	// AllowRootfsTarAnnotation indicates whether the rootfs tar annotation
 	// should be allowed.
@@ -1925,4 +1933,51 @@ func (xd *XDP) Set(input string) error {
 		return fmt.Errorf("invalid --xdp value: %q", input)
 	}
 	return nil
+}
+
+// StateEnginePolicy selects the state serialization engine used for saving checkpoints.
+type StateEnginePolicy int
+
+// StateEnginePolicy values.
+const (
+	// StateEngineWire uses the legacy wire serialization engine.
+	StateEngineWire StateEnginePolicy = iota
+
+	// StateEngineGraph uses the reflection-free graph serialization engine.
+	StateEngineGraph
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *StateEnginePolicy) Set(v string) error {
+	switch v {
+	case "graph":
+		*p = StateEngineGraph
+	case "wire":
+		*p = StateEngineWire
+	default:
+		return fmt.Errorf("invalid state engine policy %q (must be one of: graph, wire)", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to `p`.
+func (p StateEnginePolicy) Ptr() *StateEnginePolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *StateEnginePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p StateEnginePolicy) String() string {
+	switch p {
+	case StateEngineGraph:
+		return "graph"
+	case StateEngineWire:
+		return "wire"
+	default:
+		panic(fmt.Sprintf("invalid state engine policy %d", p))
+	}
 }

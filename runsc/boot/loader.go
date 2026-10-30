@@ -82,6 +82,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sighandling"
+	pkgstate "gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
@@ -661,6 +662,7 @@ func New(args Args) (*Loader, error) {
 		stopProfilingRuntime()
 		metric.StopProfilingMetrics()
 	}
+	pkgstate.EnableGraphEngine(args.Conf.StateEngine == config.StateEngineGraph)
 
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).

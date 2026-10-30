@@ -2009,6 +2009,10 @@ type CheckpointOpts struct {
 	SaveRestoreExecTimeout     time.Duration
 	SaveRestoreExecContainerID string
 	SplitFSCheckpointPaths     []string
+
+	// StateEngine, when non-nil, overrides the sandbox's boot-time state
+	// serialization engine for this checkpoint.
+	StateEngine *config.StateEnginePolicy
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
@@ -2040,6 +2044,15 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 			Timeout:     opts.SaveRestoreExecTimeout,
 			ContainerID: opts.SaveRestoreExecContainerID,
 		},
+	}
+	if opts.StateEngine != nil {
+		useGraph := *opts.StateEngine == config.StateEngineGraph
+		opt.GraphEngine = &useGraph
+	} else if conf != nil {
+		if cliEngine, ok := conf.CLIStateEngine(); ok {
+			useGraph := cliEngine == config.StateEngineGraph
+			opt.GraphEngine = &useGraph
+		}
 	}
 	defer opt.FilePayload.Close()
 	if err := s.setCheckpointOptsFiles(conf, imagePath, opts, bundles, &opt); err != nil {
