@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
@@ -114,6 +115,8 @@ func TestPassiveCloseUnaccSeqAck(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expected an ACK for our fin and DUT should enter CLOSE_WAIT: %s", err)
 			}
+			// Consume the queued FIN before probing closing-state handling.
+			dut.ExpectEOF(t, acceptFD, linux.TCP_CLOSE_WAIT)
 			windowSize := seqnum.Size(*gotTCP.WindowSize)
 
 			sampleData := []byte("Sample Data")
@@ -248,6 +251,9 @@ func TestSimultaneousCloseUnaccSeqAck(t *testing.T) {
 			if err != nil {
 				t.Errorf("expected an ACK to our FIN, but got none: %s", err)
 			}
+
+			// Consume the queued FIN before probing closing-state handling.
+			dut.ExpectEOF(t, acceptFD, linux.TCP_CLOSING)
 
 			sampleData := []byte("Sample Data")
 			samplePayload := &testbench.Payload{Bytes: sampleData}
