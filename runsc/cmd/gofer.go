@@ -497,6 +497,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	// gofer mount, not this connection, so character device opens are always
 	// allowed here.
 	devGoferConf := *fsgoferConf
+	devGoferConf.DeviceGofer = true
 	devGoferConf.CharDevicePolicy = config.CharDevPassthrough
 
 	// Create the server and start connections.

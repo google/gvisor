@@ -5118,6 +5118,19 @@ cc_binary(
 )
 
 cc_binary(
+    name = "vfio_pci_device_test",
+    testonly = 1,
+    srcs = ["vfio_pci_device.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:file_descriptor",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "vfork_test",
     testonly = 1,
     srcs = ["vfork.cc"],

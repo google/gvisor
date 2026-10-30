@@ -54,6 +54,9 @@ const (
 
 // Config holds configuration options for the fsgofer server.
 type Config struct {
+	// DeviceGofer serves /dev for the sentry's device proxies.
+	DeviceGofer bool
+
 	// HostUDS signals whether the gofer can connect to host unix domain sockets.
 	HostUDS config.HostUDS
 
@@ -454,14 +457,24 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 	return
 }
 
+// walkHostFD obtains a control FD without opening a device for I/O on the
+// device gofer. An exclusive device such as a VFIO group must remain
+// available for the client's subsequent open.
+func (fd *controlFDLisa) walkHostFD(name string) (int, error) {
+	if fd.Conn().Impl().(*connectionImpl).config.DeviceGofer {
+		return unix.Openat(fd.hostFD, name, openFlags|unix.O_PATH, 0)
+	}
+	return tryOpen(func(flags int) (int, error) {
+		return unix.Openat(fd.hostFD, name, flags, 0)
+	})
+}
+
 // Walk implements lisafs.ControlFDImpl.Walk.
 //
 // +checklocksread:fd.ControlFD.conn.server.renameMu
 // +checklocksexclude:fd.ControlFD.conn.fdsMu
 func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, error) {
-	childHostFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(fd.hostFD, name, flags, 0)
-	})
+	childHostFD, err := fd.walkHostFD(name)
 	if err != nil {
 		return nil, lisafs.Statx{}, err
 	}
