@@ -15,6 +15,8 @@ go_binary(
         "hostinet_sr.go",
         "main.go",
         "segfault_unsafe.go",
+        "state_workload.go",
+        "state_workload_fs.go",
         "vdso_clock_amd64.s",
         "vdso_clock_arm64.s",
         "vdso_clock_unsafe.go",
