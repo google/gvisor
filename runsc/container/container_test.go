@@ -5388,6 +5388,116 @@ func TestRootfsEROFS(t *testing.T) {
 	}
 }
 
+// TestReadonlyRootfsEROFS checks that a read-only EROFS rootfs keeps a
+// requested overlay, stays read-only, and creates missing mount points.
+func TestReadonlyRootfsEROFS(t *testing.T) {
+	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
+
+	testDir := t.TempDir()
+	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
+	if err != nil {
+		t.Fatalf("failed to create EROFS rootfs image: %v", err)
+	}
+	// Leave mount points out of the image, including the mandatory mounts
+	// and the implicit /tmp mount.
+	for _, dir := range []string{"data", "dev", "proc", "sys", "tmp"} {
+		if err := os.Remove(filepath.Join(rootfsDir, dir)); err != nil {
+			t.Fatalf("os.Remove(%q) failed: %v", dir, err)
+		}
+	}
+	if err := createImageEROFS(rootfsImage, rootfsDir, "-E noinline_data"); err != nil {
+		t.Fatalf("failed to create EROFS rootfs image: %v", err)
+	}
+	bindDir := filepath.Join(testDir, "bind")
+	if err := os.Mkdir(bindDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	bindFile := filepath.Join(bindDir, "file")
+	if err := os.WriteFile(bindFile, []byte("contents\n"), 0644); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	bindMounts := []specs.Mount{
+		{
+			Type:        "bind",
+			Destination: "/missing/dir",
+			Source:      bindDir,
+		},
+		{
+			Type:        "bind",
+			Destination: "/missing/file",
+			Source:      bindFile,
+		},
+	}
+	const readonlyRoot = `/busybox grep -q '/ / ro - overlay' /proc/self/mountinfo &&
+/busybox touch /foo 2>&1 | /busybox grep -q 'Read-only file system'`
+	const bindMountsReadable = `/busybox grep -qx contents /missing/dir/file &&
+/busybox grep -qx contents /missing/file && `
+
+	for _, tc := range []struct {
+		name    string
+		overlay config.OverlayMedium
+		mounts  []specs.Mount
+		script  string
+	}{
+		{
+			name:    "memory",
+			overlay: config.MemoryOverlay,
+			mounts:  bindMounts,
+			script:  bindMountsReadable,
+		},
+		{
+			name:    "memory without bind mounts",
+			overlay: config.MemoryOverlay,
+			mounts:  []specs.Mount{{Type: "tmpfs", Destination: "/missing/tmpfs"}},
+			script:  `/busybox touch /missing/tmpfs/file && `,
+		},
+		{
+			name:    "self without submounts",
+			overlay: config.SelfOverlay,
+		},
+		{
+			name:    "dir",
+			overlay: config.OverlayMedium(config.AnonOverlayPrefix + testDir),
+			mounts:  bindMounts,
+			script:  bindMountsReadable,
+		},
+	} {
+		for name, conf := range configs(t, true /* noOverlay */) {
+			t.Run(tc.name+"/"+name, func(t *testing.T) {
+				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", tc.script+readonlyRoot)
+				spec.Root.Path = rootfsDir
+				spec.Root.Readonly = true
+				spec.Annotations = map[string]string{
+					sentryapi.RootfsPrefix + "type":    erofs.Name,
+					sentryapi.RootfsPrefix + "source":  rootfsImage,
+					sentryapi.RootfsPrefix + "overlay": tc.overlay.String(),
+				}
+				spec.Mounts = tc.mounts
+
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+
+				args := Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
+					Attached:  true,
+				}
+				ws, err := Run(conf, args)
+				if err != nil {
+					t.Fatalf("error running container: %v", err)
+				}
+				if ws.ExitStatus() != 0 {
+					t.Errorf("got exit status %v want %v", ws.ExitStatus(), 0)
+				}
+			})
+		}
+	}
+}
+
 // TestLookupEROFS reads the files in EROFS images, which contain some random files,
 // and checks if the data is as expected.
 func TestLookupEROFS(t *testing.T) {
