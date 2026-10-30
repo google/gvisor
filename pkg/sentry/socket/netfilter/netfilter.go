@@ -231,9 +231,9 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 	var offsets map[uint32]int
 	var targets map[int][]byte
 	if ipv6 {
-		offsets, targets, err = modifyEntries6(mapper, optVal, &replace, &table)
+		offsets, targets, err = modifyEntries6(mapper, stk, optVal, &replace, &table)
 	} else {
-		offsets, targets, err = modifyEntries4(mapper, optVal, &replace, &table)
+		offsets, targets, err = modifyEntries4(mapper, stk, optVal, &replace, &table)
 	}
 	if err != nil {
 		return err
@@ -337,7 +337,7 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
 // only the matchers.
-func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
+func parseMatchers(mapper IDMapper, stk *stack.Stack, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
 	nflog("set entries: parsing matchers of size %d", len(optVal))
 	var matchers []stack.Matcher
 	for len(optVal) > 0 {
@@ -361,7 +361,7 @@ func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) 
 
 		// Starting with the highest supported revision, try to unmarshal
 		// with each revision down to 0; if all revisions fail, give up.
-		matcher, err := unmarshalMatcherRevs(mapper, &match, filter, optVal)
+		matcher, err := unmarshalMatcherRevs(mapper, stk, &match, filter, optVal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create matcher: %v", match)
 		}
@@ -384,7 +384,7 @@ func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) 
 // starting with the highest revision down to 0. If all revisions fail,
 // it returns the most recent (lowest revision's) "unmarshalMatcher"
 // error.
-func unmarshalMatcherRevs(mapper IDMapper, match *linux.XTEntryMatch, filter stack.IPHeaderFilter, optVal []byte) (stack.Matcher, error) {
+func unmarshalMatcherRevs(mapper IDMapper, stk *stack.Stack, match *linux.XTEntryMatch, filter stack.IPHeaderFilter, optVal []byte) (stack.Matcher, error) {
 	var (
 		matcher stack.Matcher
 		err     error
@@ -404,7 +404,7 @@ func unmarshalMatcherRevs(mapper IDMapper, match *linux.XTEntryMatch, filter sta
 
 		nflog("unmarshalMatcherRevs: attempting to find matcher: %+v", match)
 		matcher, err = unmarshalMatcher(
-			mapper, match, filter,
+			mapper, stk, match, filter,
 			optVal[linux.SizeOfXTEntryMatch:match.MatchSize],
 		)
 

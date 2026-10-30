@@ -49,7 +49,7 @@ func (commentMarshaler) marshal(mr matcher) []byte {
 	return marshalEntryMatch(matcherNameComment, buf[:])
 }
 
-func (commentMarshaler) unmarshal(_ IDMapper, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
+func (commentMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTCommentInfo {
 		return nil, fmt.Errorf("buf has insufficient size for comment match: %d", len(buf))
 	}
