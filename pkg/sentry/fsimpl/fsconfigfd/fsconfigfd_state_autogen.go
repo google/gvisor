@@ -132,7 +132,7 @@ func (f *FSParameter) beforeSave() {}
 func (f *FSParameter) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.Value)
-	stateSinkObject.Save(1, &f.DirFd)
+	stateSinkObject.SaveInt(1, &f.DirFd)
 }
 
 func (f *FSParameter) afterLoad(context.Context) {}
@@ -140,7 +140,7 @@ func (f *FSParameter) afterLoad(context.Context) {}
 // +checklocksignore
 func (f *FSParameter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.Value)
-	stateSourceObject.Load(1, &f.DirFd)
+	stateSourceObject.LoadInt(1, &f.DirFd)
 }
 
 func (c *createParamsContext) StateTypeName() string {
@@ -161,7 +161,7 @@ func (c *createParamsContext) beforeSave() {}
 // +checklocksignore
 func (c *createParamsContext) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	stateSinkObject.Save(0, &c.fsName)
+	stateSinkObject.SaveString(0, &c.fsName)
 	stateSinkObject.Save(1, &c.source)
 	stateSinkObject.Save(2, &c.params)
 	stateSinkObject.Save(3, &c.creds)
@@ -171,7 +171,7 @@ func (c *createParamsContext) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (c *createParamsContext) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.fsName)
+	stateSourceObject.LoadString(0, &c.fsName)
 	stateSourceObject.Load(1, &c.source)
 	stateSourceObject.Load(2, &c.params)
 	stateSourceObject.Load(3, &c.creds)
@@ -233,14 +233,14 @@ func (f *failedContext) StateLoad(ctx context.Context, stateSourceObject state.S
 }
 
 func init() {
-	state.Register((*Fd)(nil))
-	state.Register((*FSValueFlag)(nil))
+	state.RegisterNoHooks((*Fd)(nil))
+	state.RegisterNoHooks((*FSValueFlag)(nil))
 	state.Register((*FSValueString)(nil))
 	state.Register((*FSValueBlob)(nil))
 	state.Register((*FSValuePath)(nil))
-	state.Register((*FSValueFd)(nil))
-	state.Register((*FSParameter)(nil))
-	state.Register((*createParamsContext)(nil))
-	state.Register((*awaitingMountContext)(nil))
-	state.Register((*failedContext)(nil))
+	state.RegisterNoHooks((*FSValueFd)(nil))
+	state.RegisterNoHooks((*FSParameter)(nil))
+	state.RegisterNoHooks((*createParamsContext)(nil))
+	state.RegisterNoHooks((*awaitingMountContext)(nil))
+	state.RegisterNoHooks((*failedContext)(nil))
 }

@@ -27,16 +27,16 @@ func (i *Int64) beforeSave() {}
 // +checklocksignore
 func (i *Int64) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.value)
-	stateSinkObject.Save(1, &i.value32)
+	stateSinkObject.SaveInt64(0, &i.value)
+	stateSinkObject.SaveInt32(1, &i.value32)
 }
 
 func (i *Int64) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *Int64) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.value)
-	stateSourceObject.Load(1, &i.value32)
+	stateSourceObject.LoadInt64(0, &i.value)
+	stateSourceObject.LoadInt32(1, &i.value32)
 }
 
 func (u *Uint64) StateTypeName() string {
@@ -55,19 +55,19 @@ func (u *Uint64) beforeSave() {}
 // +checklocksignore
 func (u *Uint64) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.value)
-	stateSinkObject.Save(1, &u.value32)
+	stateSinkObject.SaveUint64(0, &u.value)
+	stateSinkObject.SaveUint32(1, &u.value32)
 }
 
 func (u *Uint64) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *Uint64) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.value)
-	stateSourceObject.Load(1, &u.value32)
+	stateSourceObject.LoadUint64(0, &u.value)
+	stateSourceObject.LoadUint32(1, &u.value32)
 }
 
 func init() {
-	state.Register((*Int64)(nil))
-	state.Register((*Uint64)(nil))
+	state.RegisterNoHooks((*Int64)(nil))
+	state.RegisterNoHooks((*Uint64)(nil))
 }

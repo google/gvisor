@@ -51,7 +51,7 @@ func (p *Program) beforeSave() {}
 func (p *Program) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.instructions)
-	stateSinkObject.Save(1, &p.id)
+	stateSinkObject.SaveUint32(1, (*uint32)(&p.id))
 	stateSinkObject.Save(2, &p.progType)
 }
 
@@ -60,11 +60,11 @@ func (p *Program) afterLoad(context.Context) {}
 // +checklocksignore
 func (p *Program) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.instructions)
-	stateSourceObject.Load(1, &p.id)
+	stateSourceObject.LoadUint32(1, (*uint32)(&p.id))
 	stateSourceObject.Load(2, &p.progType)
 }
 
 func init() {
-	state.Register((*UnverifiedProgram)(nil))
-	state.Register((*Program)(nil))
+	state.RegisterNoHooks((*UnverifiedProgram)(nil))
+	state.RegisterNoHooks((*Program)(nil))
 }

@@ -50,10 +50,10 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &s.connection)
 	stateSinkObject.Save(10, &s.netns)
 	stateSinkObject.Save(11, &s.groups)
-	stateSinkObject.Save(12, &s.bound)
-	stateSinkObject.Save(13, &s.portID)
-	stateSinkObject.Save(14, &s.sendBufferSize)
-	stateSinkObject.Save(15, &s.filter)
+	stateSinkObject.SaveBool(12, &s.bound)
+	stateSinkObject.SaveInt32(13, &s.portID)
+	stateSinkObject.SaveUint32(14, &s.sendBufferSize)
+	stateSinkObject.SaveBool(15, &s.filter)
 }
 
 func (s *Socket) afterLoad(context.Context) {}
@@ -72,10 +72,10 @@ func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(9, &s.connection)
 	stateSourceObject.Load(10, &s.netns)
 	stateSourceObject.Load(11, &s.groups)
-	stateSourceObject.Load(12, &s.bound)
-	stateSourceObject.Load(13, &s.portID)
-	stateSourceObject.Load(14, &s.sendBufferSize)
-	stateSourceObject.Load(15, &s.filter)
+	stateSourceObject.LoadBool(12, &s.bound)
+	stateSourceObject.LoadInt32(13, &s.portID)
+	stateSourceObject.LoadUint32(14, &s.sendBufferSize)
+	stateSourceObject.LoadBool(15, &s.filter)
 }
 
 func (k *kernelSCM) StateTypeName() string {
@@ -100,6 +100,6 @@ func (k *kernelSCM) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*Socket)(nil))
-	state.Register((*kernelSCM)(nil))
+	state.RegisterNoHooks((*Socket)(nil))
+	state.RegisterNoHooks((*kernelSCM)(nil))
 }

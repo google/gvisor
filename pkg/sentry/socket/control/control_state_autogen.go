@@ -48,6 +48,6 @@ func (fs *RightsFiles) StateFields() []string {
 }
 
 func init() {
-	state.Register((*scmCredentials)(nil))
+	state.RegisterNoHooks((*scmCredentials)(nil))
 	state.Register((*RightsFiles)(nil))
 }

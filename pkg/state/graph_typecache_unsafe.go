@@ -163,7 +163,7 @@ func schemaFingerprint() uint64 {
 	for name, t := range globalTypeDatabase {
 		h := hashStr(fnvOffset, name)
 		var flags byte
-		if noHooksTypes[t] {
+		if isNoHooks(t) {
 			flags |= 1
 		}
 		if binaryTypes[t] != "" {

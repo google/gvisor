@@ -31,12 +31,12 @@ func (d *discipline) beforeSave() {}
 func (d *discipline) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.lower)
-	stateSinkObject.Save(1, &d.rate)
-	stateSinkObject.Save(2, &d.burst)
-	stateSinkObject.Save(3, &d.buffer)
+	stateSinkObject.SaveUint64(1, &d.rate)
+	stateSinkObject.SaveUint32(2, &d.burst)
+	stateSinkObject.SaveInt64(3, &d.buffer)
 	stateSinkObject.Save(4, &d.closed)
 	stateSinkObject.Save(5, &d.queue)
-	stateSinkObject.Save(6, &d.tokens)
+	stateSinkObject.SaveInt64(6, &d.tokens)
 	stateSinkObject.Save(7, &d.timeCheckpoint)
 }
 
@@ -45,15 +45,15 @@ func (d *discipline) afterLoad(context.Context) {}
 // +checklocksignore
 func (d *discipline) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.lower)
-	stateSourceObject.Load(1, &d.rate)
-	stateSourceObject.Load(2, &d.burst)
-	stateSourceObject.Load(3, &d.buffer)
+	stateSourceObject.LoadUint64(1, &d.rate)
+	stateSourceObject.LoadUint32(2, &d.burst)
+	stateSourceObject.LoadInt64(3, &d.buffer)
 	stateSourceObject.Load(4, &d.closed)
 	stateSourceObject.Load(5, &d.queue)
-	stateSourceObject.Load(6, &d.tokens)
+	stateSourceObject.LoadInt64(6, &d.tokens)
 	stateSourceObject.Load(7, &d.timeCheckpoint)
 }
 
 func init() {
-	state.Register((*discipline)(nil))
+	state.RegisterNoHooks((*discipline)(nil))
 }

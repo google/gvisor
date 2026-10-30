@@ -88,11 +88,16 @@ func (r *subprocessRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *subprocessRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *subprocessRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*contextList)(nil))
-	state.Register((*contextEntry)(nil))
-	state.Register((*subprocessRefs)(nil))
+	state.RegisterNoHooks((*contextList)(nil))
+	state.RegisterNoHooks((*contextEntry)(nil))
+	state.RegisterStruct((*subprocessRefs)(nil))
 }

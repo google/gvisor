@@ -30,5 +30,5 @@ func (t *ttyDevice) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*ttyDevice)(nil))
+	state.RegisterNoHooks((*ttyDevice)(nil))
 }

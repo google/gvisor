@@ -25,18 +25,18 @@ func (f *Flags) beforeSave() {}
 // +checklocksignore
 func (f *Flags) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.MostRecent)
-	stateSinkObject.Save(1, &f.LoadBalanced)
-	stateSinkObject.Save(2, &f.TupleOnly)
+	stateSinkObject.SaveBool(0, &f.MostRecent)
+	stateSinkObject.SaveBool(1, &f.LoadBalanced)
+	stateSinkObject.SaveBool(2, &f.TupleOnly)
 }
 
 func (f *Flags) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *Flags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.MostRecent)
-	stateSourceObject.Load(1, &f.LoadBalanced)
-	stateSourceObject.Load(2, &f.TupleOnly)
+	stateSourceObject.LoadBool(0, &f.MostRecent)
+	stateSourceObject.LoadBool(1, &f.LoadBalanced)
+	stateSourceObject.LoadBool(2, &f.TupleOnly)
 }
 
 func (c *FlagCounter) StateTypeName() string {
@@ -83,7 +83,7 @@ func (p *portDescriptor) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.network)
 	stateSinkObject.Save(1, &p.transport)
-	stateSinkObject.Save(2, &p.port)
+	stateSinkObject.SaveUint16(2, &p.port)
 }
 
 func (p *portDescriptor) afterLoad(context.Context) {}
@@ -92,7 +92,7 @@ func (p *portDescriptor) afterLoad(context.Context) {}
 func (p *portDescriptor) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.network)
 	stateSourceObject.Load(1, &p.transport)
-	stateSourceObject.Load(2, &p.port)
+	stateSourceObject.LoadUint16(2, &p.port)
 }
 
 func (d *destination) StateTypeName() string {
@@ -112,7 +112,7 @@ func (d *destination) beforeSave() {}
 func (d *destination) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.addr)
-	stateSinkObject.Save(1, &d.port)
+	stateSinkObject.SaveUint16(1, &d.port)
 }
 
 func (d *destination) afterLoad(context.Context) {}
@@ -120,7 +120,7 @@ func (d *destination) afterLoad(context.Context) {}
 // +checklocksignore
 func (d *destination) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.addr)
-	stateSourceObject.Load(1, &d.port)
+	stateSourceObject.LoadUint16(1, &d.port)
 }
 
 func (pm *PortManager) StateTypeName() string {
@@ -141,8 +141,8 @@ func (pm *PortManager) beforeSave() {}
 func (pm *PortManager) StateSave(stateSinkObject state.Sink) {
 	pm.beforeSave()
 	stateSinkObject.Save(0, &pm.allocatedPorts)
-	stateSinkObject.Save(1, &pm.firstEphemeral)
-	stateSinkObject.Save(2, &pm.numEphemeral)
+	stateSinkObject.SaveUint16(1, &pm.firstEphemeral)
+	stateSinkObject.SaveUint16(2, &pm.numEphemeral)
 }
 
 func (pm *PortManager) afterLoad(context.Context) {}
@@ -150,14 +150,14 @@ func (pm *PortManager) afterLoad(context.Context) {}
 // +checklocksignore
 func (pm *PortManager) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pm.allocatedPorts)
-	stateSourceObject.Load(1, &pm.firstEphemeral)
-	stateSourceObject.Load(2, &pm.numEphemeral)
+	stateSourceObject.LoadUint16(1, &pm.firstEphemeral)
+	stateSourceObject.LoadUint16(2, &pm.numEphemeral)
 }
 
 func init() {
-	state.Register((*Flags)(nil))
-	state.Register((*FlagCounter)(nil))
-	state.Register((*portDescriptor)(nil))
-	state.Register((*destination)(nil))
-	state.Register((*PortManager)(nil))
+	state.RegisterNoHooks((*Flags)(nil))
+	state.RegisterNoHooks((*FlagCounter)(nil))
+	state.RegisterNoHooks((*portDescriptor)(nil))
+	state.RegisterNoHooks((*destination)(nil))
+	state.RegisterNoHooks((*PortManager)(nil))
 }

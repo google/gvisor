@@ -28,10 +28,10 @@ func (f *futexWaitRestartBlock) beforeSave() {}
 func (f *futexWaitRestartBlock) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.duration)
-	stateSinkObject.Save(1, &f.addr)
-	stateSinkObject.Save(2, &f.private)
-	stateSinkObject.Save(3, &f.val)
-	stateSinkObject.Save(4, &f.mask)
+	stateSinkObject.SaveUint64(1, &f.addr)
+	stateSinkObject.SaveBool(2, &f.private)
+	stateSinkObject.SaveUint32(3, &f.val)
+	stateSinkObject.SaveUint32(4, &f.mask)
 }
 
 func (f *futexWaitRestartBlock) afterLoad(context.Context) {}
@@ -39,10 +39,10 @@ func (f *futexWaitRestartBlock) afterLoad(context.Context) {}
 // +checklocksignore
 func (f *futexWaitRestartBlock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.duration)
-	stateSourceObject.Load(1, &f.addr)
-	stateSourceObject.Load(2, &f.private)
-	stateSourceObject.Load(3, &f.val)
-	stateSourceObject.Load(4, &f.mask)
+	stateSourceObject.LoadUint64(1, &f.addr)
+	stateSourceObject.LoadBool(2, &f.private)
+	stateSourceObject.LoadUint32(3, &f.val)
+	stateSourceObject.LoadUint32(4, &f.mask)
 }
 
 func (p *pollRestartBlock) StateTypeName() string {
@@ -63,7 +63,7 @@ func (p *pollRestartBlock) beforeSave() {}
 func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.pfdAddr)
-	stateSinkObject.Save(1, &p.nfds)
+	stateSinkObject.SaveUint(1, &p.nfds)
 	stateSinkObject.Save(2, &p.timeout)
 }
 
@@ -72,7 +72,7 @@ func (p *pollRestartBlock) afterLoad(context.Context) {}
 // +checklocksignore
 func (p *pollRestartBlock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.pfdAddr)
-	stateSourceObject.Load(1, &p.nfds)
+	stateSourceObject.LoadUint(1, &p.nfds)
 	stateSourceObject.Load(2, &p.timeout)
 }
 
@@ -108,7 +108,7 @@ func (n *clockNanosleepRestartBlock) StateLoad(ctx context.Context, stateSourceO
 }
 
 func init() {
-	state.Register((*futexWaitRestartBlock)(nil))
-	state.Register((*pollRestartBlock)(nil))
-	state.Register((*clockNanosleepRestartBlock)(nil))
+	state.RegisterNoHooks((*futexWaitRestartBlock)(nil))
+	state.RegisterNoHooks((*pollRestartBlock)(nil))
+	state.RegisterNoHooks((*clockNanosleepRestartBlock)(nil))
 }

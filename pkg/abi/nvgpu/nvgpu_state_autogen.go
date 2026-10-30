@@ -34,12 +34,12 @@ func (n *NVOS64_PARAMETERS) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &n.HRoot)
 	stateSinkObject.Save(1, &n.HObjectParent)
 	stateSinkObject.Save(2, &n.HObjectNew)
-	stateSinkObject.Save(3, &n.HClass)
-	stateSinkObject.Save(4, &n.PAllocParms)
-	stateSinkObject.Save(5, &n.PRightsRequested)
-	stateSinkObject.Save(6, &n.ParamsSize)
-	stateSinkObject.Save(7, &n.Flags)
-	stateSinkObject.Save(8, &n.Status)
+	stateSinkObject.SaveUint32(3, (*uint32)(&n.HClass))
+	stateSinkObject.SaveUint64(4, (*uint64)(&n.PAllocParms))
+	stateSinkObject.SaveUint64(5, (*uint64)(&n.PRightsRequested))
+	stateSinkObject.SaveUint32(6, &n.ParamsSize)
+	stateSinkObject.SaveUint32(7, &n.Flags)
+	stateSinkObject.SaveUint32(8, &n.Status)
 }
 
 func (n *NVOS64_PARAMETERS) afterLoad(context.Context) {}
@@ -49,12 +49,12 @@ func (n *NVOS64_PARAMETERS) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(0, &n.HRoot)
 	stateSourceObject.Load(1, &n.HObjectParent)
 	stateSourceObject.Load(2, &n.HObjectNew)
-	stateSourceObject.Load(3, &n.HClass)
-	stateSourceObject.Load(4, &n.PAllocParms)
-	stateSourceObject.Load(5, &n.PRightsRequested)
-	stateSourceObject.Load(6, &n.ParamsSize)
-	stateSourceObject.Load(7, &n.Flags)
-	stateSourceObject.Load(8, &n.Status)
+	stateSourceObject.LoadUint32(3, (*uint32)(&n.HClass))
+	stateSourceObject.LoadUint64(4, (*uint64)(&n.PAllocParms))
+	stateSourceObject.LoadUint64(5, (*uint64)(&n.PRightsRequested))
+	stateSourceObject.LoadUint32(6, &n.ParamsSize)
+	stateSourceObject.LoadUint32(7, &n.Flags)
+	stateSourceObject.LoadUint32(8, &n.Status)
 }
 
 func (h *Handle) StateTypeName() string {
@@ -72,14 +72,14 @@ func (h *Handle) beforeSave() {}
 // +checklocksignore
 func (h *Handle) StateSave(stateSinkObject state.Sink) {
 	h.beforeSave()
-	stateSinkObject.Save(0, &h.Val)
+	stateSinkObject.SaveUint32(0, &h.Val)
 }
 
 func (h *Handle) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (h *Handle) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &h.Val)
+	stateSourceObject.LoadUint32(0, &h.Val)
 }
 
 func (r *RS_ACCESS_MASK) StateTypeName() string {
@@ -108,7 +108,7 @@ func (r *RS_ACCESS_MASK) StateLoad(ctx context.Context, stateSourceObject state.
 }
 
 func init() {
-	state.Register((*NVOS64_PARAMETERS)(nil))
-	state.Register((*Handle)(nil))
-	state.Register((*RS_ACCESS_MASK)(nil))
+	state.RegisterNoHooks((*NVOS64_PARAMETERS)(nil))
+	state.RegisterNoHooks((*Handle)(nil))
+	state.RegisterNoHooks((*RS_ACCESS_MASK)(nil))
 }

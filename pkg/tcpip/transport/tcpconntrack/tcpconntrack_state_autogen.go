@@ -29,7 +29,7 @@ func (t *TCB) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &t.reply)
 	stateSinkObject.Save(1, &t.original)
 	stateSinkObject.Save(2, &t.firstFin)
-	stateSinkObject.Save(3, &t.state)
+	stateSinkObject.SaveInt(3, (*int)(&t.state))
 }
 
 func (t *TCB) afterLoad(context.Context) {}
@@ -39,7 +39,7 @@ func (t *TCB) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.reply)
 	stateSourceObject.Load(1, &t.original)
 	stateSourceObject.Load(2, &t.firstFin)
-	stateSourceObject.Load(3, &t.state)
+	stateSourceObject.LoadInt(3, (*int)(&t.state))
 }
 
 func (s *stream) StateTypeName() string {
@@ -66,10 +66,10 @@ func (s *stream) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &s.una)
 	stateSinkObject.Save(1, &s.nxt)
 	stateSinkObject.Save(2, &s.end)
-	stateSinkObject.Save(3, &s.finSeen)
+	stateSinkObject.SaveBool(3, &s.finSeen)
 	stateSinkObject.Save(4, &s.fin)
-	stateSinkObject.Save(5, &s.rstSeen)
-	stateSinkObject.Save(6, &s.shiftCnt)
+	stateSinkObject.SaveBool(5, &s.rstSeen)
+	stateSinkObject.SaveInt(6, &s.shiftCnt)
 }
 
 func (s *stream) afterLoad(context.Context) {}
@@ -79,13 +79,13 @@ func (s *stream) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(0, &s.una)
 	stateSourceObject.Load(1, &s.nxt)
 	stateSourceObject.Load(2, &s.end)
-	stateSourceObject.Load(3, &s.finSeen)
+	stateSourceObject.LoadBool(3, &s.finSeen)
 	stateSourceObject.Load(4, &s.fin)
-	stateSourceObject.Load(5, &s.rstSeen)
-	stateSourceObject.Load(6, &s.shiftCnt)
+	stateSourceObject.LoadBool(5, &s.rstSeen)
+	stateSourceObject.LoadInt(6, &s.shiftCnt)
 }
 
 func init() {
-	state.Register((*TCB)(nil))
-	state.Register((*stream)(nil))
+	state.RegisterNoHooks((*TCB)(nil))
+	state.RegisterNoHooks((*stream)(nil))
 }

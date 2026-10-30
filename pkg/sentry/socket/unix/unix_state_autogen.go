@@ -29,7 +29,12 @@ func (r *socketRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *socketRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *socketRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (s *Socket) StateTypeName() string {
@@ -66,8 +71,8 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &s.namespace)
 	stateSinkObject.Save(7, &s.ep)
 	stateSinkObject.Save(8, &s.stype)
-	stateSinkObject.Save(9, &s.abstractName)
-	stateSinkObject.Save(10, &s.abstractBound)
+	stateSinkObject.SaveString(9, &s.abstractName)
+	stateSinkObject.SaveBool(10, &s.abstractBound)
 }
 
 func (s *Socket) afterLoad(context.Context) {}
@@ -83,11 +88,11 @@ func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(6, &s.namespace)
 	stateSourceObject.Load(7, &s.ep)
 	stateSourceObject.Load(8, &s.stype)
-	stateSourceObject.Load(9, &s.abstractName)
-	stateSourceObject.Load(10, &s.abstractBound)
+	stateSourceObject.LoadString(9, &s.abstractName)
+	stateSourceObject.LoadBool(10, &s.abstractBound)
 }
 
 func init() {
-	state.Register((*socketRefs)(nil))
-	state.Register((*Socket)(nil))
+	state.RegisterStruct((*socketRefs)(nil))
+	state.RegisterNoHooks((*Socket)(nil))
 }

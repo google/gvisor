@@ -37,5 +37,5 @@ func (m *InjectableEndpoint) StateLoad(ctx context.Context, stateSourceObject st
 }
 
 func init() {
-	state.Register((*InjectableEndpoint)(nil))
+	state.RegisterNoHooks((*InjectableEndpoint)(nil))
 }

@@ -29,7 +29,7 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &e.linked)
 	stateSinkObject.Save(1, &e.dispatcher)
 	stateSinkObject.Save(2, &e.linkAddr)
-	stateSinkObject.Save(3, &e.mtu)
+	stateSinkObject.SaveUint32(3, &e.mtu)
 }
 
 func (e *Endpoint) afterLoad(context.Context) {}
@@ -39,9 +39,9 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(0, &e.linked)
 	stateSourceObject.Load(1, &e.dispatcher)
 	stateSourceObject.Load(2, &e.linkAddr)
-	stateSourceObject.Load(3, &e.mtu)
+	stateSourceObject.LoadUint32(3, &e.mtu)
 }
 
 func init() {
-	state.Register((*Endpoint)(nil))
+	state.RegisterNoHooks((*Endpoint)(nil))
 }

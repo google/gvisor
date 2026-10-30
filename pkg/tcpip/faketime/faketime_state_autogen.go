@@ -32,9 +32,17 @@ func (mc *ManualClock) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mc *ManualClock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(int64), func(y any) { mc.loadMu(ctx, y.(int64)) })
+	stateSourceObject.LoadValueTo(0, (*int64)(nil), mc)
+}
+
+// +checklocksignore
+func (mc *ManualClock) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		mc.loadMu(ctx, stateValue.(int64))
+	}
 }
 
 func init() {
-	state.Register((*ManualClock)(nil))
+	state.RegisterNoHooks((*ManualClock)(nil))
 }

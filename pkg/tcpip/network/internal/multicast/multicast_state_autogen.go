@@ -28,7 +28,7 @@ func (r *RouteTable) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.installedRoutes)
 	stateSinkObject.Save(1, &r.pendingRoutes)
-	stateSinkObject.Save(2, &r.isCleanupRoutineRunning)
+	stateSinkObject.SaveBool(2, &r.isCleanupRoutineRunning)
 	stateSinkObject.Save(3, &r.config)
 }
 
@@ -38,7 +38,7 @@ func (r *RouteTable) afterLoad(context.Context) {}
 func (r *RouteTable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.installedRoutes)
 	stateSourceObject.Load(1, &r.pendingRoutes)
-	stateSourceObject.Load(2, &r.isCleanupRoutineRunning)
+	stateSourceObject.LoadBool(2, &r.isCleanupRoutineRunning)
 	stateSourceObject.Load(3, &r.config)
 }
 
@@ -114,7 +114,7 @@ func (c *Config) beforeSave() {}
 // +checklocksignore
 func (c *Config) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	stateSinkObject.Save(0, &c.MaxPendingQueueSize)
+	stateSinkObject.SaveUint8(0, &c.MaxPendingQueueSize)
 	stateSinkObject.Save(1, &c.Clock)
 }
 
@@ -122,13 +122,13 @@ func (c *Config) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (c *Config) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.MaxPendingQueueSize)
+	stateSourceObject.LoadUint8(0, &c.MaxPendingQueueSize)
 	stateSourceObject.Load(1, &c.Clock)
 }
 
 func init() {
-	state.Register((*RouteTable)(nil))
-	state.Register((*InstalledRoute)(nil))
-	state.Register((*PendingRoute)(nil))
-	state.Register((*Config)(nil))
+	state.RegisterNoHooks((*RouteTable)(nil))
+	state.RegisterNoHooks((*InstalledRoute)(nil))
+	state.RegisterNoHooks((*PendingRoute)(nil))
+	state.RegisterNoHooks((*Config)(nil))
 }

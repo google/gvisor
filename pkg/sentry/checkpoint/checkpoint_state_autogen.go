@@ -24,18 +24,18 @@ func (id *ResourceID) beforeSave() {}
 // +checklocksignore
 func (id *ResourceID) StateSave(stateSinkObject state.Sink) {
 	id.beforeSave()
-	stateSinkObject.Save(0, &id.ContainerName)
-	stateSinkObject.Save(1, &id.Path)
+	stateSinkObject.SaveString(0, &id.ContainerName)
+	stateSinkObject.SaveString(1, &id.Path)
 }
 
 func (id *ResourceID) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (id *ResourceID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &id.ContainerName)
-	stateSourceObject.Load(1, &id.Path)
+	stateSourceObject.LoadString(0, &id.ContainerName)
+	stateSourceObject.LoadString(1, &id.Path)
 }
 
 func init() {
-	state.Register((*ResourceID)(nil))
+	state.RegisterNoHooks((*ResourceID)(nil))
 }

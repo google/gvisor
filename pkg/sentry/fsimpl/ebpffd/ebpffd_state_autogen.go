@@ -46,5 +46,5 @@ func (fd *ProgramFD) StateLoad(ctx context.Context, stateSourceObject state.Sour
 }
 
 func init() {
-	state.Register((*ProgramFD)(nil))
+	state.RegisterNoHooks((*ProgramFD)(nil))
 }

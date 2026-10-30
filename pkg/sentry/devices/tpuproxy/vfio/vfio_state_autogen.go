@@ -24,16 +24,16 @@ func (r *DevAddrRange) beforeSave() {}
 // +checklocksignore
 func (r *DevAddrRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUint64(0, &r.Start)
+	stateSinkObject.SaveUint64(1, &r.End)
 }
 
 func (r *DevAddrRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *DevAddrRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUint64(0, &r.Start)
+	stateSourceObject.LoadUint64(1, &r.End)
 }
 
 func (s *DevAddrSet) StateTypeName() string {
@@ -60,7 +60,15 @@ func (s *DevAddrSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *DevAddrSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]DevAddrFlatSegment), func(y any) { s.loadRoot(ctx, y.([]DevAddrFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]DevAddrFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *DevAddrSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]DevAddrFlatSegment))
+	}
 }
 
 func (n *DevAddrnode) StateTypeName() string {
@@ -85,10 +93,10 @@ func (n *DevAddrnode) beforeSave() {}
 // +checklocksignore
 func (n *DevAddrnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -99,10 +107,10 @@ func (n *DevAddrnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *DevAddrnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -126,8 +134,8 @@ func (d *DevAddrFlatSegment) beforeSave() {}
 // +checklocksignore
 func (d *DevAddrFlatSegment) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.Start)
-	stateSinkObject.Save(1, &d.End)
+	stateSinkObject.SaveUint64(0, &d.Start)
+	stateSinkObject.SaveUint64(1, &d.End)
 	stateSinkObject.Save(2, &d.Value)
 }
 
@@ -135,8 +143,8 @@ func (d *DevAddrFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *DevAddrFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.Start)
-	stateSourceObject.Load(1, &d.End)
+	stateSourceObject.LoadUint64(0, &d.Start)
+	stateSourceObject.LoadUint64(1, &d.End)
 	stateSourceObject.Load(2, &d.Value)
 }
 
@@ -169,9 +177,9 @@ func (fd *pciDeviceFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoHugepages)
-	stateSinkObject.Save(5, &fd.hostFD)
-	stateSinkObject.Save(6, &fd.deviceAddress)
-	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.SaveInt32(5, &fd.hostFD)
+	stateSinkObject.SaveString(6, &fd.deviceAddress)
+	stateSinkObject.SaveString(7, &fd.containerName)
 	stateSinkObject.Save(8, &fd.queue)
 	stateSinkObject.Save(9, &fd.mappings)
 	stateSinkObject.Save(10, &fd.memmapFile)
@@ -187,9 +195,9 @@ func (fd *pciDeviceFD) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoHugepages)
-	stateSourceObject.Load(5, &fd.hostFD)
-	stateSourceObject.Load(6, &fd.deviceAddress)
-	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.LoadInt32(5, &fd.hostFD)
+	stateSourceObject.LoadString(6, &fd.deviceAddress)
+	stateSourceObject.LoadString(7, &fd.containerName)
 	stateSourceObject.Load(8, &fd.queue)
 	stateSourceObject.Load(9, &fd.mappings)
 	stateSourceObject.Load(10, &fd.memmapFile)
@@ -225,8 +233,8 @@ func (fd *tpuFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
 	stateSinkObject.Save(5, &fd.MappableNoHugepages)
-	stateSinkObject.Save(6, &fd.hostFD)
-	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.SaveInt32(6, &fd.hostFD)
+	stateSinkObject.SaveString(7, &fd.containerName)
 	stateSinkObject.Save(8, &fd.device)
 	stateSinkObject.Save(9, &fd.queue)
 	stateSinkObject.Save(10, &fd.memmapFile)
@@ -240,12 +248,17 @@ func (fd *tpuFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
 	stateSourceObject.Load(5, &fd.MappableNoHugepages)
-	stateSourceObject.Load(6, &fd.hostFD)
-	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.LoadInt32(6, &fd.hostFD)
+	stateSourceObject.LoadString(7, &fd.containerName)
 	stateSourceObject.Load(8, &fd.device)
 	stateSourceObject.Load(9, &fd.queue)
 	stateSourceObject.Load(10, &fd.memmapFile)
-	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fd)
+}
+
+// +checklocksignore
+func (fd *tpuFD) StateAfterLoad(ctx context.Context) {
+	fd.afterLoad(ctx)
 }
 
 func (t *tpuproxy) StateTypeName() string {
@@ -287,9 +300,9 @@ func (dev *tpuDevice) beforeSave() {}
 // +checklocksignore
 func (dev *tpuDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
-	stateSinkObject.Save(0, &dev.minor)
-	stateSinkObject.Save(1, &dev.num)
-	stateSinkObject.Save(2, &dev.useDevGofer)
+	stateSinkObject.SaveUint32(0, &dev.minor)
+	stateSinkObject.SaveUint32(1, &dev.num)
+	stateSinkObject.SaveBool(2, &dev.useDevGofer)
 	stateSinkObject.Save(3, &dev.tpuproxy)
 }
 
@@ -297,9 +310,9 @@ func (dev *tpuDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (dev *tpuDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &dev.minor)
-	stateSourceObject.Load(1, &dev.num)
-	stateSourceObject.Load(2, &dev.useDevGofer)
+	stateSourceObject.LoadUint32(0, &dev.minor)
+	stateSourceObject.LoadUint32(1, &dev.num)
+	stateSourceObject.LoadBool(2, &dev.useDevGofer)
 	stateSourceObject.Load(3, &dev.tpuproxy)
 }
 
@@ -319,7 +332,7 @@ func (dev *vfioDevice) beforeSave() {}
 // +checklocksignore
 func (dev *vfioDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
-	stateSinkObject.Save(0, &dev.useDevGofer)
+	stateSinkObject.SaveBool(0, &dev.useDevGofer)
 	stateSinkObject.Save(1, &dev.tpuproxy)
 }
 
@@ -327,7 +340,7 @@ func (dev *vfioDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (dev *vfioDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &dev.useDevGofer)
+	stateSourceObject.LoadBool(0, &dev.useDevGofer)
 	stateSourceObject.Load(1, &dev.tpuproxy)
 }
 
@@ -360,8 +373,8 @@ func (fd *vfioFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
 	stateSinkObject.Save(5, &fd.MappableNoHugepages)
-	stateSinkObject.Save(6, &fd.hostFD)
-	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.SaveInt32(6, &fd.hostFD)
+	stateSinkObject.SaveString(7, &fd.containerName)
 	stateSinkObject.Save(8, &fd.device)
 	stateSinkObject.Save(9, &fd.queue)
 	stateSinkObject.Save(10, &fd.memmapFile)
@@ -375,23 +388,28 @@ func (fd *vfioFD) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
 	stateSourceObject.Load(5, &fd.MappableNoHugepages)
-	stateSourceObject.Load(6, &fd.hostFD)
-	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.LoadInt32(6, &fd.hostFD)
+	stateSourceObject.LoadString(7, &fd.containerName)
 	stateSourceObject.Load(8, &fd.device)
 	stateSourceObject.Load(9, &fd.queue)
 	stateSourceObject.Load(10, &fd.memmapFile)
-	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fd)
+}
+
+// +checklocksignore
+func (fd *vfioFD) StateAfterLoad(ctx context.Context) {
+	fd.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*DevAddrRange)(nil))
-	state.Register((*DevAddrSet)(nil))
-	state.Register((*DevAddrnode)(nil))
-	state.Register((*DevAddrFlatSegment)(nil))
-	state.Register((*pciDeviceFD)(nil))
-	state.Register((*tpuFD)(nil))
-	state.Register((*tpuproxy)(nil))
-	state.Register((*tpuDevice)(nil))
-	state.Register((*vfioDevice)(nil))
-	state.Register((*vfioFD)(nil))
+	state.RegisterNoHooks((*DevAddrRange)(nil))
+	state.RegisterNoHooks((*DevAddrSet)(nil))
+	state.RegisterNoHooks((*DevAddrnode)(nil))
+	state.RegisterNoHooks((*DevAddrFlatSegment)(nil))
+	state.RegisterStruct((*pciDeviceFD)(nil))
+	state.RegisterStruct((*tpuFD)(nil))
+	state.RegisterNoHooks((*tpuproxy)(nil))
+	state.RegisterNoHooks((*tpuDevice)(nil))
+	state.RegisterNoHooks((*vfioDevice)(nil))
+	state.RegisterStruct((*vfioFD)(nil))
 }

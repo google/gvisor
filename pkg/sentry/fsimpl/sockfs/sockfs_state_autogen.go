@@ -46,7 +46,7 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
-	stateSinkObject.Save(1, &fs.devMinor)
+	stateSinkObject.SaveUint32(1, &fs.devMinor)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -54,7 +54,7 @@ func (fs *filesystem) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
-	stateSourceObject.Load(1, &fs.devMinor)
+	stateSourceObject.LoadUint32(1, &fs.devMinor)
 }
 
 func (i *inode) StateTypeName() string {
@@ -101,7 +101,7 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {
-	state.Register((*filesystemType)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*inode)(nil))
+	state.RegisterNoHooks((*filesystemType)(nil))
+	state.RegisterNoHooks((*filesystem)(nil))
+	state.RegisterNoHooks((*inode)(nil))
 }

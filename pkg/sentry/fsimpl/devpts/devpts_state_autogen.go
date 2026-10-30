@@ -63,8 +63,8 @@ func (f *fileSystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &f.ptmxMode)
 	stateSinkObject.Save(2, &f.uid)
 	stateSinkObject.Save(3, &f.gid)
-	stateSinkObject.Save(4, &f.setuid)
-	stateSinkObject.Save(5, &f.setgid)
+	stateSinkObject.SaveBool(4, &f.setuid)
+	stateSinkObject.SaveBool(5, &f.setgid)
 }
 
 func (f *fileSystemOpts) afterLoad(context.Context) {}
@@ -75,8 +75,8 @@ func (f *fileSystemOpts) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(1, &f.ptmxMode)
 	stateSourceObject.Load(2, &f.uid)
 	stateSourceObject.Load(3, &f.gid)
-	stateSourceObject.Load(4, &f.setuid)
-	stateSourceObject.Load(5, &f.setgid)
+	stateSourceObject.LoadBool(4, &f.setuid)
+	stateSourceObject.LoadBool(5, &f.setgid)
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -96,7 +96,7 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
-	stateSinkObject.Save(1, &fs.devMinor)
+	stateSinkObject.SaveUint32(1, &fs.devMinor)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -104,7 +104,7 @@ func (fs *filesystem) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
-	stateSourceObject.Load(1, &fs.devMinor)
+	stateSourceObject.LoadUint32(1, &fs.devMinor)
 }
 
 func (i *rootInode) StateTypeName() string {
@@ -152,7 +152,7 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.master)
 	stateSinkObject.Save(13, &i.opts)
 	stateSinkObject.Save(14, &i.replicas)
-	stateSinkObject.Save(15, &i.nextIdx)
+	stateSinkObject.SaveUint32(15, &i.nextIdx)
 }
 
 func (i *rootInode) afterLoad(context.Context) {}
@@ -174,7 +174,7 @@ func (i *rootInode) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(12, &i.master)
 	stateSourceObject.Load(13, &i.opts)
 	stateSourceObject.Load(14, &i.replicas)
-	stateSourceObject.Load(15, &i.nextIdx)
+	stateSourceObject.LoadUint32(15, &i.nextIdx)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -227,13 +227,13 @@ func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.inQueue)
 	stateSinkObject.Save(2, &l.outQueue)
 	stateSinkObject.Save(3, &l.termios)
-	stateSinkObject.Save(4, &l.column)
-	stateSinkObject.Save(5, &l.numReplicas)
+	stateSinkObject.SaveInt(4, &l.column)
+	stateSinkObject.SaveInt(5, &l.numReplicas)
 	stateSinkObject.Save(6, &l.masterWaiter)
 	stateSinkObject.Save(7, &l.replicaWaiter)
 	stateSinkObject.Save(8, &l.terminal)
-	stateSinkObject.Save(9, &l.packet)
-	stateSinkObject.Save(10, &l.packetStatus)
+	stateSinkObject.SaveBool(9, &l.packet)
+	stateSinkObject.SaveUint8(10, &l.packetStatus)
 }
 
 func (l *lineDiscipline) afterLoad(context.Context) {}
@@ -244,13 +244,13 @@ func (l *lineDiscipline) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(1, &l.inQueue)
 	stateSourceObject.Load(2, &l.outQueue)
 	stateSourceObject.Load(3, &l.termios)
-	stateSourceObject.Load(4, &l.column)
-	stateSourceObject.Load(5, &l.numReplicas)
+	stateSourceObject.LoadInt(4, &l.column)
+	stateSourceObject.LoadInt(5, &l.numReplicas)
 	stateSourceObject.Load(6, &l.masterWaiter)
 	stateSourceObject.Load(7, &l.replicaWaiter)
 	stateSourceObject.Load(8, &l.terminal)
-	stateSourceObject.Load(9, &l.packet)
-	stateSourceObject.Load(10, &l.packetStatus)
+	stateSourceObject.LoadBool(9, &l.packet)
+	stateSourceObject.LoadUint8(10, &l.packetStatus)
 }
 
 func (o *outputQueueTransformer) StateTypeName() string {
@@ -405,8 +405,8 @@ func (q *queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.readBuf)
 	stateSinkObject.Save(1, &q.waitBuf)
-	stateSinkObject.Save(2, &q.waitBufLen)
-	stateSinkObject.Save(3, &q.readable)
+	stateSinkObject.SaveUint64(2, &q.waitBufLen)
+	stateSinkObject.SaveBool(3, &q.readable)
 	stateSinkObject.Save(4, &q.transformer)
 }
 
@@ -416,8 +416,8 @@ func (q *queue) afterLoad(context.Context) {}
 func (q *queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.readBuf)
 	stateSourceObject.Load(1, &q.waitBuf)
-	stateSourceObject.Load(2, &q.waitBufLen)
-	stateSourceObject.Load(3, &q.readable)
+	stateSourceObject.LoadUint64(2, &q.waitBufLen)
+	stateSourceObject.LoadBool(3, &q.readable)
 	stateSourceObject.Load(4, &q.transformer)
 }
 
@@ -531,7 +531,12 @@ func (r *rootInodeRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *rootInodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *rootInodeRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (t *Terminal) StateTypeName() string {
@@ -553,7 +558,7 @@ func (t *Terminal) beforeSave() {}
 // +checklocksignore
 func (t *Terminal) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
-	stateSinkObject.Save(0, &t.n)
+	stateSinkObject.SaveUint32(0, &t.n)
 	stateSinkObject.Save(1, &t.ld)
 	stateSinkObject.Save(2, &t.root)
 	stateSinkObject.Save(3, &t.masterKTTY)
@@ -564,7 +569,7 @@ func (t *Terminal) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (t *Terminal) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.n)
+	stateSourceObject.LoadUint32(0, &t.n)
 	stateSourceObject.Load(1, &t.ld)
 	stateSourceObject.Load(2, &t.root)
 	stateSourceObject.Load(3, &t.masterKTTY)
@@ -572,19 +577,19 @@ func (t *Terminal) StateLoad(ctx context.Context, stateSourceObject state.Source
 }
 
 func init() {
-	state.Register((*FilesystemType)(nil))
-	state.Register((*fileSystemOpts)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*rootInode)(nil))
-	state.Register((*implStatFS)(nil))
-	state.Register((*lineDiscipline)(nil))
-	state.Register((*outputQueueTransformer)(nil))
-	state.Register((*inputQueueTransformer)(nil))
-	state.Register((*masterInode)(nil))
-	state.Register((*masterFileDescription)(nil))
-	state.Register((*queue)(nil))
-	state.Register((*replicaInode)(nil))
-	state.Register((*replicaFileDescription)(nil))
-	state.Register((*rootInodeRefs)(nil))
-	state.Register((*Terminal)(nil))
+	state.RegisterNoHooks((*FilesystemType)(nil))
+	state.RegisterNoHooks((*fileSystemOpts)(nil))
+	state.RegisterNoHooks((*filesystem)(nil))
+	state.RegisterNoHooks((*rootInode)(nil))
+	state.RegisterNoHooks((*implStatFS)(nil))
+	state.RegisterNoHooks((*lineDiscipline)(nil))
+	state.RegisterNoHooks((*outputQueueTransformer)(nil))
+	state.RegisterNoHooks((*inputQueueTransformer)(nil))
+	state.RegisterNoHooks((*masterInode)(nil))
+	state.RegisterNoHooks((*masterFileDescription)(nil))
+	state.RegisterNoHooks((*queue)(nil))
+	state.RegisterNoHooks((*replicaInode)(nil))
+	state.RegisterNoHooks((*replicaFileDescription)(nil))
+	state.RegisterStruct((*rootInodeRefs)(nil))
+	state.RegisterNoHooks((*Terminal)(nil))
 }

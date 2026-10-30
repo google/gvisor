@@ -88,7 +88,15 @@ func (s *aplUnloadedSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *aplUnloadedSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]aplUnloadedFlatSegment), func(y any) { s.loadRoot(ctx, y.([]aplUnloadedFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]aplUnloadedFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *aplUnloadedSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]aplUnloadedFlatSegment))
+	}
 }
 
 func (n *aplUnloadednode) StateTypeName() string {
@@ -113,10 +121,10 @@ func (n *aplUnloadednode) beforeSave() {}
 // +checklocksignore
 func (n *aplUnloadednode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -127,10 +135,10 @@ func (n *aplUnloadednode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *aplUnloadednode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -154,8 +162,8 @@ func (a *aplUnloadedFlatSegment) beforeSave() {}
 // +checklocksignore
 func (a *aplUnloadedFlatSegment) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	stateSinkObject.Save(0, &a.Start)
-	stateSinkObject.Save(1, &a.End)
+	stateSinkObject.SaveUint64(0, &a.Start)
+	stateSinkObject.SaveUint64(1, &a.End)
 	stateSinkObject.Save(2, &a.Value)
 }
 
@@ -163,8 +171,8 @@ func (a *aplUnloadedFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (a *aplUnloadedFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.Start)
-	stateSourceObject.Load(1, &a.End)
+	stateSourceObject.LoadUint64(0, &a.Start)
+	stateSourceObject.LoadUint64(1, &a.End)
 	stateSourceObject.Load(2, &a.Value)
 }
 
@@ -184,16 +192,16 @@ func (r *EvictableRange) beforeSave() {}
 // +checklocksignore
 func (r *EvictableRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUint64(0, &r.Start)
+	stateSinkObject.SaveUint64(1, &r.End)
 }
 
 func (r *EvictableRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *EvictableRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUint64(0, &r.Start)
+	stateSourceObject.LoadUint64(1, &r.End)
 }
 
 func (s *evictableRangeSet) StateTypeName() string {
@@ -220,7 +228,15 @@ func (s *evictableRangeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *evictableRangeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]evictableRangeFlatSegment), func(y any) { s.loadRoot(ctx, y.([]evictableRangeFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]evictableRangeFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *evictableRangeSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]evictableRangeFlatSegment))
+	}
 }
 
 func (n *evictableRangenode) StateTypeName() string {
@@ -245,10 +261,10 @@ func (n *evictableRangenode) beforeSave() {}
 // +checklocksignore
 func (n *evictableRangenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -259,10 +275,10 @@ func (n *evictableRangenode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *evictableRangenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -286,8 +302,8 @@ func (e *evictableRangeFlatSegment) beforeSave() {}
 // +checklocksignore
 func (e *evictableRangeFlatSegment) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.Start)
-	stateSinkObject.Save(1, &e.End)
+	stateSinkObject.SaveUint64(0, &e.Start)
+	stateSinkObject.SaveUint64(1, &e.End)
 	stateSinkObject.Save(2, &e.Value)
 }
 
@@ -295,8 +311,8 @@ func (e *evictableRangeFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (e *evictableRangeFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.Start)
-	stateSourceObject.Load(1, &e.End)
+	stateSourceObject.LoadUint64(0, &e.Start)
+	stateSourceObject.LoadUint64(1, &e.End)
 	stateSourceObject.Load(2, &e.Value)
 }
 
@@ -324,7 +340,15 @@ func (s *memAcctSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *memAcctSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]memAcctFlatSegment), func(y any) { s.loadRoot(ctx, y.([]memAcctFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]memAcctFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *memAcctSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]memAcctFlatSegment))
+	}
 }
 
 func (n *memAcctnode) StateTypeName() string {
@@ -349,10 +373,10 @@ func (n *memAcctnode) beforeSave() {}
 // +checklocksignore
 func (n *memAcctnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -363,10 +387,10 @@ func (n *memAcctnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *memAcctnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -390,8 +414,8 @@ func (m *memAcctFlatSegment) beforeSave() {}
 // +checklocksignore
 func (m *memAcctFlatSegment) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.Start)
-	stateSinkObject.Save(1, &m.End)
+	stateSinkObject.SaveUint64(0, &m.Start)
+	stateSinkObject.SaveUint64(1, &m.End)
 	stateSinkObject.Save(2, &m.Value)
 }
 
@@ -399,8 +423,8 @@ func (m *memAcctFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *memAcctFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.Start)
-	stateSourceObject.Load(1, &m.End)
+	stateSourceObject.LoadUint64(0, &m.Start)
+	stateSourceObject.LoadUint64(1, &m.End)
 	stateSourceObject.Load(2, &m.Value)
 }
 
@@ -419,14 +443,14 @@ func (c *chunkInfo) beforeSave() {}
 // +checklocksignore
 func (c *chunkInfo) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	stateSinkObject.Save(0, &c.huge)
+	stateSinkObject.SaveBool(0, &c.huge)
 }
 
 func (c *chunkInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (c *chunkInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.huge)
+	stateSourceObject.LoadBool(0, &c.huge)
 }
 
 func (u *unwasteInfo) StateTypeName() string {
@@ -465,14 +489,14 @@ func (u *unfreeInfo) beforeSave() {}
 // +checklocksignore
 func (u *unfreeInfo) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.refs)
+	stateSinkObject.SaveUint64(0, &u.refs)
 }
 
 func (u *unfreeInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *unfreeInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.refs)
+	stateSourceObject.LoadUint64(0, &u.refs)
 }
 
 func (m *memAcctInfo) StateTypeName() string {
@@ -495,10 +519,10 @@ func (m *memAcctInfo) beforeSave() {}
 func (m *memAcctInfo) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.kind)
-	stateSinkObject.Save(1, &m.memCgID)
-	stateSinkObject.Save(2, &m.knownCommitted)
-	stateSinkObject.Save(3, &m.wasteOrReleasing)
-	stateSinkObject.Save(4, &m.commitSeq)
+	stateSinkObject.SaveUint32(1, &m.memCgID)
+	stateSinkObject.SaveBool(2, &m.knownCommitted)
+	stateSinkObject.SaveBool(3, &m.wasteOrReleasing)
+	stateSinkObject.SaveUint64(4, &m.commitSeq)
 }
 
 func (m *memAcctInfo) afterLoad(context.Context) {}
@@ -506,10 +530,10 @@ func (m *memAcctInfo) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *memAcctInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.kind)
-	stateSourceObject.Load(1, &m.memCgID)
-	stateSourceObject.Load(2, &m.knownCommitted)
-	stateSourceObject.Load(3, &m.wasteOrReleasing)
-	stateSourceObject.Load(4, &m.commitSeq)
+	stateSourceObject.LoadUint32(1, &m.memCgID)
+	stateSourceObject.LoadBool(2, &m.knownCommitted)
+	stateSourceObject.LoadBool(3, &m.wasteOrReleasing)
+	stateSourceObject.LoadUint64(4, &m.commitSeq)
 }
 
 func (s *unfreeSet) StateTypeName() string {
@@ -536,7 +560,15 @@ func (s *unfreeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *unfreeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]unfreeFlatSegment), func(y any) { s.loadRoot(ctx, y.([]unfreeFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]unfreeFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *unfreeSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]unfreeFlatSegment))
+	}
 }
 
 func (n *unfreenode) StateTypeName() string {
@@ -561,10 +593,10 @@ func (n *unfreenode) beforeSave() {}
 // +checklocksignore
 func (n *unfreenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -575,10 +607,10 @@ func (n *unfreenode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *unfreenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -602,8 +634,8 @@ func (u *unfreeFlatSegment) beforeSave() {}
 // +checklocksignore
 func (u *unfreeFlatSegment) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.Start)
-	stateSinkObject.Save(1, &u.End)
+	stateSinkObject.SaveUint64(0, &u.Start)
+	stateSinkObject.SaveUint64(1, &u.End)
 	stateSinkObject.Save(2, &u.Value)
 }
 
@@ -611,8 +643,8 @@ func (u *unfreeFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *unfreeFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.Start)
-	stateSourceObject.Load(1, &u.End)
+	stateSourceObject.LoadUint64(0, &u.Start)
+	stateSourceObject.LoadUint64(1, &u.End)
 	stateSourceObject.Load(2, &u.Value)
 }
 
@@ -640,7 +672,15 @@ func (s *unwasteSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *unwasteSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]unwasteFlatSegment), func(y any) { s.loadRoot(ctx, y.([]unwasteFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]unwasteFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *unwasteSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]unwasteFlatSegment))
+	}
 }
 
 func (n *unwastenode) StateTypeName() string {
@@ -665,10 +705,10 @@ func (n *unwastenode) beforeSave() {}
 // +checklocksignore
 func (n *unwastenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -679,10 +719,10 @@ func (n *unwastenode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *unwastenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -706,8 +746,8 @@ func (u *unwasteFlatSegment) beforeSave() {}
 // +checklocksignore
 func (u *unwasteFlatSegment) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.Start)
-	stateSinkObject.Save(1, &u.End)
+	stateSinkObject.SaveUint64(0, &u.Start)
+	stateSinkObject.SaveUint64(1, &u.End)
 	stateSinkObject.Save(2, &u.Value)
 }
 
@@ -715,32 +755,32 @@ func (u *unwasteFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *unwasteFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.Start)
-	stateSourceObject.Load(1, &u.End)
+	stateSourceObject.LoadUint64(0, &u.Start)
+	stateSourceObject.LoadUint64(1, &u.End)
 	stateSourceObject.Load(2, &u.Value)
 }
 
 func init() {
-	state.Register((*asyncMemoryFileLoadList)(nil))
-	state.Register((*asyncMemoryFileLoadEntry)(nil))
-	state.Register((*aplUnloadedSet)(nil))
-	state.Register((*aplUnloadednode)(nil))
-	state.Register((*aplUnloadedFlatSegment)(nil))
-	state.Register((*EvictableRange)(nil))
-	state.Register((*evictableRangeSet)(nil))
-	state.Register((*evictableRangenode)(nil))
-	state.Register((*evictableRangeFlatSegment)(nil))
-	state.Register((*memAcctSet)(nil))
-	state.Register((*memAcctnode)(nil))
-	state.Register((*memAcctFlatSegment)(nil))
-	state.Register((*chunkInfo)(nil))
-	state.Register((*unwasteInfo)(nil))
-	state.Register((*unfreeInfo)(nil))
-	state.Register((*memAcctInfo)(nil))
-	state.Register((*unfreeSet)(nil))
-	state.Register((*unfreenode)(nil))
-	state.Register((*unfreeFlatSegment)(nil))
-	state.Register((*unwasteSet)(nil))
-	state.Register((*unwastenode)(nil))
-	state.Register((*unwasteFlatSegment)(nil))
+	state.RegisterNoHooks((*asyncMemoryFileLoadList)(nil))
+	state.RegisterNoHooks((*asyncMemoryFileLoadEntry)(nil))
+	state.RegisterNoHooks((*aplUnloadedSet)(nil))
+	state.RegisterNoHooks((*aplUnloadednode)(nil))
+	state.RegisterNoHooks((*aplUnloadedFlatSegment)(nil))
+	state.RegisterNoHooks((*EvictableRange)(nil))
+	state.RegisterNoHooks((*evictableRangeSet)(nil))
+	state.RegisterNoHooks((*evictableRangenode)(nil))
+	state.RegisterNoHooks((*evictableRangeFlatSegment)(nil))
+	state.RegisterNoHooks((*memAcctSet)(nil))
+	state.RegisterNoHooks((*memAcctnode)(nil))
+	state.RegisterNoHooks((*memAcctFlatSegment)(nil))
+	state.RegisterNoHooks((*chunkInfo)(nil))
+	state.RegisterNoHooks((*unwasteInfo)(nil))
+	state.RegisterNoHooks((*unfreeInfo)(nil))
+	state.RegisterNoHooks((*memAcctInfo)(nil))
+	state.RegisterNoHooks((*unfreeSet)(nil))
+	state.RegisterNoHooks((*unfreenode)(nil))
+	state.RegisterNoHooks((*unfreeFlatSegment)(nil))
+	state.RegisterNoHooks((*unwasteSet)(nil))
+	state.RegisterNoHooks((*unwastenode)(nil))
+	state.RegisterNoHooks((*unwasteFlatSegment)(nil))
 }

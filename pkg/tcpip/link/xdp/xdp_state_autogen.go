@@ -31,7 +31,7 @@ func (ep *endpoint) beforeSave() {}
 // +checklocksignore
 func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	ep.beforeSave()
-	stateSinkObject.Save(0, &ep.fd)
+	stateSinkObject.SaveInt(0, &ep.fd)
 	stateSinkObject.Save(1, &ep.caps)
 	stateSinkObject.Save(2, &ep.networkDispatcher)
 	stateSinkObject.Save(3, &ep.control)
@@ -43,7 +43,7 @@ func (ep *endpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &ep.fd)
+	stateSourceObject.LoadInt(0, &ep.fd)
 	stateSourceObject.Load(1, &ep.caps)
 	stateSourceObject.Load(2, &ep.networkDispatcher)
 	stateSourceObject.Load(3, &ep.control)
@@ -52,5 +52,5 @@ func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*endpoint)(nil))
+	state.RegisterNoHooks((*endpoint)(nil))
 }

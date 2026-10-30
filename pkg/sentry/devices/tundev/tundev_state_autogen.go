@@ -67,6 +67,6 @@ func (fd *tunFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 }
 
 func init() {
-	state.Register((*tunDevice)(nil))
-	state.Register((*tunFD)(nil))
+	state.RegisterNoHooks((*tunDevice)(nil))
+	state.RegisterNoHooks((*tunFD)(nil))
 }

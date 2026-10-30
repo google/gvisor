@@ -34,5 +34,5 @@ func (x *SimpleExtendedAttributes) StateLoad(ctx context.Context, stateSourceObj
 }
 
 func init() {
-	state.Register((*SimpleExtendedAttributes)(nil))
+	state.RegisterNoHooks((*SimpleExtendedAttributes)(nil))
 }

@@ -24,7 +24,7 @@ func (b *Bitmap) beforeSave() {}
 // +checklocksignore
 func (b *Bitmap) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
-	stateSinkObject.Save(0, &b.numOnes)
+	stateSinkObject.SaveUint32(0, &b.numOnes)
 	stateSinkObject.Save(1, &b.bitBlock)
 }
 
@@ -32,10 +32,10 @@ func (b *Bitmap) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (b *Bitmap) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &b.numOnes)
+	stateSourceObject.LoadUint32(0, &b.numOnes)
 	stateSourceObject.Load(1, &b.bitBlock)
 }
 
 func init() {
-	state.Register((*Bitmap)(nil))
+	state.RegisterNoHooks((*Bitmap)(nil))
 }

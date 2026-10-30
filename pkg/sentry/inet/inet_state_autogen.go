@@ -28,7 +28,7 @@ func (a *abstractEndpoint) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.ep)
 	stateSinkObject.Save(1, &a.socket)
-	stateSinkObject.Save(2, &a.name)
+	stateSinkObject.SaveString(2, &a.name)
 	stateSinkObject.Save(3, &a.ns)
 }
 
@@ -38,7 +38,7 @@ func (a *abstractEndpoint) afterLoad(context.Context) {}
 func (a *abstractEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.ep)
 	stateSourceObject.Load(1, &a.socket)
-	stateSourceObject.Load(2, &a.name)
+	stateSourceObject.LoadString(2, &a.name)
 	stateSourceObject.Load(3, &a.ns)
 }
 
@@ -84,18 +84,18 @@ func (t *TCPBufferSize) beforeSave() {}
 // +checklocksignore
 func (t *TCPBufferSize) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
-	stateSinkObject.Save(0, &t.Min)
-	stateSinkObject.Save(1, &t.Default)
-	stateSinkObject.Save(2, &t.Max)
+	stateSinkObject.SaveInt(0, &t.Min)
+	stateSinkObject.SaveInt(1, &t.Default)
+	stateSinkObject.SaveInt(2, &t.Max)
 }
 
 func (t *TCPBufferSize) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (t *TCPBufferSize) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.Min)
-	stateSourceObject.Load(1, &t.Default)
-	stateSourceObject.Load(2, &t.Max)
+	stateSourceObject.LoadInt(0, &t.Min)
+	stateSourceObject.LoadInt(1, &t.Default)
+	stateSourceObject.LoadInt(2, &t.Max)
 }
 
 func (n *Namespace) StateTypeName() string {
@@ -122,7 +122,7 @@ func (n *Namespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &n.inode)
 	stateSinkObject.Save(1, &n.stack)
 	stateSinkObject.Save(2, &n.creator)
-	stateSinkObject.Save(3, &n.isRoot)
+	stateSinkObject.SaveBool(3, &n.isRoot)
 	stateSinkObject.Save(4, &n.userNS)
 	stateSinkObject.Save(5, &n.abstractSockets)
 	stateSinkObject.Save(6, &n.netlinkMcastTable)
@@ -133,11 +133,16 @@ func (n *Namespace) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(0, &n.inode)
 	stateSourceObject.Load(1, &n.stack)
 	stateSourceObject.LoadWait(2, &n.creator)
-	stateSourceObject.Load(3, &n.isRoot)
+	stateSourceObject.LoadBool(3, &n.isRoot)
 	stateSourceObject.Load(4, &n.userNS)
 	stateSourceObject.Load(5, &n.abstractSockets)
 	stateSourceObject.Load(6, &n.netlinkMcastTable)
-	stateSourceObject.AfterLoad(func() { n.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(n)
+}
+
+// +checklocksignore
+func (n *Namespace) StateAfterLoad(ctx context.Context) {
+	n.afterLoad(ctx)
 }
 
 func (r *namespaceRefs) StateTypeName() string {
@@ -161,7 +166,12 @@ func (r *namespaceRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *namespaceRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *namespaceRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (m *McastTable) StateTypeName() string {
@@ -190,10 +200,10 @@ func (m *McastTable) StateLoad(ctx context.Context, stateSourceObject state.Sour
 }
 
 func init() {
-	state.Register((*abstractEndpoint)(nil))
-	state.Register((*AbstractSocketNamespace)(nil))
-	state.Register((*TCPBufferSize)(nil))
-	state.Register((*Namespace)(nil))
-	state.Register((*namespaceRefs)(nil))
-	state.Register((*McastTable)(nil))
+	state.RegisterNoHooks((*abstractEndpoint)(nil))
+	state.RegisterNoHooks((*AbstractSocketNamespace)(nil))
+	state.RegisterNoHooks((*TCPBufferSize)(nil))
+	state.RegisterStruct((*Namespace)(nil))
+	state.RegisterStruct((*namespaceRefs)(nil))
+	state.RegisterNoHooks((*McastTable)(nil))
 }

@@ -29,9 +29,14 @@ func (r *asyncFileClientRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *asyncFileClientRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *asyncFileClientRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*asyncFileClientRefs)(nil))
+	state.RegisterStruct((*asyncFileClientRefs)(nil))
 }

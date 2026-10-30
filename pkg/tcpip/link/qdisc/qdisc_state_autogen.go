@@ -26,8 +26,8 @@ func (pl *PacketBufferCircularList) beforeSave() {}
 func (pl *PacketBufferCircularList) StateSave(stateSinkObject state.Sink) {
 	pl.beforeSave()
 	stateSinkObject.Save(0, &pl.pbs)
-	stateSinkObject.Save(1, &pl.head)
-	stateSinkObject.Save(2, &pl.size)
+	stateSinkObject.SaveInt(1, &pl.head)
+	stateSinkObject.SaveInt(2, &pl.size)
 }
 
 func (pl *PacketBufferCircularList) afterLoad(context.Context) {}
@@ -35,10 +35,10 @@ func (pl *PacketBufferCircularList) afterLoad(context.Context) {}
 // +checklocksignore
 func (pl *PacketBufferCircularList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pl.pbs)
-	stateSourceObject.Load(1, &pl.head)
-	stateSourceObject.Load(2, &pl.size)
+	stateSourceObject.LoadInt(1, &pl.head)
+	stateSourceObject.LoadInt(2, &pl.size)
 }
 
 func init() {
-	state.Register((*PacketBufferCircularList)(nil))
+	state.RegisterNoHooks((*PacketBufferCircularList)(nil))
 }

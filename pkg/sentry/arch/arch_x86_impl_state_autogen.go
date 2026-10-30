@@ -36,9 +36,14 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.fpState)
-	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(s)
+}
+
+// +checklocksignore
+func (s *State) StateAfterLoad(ctx context.Context) {
+	s.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*State)(nil))
+	state.RegisterStruct((*State)(nil))
 }

@@ -26,7 +26,7 @@ func (gb *groBucket) beforeSave() {}
 // +checklocksignore
 func (gb *groBucket) StateSave(stateSinkObject state.Sink) {
 	gb.beforeSave()
-	stateSinkObject.Save(0, &gb.count)
+	stateSinkObject.SaveInt(0, &gb.count)
 	stateSinkObject.Save(1, &gb.packets)
 	stateSinkObject.Save(2, &gb.packetsPrealloc)
 	stateSinkObject.Save(3, &gb.allocIdxs)
@@ -36,7 +36,7 @@ func (gb *groBucket) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (gb *groBucket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &gb.count)
+	stateSourceObject.LoadInt(0, &gb.count)
 	stateSourceObject.Load(1, &gb.packets)
 	stateSourceObject.Load(2, &gb.packetsPrealloc)
 	stateSourceObject.Load(3, &gb.allocIdxs)
@@ -66,8 +66,8 @@ func (pk *groPacket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &pk.pkt)
 	stateSinkObject.Save(2, &pk.ipHdr)
 	stateSinkObject.Save(3, &pk.tcpHdr)
-	stateSinkObject.Save(4, &pk.initialLength)
-	stateSinkObject.Save(5, &pk.idx)
+	stateSinkObject.SaveInt(4, &pk.initialLength)
+	stateSinkObject.SaveInt(5, &pk.idx)
 }
 
 func (pk *groPacket) afterLoad(context.Context) {}
@@ -78,8 +78,8 @@ func (pk *groPacket) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(1, &pk.pkt)
 	stateSourceObject.Load(2, &pk.ipHdr)
 	stateSourceObject.Load(3, &pk.tcpHdr)
-	stateSourceObject.Load(4, &pk.initialLength)
-	stateSourceObject.Load(5, &pk.idx)
+	stateSourceObject.LoadInt(4, &pk.initialLength)
+	stateSourceObject.LoadInt(5, &pk.idx)
 }
 
 func (gd *GRO) StateTypeName() string {
@@ -99,7 +99,7 @@ func (gd *GRO) beforeSave() {}
 // +checklocksignore
 func (gd *GRO) StateSave(stateSinkObject state.Sink) {
 	gd.beforeSave()
-	stateSinkObject.Save(0, &gd.enabled)
+	stateSinkObject.SaveBool(0, &gd.enabled)
 	stateSinkObject.Save(1, &gd.buckets)
 	stateSinkObject.Save(2, &gd.Dispatcher)
 }
@@ -108,7 +108,7 @@ func (gd *GRO) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (gd *GRO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &gd.enabled)
+	stateSourceObject.LoadBool(0, &gd.enabled)
 	stateSourceObject.Load(1, &gd.buckets)
 	stateSourceObject.Load(2, &gd.Dispatcher)
 }
@@ -170,9 +170,9 @@ func (e *groPacketEntry) StateLoad(ctx context.Context, stateSourceObject state.
 }
 
 func init() {
-	state.Register((*groBucket)(nil))
-	state.Register((*groPacket)(nil))
-	state.Register((*GRO)(nil))
-	state.Register((*groPacketList)(nil))
-	state.Register((*groPacketEntry)(nil))
+	state.RegisterNoHooks((*groBucket)(nil))
+	state.RegisterNoHooks((*groPacket)(nil))
+	state.RegisterNoHooks((*GRO)(nil))
+	state.RegisterNoHooks((*groPacketList)(nil))
+	state.RegisterNoHooks((*groPacketEntry)(nil))
 }

@@ -33,5 +33,5 @@ func (s *SpecialOpts) StateLoad(ctx context.Context, stateSourceObject state.Sou
 }
 
 func init() {
-	state.Register((*SpecialOpts)(nil))
+	state.RegisterNoHooks((*SpecialOpts)(nil))
 }

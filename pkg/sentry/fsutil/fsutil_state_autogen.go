@@ -23,14 +23,14 @@ func (d *DirtyInfo) beforeSave() {}
 // +checklocksignore
 func (d *DirtyInfo) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.Keep)
+	stateSinkObject.SaveBool(0, &d.Keep)
 }
 
 func (d *DirtyInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *DirtyInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.Keep)
+	stateSourceObject.LoadBool(0, &d.Keep)
 }
 
 func (f *FrameRefSegInfo) StateTypeName() string {
@@ -49,16 +49,16 @@ func (f *FrameRefSegInfo) beforeSave() {}
 // +checklocksignore
 func (f *FrameRefSegInfo) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.refs)
-	stateSinkObject.Save(1, &f.memCgID)
+	stateSinkObject.SaveUint64(0, &f.refs)
+	stateSinkObject.SaveUint32(1, &f.memCgID)
 }
 
 func (f *FrameRefSegInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *FrameRefSegInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.refs)
-	stateSourceObject.Load(1, &f.memCgID)
+	stateSourceObject.LoadUint64(0, &f.refs)
+	stateSourceObject.LoadUint32(1, &f.memCgID)
 }
 
 func (s *mappingSet) StateTypeName() string {
@@ -85,7 +85,15 @@ func (s *mappingSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *mappingSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]mappingFlatSegment), func(y any) { s.loadRoot(ctx, y.([]mappingFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]mappingFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *mappingSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]mappingFlatSegment))
+	}
 }
 
 func (n *mappingnode) StateTypeName() string {
@@ -110,10 +118,10 @@ func (n *mappingnode) beforeSave() {}
 // +checklocksignore
 func (n *mappingnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -124,10 +132,10 @@ func (n *mappingnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *mappingnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -151,8 +159,8 @@ func (m *mappingFlatSegment) beforeSave() {}
 // +checklocksignore
 func (m *mappingFlatSegment) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.Start)
-	stateSinkObject.Save(1, &m.End)
+	stateSinkObject.SaveUint64(0, &m.Start)
+	stateSinkObject.SaveUint64(1, &m.End)
 	stateSinkObject.Save(2, &m.Value)
 }
 
@@ -160,8 +168,8 @@ func (m *mappingFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *mappingFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.Start)
-	stateSourceObject.Load(1, &m.End)
+	stateSourceObject.LoadUint64(0, &m.Start)
+	stateSourceObject.LoadUint64(1, &m.End)
 	stateSourceObject.Load(2, &m.Value)
 }
 
@@ -188,7 +196,7 @@ func (f *MmapCachedFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &f.DefaultMemoryType)
 	stateSinkObject.Save(1, &f.NoBufferedIOFallback)
 	stateSinkObject.Save(2, &f.fd)
-	stateSinkObject.Save(3, &f.mappableReleased)
+	stateSinkObject.SaveBool(3, &f.mappableReleased)
 	stateSinkObject.Save(4, &f.refs)
 	stateSinkObject.Save(5, &f.memAcct)
 }
@@ -198,10 +206,15 @@ func (f *MmapCachedFile) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(0, &f.DefaultMemoryType)
 	stateSourceObject.Load(1, &f.NoBufferedIOFallback)
 	stateSourceObject.Load(2, &f.fd)
-	stateSourceObject.Load(3, &f.mappableReleased)
+	stateSourceObject.LoadBool(3, &f.mappableReleased)
 	stateSourceObject.Load(4, &f.refs)
 	stateSourceObject.Load(5, &f.memAcct)
-	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(f)
+}
+
+// +checklocksignore
+func (f *MmapCachedFile) StateAfterLoad(ctx context.Context) {
+	f.afterLoad(ctx)
 }
 
 func (m *mapping) StateTypeName() string {
@@ -220,16 +233,16 @@ func (m *mapping) beforeSave() {}
 // +checklocksignore
 func (m *mapping) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.addr)
-	stateSinkObject.Save(1, &m.writable)
+	stateSinkObject.SaveUintptr(0, &m.addr)
+	stateSinkObject.SaveBool(1, &m.writable)
 }
 
 func (m *mapping) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *mapping) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.addr)
-	stateSourceObject.Load(1, &m.writable)
+	stateSourceObject.LoadUintptr(0, &m.addr)
+	stateSourceObject.LoadBool(1, &m.writable)
 }
 
 func (r *MmapFileRefs) StateTypeName() string {
@@ -279,15 +292,20 @@ func (f *MmapNoInternalFile) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.NoMapInternal)
 	stateSinkObject.Save(1, &f.MmapFileRefs)
-	stateSinkObject.Save(2, &f.fd)
+	stateSinkObject.SaveInt(2, &f.fd)
 }
 
 // +checklocksignore
 func (f *MmapNoInternalFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.NoMapInternal)
 	stateSourceObject.Load(1, &f.MmapFileRefs)
-	stateSourceObject.Load(2, &f.fd)
-	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
+	stateSourceObject.LoadInt(2, &f.fd)
+	stateSourceObject.AfterLoadTo(f)
+}
+
+// +checklocksignore
+func (f *MmapNoInternalFile) StateAfterLoad(ctx context.Context) {
+	f.afterLoad(ctx)
 }
 
 func (f *MmapPreciseFile) StateTypeName() string {
@@ -311,22 +329,27 @@ func (f *MmapPreciseFile) beforeSave() {}
 func (f *MmapPreciseFile) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.NoBufferedIOFallback)
-	stateSinkObject.Save(1, &f.fd)
+	stateSinkObject.SaveInt(1, &f.fd)
 	stateSinkObject.Save(2, &f.memType)
-	stateSinkObject.Save(3, &f.addrMustEqualFileOffset)
-	stateSinkObject.Save(4, &f.mappableReleased)
+	stateSinkObject.SaveBool(3, &f.addrMustEqualFileOffset)
+	stateSinkObject.SaveBool(4, &f.mappableReleased)
 	stateSinkObject.Save(5, &f.refs)
 }
 
 // +checklocksignore
 func (f *MmapPreciseFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.NoBufferedIOFallback)
-	stateSourceObject.Load(1, &f.fd)
+	stateSourceObject.LoadInt(1, &f.fd)
 	stateSourceObject.Load(2, &f.memType)
-	stateSourceObject.Load(3, &f.addrMustEqualFileOffset)
-	stateSourceObject.Load(4, &f.mappableReleased)
+	stateSourceObject.LoadBool(3, &f.addrMustEqualFileOffset)
+	stateSourceObject.LoadBool(4, &f.mappableReleased)
 	stateSourceObject.Load(5, &f.refs)
-	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(f)
+}
+
+// +checklocksignore
+func (f *MmapPreciseFile) StateAfterLoad(ctx context.Context) {
+	f.afterLoad(ctx)
 }
 
 func (s *refsSet) StateTypeName() string {
@@ -353,7 +376,15 @@ func (s *refsSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *refsSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]refsFlatSegment), func(y any) { s.loadRoot(ctx, y.([]refsFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]refsFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *refsSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]refsFlatSegment))
+	}
 }
 
 func (n *refsnode) StateTypeName() string {
@@ -378,10 +409,10 @@ func (n *refsnode) beforeSave() {}
 // +checklocksignore
 func (n *refsnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -392,10 +423,10 @@ func (n *refsnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *refsnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -419,32 +450,32 @@ func (r *refsFlatSegment) beforeSave() {}
 // +checklocksignore
 func (r *refsFlatSegment) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
-	stateSinkObject.Save(2, &r.Value)
+	stateSinkObject.SaveUint64(0, &r.Start)
+	stateSinkObject.SaveUint64(1, &r.End)
+	stateSinkObject.SaveUint64(2, &r.Value)
 }
 
 func (r *refsFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *refsFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
-	stateSourceObject.Load(2, &r.Value)
+	stateSourceObject.LoadUint64(0, &r.Start)
+	stateSourceObject.LoadUint64(1, &r.End)
+	stateSourceObject.LoadUint64(2, &r.Value)
 }
 
 func init() {
-	state.Register((*DirtyInfo)(nil))
-	state.Register((*FrameRefSegInfo)(nil))
-	state.Register((*mappingSet)(nil))
-	state.Register((*mappingnode)(nil))
-	state.Register((*mappingFlatSegment)(nil))
-	state.Register((*MmapCachedFile)(nil))
-	state.Register((*mapping)(nil))
-	state.Register((*MmapFileRefs)(nil))
-	state.Register((*MmapNoInternalFile)(nil))
-	state.Register((*MmapPreciseFile)(nil))
-	state.Register((*refsSet)(nil))
-	state.Register((*refsnode)(nil))
-	state.Register((*refsFlatSegment)(nil))
+	state.RegisterNoHooks((*DirtyInfo)(nil))
+	state.RegisterNoHooks((*FrameRefSegInfo)(nil))
+	state.RegisterNoHooks((*mappingSet)(nil))
+	state.RegisterNoHooks((*mappingnode)(nil))
+	state.RegisterNoHooks((*mappingFlatSegment)(nil))
+	state.RegisterStruct((*MmapCachedFile)(nil))
+	state.RegisterNoHooks((*mapping)(nil))
+	state.RegisterNoHooks((*MmapFileRefs)(nil))
+	state.RegisterStruct((*MmapNoInternalFile)(nil))
+	state.RegisterStruct((*MmapPreciseFile)(nil))
+	state.RegisterNoHooks((*refsSet)(nil))
+	state.RegisterNoHooks((*refsnode)(nil))
+	state.RegisterNoHooks((*refsFlatSegment)(nil))
 }

@@ -23,16 +23,16 @@ func (offset *TSOffset) beforeSave() {}
 // +checklocksignore
 func (offset *TSOffset) StateSave(stateSinkObject state.Sink) {
 	offset.beforeSave()
-	stateSinkObject.Save(0, &offset.milliseconds)
+	stateSinkObject.SaveUint32(0, &offset.milliseconds)
 }
 
 func (offset *TSOffset) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (offset *TSOffset) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &offset.milliseconds)
+	stateSourceObject.LoadUint32(0, &offset.milliseconds)
 }
 
 func init() {
-	state.Register((*TSOffset)(nil))
+	state.RegisterNoHooks((*TSOffset)(nil))
 }

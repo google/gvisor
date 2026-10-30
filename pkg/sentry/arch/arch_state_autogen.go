@@ -32,8 +32,8 @@ func (m *MmapLayout) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &m.MaxAddr)
 	stateSinkObject.Save(2, &m.BottomUpBase)
 	stateSinkObject.Save(3, &m.TopDownBase)
-	stateSinkObject.Save(4, &m.DefaultDirection)
-	stateSinkObject.Save(5, &m.MaxStackRand)
+	stateSinkObject.SaveInt(4, (*int)(&m.DefaultDirection))
+	stateSinkObject.SaveUint64(5, &m.MaxStackRand)
 }
 
 func (m *MmapLayout) afterLoad(context.Context) {}
@@ -44,8 +44,8 @@ func (m *MmapLayout) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(1, &m.MaxAddr)
 	stateSourceObject.Load(2, &m.BottomUpBase)
 	stateSourceObject.Load(3, &m.TopDownBase)
-	stateSourceObject.Load(4, &m.DefaultDirection)
-	stateSourceObject.Load(5, &m.MaxStackRand)
+	stateSourceObject.LoadInt(4, (*int)(&m.DefaultDirection))
+	stateSourceObject.LoadUint64(5, &m.MaxStackRand)
 }
 
 func (a *AuxEntry) StateTypeName() string {
@@ -64,7 +64,7 @@ func (a *AuxEntry) beforeSave() {}
 // +checklocksignore
 func (a *AuxEntry) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	stateSinkObject.Save(0, &a.Key)
+	stateSinkObject.SaveUint64(0, &a.Key)
 	stateSinkObject.Save(1, &a.Value)
 }
 
@@ -72,11 +72,11 @@ func (a *AuxEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (a *AuxEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.Key)
+	stateSourceObject.LoadUint64(0, &a.Key)
 	stateSourceObject.Load(1, &a.Value)
 }
 
 func init() {
-	state.Register((*MmapLayout)(nil))
-	state.Register((*AuxEntry)(nil))
+	state.RegisterNoHooks((*MmapLayout)(nil))
+	state.RegisterNoHooks((*AuxEntry)(nil))
 }

@@ -51,8 +51,8 @@ func (r *Rx) beforeSave() {}
 func (r *Rx) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.p)
-	stateSinkObject.Save(1, &r.tail)
-	stateSinkObject.Save(2, &r.head)
+	stateSinkObject.SaveUint64(1, &r.tail)
+	stateSinkObject.SaveUint64(2, &r.head)
 }
 
 func (r *Rx) afterLoad(context.Context) {}
@@ -60,8 +60,8 @@ func (r *Rx) afterLoad(context.Context) {}
 // +checklocksignore
 func (r *Rx) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.p)
-	stateSourceObject.Load(1, &r.tail)
-	stateSourceObject.Load(2, &r.head)
+	stateSourceObject.LoadUint64(1, &r.tail)
+	stateSourceObject.LoadUint64(2, &r.head)
 }
 
 func (t *Tx) StateTypeName() string {
@@ -85,11 +85,11 @@ func (t *Tx) beforeSave() {}
 func (t *Tx) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.p)
-	stateSinkObject.Save(1, &t.maxPayloadSize)
-	stateSinkObject.Save(2, &t.head)
-	stateSinkObject.Save(3, &t.tail)
-	stateSinkObject.Save(4, &t.next)
-	stateSinkObject.Save(5, &t.tailHeader)
+	stateSinkObject.SaveUint64(1, &t.maxPayloadSize)
+	stateSinkObject.SaveUint64(2, &t.head)
+	stateSinkObject.SaveUint64(3, &t.tail)
+	stateSinkObject.SaveUint64(4, &t.next)
+	stateSinkObject.SaveUint64(5, &t.tailHeader)
 }
 
 func (t *Tx) afterLoad(context.Context) {}
@@ -97,15 +97,15 @@ func (t *Tx) afterLoad(context.Context) {}
 // +checklocksignore
 func (t *Tx) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.p)
-	stateSourceObject.Load(1, &t.maxPayloadSize)
-	stateSourceObject.Load(2, &t.head)
-	stateSourceObject.Load(3, &t.tail)
-	stateSourceObject.Load(4, &t.next)
-	stateSourceObject.Load(5, &t.tailHeader)
+	stateSourceObject.LoadUint64(1, &t.maxPayloadSize)
+	stateSourceObject.LoadUint64(2, &t.head)
+	stateSourceObject.LoadUint64(3, &t.tail)
+	stateSourceObject.LoadUint64(4, &t.next)
+	stateSourceObject.LoadUint64(5, &t.tailHeader)
 }
 
 func init() {
-	state.Register((*pipe)(nil))
-	state.Register((*Rx)(nil))
-	state.Register((*Tx)(nil))
+	state.RegisterNoHooks((*pipe)(nil))
+	state.RegisterNoHooks((*Rx)(nil))
+	state.RegisterNoHooks((*Tx)(nil))
 }

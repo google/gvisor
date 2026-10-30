@@ -46,7 +46,7 @@ func (fs *anonFilesystem) beforeSave() {}
 func (fs *anonFilesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
-	stateSinkObject.Save(1, &fs.devMinor)
+	stateSinkObject.SaveUint32(1, &fs.devMinor)
 }
 
 func (fs *anonFilesystem) afterLoad(context.Context) {}
@@ -54,7 +54,7 @@ func (fs *anonFilesystem) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *anonFilesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
-	stateSourceObject.Load(1, &fs.devMinor)
+	stateSourceObject.LoadUint32(1, &fs.devMinor)
 }
 
 func (d *anonDentry) StateTypeName() string {
@@ -75,7 +75,7 @@ func (d *anonDentry) beforeSave() {}
 func (d *anonDentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.vfsd)
-	stateSinkObject.Save(1, &d.name)
+	stateSinkObject.SaveString(1, &d.name)
 	stateSinkObject.Save(2, &d.watches)
 }
 
@@ -84,7 +84,7 @@ func (d *anonDentry) afterLoad(context.Context) {}
 // +checklocksignore
 func (d *anonDentry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
-	stateSourceObject.Load(1, &d.name)
+	stateSourceObject.LoadString(1, &d.name)
 	stateSourceObject.Load(2, &d.watches)
 }
 
@@ -106,8 +106,8 @@ func (d *Dentry) beforeSave() {}
 // +checklocksignore
 func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.dead)
-	stateSinkObject.Save(1, &d.evictable)
+	stateSinkObject.SaveBool(0, &d.dead)
+	stateSinkObject.SaveBool(1, &d.evictable)
 	stateSinkObject.Save(2, &d.mounts)
 	stateSinkObject.Save(3, &d.impl)
 }
@@ -116,8 +116,8 @@ func (d *Dentry) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *Dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.dead)
-	stateSourceObject.Load(1, &d.evictable)
+	stateSourceObject.LoadBool(0, &d.dead)
+	stateSourceObject.LoadBool(1, &d.evictable)
 	stateSourceObject.Load(2, &d.mounts)
 	stateSourceObject.Load(3, &d.impl)
 }
@@ -147,18 +147,18 @@ func (d *devTuple) beforeSave() {}
 // +checklocksignore
 func (d *devTuple) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.kind)
-	stateSinkObject.Save(1, &d.major)
-	stateSinkObject.Save(2, &d.minor)
+	stateSinkObject.SaveUint32(0, (*uint32)(&d.kind))
+	stateSinkObject.SaveUint32(1, &d.major)
+	stateSinkObject.SaveUint32(2, &d.minor)
 }
 
 func (d *devTuple) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *devTuple) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.kind)
-	stateSourceObject.Load(1, &d.major)
-	stateSourceObject.Load(2, &d.minor)
+	stateSourceObject.LoadUint32(0, (*uint32)(&d.kind))
+	stateSourceObject.LoadUint32(1, &d.major)
+	stateSourceObject.LoadUint32(2, &d.minor)
 }
 
 func (r *registeredDevice) StateTypeName() string {
@@ -206,18 +206,18 @@ func (r *RegisterDeviceOptions) beforeSave() {}
 // +checklocksignore
 func (r *RegisterDeviceOptions) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.GroupName)
-	stateSinkObject.Save(1, &r.Pathname)
-	stateSinkObject.Save(2, &r.FilePerms)
+	stateSinkObject.SaveString(0, &r.GroupName)
+	stateSinkObject.SaveString(1, &r.Pathname)
+	stateSinkObject.SaveUint16(2, &r.FilePerms)
 }
 
 func (r *RegisterDeviceOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *RegisterDeviceOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.GroupName)
-	stateSourceObject.Load(1, &r.Pathname)
-	stateSourceObject.Load(2, &r.FilePerms)
+	stateSourceObject.LoadString(0, &r.GroupName)
+	stateSourceObject.LoadString(1, &r.Pathname)
+	stateSourceObject.LoadUint16(2, &r.FilePerms)
 }
 
 func (s *SharedDynamicCharDevMajorKey) StateTypeName() string {
@@ -255,7 +255,7 @@ func (ep *EpollInstance) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &ep.NoLockFD)
 	stateSinkObject.Save(4, &ep.q)
 	stateSinkObject.Save(5, &ep.interest)
-	stateSinkObject.Save(6, &ep.readySeq)
+	stateSinkObject.SaveUint32(6, &ep.readySeq)
 }
 
 func (ep *EpollInstance) afterLoad(context.Context) {}
@@ -268,7 +268,7 @@ func (ep *EpollInstance) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(3, &ep.NoLockFD)
 	stateSourceObject.Load(4, &ep.q)
 	stateSourceObject.Load(5, &ep.interest)
-	stateSourceObject.Load(6, &ep.readySeq)
+	stateSourceObject.LoadUint32(6, &ep.readySeq)
 }
 
 func (e *epollInterestKey) StateTypeName() string {
@@ -288,7 +288,7 @@ func (e *epollInterestKey) beforeSave() {}
 func (e *epollInterestKey) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.file)
-	stateSinkObject.Save(1, &e.num)
+	stateSinkObject.SaveInt32(1, &e.num)
 }
 
 func (e *epollInterestKey) afterLoad(context.Context) {}
@@ -296,7 +296,7 @@ func (e *epollInterestKey) afterLoad(context.Context) {}
 // +checklocksignore
 func (e *epollInterestKey) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.file)
-	stateSourceObject.Load(1, &e.num)
+	stateSourceObject.LoadInt32(1, &e.num)
 }
 
 func (epi *epollInterest) StateTypeName() string {
@@ -321,7 +321,7 @@ func (epi *epollInterest) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &epi.epoll)
 	stateSinkObject.Save(1, &epi.key)
 	stateSinkObject.Save(2, &epi.waiter)
-	stateSinkObject.Save(3, &epi.mask)
+	stateSinkObject.SaveUint32(3, &epi.mask)
 	stateSinkObject.Save(4, &epi.userData)
 }
 
@@ -330,9 +330,14 @@ func (epi *epollInterest) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.LoadWait(0, &epi.epoll)
 	stateSourceObject.Load(1, &epi.key)
 	stateSourceObject.Load(2, &epi.waiter)
-	stateSourceObject.Load(3, &epi.mask)
+	stateSourceObject.LoadUint32(3, &epi.mask)
 	stateSourceObject.Load(4, &epi.userData)
-	stateSourceObject.AfterLoad(func() { epi.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(epi)
+}
+
+// +checklocksignore
+func (epi *epollInterest) StateAfterLoad(ctx context.Context) {
+	epi.afterLoad(ctx)
 }
 
 func (l *epollInterestList) StateTypeName() string {
@@ -474,7 +479,7 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fd.FileDescriptionRefs)
 	stateSinkObject.Save(1, &fd.creds)
 	stateSinkObject.Save(2, &fd.statusFlags)
-	stateSinkObject.Save(3, &fd.fmodeFlags)
+	stateSinkObject.SaveUint32(3, &fd.fmodeFlags)
 	stateSinkObject.Save(4, &fd.asyncHandler)
 	stateSinkObject.Save(5, &fd.epolls)
 	stateSinkObject.Save(6, &fd.vd)
@@ -490,7 +495,7 @@ func (fd *FileDescription) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(0, &fd.FileDescriptionRefs)
 	stateSourceObject.Load(1, &fd.creds)
 	stateSourceObject.Load(2, &fd.statusFlags)
-	stateSourceObject.Load(3, &fd.fmodeFlags)
+	stateSourceObject.LoadUint32(3, &fd.fmodeFlags)
 	stateSourceObject.Load(4, &fd.asyncHandler)
 	stateSourceObject.Load(5, &fd.epolls)
 	stateSourceObject.Load(6, &fd.vd)
@@ -519,24 +524,24 @@ func (f *FileDescriptionOptions) beforeSave() {}
 // +checklocksignore
 func (f *FileDescriptionOptions) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.AllowDirectIO)
-	stateSinkObject.Save(1, &f.DenyPRead)
-	stateSinkObject.Save(2, &f.DenyPWrite)
-	stateSinkObject.Save(3, &f.UseDentryMetadata)
-	stateSinkObject.Save(4, &f.DenySpliceIn)
-	stateSinkObject.Save(5, &f.SpecialFile)
+	stateSinkObject.SaveBool(0, &f.AllowDirectIO)
+	stateSinkObject.SaveBool(1, &f.DenyPRead)
+	stateSinkObject.SaveBool(2, &f.DenyPWrite)
+	stateSinkObject.SaveBool(3, &f.UseDentryMetadata)
+	stateSinkObject.SaveBool(4, &f.DenySpliceIn)
+	stateSinkObject.SaveBool(5, &f.SpecialFile)
 }
 
 func (f *FileDescriptionOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *FileDescriptionOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.AllowDirectIO)
-	stateSourceObject.Load(1, &f.DenyPRead)
-	stateSourceObject.Load(2, &f.DenyPWrite)
-	stateSourceObject.Load(3, &f.UseDentryMetadata)
-	stateSourceObject.Load(4, &f.DenySpliceIn)
-	stateSourceObject.Load(5, &f.SpecialFile)
+	stateSourceObject.LoadBool(0, &f.AllowDirectIO)
+	stateSourceObject.LoadBool(1, &f.DenyPRead)
+	stateSourceObject.LoadBool(2, &f.DenyPWrite)
+	stateSourceObject.LoadBool(3, &f.UseDentryMetadata)
+	stateSourceObject.LoadBool(4, &f.DenySpliceIn)
+	stateSourceObject.LoadBool(5, &f.SpecialFile)
 }
 
 func (d *Dirent) StateTypeName() string {
@@ -557,20 +562,20 @@ func (d *Dirent) beforeSave() {}
 // +checklocksignore
 func (d *Dirent) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.Name)
-	stateSinkObject.Save(1, &d.Type)
-	stateSinkObject.Save(2, &d.Ino)
-	stateSinkObject.Save(3, &d.NextOff)
+	stateSinkObject.SaveString(0, &d.Name)
+	stateSinkObject.SaveUint8(1, &d.Type)
+	stateSinkObject.SaveUint64(2, &d.Ino)
+	stateSinkObject.SaveInt64(3, &d.NextOff)
 }
 
 func (d *Dirent) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *Dirent) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.Name)
-	stateSourceObject.Load(1, &d.Type)
-	stateSourceObject.Load(2, &d.Ino)
-	stateSourceObject.Load(3, &d.NextOff)
+	stateSourceObject.LoadString(0, &d.Name)
+	stateSourceObject.LoadUint8(1, &d.Type)
+	stateSourceObject.LoadUint64(2, &d.Ino)
+	stateSourceObject.LoadInt64(3, &d.NextOff)
 }
 
 func (f *FileDescriptionDefaultImpl) StateTypeName() string {
@@ -679,14 +684,14 @@ func (s *StaticData) beforeSave() {}
 // +checklocksignore
 func (s *StaticData) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.Data)
+	stateSinkObject.SaveString(0, &s.Data)
 }
 
 func (s *StaticData) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *StaticData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Data)
+	stateSourceObject.LoadString(0, &s.Data)
 }
 
 func (fd *DynamicBytesFileDescriptionImpl) StateTypeName() string {
@@ -710,11 +715,11 @@ func (fd *DynamicBytesFileDescriptionImpl) StateSave(stateSinkObject state.Sink)
 	fd.beforeSave()
 	bufValue := fd.saveBuf()
 	_ = ([]byte)(bufValue)
-	stateSinkObject.SaveValue(2, bufValue)
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.data)
 	stateSinkObject.Save(3, &fd.off)
-	stateSinkObject.Save(4, &fd.lastRead)
+	stateSinkObject.SaveInt64(4, &fd.lastRead)
+	stateSinkObject.SaveValue(2, bufValue)
 }
 
 func (fd *DynamicBytesFileDescriptionImpl) afterLoad(context.Context) {}
@@ -724,8 +729,16 @@ func (fd *DynamicBytesFileDescriptionImpl) StateLoad(ctx context.Context, stateS
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.data)
 	stateSourceObject.Load(3, &fd.off)
-	stateSourceObject.Load(4, &fd.lastRead)
-	stateSourceObject.LoadValue(2, new([]byte), func(y any) { fd.loadBuf(ctx, y.([]byte)) })
+	stateSourceObject.LoadInt64(4, &fd.lastRead)
+	stateSourceObject.LoadValueTo(2, (*[]byte)(nil), fd)
+}
+
+// +checklocksignore
+func (fd *DynamicBytesFileDescriptionImpl) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 2:
+		fd.loadBuf(ctx, stateValue.([]byte))
+	}
 }
 
 func (fd *LockFD) StateTypeName() string {
@@ -816,7 +829,12 @@ func (r *FileDescriptionRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *FileDescriptionRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *FileDescriptionRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (fs *Filesystem) StateTypeName() string {
@@ -937,7 +955,12 @@ func (r *FilesystemRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *FilesystemRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *FilesystemRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (r *registeredFilesystemType) StateTypeName() string {
@@ -985,18 +1008,18 @@ func (r *RegisterFilesystemTypeOptions) beforeSave() {}
 // +checklocksignore
 func (r *RegisterFilesystemTypeOptions) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.AllowUserMount)
-	stateSinkObject.Save(1, &r.AllowUserList)
-	stateSinkObject.Save(2, &r.RequiresDevice)
+	stateSinkObject.SaveBool(0, &r.AllowUserMount)
+	stateSinkObject.SaveBool(1, &r.AllowUserList)
+	stateSinkObject.SaveBool(2, &r.RequiresDevice)
 }
 
 func (r *RegisterFilesystemTypeOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *RegisterFilesystemTypeOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.AllowUserMount)
-	stateSourceObject.Load(1, &r.AllowUserList)
-	stateSourceObject.Load(2, &r.RequiresDevice)
+	stateSourceObject.LoadBool(0, &r.AllowUserMount)
+	stateSourceObject.LoadBool(1, &r.AllowUserList)
+	stateSourceObject.LoadBool(2, &r.RequiresDevice)
 }
 
 func (e *EventType) StateTypeName() string {
@@ -1035,11 +1058,11 @@ func (i *Inotify) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &i.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &i.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &i.NoLockFD)
-	stateSinkObject.Save(4, &i.id)
+	stateSinkObject.SaveUint64(4, &i.id)
 	stateSinkObject.Save(5, &i.queue)
 	stateSinkObject.Save(6, &i.events)
 	stateSinkObject.Save(7, &i.scratch)
-	stateSinkObject.Save(8, &i.nextWatchMinusOne)
+	stateSinkObject.SaveInt32(8, &i.nextWatchMinusOne)
 	stateSinkObject.Save(9, &i.watches)
 }
 
@@ -1051,11 +1074,11 @@ func (i *Inotify) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(1, &i.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &i.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &i.NoLockFD)
-	stateSourceObject.Load(4, &i.id)
+	stateSourceObject.LoadUint64(4, &i.id)
 	stateSourceObject.Load(5, &i.queue)
 	stateSourceObject.Load(6, &i.events)
 	stateSourceObject.Load(7, &i.scratch)
-	stateSourceObject.Load(8, &i.nextWatchMinusOne)
+	stateSourceObject.LoadInt32(8, &i.nextWatchMinusOne)
 	stateSourceObject.Load(9, &i.watches)
 }
 
@@ -1104,7 +1127,7 @@ func (w *Watch) beforeSave() {}
 func (w *Watch) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	stateSinkObject.Save(0, &w.owner)
-	stateSinkObject.Save(1, &w.wd)
+	stateSinkObject.SaveInt32(1, &w.wd)
 	stateSinkObject.Save(2, &w.target)
 	stateSinkObject.Save(3, &w.mask)
 	stateSinkObject.Save(4, &w.expired)
@@ -1115,7 +1138,7 @@ func (w *Watch) afterLoad(context.Context) {}
 // +checklocksignore
 func (w *Watch) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &w.owner)
-	stateSourceObject.Load(1, &w.wd)
+	stateSourceObject.LoadInt32(1, &w.wd)
 	stateSourceObject.Load(2, &w.target)
 	stateSourceObject.Load(3, &w.mask)
 	stateSourceObject.Load(4, &w.expired)
@@ -1142,10 +1165,10 @@ func (e *Event) beforeSave() {}
 func (e *Event) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.eventEntry)
-	stateSinkObject.Save(1, &e.wd)
-	stateSinkObject.Save(2, &e.mask)
-	stateSinkObject.Save(3, &e.cookie)
-	stateSinkObject.Save(4, &e.len)
+	stateSinkObject.SaveInt32(1, &e.wd)
+	stateSinkObject.SaveUint32(2, &e.mask)
+	stateSinkObject.SaveUint32(3, &e.cookie)
+	stateSinkObject.SaveUint32(4, &e.len)
 	stateSinkObject.Save(5, &e.name)
 }
 
@@ -1154,10 +1177,10 @@ func (e *Event) afterLoad(context.Context) {}
 // +checklocksignore
 func (e *Event) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.eventEntry)
-	stateSourceObject.Load(1, &e.wd)
-	stateSourceObject.Load(2, &e.mask)
-	stateSourceObject.Load(3, &e.cookie)
-	stateSourceObject.Load(4, &e.len)
+	stateSourceObject.LoadInt32(1, &e.wd)
+	stateSourceObject.LoadUint32(2, &e.mask)
+	stateSourceObject.LoadUint32(3, &e.cookie)
+	stateSourceObject.LoadUint32(4, &e.len)
 	stateSourceObject.Load(5, &e.name)
 }
 
@@ -1185,7 +1208,15 @@ func (fl *FileLocks) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (fl *FileLocks) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*fileLocks), func(y any) { fl.loadLocks(ctx, y.(*fileLocks)) })
+	stateSourceObject.LoadValueTo(0, (**fileLocks)(nil), fl)
+}
+
+// +checklocksignore
+func (fl *FileLocks) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		fl.loadLocks(ctx, stateValue.(*fileLocks))
+	}
 }
 
 func (f *fileLocks) StateTypeName() string {
@@ -1234,20 +1265,20 @@ func (m *mountLockFlags) beforeSave() {}
 // +checklocksignore
 func (m *mountLockFlags) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.readOnly)
-	stateSinkObject.Save(1, &m.noExec)
-	stateSinkObject.Save(2, &m.noDev)
-	stateSinkObject.Save(3, &m.noSUID)
+	stateSinkObject.SaveBool(0, &m.readOnly)
+	stateSinkObject.SaveBool(1, &m.noExec)
+	stateSinkObject.SaveBool(2, &m.noDev)
+	stateSinkObject.SaveBool(3, &m.noSUID)
 }
 
 func (m *mountLockFlags) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *mountLockFlags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.readOnly)
-	stateSourceObject.Load(1, &m.noExec)
-	stateSourceObject.Load(2, &m.noDev)
-	stateSourceObject.Load(3, &m.noSUID)
+	stateSourceObject.LoadBool(0, &m.readOnly)
+	stateSourceObject.LoadBool(1, &m.noExec)
+	stateSourceObject.LoadBool(2, &m.noDev)
+	stateSourceObject.LoadBool(3, &m.noSUID)
 }
 
 func (mnt *Mount) StateTypeName() string {
@@ -1285,25 +1316,25 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	mnt.beforeSave()
 	keyValue := mnt.saveKey()
 	_ = (VirtualDentry)(keyValue)
-	stateSinkObject.SaveValue(5, keyValue)
 	stateSinkObject.Save(0, &mnt.vfs)
 	stateSinkObject.Save(1, &mnt.fs)
 	stateSinkObject.Save(2, &mnt.root)
-	stateSinkObject.Save(3, &mnt.ID)
+	stateSinkObject.SaveUint64(3, &mnt.ID)
 	stateSinkObject.Save(4, &mnt.flags)
 	stateSinkObject.Save(6, &mnt.ns)
 	stateSinkObject.Save(7, &mnt.refs)
 	stateSinkObject.Save(8, &mnt.children)
-	stateSinkObject.Save(9, &mnt.isShared)
+	stateSinkObject.SaveBool(9, &mnt.isShared)
 	stateSinkObject.Save(10, &mnt.sharedEntry)
 	stateSinkObject.Save(11, &mnt.followerList)
 	stateSinkObject.Save(12, &mnt.followerEntry)
 	stateSinkObject.Save(13, &mnt.leader)
-	stateSinkObject.Save(14, &mnt.groupID)
-	stateSinkObject.Save(15, &mnt.umounted)
-	stateSinkObject.Save(16, &mnt.locked)
+	stateSinkObject.SaveUint32(14, &mnt.groupID)
+	stateSinkObject.SaveBool(15, &mnt.umounted)
+	stateSinkObject.SaveBool(16, &mnt.locked)
 	stateSinkObject.Save(17, &mnt.lockedFlags)
 	stateSinkObject.Save(18, &mnt.writers)
+	stateSinkObject.SaveValue(5, keyValue)
 }
 
 // +checklocksignore
@@ -1311,23 +1342,36 @@ func (mnt *Mount) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(0, &mnt.vfs)
 	stateSourceObject.Load(1, &mnt.fs)
 	stateSourceObject.Load(2, &mnt.root)
-	stateSourceObject.Load(3, &mnt.ID)
+	stateSourceObject.LoadUint64(3, &mnt.ID)
 	stateSourceObject.Load(4, &mnt.flags)
 	stateSourceObject.Load(6, &mnt.ns)
 	stateSourceObject.Load(7, &mnt.refs)
 	stateSourceObject.Load(8, &mnt.children)
-	stateSourceObject.Load(9, &mnt.isShared)
+	stateSourceObject.LoadBool(9, &mnt.isShared)
 	stateSourceObject.Load(10, &mnt.sharedEntry)
 	stateSourceObject.Load(11, &mnt.followerList)
 	stateSourceObject.Load(12, &mnt.followerEntry)
 	stateSourceObject.Load(13, &mnt.leader)
-	stateSourceObject.Load(14, &mnt.groupID)
-	stateSourceObject.Load(15, &mnt.umounted)
-	stateSourceObject.Load(16, &mnt.locked)
+	stateSourceObject.LoadUint32(14, &mnt.groupID)
+	stateSourceObject.LoadBool(15, &mnt.umounted)
+	stateSourceObject.LoadBool(16, &mnt.locked)
 	stateSourceObject.Load(17, &mnt.lockedFlags)
 	stateSourceObject.Load(18, &mnt.writers)
-	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(ctx, y.(VirtualDentry)) })
-	stateSourceObject.AfterLoad(func() { mnt.afterLoad(ctx) })
+	stateSourceObject.LoadValueTo(5, (*VirtualDentry)(nil), mnt)
+	stateSourceObject.AfterLoadTo(mnt)
+}
+
+// +checklocksignore
+func (mnt *Mount) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 5:
+		mnt.loadKey(ctx, stateValue.(VirtualDentry))
+	}
+}
+
+// +checklocksignore
+func (mnt *Mount) StateAfterLoad(ctx context.Context) {
+	mnt.afterLoad(ctx)
 }
 
 func (u *umountRecursiveOptions) StateTypeName() string {
@@ -1347,18 +1391,18 @@ func (u *umountRecursiveOptions) beforeSave() {}
 // +checklocksignore
 func (u *umountRecursiveOptions) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.eager)
-	stateSinkObject.Save(1, &u.disconnectHierarchy)
-	stateSinkObject.Save(2, &u.propagate)
+	stateSinkObject.SaveBool(0, &u.eager)
+	stateSinkObject.SaveBool(1, &u.disconnectHierarchy)
+	stateSinkObject.SaveBool(2, &u.propagate)
 }
 
 func (u *umountRecursiveOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *umountRecursiveOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.eager)
-	stateSourceObject.Load(1, &u.disconnectHierarchy)
-	stateSourceObject.Load(2, &u.propagate)
+	stateSourceObject.LoadBool(0, &u.eager)
+	stateSourceObject.LoadBool(1, &u.disconnectHierarchy)
+	stateSourceObject.LoadBool(2, &u.propagate)
 }
 
 func (l *followerList) StateTypeName() string {
@@ -1438,7 +1482,12 @@ func (r *namespaceRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *namespaceRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *namespaceRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (e *mountEntry) StateTypeName() string {
@@ -1497,16 +1546,16 @@ func (mntns *MountNamespace) beforeSave() {}
 // +checklocksignore
 func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 	mntns.beforeSave()
-	stateSinkObject.Save(0, &mntns.ID)
+	stateSinkObject.SaveUint64(0, &mntns.ID)
 	stateSinkObject.Save(1, &mntns.Refs)
 	stateSinkObject.Save(2, &mntns.Owner)
 	stateSinkObject.Save(3, &mntns.vfs)
 	stateSinkObject.Save(4, &mntns.root)
 	stateSinkObject.Save(5, &mntns.mountpoints)
-	stateSinkObject.Save(6, &mntns.mounts)
-	stateSinkObject.Save(7, &mntns.pending)
-	stateSinkObject.Save(8, &mntns.anon)
-	stateSinkObject.Save(9, &mntns.originatorID)
+	stateSinkObject.SaveUint32(6, &mntns.mounts)
+	stateSinkObject.SaveUint32(7, &mntns.pending)
+	stateSinkObject.SaveBool(8, &mntns.anon)
+	stateSinkObject.SaveUint64(9, &mntns.originatorID)
 	stateSinkObject.Save(10, &mntns.Poller)
 }
 
@@ -1514,16 +1563,16 @@ func (mntns *MountNamespace) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mntns *MountNamespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mntns.ID)
+	stateSourceObject.LoadUint64(0, &mntns.ID)
 	stateSourceObject.Load(1, &mntns.Refs)
 	stateSourceObject.Load(2, &mntns.Owner)
 	stateSourceObject.Load(3, &mntns.vfs)
 	stateSourceObject.Load(4, &mntns.root)
 	stateSourceObject.Load(5, &mntns.mountpoints)
-	stateSourceObject.Load(6, &mntns.mounts)
-	stateSourceObject.Load(7, &mntns.pending)
-	stateSourceObject.Load(8, &mntns.anon)
-	stateSourceObject.Load(9, &mntns.originatorID)
+	stateSourceObject.LoadUint32(6, &mntns.mounts)
+	stateSourceObject.LoadUint32(7, &mntns.pending)
+	stateSourceObject.LoadBool(8, &mntns.anon)
+	stateSourceObject.LoadUint64(9, &mntns.originatorID)
 	stateSourceObject.Load(10, &mntns.Poller)
 }
 
@@ -1573,14 +1622,14 @@ func (g *GetDentryOptions) beforeSave() {}
 // +checklocksignore
 func (g *GetDentryOptions) StateSave(stateSinkObject state.Sink) {
 	g.beforeSave()
-	stateSinkObject.Save(0, &g.CheckSearchable)
+	stateSinkObject.SaveBool(0, &g.CheckSearchable)
 }
 
 func (g *GetDentryOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (g *GetDentryOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &g.CheckSearchable)
+	stateSourceObject.LoadBool(0, &g.CheckSearchable)
 }
 
 func (m *MkdirOptions) StateTypeName() string {
@@ -1600,7 +1649,7 @@ func (m *MkdirOptions) beforeSave() {}
 func (m *MkdirOptions) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.Mode)
-	stateSinkObject.Save(1, &m.ForSyntheticMountpoint)
+	stateSinkObject.SaveBool(1, &m.ForSyntheticMountpoint)
 }
 
 func (m *MkdirOptions) afterLoad(context.Context) {}
@@ -1608,7 +1657,7 @@ func (m *MkdirOptions) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *MkdirOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Mode)
-	stateSourceObject.Load(1, &m.ForSyntheticMountpoint)
+	stateSourceObject.LoadBool(1, &m.ForSyntheticMountpoint)
 }
 
 func (m *MknodOptions) StateTypeName() string {
@@ -1630,8 +1679,8 @@ func (m *MknodOptions) beforeSave() {}
 func (m *MknodOptions) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.Mode)
-	stateSinkObject.Save(1, &m.DevMajor)
-	stateSinkObject.Save(2, &m.DevMinor)
+	stateSinkObject.SaveUint32(1, &m.DevMajor)
+	stateSinkObject.SaveUint32(2, &m.DevMinor)
 	stateSinkObject.Save(3, &m.Endpoint)
 }
 
@@ -1640,8 +1689,8 @@ func (m *MknodOptions) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *MknodOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Mode)
-	stateSourceObject.Load(1, &m.DevMajor)
-	stateSourceObject.Load(2, &m.DevMinor)
+	stateSourceObject.LoadUint32(1, &m.DevMajor)
+	stateSourceObject.LoadUint32(2, &m.DevMinor)
 	stateSourceObject.Load(3, &m.Endpoint)
 }
 
@@ -1663,20 +1712,20 @@ func (m *MountFlags) beforeSave() {}
 // +checklocksignore
 func (m *MountFlags) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.NoExec)
-	stateSinkObject.Save(1, &m.NoATime)
-	stateSinkObject.Save(2, &m.NoDev)
-	stateSinkObject.Save(3, &m.NoSUID)
+	stateSinkObject.SaveBool(0, &m.NoExec)
+	stateSinkObject.SaveBool(1, &m.NoATime)
+	stateSinkObject.SaveBool(2, &m.NoDev)
+	stateSinkObject.SaveBool(3, &m.NoSUID)
 }
 
 func (m *MountFlags) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *MountFlags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.NoExec)
-	stateSourceObject.Load(1, &m.NoATime)
-	stateSourceObject.Load(2, &m.NoDev)
-	stateSourceObject.Load(3, &m.NoSUID)
+	stateSourceObject.LoadBool(0, &m.NoExec)
+	stateSourceObject.LoadBool(1, &m.NoATime)
+	stateSourceObject.LoadBool(2, &m.NoDev)
+	stateSourceObject.LoadBool(3, &m.NoSUID)
 }
 
 func (m *MountOptions) StateTypeName() string {
@@ -1698,9 +1747,9 @@ func (m *MountOptions) beforeSave() {}
 func (m *MountOptions) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.Flags)
-	stateSinkObject.Save(1, &m.ReadOnly)
+	stateSinkObject.SaveBool(1, &m.ReadOnly)
 	stateSinkObject.Save(2, &m.GetFilesystemOptions)
-	stateSinkObject.Save(3, &m.Locked)
+	stateSinkObject.SaveBool(3, &m.Locked)
 }
 
 func (m *MountOptions) afterLoad(context.Context) {}
@@ -1708,9 +1757,9 @@ func (m *MountOptions) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *MountOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Flags)
-	stateSourceObject.Load(1, &m.ReadOnly)
+	stateSourceObject.LoadBool(1, &m.ReadOnly)
 	stateSourceObject.Load(2, &m.GetFilesystemOptions)
-	stateSourceObject.Load(3, &m.Locked)
+	stateSourceObject.LoadBool(3, &m.Locked)
 }
 
 func (o *OpenOptions) StateTypeName() string {
@@ -1730,18 +1779,18 @@ func (o *OpenOptions) beforeSave() {}
 // +checklocksignore
 func (o *OpenOptions) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.Flags)
+	stateSinkObject.SaveUint32(0, &o.Flags)
 	stateSinkObject.Save(1, &o.Mode)
-	stateSinkObject.Save(2, &o.FileExec)
+	stateSinkObject.SaveBool(2, &o.FileExec)
 }
 
 func (o *OpenOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *OpenOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.Flags)
+	stateSourceObject.LoadUint32(0, &o.Flags)
 	stateSourceObject.Load(1, &o.Mode)
-	stateSourceObject.Load(2, &o.FileExec)
+	stateSourceObject.LoadBool(2, &o.FileExec)
 }
 
 func (r *ReadOptions) StateTypeName() string {
@@ -1759,14 +1808,14 @@ func (r *ReadOptions) beforeSave() {}
 // +checklocksignore
 func (r *ReadOptions) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Flags)
+	stateSinkObject.SaveUint32(0, &r.Flags)
 }
 
 func (r *ReadOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *ReadOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Flags)
+	stateSourceObject.LoadUint32(0, &r.Flags)
 }
 
 func (r *RenameOptions) StateTypeName() string {
@@ -1785,16 +1834,16 @@ func (r *RenameOptions) beforeSave() {}
 // +checklocksignore
 func (r *RenameOptions) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Flags)
-	stateSinkObject.Save(1, &r.MustBeDir)
+	stateSinkObject.SaveUint32(0, &r.Flags)
+	stateSinkObject.SaveBool(1, &r.MustBeDir)
 }
 
 func (r *RenameOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *RenameOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Flags)
-	stateSourceObject.Load(1, &r.MustBeDir)
+	stateSourceObject.LoadUint32(0, &r.Flags)
+	stateSourceObject.LoadBool(1, &r.MustBeDir)
 }
 
 func (s *SetStatOptions) StateTypeName() string {
@@ -1815,8 +1864,8 @@ func (s *SetStatOptions) beforeSave() {}
 func (s *SetStatOptions) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Stat)
-	stateSinkObject.Save(1, &s.NeedWritePerm)
-	stateSinkObject.Save(2, &s.ClearPrivs)
+	stateSinkObject.SaveBool(1, &s.NeedWritePerm)
+	stateSinkObject.SaveBool(2, &s.ClearPrivs)
 }
 
 func (s *SetStatOptions) afterLoad(context.Context) {}
@@ -1824,8 +1873,8 @@ func (s *SetStatOptions) afterLoad(context.Context) {}
 // +checklocksignore
 func (s *SetStatOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Stat)
-	stateSourceObject.Load(1, &s.NeedWritePerm)
-	stateSourceObject.Load(2, &s.ClearPrivs)
+	stateSourceObject.LoadBool(1, &s.NeedWritePerm)
+	stateSourceObject.LoadBool(2, &s.ClearPrivs)
 }
 
 func (b *BoundEndpointOptions) StateTypeName() string {
@@ -1843,14 +1892,14 @@ func (b *BoundEndpointOptions) beforeSave() {}
 // +checklocksignore
 func (b *BoundEndpointOptions) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
-	stateSinkObject.Save(0, &b.Addr)
+	stateSinkObject.SaveString(0, &b.Addr)
 }
 
 func (b *BoundEndpointOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (b *BoundEndpointOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &b.Addr)
+	stateSourceObject.LoadString(0, &b.Addr)
 }
 
 func (g *GetXattrOptions) StateTypeName() string {
@@ -1869,16 +1918,16 @@ func (g *GetXattrOptions) beforeSave() {}
 // +checklocksignore
 func (g *GetXattrOptions) StateSave(stateSinkObject state.Sink) {
 	g.beforeSave()
-	stateSinkObject.Save(0, &g.Name)
-	stateSinkObject.Save(1, &g.Size)
+	stateSinkObject.SaveString(0, &g.Name)
+	stateSinkObject.SaveUint64(1, &g.Size)
 }
 
 func (g *GetXattrOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (g *GetXattrOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &g.Name)
-	stateSourceObject.Load(1, &g.Size)
+	stateSourceObject.LoadString(0, &g.Name)
+	stateSourceObject.LoadUint64(1, &g.Size)
 }
 
 func (s *SetXattrOptions) StateTypeName() string {
@@ -1898,18 +1947,18 @@ func (s *SetXattrOptions) beforeSave() {}
 // +checklocksignore
 func (s *SetXattrOptions) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.Name)
-	stateSinkObject.Save(1, &s.Value)
-	stateSinkObject.Save(2, &s.Flags)
+	stateSinkObject.SaveString(0, &s.Name)
+	stateSinkObject.SaveString(1, &s.Value)
+	stateSinkObject.SaveUint32(2, &s.Flags)
 }
 
 func (s *SetXattrOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *SetXattrOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Name)
-	stateSourceObject.Load(1, &s.Value)
-	stateSourceObject.Load(2, &s.Flags)
+	stateSourceObject.LoadString(0, &s.Name)
+	stateSourceObject.LoadString(1, &s.Value)
+	stateSourceObject.LoadUint32(2, &s.Flags)
 }
 
 func (s *StatOptions) StateTypeName() string {
@@ -1928,16 +1977,16 @@ func (s *StatOptions) beforeSave() {}
 // +checklocksignore
 func (s *StatOptions) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.Mask)
-	stateSinkObject.Save(1, &s.Sync)
+	stateSinkObject.SaveUint32(0, &s.Mask)
+	stateSinkObject.SaveUint32(1, &s.Sync)
 }
 
 func (s *StatOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *StatOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Mask)
-	stateSourceObject.Load(1, &s.Sync)
+	stateSourceObject.LoadUint32(0, &s.Mask)
+	stateSourceObject.LoadUint32(1, &s.Sync)
 }
 
 func (u *UmountOptions) StateTypeName() string {
@@ -1955,14 +2004,14 @@ func (u *UmountOptions) beforeSave() {}
 // +checklocksignore
 func (u *UmountOptions) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.Flags)
+	stateSinkObject.SaveUint32(0, &u.Flags)
 }
 
 func (u *UmountOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *UmountOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.Flags)
+	stateSourceObject.LoadUint32(0, &u.Flags)
 }
 
 func (w *WriteOptions) StateTypeName() string {
@@ -1980,14 +2029,14 @@ func (w *WriteOptions) beforeSave() {}
 // +checklocksignore
 func (w *WriteOptions) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
-	stateSinkObject.Save(0, &w.Flags)
+	stateSinkObject.SaveUint32(0, &w.Flags)
 }
 
 func (w *WriteOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (w *WriteOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.Flags)
+	stateSourceObject.LoadUint32(0, &w.Flags)
 }
 
 func (a *AccessTypes) StateTypeName() string {
@@ -2015,7 +2064,7 @@ func (a *ACLUser) beforeSave() {}
 func (a *ACLUser) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.UID)
-	stateSinkObject.Save(1, &a.Perms)
+	stateSinkObject.SaveUint16(1, (*uint16)(&a.Perms))
 }
 
 func (a *ACLUser) afterLoad(context.Context) {}
@@ -2023,7 +2072,7 @@ func (a *ACLUser) afterLoad(context.Context) {}
 // +checklocksignore
 func (a *ACLUser) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.UID)
-	stateSourceObject.Load(1, &a.Perms)
+	stateSourceObject.LoadUint16(1, (*uint16)(&a.Perms))
 }
 
 func (a *ACLGroup) StateTypeName() string {
@@ -2043,7 +2092,7 @@ func (a *ACLGroup) beforeSave() {}
 func (a *ACLGroup) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.GID)
-	stateSinkObject.Save(1, &a.Perms)
+	stateSinkObject.SaveUint16(1, (*uint16)(&a.Perms))
 }
 
 func (a *ACLGroup) afterLoad(context.Context) {}
@@ -2051,7 +2100,7 @@ func (a *ACLGroup) afterLoad(context.Context) {}
 // +checklocksignore
 func (a *ACLGroup) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.GID)
-	stateSourceObject.Load(1, &a.Perms)
+	stateSourceObject.LoadUint16(1, (*uint16)(&a.Perms))
 }
 
 func (a *PosixACL) StateTypeName() string {
@@ -2072,7 +2121,7 @@ func (a *PosixACL) beforeSave() {}
 // +checklocksignore
 func (a *PosixACL) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	stateSinkObject.Save(0, &a.UGOPerms)
+	stateSinkObject.SaveUint16(0, &a.UGOPerms)
 	stateSinkObject.Save(1, &a.Mask)
 	stateSinkObject.Save(2, &a.Users)
 	stateSinkObject.Save(3, &a.Groups)
@@ -2082,7 +2131,7 @@ func (a *PosixACL) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (a *PosixACL) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.UGOPerms)
+	stateSourceObject.LoadUint16(0, &a.UGOPerms)
 	stateSourceObject.Load(1, &a.Mask)
 	stateSourceObject.Load(2, &a.Users)
 	stateSourceObject.Load(3, &a.Groups)
@@ -2123,17 +2172,17 @@ func (rp *ResolvingPath) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &rp.mount)
 	stateSinkObject.Save(3, &rp.start)
 	stateSinkObject.Save(4, &rp.pit)
-	stateSinkObject.Save(5, &rp.flags)
-	stateSinkObject.Save(6, &rp.mustBeDir)
-	stateSinkObject.Save(7, &rp.symlinks)
-	stateSinkObject.Save(8, &rp.curPart)
+	stateSinkObject.SaveUint16(5, &rp.flags)
+	stateSinkObject.SaveBool(6, &rp.mustBeDir)
+	stateSinkObject.SaveUint8(7, &rp.symlinks)
+	stateSinkObject.SaveUint8(8, &rp.curPart)
 	stateSinkObject.Save(9, &rp.creds)
 	stateSinkObject.Save(10, &rp.nextMount)
 	stateSinkObject.Save(11, &rp.nextStart)
 	stateSinkObject.Save(12, &rp.absSymlinkTarget)
 	stateSinkObject.Save(13, &rp.parts)
 	stateSinkObject.Save(14, &rp.mountSeq)
-	stateSinkObject.Save(15, &rp.renameState)
+	stateSinkObject.SaveUint64(15, &rp.renameState)
 }
 
 func (rp *ResolvingPath) afterLoad(context.Context) {}
@@ -2145,17 +2194,17 @@ func (rp *ResolvingPath) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(2, &rp.mount)
 	stateSourceObject.Load(3, &rp.start)
 	stateSourceObject.Load(4, &rp.pit)
-	stateSourceObject.Load(5, &rp.flags)
-	stateSourceObject.Load(6, &rp.mustBeDir)
-	stateSourceObject.Load(7, &rp.symlinks)
-	stateSourceObject.Load(8, &rp.curPart)
+	stateSourceObject.LoadUint16(5, &rp.flags)
+	stateSourceObject.LoadBool(6, &rp.mustBeDir)
+	stateSourceObject.LoadUint8(7, &rp.symlinks)
+	stateSourceObject.LoadUint8(8, &rp.curPart)
 	stateSourceObject.Load(9, &rp.creds)
 	stateSourceObject.Load(10, &rp.nextMount)
 	stateSourceObject.Load(11, &rp.nextStart)
 	stateSourceObject.Load(12, &rp.absSymlinkTarget)
 	stateSourceObject.Load(13, &rp.parts)
 	stateSourceObject.Load(14, &rp.mountSeq)
-	stateSourceObject.Load(15, &rp.renameState)
+	stateSourceObject.LoadUint64(15, &rp.renameState)
 }
 
 func (r *resolveMountRootOrJumpError) StateTypeName() string {
@@ -2255,10 +2304,8 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	vfs.beforeSave()
 	mountsValue := vfs.saveMounts()
 	_ = ([]*Mount)(mountsValue)
-	stateSinkObject.SaveValue(0, mountsValue)
 	mountPromisesValue := vfs.saveMountPromises()
 	_ = (map[VirtualDentry]*mountPromise)(mountPromisesValue)
-	stateSinkObject.SaveValue(15, mountPromisesValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)
 	stateSinkObject.Save(3, &vfs.lastMountNamespaceID)
@@ -2268,13 +2315,15 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &vfs.devices)
 	stateSinkObject.Save(8, &vfs.dynCharDevMajorUsed)
 	stateSinkObject.Save(9, &vfs.dynCharDevMajorShared)
-	stateSinkObject.Save(10, &vfs.anonBlockDevMinorNext)
+	stateSinkObject.SaveUint32(10, &vfs.anonBlockDevMinorNext)
 	stateSinkObject.Save(11, &vfs.anonBlockDevMinor)
 	stateSinkObject.Save(12, &vfs.fsTypes)
 	stateSinkObject.Save(13, &vfs.filesystems)
 	stateSinkObject.Save(14, &vfs.groupIDBitmap)
 	stateSinkObject.Save(16, &vfs.toDecRef)
 	stateSinkObject.Save(17, &vfs.renameState)
+	stateSinkObject.SaveValue(0, mountsValue)
+	stateSinkObject.SaveValue(15, mountPromisesValue)
 }
 
 // +checklocksignore
@@ -2288,16 +2337,31 @@ func (vfs *VirtualFilesystem) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(7, &vfs.devices)
 	stateSourceObject.Load(8, &vfs.dynCharDevMajorUsed)
 	stateSourceObject.Load(9, &vfs.dynCharDevMajorShared)
-	stateSourceObject.Load(10, &vfs.anonBlockDevMinorNext)
+	stateSourceObject.LoadUint32(10, &vfs.anonBlockDevMinorNext)
 	stateSourceObject.Load(11, &vfs.anonBlockDevMinor)
 	stateSourceObject.Load(12, &vfs.fsTypes)
 	stateSourceObject.Load(13, &vfs.filesystems)
 	stateSourceObject.Load(14, &vfs.groupIDBitmap)
 	stateSourceObject.Load(16, &vfs.toDecRef)
 	stateSourceObject.Load(17, &vfs.renameState)
-	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(ctx, y.([]*Mount)) })
-	stateSourceObject.LoadValue(15, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
-	stateSourceObject.AfterLoad(func() { vfs.afterLoad(ctx) })
+	stateSourceObject.LoadValueTo(0, (*[]*Mount)(nil), vfs)
+	stateSourceObject.LoadValueTo(15, (*map[VirtualDentry]*mountPromise)(nil), vfs)
+	stateSourceObject.AfterLoadTo(vfs)
+}
+
+// +checklocksignore
+func (vfs *VirtualFilesystem) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		vfs.loadMounts(ctx, stateValue.([]*Mount))
+	case 15:
+		vfs.loadMountPromises(ctx, stateValue.(map[VirtualDentry]*mountPromise))
+	}
+}
+
+// +checklocksignore
+func (vfs *VirtualFilesystem) StateAfterLoad(ctx context.Context) {
+	vfs.afterLoad(ctx)
 }
 
 func (pop *PathOperation) StateTypeName() string {
@@ -2322,8 +2386,8 @@ func (pop *PathOperation) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &pop.Root)
 	stateSinkObject.Save(1, &pop.Start)
 	stateSinkObject.Save(2, &pop.Path)
-	stateSinkObject.Save(3, &pop.FollowFinalSymlink)
-	stateSinkObject.Save(4, &pop.ResolveFlags)
+	stateSinkObject.SaveBool(3, &pop.FollowFinalSymlink)
+	stateSinkObject.SaveUint64(4, &pop.ResolveFlags)
 }
 
 func (pop *PathOperation) afterLoad(context.Context) {}
@@ -2333,8 +2397,8 @@ func (pop *PathOperation) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(0, &pop.Root)
 	stateSourceObject.Load(1, &pop.Start)
 	stateSourceObject.Load(2, &pop.Path)
-	stateSourceObject.Load(3, &pop.FollowFinalSymlink)
-	stateSourceObject.Load(4, &pop.ResolveFlags)
+	stateSourceObject.LoadBool(3, &pop.FollowFinalSymlink)
+	stateSourceObject.LoadUint64(4, &pop.ResolveFlags)
 }
 
 func (vd *VirtualDentry) StateTypeName() string {
@@ -2391,83 +2455,83 @@ func (wc *WriteCount) StateLoad(ctx context.Context, stateSourceObject state.Sou
 }
 
 func init() {
-	state.Register((*anonFilesystemType)(nil))
-	state.Register((*anonFilesystem)(nil))
-	state.Register((*anonDentry)(nil))
-	state.Register((*Dentry)(nil))
+	state.RegisterNoHooks((*anonFilesystemType)(nil))
+	state.RegisterNoHooks((*anonFilesystem)(nil))
+	state.RegisterNoHooks((*anonDentry)(nil))
+	state.RegisterNoHooks((*Dentry)(nil))
 	state.Register((*DeviceKind)(nil))
-	state.Register((*devTuple)(nil))
-	state.Register((*registeredDevice)(nil))
-	state.Register((*RegisterDeviceOptions)(nil))
+	state.RegisterNoHooks((*devTuple)(nil))
+	state.RegisterNoHooks((*registeredDevice)(nil))
+	state.RegisterNoHooks((*RegisterDeviceOptions)(nil))
 	state.Register((*SharedDynamicCharDevMajorKey)(nil))
-	state.Register((*EpollInstance)(nil))
-	state.Register((*epollInterestKey)(nil))
-	state.Register((*epollInterest)(nil))
-	state.Register((*epollInterestList)(nil))
-	state.Register((*epollInterestEntry)(nil))
-	state.Register((*eventList)(nil))
-	state.Register((*eventEntry)(nil))
-	state.Register((*FileDescription)(nil))
-	state.Register((*FileDescriptionOptions)(nil))
-	state.Register((*Dirent)(nil))
-	state.Register((*FileDescriptionDefaultImpl)(nil))
-	state.Register((*DirectoryFileDescriptionDefaultImpl)(nil))
-	state.Register((*DentryMetadataFileDescriptionImpl)(nil))
-	state.Register((*DynamicBytesPoller)(nil))
-	state.Register((*StaticData)(nil))
-	state.Register((*DynamicBytesFileDescriptionImpl)(nil))
-	state.Register((*LockFD)(nil))
-	state.Register((*NoLockFD)(nil))
-	state.Register((*BadLockFD)(nil))
-	state.Register((*FileDescriptionRefs)(nil))
-	state.Register((*Filesystem)(nil))
-	state.Register((*PrependPathAtVFSRootError)(nil))
-	state.Register((*PrependPathAtNonMountRootError)(nil))
-	state.Register((*PrependPathSyntheticError)(nil))
-	state.Register((*FilesystemRefs)(nil))
-	state.Register((*registeredFilesystemType)(nil))
-	state.Register((*RegisterFilesystemTypeOptions)(nil))
+	state.RegisterNoHooks((*EpollInstance)(nil))
+	state.RegisterNoHooks((*epollInterestKey)(nil))
+	state.RegisterStruct((*epollInterest)(nil))
+	state.RegisterNoHooks((*epollInterestList)(nil))
+	state.RegisterNoHooks((*epollInterestEntry)(nil))
+	state.RegisterNoHooks((*eventList)(nil))
+	state.RegisterNoHooks((*eventEntry)(nil))
+	state.RegisterNoHooks((*FileDescription)(nil))
+	state.RegisterNoHooks((*FileDescriptionOptions)(nil))
+	state.RegisterNoHooks((*Dirent)(nil))
+	state.RegisterNoHooks((*FileDescriptionDefaultImpl)(nil))
+	state.RegisterNoHooks((*DirectoryFileDescriptionDefaultImpl)(nil))
+	state.RegisterNoHooks((*DentryMetadataFileDescriptionImpl)(nil))
+	state.RegisterNoHooks((*DynamicBytesPoller)(nil))
+	state.RegisterNoHooks((*StaticData)(nil))
+	state.RegisterNoHooks((*DynamicBytesFileDescriptionImpl)(nil))
+	state.RegisterNoHooks((*LockFD)(nil))
+	state.RegisterNoHooks((*NoLockFD)(nil))
+	state.RegisterNoHooks((*BadLockFD)(nil))
+	state.RegisterStruct((*FileDescriptionRefs)(nil))
+	state.RegisterNoHooks((*Filesystem)(nil))
+	state.RegisterNoHooks((*PrependPathAtVFSRootError)(nil))
+	state.RegisterNoHooks((*PrependPathAtNonMountRootError)(nil))
+	state.RegisterNoHooks((*PrependPathSyntheticError)(nil))
+	state.RegisterStruct((*FilesystemRefs)(nil))
+	state.RegisterNoHooks((*registeredFilesystemType)(nil))
+	state.RegisterNoHooks((*RegisterFilesystemTypeOptions)(nil))
 	state.Register((*EventType)(nil))
-	state.Register((*Inotify)(nil))
-	state.Register((*Watches)(nil))
-	state.Register((*Watch)(nil))
-	state.Register((*Event)(nil))
-	state.Register((*FileLocks)(nil))
-	state.Register((*fileLocks)(nil))
-	state.Register((*mountLockFlags)(nil))
-	state.Register((*Mount)(nil))
-	state.Register((*umountRecursiveOptions)(nil))
-	state.Register((*followerList)(nil))
-	state.Register((*followerEntry)(nil))
-	state.Register((*namespaceRefs)(nil))
-	state.Register((*mountEntry)(nil))
-	state.Register((*MountNamespace)(nil))
-	state.Register((*opathFD)(nil))
-	state.Register((*GetDentryOptions)(nil))
-	state.Register((*MkdirOptions)(nil))
-	state.Register((*MknodOptions)(nil))
-	state.Register((*MountFlags)(nil))
-	state.Register((*MountOptions)(nil))
-	state.Register((*OpenOptions)(nil))
-	state.Register((*ReadOptions)(nil))
-	state.Register((*RenameOptions)(nil))
-	state.Register((*SetStatOptions)(nil))
-	state.Register((*BoundEndpointOptions)(nil))
-	state.Register((*GetXattrOptions)(nil))
-	state.Register((*SetXattrOptions)(nil))
-	state.Register((*StatOptions)(nil))
-	state.Register((*UmountOptions)(nil))
-	state.Register((*WriteOptions)(nil))
+	state.RegisterNoHooks((*Inotify)(nil))
+	state.RegisterNoHooks((*Watches)(nil))
+	state.RegisterNoHooks((*Watch)(nil))
+	state.RegisterNoHooks((*Event)(nil))
+	state.RegisterNoHooks((*FileLocks)(nil))
+	state.RegisterNoHooks((*fileLocks)(nil))
+	state.RegisterNoHooks((*mountLockFlags)(nil))
+	state.RegisterStruct((*Mount)(nil))
+	state.RegisterNoHooks((*umountRecursiveOptions)(nil))
+	state.RegisterNoHooks((*followerList)(nil))
+	state.RegisterNoHooks((*followerEntry)(nil))
+	state.RegisterStruct((*namespaceRefs)(nil))
+	state.RegisterNoHooks((*mountEntry)(nil))
+	state.RegisterNoHooks((*MountNamespace)(nil))
+	state.RegisterNoHooks((*opathFD)(nil))
+	state.RegisterNoHooks((*GetDentryOptions)(nil))
+	state.RegisterNoHooks((*MkdirOptions)(nil))
+	state.RegisterNoHooks((*MknodOptions)(nil))
+	state.RegisterNoHooks((*MountFlags)(nil))
+	state.RegisterNoHooks((*MountOptions)(nil))
+	state.RegisterNoHooks((*OpenOptions)(nil))
+	state.RegisterNoHooks((*ReadOptions)(nil))
+	state.RegisterNoHooks((*RenameOptions)(nil))
+	state.RegisterNoHooks((*SetStatOptions)(nil))
+	state.RegisterNoHooks((*BoundEndpointOptions)(nil))
+	state.RegisterNoHooks((*GetXattrOptions)(nil))
+	state.RegisterNoHooks((*SetXattrOptions)(nil))
+	state.RegisterNoHooks((*StatOptions)(nil))
+	state.RegisterNoHooks((*UmountOptions)(nil))
+	state.RegisterNoHooks((*WriteOptions)(nil))
 	state.Register((*AccessTypes)(nil))
-	state.Register((*ACLUser)(nil))
-	state.Register((*ACLGroup)(nil))
-	state.Register((*PosixACL)(nil))
-	state.Register((*ResolvingPath)(nil))
-	state.Register((*resolveMountRootOrJumpError)(nil))
-	state.Register((*resolveMountPointError)(nil))
-	state.Register((*resolveAbsSymlinkError)(nil))
-	state.Register((*VirtualFilesystem)(nil))
-	state.Register((*PathOperation)(nil))
-	state.Register((*VirtualDentry)(nil))
-	state.Register((*WriteCount)(nil))
+	state.RegisterNoHooks((*ACLUser)(nil))
+	state.RegisterNoHooks((*ACLGroup)(nil))
+	state.RegisterNoHooks((*PosixACL)(nil))
+	state.RegisterNoHooks((*ResolvingPath)(nil))
+	state.RegisterNoHooks((*resolveMountRootOrJumpError)(nil))
+	state.RegisterNoHooks((*resolveMountPointError)(nil))
+	state.RegisterNoHooks((*resolveAbsSymlinkError)(nil))
+	state.RegisterStruct((*VirtualFilesystem)(nil))
+	state.RegisterNoHooks((*PathOperation)(nil))
+	state.RegisterNoHooks((*VirtualDentry)(nil))
+	state.RegisterNoHooks((*WriteCount)(nil))
 }

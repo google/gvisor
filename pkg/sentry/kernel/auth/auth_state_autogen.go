@@ -39,22 +39,22 @@ func (c *Credentials) beforeSave() {}
 // +checklocksignore
 func (c *Credentials) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	stateSinkObject.Save(0, &c.RealKUID)
-	stateSinkObject.Save(1, &c.EffectiveKUID)
-	stateSinkObject.Save(2, &c.SavedKUID)
-	stateSinkObject.Save(3, &c.RealKGID)
-	stateSinkObject.Save(4, &c.EffectiveKGID)
-	stateSinkObject.Save(5, &c.SavedKGID)
-	stateSinkObject.Save(6, &c.FilesystemKUID)
-	stateSinkObject.Save(7, &c.FilesystemKGID)
+	stateSinkObject.SaveUint32(0, (*uint32)(&c.RealKUID))
+	stateSinkObject.SaveUint32(1, (*uint32)(&c.EffectiveKUID))
+	stateSinkObject.SaveUint32(2, (*uint32)(&c.SavedKUID))
+	stateSinkObject.SaveUint32(3, (*uint32)(&c.RealKGID))
+	stateSinkObject.SaveUint32(4, (*uint32)(&c.EffectiveKGID))
+	stateSinkObject.SaveUint32(5, (*uint32)(&c.SavedKGID))
+	stateSinkObject.SaveUint32(6, (*uint32)(&c.FilesystemKUID))
+	stateSinkObject.SaveUint32(7, (*uint32)(&c.FilesystemKGID))
 	stateSinkObject.Save(8, &c.ExtraKGIDs)
-	stateSinkObject.Save(9, &c.PermittedCaps)
-	stateSinkObject.Save(10, &c.InheritableCaps)
-	stateSinkObject.Save(11, &c.EffectiveCaps)
-	stateSinkObject.Save(12, &c.BoundingCaps)
-	stateSinkObject.Save(13, &c.AmbientCaps)
-	stateSinkObject.Save(14, &c.KeepCaps)
-	stateSinkObject.Save(15, &c.NoSetUIDFixup)
+	stateSinkObject.SaveUint64(9, (*uint64)(&c.PermittedCaps))
+	stateSinkObject.SaveUint64(10, (*uint64)(&c.InheritableCaps))
+	stateSinkObject.SaveUint64(11, (*uint64)(&c.EffectiveCaps))
+	stateSinkObject.SaveUint64(12, (*uint64)(&c.BoundingCaps))
+	stateSinkObject.SaveUint64(13, (*uint64)(&c.AmbientCaps))
+	stateSinkObject.SaveBool(14, &c.KeepCaps)
+	stateSinkObject.SaveBool(15, &c.NoSetUIDFixup)
 	stateSinkObject.Save(16, &c.UserNamespace)
 }
 
@@ -62,22 +62,22 @@ func (c *Credentials) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (c *Credentials) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.RealKUID)
-	stateSourceObject.Load(1, &c.EffectiveKUID)
-	stateSourceObject.Load(2, &c.SavedKUID)
-	stateSourceObject.Load(3, &c.RealKGID)
-	stateSourceObject.Load(4, &c.EffectiveKGID)
-	stateSourceObject.Load(5, &c.SavedKGID)
-	stateSourceObject.Load(6, &c.FilesystemKUID)
-	stateSourceObject.Load(7, &c.FilesystemKGID)
+	stateSourceObject.LoadUint32(0, (*uint32)(&c.RealKUID))
+	stateSourceObject.LoadUint32(1, (*uint32)(&c.EffectiveKUID))
+	stateSourceObject.LoadUint32(2, (*uint32)(&c.SavedKUID))
+	stateSourceObject.LoadUint32(3, (*uint32)(&c.RealKGID))
+	stateSourceObject.LoadUint32(4, (*uint32)(&c.EffectiveKGID))
+	stateSourceObject.LoadUint32(5, (*uint32)(&c.SavedKGID))
+	stateSourceObject.LoadUint32(6, (*uint32)(&c.FilesystemKUID))
+	stateSourceObject.LoadUint32(7, (*uint32)(&c.FilesystemKGID))
 	stateSourceObject.Load(8, &c.ExtraKGIDs)
-	stateSourceObject.Load(9, &c.PermittedCaps)
-	stateSourceObject.Load(10, &c.InheritableCaps)
-	stateSourceObject.Load(11, &c.EffectiveCaps)
-	stateSourceObject.Load(12, &c.BoundingCaps)
-	stateSourceObject.Load(13, &c.AmbientCaps)
-	stateSourceObject.Load(14, &c.KeepCaps)
-	stateSourceObject.Load(15, &c.NoSetUIDFixup)
+	stateSourceObject.LoadUint64(9, (*uint64)(&c.PermittedCaps))
+	stateSourceObject.LoadUint64(10, (*uint64)(&c.InheritableCaps))
+	stateSourceObject.LoadUint64(11, (*uint64)(&c.EffectiveCaps))
+	stateSourceObject.LoadUint64(12, (*uint64)(&c.BoundingCaps))
+	stateSourceObject.LoadUint64(13, (*uint64)(&c.AmbientCaps))
+	stateSourceObject.LoadBool(14, &c.KeepCaps)
+	stateSourceObject.LoadBool(15, &c.NoSetUIDFixup)
 	stateSourceObject.Load(16, &c.UserNamespace)
 }
 
@@ -98,18 +98,18 @@ func (i *IDMapEntry) beforeSave() {}
 // +checklocksignore
 func (i *IDMapEntry) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.FirstID)
-	stateSinkObject.Save(1, &i.FirstParentID)
-	stateSinkObject.Save(2, &i.Length)
+	stateSinkObject.SaveUint32(0, &i.FirstID)
+	stateSinkObject.SaveUint32(1, &i.FirstParentID)
+	stateSinkObject.SaveUint32(2, &i.Length)
 }
 
 func (i *IDMapEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *IDMapEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.FirstID)
-	stateSourceObject.Load(1, &i.FirstParentID)
-	stateSourceObject.Load(2, &i.Length)
+	stateSourceObject.LoadUint32(0, &i.FirstID)
+	stateSourceObject.LoadUint32(1, &i.FirstParentID)
+	stateSourceObject.LoadUint32(2, &i.Length)
 }
 
 func (r *idMapRange) StateTypeName() string {
@@ -128,16 +128,16 @@ func (r *idMapRange) beforeSave() {}
 // +checklocksignore
 func (r *idMapRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUint32(0, &r.Start)
+	stateSinkObject.SaveUint32(1, &r.End)
 }
 
 func (r *idMapRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *idMapRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUint32(0, &r.Start)
+	stateSourceObject.LoadUint32(1, &r.End)
 }
 
 func (s *idMapSet) StateTypeName() string {
@@ -164,7 +164,15 @@ func (s *idMapSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *idMapSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]idMapFlatSegment), func(y any) { s.loadRoot(ctx, y.([]idMapFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]idMapFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *idMapSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]idMapFlatSegment))
+	}
 }
 
 func (n *idMapnode) StateTypeName() string {
@@ -189,10 +197,10 @@ func (n *idMapnode) beforeSave() {}
 // +checklocksignore
 func (n *idMapnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -203,10 +211,10 @@ func (n *idMapnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *idMapnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -230,18 +238,18 @@ func (i *idMapFlatSegment) beforeSave() {}
 // +checklocksignore
 func (i *idMapFlatSegment) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.Start)
-	stateSinkObject.Save(1, &i.End)
-	stateSinkObject.Save(2, &i.Value)
+	stateSinkObject.SaveUint32(0, &i.Start)
+	stateSinkObject.SaveUint32(1, &i.End)
+	stateSinkObject.SaveUint32(2, &i.Value)
 }
 
 func (i *idMapFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *idMapFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.Start)
-	stateSourceObject.Load(1, &i.End)
-	stateSourceObject.Load(2, &i.Value)
+	stateSourceObject.LoadUint32(0, &i.Start)
+	stateSourceObject.LoadUint32(1, &i.End)
+	stateSourceObject.LoadUint32(2, &i.Value)
 }
 
 func (k *Key) StateTypeName() string {
@@ -265,22 +273,30 @@ func (k *Key) StateSave(stateSinkObject state.Sink) {
 	k.beforeSave()
 	permsValue := k.savePerms()
 	_ = (KeyPermissions)(permsValue)
+	stateSinkObject.SaveInt32(0, (*int32)(&k.ID))
+	stateSinkObject.SaveString(1, &k.Description)
+	stateSinkObject.SaveUint32(2, (*uint32)(&k.kuid))
+	stateSinkObject.SaveUint32(3, (*uint32)(&k.kgid))
 	stateSinkObject.SaveValue(4, permsValue)
-	stateSinkObject.Save(0, &k.ID)
-	stateSinkObject.Save(1, &k.Description)
-	stateSinkObject.Save(2, &k.kuid)
-	stateSinkObject.Save(3, &k.kgid)
 }
 
 func (k *Key) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (k *Key) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &k.ID)
-	stateSourceObject.Load(1, &k.Description)
-	stateSourceObject.Load(2, &k.kuid)
-	stateSourceObject.Load(3, &k.kgid)
-	stateSourceObject.LoadValue(4, new(KeyPermissions), func(y any) { k.loadPerms(ctx, y.(KeyPermissions)) })
+	stateSourceObject.LoadInt32(0, (*int32)(&k.ID))
+	stateSourceObject.LoadString(1, &k.Description)
+	stateSourceObject.LoadUint32(2, (*uint32)(&k.kuid))
+	stateSourceObject.LoadUint32(3, (*uint32)(&k.kgid))
+	stateSourceObject.LoadValueTo(4, (*KeyPermissions)(nil), k)
+}
+
+// +checklocksignore
+func (k *Key) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 4:
+		k.loadPerms(ctx, stateValue.(KeyPermissions))
+	}
 }
 
 func (s *KeySet) StateTypeName() string {
@@ -335,7 +351,7 @@ func (ns *UserNamespace) beforeSave() {}
 func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	ns.beforeSave()
 	stateSinkObject.Save(0, &ns.parent)
-	stateSinkObject.Save(1, &ns.owner)
+	stateSinkObject.SaveUint32(1, (*uint32)(&ns.owner))
 	stateSinkObject.Save(2, &ns.Keys)
 	stateSinkObject.Save(3, &ns.maxUserNamespaces)
 	stateSinkObject.Save(4, &ns.numUserNamespaces)
@@ -343,8 +359,8 @@ func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &ns.uidMapToParent)
 	stateSinkObject.Save(7, &ns.gidMapFromParent)
 	stateSinkObject.Save(8, &ns.gidMapToParent)
-	stateSinkObject.Save(9, &ns.parentHadSetfcap)
-	stateSinkObject.Save(10, &ns.setgroupsAllowed)
+	stateSinkObject.SaveBool(9, &ns.parentHadSetfcap)
+	stateSinkObject.SaveBool(10, &ns.setgroupsAllowed)
 	stateSinkObject.Save(11, &ns.inode)
 }
 
@@ -353,7 +369,7 @@ func (ns *UserNamespace) afterLoad(context.Context) {}
 // +checklocksignore
 func (ns *UserNamespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ns.parent)
-	stateSourceObject.Load(1, &ns.owner)
+	stateSourceObject.LoadUint32(1, (*uint32)(&ns.owner))
 	stateSourceObject.Load(2, &ns.Keys)
 	stateSourceObject.Load(3, &ns.maxUserNamespaces)
 	stateSourceObject.Load(4, &ns.numUserNamespaces)
@@ -361,19 +377,19 @@ func (ns *UserNamespace) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(6, &ns.uidMapToParent)
 	stateSourceObject.Load(7, &ns.gidMapFromParent)
 	stateSourceObject.Load(8, &ns.gidMapToParent)
-	stateSourceObject.Load(9, &ns.parentHadSetfcap)
-	stateSourceObject.Load(10, &ns.setgroupsAllowed)
+	stateSourceObject.LoadBool(9, &ns.parentHadSetfcap)
+	stateSourceObject.LoadBool(10, &ns.setgroupsAllowed)
 	stateSourceObject.Load(11, &ns.inode)
 }
 
 func init() {
-	state.Register((*Credentials)(nil))
-	state.Register((*IDMapEntry)(nil))
-	state.Register((*idMapRange)(nil))
-	state.Register((*idMapSet)(nil))
-	state.Register((*idMapnode)(nil))
-	state.Register((*idMapFlatSegment)(nil))
-	state.Register((*Key)(nil))
-	state.Register((*KeySet)(nil))
-	state.Register((*UserNamespace)(nil))
+	state.RegisterNoHooks((*Credentials)(nil))
+	state.RegisterNoHooks((*IDMapEntry)(nil))
+	state.RegisterNoHooks((*idMapRange)(nil))
+	state.RegisterNoHooks((*idMapSet)(nil))
+	state.RegisterNoHooks((*idMapnode)(nil))
+	state.RegisterNoHooks((*idMapFlatSegment)(nil))
+	state.RegisterNoHooks((*Key)(nil))
+	state.RegisterNoHooks((*KeySet)(nil))
+	state.RegisterNoHooks((*UserNamespace)(nil))
 }

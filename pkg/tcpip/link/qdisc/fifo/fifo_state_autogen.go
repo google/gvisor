@@ -65,6 +65,6 @@ func (qd *queueDispatcher) StateLoad(ctx context.Context, stateSourceObject stat
 }
 
 func init() {
-	state.Register((*discipline)(nil))
-	state.Register((*queueDispatcher)(nil))
+	state.RegisterNoHooks((*discipline)(nil))
+	state.RegisterNoHooks((*queueDispatcher)(nil))
 }

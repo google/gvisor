@@ -210,14 +210,14 @@ func (g *GenericDirectoryFDOptions) beforeSave() {}
 // +checklocksignore
 func (g *GenericDirectoryFDOptions) StateSave(stateSinkObject state.Sink) {
 	g.beforeSave()
-	stateSinkObject.Save(0, &g.SeekEnd)
+	stateSinkObject.SaveInt(0, (*int)(&g.SeekEnd))
 }
 
 func (g *GenericDirectoryFDOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (g *GenericDirectoryFDOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &g.SeekEnd)
+	stateSourceObject.LoadInt(0, (*int)(&g.SeekEnd))
 }
 
 func (fd *GenericDirectoryFD) StateTypeName() string {
@@ -244,10 +244,10 @@ func (fd *GenericDirectoryFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(1, &fd.DirectoryFileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.LockFD)
-	stateSinkObject.Save(3, &fd.seekEnd)
+	stateSinkObject.SaveInt(3, (*int)(&fd.seekEnd))
 	stateSinkObject.Save(4, &fd.vfsfd)
 	stateSinkObject.Save(5, &fd.children)
-	stateSinkObject.Save(6, &fd.off)
+	stateSinkObject.SaveInt64(6, &fd.off)
 }
 
 func (fd *GenericDirectoryFD) afterLoad(context.Context) {}
@@ -257,10 +257,10 @@ func (fd *GenericDirectoryFD) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(0, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(1, &fd.DirectoryFileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.LockFD)
-	stateSourceObject.Load(3, &fd.seekEnd)
+	stateSourceObject.LoadInt(3, (*int)(&fd.seekEnd))
 	stateSourceObject.Load(4, &fd.vfsfd)
 	stateSourceObject.Load(5, &fd.children)
-	stateSourceObject.Load(6, &fd.off)
+	stateSourceObject.LoadInt64(6, &fd.off)
 }
 
 func (i *InodeNoopRefCount) StateTypeName() string {
@@ -380,8 +380,8 @@ func (a *InodeAttrs) beforeSave() {}
 // +checklocksignore
 func (a *InodeAttrs) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	stateSinkObject.Save(0, &a.devMajor)
-	stateSinkObject.Save(1, &a.devMinor)
+	stateSinkObject.SaveUint32(0, &a.devMajor)
+	stateSinkObject.SaveUint32(1, &a.devMinor)
 	stateSinkObject.Save(2, &a.ino)
 	stateSinkObject.Save(3, &a.mode)
 	stateSinkObject.Save(4, &a.uid)
@@ -397,8 +397,8 @@ func (a *InodeAttrs) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (a *InodeAttrs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.devMajor)
-	stateSourceObject.Load(1, &a.devMinor)
+	stateSourceObject.LoadUint32(0, &a.devMajor)
+	stateSourceObject.LoadUint32(1, &a.devMinor)
 	stateSourceObject.Load(2, &a.ino)
 	stateSourceObject.Load(3, &a.mode)
 	stateSourceObject.Load(4, &a.uid)
@@ -428,9 +428,9 @@ func (s *slot) beforeSave() {}
 // +checklocksignore
 func (s *slot) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.name)
+	stateSinkObject.SaveString(0, &s.name)
 	stateSinkObject.Save(1, &s.inode)
-	stateSinkObject.Save(2, &s.static)
+	stateSinkObject.SaveBool(2, &s.static)
 	stateSinkObject.Save(3, &s.slotEntry)
 }
 
@@ -438,9 +438,9 @@ func (s *slot) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *slot) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.name)
+	stateSourceObject.LoadString(0, &s.name)
 	stateSourceObject.Load(1, &s.inode)
-	stateSourceObject.Load(2, &s.static)
+	stateSourceObject.LoadBool(2, &s.static)
 	stateSourceObject.Load(3, &s.slotEntry)
 }
 
@@ -459,14 +459,14 @@ func (o *OrderedChildrenOptions) beforeSave() {}
 // +checklocksignore
 func (o *OrderedChildrenOptions) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.Writable)
+	stateSinkObject.SaveBool(0, &o.Writable)
 }
 
 func (o *OrderedChildrenOptions) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *OrderedChildrenOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.Writable)
+	stateSourceObject.LoadBool(0, &o.Writable)
 }
 
 func (o *OrderedChildren) StateTypeName() string {
@@ -486,7 +486,7 @@ func (o *OrderedChildren) beforeSave() {}
 // +checklocksignore
 func (o *OrderedChildren) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.writable)
+	stateSinkObject.SaveBool(0, &o.writable)
 	stateSinkObject.Save(1, &o.order)
 	stateSinkObject.Save(2, &o.set)
 }
@@ -495,7 +495,7 @@ func (o *OrderedChildren) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *OrderedChildren) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.writable)
+	stateSourceObject.LoadBool(0, &o.writable)
 	stateSourceObject.Load(1, &o.order)
 	stateSourceObject.Load(2, &o.set)
 }
@@ -763,9 +763,9 @@ func (fs *Filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.deferredDecRefs)
 	stateSinkObject.Save(2, &fs.nextInoMinusOne)
 	stateSinkObject.Save(3, &fs.cachedDentries)
-	stateSinkObject.Save(4, &fs.cachedDentriesLen)
-	stateSinkObject.Save(5, &fs.MaxCachedDentries)
-	stateSinkObject.Save(6, &fs.NoNegativeDentries)
+	stateSinkObject.SaveUint64(4, &fs.cachedDentriesLen)
+	stateSinkObject.SaveUint64(5, &fs.MaxCachedDentries)
+	stateSinkObject.SaveBool(6, &fs.NoNegativeDentries)
 	stateSinkObject.Save(7, &fs.root)
 }
 
@@ -777,9 +777,9 @@ func (fs *Filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(1, &fs.deferredDecRefs)
 	stateSourceObject.Load(2, &fs.nextInoMinusOne)
 	stateSourceObject.Load(3, &fs.cachedDentries)
-	stateSourceObject.Load(4, &fs.cachedDentriesLen)
-	stateSourceObject.Load(5, &fs.MaxCachedDentries)
-	stateSourceObject.Load(6, &fs.NoNegativeDentries)
+	stateSourceObject.LoadUint64(4, &fs.cachedDentriesLen)
+	stateSourceObject.LoadUint64(5, &fs.MaxCachedDentries)
+	stateSourceObject.LoadBool(6, &fs.NoNegativeDentries)
 	stateSourceObject.Load(7, &fs.root)
 }
 
@@ -810,17 +810,17 @@ func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	parentValue := d.saveParent()
 	_ = (*Dentry)(parentValue)
-	stateSinkObject.SaveValue(4, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)
 	stateSinkObject.Save(2, &d.fs)
 	stateSinkObject.Save(3, &d.flags)
-	stateSinkObject.Save(5, &d.name)
-	stateSinkObject.Save(6, &d.cached)
+	stateSinkObject.SaveString(5, &d.name)
+	stateSinkObject.SaveBool(6, &d.cached)
 	stateSinkObject.Save(7, &d.dentryEntry)
 	stateSinkObject.Save(8, &d.children)
 	stateSinkObject.Save(9, &d.inode)
 	stateSinkObject.Save(10, &d.deleted)
+	stateSinkObject.SaveValue(4, parentValue)
 }
 
 // +checklocksignore
@@ -829,14 +829,27 @@ func (d *Dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(1, &d.refs)
 	stateSourceObject.Load(2, &d.fs)
 	stateSourceObject.Load(3, &d.flags)
-	stateSourceObject.Load(5, &d.name)
-	stateSourceObject.Load(6, &d.cached)
+	stateSourceObject.LoadString(5, &d.name)
+	stateSourceObject.LoadBool(6, &d.cached)
 	stateSourceObject.Load(7, &d.dentryEntry)
 	stateSourceObject.Load(8, &d.children)
 	stateSourceObject.Load(9, &d.inode)
 	stateSourceObject.Load(10, &d.deleted)
-	stateSourceObject.LoadValue(4, new(*Dentry), func(y any) { d.loadParent(ctx, y.(*Dentry)) })
-	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
+	stateSourceObject.LoadValueTo(4, (**Dentry)(nil), d)
+	stateSourceObject.AfterLoadTo(d)
+}
+
+// +checklocksignore
+func (d *Dentry) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 4:
+		d.loadParent(ctx, stateValue.(*Dentry))
+	}
+}
+
+// +checklocksignore
+func (d *Dentry) StateAfterLoad(ctx context.Context) {
+	d.afterLoad(ctx)
 }
 
 func (l *slotList) StateTypeName() string {
@@ -916,7 +929,12 @@ func (r *StaticDirectoryRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *StaticDirectoryRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *StaticDirectoryRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (s *StaticSymlink) StateTypeName() string {
@@ -948,7 +966,7 @@ func (s *StaticSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &s.InodeNoStatFS)
 	stateSinkObject.Save(5, &s.InodeWatches)
 	stateSinkObject.Save(6, &s.InodeFSOwned)
-	stateSinkObject.Save(7, &s.target)
+	stateSinkObject.SaveString(7, &s.target)
 }
 
 func (s *StaticSymlink) afterLoad(context.Context) {}
@@ -962,7 +980,7 @@ func (s *StaticSymlink) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(4, &s.InodeNoStatFS)
 	stateSourceObject.Load(5, &s.InodeWatches)
 	stateSourceObject.Load(6, &s.InodeFSOwned)
-	stateSourceObject.Load(7, &s.target)
+	stateSourceObject.LoadString(7, &s.target)
 }
 
 func (dir *syntheticDirectory) StateTypeName() string {
@@ -1038,41 +1056,46 @@ func (r *syntheticDirectoryRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *syntheticDirectoryRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *syntheticDirectoryRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*dentryList)(nil))
-	state.Register((*dentryEntry)(nil))
-	state.Register((*DynamicBytesFile)(nil))
-	state.Register((*DynamicBytesFD)(nil))
-	state.Register((*PollableDynamicBytesFD)(nil))
+	state.RegisterNoHooks((*dentryList)(nil))
+	state.RegisterNoHooks((*dentryEntry)(nil))
+	state.RegisterNoHooks((*DynamicBytesFile)(nil))
+	state.RegisterNoHooks((*DynamicBytesFD)(nil))
+	state.RegisterNoHooks((*PollableDynamicBytesFD)(nil))
 	state.Register((*SeekEndConfig)(nil))
-	state.Register((*GenericDirectoryFDOptions)(nil))
-	state.Register((*GenericDirectoryFD)(nil))
-	state.Register((*InodeNoopRefCount)(nil))
-	state.Register((*InodeDirectoryNoNewChildren)(nil))
-	state.Register((*InodeNotDirectory)(nil))
-	state.Register((*InodeNotSymlink)(nil))
-	state.Register((*InodeAttrs)(nil))
-	state.Register((*slot)(nil))
-	state.Register((*OrderedChildrenOptions)(nil))
-	state.Register((*OrderedChildren)(nil))
-	state.Register((*InodeSymlink)(nil))
-	state.Register((*StaticDirectory)(nil))
-	state.Register((*InodeAlwaysValid)(nil))
-	state.Register((*InodeTemporary)(nil))
-	state.Register((*InodeNoStatFS)(nil))
-	state.Register((*InodeWatches)(nil))
-	state.Register((*InodeAnonymous)(nil))
-	state.Register((*InodeNotAnonymous)(nil))
-	state.Register((*InodeFSOwned)(nil))
-	state.Register((*Filesystem)(nil))
-	state.Register((*Dentry)(nil))
-	state.Register((*slotList)(nil))
-	state.Register((*slotEntry)(nil))
-	state.Register((*StaticDirectoryRefs)(nil))
-	state.Register((*StaticSymlink)(nil))
-	state.Register((*syntheticDirectory)(nil))
-	state.Register((*syntheticDirectoryRefs)(nil))
+	state.RegisterNoHooks((*GenericDirectoryFDOptions)(nil))
+	state.RegisterNoHooks((*GenericDirectoryFD)(nil))
+	state.RegisterNoHooks((*InodeNoopRefCount)(nil))
+	state.RegisterNoHooks((*InodeDirectoryNoNewChildren)(nil))
+	state.RegisterNoHooks((*InodeNotDirectory)(nil))
+	state.RegisterNoHooks((*InodeNotSymlink)(nil))
+	state.RegisterNoHooks((*InodeAttrs)(nil))
+	state.RegisterNoHooks((*slot)(nil))
+	state.RegisterNoHooks((*OrderedChildrenOptions)(nil))
+	state.RegisterNoHooks((*OrderedChildren)(nil))
+	state.RegisterNoHooks((*InodeSymlink)(nil))
+	state.RegisterNoHooks((*StaticDirectory)(nil))
+	state.RegisterNoHooks((*InodeAlwaysValid)(nil))
+	state.RegisterNoHooks((*InodeTemporary)(nil))
+	state.RegisterNoHooks((*InodeNoStatFS)(nil))
+	state.RegisterNoHooks((*InodeWatches)(nil))
+	state.RegisterNoHooks((*InodeAnonymous)(nil))
+	state.RegisterNoHooks((*InodeNotAnonymous)(nil))
+	state.RegisterNoHooks((*InodeFSOwned)(nil))
+	state.RegisterNoHooks((*Filesystem)(nil))
+	state.RegisterStruct((*Dentry)(nil))
+	state.RegisterNoHooks((*slotList)(nil))
+	state.RegisterNoHooks((*slotEntry)(nil))
+	state.RegisterStruct((*StaticDirectoryRefs)(nil))
+	state.RegisterNoHooks((*StaticSymlink)(nil))
+	state.RegisterNoHooks((*syntheticDirectory)(nil))
+	state.RegisterStruct((*syntheticDirectoryRefs)(nil))
 }

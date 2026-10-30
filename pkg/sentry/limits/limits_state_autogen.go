@@ -24,16 +24,16 @@ func (l *Limit) beforeSave() {}
 // +checklocksignore
 func (l *Limit) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
-	stateSinkObject.Save(0, &l.Cur)
-	stateSinkObject.Save(1, &l.Max)
+	stateSinkObject.SaveUint64(0, &l.Cur)
+	stateSinkObject.SaveUint64(1, &l.Max)
 }
 
 func (l *Limit) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (l *Limit) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.Cur)
-	stateSourceObject.Load(1, &l.Max)
+	stateSourceObject.LoadUint64(0, &l.Cur)
+	stateSourceObject.LoadUint64(1, &l.Max)
 }
 
 func (l *LimitSet) StateTypeName() string {
@@ -62,6 +62,6 @@ func (l *LimitSet) StateLoad(ctx context.Context, stateSourceObject state.Source
 }
 
 func init() {
-	state.Register((*Limit)(nil))
-	state.Register((*LimitSet)(nil))
+	state.RegisterNoHooks((*Limit)(nil))
+	state.RegisterNoHooks((*LimitSet)(nil))
 }

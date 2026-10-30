@@ -24,16 +24,16 @@ func (o *OwnerInfo) beforeSave() {}
 // +checklocksignore
 func (o *OwnerInfo) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.PID)
-	stateSinkObject.Save(1, &o.OFD)
+	stateSinkObject.SaveInt32(0, &o.PID)
+	stateSinkObject.SaveBool(1, &o.OFD)
 }
 
 func (o *OwnerInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *OwnerInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.PID)
-	stateSourceObject.Load(1, &o.OFD)
+	stateSourceObject.LoadInt32(0, &o.PID)
+	stateSourceObject.LoadBool(1, &o.OFD)
 }
 
 func (l *Lock) StateTypeName() string {
@@ -111,16 +111,16 @@ func (r *LockRange) beforeSave() {}
 // +checklocksignore
 func (r *LockRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUint64(0, &r.Start)
+	stateSinkObject.SaveUint64(1, &r.End)
 }
 
 func (r *LockRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *LockRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUint64(0, &r.Start)
+	stateSourceObject.LoadUint64(1, &r.End)
 }
 
 func (s *LockSet) StateTypeName() string {
@@ -147,7 +147,15 @@ func (s *LockSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *LockSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]LockFlatSegment), func(y any) { s.loadRoot(ctx, y.([]LockFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]LockFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *LockSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]LockFlatSegment))
+	}
 }
 
 func (n *Locknode) StateTypeName() string {
@@ -172,10 +180,10 @@ func (n *Locknode) beforeSave() {}
 // +checklocksignore
 func (n *Locknode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -186,10 +194,10 @@ func (n *Locknode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *Locknode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -213,8 +221,8 @@ func (l *LockFlatSegment) beforeSave() {}
 // +checklocksignore
 func (l *LockFlatSegment) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
-	stateSinkObject.Save(0, &l.Start)
-	stateSinkObject.Save(1, &l.End)
+	stateSinkObject.SaveUint64(0, &l.Start)
+	stateSinkObject.SaveUint64(1, &l.End)
 	stateSinkObject.Save(2, &l.Value)
 }
 
@@ -222,17 +230,17 @@ func (l *LockFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (l *LockFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.Start)
-	stateSourceObject.Load(1, &l.End)
+	stateSourceObject.LoadUint64(0, &l.Start)
+	stateSourceObject.LoadUint64(1, &l.End)
 	stateSourceObject.Load(2, &l.Value)
 }
 
 func init() {
-	state.Register((*OwnerInfo)(nil))
-	state.Register((*Lock)(nil))
-	state.Register((*Locks)(nil))
-	state.Register((*LockRange)(nil))
-	state.Register((*LockSet)(nil))
-	state.Register((*Locknode)(nil))
-	state.Register((*LockFlatSegment)(nil))
+	state.RegisterNoHooks((*OwnerInfo)(nil))
+	state.RegisterNoHooks((*Lock)(nil))
+	state.RegisterNoHooks((*Locks)(nil))
+	state.RegisterNoHooks((*LockRange)(nil))
+	state.RegisterNoHooks((*LockSet)(nil))
+	state.RegisterNoHooks((*Locknode)(nil))
+	state.RegisterNoHooks((*LockFlatSegment)(nil))
 }

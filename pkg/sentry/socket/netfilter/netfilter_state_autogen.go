@@ -75,8 +75,8 @@ func (mt *markTarget) beforeSave() {}
 // +checklocksignore
 func (mt *markTarget) StateSave(stateSinkObject state.Sink) {
 	mt.beforeSave()
-	stateSinkObject.Save(0, &mt.mark)
-	stateSinkObject.Save(1, &mt.mask)
+	stateSinkObject.SaveUint32(0, &mt.mark)
+	stateSinkObject.SaveUint32(1, &mt.mask)
 	stateSinkObject.Save(2, &mt.networkProtocol)
 }
 
@@ -84,8 +84,8 @@ func (mt *markTarget) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mt *markTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mt.mark)
-	stateSourceObject.Load(1, &mt.mask)
+	stateSourceObject.LoadUint32(0, &mt.mark)
+	stateSourceObject.LoadUint32(1, &mt.mask)
 	stateSourceObject.Load(2, &mt.networkProtocol)
 }
 
@@ -437,8 +437,8 @@ func (jt *JumpTarget) beforeSave() {}
 // +checklocksignore
 func (jt *JumpTarget) StateSave(stateSinkObject state.Sink) {
 	jt.beforeSave()
-	stateSinkObject.Save(0, &jt.Offset)
-	stateSinkObject.Save(1, &jt.RuleNum)
+	stateSinkObject.SaveUint32(0, &jt.Offset)
+	stateSinkObject.SaveInt(1, &jt.RuleNum)
 	stateSinkObject.Save(2, &jt.NetworkProtocol)
 }
 
@@ -446,8 +446,8 @@ func (jt *JumpTarget) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (jt *JumpTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &jt.Offset)
-	stateSourceObject.Load(1, &jt.RuleNum)
+	stateSourceObject.LoadUint32(0, &jt.Offset)
+	stateSourceObject.LoadInt(1, &jt.RuleNum)
 	stateSourceObject.Load(2, &jt.NetworkProtocol)
 }
 
@@ -527,24 +527,24 @@ func (rm *rejectTargetMaker) StateLoad(ctx context.Context, stateSourceObject st
 }
 
 func init() {
-	state.Register((*ctTarget)(nil))
-	state.Register((*ctTargetMaker)(nil))
-	state.Register((*markTarget)(nil))
-	state.Register((*markTargetMaker)(nil))
-	state.Register((*masqueradeTarget)(nil))
-	state.Register((*masqueradeTargetMaker)(nil))
-	state.Register((*acceptTarget)(nil))
-	state.Register((*dropTarget)(nil))
-	state.Register((*errorTarget)(nil))
-	state.Register((*userChainTarget)(nil))
-	state.Register((*returnTarget)(nil))
-	state.Register((*redirectTarget)(nil))
-	state.Register((*standardTargetMaker)(nil))
-	state.Register((*errorTargetMaker)(nil))
-	state.Register((*redirectTargetMaker)(nil))
-	state.Register((*nfNATTargetMaker)(nil))
-	state.Register((*JumpTarget)(nil))
-	state.Register((*rejectIPv4Target)(nil))
-	state.Register((*rejectIPv6Target)(nil))
-	state.Register((*rejectTargetMaker)(nil))
+	state.RegisterNoHooks((*ctTarget)(nil))
+	state.RegisterNoHooks((*ctTargetMaker)(nil))
+	state.RegisterNoHooks((*markTarget)(nil))
+	state.RegisterNoHooks((*markTargetMaker)(nil))
+	state.RegisterNoHooks((*masqueradeTarget)(nil))
+	state.RegisterNoHooks((*masqueradeTargetMaker)(nil))
+	state.RegisterNoHooks((*acceptTarget)(nil))
+	state.RegisterNoHooks((*dropTarget)(nil))
+	state.RegisterNoHooks((*errorTarget)(nil))
+	state.RegisterNoHooks((*userChainTarget)(nil))
+	state.RegisterNoHooks((*returnTarget)(nil))
+	state.RegisterNoHooks((*redirectTarget)(nil))
+	state.RegisterNoHooks((*standardTargetMaker)(nil))
+	state.RegisterNoHooks((*errorTargetMaker)(nil))
+	state.RegisterNoHooks((*redirectTargetMaker)(nil))
+	state.RegisterNoHooks((*nfNATTargetMaker)(nil))
+	state.RegisterNoHooks((*JumpTarget)(nil))
+	state.RegisterNoHooks((*rejectIPv4Target)(nil))
+	state.RegisterNoHooks((*rejectIPv6Target)(nil))
+	state.RegisterNoHooks((*rejectTargetMaker)(nil))
 }

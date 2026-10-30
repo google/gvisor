@@ -26,16 +26,24 @@ func (b *Buffer) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
 	dataValue := b.saveData()
 	_ = ([]byte)(dataValue)
+	stateSinkObject.SaveInt64(1, &b.size)
 	stateSinkObject.SaveValue(0, dataValue)
-	stateSinkObject.Save(1, &b.size)
 }
 
 func (b *Buffer) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (b *Buffer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(1, &b.size)
-	stateSourceObject.LoadValue(0, new([]byte), func(y any) { b.loadData(ctx, y.([]byte)) })
+	stateSourceObject.LoadInt64(1, &b.size)
+	stateSourceObject.LoadValueTo(0, (*[]byte)(nil), b)
+}
+
+// +checklocksignore
+func (b *Buffer) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		b.loadData(ctx, stateValue.([]byte))
+	}
 }
 
 func (c *chunk) StateTypeName() string {
@@ -87,7 +95,12 @@ func (r *chunkRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *chunkRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *chunkRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (v *View) StateTypeName() string {
@@ -107,8 +120,8 @@ func (v *View) beforeSave() {}
 // +checklocksignore
 func (v *View) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
-	stateSinkObject.Save(0, &v.read)
-	stateSinkObject.Save(1, &v.write)
+	stateSinkObject.SaveInt(0, &v.read)
+	stateSinkObject.SaveInt(1, &v.write)
 	stateSinkObject.Save(2, &v.chunk)
 }
 
@@ -116,8 +129,8 @@ func (v *View) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (v *View) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.read)
-	stateSourceObject.Load(1, &v.write)
+	stateSourceObject.LoadInt(0, &v.read)
+	stateSourceObject.LoadInt(1, &v.write)
 	stateSourceObject.Load(2, &v.chunk)
 }
 
@@ -178,10 +191,10 @@ func (e *ViewEntry) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*Buffer)(nil))
-	state.Register((*chunk)(nil))
-	state.Register((*chunkRefs)(nil))
-	state.Register((*View)(nil))
-	state.Register((*ViewList)(nil))
-	state.Register((*ViewEntry)(nil))
+	state.RegisterNoHooks((*Buffer)(nil))
+	state.RegisterNoHooks((*chunk)(nil))
+	state.RegisterStruct((*chunkRefs)(nil))
+	state.RegisterNoHooks((*View)(nil))
+	state.RegisterNoHooks((*ViewList)(nil))
+	state.RegisterNoHooks((*ViewEntry)(nil))
 }

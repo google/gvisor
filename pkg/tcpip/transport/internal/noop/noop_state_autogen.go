@@ -37,5 +37,5 @@ func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*endpoint)(nil))
+	state.RegisterNoHooks((*endpoint)(nil))
 }

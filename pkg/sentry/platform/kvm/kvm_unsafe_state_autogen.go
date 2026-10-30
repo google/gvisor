@@ -35,9 +35,17 @@ func (p *machineAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *machineAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*machine), func(y any) { p.loadPtr(ctx, y.(*machine)) })
+	stateSourceObject.LoadValueTo(0, (**machine)(nil), p)
+}
+
+// +checklocksignore
+func (p *machineAtomicPtr) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		p.loadPtr(ctx, stateValue.(*machine))
+	}
 }
 
 func init() {
-	state.Register((*machineAtomicPtr)(nil))
+	state.RegisterNoHooks((*machineAtomicPtr)(nil))
 }

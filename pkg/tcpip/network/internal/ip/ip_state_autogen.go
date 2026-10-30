@@ -27,7 +27,7 @@ func (d *dadState) beforeSave() {}
 func (d *dadState) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.nonce)
-	stateSinkObject.Save(1, &d.extendRequest)
+	stateSinkObject.SaveInt(1, (*int)(&d.extendRequest))
 	stateSinkObject.Save(2, &d.done)
 	stateSinkObject.Save(3, &d.completionHandlers)
 }
@@ -37,7 +37,7 @@ func (d *dadState) afterLoad(context.Context) {}
 // +checklocksignore
 func (d *dadState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.nonce)
-	stateSourceObject.Load(1, &d.extendRequest)
+	stateSourceObject.LoadInt(1, (*int)(&d.extendRequest))
 	stateSourceObject.Load(2, &d.done)
 	stateSourceObject.Load(3, &d.completionHandlers)
 }
@@ -62,8 +62,8 @@ func (d *DADOptions) beforeSave() {}
 func (d *DADOptions) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.Clock)
-	stateSinkObject.Save(1, &d.NonceSize)
-	stateSinkObject.Save(2, &d.ExtendDADTransmits)
+	stateSinkObject.SaveUint8(1, &d.NonceSize)
+	stateSinkObject.SaveUint8(2, &d.ExtendDADTransmits)
 	stateSinkObject.Save(3, &d.Protocol)
 	stateSinkObject.Save(4, &d.NICID)
 }
@@ -73,8 +73,8 @@ func (d *DADOptions) afterLoad(context.Context) {}
 // +checklocksignore
 func (d *DADOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Clock)
-	stateSourceObject.Load(1, &d.NonceSize)
-	stateSourceObject.Load(2, &d.ExtendDADTransmits)
+	stateSourceObject.LoadUint8(1, &d.NonceSize)
+	stateSourceObject.LoadUint8(2, &d.ExtendDADTransmits)
 	stateSourceObject.Load(3, &d.Protocol)
 	stateSourceObject.Load(4, &d.NICID)
 }
@@ -169,24 +169,24 @@ func (m *multicastGroupState) beforeSave() {}
 // +checklocksignore
 func (m *multicastGroupState) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.joins)
-	stateSinkObject.Save(1, &m.transmissionLeft)
-	stateSinkObject.Save(2, &m.lastToSendReport)
+	stateSinkObject.SaveUint64(0, &m.joins)
+	stateSinkObject.SaveUint8(1, &m.transmissionLeft)
+	stateSinkObject.SaveBool(2, &m.lastToSendReport)
 	stateSinkObject.Save(3, &m.delayedReportJob)
 	stateSinkObject.Save(4, &m.queriedIncludeSources)
-	stateSinkObject.Save(5, &m.deleteScheduled)
+	stateSinkObject.SaveBool(5, &m.deleteScheduled)
 }
 
 func (m *multicastGroupState) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *multicastGroupState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.joins)
-	stateSourceObject.Load(1, &m.transmissionLeft)
-	stateSourceObject.Load(2, &m.lastToSendReport)
+	stateSourceObject.LoadUint64(0, &m.joins)
+	stateSourceObject.LoadUint8(1, &m.transmissionLeft)
+	stateSourceObject.LoadBool(2, &m.lastToSendReport)
 	stateSourceObject.Load(3, &m.delayedReportJob)
 	stateSourceObject.Load(4, &m.queriedIncludeSources)
-	stateSourceObject.Load(5, &m.deleteScheduled)
+	stateSourceObject.LoadBool(5, &m.deleteScheduled)
 }
 
 func (g *GenericMulticastProtocolOptions) StateTypeName() string {
@@ -242,10 +242,10 @@ func (g *GenericMulticastProtocolState) StateSave(stateSinkObject state.Sink) {
 	g.beforeSave()
 	stateSinkObject.Save(0, &g.opts)
 	stateSinkObject.Save(1, &g.memberships)
-	stateSinkObject.Save(2, &g.robustnessVariable)
+	stateSinkObject.SaveUint8(2, &g.robustnessVariable)
 	stateSinkObject.Save(3, &g.queryInterval)
-	stateSinkObject.Save(4, &g.mode)
-	stateSinkObject.Save(5, &g.stateChangedReportV2TimerSet)
+	stateSinkObject.SaveInt(4, (*int)(&g.mode))
+	stateSinkObject.SaveBool(5, &g.stateChangedReportV2TimerSet)
 }
 
 func (g *GenericMulticastProtocolState) afterLoad(context.Context) {}
@@ -254,10 +254,10 @@ func (g *GenericMulticastProtocolState) afterLoad(context.Context) {}
 func (g *GenericMulticastProtocolState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &g.opts)
 	stateSourceObject.Load(1, &g.memberships)
-	stateSourceObject.Load(2, &g.robustnessVariable)
+	stateSourceObject.LoadUint8(2, &g.robustnessVariable)
 	stateSourceObject.Load(3, &g.queryInterval)
-	stateSourceObject.Load(4, &g.mode)
-	stateSourceObject.Load(5, &g.stateChangedReportV2TimerSet)
+	stateSourceObject.LoadInt(4, (*int)(&g.mode))
+	stateSourceObject.LoadBool(5, &g.stateChangedReportV2TimerSet)
 }
 
 func (m *MultiCounterIPForwardingStats) StateTypeName() string {
@@ -407,14 +407,14 @@ func (m *MultiCounterIPStats) StateLoad(ctx context.Context, stateSourceObject s
 }
 
 func init() {
-	state.Register((*dadState)(nil))
-	state.Register((*DADOptions)(nil))
-	state.Register((*DAD)(nil))
-	state.Register((*ErrMessageTooLong)(nil))
-	state.Register((*ErrNoMulticastPendingQueueBufferSpace)(nil))
-	state.Register((*multicastGroupState)(nil))
-	state.Register((*GenericMulticastProtocolOptions)(nil))
-	state.Register((*GenericMulticastProtocolState)(nil))
-	state.Register((*MultiCounterIPForwardingStats)(nil))
-	state.Register((*MultiCounterIPStats)(nil))
+	state.RegisterNoHooks((*dadState)(nil))
+	state.RegisterNoHooks((*DADOptions)(nil))
+	state.RegisterNoHooks((*DAD)(nil))
+	state.RegisterNoHooks((*ErrMessageTooLong)(nil))
+	state.RegisterNoHooks((*ErrNoMulticastPendingQueueBufferSpace)(nil))
+	state.RegisterNoHooks((*multicastGroupState)(nil))
+	state.RegisterNoHooks((*GenericMulticastProtocolOptions)(nil))
+	state.RegisterNoHooks((*GenericMulticastProtocolState)(nil))
+	state.RegisterNoHooks((*MultiCounterIPForwardingStats)(nil))
+	state.RegisterNoHooks((*MultiCounterIPStats)(nil))
 }

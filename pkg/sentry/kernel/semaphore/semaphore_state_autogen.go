@@ -61,7 +61,7 @@ func (s *Set) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.opTime)
 	stateSinkObject.Save(3, &s.changeTime)
 	stateSinkObject.Save(4, &s.sems)
-	stateSinkObject.Save(5, &s.dead)
+	stateSinkObject.SaveBool(5, &s.dead)
 }
 
 func (s *Set) afterLoad(context.Context) {}
@@ -73,7 +73,7 @@ func (s *Set) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &s.opTime)
 	stateSourceObject.Load(3, &s.changeTime)
 	stateSourceObject.Load(4, &s.sems)
-	stateSourceObject.Load(5, &s.dead)
+	stateSourceObject.LoadBool(5, &s.dead)
 }
 
 func (s *sem) StateTypeName() string {
@@ -95,16 +95,16 @@ func (s *sem) StateSave(stateSinkObject state.Sink) {
 	if !state.IsZeroValue(&s.waiters) {
 		state.Failf("waiters is %#v, expected zero", &s.waiters)
 	}
-	stateSinkObject.Save(0, &s.value)
-	stateSinkObject.Save(1, &s.pid)
+	stateSinkObject.SaveInt16(0, &s.value)
+	stateSinkObject.SaveInt32(1, &s.pid)
 }
 
 func (s *sem) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *sem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.value)
-	stateSourceObject.Load(1, &s.pid)
+	stateSourceObject.LoadInt16(0, &s.value)
+	stateSourceObject.LoadInt32(1, &s.pid)
 }
 
 func (w *waiter) StateTypeName() string {
@@ -125,7 +125,7 @@ func (w *waiter) beforeSave() {}
 func (w *waiter) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	stateSinkObject.Save(0, &w.waiterEntry)
-	stateSinkObject.Save(1, &w.value)
+	stateSinkObject.SaveInt16(1, &w.value)
 	stateSinkObject.Save(2, &w.ch)
 }
 
@@ -134,7 +134,7 @@ func (w *waiter) afterLoad(context.Context) {}
 // +checklocksignore
 func (w *waiter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &w.waiterEntry)
-	stateSourceObject.Load(1, &w.value)
+	stateSourceObject.LoadInt16(1, &w.value)
 	stateSourceObject.Load(2, &w.ch)
 }
 
@@ -195,10 +195,10 @@ func (e *waiterEntry) StateLoad(ctx context.Context, stateSourceObject state.Sou
 }
 
 func init() {
-	state.Register((*Registry)(nil))
-	state.Register((*Set)(nil))
-	state.Register((*sem)(nil))
-	state.Register((*waiter)(nil))
-	state.Register((*waiterList)(nil))
-	state.Register((*waiterEntry)(nil))
+	state.RegisterNoHooks((*Registry)(nil))
+	state.RegisterNoHooks((*Set)(nil))
+	state.RegisterNoHooks((*sem)(nil))
+	state.RegisterNoHooks((*waiter)(nil))
+	state.RegisterNoHooks((*waiterList)(nil))
+	state.RegisterNoHooks((*waiterEntry)(nil))
 }

@@ -28,7 +28,7 @@ func (r *Registers) beforeSave() {}
 func (r *Registers) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.PtraceRegs)
-	stateSinkObject.Save(1, &r.TPIDR_EL0)
+	stateSinkObject.SaveUint64(1, &r.TPIDR_EL0)
 }
 
 func (r *Registers) afterLoad(context.Context) {}
@@ -36,7 +36,7 @@ func (r *Registers) afterLoad(context.Context) {}
 // +checklocksignore
 func (r *Registers) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.PtraceRegs)
-	stateSourceObject.Load(1, &r.TPIDR_EL0)
+	stateSourceObject.LoadUint64(1, &r.TPIDR_EL0)
 }
 
 func (s *State) StateTypeName() string {
@@ -58,7 +58,7 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Regs)
 	stateSinkObject.Save(1, &s.fpState)
-	stateSinkObject.Save(2, &s.OrigR0)
+	stateSinkObject.SaveUint64(2, &s.OrigR0)
 }
 
 func (s *State) afterLoad(context.Context) {}
@@ -67,10 +67,10 @@ func (s *State) afterLoad(context.Context) {}
 func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.fpState)
-	stateSourceObject.Load(2, &s.OrigR0)
+	stateSourceObject.LoadUint64(2, &s.OrigR0)
 }
 
 func init() {
-	state.Register((*Registers)(nil))
-	state.Register((*State)(nil))
+	state.RegisterNoHooks((*Registers)(nil))
+	state.RegisterNoHooks((*State)(nil))
 }

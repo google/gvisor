@@ -29,11 +29,11 @@ func (v *VDSO) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
 	phdrsValue := v.savePhdrs()
 	_ = ([]elfProgHeader)(phdrsValue)
-	stateSinkObject.SaveValue(4, phdrsValue)
 	stateSinkObject.Save(0, &v.ParamPage)
 	stateSinkObject.Save(1, &v.vdso)
 	stateSinkObject.Save(2, &v.os)
 	stateSinkObject.Save(3, &v.arch)
+	stateSinkObject.SaveValue(4, phdrsValue)
 }
 
 func (v *VDSO) afterLoad(context.Context) {}
@@ -44,7 +44,15 @@ func (v *VDSO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &v.vdso)
 	stateSourceObject.Load(2, &v.os)
 	stateSourceObject.Load(3, &v.arch)
-	stateSourceObject.LoadValue(4, new([]elfProgHeader), func(y any) { v.loadPhdrs(ctx, y.([]elfProgHeader)) })
+	stateSourceObject.LoadValueTo(4, (*[]elfProgHeader)(nil), v)
+}
+
+// +checklocksignore
+func (v *VDSO) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 4:
+		v.loadPhdrs(ctx, stateValue.([]elfProgHeader))
+	}
 }
 
 func (e *elfProgHeader) StateTypeName() string {
@@ -71,12 +79,12 @@ func (e *elfProgHeader) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Type)
 	stateSinkObject.Save(1, &e.Flags)
-	stateSinkObject.Save(2, &e.Off)
-	stateSinkObject.Save(3, &e.Vaddr)
-	stateSinkObject.Save(4, &e.Paddr)
-	stateSinkObject.Save(5, &e.Filesz)
-	stateSinkObject.Save(6, &e.Memsz)
-	stateSinkObject.Save(7, &e.Align)
+	stateSinkObject.SaveUint64(2, &e.Off)
+	stateSinkObject.SaveUint64(3, &e.Vaddr)
+	stateSinkObject.SaveUint64(4, &e.Paddr)
+	stateSinkObject.SaveUint64(5, &e.Filesz)
+	stateSinkObject.SaveUint64(6, &e.Memsz)
+	stateSinkObject.SaveUint64(7, &e.Align)
 }
 
 func (e *elfProgHeader) afterLoad(context.Context) {}
@@ -85,15 +93,15 @@ func (e *elfProgHeader) afterLoad(context.Context) {}
 func (e *elfProgHeader) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Type)
 	stateSourceObject.Load(1, &e.Flags)
-	stateSourceObject.Load(2, &e.Off)
-	stateSourceObject.Load(3, &e.Vaddr)
-	stateSourceObject.Load(4, &e.Paddr)
-	stateSourceObject.Load(5, &e.Filesz)
-	stateSourceObject.Load(6, &e.Memsz)
-	stateSourceObject.Load(7, &e.Align)
+	stateSourceObject.LoadUint64(2, &e.Off)
+	stateSourceObject.LoadUint64(3, &e.Vaddr)
+	stateSourceObject.LoadUint64(4, &e.Paddr)
+	stateSourceObject.LoadUint64(5, &e.Filesz)
+	stateSourceObject.LoadUint64(6, &e.Memsz)
+	stateSourceObject.LoadUint64(7, &e.Align)
 }
 
 func init() {
-	state.Register((*VDSO)(nil))
-	state.Register((*elfProgHeader)(nil))
+	state.RegisterNoHooks((*VDSO)(nil))
+	state.RegisterNoHooks((*elfProgHeader)(nil))
 }

@@ -40,5 +40,5 @@ func (c *Context64) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*Context64)(nil))
+	state.RegisterNoHooks((*Context64)(nil))
 }

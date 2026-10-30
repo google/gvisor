@@ -31,8 +31,8 @@ func (o *Object) beforeSave() {}
 func (o *Object) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 	stateSinkObject.Save(0, &o.UserNS)
-	stateSinkObject.Save(1, &o.ID)
-	stateSinkObject.Save(2, &o.Key)
+	stateSinkObject.SaveInt32(1, (*int32)(&o.ID))
+	stateSinkObject.SaveInt32(2, (*int32)(&o.Key))
 	stateSinkObject.Save(3, &o.CreatorUID)
 	stateSinkObject.Save(4, &o.CreatorGID)
 	stateSinkObject.Save(5, &o.OwnerUID)
@@ -45,8 +45,8 @@ func (o *Object) afterLoad(context.Context) {}
 // +checklocksignore
 func (o *Object) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &o.UserNS)
-	stateSourceObject.Load(1, &o.ID)
-	stateSourceObject.Load(2, &o.Key)
+	stateSourceObject.LoadInt32(1, (*int32)(&o.ID))
+	stateSourceObject.LoadInt32(2, (*int32)(&o.Key))
 	stateSourceObject.Load(3, &o.CreatorUID)
 	stateSourceObject.Load(4, &o.CreatorGID)
 	stateSourceObject.Load(5, &o.OwnerUID)
@@ -75,7 +75,7 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.UserNS)
 	stateSinkObject.Save(1, &r.objects)
 	stateSinkObject.Save(2, &r.keysToIDs)
-	stateSinkObject.Save(3, &r.lastIDUsed)
+	stateSinkObject.SaveInt32(3, (*int32)(&r.lastIDUsed))
 }
 
 func (r *Registry) afterLoad(context.Context) {}
@@ -85,10 +85,10 @@ func (r *Registry) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(0, &r.UserNS)
 	stateSourceObject.Load(1, &r.objects)
 	stateSourceObject.Load(2, &r.keysToIDs)
-	stateSourceObject.Load(3, &r.lastIDUsed)
+	stateSourceObject.LoadInt32(3, (*int32)(&r.lastIDUsed))
 }
 
 func init() {
-	state.Register((*Object)(nil))
-	state.Register((*Registry)(nil))
+	state.RegisterNoHooks((*Object)(nil))
+	state.RegisterNoHooks((*Registry)(nil))
 }

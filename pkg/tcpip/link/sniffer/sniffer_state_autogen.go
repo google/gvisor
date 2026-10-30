@@ -28,8 +28,8 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Endpoint)
 	stateSinkObject.Save(1, &e.writer)
-	stateSinkObject.Save(2, &e.maxPCAPLen)
-	stateSinkObject.Save(3, &e.logPrefix)
+	stateSinkObject.SaveUint32(2, &e.maxPCAPLen)
+	stateSinkObject.SaveString(3, &e.logPrefix)
 }
 
 func (e *Endpoint) afterLoad(context.Context) {}
@@ -38,10 +38,10 @@ func (e *Endpoint) afterLoad(context.Context) {}
 func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Endpoint)
 	stateSourceObject.Load(1, &e.writer)
-	stateSourceObject.Load(2, &e.maxPCAPLen)
-	stateSourceObject.Load(3, &e.logPrefix)
+	stateSourceObject.LoadUint32(2, &e.maxPCAPLen)
+	stateSourceObject.LoadString(3, &e.logPrefix)
 }
 
 func init() {
-	state.Register((*Endpoint)(nil))
+	state.RegisterNoHooks((*Endpoint)(nil))
 }

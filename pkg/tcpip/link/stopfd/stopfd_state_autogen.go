@@ -28,9 +28,14 @@ func (sf *StopFD) StateSave(stateSinkObject state.Sink) {
 
 // +checklocksignore
 func (sf *StopFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.AfterLoad(func() { sf.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(sf)
+}
+
+// +checklocksignore
+func (sf *StopFD) StateAfterLoad(ctx context.Context) {
+	sf.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*StopFD)(nil))
+	state.RegisterStruct((*StopFD)(nil))
 }

@@ -30,5 +30,5 @@ func (p *Protocol) StateLoad(ctx context.Context, stateSourceObject state.Source
 }
 
 func init() {
-	state.Register((*Protocol)(nil))
+	state.RegisterNoHooks((*Protocol)(nil))
 }

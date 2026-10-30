@@ -50,7 +50,7 @@ func (s *savedQueue) beforeSave() {}
 func (s *savedQueue) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.packets)
-	stateSinkObject.Save(1, &s.capacity)
+	stateSinkObject.SaveInt(1, &s.capacity)
 }
 
 func (s *savedQueue) afterLoad(context.Context) {}
@@ -58,7 +58,7 @@ func (s *savedQueue) afterLoad(context.Context) {}
 // +checklocksignore
 func (s *savedQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.packets)
-	stateSourceObject.Load(1, &s.capacity)
+	stateSourceObject.LoadInt(1, &s.capacity)
 }
 
 func (q *queue) StateTypeName() string {
@@ -80,17 +80,30 @@ func (q *queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	cValue := q.saveC()
 	_ = (*savedQueue)(cValue)
-	stateSinkObject.SaveValue(0, cValue)
 	stateSinkObject.Save(1, &q.notify)
-	stateSinkObject.Save(2, &q.closed)
+	stateSinkObject.SaveBool(2, &q.closed)
+	stateSinkObject.SaveValue(0, cValue)
 }
 
 // +checklocksignore
 func (q *queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &q.notify)
-	stateSourceObject.Load(2, &q.closed)
-	stateSourceObject.LoadValue(0, new(*savedQueue), func(y any) { q.loadC(ctx, y.(*savedQueue)) })
-	stateSourceObject.AfterLoad(func() { q.afterLoad(ctx) })
+	stateSourceObject.LoadBool(2, &q.closed)
+	stateSourceObject.LoadValueTo(0, (**savedQueue)(nil), q)
+	stateSourceObject.AfterLoadTo(q)
+}
+
+// +checklocksignore
+func (q *queue) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		q.loadC(ctx, stateValue.(*savedQueue))
+	}
+}
+
+// +checklocksignore
+func (q *queue) StateAfterLoad(ctx context.Context) {
+	q.afterLoad(ctx)
 }
 
 func (e *Endpoint) StateTypeName() string {
@@ -117,7 +130,7 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.SupportedGSOKind)
 	stateSinkObject.Save(2, &e.dispatcher)
 	stateSinkObject.Save(3, &e.linkAddr)
-	stateSinkObject.Save(4, &e.mtu)
+	stateSinkObject.SaveUint32(4, &e.mtu)
 	stateSinkObject.Save(5, &e.q)
 }
 
@@ -129,13 +142,13 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(1, &e.SupportedGSOKind)
 	stateSourceObject.Load(2, &e.dispatcher)
 	stateSourceObject.Load(3, &e.linkAddr)
-	stateSourceObject.Load(4, &e.mtu)
+	stateSourceObject.LoadUint32(4, &e.mtu)
 	stateSourceObject.Load(5, &e.q)
 }
 
 func init() {
-	state.Register((*NotificationHandle)(nil))
-	state.Register((*savedQueue)(nil))
-	state.Register((*queue)(nil))
-	state.Register((*Endpoint)(nil))
+	state.RegisterNoHooks((*NotificationHandle)(nil))
+	state.RegisterNoHooks((*savedQueue)(nil))
+	state.RegisterStruct((*queue)(nil))
+	state.RegisterNoHooks((*Endpoint)(nil))
 }

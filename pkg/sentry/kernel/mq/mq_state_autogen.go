@@ -116,10 +116,10 @@ func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &q.queue)
 	stateSinkObject.Save(1, &q.messages)
 	stateSinkObject.Save(2, &q.subscriber)
-	stateSinkObject.Save(3, &q.messageCount)
-	stateSinkObject.Save(4, &q.maxMessageCount)
-	stateSinkObject.Save(5, &q.maxMessageSize)
-	stateSinkObject.Save(6, &q.byteCount)
+	stateSinkObject.SaveInt64(3, &q.messageCount)
+	stateSinkObject.SaveInt64(4, &q.maxMessageCount)
+	stateSinkObject.SaveUint64(5, &q.maxMessageSize)
+	stateSinkObject.SaveUint64(6, &q.byteCount)
 }
 
 func (q *Queue) afterLoad(context.Context) {}
@@ -129,10 +129,10 @@ func (q *Queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.queue)
 	stateSourceObject.Load(1, &q.messages)
 	stateSourceObject.Load(2, &q.subscriber)
-	stateSourceObject.Load(3, &q.messageCount)
-	stateSourceObject.Load(4, &q.maxMessageCount)
-	stateSourceObject.Load(5, &q.maxMessageSize)
-	stateSourceObject.Load(6, &q.byteCount)
+	stateSourceObject.LoadInt64(3, &q.messageCount)
+	stateSourceObject.LoadInt64(4, &q.maxMessageCount)
+	stateSourceObject.LoadUint64(5, &q.maxMessageSize)
+	stateSourceObject.LoadUint64(6, &q.byteCount)
 }
 
 func (r *ReaderWriter) StateTypeName() string {
@@ -152,7 +152,7 @@ func (r *ReaderWriter) beforeSave() {}
 func (r *ReaderWriter) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Queue)
-	stateSinkObject.Save(1, &r.block)
+	stateSinkObject.SaveBool(1, &r.block)
 }
 
 func (r *ReaderWriter) afterLoad(context.Context) {}
@@ -160,7 +160,7 @@ func (r *ReaderWriter) afterLoad(context.Context) {}
 // +checklocksignore
 func (r *ReaderWriter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Queue)
-	stateSourceObject.Load(1, &r.block)
+	stateSourceObject.LoadBool(1, &r.block)
 }
 
 func (r *Reader) StateTypeName() string {
@@ -180,7 +180,7 @@ func (r *Reader) beforeSave() {}
 func (r *Reader) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Queue)
-	stateSinkObject.Save(1, &r.block)
+	stateSinkObject.SaveBool(1, &r.block)
 }
 
 func (r *Reader) afterLoad(context.Context) {}
@@ -188,7 +188,7 @@ func (r *Reader) afterLoad(context.Context) {}
 // +checklocksignore
 func (r *Reader) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Queue)
-	stateSourceObject.Load(1, &r.block)
+	stateSourceObject.LoadBool(1, &r.block)
 }
 
 func (w *Writer) StateTypeName() string {
@@ -208,7 +208,7 @@ func (w *Writer) beforeSave() {}
 func (w *Writer) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	stateSinkObject.Save(0, &w.Queue)
-	stateSinkObject.Save(1, &w.block)
+	stateSinkObject.SaveBool(1, &w.block)
 }
 
 func (w *Writer) afterLoad(context.Context) {}
@@ -216,7 +216,7 @@ func (w *Writer) afterLoad(context.Context) {}
 // +checklocksignore
 func (w *Writer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &w.Queue)
-	stateSourceObject.Load(1, &w.block)
+	stateSourceObject.LoadBool(1, &w.block)
 }
 
 func (m *Message) StateTypeName() string {
@@ -238,9 +238,9 @@ func (m *Message) beforeSave() {}
 func (m *Message) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.msgEntry)
-	stateSinkObject.Save(1, &m.Text)
-	stateSinkObject.Save(2, &m.Size)
-	stateSinkObject.Save(3, &m.Priority)
+	stateSinkObject.SaveString(1, &m.Text)
+	stateSinkObject.SaveUint64(2, &m.Size)
+	stateSinkObject.SaveUint32(3, &m.Priority)
 }
 
 func (m *Message) afterLoad(context.Context) {}
@@ -248,9 +248,9 @@ func (m *Message) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *Message) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.msgEntry)
-	stateSourceObject.Load(1, &m.Text)
-	stateSourceObject.Load(2, &m.Size)
-	stateSourceObject.Load(3, &m.Priority)
+	stateSourceObject.LoadString(1, &m.Text)
+	stateSourceObject.LoadUint64(2, &m.Size)
+	stateSourceObject.LoadUint32(3, &m.Priority)
 }
 
 func (s *Subscriber) StateTypeName() string {
@@ -268,24 +268,24 @@ func (s *Subscriber) beforeSave() {}
 // +checklocksignore
 func (s *Subscriber) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.pid)
+	stateSinkObject.SaveInt32(0, &s.pid)
 }
 
 func (s *Subscriber) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *Subscriber) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.pid)
+	stateSourceObject.LoadInt32(0, &s.pid)
 }
 
 func init() {
-	state.Register((*msgList)(nil))
-	state.Register((*msgEntry)(nil))
-	state.Register((*Registry)(nil))
-	state.Register((*Queue)(nil))
-	state.Register((*ReaderWriter)(nil))
-	state.Register((*Reader)(nil))
-	state.Register((*Writer)(nil))
-	state.Register((*Message)(nil))
-	state.Register((*Subscriber)(nil))
+	state.RegisterNoHooks((*msgList)(nil))
+	state.RegisterNoHooks((*msgEntry)(nil))
+	state.RegisterNoHooks((*Registry)(nil))
+	state.RegisterNoHooks((*Queue)(nil))
+	state.RegisterNoHooks((*ReaderWriter)(nil))
+	state.RegisterNoHooks((*Reader)(nil))
+	state.RegisterNoHooks((*Writer)(nil))
+	state.RegisterNoHooks((*Message)(nil))
+	state.RegisterNoHooks((*Subscriber)(nil))
 }

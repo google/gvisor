@@ -27,7 +27,7 @@ func (s *CPUStats) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.UserTime)
 	stateSinkObject.Save(1, &s.SysTime)
-	stateSinkObject.Save(2, &s.VoluntarySwitches)
+	stateSinkObject.SaveUint64(2, &s.VoluntarySwitches)
 }
 
 func (s *CPUStats) afterLoad(context.Context) {}
@@ -36,7 +36,7 @@ func (s *CPUStats) afterLoad(context.Context) {}
 func (s *CPUStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.UserTime)
 	stateSourceObject.Load(1, &s.SysTime)
-	stateSourceObject.Load(2, &s.VoluntarySwitches)
+	stateSourceObject.LoadUint64(2, &s.VoluntarySwitches)
 }
 
 func (i *IO) StateTypeName() string {
@@ -83,6 +83,6 @@ func (i *IO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {
-	state.Register((*CPUStats)(nil))
-	state.Register((*IO)(nil))
+	state.RegisterNoHooks((*CPUStats)(nil))
+	state.RegisterNoHooks((*IO)(nil))
 }

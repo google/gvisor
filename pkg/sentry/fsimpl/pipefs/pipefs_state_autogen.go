@@ -46,7 +46,7 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
-	stateSinkObject.Save(1, &fs.devMinor)
+	stateSinkObject.SaveUint32(1, &fs.devMinor)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -54,7 +54,7 @@ func (fs *filesystem) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
-	stateSourceObject.Load(1, &fs.devMinor)
+	stateSourceObject.LoadUint32(1, &fs.devMinor)
 }
 
 func (i *inode) StateTypeName() string {
@@ -91,7 +91,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &i.InodeFSOwned)
 	stateSinkObject.Save(6, &i.locks)
 	stateSinkObject.Save(7, &i.pipe)
-	stateSinkObject.Save(8, &i.ino)
+	stateSinkObject.SaveUint64(8, &i.ino)
 	stateSinkObject.Save(9, &i.uid)
 	stateSinkObject.Save(10, &i.gid)
 	stateSinkObject.Save(11, &i.ctime)
@@ -109,14 +109,14 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &i.InodeFSOwned)
 	stateSourceObject.Load(6, &i.locks)
 	stateSourceObject.Load(7, &i.pipe)
-	stateSourceObject.Load(8, &i.ino)
+	stateSourceObject.LoadUint64(8, &i.ino)
 	stateSourceObject.Load(9, &i.uid)
 	stateSourceObject.Load(10, &i.gid)
 	stateSourceObject.Load(11, &i.ctime)
 }
 
 func init() {
-	state.Register((*filesystemType)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*inode)(nil))
+	state.RegisterNoHooks((*filesystemType)(nil))
+	state.RegisterNoHooks((*filesystem)(nil))
+	state.RegisterNoHooks((*inode)(nil))
 }

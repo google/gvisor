@@ -53,6 +53,6 @@ func (p *Program) StateLoad(ctx context.Context, stateSourceObject state.Source)
 }
 
 func init() {
-	state.Register((*Instruction)(nil))
-	state.Register((*Program)(nil))
+	state.RegisterIdent((*Instruction)(nil), (*linux.BPFInstruction)(nil))
+	state.RegisterNoHooks((*Program)(nil))
 }

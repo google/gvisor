@@ -53,7 +53,9 @@ import (
 	"io"
 	"reflect"
 	"runtime"
+	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
@@ -87,8 +89,30 @@ func (e *ErrState) Unwrap() error {
 	return e.err
 }
 
+// useGraphEngine is set by EnableGraphEngine.
+var useGraphEngine atomic.Bool
+
+// EnableGraphEngine enables or disables the reflection-free graph engine for
+// Save. Load automatically detects which engine produced a stream from its
+// header.
+//
+// EnableGraphEngine mutates process-global state and must not be called
+// concurrently with Save.
+func EnableGraphEngine(enable bool) {
+	useGraphEngine.Store(enable)
+}
+
+// GraphEngineEnabled reports whether Save uses the reflection-free graph
+// engine.
+func GraphEngineEnabled() bool {
+	return useGraphEngine.Load()
+}
+
 // Save saves the given object state.
 func Save(ctx context.Context, w io.Writer, rootPtr any) (Stats, error) {
+	if GraphEngineEnabled() {
+		return saveGraph(ctx, w, rootPtr)
+	}
 	// Create the encoding state.
 	es := encodeState{
 		ctx:            ctx,
@@ -108,21 +132,26 @@ func Save(ctx context.Context, w io.Writer, rootPtr any) (Stats, error) {
 
 // Load loads a checkpoint.
 func Load(ctx context.Context, r io.Reader, rootPtr any) (Stats, error) {
+	start := gohacks.Nanotime()
+	wr := wire.Reader{Reader: r}
+	hdr, err := ReadHeaderMode(&wr)
+	if err != nil {
+		return Stats{}, err
+	}
+	if !hdr.Object {
+		return Stats{}, fmt.Errorf("expected an object graph, got %d bytes of raw data", hdr.Length)
+	}
+	if hdr.Graph {
+		return loadGraph(ctx, r, rootPtr, hdr.Length, start)
+	}
 	// Create the decoding state.
 	ds := decodeState{
 		ctx:      ctx,
-		r:        wire.Reader{Reader: r},
+		r:        wr,
 		types:    makeTypeDecodeDatabase(),
 		deferred: make(map[objectID]wire.Object),
 	}
 
-	hdr, err := ReadHeaderMode(&ds.r)
-	if err != nil {
-		return ds.stats, err
-	}
-	if !hdr.Object {
-		return ds.stats, fmt.Errorf("expected an object graph, got %d bytes of raw data", hdr.Length)
-	}
 	// Attempt our decode.
 	err = safely(func() {
 		ds.Load(reflect.ValueOf(rootPtr).Elem(), hdr.Length)
@@ -165,6 +194,10 @@ type Sink struct {
 //		m.Load(1, &x.B) // Field is B.
 //	}
 func (s Sink) Save(slot int, objPtr any) {
+	if s.graph.es != nil {
+		s.graph.save(slot, objPtr)
+		return
+	}
 	s.internal.save(slot, reflect.ValueOf(objPtr).Elem())
 }
 
@@ -185,11 +218,18 @@ func (s Sink) Save(slot int, objPtr any) {
 //		})
 //	}
 func (s Sink) SaveValue(slot int, obj any) {
+	if s.graph.es != nil {
+		s.graph.saveValue(slot, obj)
+		return
+	}
 	s.internal.save(slot, reflect.ValueOf(obj))
 }
 
 // Context returns the context object provided at save time.
 func (s Sink) Context() context.Context {
+	if s.graph.es != nil {
+		return s.graph.es.ctx
+	}
 	return s.internal.es.ctx
 }
 
@@ -234,6 +274,10 @@ type Source struct {
 //
 // See Sink.Save for an example.
 func (s Source) Load(slot int, objPtr any) {
+	if s.graph.ds != nil {
+		s.graph.load(slot, objPtr)
+		return
+	}
 	s.internal.load(slot, reflect.ValueOf(objPtr), false, nil)
 }
 
@@ -242,6 +286,10 @@ func (s Source) Load(slot int, objPtr any) {
 //
 // See Sink.Save for an example.
 func (s Source) LoadWait(slot int, objPtr any) {
+	if s.graph.ds != nil {
+		s.graph.loadWait(slot, objPtr)
+		return
+	}
 	s.internal.load(slot, reflect.ValueOf(objPtr), true, nil)
 }
 
@@ -249,6 +297,10 @@ func (s Source) LoadWait(slot int, objPtr any) {
 //
 // See Sink.SaveValue for an example.
 func (s Source) LoadValue(slot int, objPtr any, fn func(any)) {
+	if s.graph.ds != nil {
+		s.graph.loadValue(slot, objPtr, fn)
+		return
+	}
 	o := reflect.ValueOf(objPtr)
 	s.internal.load(slot, o, true, func() { fn(o.Elem().Interface()) })
 }
@@ -267,16 +319,51 @@ type AfterLoader interface {
 	StateAfterLoad(ctx context.Context)
 }
 
+// LoadValueTo is like LoadValue, but calls l.StateLoadValue(ctx, slot, value)
+// instead of a function. typ is a nil pointer to the type of the value.
+// StateLoadValue must not retain the address of the value, which it must
+// copy.
+//
+// This is used by go_stateify, and avoids the allocations of LoadValue.
+func (s Source) LoadValueTo(slot int, typ any, l ValueLoader) {
+	if s.graph.ds != nil {
+		s.graph.loadValueTo(slot, typ, l)
+		return
+	}
+	o := reflect.New(reflect.TypeOf(typ).Elem())
+	ctx := s.internal.ds.ctx
+	s.internal.load(slot, o, true, func() { l.StateLoadValue(ctx, slot, o.Elem().Interface()) })
+}
+
+// AfterLoadTo is like AfterLoad, but calls l.StateAfterLoad.
+//
+// This is used by go_stateify, and avoids the allocation of a function.
+func (s Source) AfterLoadTo(l AfterLoader) {
+	if s.graph.ds != nil {
+		s.graph.afterLoadTo(l)
+		return
+	}
+	ctx := s.internal.ds.ctx
+	s.internal.afterLoad(func() { l.StateAfterLoad(ctx) })
+}
+
 // AfterLoad schedules a function execution when all objects have been
 // allocated and their automated loading and customized load logic have been
 // executed. fn will not be executed until all of current object's
 // dependencies' AfterLoad() logic, if exist, have been executed.
 func (s Source) AfterLoad(fn func()) {
+	if s.graph.ds != nil {
+		s.graph.afterLoad(fn)
+		return
+	}
 	s.internal.afterLoad(fn)
 }
 
 // Context returns the context object provided at load time.
 func (s Source) Context() context.Context {
+	if s.graph.ds != nil {
+		return s.graph.ds.ctx
+	}
 	return s.internal.ds.ctx
 }
 

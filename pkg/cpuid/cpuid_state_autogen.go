@@ -24,18 +24,18 @@ func (h *hwCap) beforeSave() {}
 // +checklocksignore
 func (h *hwCap) StateSave(stateSinkObject state.Sink) {
 	h.beforeSave()
-	stateSinkObject.Save(0, &h.hwCap1)
-	stateSinkObject.Save(1, &h.hwCap2)
+	stateSinkObject.SaveUint64(0, &h.hwCap1)
+	stateSinkObject.SaveUint64(1, &h.hwCap2)
 }
 
 func (h *hwCap) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (h *hwCap) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &h.hwCap1)
-	stateSourceObject.Load(1, &h.hwCap2)
+	stateSourceObject.LoadUint64(0, &h.hwCap1)
+	stateSourceObject.LoadUint64(1, &h.hwCap2)
 }
 
 func init() {
-	state.Register((*hwCap)(nil))
+	state.RegisterNoHooks((*hwCap)(nil))
 }

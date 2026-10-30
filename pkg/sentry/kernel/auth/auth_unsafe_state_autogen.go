@@ -32,9 +32,17 @@ func (p *AtomicPtrCredentials) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *AtomicPtrCredentials) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*Credentials), func(y any) { p.loadPtr(ctx, y.(*Credentials)) })
+	stateSourceObject.LoadValueTo(0, (**Credentials)(nil), p)
+}
+
+// +checklocksignore
+func (p *AtomicPtrCredentials) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		p.loadPtr(ctx, stateValue.(*Credentials))
+	}
 }
 
 func init() {
-	state.Register((*AtomicPtrCredentials)(nil))
+	state.RegisterNoHooks((*AtomicPtrCredentials)(nil))
 }

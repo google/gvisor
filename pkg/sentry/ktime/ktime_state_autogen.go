@@ -23,14 +23,14 @@ func (t *Time) beforeSave() {}
 // +checklocksignore
 func (t *Time) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
-	stateSinkObject.Save(0, &t.ns)
+	stateSinkObject.SaveInt64(0, &t.ns)
 }
 
 func (t *Time) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (t *Time) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.ns)
+	stateSourceObject.LoadInt64(0, &t.ns)
 }
 
 func (s *Setting) StateTypeName() string {
@@ -50,7 +50,7 @@ func (s *Setting) beforeSave() {}
 // +checklocksignore
 func (s *Setting) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.Enabled)
+	stateSinkObject.SaveBool(0, &s.Enabled)
 	stateSinkObject.Save(1, &s.Next)
 	stateSinkObject.Save(2, &s.Period)
 }
@@ -59,7 +59,7 @@ func (s *Setting) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *Setting) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Enabled)
+	stateSourceObject.LoadBool(0, &s.Enabled)
 	stateSourceObject.Load(1, &s.Next)
 	stateSourceObject.Load(2, &s.Period)
 }
@@ -85,7 +85,7 @@ func (t *SampledTimer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &t.clock)
 	stateSinkObject.Save(1, &t.listener)
 	stateSinkObject.Save(2, &t.setting)
-	stateSinkObject.Save(3, &t.pauseState)
+	stateSinkObject.SaveUint8(3, (*uint8)(&t.pauseState))
 }
 
 func (t *SampledTimer) afterLoad(context.Context) {}
@@ -95,7 +95,7 @@ func (t *SampledTimer) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(0, &t.clock)
 	stateSourceObject.Load(1, &t.listener)
 	stateSourceObject.Load(2, &t.setting)
-	stateSourceObject.Load(3, &t.pauseState)
+	stateSourceObject.LoadUint8(3, (*uint8)(&t.pauseState))
 }
 
 func (t *SyntheticTimer) StateTypeName() string {
@@ -265,7 +265,15 @@ func (s *syntheticTimerSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *syntheticTimerSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]syntheticTimerFlatSegment), func(y any) { s.loadRoot(ctx, y.([]syntheticTimerFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]syntheticTimerFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *syntheticTimerSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]syntheticTimerFlatSegment))
+	}
 }
 
 func (n *syntheticTimernode) StateTypeName() string {
@@ -290,10 +298,10 @@ func (n *syntheticTimernode) beforeSave() {}
 // +checklocksignore
 func (n *syntheticTimernode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -304,10 +312,10 @@ func (n *syntheticTimernode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *syntheticTimernode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -331,8 +339,8 @@ func (s *syntheticTimerFlatSegment) beforeSave() {}
 // +checklocksignore
 func (s *syntheticTimerFlatSegment) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.Start)
-	stateSinkObject.Save(1, &s.End)
+	stateSinkObject.SaveUint64(0, &s.Start)
+	stateSinkObject.SaveUint64(1, &s.End)
 	stateSinkObject.Save(2, &s.Value)
 }
 
@@ -340,8 +348,8 @@ func (s *syntheticTimerFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *syntheticTimerFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Start)
-	stateSourceObject.Load(1, &s.End)
+	stateSourceObject.LoadUint64(0, &s.Start)
+	stateSourceObject.LoadUint64(1, &s.End)
 	stateSourceObject.Load(2, &s.Value)
 }
 
@@ -361,29 +369,29 @@ func (r *uint64Range) beforeSave() {}
 // +checklocksignore
 func (r *uint64Range) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUint64(0, &r.Start)
+	stateSinkObject.SaveUint64(1, &r.End)
 }
 
 func (r *uint64Range) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *uint64Range) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUint64(0, &r.Start)
+	stateSourceObject.LoadUint64(1, &r.End)
 }
 
 func init() {
-	state.Register((*Time)(nil))
-	state.Register((*Setting)(nil))
-	state.Register((*SampledTimer)(nil))
-	state.Register((*SyntheticTimer)(nil))
-	state.Register((*SyntheticClock)(nil))
-	state.Register((*syntheticTimerQueue)(nil))
-	state.Register((*syntheticTimerList)(nil))
-	state.Register((*syntheticTimerEntry)(nil))
-	state.Register((*syntheticTimerSet)(nil))
-	state.Register((*syntheticTimernode)(nil))
-	state.Register((*syntheticTimerFlatSegment)(nil))
-	state.Register((*uint64Range)(nil))
+	state.RegisterNoHooks((*Time)(nil))
+	state.RegisterNoHooks((*Setting)(nil))
+	state.RegisterNoHooks((*SampledTimer)(nil))
+	state.RegisterNoHooks((*SyntheticTimer)(nil))
+	state.RegisterNoHooks((*SyntheticClock)(nil))
+	state.RegisterNoHooks((*syntheticTimerQueue)(nil))
+	state.RegisterNoHooks((*syntheticTimerList)(nil))
+	state.RegisterNoHooks((*syntheticTimerEntry)(nil))
+	state.RegisterNoHooks((*syntheticTimerSet)(nil))
+	state.RegisterNoHooks((*syntheticTimernode)(nil))
+	state.RegisterNoHooks((*syntheticTimerFlatSegment)(nil))
+	state.RegisterNoHooks((*uint64Range)(nil))
 }

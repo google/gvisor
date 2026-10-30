@@ -29,9 +29,9 @@ func (dev *accelDevice) beforeSave() {}
 func (dev *accelDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
 	stateSinkObject.Save(0, &dev.mu)
-	stateSinkObject.Save(1, &dev.minor)
-	stateSinkObject.Save(2, &dev.lite)
-	stateSinkObject.Save(3, &dev.openWriteFDs)
+	stateSinkObject.SaveUint32(1, &dev.minor)
+	stateSinkObject.SaveBool(2, &dev.lite)
+	stateSinkObject.SaveUint32(3, &dev.openWriteFDs)
 	stateSinkObject.Save(4, &dev.devAddrSet)
 	stateSinkObject.Save(5, &dev.owner)
 }
@@ -41,9 +41,9 @@ func (dev *accelDevice) afterLoad(context.Context) {}
 // +checklocksignore
 func (dev *accelDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.mu)
-	stateSourceObject.Load(1, &dev.minor)
-	stateSourceObject.Load(2, &dev.lite)
-	stateSourceObject.Load(3, &dev.openWriteFDs)
+	stateSourceObject.LoadUint32(1, &dev.minor)
+	stateSourceObject.LoadBool(2, &dev.lite)
+	stateSourceObject.LoadUint32(3, &dev.openWriteFDs)
 	stateSourceObject.Load(4, &dev.devAddrSet)
 	stateSourceObject.Load(5, &dev.owner)
 }
@@ -64,16 +64,16 @@ func (r *DevAddrRange) beforeSave() {}
 // +checklocksignore
 func (r *DevAddrRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUint64(0, &r.Start)
+	stateSinkObject.SaveUint64(1, &r.End)
 }
 
 func (r *DevAddrRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *DevAddrRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUint64(0, &r.Start)
+	stateSourceObject.LoadUint64(1, &r.End)
 }
 
 func (s *DevAddrSet) StateTypeName() string {
@@ -100,7 +100,15 @@ func (s *DevAddrSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *DevAddrSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]DevAddrFlatSegment), func(y any) { s.loadRoot(ctx, y.([]DevAddrFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]DevAddrFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *DevAddrSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]DevAddrFlatSegment))
+	}
 }
 
 func (n *DevAddrnode) StateTypeName() string {
@@ -125,10 +133,10 @@ func (n *DevAddrnode) beforeSave() {}
 // +checklocksignore
 func (n *DevAddrnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -139,10 +147,10 @@ func (n *DevAddrnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *DevAddrnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -166,8 +174,8 @@ func (d *DevAddrFlatSegment) beforeSave() {}
 // +checklocksignore
 func (d *DevAddrFlatSegment) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.Start)
-	stateSinkObject.Save(1, &d.End)
+	stateSinkObject.SaveUint64(0, &d.Start)
+	stateSinkObject.SaveUint64(1, &d.End)
 	stateSinkObject.Save(2, &d.Value)
 }
 
@@ -175,15 +183,15 @@ func (d *DevAddrFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *DevAddrFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.Start)
-	stateSourceObject.Load(1, &d.End)
+	stateSourceObject.LoadUint64(0, &d.Start)
+	stateSourceObject.LoadUint64(1, &d.End)
 	stateSourceObject.Load(2, &d.Value)
 }
 
 func init() {
-	state.Register((*accelDevice)(nil))
-	state.Register((*DevAddrRange)(nil))
-	state.Register((*DevAddrSet)(nil))
-	state.Register((*DevAddrnode)(nil))
-	state.Register((*DevAddrFlatSegment)(nil))
+	state.RegisterNoHooks((*accelDevice)(nil))
+	state.RegisterNoHooks((*DevAddrRange)(nil))
+	state.RegisterNoHooks((*DevAddrSet)(nil))
+	state.RegisterNoHooks((*DevAddrnode)(nil))
+	state.RegisterNoHooks((*DevAddrFlatSegment)(nil))
 }

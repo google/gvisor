@@ -29,7 +29,12 @@ func (r *dirRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *dirRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *dirRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (i *kcovInode) StateTypeName() string {
@@ -154,20 +159,20 @@ func (i *InternalData) beforeSave() {}
 // +checklocksignore
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.ProductName)
-	stateSinkObject.Save(1, &i.EnableTPUProxyPaths)
+	stateSinkObject.SaveString(0, &i.ProductName)
+	stateSinkObject.SaveBool(1, &i.EnableTPUProxyPaths)
 	stateSinkObject.Save(2, &i.RDMASysfs)
-	stateSinkObject.Save(3, &i.TestSysfsPathPrefix)
+	stateSinkObject.SaveString(3, &i.TestSysfsPathPrefix)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.ProductName)
-	stateSourceObject.Load(1, &i.EnableTPUProxyPaths)
+	stateSourceObject.LoadString(0, &i.ProductName)
+	stateSourceObject.LoadBool(1, &i.EnableTPUProxyPaths)
 	stateSourceObject.Load(2, &i.RDMASysfs)
-	stateSourceObject.Load(3, &i.TestSysfsPathPrefix)
+	stateSourceObject.LoadString(3, &i.TestSysfsPathPrefix)
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -191,10 +196,10 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
-	stateSinkObject.Save(1, &fs.devMinor)
-	stateSinkObject.Save(2, &fs.enableTPUProxyPaths)
-	stateSinkObject.Save(3, &fs.testSysfsPathPrefix)
-	stateSinkObject.Save(4, &fs.productName)
+	stateSinkObject.SaveUint32(1, &fs.devMinor)
+	stateSinkObject.SaveBool(2, &fs.enableTPUProxyPaths)
+	stateSinkObject.SaveString(3, &fs.testSysfsPathPrefix)
+	stateSinkObject.SaveString(4, &fs.productName)
 	stateSinkObject.Save(5, &fs.root)
 }
 
@@ -203,10 +208,10 @@ func (fs *filesystem) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
-	stateSourceObject.Load(1, &fs.devMinor)
-	stateSourceObject.Load(2, &fs.enableTPUProxyPaths)
-	stateSourceObject.Load(3, &fs.testSysfsPathPrefix)
-	stateSourceObject.Load(4, &fs.productName)
+	stateSourceObject.LoadUint32(1, &fs.devMinor)
+	stateSourceObject.LoadBool(2, &fs.enableTPUProxyPaths)
+	stateSourceObject.LoadString(3, &fs.testSysfsPathPrefix)
+	stateSourceObject.LoadString(4, &fs.productName)
 	stateSourceObject.Load(5, &fs.root)
 }
 
@@ -309,7 +314,7 @@ func (c *cpuFile) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.implStatFS)
 	stateSinkObject.Save(1, &c.DynamicBytesFile)
-	stateSinkObject.Save(2, &c.maxCores)
+	stateSinkObject.SaveUint(2, &c.maxCores)
 }
 
 func (c *cpuFile) afterLoad(context.Context) {}
@@ -318,7 +323,7 @@ func (c *cpuFile) afterLoad(context.Context) {}
 func (c *cpuFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.implStatFS)
 	stateSourceObject.Load(1, &c.DynamicBytesFile)
-	stateSourceObject.Load(2, &c.maxCores)
+	stateSourceObject.LoadUint(2, &c.maxCores)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -387,7 +392,7 @@ func (hf *hostFile) beforeSave() {}
 func (hf *hostFile) StateSave(stateSinkObject state.Sink) {
 	hf.beforeSave()
 	stateSinkObject.Save(0, &hf.DynamicBytesFile)
-	stateSinkObject.Save(1, &hf.hostPath)
+	stateSinkObject.SaveString(1, &hf.hostPath)
 }
 
 func (hf *hostFile) afterLoad(context.Context) {}
@@ -395,7 +400,7 @@ func (hf *hostFile) afterLoad(context.Context) {}
 // +checklocksignore
 func (hf *hostFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &hf.DynamicBytesFile)
-	stateSourceObject.Load(1, &hf.hostPath)
+	stateSourceObject.LoadString(1, &hf.hostPath)
 }
 
 func (ef *errorFile) StateTypeName() string {
@@ -415,7 +420,7 @@ func (ef *errorFile) beforeSave() {}
 func (ef *errorFile) StateSave(stateSinkObject state.Sink) {
 	ef.beforeSave()
 	stateSinkObject.Save(0, &ef.DynamicBytesFile)
-	stateSinkObject.Save(1, &ef.errno)
+	stateSinkObject.SaveInt32(1, &ef.errno)
 }
 
 func (ef *errorFile) afterLoad(context.Context) {}
@@ -423,21 +428,21 @@ func (ef *errorFile) afterLoad(context.Context) {}
 // +checklocksignore
 func (ef *errorFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ef.DynamicBytesFile)
-	stateSourceObject.Load(1, &ef.errno)
+	stateSourceObject.LoadInt32(1, &ef.errno)
 }
 
 func init() {
-	state.Register((*dirRefs)(nil))
-	state.Register((*kcovInode)(nil))
-	state.Register((*kcovFD)(nil))
-	state.Register((*FilesystemType)(nil))
-	state.Register((*InternalData)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*dir)(nil))
-	state.Register((*cgroupDir)(nil))
-	state.Register((*cpuFile)(nil))
-	state.Register((*implStatFS)(nil))
-	state.Register((*staticFile)(nil))
-	state.Register((*hostFile)(nil))
-	state.Register((*errorFile)(nil))
+	state.RegisterStruct((*dirRefs)(nil))
+	state.RegisterNoHooks((*kcovInode)(nil))
+	state.RegisterNoHooks((*kcovFD)(nil))
+	state.RegisterNoHooks((*FilesystemType)(nil))
+	state.RegisterNoHooks((*InternalData)(nil))
+	state.RegisterNoHooks((*filesystem)(nil))
+	state.RegisterNoHooks((*dir)(nil))
+	state.RegisterNoHooks((*cgroupDir)(nil))
+	state.RegisterNoHooks((*cpuFile)(nil))
+	state.RegisterNoHooks((*implStatFS)(nil))
+	state.RegisterNoHooks((*staticFile)(nil))
+	state.RegisterNoHooks((*hostFile)(nil))
+	state.RegisterNoHooks((*errorFile)(nil))
 }

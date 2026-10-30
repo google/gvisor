@@ -31,7 +31,7 @@ func (fd *directoryFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fd.fileDescription)
 	stateSinkObject.Save(1, &fd.DirectoryFileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &fd.off)
+	stateSinkObject.SaveInt64(3, &fd.off)
 	stateSinkObject.Save(4, &fd.dirents)
 }
 
@@ -42,7 +42,7 @@ func (fd *directoryFD) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.DirectoryFileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &fd.off)
+	stateSourceObject.LoadInt64(3, &fd.off)
 	stateSourceObject.Load(4, &fd.dirents)
 }
 
@@ -123,14 +123,14 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fs.vfsfs)
 	stateSinkObject.Save(1, &fs.opts)
 	stateSinkObject.Save(2, &fs.creds)
-	stateSinkObject.Save(3, &fs.xattrPrefix)
-	stateSinkObject.Save(4, &fs.xattrOpaque)
+	stateSinkObject.SaveString(3, &fs.xattrPrefix)
+	stateSinkObject.SaveString(4, &fs.xattrOpaque)
 	stateSinkObject.Save(5, &fs.createCreds)
-	stateSinkObject.Save(6, &fs.dirDevMinor)
+	stateSinkObject.SaveUint32(6, &fs.dirDevMinor)
 	stateSinkObject.Save(7, &fs.lowerDevMinors)
 	stateSinkObject.Save(8, &fs.dirInoCache)
-	stateSinkObject.Save(9, &fs.lastDirIno)
-	stateSinkObject.Save(10, &fs.maxFilenameLen)
+	stateSinkObject.SaveUint64(9, &fs.lastDirIno)
+	stateSinkObject.SaveUint64(10, &fs.maxFilenameLen)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -140,14 +140,14 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(0, &fs.vfsfs)
 	stateSourceObject.Load(1, &fs.opts)
 	stateSourceObject.Load(2, &fs.creds)
-	stateSourceObject.Load(3, &fs.xattrPrefix)
-	stateSourceObject.Load(4, &fs.xattrOpaque)
+	stateSourceObject.LoadString(3, &fs.xattrPrefix)
+	stateSourceObject.LoadString(4, &fs.xattrOpaque)
 	stateSourceObject.Load(5, &fs.createCreds)
-	stateSourceObject.Load(6, &fs.dirDevMinor)
+	stateSourceObject.LoadUint32(6, &fs.dirDevMinor)
 	stateSourceObject.Load(7, &fs.lowerDevMinors)
 	stateSourceObject.Load(8, &fs.dirInoCache)
-	stateSourceObject.Load(9, &fs.lastDirIno)
-	stateSourceObject.Load(10, &fs.maxFilenameLen)
+	stateSourceObject.LoadUint64(9, &fs.lastDirIno)
+	stateSourceObject.LoadUint64(10, &fs.maxFilenameLen)
 }
 
 func (l *layerDevNumber) StateTypeName() string {
@@ -166,16 +166,16 @@ func (l *layerDevNumber) beforeSave() {}
 // +checklocksignore
 func (l *layerDevNumber) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
-	stateSinkObject.Save(0, &l.major)
-	stateSinkObject.Save(1, &l.minor)
+	stateSinkObject.SaveUint32(0, &l.major)
+	stateSinkObject.SaveUint32(1, &l.minor)
 }
 
 func (l *layerDevNumber) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (l *layerDevNumber) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.major)
-	stateSourceObject.Load(1, &l.minor)
+	stateSourceObject.LoadUint32(0, &l.major)
+	stateSourceObject.LoadUint32(1, &l.minor)
 }
 
 func (l *layerDevNoAndIno) StateTypeName() string {
@@ -195,7 +195,7 @@ func (l *layerDevNoAndIno) beforeSave() {}
 func (l *layerDevNoAndIno) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.layerDevNumber)
-	stateSinkObject.Save(1, &l.ino)
+	stateSinkObject.SaveUint64(1, &l.ino)
 }
 
 func (l *layerDevNoAndIno) afterLoad(context.Context) {}
@@ -203,7 +203,7 @@ func (l *layerDevNoAndIno) afterLoad(context.Context) {}
 // +checklocksignore
 func (l *layerDevNoAndIno) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.layerDevNumber)
-	stateSourceObject.Load(1, &l.ino)
+	stateSourceObject.LoadUint64(1, &l.ino)
 }
 
 func (c *createCredsKey) StateTypeName() string {
@@ -277,13 +277,10 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	accessACLValue := d.saveAccessACL()
 	_ = (*vfs.PosixACL)(accessACLValue)
-	stateSinkObject.SaveValue(5, accessACLValue)
 	defaultACLValue := d.saveDefaultACL()
 	_ = (*vfs.PosixACL)(defaultACLValue)
-	stateSinkObject.SaveValue(6, defaultACLValue)
 	parentValue := d.saveParent()
 	_ = (*dentry)(parentValue)
-	stateSinkObject.SaveValue(10, parentValue)
 	stateSinkObject.Save(0, &d.MappableNoHugepages)
 	stateSinkObject.Save(1, &d.vfsd)
 	stateSinkObject.Save(2, &d.refs)
@@ -292,7 +289,7 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &d.uid)
 	stateSinkObject.Save(8, &d.gid)
 	stateSinkObject.Save(9, &d.copiedUp)
-	stateSinkObject.Save(11, &d.name)
+	stateSinkObject.SaveString(11, &d.name)
 	stateSinkObject.Save(12, &d.children)
 	stateSinkObject.Save(13, &d.dirents)
 	stateSinkObject.Save(14, &d.upperVD)
@@ -308,6 +305,9 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &d.writeCount)
 	stateSinkObject.Save(25, &d.watches)
 	stateSinkObject.Save(26, &d.dirInoHash)
+	stateSinkObject.SaveValue(5, accessACLValue)
+	stateSinkObject.SaveValue(6, defaultACLValue)
+	stateSinkObject.SaveValue(10, parentValue)
 }
 
 // +checklocksignore
@@ -320,7 +320,7 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(7, &d.uid)
 	stateSourceObject.Load(8, &d.gid)
 	stateSourceObject.Load(9, &d.copiedUp)
-	stateSourceObject.Load(11, &d.name)
+	stateSourceObject.LoadString(11, &d.name)
 	stateSourceObject.Load(12, &d.children)
 	stateSourceObject.Load(13, &d.dirents)
 	stateSourceObject.Load(14, &d.upperVD)
@@ -336,10 +336,27 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(24, &d.writeCount)
 	stateSourceObject.Load(25, &d.watches)
 	stateSourceObject.Load(26, &d.dirInoHash)
-	stateSourceObject.LoadValue(5, new(*vfs.PosixACL), func(y any) { d.loadAccessACL(ctx, y.(*vfs.PosixACL)) })
-	stateSourceObject.LoadValue(6, new(*vfs.PosixACL), func(y any) { d.loadDefaultACL(ctx, y.(*vfs.PosixACL)) })
-	stateSourceObject.LoadValue(10, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
-	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
+	stateSourceObject.LoadValueTo(5, (**vfs.PosixACL)(nil), d)
+	stateSourceObject.LoadValueTo(6, (**vfs.PosixACL)(nil), d)
+	stateSourceObject.LoadValueTo(10, (**dentry)(nil), d)
+	stateSourceObject.AfterLoadTo(d)
+}
+
+// +checklocksignore
+func (d *dentry) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 5:
+		d.loadAccessACL(ctx, stateValue.(*vfs.PosixACL))
+	case 6:
+		d.loadDefaultACL(ctx, stateValue.(*vfs.PosixACL))
+	case 10:
+		d.loadParent(ctx, stateValue.(*dentry))
+	}
+}
+
+// +checklocksignore
+func (d *dentry) StateAfterLoad(ctx context.Context) {
+	d.afterLoad(ctx)
 }
 
 func (fd *fileDescription) StateTypeName() string {
@@ -392,9 +409,9 @@ func (fd *regularFileFD) beforeSave() {}
 func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
-	stateSinkObject.Save(1, &fd.copiedUp)
+	stateSinkObject.SaveBool(1, &fd.copiedUp)
 	stateSinkObject.Save(2, &fd.cachedFD)
-	stateSinkObject.Save(3, &fd.cachedFlags)
+	stateSinkObject.SaveUint32(3, &fd.cachedFlags)
 }
 
 func (fd *regularFileFD) afterLoad(context.Context) {}
@@ -402,20 +419,20 @@ func (fd *regularFileFD) afterLoad(context.Context) {}
 // +checklocksignore
 func (fd *regularFileFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
-	stateSourceObject.Load(1, &fd.copiedUp)
+	stateSourceObject.LoadBool(1, &fd.copiedUp)
 	stateSourceObject.Load(2, &fd.cachedFD)
-	stateSourceObject.Load(3, &fd.cachedFlags)
+	stateSourceObject.LoadUint32(3, &fd.cachedFlags)
 }
 
 func init() {
-	state.Register((*directoryFD)(nil))
-	state.Register((*FilesystemType)(nil))
-	state.Register((*FilesystemOptions)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*layerDevNumber)(nil))
-	state.Register((*layerDevNoAndIno)(nil))
-	state.Register((*createCredsKey)(nil))
-	state.Register((*dentry)(nil))
-	state.Register((*fileDescription)(nil))
-	state.Register((*regularFileFD)(nil))
+	state.RegisterNoHooks((*directoryFD)(nil))
+	state.RegisterNoHooks((*FilesystemType)(nil))
+	state.RegisterNoHooks((*FilesystemOptions)(nil))
+	state.RegisterNoHooks((*filesystem)(nil))
+	state.RegisterNoHooks((*layerDevNumber)(nil))
+	state.RegisterNoHooks((*layerDevNoAndIno)(nil))
+	state.RegisterNoHooks((*createCredsKey)(nil))
+	state.RegisterStruct((*dentry)(nil))
+	state.RegisterNoHooks((*fileDescription)(nil))
+	state.RegisterNoHooks((*regularFileFD)(nil))
 }

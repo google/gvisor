@@ -117,8 +117,8 @@ func (e *waiterEntry) StateLoad(ctx context.Context, stateSourceObject state.Sou
 }
 
 func init() {
-	state.Register((*bucket)(nil))
-	state.Register((*Manager)(nil))
-	state.Register((*waiterList)(nil))
-	state.Register((*waiterEntry)(nil))
+	state.RegisterNoHooks((*bucket)(nil))
+	state.RegisterNoHooks((*Manager)(nil))
+	state.RegisterNoHooks((*waiterList)(nil))
+	state.RegisterNoHooks((*waiterEntry)(nil))
 }

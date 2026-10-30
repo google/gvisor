@@ -32,7 +32,15 @@ func (p *descriptorBucketSliceAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *descriptorBucketSliceAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*descriptorBucketSlice), func(y any) { p.loadPtr(ctx, y.(*descriptorBucketSlice)) })
+	stateSourceObject.LoadValueTo(0, (**descriptorBucketSlice)(nil), p)
+}
+
+// +checklocksignore
+func (p *descriptorBucketSliceAtomicPtr) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		p.loadPtr(ctx, stateValue.(*descriptorBucketSlice))
+	}
 }
 
 func (p *descriptorBucketAtomicPtr) StateTypeName() string {
@@ -59,7 +67,15 @@ func (p *descriptorBucketAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *descriptorBucketAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*descriptorBucket), func(y any) { p.loadPtr(ctx, y.(*descriptorBucket)) })
+	stateSourceObject.LoadValueTo(0, (**descriptorBucket)(nil), p)
+}
+
+// +checklocksignore
+func (p *descriptorBucketAtomicPtr) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		p.loadPtr(ctx, stateValue.(*descriptorBucket))
+	}
 }
 
 func (p *descriptorAtomicPtr) StateTypeName() string {
@@ -86,11 +102,19 @@ func (p *descriptorAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *descriptorAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*descriptor), func(y any) { p.loadPtr(ctx, y.(*descriptor)) })
+	stateSourceObject.LoadValueTo(0, (**descriptor)(nil), p)
+}
+
+// +checklocksignore
+func (p *descriptorAtomicPtr) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		p.loadPtr(ctx, stateValue.(*descriptor))
+	}
 }
 
 func init() {
-	state.Register((*descriptorBucketSliceAtomicPtr)(nil))
-	state.Register((*descriptorBucketAtomicPtr)(nil))
-	state.Register((*descriptorAtomicPtr)(nil))
+	state.RegisterNoHooks((*descriptorBucketSliceAtomicPtr)(nil))
+	state.RegisterNoHooks((*descriptorBucketAtomicPtr)(nil))
+	state.RegisterNoHooks((*descriptorAtomicPtr)(nil))
 }

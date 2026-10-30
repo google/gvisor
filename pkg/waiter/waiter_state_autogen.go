@@ -27,7 +27,7 @@ func (e *Entry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.waiterEntry)
 	stateSinkObject.Save(1, &e.eventListener)
-	stateSinkObject.Save(2, &e.mask)
+	stateSinkObject.SaveUint64(2, (*uint64)(&e.mask))
 }
 
 func (e *Entry) afterLoad(context.Context) {}
@@ -36,7 +36,7 @@ func (e *Entry) afterLoad(context.Context) {}
 func (e *Entry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.waiterEntry)
 	stateSourceObject.Load(1, &e.eventListener)
-	stateSourceObject.Load(2, &e.mask)
+	stateSourceObject.LoadUint64(2, (*uint64)(&e.mask))
 }
 
 func (n *NoopListener) StateTypeName() string {
@@ -142,9 +142,9 @@ func (e *waiterEntry) StateLoad(ctx context.Context, stateSourceObject state.Sou
 }
 
 func init() {
-	state.Register((*Entry)(nil))
-	state.Register((*NoopListener)(nil))
-	state.Register((*Queue)(nil))
-	state.Register((*waiterList)(nil))
-	state.Register((*waiterEntry)(nil))
+	state.RegisterNoHooks((*Entry)(nil))
+	state.RegisterNoHooks((*NoopListener)(nil))
+	state.RegisterNoHooks((*Queue)(nil))
+	state.RegisterNoHooks((*waiterList)(nil))
+	state.RegisterNoHooks((*waiterEntry)(nil))
 }

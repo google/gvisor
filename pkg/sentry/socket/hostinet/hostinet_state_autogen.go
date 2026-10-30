@@ -29,11 +29,11 @@ func (l *listenerState) beforeSave() {}
 func (l *listenerState) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.addr)
-	stateSinkObject.Save(1, &l.backlog)
-	stateSinkObject.Save(2, &l.reuseAddr)
-	stateSinkObject.Save(3, &l.reusePort)
-	stateSinkObject.Save(4, &l.v6Only)
-	stateSinkObject.Save(5, &l.bindToDevice)
+	stateSinkObject.SaveInt32(1, &l.backlog)
+	stateSinkObject.SaveInt32(2, &l.reuseAddr)
+	stateSinkObject.SaveInt32(3, &l.reusePort)
+	stateSinkObject.SaveInt32(4, &l.v6Only)
+	stateSinkObject.SaveString(5, &l.bindToDevice)
 }
 
 func (l *listenerState) afterLoad(context.Context) {}
@@ -41,11 +41,11 @@ func (l *listenerState) afterLoad(context.Context) {}
 // +checklocksignore
 func (l *listenerState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.addr)
-	stateSourceObject.Load(1, &l.backlog)
-	stateSourceObject.Load(2, &l.reuseAddr)
-	stateSourceObject.Load(3, &l.reusePort)
-	stateSourceObject.Load(4, &l.v6Only)
-	stateSourceObject.Load(5, &l.bindToDevice)
+	stateSourceObject.LoadInt32(1, &l.backlog)
+	stateSourceObject.LoadInt32(2, &l.reuseAddr)
+	stateSourceObject.LoadInt32(3, &l.reusePort)
+	stateSourceObject.LoadInt32(4, &l.v6Only)
+	stateSourceObject.LoadString(5, &l.bindToDevice)
 }
 
 func (s *Socket) StateTypeName() string {
@@ -79,9 +79,9 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.LockFD)
 	stateSinkObject.Save(3, &s.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(4, &s.SendReceiveTimeout)
-	stateSinkObject.Save(5, &s.family)
+	stateSinkObject.SaveInt(5, &s.family)
 	stateSinkObject.Save(6, &s.stype)
-	stateSinkObject.Save(7, &s.protocol)
+	stateSinkObject.SaveInt(7, &s.protocol)
 	stateSinkObject.Save(8, &s.queue)
 	stateSinkObject.Save(9, &s.persistentEventMask)
 	stateSinkObject.Save(10, &s.persistentEntry)
@@ -97,16 +97,21 @@ func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(2, &s.LockFD)
 	stateSourceObject.Load(3, &s.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(4, &s.SendReceiveTimeout)
-	stateSourceObject.Load(5, &s.family)
+	stateSourceObject.LoadInt(5, &s.family)
 	stateSourceObject.Load(6, &s.stype)
-	stateSourceObject.Load(7, &s.protocol)
+	stateSourceObject.LoadInt(7, &s.protocol)
 	stateSourceObject.Load(8, &s.queue)
 	stateSourceObject.Load(9, &s.persistentEventMask)
 	stateSourceObject.Load(10, &s.persistentEntry)
 	stateSourceObject.Load(11, &s.recvClosed)
 	stateSourceObject.Load(12, &s.listenBacklog)
 	stateSourceObject.Load(13, &s.savedListener)
-	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(s)
+}
+
+// +checklocksignore
+func (s *Socket) StateAfterLoad(ctx context.Context) {
+	s.afterLoad(ctx)
 }
 
 func (s *Stack) StateTypeName() string {
@@ -130,30 +135,30 @@ func (s *Stack) beforeSave() {}
 // +checklocksignore
 func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.supportsIPv6)
+	stateSinkObject.SaveBool(0, &s.supportsIPv6)
 	stateSinkObject.Save(1, &s.tcpRecovery)
 	stateSinkObject.Save(2, &s.tcpRecvBufSize)
 	stateSinkObject.Save(3, &s.tcpSendBufSize)
-	stateSinkObject.Save(4, &s.tcpSACKEnabled)
+	stateSinkObject.SaveBool(4, &s.tcpSACKEnabled)
 	stateSinkObject.Save(5, &s.portRange)
-	stateSinkObject.Save(6, &s.allowRawSockets)
+	stateSinkObject.SaveBool(6, &s.allowRawSockets)
 }
 
 func (s *Stack) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.supportsIPv6)
+	stateSourceObject.LoadBool(0, &s.supportsIPv6)
 	stateSourceObject.Load(1, &s.tcpRecovery)
 	stateSourceObject.Load(2, &s.tcpRecvBufSize)
 	stateSourceObject.Load(3, &s.tcpSendBufSize)
-	stateSourceObject.Load(4, &s.tcpSACKEnabled)
+	stateSourceObject.LoadBool(4, &s.tcpSACKEnabled)
 	stateSourceObject.Load(5, &s.portRange)
-	stateSourceObject.Load(6, &s.allowRawSockets)
+	stateSourceObject.LoadBool(6, &s.allowRawSockets)
 }
 
 func init() {
-	state.Register((*listenerState)(nil))
-	state.Register((*Socket)(nil))
-	state.Register((*Stack)(nil))
+	state.RegisterNoHooks((*listenerState)(nil))
+	state.RegisterStruct((*Socket)(nil))
+	state.RegisterNoHooks((*Stack)(nil))
 }

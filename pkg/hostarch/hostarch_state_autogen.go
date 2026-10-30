@@ -25,18 +25,18 @@ func (a *AccessType) beforeSave() {}
 // +checklocksignore
 func (a *AccessType) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	stateSinkObject.Save(0, &a.Read)
-	stateSinkObject.Save(1, &a.Write)
-	stateSinkObject.Save(2, &a.Execute)
+	stateSinkObject.SaveBool(0, &a.Read)
+	stateSinkObject.SaveBool(1, &a.Write)
+	stateSinkObject.SaveBool(2, &a.Execute)
 }
 
 func (a *AccessType) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (a *AccessType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.Read)
-	stateSourceObject.Load(1, &a.Write)
-	stateSourceObject.Load(2, &a.Execute)
+	stateSourceObject.LoadBool(0, &a.Read)
+	stateSourceObject.LoadBool(1, &a.Write)
+	stateSourceObject.LoadBool(2, &a.Execute)
 }
 
 func (v *Addr) StateTypeName() string {
@@ -63,20 +63,20 @@ func (r *AddrRange) beforeSave() {}
 // +checklocksignore
 func (r *AddrRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
+	stateSinkObject.SaveUintptr(0, (*uintptr)(&r.Start))
+	stateSinkObject.SaveUintptr(1, (*uintptr)(&r.End))
 }
 
 func (r *AddrRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *AddrRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
+	stateSourceObject.LoadUintptr(0, (*uintptr)(&r.Start))
+	stateSourceObject.LoadUintptr(1, (*uintptr)(&r.End))
 }
 
 func init() {
-	state.Register((*AccessType)(nil))
+	state.RegisterNoHooks((*AccessType)(nil))
 	state.Register((*Addr)(nil))
-	state.Register((*AddrRange)(nil))
+	state.RegisterNoHooks((*AddrRange)(nil))
 }

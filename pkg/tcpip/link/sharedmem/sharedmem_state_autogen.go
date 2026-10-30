@@ -110,22 +110,22 @@ func (q *QueueConfig) beforeSave() {}
 // +checklocksignore
 func (q *QueueConfig) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
-	stateSinkObject.Save(0, &q.DataFD)
+	stateSinkObject.SaveInt(0, &q.DataFD)
 	stateSinkObject.Save(1, &q.EventFD)
-	stateSinkObject.Save(2, &q.TxPipeFD)
-	stateSinkObject.Save(3, &q.RxPipeFD)
-	stateSinkObject.Save(4, &q.SharedDataFD)
+	stateSinkObject.SaveInt(2, &q.TxPipeFD)
+	stateSinkObject.SaveInt(3, &q.RxPipeFD)
+	stateSinkObject.SaveInt(4, &q.SharedDataFD)
 }
 
 func (q *QueueConfig) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (q *QueueConfig) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &q.DataFD)
+	stateSourceObject.LoadInt(0, &q.DataFD)
 	stateSourceObject.Load(1, &q.EventFD)
-	stateSourceObject.Load(2, &q.TxPipeFD)
-	stateSourceObject.Load(3, &q.RxPipeFD)
-	stateSourceObject.Load(4, &q.SharedDataFD)
+	stateSourceObject.LoadInt(2, &q.TxPipeFD)
+	stateSourceObject.LoadInt(3, &q.RxPipeFD)
+	stateSourceObject.LoadInt(4, &q.SharedDataFD)
 }
 
 func (o *Options) StateTypeName() string {
@@ -153,34 +153,34 @@ func (o *Options) beforeSave() {}
 // +checklocksignore
 func (o *Options) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.MTU)
-	stateSinkObject.Save(1, &o.BufferSize)
+	stateSinkObject.SaveUint32(0, &o.MTU)
+	stateSinkObject.SaveUint32(1, &o.BufferSize)
 	stateSinkObject.Save(2, &o.LinkAddress)
 	stateSinkObject.Save(3, &o.TX)
 	stateSinkObject.Save(4, &o.RX)
-	stateSinkObject.Save(5, &o.PeerFD)
+	stateSinkObject.SaveInt(5, &o.PeerFD)
 	stateSinkObject.Save(6, &o.OnClosed)
-	stateSinkObject.Save(7, &o.TXChecksumOffload)
-	stateSinkObject.Save(8, &o.RXChecksumOffload)
-	stateSinkObject.Save(9, &o.VirtioNetHeaderRequired)
-	stateSinkObject.Save(10, &o.GSOMaxSize)
+	stateSinkObject.SaveBool(7, &o.TXChecksumOffload)
+	stateSinkObject.SaveBool(8, &o.RXChecksumOffload)
+	stateSinkObject.SaveBool(9, &o.VirtioNetHeaderRequired)
+	stateSinkObject.SaveUint32(10, &o.GSOMaxSize)
 }
 
 func (o *Options) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *Options) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.MTU)
-	stateSourceObject.Load(1, &o.BufferSize)
+	stateSourceObject.LoadUint32(0, &o.MTU)
+	stateSourceObject.LoadUint32(1, &o.BufferSize)
 	stateSourceObject.Load(2, &o.LinkAddress)
 	stateSourceObject.Load(3, &o.TX)
 	stateSourceObject.Load(4, &o.RX)
-	stateSourceObject.Load(5, &o.PeerFD)
+	stateSourceObject.LoadInt(5, &o.PeerFD)
 	stateSourceObject.Load(6, &o.OnClosed)
-	stateSourceObject.Load(7, &o.TXChecksumOffload)
-	stateSourceObject.Load(8, &o.RXChecksumOffload)
-	stateSourceObject.Load(9, &o.VirtioNetHeaderRequired)
-	stateSourceObject.Load(10, &o.GSOMaxSize)
+	stateSourceObject.LoadBool(7, &o.TXChecksumOffload)
+	stateSourceObject.LoadBool(8, &o.RXChecksumOffload)
+	stateSourceObject.LoadBool(9, &o.VirtioNetHeaderRequired)
+	stateSourceObject.LoadUint32(10, &o.GSOMaxSize)
 }
 
 func (e *endpoint) StateTypeName() string {
@@ -210,38 +210,38 @@ func (e *endpoint) beforeSave() {}
 // +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.bufferSize)
-	stateSinkObject.Save(1, &e.peerFD)
+	stateSinkObject.SaveUint32(0, &e.bufferSize)
+	stateSinkObject.SaveInt(1, &e.peerFD)
 	stateSinkObject.Save(2, &e.caps)
-	stateSinkObject.Save(3, &e.hdrSize)
-	stateSinkObject.Save(4, &e.gsoMaxSize)
-	stateSinkObject.Save(5, &e.virtioNetHeaderRequired)
+	stateSinkObject.SaveUint32(3, &e.hdrSize)
+	stateSinkObject.SaveUint32(4, &e.gsoMaxSize)
+	stateSinkObject.SaveBool(5, &e.virtioNetHeaderRequired)
 	stateSinkObject.Save(6, &e.rx)
 	stateSinkObject.Save(7, &e.stopRequested)
 	stateSinkObject.Save(8, &e.completed)
 	stateSinkObject.Save(9, &e.tx)
-	stateSinkObject.Save(10, &e.workerStarted)
+	stateSinkObject.SaveBool(10, &e.workerStarted)
 	stateSinkObject.Save(11, &e.addr)
-	stateSinkObject.Save(12, &e.mtu)
+	stateSinkObject.SaveUint32(12, &e.mtu)
 }
 
 func (e *endpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.bufferSize)
-	stateSourceObject.Load(1, &e.peerFD)
+	stateSourceObject.LoadUint32(0, &e.bufferSize)
+	stateSourceObject.LoadInt(1, &e.peerFD)
 	stateSourceObject.Load(2, &e.caps)
-	stateSourceObject.Load(3, &e.hdrSize)
-	stateSourceObject.Load(4, &e.gsoMaxSize)
-	stateSourceObject.Load(5, &e.virtioNetHeaderRequired)
+	stateSourceObject.LoadUint32(3, &e.hdrSize)
+	stateSourceObject.LoadUint32(4, &e.gsoMaxSize)
+	stateSourceObject.LoadBool(5, &e.virtioNetHeaderRequired)
 	stateSourceObject.Load(6, &e.rx)
 	stateSourceObject.Load(7, &e.stopRequested)
 	stateSourceObject.Load(8, &e.completed)
 	stateSourceObject.Load(9, &e.tx)
-	stateSourceObject.Load(10, &e.workerStarted)
+	stateSourceObject.LoadBool(10, &e.workerStarted)
 	stateSourceObject.Load(11, &e.addr)
-	stateSourceObject.Load(12, &e.mtu)
+	stateSourceObject.LoadUint32(12, &e.mtu)
 }
 
 func (e *serverEndpoint) StateTypeName() string {
@@ -269,41 +269,41 @@ func (e *serverEndpoint) beforeSave() {}
 // +checklocksignore
 func (e *serverEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.bufferSize)
+	stateSinkObject.SaveUint32(0, &e.bufferSize)
 	stateSinkObject.Save(1, &e.rx)
 	stateSinkObject.Save(2, &e.stopRequested)
-	stateSinkObject.Save(3, &e.peerFD)
+	stateSinkObject.SaveInt(3, &e.peerFD)
 	stateSinkObject.Save(4, &e.caps)
-	stateSinkObject.Save(5, &e.hdrSize)
-	stateSinkObject.Save(6, &e.virtioNetHeaderRequired)
+	stateSinkObject.SaveUint32(5, &e.hdrSize)
+	stateSinkObject.SaveBool(6, &e.virtioNetHeaderRequired)
 	stateSinkObject.Save(7, &e.tx)
-	stateSinkObject.Save(8, &e.workerStarted)
+	stateSinkObject.SaveBool(8, &e.workerStarted)
 	stateSinkObject.Save(9, &e.addr)
-	stateSinkObject.Save(10, &e.mtu)
+	stateSinkObject.SaveUint32(10, &e.mtu)
 }
 
 func (e *serverEndpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (e *serverEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.bufferSize)
+	stateSourceObject.LoadUint32(0, &e.bufferSize)
 	stateSourceObject.Load(1, &e.rx)
 	stateSourceObject.Load(2, &e.stopRequested)
-	stateSourceObject.Load(3, &e.peerFD)
+	stateSourceObject.LoadInt(3, &e.peerFD)
 	stateSourceObject.Load(4, &e.caps)
-	stateSourceObject.Load(5, &e.hdrSize)
-	stateSourceObject.Load(6, &e.virtioNetHeaderRequired)
+	stateSourceObject.LoadUint32(5, &e.hdrSize)
+	stateSourceObject.LoadBool(6, &e.virtioNetHeaderRequired)
 	stateSourceObject.Load(7, &e.tx)
-	stateSourceObject.Load(8, &e.workerStarted)
+	stateSourceObject.LoadBool(8, &e.workerStarted)
 	stateSourceObject.Load(9, &e.addr)
-	stateSourceObject.Load(10, &e.mtu)
+	stateSourceObject.LoadUint32(10, &e.mtu)
 }
 
 func init() {
-	state.Register((*serverRx)(nil))
-	state.Register((*serverTx)(nil))
-	state.Register((*QueueConfig)(nil))
-	state.Register((*Options)(nil))
-	state.Register((*endpoint)(nil))
-	state.Register((*serverEndpoint)(nil))
+	state.RegisterNoHooks((*serverRx)(nil))
+	state.RegisterNoHooks((*serverTx)(nil))
+	state.RegisterNoHooks((*QueueConfig)(nil))
+	state.RegisterNoHooks((*Options)(nil))
+	state.RegisterNoHooks((*endpoint)(nil))
+	state.RegisterNoHooks((*serverEndpoint)(nil))
 }

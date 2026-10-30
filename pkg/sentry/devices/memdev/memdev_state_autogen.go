@@ -232,12 +232,12 @@ func (fd *zeroFD) StateLoad(ctx context.Context, stateSourceObject state.Source)
 }
 
 func init() {
-	state.Register((*fullDevice)(nil))
-	state.Register((*fullFD)(nil))
-	state.Register((*nullDevice)(nil))
-	state.Register((*nullFD)(nil))
-	state.Register((*randomDevice)(nil))
-	state.Register((*randomFD)(nil))
-	state.Register((*zeroDevice)(nil))
-	state.Register((*zeroFD)(nil))
+	state.RegisterNoHooks((*fullDevice)(nil))
+	state.RegisterNoHooks((*fullFD)(nil))
+	state.RegisterNoHooks((*nullDevice)(nil))
+	state.RegisterNoHooks((*nullFD)(nil))
+	state.RegisterNoHooks((*randomDevice)(nil))
+	state.RegisterNoHooks((*randomFD)(nil))
+	state.RegisterNoHooks((*zeroDevice)(nil))
+	state.RegisterNoHooks((*zeroFD)(nil))
 }

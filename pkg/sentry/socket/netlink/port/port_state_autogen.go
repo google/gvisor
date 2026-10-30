@@ -34,5 +34,5 @@ func (m *Manager) StateLoad(ctx context.Context, stateSourceObject state.Source)
 }
 
 func init() {
-	state.Register((*Manager)(nil))
+	state.RegisterNoHooks((*Manager)(nil))
 }

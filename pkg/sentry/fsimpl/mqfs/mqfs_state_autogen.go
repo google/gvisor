@@ -46,7 +46,7 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
-	stateSinkObject.Save(1, &fs.devMinor)
+	stateSinkObject.SaveUint32(1, &fs.devMinor)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -54,7 +54,7 @@ func (fs *filesystem) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
-	stateSourceObject.Load(1, &fs.devMinor)
+	stateSourceObject.LoadUint32(1, &fs.devMinor)
 }
 
 func (q *queueInode) StateTypeName() string {
@@ -232,15 +232,20 @@ func (r *rootInodeRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *rootInodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *rootInodeRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*FilesystemType)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*queueInode)(nil))
-	state.Register((*queueFD)(nil))
-	state.Register((*RegistryImpl)(nil))
-	state.Register((*rootInode)(nil))
-	state.Register((*rootInodeRefs)(nil))
+	state.RegisterNoHooks((*FilesystemType)(nil))
+	state.RegisterNoHooks((*filesystem)(nil))
+	state.RegisterNoHooks((*queueInode)(nil))
+	state.RegisterNoHooks((*queueFD)(nil))
+	state.RegisterNoHooks((*RegistryImpl)(nil))
+	state.RegisterNoHooks((*rootInode)(nil))
+	state.RegisterStruct((*rootInodeRefs)(nil))
 }

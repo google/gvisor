@@ -33,12 +33,12 @@ func (fs *FeatureSet) beforeSave() {}
 func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.hwCap)
-	stateSinkObject.Save(1, &fs.cpuFreqMHz)
-	stateSinkObject.Save(2, &fs.cpuImplHex)
-	stateSinkObject.Save(3, &fs.cpuArchDec)
-	stateSinkObject.Save(4, &fs.cpuVarHex)
-	stateSinkObject.Save(5, &fs.cpuPartHex)
-	stateSinkObject.Save(6, &fs.cpuRevDec)
+	stateSinkObject.SaveFloat64(1, &fs.cpuFreqMHz)
+	stateSinkObject.SaveUint64(2, &fs.cpuImplHex)
+	stateSinkObject.SaveUint64(3, &fs.cpuArchDec)
+	stateSinkObject.SaveUint64(4, &fs.cpuVarHex)
+	stateSinkObject.SaveUint64(5, &fs.cpuPartHex)
+	stateSinkObject.SaveUint64(6, &fs.cpuRevDec)
 }
 
 func (fs *FeatureSet) afterLoad(context.Context) {}
@@ -46,14 +46,14 @@ func (fs *FeatureSet) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *FeatureSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.hwCap)
-	stateSourceObject.Load(1, &fs.cpuFreqMHz)
-	stateSourceObject.Load(2, &fs.cpuImplHex)
-	stateSourceObject.Load(3, &fs.cpuArchDec)
-	stateSourceObject.Load(4, &fs.cpuVarHex)
-	stateSourceObject.Load(5, &fs.cpuPartHex)
-	stateSourceObject.Load(6, &fs.cpuRevDec)
+	stateSourceObject.LoadFloat64(1, &fs.cpuFreqMHz)
+	stateSourceObject.LoadUint64(2, &fs.cpuImplHex)
+	stateSourceObject.LoadUint64(3, &fs.cpuArchDec)
+	stateSourceObject.LoadUint64(4, &fs.cpuVarHex)
+	stateSourceObject.LoadUint64(5, &fs.cpuPartHex)
+	stateSourceObject.LoadUint64(6, &fs.cpuRevDec)
 }
 
 func init() {
-	state.Register((*FeatureSet)(nil))
+	state.RegisterNoHooks((*FeatureSet)(nil))
 }

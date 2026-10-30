@@ -25,20 +25,20 @@ func (v *DriverVersion) beforeSave() {}
 // +checklocksignore
 func (v *DriverVersion) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
-	stateSinkObject.Save(0, &v.major)
-	stateSinkObject.Save(1, &v.minor)
-	stateSinkObject.Save(2, &v.patch)
+	stateSinkObject.SaveInt(0, &v.major)
+	stateSinkObject.SaveInt(1, &v.minor)
+	stateSinkObject.SaveInt(2, &v.patch)
 }
 
 func (v *DriverVersion) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (v *DriverVersion) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.major)
-	stateSourceObject.Load(1, &v.minor)
-	stateSourceObject.Load(2, &v.patch)
+	stateSourceObject.LoadInt(0, &v.major)
+	stateSourceObject.LoadInt(1, &v.minor)
+	stateSourceObject.LoadInt(2, &v.patch)
 }
 
 func init() {
-	state.Register((*DriverVersion)(nil))
+	state.RegisterNoHooks((*DriverVersion)(nil))
 }

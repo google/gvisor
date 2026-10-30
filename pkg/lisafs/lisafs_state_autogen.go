@@ -29,7 +29,12 @@ func (r *boundSocketFDRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *boundSocketFDRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *boundSocketFDRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (l *controlFDList) StateTypeName() string {
@@ -109,7 +114,12 @@ func (r *controlFDRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *controlFDRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *controlFDRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (r *nodeRefs) StateTypeName() string {
@@ -133,7 +143,12 @@ func (r *nodeRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *nodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *nodeRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (l *openFDList) StateTypeName() string {
@@ -213,16 +228,21 @@ func (r *openFDRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *openFDRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *openFDRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*boundSocketFDRefs)(nil))
-	state.Register((*controlFDList)(nil))
-	state.Register((*controlFDEntry)(nil))
-	state.Register((*controlFDRefs)(nil))
-	state.Register((*nodeRefs)(nil))
-	state.Register((*openFDList)(nil))
-	state.Register((*openFDEntry)(nil))
-	state.Register((*openFDRefs)(nil))
+	state.RegisterStruct((*boundSocketFDRefs)(nil))
+	state.RegisterNoHooks((*controlFDList)(nil))
+	state.RegisterNoHooks((*controlFDEntry)(nil))
+	state.RegisterStruct((*controlFDRefs)(nil))
+	state.RegisterStruct((*nodeRefs)(nil))
+	state.RegisterNoHooks((*openFDList)(nil))
+	state.RegisterNoHooks((*openFDEntry)(nil))
+	state.RegisterStruct((*openFDRefs)(nil))
 }

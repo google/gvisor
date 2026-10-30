@@ -52,5 +52,5 @@ func (tfd *TimerFileDescription) StateLoad(ctx context.Context, stateSourceObjec
 }
 
 func init() {
-	state.Register((*TimerFileDescription)(nil))
+	state.RegisterNoHooks((*TimerFileDescription)(nil))
 }

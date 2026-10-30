@@ -118,7 +118,7 @@ func (q *Queue) beforeSave() {}
 func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.registry)
-	stateSinkObject.Save(1, &q.dead)
+	stateSinkObject.SaveBool(1, &q.dead)
 	stateSinkObject.Save(2, &q.obj)
 	stateSinkObject.Save(3, &q.senders)
 	stateSinkObject.Save(4, &q.receivers)
@@ -126,11 +126,11 @@ func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &q.sendTime)
 	stateSinkObject.Save(7, &q.receiveTime)
 	stateSinkObject.Save(8, &q.changeTime)
-	stateSinkObject.Save(9, &q.byteCount)
-	stateSinkObject.Save(10, &q.messageCount)
-	stateSinkObject.Save(11, &q.maxBytes)
-	stateSinkObject.Save(12, &q.sendPID)
-	stateSinkObject.Save(13, &q.receivePID)
+	stateSinkObject.SaveUint64(9, &q.byteCount)
+	stateSinkObject.SaveUint64(10, &q.messageCount)
+	stateSinkObject.SaveUint64(11, &q.maxBytes)
+	stateSinkObject.SaveInt32(12, &q.sendPID)
+	stateSinkObject.SaveInt32(13, &q.receivePID)
 }
 
 func (q *Queue) afterLoad(context.Context) {}
@@ -138,7 +138,7 @@ func (q *Queue) afterLoad(context.Context) {}
 // +checklocksignore
 func (q *Queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.registry)
-	stateSourceObject.Load(1, &q.dead)
+	stateSourceObject.LoadBool(1, &q.dead)
 	stateSourceObject.Load(2, &q.obj)
 	stateSourceObject.Load(3, &q.senders)
 	stateSourceObject.Load(4, &q.receivers)
@@ -146,11 +146,11 @@ func (q *Queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &q.sendTime)
 	stateSourceObject.Load(7, &q.receiveTime)
 	stateSourceObject.Load(8, &q.changeTime)
-	stateSourceObject.Load(9, &q.byteCount)
-	stateSourceObject.Load(10, &q.messageCount)
-	stateSourceObject.Load(11, &q.maxBytes)
-	stateSourceObject.Load(12, &q.sendPID)
-	stateSourceObject.Load(13, &q.receivePID)
+	stateSourceObject.LoadUint64(9, &q.byteCount)
+	stateSourceObject.LoadUint64(10, &q.messageCount)
+	stateSourceObject.LoadUint64(11, &q.maxBytes)
+	stateSourceObject.LoadInt32(12, &q.sendPID)
+	stateSourceObject.LoadInt32(13, &q.receivePID)
 }
 
 func (m *Message) StateTypeName() string {
@@ -171,7 +171,7 @@ func (m *Message) beforeSave() {}
 func (m *Message) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.msgEntry)
-	stateSinkObject.Save(1, &m.Type)
+	stateSinkObject.SaveInt64(1, &m.Type)
 	stateSinkObject.Save(2, &m.Text)
 }
 
@@ -180,14 +180,14 @@ func (m *Message) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *Message) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.msgEntry)
-	stateSourceObject.Load(1, &m.Type)
+	stateSourceObject.LoadInt64(1, &m.Type)
 	stateSourceObject.Load(2, &m.Text)
 }
 
 func init() {
-	state.Register((*msgList)(nil))
-	state.Register((*msgEntry)(nil))
-	state.Register((*Registry)(nil))
-	state.Register((*Queue)(nil))
-	state.Register((*Message)(nil))
+	state.RegisterNoHooks((*msgList)(nil))
+	state.RegisterNoHooks((*msgEntry)(nil))
+	state.RegisterNoHooks((*Registry)(nil))
+	state.RegisterNoHooks((*Queue)(nil))
+	state.RegisterNoHooks((*Message)(nil))
 }

@@ -30,5 +30,5 @@ func (fst *FilesystemType) StateLoad(ctx context.Context, stateSourceObject stat
 }
 
 func init() {
-	state.Register((*FilesystemType)(nil))
+	state.RegisterNoHooks((*FilesystemType)(nil))
 }

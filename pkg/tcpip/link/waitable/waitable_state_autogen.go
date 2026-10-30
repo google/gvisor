@@ -43,5 +43,5 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 }
 
 func init() {
-	state.Register((*Endpoint)(nil))
+	state.RegisterNoHooks((*Endpoint)(nil))
 }

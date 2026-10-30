@@ -37,7 +37,7 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &fd.sqemf)
 	stateSinkObject.Save(6, &fd.running)
 	stateSinkObject.Save(7, &fd.ioRings)
-	stateSinkObject.Save(8, &fd.remap)
+	stateSinkObject.SaveBool(8, &fd.remap)
 }
 
 // +checklocksignore
@@ -50,8 +50,13 @@ func (fd *FileDescription) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(5, &fd.sqemf)
 	stateSourceObject.Load(6, &fd.running)
 	stateSourceObject.Load(7, &fd.ioRings)
-	stateSourceObject.Load(8, &fd.remap)
-	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+	stateSourceObject.LoadBool(8, &fd.remap)
+	stateSourceObject.AfterLoadTo(fd)
+}
+
+// +checklocksignore
+func (fd *FileDescription) StateAfterLoad(ctx context.Context) {
+	fd.afterLoad(ctx)
 }
 
 func (sqemf *sqEntriesFile) StateTypeName() string {
@@ -117,7 +122,7 @@ func (rbmf *ringsBufferFile) StateLoad(ctx context.Context, stateSourceObject st
 }
 
 func init() {
-	state.Register((*FileDescription)(nil))
-	state.Register((*sqEntriesFile)(nil))
-	state.Register((*ringsBufferFile)(nil))
+	state.RegisterStruct((*FileDescription)(nil))
+	state.RegisterNoHooks((*sqEntriesFile)(nil))
+	state.RegisterNoHooks((*ringsBufferFile)(nil))
 }

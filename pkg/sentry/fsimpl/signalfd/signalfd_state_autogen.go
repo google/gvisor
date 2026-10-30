@@ -55,5 +55,5 @@ func (sfd *SignalFileDescription) StateLoad(ctx context.Context, stateSourceObje
 }
 
 func init() {
-	state.Register((*SignalFileDescription)(nil))
+	state.RegisterNoHooks((*SignalFileDescription)(nil))
 }

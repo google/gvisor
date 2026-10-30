@@ -32,7 +32,15 @@ func (s *DirtySet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *DirtySet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]DirtyFlatSegment), func(y any) { s.loadRoot(ctx, y.([]DirtyFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]DirtyFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *DirtySet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]DirtyFlatSegment))
+	}
 }
 
 func (n *Dirtynode) StateTypeName() string {
@@ -57,10 +65,10 @@ func (n *Dirtynode) beforeSave() {}
 // +checklocksignore
 func (n *Dirtynode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -71,10 +79,10 @@ func (n *Dirtynode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *Dirtynode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -98,8 +106,8 @@ func (d *DirtyFlatSegment) beforeSave() {}
 // +checklocksignore
 func (d *DirtyFlatSegment) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.Start)
-	stateSinkObject.Save(1, &d.End)
+	stateSinkObject.SaveUint64(0, &d.Start)
+	stateSinkObject.SaveUint64(1, &d.End)
 	stateSinkObject.Save(2, &d.Value)
 }
 
@@ -107,8 +115,8 @@ func (d *DirtyFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *DirtyFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.Start)
-	stateSourceObject.Load(1, &d.End)
+	stateSourceObject.LoadUint64(0, &d.Start)
+	stateSourceObject.LoadUint64(1, &d.End)
 	stateSourceObject.Load(2, &d.Value)
 }
 
@@ -136,7 +144,15 @@ func (s *FileRangeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *FileRangeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]FileRangeFlatSegment), func(y any) { s.loadRoot(ctx, y.([]FileRangeFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]FileRangeFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *FileRangeSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]FileRangeFlatSegment))
+	}
 }
 
 func (n *FileRangenode) StateTypeName() string {
@@ -161,10 +177,10 @@ func (n *FileRangenode) beforeSave() {}
 // +checklocksignore
 func (n *FileRangenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -175,10 +191,10 @@ func (n *FileRangenode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *FileRangenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -202,18 +218,18 @@ func (f *FileRangeFlatSegment) beforeSave() {}
 // +checklocksignore
 func (f *FileRangeFlatSegment) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.Start)
-	stateSinkObject.Save(1, &f.End)
-	stateSinkObject.Save(2, &f.Value)
+	stateSinkObject.SaveUint64(0, &f.Start)
+	stateSinkObject.SaveUint64(1, &f.End)
+	stateSinkObject.SaveUint64(2, &f.Value)
 }
 
 func (f *FileRangeFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *FileRangeFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Start)
-	stateSourceObject.Load(1, &f.End)
-	stateSourceObject.Load(2, &f.Value)
+	stateSourceObject.LoadUint64(0, &f.Start)
+	stateSourceObject.LoadUint64(1, &f.End)
+	stateSourceObject.LoadUint64(2, &f.Value)
 }
 
 func (s *FrameRefSet) StateTypeName() string {
@@ -240,7 +256,15 @@ func (s *FrameRefSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *FrameRefSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]FrameRefFlatSegment), func(y any) { s.loadRoot(ctx, y.([]FrameRefFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]FrameRefFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *FrameRefSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]FrameRefFlatSegment))
+	}
 }
 
 func (n *FrameRefnode) StateTypeName() string {
@@ -265,10 +289,10 @@ func (n *FrameRefnode) beforeSave() {}
 // +checklocksignore
 func (n *FrameRefnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -279,10 +303,10 @@ func (n *FrameRefnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *FrameRefnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -306,8 +330,8 @@ func (f *FrameRefFlatSegment) beforeSave() {}
 // +checklocksignore
 func (f *FrameRefFlatSegment) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.Start)
-	stateSinkObject.Save(1, &f.End)
+	stateSinkObject.SaveUint64(0, &f.Start)
+	stateSinkObject.SaveUint64(1, &f.End)
 	stateSinkObject.Save(2, &f.Value)
 }
 
@@ -315,19 +339,19 @@ func (f *FrameRefFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *FrameRefFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Start)
-	stateSourceObject.Load(1, &f.End)
+	stateSourceObject.LoadUint64(0, &f.Start)
+	stateSourceObject.LoadUint64(1, &f.End)
 	stateSourceObject.Load(2, &f.Value)
 }
 
 func init() {
-	state.Register((*DirtySet)(nil))
-	state.Register((*Dirtynode)(nil))
-	state.Register((*DirtyFlatSegment)(nil))
-	state.Register((*FileRangeSet)(nil))
-	state.Register((*FileRangenode)(nil))
-	state.Register((*FileRangeFlatSegment)(nil))
-	state.Register((*FrameRefSet)(nil))
-	state.Register((*FrameRefnode)(nil))
-	state.Register((*FrameRefFlatSegment)(nil))
+	state.RegisterNoHooks((*DirtySet)(nil))
+	state.RegisterNoHooks((*Dirtynode)(nil))
+	state.RegisterNoHooks((*DirtyFlatSegment)(nil))
+	state.RegisterNoHooks((*FileRangeSet)(nil))
+	state.RegisterNoHooks((*FileRangenode)(nil))
+	state.RegisterNoHooks((*FileRangeFlatSegment)(nil))
+	state.RegisterNoHooks((*FrameRefSet)(nil))
+	state.RegisterNoHooks((*FrameRefnode)(nil))
+	state.RegisterNoHooks((*FrameRefFlatSegment)(nil))
 }

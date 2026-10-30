@@ -33,5 +33,5 @@ func (p *pidNamespaceData) StateLoad(ctx context.Context, stateSourceObject stat
 }
 
 func init() {
-	state.Register((*pidNamespaceData)(nil))
+	state.RegisterNoHooks((*pidNamespaceData)(nil))
 }

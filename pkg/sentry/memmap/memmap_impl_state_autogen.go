@@ -32,7 +32,15 @@ func (s *MappingSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *MappingSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]MappingFlatSegment), func(y any) { s.loadRoot(ctx, y.([]MappingFlatSegment)) })
+	stateSourceObject.LoadValueTo(0, (*[]MappingFlatSegment)(nil), s)
+}
+
+// +checklocksignore
+func (s *MappingSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadRoot(ctx, stateValue.([]MappingFlatSegment))
+	}
 }
 
 func (n *Mappingnode) StateTypeName() string {
@@ -57,10 +65,10 @@ func (n *Mappingnode) beforeSave() {}
 // +checklocksignore
 func (n *Mappingnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.SaveInt(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.SaveInt(2, &n.parentIndex)
+	stateSinkObject.SaveBool(3, &n.hasChildren)
 	stateSinkObject.Save(4, &n.maxGap)
 	stateSinkObject.Save(5, &n.keys)
 	stateSinkObject.Save(6, &n.values)
@@ -71,10 +79,10 @@ func (n *Mappingnode) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (n *Mappingnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.LoadInt(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.LoadInt(2, &n.parentIndex)
+	stateSourceObject.LoadBool(3, &n.hasChildren)
 	stateSourceObject.Load(4, &n.maxGap)
 	stateSourceObject.Load(5, &n.keys)
 	stateSourceObject.Load(6, &n.values)
@@ -98,8 +106,8 @@ func (m *MappingFlatSegment) beforeSave() {}
 // +checklocksignore
 func (m *MappingFlatSegment) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.Start)
-	stateSinkObject.Save(1, &m.End)
+	stateSinkObject.SaveUint64(0, &m.Start)
+	stateSinkObject.SaveUint64(1, &m.End)
 	stateSinkObject.Save(2, &m.Value)
 }
 
@@ -107,13 +115,13 @@ func (m *MappingFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *MappingFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.Start)
-	stateSourceObject.Load(1, &m.End)
+	stateSourceObject.LoadUint64(0, &m.Start)
+	stateSourceObject.LoadUint64(1, &m.End)
 	stateSourceObject.Load(2, &m.Value)
 }
 
 func init() {
-	state.Register((*MappingSet)(nil))
-	state.Register((*Mappingnode)(nil))
-	state.Register((*MappingFlatSegment)(nil))
+	state.RegisterNoHooks((*MappingSet)(nil))
+	state.RegisterNoHooks((*Mappingnode)(nil))
+	state.RegisterNoHooks((*MappingFlatSegment)(nil))
 }

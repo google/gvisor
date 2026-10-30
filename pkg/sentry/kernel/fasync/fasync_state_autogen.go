@@ -31,9 +31,9 @@ func (a *FileAsync) beforeSave() {}
 func (a *FileAsync) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.e)
-	stateSinkObject.Save(1, &a.fd)
+	stateSinkObject.SaveInt(1, &a.fd)
 	stateSinkObject.Save(2, &a.requester)
-	stateSinkObject.Save(3, &a.registered)
+	stateSinkObject.SaveBool(3, &a.registered)
 	stateSinkObject.Save(4, &a.signal)
 	stateSinkObject.Save(5, &a.recipientPG)
 	stateSinkObject.Save(6, &a.recipientTG)
@@ -45,9 +45,9 @@ func (a *FileAsync) afterLoad(context.Context) {}
 // +checklocksignore
 func (a *FileAsync) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.e)
-	stateSourceObject.Load(1, &a.fd)
+	stateSourceObject.LoadInt(1, &a.fd)
 	stateSourceObject.Load(2, &a.requester)
-	stateSourceObject.Load(3, &a.registered)
+	stateSourceObject.LoadBool(3, &a.registered)
 	stateSourceObject.Load(4, &a.signal)
 	stateSourceObject.Load(5, &a.recipientPG)
 	stateSourceObject.Load(6, &a.recipientTG)
@@ -55,5 +55,5 @@ func (a *FileAsync) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 }
 
 func init() {
-	state.Register((*FileAsync)(nil))
+	state.RegisterNoHooks((*FileAsync)(nil))
 }

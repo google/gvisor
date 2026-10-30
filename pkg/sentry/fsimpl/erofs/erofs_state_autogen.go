@@ -83,7 +83,7 @@ func (fd *directoryFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
 	stateSinkObject.Save(1, &fd.DirectoryFileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &fd.off)
+	stateSinkObject.SaveInt64(2, &fd.off)
 }
 
 func (fd *directoryFD) afterLoad(context.Context) {}
@@ -92,7 +92,7 @@ func (fd *directoryFD) afterLoad(context.Context) {}
 func (fd *directoryFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.DirectoryFileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &fd.off)
+	stateSourceObject.LoadInt64(2, &fd.off)
 }
 
 func (fstype *FilesystemType) StateTypeName() string {
@@ -145,38 +145,43 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
-	stateSinkObject.Save(1, &fs.mopts)
+	stateSinkObject.SaveString(1, &fs.mopts)
 	stateSinkObject.Save(2, &fs.iopts)
-	stateSinkObject.Save(3, &fs.devMinor)
+	stateSinkObject.SaveUint32(3, &fs.devMinor)
 	stateSinkObject.Save(4, &fs.root)
 	stateSinkObject.Save(5, &fs.image)
 	stateSinkObject.Save(6, &fs.mf)
 	stateSinkObject.Save(7, &fs.zeroPage)
-	stateSinkObject.Save(8, &fs.useReadForIO)
+	stateSinkObject.SaveBool(8, &fs.useReadForIO)
 	stateSinkObject.Save(9, &fs.inodeBuckets)
 	stateSinkObject.Save(10, &fs.cachedDentries)
-	stateSinkObject.Save(11, &fs.cachedDentriesLen)
-	stateSinkObject.Save(12, &fs.maxCachedDentries)
+	stateSinkObject.SaveUint64(11, &fs.cachedDentriesLen)
+	stateSinkObject.SaveUint64(12, &fs.maxCachedDentries)
 	stateSinkObject.Save(13, &fs.released)
 }
 
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
-	stateSourceObject.Load(1, &fs.mopts)
+	stateSourceObject.LoadString(1, &fs.mopts)
 	stateSourceObject.Load(2, &fs.iopts)
-	stateSourceObject.Load(3, &fs.devMinor)
+	stateSourceObject.LoadUint32(3, &fs.devMinor)
 	stateSourceObject.Load(4, &fs.root)
 	stateSourceObject.Load(5, &fs.image)
 	stateSourceObject.Load(6, &fs.mf)
 	stateSourceObject.Load(7, &fs.zeroPage)
-	stateSourceObject.Load(8, &fs.useReadForIO)
+	stateSourceObject.LoadBool(8, &fs.useReadForIO)
 	stateSourceObject.Load(9, &fs.inodeBuckets)
 	stateSourceObject.Load(10, &fs.cachedDentries)
-	stateSourceObject.Load(11, &fs.cachedDentriesLen)
-	stateSourceObject.Load(12, &fs.maxCachedDentries)
+	stateSourceObject.LoadUint64(11, &fs.cachedDentriesLen)
+	stateSourceObject.LoadUint64(12, &fs.maxCachedDentries)
 	stateSourceObject.Load(13, &fs.released)
-	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fs)
+}
+
+// +checklocksignore
+func (fs *filesystem) StateAfterLoad(ctx context.Context) {
+	fs.afterLoad(ctx)
 }
 
 func (i *InternalFilesystemOptions) StateTypeName() string {
@@ -296,27 +301,40 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	parentValue := d.saveParent()
 	_ = (*dentry)(parentValue)
-	stateSinkObject.SaveValue(2, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)
-	stateSinkObject.Save(3, &d.name)
+	stateSinkObject.SaveString(3, &d.name)
 	stateSinkObject.Save(4, &d.inode)
 	stateSinkObject.Save(5, &d.childMap)
-	stateSinkObject.Save(6, &d.cached)
+	stateSinkObject.SaveBool(6, &d.cached)
 	stateSinkObject.Save(7, &d.dentryEntry)
+	stateSinkObject.SaveValue(2, parentValue)
 }
 
 // +checklocksignore
 func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
 	stateSourceObject.Load(1, &d.refs)
-	stateSourceObject.Load(3, &d.name)
+	stateSourceObject.LoadString(3, &d.name)
 	stateSourceObject.Load(4, &d.inode)
 	stateSourceObject.Load(5, &d.childMap)
-	stateSourceObject.Load(6, &d.cached)
+	stateSourceObject.LoadBool(6, &d.cached)
 	stateSourceObject.Load(7, &d.dentryEntry)
-	stateSourceObject.LoadValue(2, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
-	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
+	stateSourceObject.LoadValueTo(2, (**dentry)(nil), d)
+	stateSourceObject.AfterLoadTo(d)
+}
+
+// +checklocksignore
+func (d *dentry) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 2:
+		d.loadParent(ctx, stateValue.(*dentry))
+	}
+}
+
+// +checklocksignore
+func (d *dentry) StateAfterLoad(ctx context.Context) {
+	d.afterLoad(ctx)
 }
 
 func (fd *fileDescription) StateTypeName() string {
@@ -371,7 +389,12 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *inodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *inodeRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func (fd *regularFileFD) StateTypeName() string {
@@ -391,7 +414,7 @@ func (fd *regularFileFD) beforeSave() {}
 func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
-	stateSinkObject.Save(1, &fd.off)
+	stateSinkObject.SaveInt64(1, &fd.off)
 }
 
 func (fd *regularFileFD) afterLoad(context.Context) {}
@@ -399,7 +422,7 @@ func (fd *regularFileFD) afterLoad(context.Context) {}
 // +checklocksignore
 func (fd *regularFileFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
-	stateSourceObject.Load(1, &fd.off)
+	stateSourceObject.LoadInt64(1, &fd.off)
 }
 
 func (mf *imageMemmapFile) StateTypeName() string {
@@ -434,17 +457,17 @@ func (mf *imageMemmapFile) StateLoad(ctx context.Context, stateSourceObject stat
 }
 
 func init() {
-	state.Register((*dentryList)(nil))
-	state.Register((*dentryEntry)(nil))
-	state.Register((*directoryFD)(nil))
-	state.Register((*FilesystemType)(nil))
-	state.Register((*filesystem)(nil))
-	state.Register((*InternalFilesystemOptions)(nil))
-	state.Register((*inodeBucket)(nil))
-	state.Register((*inode)(nil))
-	state.Register((*dentry)(nil))
-	state.Register((*fileDescription)(nil))
-	state.Register((*inodeRefs)(nil))
-	state.Register((*regularFileFD)(nil))
-	state.Register((*imageMemmapFile)(nil))
+	state.RegisterNoHooks((*dentryList)(nil))
+	state.RegisterNoHooks((*dentryEntry)(nil))
+	state.RegisterNoHooks((*directoryFD)(nil))
+	state.RegisterNoHooks((*FilesystemType)(nil))
+	state.RegisterStruct((*filesystem)(nil))
+	state.RegisterNoHooks((*InternalFilesystemOptions)(nil))
+	state.RegisterNoHooks((*inodeBucket)(nil))
+	state.RegisterNoHooks((*inode)(nil))
+	state.RegisterStruct((*dentry)(nil))
+	state.RegisterNoHooks((*fileDescription)(nil))
+	state.RegisterStruct((*inodeRefs)(nil))
+	state.RegisterNoHooks((*regularFileFD)(nil))
+	state.RegisterNoHooks((*imageMemmapFile)(nil))
 }

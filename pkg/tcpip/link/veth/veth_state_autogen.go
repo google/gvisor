@@ -25,8 +25,8 @@ func (v *veth) beforeSave() {}
 // +checklocksignore
 func (v *veth) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
-	stateSinkObject.Save(0, &v.closed)
-	stateSinkObject.Save(1, &v.mtu)
+	stateSinkObject.SaveBool(0, &v.closed)
+	stateSinkObject.SaveUint32(1, &v.mtu)
 	stateSinkObject.Save(2, &v.endpoints)
 }
 
@@ -34,8 +34,8 @@ func (v *veth) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (v *veth) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.closed)
-	stateSourceObject.Load(1, &v.mtu)
+	stateSourceObject.LoadBool(0, &v.closed)
+	stateSourceObject.LoadUint32(1, &v.mtu)
 	stateSourceObject.Load(2, &v.endpoints)
 }
 
@@ -105,7 +105,7 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 }
 
 func init() {
-	state.Register((*veth)(nil))
-	state.Register((*vethPacket)(nil))
-	state.Register((*Endpoint)(nil))
+	state.RegisterNoHooks((*veth)(nil))
+	state.RegisterNoHooks((*vethPacket)(nil))
+	state.RegisterNoHooks((*Endpoint)(nil))
 }

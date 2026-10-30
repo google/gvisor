@@ -60,20 +60,20 @@ func (f *Flags) beforeSave() {}
 // +checklocksignore
 func (f *Flags) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.TUN)
-	stateSinkObject.Save(1, &f.TAP)
-	stateSinkObject.Save(2, &f.NoPacketInfo)
-	stateSinkObject.Save(3, &f.Exclusive)
+	stateSinkObject.SaveBool(0, &f.TUN)
+	stateSinkObject.SaveBool(1, &f.TAP)
+	stateSinkObject.SaveBool(2, &f.NoPacketInfo)
+	stateSinkObject.SaveBool(3, &f.Exclusive)
 }
 
 func (f *Flags) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *Flags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.TUN)
-	stateSourceObject.Load(1, &f.TAP)
-	stateSourceObject.Load(2, &f.NoPacketInfo)
-	stateSourceObject.Load(3, &f.Exclusive)
+	stateSourceObject.LoadBool(0, &f.TUN)
+	stateSourceObject.LoadBool(1, &f.TAP)
+	stateSourceObject.LoadBool(2, &f.NoPacketInfo)
+	stateSourceObject.LoadBool(3, &f.Exclusive)
 }
 
 func (e *tunEndpoint) StateTypeName() string {
@@ -98,10 +98,10 @@ func (e *tunEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.tunEndpointRefs)
 	stateSinkObject.Save(1, &e.Endpoint)
-	stateSinkObject.Save(2, &e.name)
-	stateSinkObject.Save(3, &e.isTap)
-	stateSinkObject.Save(4, &e.persistent)
-	stateSinkObject.Save(5, &e.closed)
+	stateSinkObject.SaveString(2, &e.name)
+	stateSinkObject.SaveBool(3, &e.isTap)
+	stateSinkObject.SaveBool(4, &e.persistent)
+	stateSinkObject.SaveBool(5, &e.closed)
 }
 
 func (e *tunEndpoint) afterLoad(context.Context) {}
@@ -110,10 +110,10 @@ func (e *tunEndpoint) afterLoad(context.Context) {}
 func (e *tunEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.tunEndpointRefs)
 	stateSourceObject.Load(1, &e.Endpoint)
-	stateSourceObject.Load(2, &e.name)
-	stateSourceObject.Load(3, &e.isTap)
-	stateSourceObject.Load(4, &e.persistent)
-	stateSourceObject.Load(5, &e.closed)
+	stateSourceObject.LoadString(2, &e.name)
+	stateSourceObject.LoadBool(3, &e.isTap)
+	stateSourceObject.LoadBool(4, &e.persistent)
+	stateSourceObject.LoadBool(5, &e.closed)
 }
 
 func (r *tunEndpointRefs) StateTypeName() string {
@@ -137,12 +137,17 @@ func (r *tunEndpointRefs) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (r *tunEndpointRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(r)
+}
+
+// +checklocksignore
+func (r *tunEndpointRefs) StateAfterLoad(ctx context.Context) {
+	r.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*Device)(nil))
-	state.Register((*Flags)(nil))
-	state.Register((*tunEndpoint)(nil))
-	state.Register((*tunEndpointRefs)(nil))
+	state.RegisterNoHooks((*Device)(nil))
+	state.RegisterNoHooks((*Flags)(nil))
+	state.RegisterNoHooks((*tunEndpoint)(nil))
+	state.RegisterStruct((*tunEndpointRefs)(nil))
 }

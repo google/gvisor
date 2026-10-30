@@ -44,15 +44,15 @@ func (s *sock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.LockFD)
 	stateSinkObject.Save(4, &s.SendReceiveTimeout)
 	stateSinkObject.Save(5, &s.Queue)
-	stateSinkObject.Save(6, &s.family)
+	stateSinkObject.SaveInt(6, &s.family)
 	stateSinkObject.Save(7, &s.Endpoint)
 	stateSinkObject.Save(8, &s.skType)
-	stateSinkObject.Save(9, &s.protocol)
+	stateSinkObject.SaveInt(9, &s.protocol)
 	stateSinkObject.Save(10, &s.namespace)
-	stateSinkObject.Save(11, &s.sockOptTimestamp)
-	stateSinkObject.Save(12, &s.timestampValid)
+	stateSinkObject.SaveBool(11, &s.sockOptTimestamp)
+	stateSinkObject.SaveBool(12, &s.timestampValid)
 	stateSinkObject.Save(13, &s.timestamp)
-	stateSinkObject.Save(14, &s.sockOptInq)
+	stateSinkObject.SaveBool(14, &s.sockOptInq)
 }
 
 func (s *sock) afterLoad(context.Context) {}
@@ -65,15 +65,15 @@ func (s *sock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &s.LockFD)
 	stateSourceObject.Load(4, &s.SendReceiveTimeout)
 	stateSourceObject.Load(5, &s.Queue)
-	stateSourceObject.Load(6, &s.family)
+	stateSourceObject.LoadInt(6, &s.family)
 	stateSourceObject.Load(7, &s.Endpoint)
 	stateSourceObject.Load(8, &s.skType)
-	stateSourceObject.Load(9, &s.protocol)
+	stateSourceObject.LoadInt(9, &s.protocol)
 	stateSourceObject.Load(10, &s.namespace)
-	stateSourceObject.Load(11, &s.sockOptTimestamp)
-	stateSourceObject.Load(12, &s.timestampValid)
+	stateSourceObject.LoadBool(11, &s.sockOptTimestamp)
+	stateSourceObject.LoadBool(12, &s.timestampValid)
 	stateSourceObject.Load(13, &s.timestamp)
-	stateSourceObject.Load(14, &s.sockOptInq)
+	stateSourceObject.LoadBool(14, &s.sockOptInq)
 }
 
 func (s *Stack) StateTypeName() string {
@@ -95,9 +95,9 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	StackValue := s.saveStack()
 	_ = (*stack.Stack)(StackValue)
-	stateSinkObject.SaveValue(0, StackValue)
 	stateSinkObject.Save(1, &s.eventSubscriber)
-	stateSinkObject.Save(2, &s.id)
+	stateSinkObject.SaveUint64(2, &s.id)
+	stateSinkObject.SaveValue(0, StackValue)
 }
 
 func (s *Stack) afterLoad(context.Context) {}
@@ -105,11 +105,19 @@ func (s *Stack) afterLoad(context.Context) {}
 // +checklocksignore
 func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.eventSubscriber)
-	stateSourceObject.Load(2, &s.id)
-	stateSourceObject.LoadValue(0, new(*stack.Stack), func(y any) { s.loadStack(ctx, y.(*stack.Stack)) })
+	stateSourceObject.LoadUint64(2, &s.id)
+	stateSourceObject.LoadValueTo(0, (**stack.Stack)(nil), s)
+}
+
+// +checklocksignore
+func (s *Stack) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadStack(ctx, stateValue.(*stack.Stack))
+	}
 }
 
 func init() {
-	state.Register((*sock)(nil))
-	state.Register((*Stack)(nil))
+	state.RegisterNoHooks((*sock)(nil))
+	state.RegisterNoHooks((*Stack)(nil))
 }

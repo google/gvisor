@@ -35,10 +35,10 @@ func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &efd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &efd.NoLockFD)
 	stateSinkObject.Save(4, &efd.queue)
-	stateSinkObject.Save(5, &efd.val)
-	stateSinkObject.Save(6, &efd.semMode)
-	stateSinkObject.Save(7, &efd.hostfd)
-	stateSinkObject.Save(8, &efd.sentryOwnedHostfd)
+	stateSinkObject.SaveUint64(5, &efd.val)
+	stateSinkObject.SaveBool(6, &efd.semMode)
+	stateSinkObject.SaveInt(7, &efd.hostfd)
+	stateSinkObject.SaveBool(8, &efd.sentryOwnedHostfd)
 	stateSinkObject.Save(9, &efd.hostfdState)
 }
 
@@ -49,14 +49,19 @@ func (efd *EventFileDescription) StateLoad(ctx context.Context, stateSourceObjec
 	stateSourceObject.Load(2, &efd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &efd.NoLockFD)
 	stateSourceObject.Load(4, &efd.queue)
-	stateSourceObject.Load(5, &efd.val)
-	stateSourceObject.Load(6, &efd.semMode)
-	stateSourceObject.Load(7, &efd.hostfd)
-	stateSourceObject.Load(8, &efd.sentryOwnedHostfd)
+	stateSourceObject.LoadUint64(5, &efd.val)
+	stateSourceObject.LoadBool(6, &efd.semMode)
+	stateSourceObject.LoadInt(7, &efd.hostfd)
+	stateSourceObject.LoadBool(8, &efd.sentryOwnedHostfd)
 	stateSourceObject.Load(9, &efd.hostfdState)
-	stateSourceObject.AfterLoad(func() { efd.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(efd)
+}
+
+// +checklocksignore
+func (efd *EventFileDescription) StateAfterLoad(ctx context.Context) {
+	efd.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*EventFileDescription)(nil))
+	state.RegisterStruct((*EventFileDescription)(nil))
 }

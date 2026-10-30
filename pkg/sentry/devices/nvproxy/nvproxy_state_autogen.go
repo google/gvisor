@@ -25,7 +25,7 @@ func (dev *frontendDevice) beforeSave() {}
 func (dev *frontendDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
 	stateSinkObject.Save(0, &dev.nvp)
-	stateSinkObject.Save(1, &dev.minor)
+	stateSinkObject.SaveUint32(1, &dev.minor)
 }
 
 func (dev *frontendDevice) afterLoad(context.Context) {}
@@ -33,7 +33,7 @@ func (dev *frontendDevice) afterLoad(context.Context) {}
 // +checklocksignore
 func (dev *frontendDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.nvp)
-	stateSourceObject.Load(1, &dev.minor)
+	stateSourceObject.LoadUint32(1, &dev.minor)
 }
 
 func (fd *frontendFD) StateTypeName() string {
@@ -70,8 +70,8 @@ func (fd *frontendFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
 	stateSinkObject.Save(5, &fd.MappableNoHugepages)
 	stateSinkObject.Save(6, &fd.dev)
-	stateSinkObject.Save(7, &fd.containerName)
-	stateSinkObject.Save(8, &fd.hostFD)
+	stateSinkObject.SaveString(7, &fd.containerName)
+	stateSinkObject.SaveInt32(8, &fd.hostFD)
 	stateSinkObject.Save(9, &fd.memmapFile)
 	stateSinkObject.Save(10, &fd.internalQueue)
 	stateSinkObject.Save(11, &fd.internalEntry)
@@ -89,15 +89,20 @@ func (fd *frontendFD) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
 	stateSourceObject.Load(5, &fd.MappableNoHugepages)
 	stateSourceObject.Load(6, &fd.dev)
-	stateSourceObject.Load(7, &fd.containerName)
-	stateSourceObject.Load(8, &fd.hostFD)
+	stateSourceObject.LoadString(7, &fd.containerName)
+	stateSourceObject.LoadInt32(8, &fd.hostFD)
 	stateSourceObject.Load(9, &fd.memmapFile)
 	stateSourceObject.Load(10, &fd.internalQueue)
 	stateSourceObject.Load(11, &fd.internalEntry)
 	stateSourceObject.Load(12, &fd.cachedEvents)
 	stateSourceObject.Load(13, &fd.appQueue)
 	stateSourceObject.Load(14, &fd.clients)
-	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fd)
+}
+
+// +checklocksignore
+func (fd *frontendFD) StateAfterLoad(ctx context.Context) {
+	fd.afterLoad(ctx)
 }
 
 func (fd *dmaBufFDWrapper) StateTypeName() string {
@@ -123,7 +128,7 @@ func (fd *dmaBufFDWrapper) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.hostFD)
+	stateSinkObject.SaveInt32(4, &fd.hostFD)
 }
 
 func (fd *dmaBufFDWrapper) afterLoad(context.Context) {}
@@ -134,7 +139,7 @@ func (fd *dmaBufFDWrapper) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.hostFD)
+	stateSourceObject.LoadInt32(4, &fd.hostFD)
 }
 
 func (mf *frontendFDMemmapFile) StateTypeName() string {
@@ -160,7 +165,7 @@ func (mf *frontendFDMemmapFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &mf.MmapFileRefs)
 	stateSinkObject.Save(2, &mf.nvp)
 	stateSinkObject.Save(3, &mf.clients)
-	stateSinkObject.Save(4, &mf.hostFD)
+	stateSinkObject.SaveInt32(4, &mf.hostFD)
 }
 
 func (mf *frontendFDMemmapFile) afterLoad(context.Context) {}
@@ -171,7 +176,7 @@ func (mf *frontendFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject
 	stateSourceObject.Load(1, &mf.MmapFileRefs)
 	stateSourceObject.Load(2, &mf.nvp)
 	stateSourceObject.Load(3, &mf.clients)
-	stateSourceObject.Load(4, &mf.hostFD)
+	stateSourceObject.LoadInt32(4, &mf.hostFD)
 }
 
 func (d *DeviceInfo) StateTypeName() string {
@@ -196,28 +201,28 @@ func (d *DeviceInfo) beforeSave() {}
 // +checklocksignore
 func (d *DeviceInfo) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.CapsDevMajor)
-	stateSinkObject.Save(1, &d.HaveFabricIMEXManagement)
-	stateSinkObject.Save(2, &d.FabricIMEXManagementDevMinor)
-	stateSinkObject.Save(3, &d.HaveMNCCManagement)
-	stateSinkObject.Save(4, &d.MNCCManagementDevMinor)
-	stateSinkObject.Save(5, &d.CapsIMEXChannelsDevMajor)
-	stateSinkObject.Save(6, &d.UVMDevMajor)
-	stateSinkObject.Save(7, &d.HaveUVMTools)
+	stateSinkObject.SaveUint32(0, &d.CapsDevMajor)
+	stateSinkObject.SaveBool(1, &d.HaveFabricIMEXManagement)
+	stateSinkObject.SaveUint32(2, &d.FabricIMEXManagementDevMinor)
+	stateSinkObject.SaveBool(3, &d.HaveMNCCManagement)
+	stateSinkObject.SaveUint32(4, &d.MNCCManagementDevMinor)
+	stateSinkObject.SaveUint32(5, &d.CapsIMEXChannelsDevMajor)
+	stateSinkObject.SaveUint32(6, &d.UVMDevMajor)
+	stateSinkObject.SaveBool(7, &d.HaveUVMTools)
 }
 
 func (d *DeviceInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *DeviceInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.CapsDevMajor)
-	stateSourceObject.Load(1, &d.HaveFabricIMEXManagement)
-	stateSourceObject.Load(2, &d.FabricIMEXManagementDevMinor)
-	stateSourceObject.Load(3, &d.HaveMNCCManagement)
-	stateSourceObject.Load(4, &d.MNCCManagementDevMinor)
-	stateSourceObject.Load(5, &d.CapsIMEXChannelsDevMajor)
-	stateSourceObject.Load(6, &d.UVMDevMajor)
-	stateSourceObject.Load(7, &d.HaveUVMTools)
+	stateSourceObject.LoadUint32(0, &d.CapsDevMajor)
+	stateSourceObject.LoadBool(1, &d.HaveFabricIMEXManagement)
+	stateSourceObject.LoadUint32(2, &d.FabricIMEXManagementDevMinor)
+	stateSourceObject.LoadBool(3, &d.HaveMNCCManagement)
+	stateSourceObject.LoadUint32(4, &d.MNCCManagementDevMinor)
+	stateSourceObject.LoadUint32(5, &d.CapsIMEXChannelsDevMajor)
+	stateSourceObject.LoadUint32(6, &d.UVMDevMajor)
+	stateSourceObject.LoadBool(7, &d.HaveUVMTools)
 }
 
 func (nvp *nvproxy) StateTypeName() string {
@@ -242,8 +247,8 @@ func (nvp *nvproxy) StateSave(stateSinkObject state.Sink) {
 	nvp.beforeSave()
 	stateSinkObject.Save(0, &nvp.version)
 	stateSinkObject.Save(1, &nvp.capsEnabled)
-	stateSinkObject.Save(2, &nvp.useDevGofer)
-	stateSinkObject.Save(3, &nvp.procDriverNvidiaParams)
+	stateSinkObject.SaveBool(2, &nvp.useDevGofer)
+	stateSinkObject.SaveString(3, &nvp.procDriverNvidiaParams)
 	stateSinkObject.Save(4, &nvp.devInfo)
 	stateSinkObject.Save(5, &nvp.regularDevs)
 	stateSinkObject.Save(6, &nvp.frontendFDs)
@@ -254,13 +259,18 @@ func (nvp *nvproxy) StateSave(stateSinkObject state.Sink) {
 func (nvp *nvproxy) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &nvp.version)
 	stateSourceObject.Load(1, &nvp.capsEnabled)
-	stateSourceObject.Load(2, &nvp.useDevGofer)
-	stateSourceObject.Load(3, &nvp.procDriverNvidiaParams)
+	stateSourceObject.LoadBool(2, &nvp.useDevGofer)
+	stateSourceObject.LoadString(3, &nvp.procDriverNvidiaParams)
 	stateSourceObject.Load(4, &nvp.devInfo)
 	stateSourceObject.Load(5, &nvp.regularDevs)
 	stateSourceObject.Load(6, &nvp.frontendFDs)
 	stateSourceObject.Load(7, &nvp.clients)
-	stateSourceObject.AfterLoad(func() { nvp.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(nvp)
+}
+
+// +checklocksignore
+func (nvp *nvproxy) StateAfterLoad(ctx context.Context) {
+	nvp.afterLoad(ctx)
 }
 
 func (o *object) StateTypeName() string {
@@ -394,7 +404,7 @@ func (c *rootClient) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.object)
 	stateSinkObject.Save(1, &c.resources)
-	stateSinkObject.Save(2, &c.released)
+	stateSinkObject.SaveBool(2, &c.released)
 	stateSinkObject.Save(3, &c.params)
 }
 
@@ -404,7 +414,7 @@ func (c *rootClient) afterLoad(context.Context) {}
 func (c *rootClient) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.object)
 	stateSourceObject.Load(1, &c.resources)
-	stateSourceObject.Load(2, &c.released)
+	stateSourceObject.LoadBool(2, &c.released)
 	stateSourceObject.Load(3, &c.params)
 }
 
@@ -481,7 +491,7 @@ func (dev *openOnlyDevice) beforeSave() {}
 func (dev *openOnlyDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
 	stateSinkObject.Save(0, &dev.nvp)
-	stateSinkObject.Save(1, &dev.relpath)
+	stateSinkObject.SaveString(1, &dev.relpath)
 }
 
 func (dev *openOnlyDevice) afterLoad(context.Context) {}
@@ -489,7 +499,7 @@ func (dev *openOnlyDevice) afterLoad(context.Context) {}
 // +checklocksignore
 func (dev *openOnlyDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.nvp)
-	stateSourceObject.Load(1, &dev.relpath)
+	stateSourceObject.LoadString(1, &dev.relpath)
 }
 
 func (dev *uvmDevice) StateTypeName() string {
@@ -547,8 +557,8 @@ func (fd *uvmFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
 	stateSinkObject.Save(5, &fd.MappableNoHugepages)
 	stateSinkObject.Save(6, &fd.dev)
-	stateSinkObject.Save(7, &fd.containerName)
-	stateSinkObject.Save(8, &fd.hostFD)
+	stateSinkObject.SaveString(7, &fd.containerName)
+	stateSinkObject.SaveInt32(8, &fd.hostFD)
 	stateSinkObject.Save(9, &fd.memmapFile)
 	stateSinkObject.Save(10, &fd.queue)
 }
@@ -562,11 +572,16 @@ func (fd *uvmFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
 	stateSourceObject.Load(5, &fd.MappableNoHugepages)
 	stateSourceObject.Load(6, &fd.dev)
-	stateSourceObject.Load(7, &fd.containerName)
-	stateSourceObject.Load(8, &fd.hostFD)
+	stateSourceObject.LoadString(7, &fd.containerName)
+	stateSourceObject.LoadInt32(8, &fd.hostFD)
 	stateSourceObject.Load(9, &fd.memmapFile)
 	stateSourceObject.Load(10, &fd.queue)
-	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fd)
+}
+
+// +checklocksignore
+func (fd *uvmFD) StateAfterLoad(ctx context.Context) {
+	fd.afterLoad(ctx)
 }
 
 func (mf *uvmFDMemmapFile) StateTypeName() string {
@@ -644,8 +659,8 @@ func (fd *uvmToolsFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.dev)
-	stateSinkObject.Save(5, &fd.containerName)
-	stateSinkObject.Save(6, &fd.hostFD)
+	stateSinkObject.SaveString(5, &fd.containerName)
+	stateSinkObject.SaveInt32(6, &fd.hostFD)
 	stateSinkObject.Save(7, &fd.queue)
 }
 
@@ -656,29 +671,34 @@ func (fd *uvmToolsFD) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.dev)
-	stateSourceObject.Load(5, &fd.containerName)
-	stateSourceObject.Load(6, &fd.hostFD)
+	stateSourceObject.LoadString(5, &fd.containerName)
+	stateSourceObject.LoadInt32(6, &fd.hostFD)
 	stateSourceObject.Load(7, &fd.queue)
-	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fd)
+}
+
+// +checklocksignore
+func (fd *uvmToolsFD) StateAfterLoad(ctx context.Context) {
+	fd.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*frontendDevice)(nil))
-	state.Register((*frontendFD)(nil))
-	state.Register((*dmaBufFDWrapper)(nil))
-	state.Register((*frontendFDMemmapFile)(nil))
-	state.Register((*DeviceInfo)(nil))
-	state.Register((*nvproxy)(nil))
-	state.Register((*object)(nil))
-	state.Register((*capturedRmAllocParams)(nil))
-	state.Register((*rmAllocObject)(nil))
-	state.Register((*rootClient)(nil))
-	state.Register((*objectFreeList)(nil))
-	state.Register((*objectFreeEntry)(nil))
-	state.Register((*openOnlyDevice)(nil))
-	state.Register((*uvmDevice)(nil))
-	state.Register((*uvmFD)(nil))
-	state.Register((*uvmFDMemmapFile)(nil))
-	state.Register((*uvmToolsDevice)(nil))
-	state.Register((*uvmToolsFD)(nil))
+	state.RegisterNoHooks((*frontendDevice)(nil))
+	state.RegisterStruct((*frontendFD)(nil))
+	state.RegisterNoHooks((*dmaBufFDWrapper)(nil))
+	state.RegisterNoHooks((*frontendFDMemmapFile)(nil))
+	state.RegisterNoHooks((*DeviceInfo)(nil))
+	state.RegisterStruct((*nvproxy)(nil))
+	state.RegisterNoHooks((*object)(nil))
+	state.RegisterNoHooks((*capturedRmAllocParams)(nil))
+	state.RegisterNoHooks((*rmAllocObject)(nil))
+	state.RegisterNoHooks((*rootClient)(nil))
+	state.RegisterNoHooks((*objectFreeList)(nil))
+	state.RegisterNoHooks((*objectFreeEntry)(nil))
+	state.RegisterNoHooks((*openOnlyDevice)(nil))
+	state.RegisterNoHooks((*uvmDevice)(nil))
+	state.RegisterStruct((*uvmFD)(nil))
+	state.RegisterNoHooks((*uvmFDMemmapFile)(nil))
+	state.RegisterNoHooks((*uvmToolsDevice)(nil))
+	state.RegisterStruct((*uvmToolsFD)(nil))
 }

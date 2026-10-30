@@ -29,8 +29,8 @@ func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	FunctionValue := fs.saveFunction()
 	_ = ([]byte)(FunctionValue)
-	stateSinkObject.SaveValue(0, FunctionValue)
 	stateSinkObject.Save(1, &fs.hwCap)
+	stateSinkObject.SaveValue(0, FunctionValue)
 }
 
 func (fs *FeatureSet) afterLoad(context.Context) {}
@@ -38,7 +38,15 @@ func (fs *FeatureSet) afterLoad(context.Context) {}
 // +checklocksignore
 func (fs *FeatureSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fs.hwCap)
-	stateSourceObject.LoadValue(0, new([]byte), func(y any) { fs.loadFunction(ctx, y.([]byte)) })
+	stateSourceObject.LoadValueTo(0, (*[]byte)(nil), fs)
+}
+
+// +checklocksignore
+func (fs *FeatureSet) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		fs.loadFunction(ctx, stateValue.([]byte))
+	}
 }
 
 func (i *In) StateTypeName() string {
@@ -57,16 +65,16 @@ func (i *In) beforeSave() {}
 // +checklocksignore
 func (i *In) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.Eax)
-	stateSinkObject.Save(1, &i.Ecx)
+	stateSinkObject.SaveUint32(0, &i.Eax)
+	stateSinkObject.SaveUint32(1, &i.Ecx)
 }
 
 func (i *In) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *In) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.Eax)
-	stateSourceObject.Load(1, &i.Ecx)
+	stateSourceObject.LoadUint32(0, &i.Eax)
+	stateSourceObject.LoadUint32(1, &i.Ecx)
 }
 
 func (o *Out) StateTypeName() string {
@@ -87,24 +95,24 @@ func (o *Out) beforeSave() {}
 // +checklocksignore
 func (o *Out) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.Eax)
-	stateSinkObject.Save(1, &o.Ebx)
-	stateSinkObject.Save(2, &o.Ecx)
-	stateSinkObject.Save(3, &o.Edx)
+	stateSinkObject.SaveUint32(0, &o.Eax)
+	stateSinkObject.SaveUint32(1, &o.Ebx)
+	stateSinkObject.SaveUint32(2, &o.Ecx)
+	stateSinkObject.SaveUint32(3, &o.Edx)
 }
 
 func (o *Out) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *Out) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.Eax)
-	stateSourceObject.Load(1, &o.Ebx)
-	stateSourceObject.Load(2, &o.Ecx)
-	stateSourceObject.Load(3, &o.Edx)
+	stateSourceObject.LoadUint32(0, &o.Eax)
+	stateSourceObject.LoadUint32(1, &o.Ebx)
+	stateSourceObject.LoadUint32(2, &o.Ecx)
+	stateSourceObject.LoadUint32(3, &o.Edx)
 }
 
 func init() {
-	state.Register((*FeatureSet)(nil))
-	state.Register((*In)(nil))
-	state.Register((*Out)(nil))
+	state.RegisterNoHooks((*FeatureSet)(nil))
+	state.RegisterNoHooks((*In)(nil))
+	state.RegisterNoHooks((*Out)(nil))
 }

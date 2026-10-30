@@ -27,8 +27,8 @@ func (c *sandboxNetstackCreator) beforeSave() {}
 func (c *sandboxNetstackCreator) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.clock)
-	stateSinkObject.Save(1, &c.allowPacketEndpointWrite)
-	stateSinkObject.Save(2, &c.allowLiveTCPMigration)
+	stateSinkObject.SaveBool(1, &c.allowPacketEndpointWrite)
+	stateSinkObject.SaveBool(2, &c.allowLiveTCPMigration)
 	stateSinkObject.Save(3, &c.uid)
 }
 
@@ -37,11 +37,11 @@ func (c *sandboxNetstackCreator) afterLoad(context.Context) {}
 // +checklocksignore
 func (c *sandboxNetstackCreator) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.clock)
-	stateSourceObject.Load(1, &c.allowPacketEndpointWrite)
-	stateSourceObject.Load(2, &c.allowLiveTCPMigration)
+	stateSourceObject.LoadBool(1, &c.allowPacketEndpointWrite)
+	stateSourceObject.LoadBool(2, &c.allowLiveTCPMigration)
 	stateSourceObject.Load(3, &c.uid)
 }
 
 func init() {
-	state.Register((*sandboxNetstackCreator)(nil))
+	state.RegisterNoHooks((*sandboxNetstackCreator)(nil))
 }

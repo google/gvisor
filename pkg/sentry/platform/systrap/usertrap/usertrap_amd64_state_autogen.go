@@ -29,9 +29,9 @@ func (s *State) beforeSave() {}
 // +checklocksignore
 func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.nextTrap)
+	stateSinkObject.SaveUint32(0, &s.nextTrap)
 	stateSinkObject.Save(1, &s.tableAddr)
-	stateSinkObject.Save(2, &s.disabled)
+	stateSinkObject.SaveBool(2, &s.disabled)
 	stateSinkObject.Save(3, &s.patches)
 }
 
@@ -39,12 +39,12 @@ func (s *State) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.nextTrap)
+	stateSourceObject.LoadUint32(0, &s.nextTrap)
 	stateSourceObject.Load(1, &s.tableAddr)
-	stateSourceObject.Load(2, &s.disabled)
+	stateSourceObject.LoadBool(2, &s.disabled)
 	stateSourceObject.Load(3, &s.patches)
 }
 
 func init() {
-	state.Register((*State)(nil))
+	state.RegisterNoHooks((*State)(nil))
 }

@@ -34,32 +34,37 @@ func (p *Pipe) beforeSave() {}
 func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.queue)
-	stateSinkObject.Save(1, &p.isNamed)
+	stateSinkObject.SaveBool(1, &p.isNamed)
 	stateSinkObject.Save(2, &p.readers)
 	stateSinkObject.Save(3, &p.totalReaders)
 	stateSinkObject.Save(4, &p.writers)
 	stateSinkObject.Save(5, &p.totalWriters)
 	stateSinkObject.Save(6, &p.buf)
-	stateSinkObject.Save(7, &p.off)
-	stateSinkObject.Save(8, &p.size)
-	stateSinkObject.Save(9, &p.max)
-	stateSinkObject.Save(10, &p.hadWriter)
+	stateSinkObject.SaveInt64(7, &p.off)
+	stateSinkObject.SaveInt64(8, &p.size)
+	stateSinkObject.SaveInt64(9, &p.max)
+	stateSinkObject.SaveBool(10, &p.hadWriter)
 }
 
 // +checklocksignore
 func (p *Pipe) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.queue)
-	stateSourceObject.Load(1, &p.isNamed)
+	stateSourceObject.LoadBool(1, &p.isNamed)
 	stateSourceObject.Load(2, &p.readers)
 	stateSourceObject.Load(3, &p.totalReaders)
 	stateSourceObject.Load(4, &p.writers)
 	stateSourceObject.Load(5, &p.totalWriters)
 	stateSourceObject.Load(6, &p.buf)
-	stateSourceObject.Load(7, &p.off)
-	stateSourceObject.Load(8, &p.size)
-	stateSourceObject.Load(9, &p.max)
-	stateSourceObject.Load(10, &p.hadWriter)
-	stateSourceObject.AfterLoad(func() { p.afterLoad(ctx) })
+	stateSourceObject.LoadInt64(7, &p.off)
+	stateSourceObject.LoadInt64(8, &p.size)
+	stateSourceObject.LoadInt64(9, &p.max)
+	stateSourceObject.LoadBool(10, &p.hadWriter)
+	stateSourceObject.AfterLoadTo(p)
+}
+
+// +checklocksignore
+func (p *Pipe) StateAfterLoad(ctx context.Context) {
+	p.afterLoad(ctx)
 }
 
 func (vp *VFSPipe) StateTypeName() string {
@@ -128,7 +133,7 @@ func (fd *VFSPipeFD) StateLoad(ctx context.Context, stateSourceObject state.Sour
 }
 
 func init() {
-	state.Register((*Pipe)(nil))
-	state.Register((*VFSPipe)(nil))
-	state.Register((*VFSPipeFD)(nil))
+	state.RegisterStruct((*Pipe)(nil))
+	state.RegisterNoHooks((*VFSPipe)(nil))
+	state.RegisterNoHooks((*VFSPipeFD)(nil))
 }

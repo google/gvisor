@@ -27,9 +27,9 @@ func (s *Sleeper) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	sharedListValue := s.saveSharedList()
 	_ = (*Waker)(sharedListValue)
-	stateSinkObject.SaveValue(0, sharedListValue)
 	stateSinkObject.Save(1, &s.localList)
 	stateSinkObject.Save(2, &s.allWakers)
+	stateSinkObject.SaveValue(0, sharedListValue)
 }
 
 func (s *Sleeper) afterLoad(context.Context) {}
@@ -38,7 +38,15 @@ func (s *Sleeper) afterLoad(context.Context) {}
 func (s *Sleeper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.localList)
 	stateSourceObject.Load(2, &s.allWakers)
-	stateSourceObject.LoadValue(0, new(*Waker), func(y any) { s.loadSharedList(ctx, y.(*Waker)) })
+	stateSourceObject.LoadValueTo(0, (**Waker)(nil), s)
+}
+
+// +checklocksignore
+func (s *Sleeper) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadSharedList(ctx, stateValue.(*Waker))
+	}
 }
 
 func (w *Waker) StateTypeName() string {
@@ -60,9 +68,9 @@ func (w *Waker) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	sValue := w.saveS()
 	_ = (wakerState)(sValue)
-	stateSinkObject.SaveValue(0, sValue)
 	stateSinkObject.Save(1, &w.next)
 	stateSinkObject.Save(2, &w.allWakersNext)
+	stateSinkObject.SaveValue(0, sValue)
 }
 
 func (w *Waker) afterLoad(context.Context) {}
@@ -71,7 +79,15 @@ func (w *Waker) afterLoad(context.Context) {}
 func (w *Waker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &w.next)
 	stateSourceObject.Load(2, &w.allWakersNext)
-	stateSourceObject.LoadValue(0, new(wakerState), func(y any) { w.loadS(ctx, y.(wakerState)) })
+	stateSourceObject.LoadValueTo(0, (*wakerState)(nil), w)
+}
+
+// +checklocksignore
+func (w *Waker) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		w.loadS(ctx, stateValue.(wakerState))
+	}
 }
 
 func (w *wakerState) StateTypeName() string {
@@ -90,7 +106,7 @@ func (w *wakerState) beforeSave() {}
 // +checklocksignore
 func (w *wakerState) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
-	stateSinkObject.Save(0, &w.asserted)
+	stateSinkObject.SaveBool(0, &w.asserted)
 	stateSinkObject.Save(1, &w.other)
 }
 
@@ -98,12 +114,12 @@ func (w *wakerState) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (w *wakerState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.asserted)
+	stateSourceObject.LoadBool(0, &w.asserted)
 	stateSourceObject.Load(1, &w.other)
 }
 
 func init() {
-	state.Register((*Sleeper)(nil))
-	state.Register((*Waker)(nil))
-	state.Register((*wakerState)(nil))
+	state.RegisterNoHooks((*Sleeper)(nil))
+	state.RegisterNoHooks((*Waker)(nil))
+	state.RegisterNoHooks((*wakerState)(nil))
 }

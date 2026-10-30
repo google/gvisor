@@ -35,9 +35,14 @@ func (fst *FilesystemType) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(0, &fst.initErr)
 	stateSourceObject.Load(1, &fst.fs)
 	stateSourceObject.Load(2, &fst.root)
-	stateSourceObject.AfterLoad(func() { fst.afterLoad(ctx) })
+	stateSourceObject.AfterLoadTo(fst)
+}
+
+// +checklocksignore
+func (fst *FilesystemType) StateAfterLoad(ctx context.Context) {
+	fst.afterLoad(ctx)
 }
 
 func init() {
-	state.Register((*FilesystemType)(nil))
+	state.RegisterStruct((*FilesystemType)(nil))
 }

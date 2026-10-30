@@ -210,10 +210,10 @@ func (m *multiCounterARPStats) StateLoad(ctx context.Context, stateSourceObject 
 }
 
 func init() {
-	state.Register((*endpoint)(nil))
-	state.Register((*protocol)(nil))
-	state.Register((*Options)(nil))
-	state.Register((*Stats)(nil))
-	state.Register((*sharedStats)(nil))
-	state.Register((*multiCounterARPStats)(nil))
+	state.RegisterNoHooks((*endpoint)(nil))
+	state.RegisterNoHooks((*protocol)(nil))
+	state.RegisterNoHooks((*Options)(nil))
+	state.RegisterNoHooks((*Stats)(nil))
+	state.RegisterNoHooks((*sharedStats)(nil))
+	state.RegisterNoHooks((*multiCounterARPStats)(nil))
 }

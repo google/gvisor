@@ -24,16 +24,16 @@ func (fr *FileRange) beforeSave() {}
 // +checklocksignore
 func (fr *FileRange) StateSave(stateSinkObject state.Sink) {
 	fr.beforeSave()
-	stateSinkObject.Save(0, &fr.Start)
-	stateSinkObject.Save(1, &fr.End)
+	stateSinkObject.SaveUint64(0, &fr.Start)
+	stateSinkObject.SaveUint64(1, &fr.End)
 }
 
 func (fr *FileRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (fr *FileRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &fr.Start)
-	stateSourceObject.Load(1, &fr.End)
+	stateSourceObject.LoadUint64(0, &fr.Start)
+	stateSourceObject.LoadUint64(1, &fr.End)
 }
 
 func (mr *MappableRange) StateTypeName() string {
@@ -52,16 +52,16 @@ func (mr *MappableRange) beforeSave() {}
 // +checklocksignore
 func (mr *MappableRange) StateSave(stateSinkObject state.Sink) {
 	mr.beforeSave()
-	stateSinkObject.Save(0, &mr.Start)
-	stateSinkObject.Save(1, &mr.End)
+	stateSinkObject.SaveUint64(0, &mr.Start)
+	stateSinkObject.SaveUint64(1, &mr.End)
 }
 
 func (mr *MappableRange) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mr *MappableRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mr.Start)
-	stateSourceObject.Load(1, &mr.End)
+	stateSourceObject.LoadUint64(0, &mr.Start)
+	stateSourceObject.LoadUint64(1, &mr.End)
 }
 
 func (r *MappingOfRange) StateTypeName() string {
@@ -83,7 +83,7 @@ func (r *MappingOfRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.MappingSpace)
 	stateSinkObject.Save(1, &r.AddrRange)
-	stateSinkObject.Save(2, &r.Writable)
+	stateSinkObject.SaveBool(2, &r.Writable)
 }
 
 func (r *MappingOfRange) afterLoad(context.Context) {}
@@ -92,7 +92,7 @@ func (r *MappingOfRange) afterLoad(context.Context) {}
 func (r *MappingOfRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.MappingSpace)
 	stateSourceObject.Load(1, &r.AddrRange)
-	stateSourceObject.Load(2, &r.Writable)
+	stateSourceObject.LoadBool(2, &r.Writable)
 }
 
 func (n *NoMapInternal) StateTypeName() string {
@@ -163,10 +163,10 @@ func (m *MappableNoHugepages) StateLoad(ctx context.Context, stateSourceObject s
 }
 
 func init() {
-	state.Register((*FileRange)(nil))
-	state.Register((*MappableRange)(nil))
-	state.Register((*MappingOfRange)(nil))
-	state.Register((*NoMapInternal)(nil))
-	state.Register((*MappableNoTrackMappings)(nil))
-	state.Register((*MappableNoHugepages)(nil))
+	state.RegisterNoHooks((*FileRange)(nil))
+	state.RegisterNoHooks((*MappableRange)(nil))
+	state.RegisterNoHooks((*MappingOfRange)(nil))
+	state.RegisterNoHooks((*NoMapInternal)(nil))
+	state.RegisterNoHooks((*MappableNoTrackMappings)(nil))
+	state.RegisterNoHooks((*MappableNoHugepages)(nil))
 }

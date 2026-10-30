@@ -39,5 +39,5 @@ func (f *Float64) StateLoad(ctx context.Context, stateSourceObject state.Source)
 }
 
 func init() {
-	state.Register((*Float64)(nil))
+	state.RegisterNoHooks((*Float64)(nil))
 }

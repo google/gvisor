@@ -26,14 +26,14 @@ func (i *Int32) beforeSave() {}
 // +checklocksignore
 func (i *Int32) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.value)
+	stateSinkObject.SaveInt32(0, &i.value)
 }
 
 func (i *Int32) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *Int32) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.value)
+	stateSourceObject.LoadInt32(0, &i.value)
 }
 
 func (u *Uint32) StateTypeName() string {
@@ -51,14 +51,14 @@ func (u *Uint32) beforeSave() {}
 // +checklocksignore
 func (u *Uint32) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
-	stateSinkObject.Save(0, &u.value)
+	stateSinkObject.SaveUint32(0, &u.value)
 }
 
 func (u *Uint32) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (u *Uint32) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.value)
+	stateSourceObject.LoadUint32(0, &u.value)
 }
 
 func (b *Bool) StateTypeName() string {
@@ -87,7 +87,7 @@ func (b *Bool) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {
-	state.Register((*Int32)(nil))
-	state.Register((*Uint32)(nil))
-	state.Register((*Bool)(nil))
+	state.RegisterNoHooks((*Int32)(nil))
+	state.RegisterNoHooks((*Uint32)(nil))
+	state.RegisterNoHooks((*Bool)(nil))
 }

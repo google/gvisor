@@ -32,9 +32,17 @@ func (p *AtomicPtrBucket) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *AtomicPtrBucket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*bucket), func(y any) { p.loadPtr(ctx, y.(*bucket)) })
+	stateSourceObject.LoadValueTo(0, (**bucket)(nil), p)
+}
+
+// +checklocksignore
+func (p *AtomicPtrBucket) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		p.loadPtr(ctx, stateValue.(*bucket))
+	}
 }
 
 func init() {
-	state.Register((*AtomicPtrBucket)(nil))
+	state.RegisterNoHooks((*AtomicPtrBucket)(nil))
 }
