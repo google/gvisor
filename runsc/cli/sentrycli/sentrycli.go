@@ -30,6 +30,7 @@ func Main(sentry *gvisorbinaries.Binary) {
 	cli.Run(sentry, map[util.SubCommand]string{
 		new(sentrycmd.Boot):            "internal use only",
 		new(forwardcmd.MetricMetadata): "internal use only",
+		new(forwardcmd.Statefile):      "internal use only",
 		new(forwardcmd.Symbolize):      "internal use only",
 		&nvproxy.Nvproxy{SupportedDrivers: sentrycmd.NvproxySupportedDrivers}: "internal use only",
 	}, []subcommands.Command{

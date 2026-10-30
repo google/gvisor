@@ -57,6 +57,19 @@ func (*Nvproxy) Execute(context.Context, *flag.FlagSet, ...any) subcommands.Exit
 	return execSentry()
 }
 
+// Statefile implements subcommands.Command for the "statefile" command.
+type Statefile struct {
+	forwardcmd.Statefile
+}
+
+// Execute implements subcommands.Command.Execute.
+func (s *Statefile) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	if s.MetadataOnly() || f.NArg() != 1 {
+		return s.Statefile.Execute(ctx, f, args...)
+	}
+	return execSentry()
+}
+
 // Symbolize implements subcommands.Command for the "symbolize" command.
 type Symbolize struct {
 	forwardcmd.Symbolize

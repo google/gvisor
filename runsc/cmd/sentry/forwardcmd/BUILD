@@ -10,13 +10,18 @@ go_library(
     srcs = [
         "forwardcmd.go",
         "metric_metadata.go",
+        "statefile.go",
         "symbolize.go",
         "syscalls.go",
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/coverage",
+        "//pkg/cpuid",
         "//pkg/metric",
+        "//pkg/state/pretty",
+        "//pkg/state/statefile",
+        "//runsc/boot/sentryapi",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",

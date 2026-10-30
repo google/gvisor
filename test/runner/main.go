@@ -38,11 +38,9 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -301,37 +299,41 @@ func printOne(dir string, file string, html bool, postfix string) {
 	if err != nil {
 		return
 	}
-	r, m, err := statefile.NewReader(f, nil)
+	m, err := statefile.MetadataUnsafe(f)
+	f.Close()
 	if err != nil {
 		return
 	}
-	defer r.Close()
-	w, err := os.Create(dir + postfix)
+	outPath := dir + postfix
+	w, err := os.Create(outPath)
 	if err != nil {
 		return
 	}
-	defer w.Close()
-
-	cu := cleanup.Make(func() {
-		os.Remove(dir + postfix)
-	})
-	defer cu.Clean()
-	if html {
-		// Print just the HTML stream.
-		if err := pretty.PrintHTML(w, r); err != nil {
-			return
-		}
-	} else {
+	if !html {
 		// Print the metadata first.
 		if _, err := fmt.Fprintf(w, "%v\n", m); err != nil {
-			return
-		}
-		// Then print the rest of the text.
-		if err := pretty.PrintText(w, r); err != nil {
+			w.Close()
+			os.Remove(outPath)
 			return
 		}
 	}
-	cu.Release()
+	args := []string{"statefile"}
+	if html {
+		args = append(args, "-html")
+	}
+	args = append(args, "--", file)
+	var stderr bytes.Buffer
+	cmd := exec.Command(specutils.ExePath, args...)
+	cmd.Stdout = w
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	closeErr := w.Close()
+	if err != nil || closeErr != nil {
+		if err != nil {
+			log.Warningf("Failed to print statefile %s: %v (%s)", file, err, bytes.TrimSpace(stderr.Bytes()))
+		}
+		os.Remove(outPath)
+	}
 }
 
 func prepareSave(args []string, undeclaredOutputsDir string, index int) ([]string, string, error) {
