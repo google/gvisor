@@ -274,7 +274,7 @@ func (b *typeInfoBuilder) get(t reflect.Type) *typeInfo {
 				validateTypeInfo(wire.Type{Name: ti.name, Fields: fields})
 			}
 			ti.slots = newSlots(len(fields))
-			ti.hooks = !ti.registered || !noHooksTypes[t]
+			ti.hooks = !ti.registered || !isNoHooks(t)
 			if !ti.hooks && b.plainFields(t) {
 				// The StateSave and StateLoad methods only save and load
 				// the fields, which are all plain data.

@@ -299,6 +299,16 @@ var reverseTypeDatabase = map[reflect.Type]wire.Type{}
 // noHooksTypes contains types registered with RegisterNoHooks.
 var noHooksTypes = map[reflect.Type]bool{}
 
+// identBases maps +stateify identtype struct types to their base struct types.
+var identBases = map[reflect.Type]reflect.Type{}
+
+func isNoHooks(t reflect.Type) bool {
+	for base, ok := identBases[t]; ok; base, ok = identBases[base] {
+		t = base
+	}
+	return noHooksTypes[t]
+}
+
 // binaryTypes maps types registered with registerBinary to their names.
 var binaryTypes = map[reflect.Type]string{}
 
@@ -309,6 +319,7 @@ func Release() {
 	globalTypeDatabase = nil
 	reverseTypeDatabase = nil
 	noHooksTypes = nil
+	identBases = nil
 	binaryTypes = nil
 	typeInfosMu.Lock()
 	typeInfos = nil
@@ -376,6 +387,20 @@ func RegisterStruct(t StructType) {
 // This must be called on init and only done once.
 func RegisterNoHooks(t StructType) {
 	registerStruct(t, true)
+}
+
+// RegisterIdent registers a struct type defined over base (+stateify identtype),
+// inheriting base's RegisterNoHooks property regardless of init order.
+//
+// This must be called on init and only done once.
+func RegisterIdent(t, base StructType) {
+	typ := reflect.TypeOf(t)
+	baseTyp := reflect.TypeOf(base)
+	if typ == nil || typ.Kind() != reflect.Ptr || baseTyp == nil || baseTyp.Kind() != reflect.Ptr {
+		Failf("RegisterIdent must be called on pointers")
+	}
+	identBases[typ.Elem()] = baseTyp.Elem()
+	registerStruct(t, false)
 }
 
 func registerStruct(t StructType, noHooks bool) {
