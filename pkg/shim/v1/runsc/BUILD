@@ -80,6 +80,7 @@ go_test(
     deps = [
         "//pkg/shim/v1/proc",
         "//pkg/shim/v1/runsccmd",
+        "//pkg/shim/v1/taskserver:task_server_go_proto",
         "//pkg/shim/v1/utils",
         "//runsc/specutils",
         "@com_github_containerd_cgroups_v3//cgroup1:go_default_library",
