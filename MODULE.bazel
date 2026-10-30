@@ -299,6 +299,32 @@ img_pull(
     tag = "1.31.1",
 )
 
+img_pull(
+    name = "test_nginx",
+    digest = "sha256:bc4cad49969aaf95eb4eecec5572846f86e59f1e8332aba36ed64b91aff8b724",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/nginx",
+    tag = "1.31.7",
+)
+
+img_pull(
+    name = "test_redis",
+    digest = "sha256:a030024d2b65447fba04de1e3b440226d78dfe6e4fbc8ab0ca9a44ca6eed0acd",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/redis",
+    tag = "7.0.12",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
