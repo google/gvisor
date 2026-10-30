@@ -99,11 +99,15 @@ func TestGetGCSURIFromImagePath(t *testing.T) {
 
 type fakeCgroup struct {
 	cgroup.Cgroup
-	numCPU    int
-	numCPUErr error
-	cpuQuota  int64
-	cpuPeriod int64
-	updates   []specs.LinuxCPU
+	numCPU       int
+	numCPUErr    error
+	cpuQuota     int64
+	cpuQuotaErr  error
+	cpuPeriod    int64
+	cpuPeriodErr error
+	quotaReads   int
+	periodReads  int
+	updates      []specs.LinuxCPU
 }
 
 func (f *fakeCgroup) Update(res *specs.LinuxResources) error {
@@ -116,11 +120,13 @@ func (f *fakeCgroup) NumCPU() (int, error) {
 }
 
 func (f *fakeCgroup) CPUQuota() (int64, error) {
-	return f.cpuQuota, nil
+	f.quotaReads++
+	return f.cpuQuota, f.cpuQuotaErr
 }
 
 func (f *fakeCgroup) CPUPeriod() (int64, error) {
-	return f.cpuPeriod, nil
+	f.periodReads++
+	return f.cpuPeriod, f.cpuPeriodErr
 }
 
 func TestCalculateCPUNum(t *testing.T) {
@@ -202,8 +208,82 @@ func TestCalculateCPUNum(t *testing.T) {
 			if gotPeriod != wantPeriod {
 				t.Errorf("calculateCPUNum() got cpuPeriod = %d, want %d", gotPeriod, wantPeriod)
 			}
+
+			gotExported, err := CalculateCPUNum(cg, tc.limits, tc.cpuNumFromQuota)
+			if err != nil {
+				t.Fatalf("CalculateCPUNum failed: %v", err)
+			}
+			if gotExported != tc.want {
+				t.Errorf("CalculateCPUNum() = %d, want %d", gotExported, tc.want)
+			}
 		})
 	}
+
+	t.Run("CPUQuota error preserves cpuset bound", func(t *testing.T) {
+		quotaErr := &fakeCgroup{numCPU: 4, cpuQuotaErr: errors.New("cpu.max read error")}
+		if _, _, _, err := calculateCPUNum(quotaErr, 4, nil, true); err == nil {
+			t.Errorf("calculateCPUNum(quotaErr) succeeded, want error")
+		}
+		got, err := CalculateCPUNum(quotaErr, nil, true)
+		if err == nil {
+			t.Fatalf("CalculateCPUNum(quotaErr) succeeded, want error")
+		}
+		if got != 4 {
+			t.Errorf("CalculateCPUNum(quotaErr) = %d, want cpuset fallback 4", got)
+		}
+	})
+
+	t.Run("CPUPeriod error when quota is positive", func(t *testing.T) {
+		periodErr := &fakeCgroup{
+			numCPU:       6,
+			cpuQuota:     250000,
+			cpuPeriodErr: errors.New("cpu.cfs_period_us read error"),
+		}
+		if _, _, _, err := calculateCPUNum(periodErr, 6, nil, true); err == nil {
+			t.Errorf("calculateCPUNum(periodErr) succeeded, want error")
+		}
+		got, err := CalculateCPUNum(periodErr, nil, true)
+		if err == nil {
+			t.Fatalf("CalculateCPUNum(periodErr) succeeded, want error")
+		}
+		if got != 6 {
+			t.Errorf("CalculateCPUNum(periodErr) = %d, want cpuset fallback 6", got)
+		}
+	})
+
+	t.Run("nil cgroup and partial limits", func(t *testing.T) {
+		got, err := CalculateCPUNum(nil, nil, true)
+		if err != nil {
+			t.Fatalf("CalculateCPUNum(nil, nil, true) failed: %v", err)
+		}
+		if got != runtime.NumCPU() {
+			t.Errorf("CalculateCPUNum(nil, nil, true) = %d, want %d", got, runtime.NumCPU())
+		}
+
+		// Period omitted in limits defaults to DefaultCPUPeriod (100000us).
+		limits := &CPULimits{App: specs.LinuxCPU{Quota: new(int64(250000))}}
+		got, err = CalculateCPUNum(nil, limits, true)
+		if err != nil {
+			t.Fatalf("CalculateCPUNum(nil, limits, true) failed: %v", err)
+		}
+		if want := min(runtime.NumCPU(), 3); got != want {
+			t.Errorf("CalculateCPUNum(nil, limits, true) = %d, want %d", got, want)
+		}
+	})
+
+	t.Run("CalculateCPUNum skips quota and period reads when cpuNumFromQuota is false", func(t *testing.T) {
+		cg := &fakeCgroup{numCPU: 6, cpuQuota: 200000, cpuPeriod: 100000}
+		got, err := CalculateCPUNum(cg, nil, false)
+		if err != nil {
+			t.Fatalf("CalculateCPUNum(..., false) failed: %v", err)
+		}
+		if got != 6 {
+			t.Errorf("CalculateCPUNum(..., false) = %d, want 6", got)
+		}
+		if cg.quotaReads != 0 || cg.periodReads != 0 {
+			t.Errorf("CalculateCPUNum(..., false) read quota %d times and period %d times, want 0", cg.quotaReads, cg.periodReads)
+		}
+	})
 }
 
 func TestLifecycleCPUNum(t *testing.T) {
