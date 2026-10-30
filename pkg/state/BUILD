@@ -110,6 +110,7 @@ go_test(
         "graph_addrmap_test.go",
         "graph_buf_test.go",
         "graph_decode_callbacks_test.go",
+        "graph_loadvalue_snapshot_test.go",
         "graph_print_test.go",
         "graph_typeinfo_test.go",
         "types_test.go",

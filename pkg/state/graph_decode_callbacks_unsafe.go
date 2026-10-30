@@ -357,17 +357,18 @@ func (gd *graphStructDecoder) loadValue(slot int, objPtr any, fn func(any)) {
 	ds.keepZero = false
 	ds.decodeValue(ti, e.data)
 	ds.keepZero = keepZero
+	// Copy the value when fn runs, after any dependency callbacks have
+	// populated the destination. The callback may retain its argument.
+	cb := decodeCallback{fn: func() { fn(reflect.ValueOf(objPtr).Elem().Interface()) }, waiter: -1}
 	if ds.deferred != deferred {
 		if ds.lastRef >= 0 && ds.lastRef != ds.cur && ds.lastRef != 0 {
 			ds.wait(ds.cur, ds.lastRef, decodeCallback{waiter: -1})
 		}
 		if !ds.noCallbacks {
-			p := e.data
-			ds.addCallback(ds.cur, decodeCallback{fn: func() { fn(makeAny(ti, p)) }, waiter: -1})
+			ds.addCallback(ds.cur, cb)
 		}
 		return
 	}
-	cb := decodeCallback{valueFn: fn, value: makeAny(ti, e.data), waiter: -1}
 	if ds.lastRef >= 0 {
 		if ds.lastRef != ds.cur && ds.lastRef != 0 {
 			ds.wait(ds.cur, ds.lastRef, cb)
