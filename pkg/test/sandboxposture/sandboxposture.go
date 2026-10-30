@@ -378,11 +378,15 @@ var platformGoDebug = map[string]string{
 	"slimvm": "asyncpreemptoff=1",
 }
 
-// GoDebug returns the expected GODEBUG for a platform.
-func GoDebug(platform string) string {
+// GoDebug returns the expected GODEBUG for a sandbox on the given platform.
+// profile is whether the sandbox runs with --profile.
+func GoDebug(platform string, profile bool) string {
 	godebug := "containermaxprocs=0"
 	if p := platformGoDebug[platform]; p != "" {
 		godebug += "," + p
+	}
+	if !profile {
+		godebug += ",memprofilerate=0"
 	}
 	return godebug
 }

@@ -174,7 +174,7 @@ func testBootPosture(t *testing.T, tc postureCase) {
 		NetworkMode:          tc.network.String(),
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
-		GoDebug:              sandboxposture.GoDebug(conf.Platform),
+		GoDebug:              sandboxposture.GoDebug(conf.Platform, conf.ProfileEnable),
 		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       tc.extraFDClasses,
 		CgoEnabled:           config.CgoEnabled,

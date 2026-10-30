@@ -106,7 +106,7 @@ func TestSandboxPostureDocker(t *testing.T) {
 		NetworkMode:          conf.Network.String(),
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
-		GoDebug:              sandboxposture.GoDebug(conf.Platform),
+		GoDebug:              sandboxposture.GoDebug(conf.Platform, conf.ProfileEnable),
 		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       extraFDClasses(conf),
 		CgoEnabled:           config.CgoEnabled,
@@ -202,6 +202,7 @@ func TestSandboxPostureDo(t *testing.T) {
 		"--platform="+conf.Platform,
 		"--directfs="+strconv.FormatBool(conf.DirectFS),
 		"--enable-core-tags="+strconv.FormatBool(conf.EnableCoreTags),
+		"--profile="+strconv.FormatBool(conf.ProfileEnable),
 		"--root", rootDir,
 		"do", "/bin/sh", "-c", "echo "+readyMarker+"; exec sleep 300")
 	stdout, err := cmd.StdoutPipe()
@@ -264,7 +265,7 @@ func TestSandboxPostureDo(t *testing.T) {
 		DirectFS:             conf.DirectFS,
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
-		GoDebug:              sandboxposture.GoDebug(conf.Platform),
+		GoDebug:              sandboxposture.GoDebug(conf.Platform, conf.ProfileEnable),
 		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       extraFDClasses(conf),
 		CgoEnabled:           config.CgoEnabled,
