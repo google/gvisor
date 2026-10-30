@@ -661,6 +661,14 @@ func (s *Stack) NICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumb
 	return nic.forwarding(protocol)
 }
 
+// ForwardingDefault returns whether newly added NICs forward protocol.
+func (s *Stack) ForwardingDefault(protocol tcpip.NetworkProtocolNumber) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, enabled := s.defaultForwardingEnabled[protocol]
+	return enabled
+}
+
 // SetForwardingDefaultAndAllNICs sets packet forwarding for all NICs for the
 // passed protocol and sets the default setting for newly created NICs.
 func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
