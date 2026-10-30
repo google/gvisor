@@ -616,3 +616,68 @@ func TestProcessMessageUnsupported(t *testing.T) {
 		t.Errorf("ProcessMessage on unsupported REQUEST type got err = %v, want ErrNotSupported", err)
 	}
 }
+
+// Dumps are restricted to AF_INET or AF_INET6 when requested; any other
+// family dumps everything, like Linux's fallback to the AF_UNSPEC handler.
+func TestDumpFamily(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload func(*nlmsg.Message)
+		want    uint8
+	}{
+		{
+			name:    "missing family",
+			payload: func(*nlmsg.Message) {},
+			want:    linux.AF_UNSPEC,
+		},
+		{
+			name: "rtgenmsg AF_UNSPEC",
+			payload: func(m *nlmsg.Message) {
+				family := primitive.Uint8(linux.AF_UNSPEC)
+				m.Put(&family)
+			},
+			want: linux.AF_UNSPEC,
+		},
+		{
+			name: "rtgenmsg AF_INET",
+			payload: func(m *nlmsg.Message) {
+				family := primitive.Uint8(linux.AF_INET)
+				m.Put(&family)
+			},
+			want: linux.AF_INET,
+		},
+		{
+			name: "rtmsg AF_INET6",
+			payload: func(m *nlmsg.Message) {
+				m.Put(&linux.RouteMessage{Family: linux.AF_INET6})
+			},
+			want: linux.AF_INET6,
+		},
+		{
+			name: "ifaddrmsg AF_INET",
+			payload: func(m *nlmsg.Message) {
+				m.Put(&linux.InterfaceAddrMessage{Family: linux.AF_INET})
+			},
+			want: linux.AF_INET,
+		},
+		{
+			name: "rtgenmsg AF_PACKET",
+			payload: func(m *nlmsg.Message) {
+				family := primitive.Uint8(linux.AF_PACKET)
+				m.Put(&family)
+			},
+			want: linux.AF_UNSPEC,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+				Type:  linux.RTM_GETROUTE,
+				Flags: linux.NLM_F_REQUEST | linux.NLM_F_DUMP,
+			})
+			tc.payload(msg)
+			if got := dumpFamily(msg); got != tc.want {
+				t.Errorf("dumpFamily() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
