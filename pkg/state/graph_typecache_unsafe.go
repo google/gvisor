@@ -17,6 +17,7 @@ package state
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sync/atomic"
 	"unsafe"
 )
@@ -159,7 +160,10 @@ func schemaFingerprint() uint64 {
 	if f := fingerprint.Load(); f != 0 {
 		return f
 	}
-	var f uint64
+	var (
+		f    uint64
+		seen [16]reflect.Type
+	)
 	for name, t := range globalTypeDatabase {
 		h := hashStr(fnvOffset, name)
 		var flags byte
@@ -169,32 +173,48 @@ func schemaFingerprint() uint64 {
 		if binaryTypes[t] != "" {
 			flags |= 2
 		}
-		f += hashTypeSig(hashUint(h, uint64(flags)), t, 0) // Order-independent across map entries.
+		h = hashTypeSig(hashUint(h, uint64(flags)), t, 0, seen[:0])
+		if t.Kind() == reflect.Struct && flags&2 == 0 {
+			if st, ok := reflect.Zero(reflect.PointerTo(t)).Interface().(StructType); ok {
+				fields := st.StateFields()
+				h = hashUint(h, uint64(len(fields)))
+				for _, field := range fields {
+					h = hashStr(h, field)
+				}
+			}
+		}
+		f += h // Order-independent across map entries.
 	}
 	f |= 1 // Never zero.
 	fingerprint.Store(f)
 	return f
 }
 
-func hashTypeSig(h uint64, t reflect.Type, depth int) uint64 {
+func hashTypeSig(h uint64, t reflect.Type, depth int, seen []reflect.Type) uint64 {
 	h = hashUint(h, uint64(t.Kind()))
 	h = hashUint(h, uint64(t.Size()))
 	h = hashStr(h, t.PkgPath())
 	h = hashStr(h, t.Name())
-	if depth >= 4 {
+	if depth >= 32 {
 		return h
+	}
+	if t.Name() != "" {
+		if depth > 0 && t.Kind() == reflect.Struct {
+			return h
+		}
+		if slices.Contains(seen, t) {
+			return h
+		}
+		seen = append(seen, t)
 	}
 	switch t.Kind() {
 	case reflect.Pointer, reflect.Slice:
-		return hashTypeSig(h, t.Elem(), depth+1)
+		return hashTypeSig(h, t.Elem(), depth+1, seen)
 	case reflect.Array:
-		return hashTypeSig(hashUint(h, uint64(t.Len())), t.Elem(), depth+1)
+		return hashTypeSig(hashUint(h, uint64(t.Len())), t.Elem(), depth+1, seen)
 	case reflect.Map:
-		return hashTypeSig(hashTypeSig(h, t.Key(), depth+1), t.Elem(), depth+1)
+		return hashTypeSig(hashTypeSig(h, t.Key(), depth+1, seen), t.Elem(), depth+1, seen)
 	case reflect.Struct:
-		if depth > 0 && t.Name() != "" {
-			return h
-		}
 		n := t.NumField()
 		h = hashUint(h, uint64(n))
 		for i := 0; i < n; i++ {
@@ -202,14 +222,48 @@ func hashTypeSig(h uint64, t reflect.Type, depth int) uint64 {
 			h = hashStr(h, f.Name)
 			h = hashUint(h, uint64(f.Offset))
 			h = hashStr(h, string(f.Tag))
-			h = hashTypeSig(h, f.Type, depth+1)
+			h = hashTypeSig(h, f.Type, depth+1, seen)
 		}
 		return h
+	case reflect.Interface:
+		n := t.NumMethod()
+		h = hashUint(h, uint64(n))
+		if depth >= 31 {
+			return h
+		}
+		for i := 0; i < n; i++ {
+			m := t.Method(i)
+			h = hashStr(h, m.PkgPath)
+			h = hashStr(h, m.Name)
+			if m.Type != nil {
+				h = hashTypeSig(h, m.Type, max(depth+1, 30), seen)
+			}
+		}
+		return h
+	case reflect.Func:
+		var variadic uint64
+		if t.IsVariadic() {
+			variadic = 1
+		}
+		h = hashUint(h, variadic)
+		in := t.NumIn()
+		h = hashUint(h, uint64(in))
+		for i := 0; i < in; i++ {
+			h = hashTypeSig(h, t.In(i), depth+1, seen)
+		}
+		out := t.NumOut()
+		h = hashUint(h, uint64(out))
+		for i := 0; i < out; i++ {
+			h = hashTypeSig(h, t.Out(i), depth+1, seen)
+		}
+		return h
+	case reflect.Chan:
+		return hashTypeSig(hashUint(h, uint64(t.ChanDir())), t.Elem(), depth+1, seen)
 	case reflect.Bool,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128,
-		reflect.String, reflect.Interface, reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		reflect.String, reflect.UnsafePointer:
 		return h
 	default:
 		panic(fmt.Sprintf("unexpected reflect.Kind: %v (%v)", t.Kind(), t))
@@ -218,7 +272,8 @@ func hashTypeSig(h uint64, t reflect.Type, depth int) uint64 {
 
 // typeTable assigns stream indices to types.
 type typeTable struct {
-	// exact and shape map typeInfo ids to indices plus one.
+	// exact and shape map typeInfo ids to indices plus one, or -1 while
+	// recursively adding an unregistered composite type.
 	exact, shape []int32
 	types        []*typeInfo
 	buf          encBuf
@@ -248,6 +303,9 @@ func (tt *typeTable) reset() {
 func lookupIndex(m []int32, ti *typeInfo) (int, bool) {
 	if int(ti.id) < len(m) {
 		if v := m[ti.id]; v != 0 {
+			if v < 0 {
+				Failf("type %q is not registered", ti.typ)
+			}
 			return int(v - 1), true
 		}
 	}
@@ -304,8 +362,18 @@ func (tt *typeTable) add(ti *typeInfo, exact bool) int {
 	if !registered {
 		switch ti.kind {
 		case reflect.Pointer, reflect.Slice, reflect.Array:
+			target := &tt.shape
+			if exact {
+				target = &tt.exact
+			}
+			setIndex(target, ti, -2)
 			elem = tt.index(ti.elem, exact)
 		case reflect.Map:
+			target := &tt.shape
+			if exact {
+				target = &tt.exact
+			}
+			setIndex(target, ti, -2)
 			key = tt.index(ti.key, exact)
 			elem = tt.index(ti.elem, exact)
 		}
@@ -339,7 +407,7 @@ func (tt *typeTable) add(ti *typeInfo, exact bool) int {
 		b.uvarint(uint64(elem))
 	case ti.kind == reflect.Interface && (!exact || ti.typ == anyType):
 		b.byte(typeAny)
-	case ti.kind == reflect.Struct && ti.typ.NumField() == 0 && (!exact || ti.typ == emptyStructType):
+	case ti.kind == reflect.Struct && ti.structKind == structEmpty && ti.size == 0 && (!exact || ti.typ == emptyStructType):
 		b.byte(typeEmptyStruct)
 	default:
 		Failf("type %q is not known", ti.typ)

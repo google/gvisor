@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
@@ -715,5 +716,353 @@ func TestGraphDecodeValueIntegerOverflow(t *testing.T) {
 		} else if got := rv.Elem().Interface(); got != tc.want {
 			t.Errorf("loadGraph(%T) = %v, want %v", tc.want, got, tc.want)
 		}
+	}
+}
+
+// mapDirectHookVal is a 1-pointer struct (ti.direct == true) whose single
+// pointer word is populated and mutated via LoadValue and AfterLoad hooks.
+type mapDirectHookVal struct {
+	p *int
+}
+
+func (*mapDirectHookVal) StateTypeName() string { return "state.mapDirectHookVal" }
+func (*mapDirectHookVal) StateFields() []string { return []string{"p"} }
+func (x *mapDirectHookVal) StateSave(s Sink) {
+	s.SaveValue(0, x.p)
+}
+func (x *mapDirectHookVal) StateLoad(_ context.Context, s Source) {
+	s.LoadValue(0, new(*int), func(y any) {
+		x.p = y.(*int)
+	})
+	s.AfterLoad(func() {
+		v := *x.p + 100
+		x.p = &v
+	})
+}
+
+type mapDirectHookNode struct {
+	anyVal any
+	arrVal [1]any
+	toAny  any
+	toArr  [1]any
+}
+
+func (*mapDirectHookNode) StateTypeName() string { return "state.mapDirectHookNode" }
+func (*mapDirectHookNode) StateFields() []string {
+	return []string{"anyVal", "arrVal", "toAny", "toArr"}
+}
+func (x *mapDirectHookNode) StateSave(s Sink) {
+	s.Save(0, &x.anyVal)
+	s.SaveValue(1, x.arrVal)
+	s.Save(2, &x.toAny)
+	s.SaveValue(3, x.toArr)
+}
+func (x *mapDirectHookNode) StateLoad(_ context.Context, s Source) {
+	s.LoadValue(0, new(any), func(y any) { x.anyVal = y })
+	s.LoadValue(1, new([1]any), func(y any) { x.arrVal = y.([1]any) })
+	s.LoadValueTo(2, new(any), x)
+	s.LoadValueTo(3, new([1]any), x)
+}
+func (x *mapDirectHookNode) StateLoadValue(_ context.Context, slot int, v any) {
+	switch slot {
+	case 2:
+		x.toAny = v
+	case 3:
+		x.toArr = v.([1]any)
+	}
+}
+
+type mapDirectHookRoot struct {
+	shared int
+	dep    *int
+	valA   map[uint8]any
+	valB   map[uint8]any
+	keyMap map[any]int
+	rootLV mapDirectHookNode
+	child  *mapDirectHookNode
+}
+
+func (*mapDirectHookRoot) StateTypeName() string { return "state.mapDirectHookRoot" }
+func (*mapDirectHookRoot) StateFields() []string {
+	return []string{"shared", "dep", "valA", "valB", "keyMap", "rootLV", "child"}
+}
+func (x *mapDirectHookRoot) StateSave(s Sink) {
+	s.Save(0, &x.shared)
+	s.Save(1, &x.dep)
+	s.Save(2, &x.valA)
+	s.Save(3, &x.valB)
+	s.Save(4, &x.keyMap)
+	s.Save(5, &x.rootLV)
+	s.Save(6, &x.child)
+}
+func (x *mapDirectHookRoot) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &x.shared)
+	s.Load(1, &x.dep)
+	s.Load(2, &x.valA)
+	s.Load(3, &x.valB)
+	s.Load(4, &x.keyMap)
+	s.Load(5, &x.rootLV)
+	s.Load(6, &x.child)
+}
+
+var registerMapDirectHookTypes = sync.OnceFunc(func() {
+	Register((*mapDirectHookVal)(nil))
+	Register((*mapDirectHookNode)(nil))
+	Register((*mapDirectHookRoot)(nil))
+	fingerprint.Store(0)
+})
+
+func TestGraphDecodeMapAndLoadValueDirectStructWithHooks(t *testing.T) {
+	registerMapDirectHookTypes()
+	if !typeInfoOf(reflect.TypeFor[mapDirectHookVal]()).direct {
+		t.Fatalf("mapDirectHookVal must be a direct-interface 1-pointer struct")
+	}
+
+	dep := 7
+	saved := mapDirectHookRoot{
+		shared: 3,
+	}
+	saved.dep = &dep
+	saved.valA = map[uint8]any{
+		1: mapDirectHookVal{p: &dep},
+		2: mapDirectHookVal{p: &saved.shared},
+	}
+	saved.valB = map[uint8]any{
+		9: mapDirectHookVal{p: &dep},
+	}
+	saved.keyMap = map[any]int{
+		mapDirectHookVal{p: &dep}: 55,
+	}
+	saved.rootLV = mapDirectHookNode{
+		anyVal: mapDirectHookVal{p: &saved.shared},
+		arrVal: [1]any{mapDirectHookVal{p: &dep}},
+		toAny:  mapDirectHookVal{p: &dep},
+		toArr:  [1]any{mapDirectHookVal{p: &saved.shared}},
+	}
+	saved.child = &mapDirectHookNode{
+		anyVal: mapDirectHookVal{p: &dep},
+		arrVal: [1]any{mapDirectHookVal{p: &dep}},
+		toAny:  mapDirectHookVal{p: &saved.shared},
+		toArr:  [1]any{mapDirectHookVal{p: &dep}},
+	}
+
+	var buf bytes.Buffer
+	if _, err := saveGraph(t.Context(), &buf, &saved); err != nil {
+		t.Fatalf("saveGraph: %v", err)
+	}
+	allBytes := buf.Bytes()
+	wr := wire.Reader{Reader: bytes.NewReader(allBytes)}
+	hdr, err := ReadHeaderMode(&wr)
+	if err != nil {
+		t.Fatalf("ReadHeaderMode: %v", err)
+	}
+	raw := allBytes[len(allBytes)-int(hdr.Length):]
+
+	// PrintGraph sets noCallbacks=true and must still print all map entries cleanly.
+	var printed strings.Builder
+	if err := PrintGraph(&printed, raw, 0, false); err != nil {
+		t.Fatalf("PrintGraph: %v", err)
+	}
+	if out := printed.String(); !strings.Contains(out, "state.mapDirectHookVal") || !strings.Contains(out, "55") {
+		t.Fatalf("PrintGraph missing expected entries:\n%s", out)
+	}
+
+	var loaded mapDirectHookRoot
+	if _, err := loadGraph(t.Context(), bytes.NewReader(raw), &loaded, hdr.Length, 0); err != nil {
+		t.Fatalf("loadGraph: %v", err)
+	}
+
+	checkVal := func(desc string, v any, want int) {
+		t.Helper()
+		hv, ok := v.(mapDirectHookVal)
+		if !ok || hv.p == nil || *hv.p != want {
+			var got any = hv
+			if ok && hv.p != nil {
+				got = *hv.p
+			}
+			t.Errorf("%s = %#v (%v), want *p == %d", desc, v, got, want)
+		}
+	}
+	checkVal("valA[1]", loaded.valA[1], 107)
+	checkVal("valA[2]", loaded.valA[2], 103)
+	checkVal("valB[9]", loaded.valB[9], 107)
+	if len(loaded.keyMap) != 1 {
+		t.Fatalf("len(keyMap) = %d, want 1", len(loaded.keyMap))
+	}
+	for k, v := range loaded.keyMap {
+		checkVal("keyMap key", k, 107)
+		if v != 55 {
+			t.Errorf("keyMap value = %d, want 55", v)
+		}
+	}
+	checkVal("rootLV.anyVal", loaded.rootLV.anyVal, 103)
+	checkVal("rootLV.arrVal[0]", loaded.rootLV.arrVal[0], 107)
+	checkVal("rootLV.toAny", loaded.rootLV.toAny, 107)
+	checkVal("rootLV.toArr[0]", loaded.rootLV.toArr[0], 103)
+	checkVal("child.anyVal", loaded.child.anyVal, 107)
+	checkVal("child.arrVal[0]", loaded.child.arrVal[0], 107)
+	checkVal("child.toAny", loaded.child.toAny, 103)
+	checkVal("child.toArr[0]", loaded.child.toArr[0], 107)
+}
+
+// mapSyncHookKey is registered via RegisterStruct (ti.hooks == true) while
+// StateLoad schedules no deferred callbacks.
+type mapSyncHookKey struct {
+	id int
+}
+
+func (*mapSyncHookKey) StateTypeName() string { return "state.mapSyncHookKey" }
+func (*mapSyncHookKey) StateFields() []string { return []string{"id"} }
+func (k *mapSyncHookKey) StateSave(s Sink)    { s.Save(0, &k.id) }
+func (k *mapSyncHookKey) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &k.id)
+}
+
+// mapScalarLoadVal loads a scalar value via StateLoadValue synchronously during
+// decodeValue without queuing deferred callbacks.
+type mapScalarLoadVal struct {
+	v int
+}
+
+func (*mapScalarLoadVal) StateTypeName() string { return "state.mapScalarLoadVal" }
+func (*mapScalarLoadVal) StateFields() []string { return []string{"v"} }
+func (x *mapScalarLoadVal) StateSave(s Sink)    { s.SaveValue(0, int64(x.v)) }
+func (x *mapScalarLoadVal) StateLoad(_ context.Context, s Source) {
+	s.LoadValueTo(0, new(int64), x)
+}
+func (x *mapScalarLoadVal) StateLoadValue(_ context.Context, _ int, v any) {
+	x.v = int(v.(int64))
+}
+
+type mapSyncHookChild struct {
+	parent        *mapSyncHookOwner
+	sawParentKeys int
+}
+
+func (*mapSyncHookChild) StateTypeName() string { return "state.mapSyncHookChild" }
+func (*mapSyncHookChild) StateFields() []string { return []string{"parent"} }
+func (c *mapSyncHookChild) StateSave(s Sink)    { s.Save(0, &c.parent) }
+func (c *mapSyncHookChild) StateLoad(_ context.Context, s Source) {
+	s.LoadWait(0, &c.parent)
+	s.AfterLoad(func() {
+		c.sawParentKeys = len(c.parent.byBeforeSave)
+	})
+}
+
+type mapSyncHookOwner struct {
+	byTime       map[string]time.Time
+	byBeforeSave map[mapSyncHookKey]*mapSyncHookChild
+	byScalarLV   map[int]mapScalarLoadVal
+
+	afterTimeLen   int
+	afterBeforeLen int
+	afterScalarVal int
+}
+
+func (*mapSyncHookOwner) StateTypeName() string { return "state.mapSyncHookOwner" }
+func (*mapSyncHookOwner) StateFields() []string {
+	return []string{"byTime", "byBeforeSave", "byScalarLV"}
+}
+func (o *mapSyncHookOwner) StateSave(s Sink) {
+	s.Save(0, &o.byTime)
+	s.Save(1, &o.byBeforeSave)
+	s.Save(2, &o.byScalarLV)
+}
+func (o *mapSyncHookOwner) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &o.byTime)
+	s.Load(1, &o.byBeforeSave)
+	s.Load(2, &o.byScalarLV)
+	s.AfterLoad(func() {
+		o.afterTimeLen = len(o.byTime)
+		o.afterBeforeLen = len(o.byBeforeSave)
+		o.afterScalarVal = o.byScalarLV[1].v
+	})
+}
+
+type mapSyncHookRoot struct {
+	owner *mapSyncHookOwner
+}
+
+func (*mapSyncHookRoot) StateTypeName() string { return "state.mapSyncHookRoot" }
+func (*mapSyncHookRoot) StateFields() []string { return []string{"owner"} }
+func (r *mapSyncHookRoot) StateSave(s Sink)    { s.Save(0, &r.owner) }
+func (r *mapSyncHookRoot) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &r.owner)
+}
+
+var registerMapSyncHookTypes = sync.OnceFunc(func() {
+	RegisterStruct((*mapSyncHookKey)(nil))
+	RegisterStruct((*mapScalarLoadVal)(nil))
+	RegisterStruct((*mapSyncHookChild)(nil))
+	RegisterStruct((*mapSyncHookOwner)(nil))
+	RegisterNoHooks((*mapSyncHookRoot)(nil))
+	fingerprint.Store(0)
+})
+
+func TestGraphDecodeMapPopulatedBeforeCallbacks(t *testing.T) {
+	registerMapSyncHookTypes()
+
+	ts := time.Date(2026, time.March, 15, 12, 30, 0, 0, time.UTC)
+	prev := GraphEngineEnabled()
+	defer EnableGraphEngine(prev)
+
+	for _, tc := range []struct {
+		name  string
+		graph bool
+	}{
+		{name: "wire", graph: false},
+		{name: "graph", graph: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			EnableGraphEngine(tc.graph)
+			owner := &mapSyncHookOwner{
+				byTime: map[string]time.Time{
+					"a": ts,
+					"b": ts.Add(time.Hour),
+				},
+				byBeforeSave: make(map[mapSyncHookKey]*mapSyncHookChild),
+				byScalarLV: map[int]mapScalarLoadVal{
+					1: {v: 77},
+					2: {v: 88},
+				},
+			}
+			c1 := &mapSyncHookChild{parent: owner}
+			c2 := &mapSyncHookChild{parent: owner}
+			owner.byBeforeSave[mapSyncHookKey{id: 10}] = c1
+			owner.byBeforeSave[mapSyncHookKey{id: 20}] = c2
+			saved := mapSyncHookRoot{owner: owner}
+
+			var buf bytes.Buffer
+			if _, err := Save(t.Context(), &buf, &saved); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+
+			var loaded mapSyncHookRoot
+			if _, err := Load(t.Context(), &buf, &loaded); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+
+			got := loaded.owner
+			if got.afterTimeLen != 2 {
+				t.Errorf("owner.AfterLoad len(byTime) = %d, want 2", got.afterTimeLen)
+			}
+			if got.afterBeforeLen != 2 {
+				t.Errorf("owner.AfterLoad len(byBeforeSave) = %d, want 2", got.afterBeforeLen)
+			}
+			if got.afterScalarVal != 77 {
+				t.Errorf("owner.AfterLoad byScalarLV[1].v = %d, want 77", got.afterScalarVal)
+			}
+			for k, child := range got.byBeforeSave {
+				if child.sawParentKeys != 2 {
+					t.Errorf("child(%v).AfterLoad sawParentKeys = %d, want 2", k, child.sawParentKeys)
+				}
+			}
+			if !got.byTime["a"].Equal(ts) || !got.byTime["b"].Equal(ts.Add(time.Hour)) {
+				t.Errorf("byTime = %v, want a=%v b=%v", got.byTime, ts, ts.Add(time.Hour))
+			}
+			if got.byScalarLV[1].v != 77 || got.byScalarLV[2].v != 88 {
+				t.Errorf("byScalarLV = %v, want 1:77 2:88", got.byScalarLV)
+			}
+		})
 	}
 }

@@ -314,9 +314,9 @@ type graphEncodeState struct {
 }
 
 // graphDummyAddr returns the runtime address of zero-sized allocations.
-var graphDummyAddr = sync.OnceValue(func() uintptr {
-	return reflect.ValueOf(new(struct{})).Pointer()
-})
+func graphDummyAddr() uintptr {
+	return uintptr(zeroSizedPtr())
+}
 
 // graphEncodeStatePool holds encodeStates for reuse, which avoids growing their
 // buffers and maps for each Save.

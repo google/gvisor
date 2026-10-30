@@ -106,6 +106,8 @@ type graphDecodeState struct {
 	// hooks counts the runs of code that may retain the addresses of
 	// decoded values: callbacks, and the methods of structs with hooks.
 	hooks uint64
+	// deferred counts callbacks queued for post-decode execution.
+	deferred uint64
 	// refs counts object references resolved so far.
 	refs uint64
 
@@ -417,6 +419,7 @@ func (cb *decodeCallback) user() bool {
 func (ds *graphDecodeState) appendCallback(head, tail *int32, cb decodeCallback) {
 	if cb.waiter < 0 {
 		ds.hooks++
+		ds.deferred++
 	}
 	cb.next = -1
 	ds.cbs = append(ds.cbs, cb)

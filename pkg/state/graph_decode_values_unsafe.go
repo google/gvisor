@@ -439,8 +439,8 @@ func (ds *graphDecodeState) decodeInterface(ti *typeInfo, p unsafe.Pointer) {
 }
 
 // decodeDynamic decodes a value of type ti, and returns the data word of
-// interfaces holding it (plus deferred word storage if hooks ran on a direct
-// non-pointer value).
+// interfaces holding it (plus deferred word storage if decoding a direct
+// non-pointer value queued callbacks).
 func (ds *graphDecodeState) decodeDynamic(ti *typeInfo) (unsafe.Pointer, *unsafe.Pointer) {
 	if !ti.direct {
 		q := reflect.New(ti.typ).UnsafePointer()
@@ -459,10 +459,10 @@ func (ds *graphDecodeState) decodeDynamic(ti *typeInfo) (unsafe.Pointer, *unsafe
 		}
 		return nil, nil
 	default:
-		hooks := ds.hooks
+		deferred := ds.deferred
 		w := new(unsafe.Pointer)
 		ds.decodeValue(ti, unsafe.Pointer(w))
-		if ds.hooks == hooks {
+		if ds.noCallbacks || ds.deferred == deferred {
 			return *w, nil
 		}
 		return *w, w
@@ -527,7 +527,7 @@ func (ds *graphDecodeState) decodeMap(ti *typeInfo, m unsafe.Pointer, n int) {
 				e.SetZero()
 			}
 		}
-		hooks := ds.hooks
+		hooks, deferred := ds.hooks, ds.deferred
 		ds.lastRef = -1
 		ds.decodeValue(kt, kp)
 		if ds.lastRef >= 0 {
@@ -538,10 +538,24 @@ func (ds *graphDecodeState) decodeMap(ti *typeInfo, m unsafe.Pointer, n int) {
 		if ds.lastRef >= 0 {
 			ds.wait(ds.cur, ds.lastRef, decodeCallback{waiter: -1})
 		}
-		mv.SetMapIndex(k, e)
+		if !ds.noCallbacks && ds.deferred != deferred {
+			ds.deferMapSetIndex(ti.typ, m, k, e)
+		} else {
+			mv.SetMapIndex(k, e)
+		}
 		fresh = ds.hooks != hooks
 	}
 	ds.lastRef = -1
+}
+
+// deferMapSetIndex inserts (k, e) into m once queued callbacks on ds.cur have
+// finalized k and e.
+func (ds *graphDecodeState) deferMapSetIndex(mapTyp reflect.Type, m unsafe.Pointer, k, e reflect.Value) {
+	mv := reflect.NewAt(mapTyp, unsafe.Pointer(&m)).Elem()
+	ds.addCallback(ds.cur, decodeCallback{
+		fn:     func() { mv.SetMapIndex(k, e) },
+		waiter: -1,
+	})
 }
 
 // graphStructDecoder decodes the fields of a struct.

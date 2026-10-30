@@ -199,6 +199,9 @@ type sliceEntry struct {
 
 // String returns a table representation of the stats.
 func (s *Stats) String() string {
+	if s == nil {
+		return ""
+	}
 	if s.graph.used {
 		return s.graph.String()
 	}
@@ -238,7 +241,9 @@ func (s *Stats) String() string {
 			se.entry.total, se.entry.count, per, se.name)
 	}
 	buf.WriteString("-----------------+----------+------------------+----------------\n")
-	fmt.Fprintf(&buf, "% 16s | % 8d | % 16s | [all]",
-		total, count, total/time.Duration(count))
+	if count > 0 {
+		fmt.Fprintf(&buf, "% 16s | % 8d | % 16s | [all]",
+			total, count, total/time.Duration(count))
+	}
 	return buf.String()
 }
