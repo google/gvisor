@@ -195,6 +195,10 @@ The project maintains the following channels:
     purpose user list, used for announcements and meeting invitations.
 *   [gvisor-dev](mailto:gvisor-dev@googlegroups.com): public, general purpose
     development list. Maintainer nominations and votes are held here.
+*   [#gvisor](https://cloud-native.slack.com/archives/C0CCKLKSN31): public Slack
+    channel in the CNCF workspace, for user questions and general discussion.
+*   [#gvisor-dev](https://cloud-native.slack.com/archives/C0CCZ4S4V62): public
+    Slack channel in the CNCF workspace, for development discussion.
 *   [GitHub issues](https://github.com/google/gvisor/issues): public bug reports
     and feature requests.
 *   [gvisor-security](mailto:gvisor-security@googlegroups.com): **private**
@@ -211,6 +215,10 @@ The project maintains the following channels:
     may contain undisclosed vulnerabilities. Access is not limited to
     maintainers, but will be granted to those who can credibly contribute to
     fixes.
+
+Before you can join the Slack channels, get an invitation to the CNCF Slack
+workspace from the self-service page at [slack.cncf.io](https://slack.cncf.io/),
+and accept it in your email.
 
 ## Code of Conduct
 

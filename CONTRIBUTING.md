@@ -2,6 +2,11 @@
 
 Want to contribute? Great! First, read this page.
 
+For questions about development, use the [#gvisor-dev][slack-gvisor-dev] channel
+in the CNCF Slack workspace. Before you can join the channel, get an invitation
+from the self-service page at [slack.cncf.io][cncf-slack-invite] and accept it
+in your email.
+
 ## Contributor License Agreement
 
 Contributions to this project must be accompanied by a Contributor License
@@ -228,6 +233,8 @@ one above, the
 [gcla]: https://cla.developers.google.com/about/google-individual
 [gccla]: https://cla.developers.google.com/about/google-corporate
 [github]: https://github.com/google/gvisor/compare
+[cncf-slack-invite]: https://slack.cncf.io/
+[slack-gvisor-dev]: https://cloud-native.slack.com/archives/C0CCZ4S4V62
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [go]: https://go.dev/doc/install
 [bazelisk]: https://github.com/bazelbuild/bazelisk

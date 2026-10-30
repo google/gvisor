@@ -6,6 +6,9 @@ contact_links:
   - name: gVisor Documentation (Debugging)
     url: https://gvisor.dev/docs/user_guide/debugging/
     about: Please see our documentation for debugging tips.
+  - name: gVisor Slack (#gvisor on CNCF Slack)
+    url: https://cloud-native.slack.com/archives/C0CCKLKSN31
+    about: Ask questions and chat with the community. First get and accept an invitation to the CNCF Slack workspace at https://slack.cncf.io/, then join the channel.
   - name: gVisor User Forum
     url: https://groups.google.com/g/gvisor-users
     about: Ask and answer general questions here.
