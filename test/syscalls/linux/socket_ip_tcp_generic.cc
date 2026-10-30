@@ -452,6 +452,70 @@ TEST_P(TCPSocketPairTest, TCPCork) {
             absl::string_view(buf, sizeof(kData)));
 }
 
+namespace {
+
+void CheckCorkedFIN(const SocketPairKind& kind, bool close_sender) {
+  const DisableSave ds;
+  constexpr char kByte = 'x';
+  constexpr int kAttempts = 3;
+  int expired_before_fin = 0;
+  int ties = 0;
+  for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    auto control = ASSERT_NO_ERRNO_AND_VALUE(kind.Create());
+    auto sender = ASSERT_NO_ERRNO_AND_VALUE(kind.Create());
+    for (int fd : {control->first_fd(), sender->first_fd()}) {
+      ASSERT_THAT(setsockopt(fd, IPPROTO_TCP, TCP_CORK, &kSockOptOn,
+                             sizeof(kSockOptOn)),
+                  SyscallSucceeds());
+      ASSERT_THAT(WriteFd(fd, &kByte, 1), SyscallSucceedsWithValue(1));
+    }
+
+    // The control was corked first. Its timeout tells us whether the test
+    // process was scheduled in time to distinguish the FIN from auto-flush.
+    struct pollfd peers[] = {{control->second_fd(), POLLIN, 0},
+                             {sender->second_fd(), POLLIN, 0}};
+    int ready = RetryEINTR(poll)(peers, 2, 0);
+    ASSERT_THAT(ready, SyscallSucceeds());
+    if (ready != 0) {
+      ++expired_before_fin;
+      continue;
+    }
+    if (close_sender) {
+      ASSERT_THAT(close(sender->release_first_fd()), SyscallSucceeds());
+    } else {
+      ASSERT_THAT(shutdown(sender->first_fd(), SHUT_WR), SyscallSucceeds());
+    }
+    ready = RetryEINTR(poll)(peers, 2, kPositiveTimeoutMs);
+    ASSERT_THAT(ready, SyscallSucceeds());
+    ASSERT_GT(ready, 0) << "Neither receiver became readable";
+    if (peers[0].revents != 0) {
+      ties += (peers[1].revents != 0);
+      continue;
+    }
+    ASSERT_NE(peers[1].revents & POLLIN, 0);
+    char received = 0;
+    ASSERT_THAT(ReadFd(sender->second_fd(), &received, 1),
+                SyscallSucceedsWithValue(1));
+    EXPECT_EQ(received, kByte);
+    ASSERT_THAT(ReadFd(sender->second_fd(), &received, 1),
+                SyscallSucceedsWithValue(0));
+    return;
+  }
+  FAIL() << "FIN never flushed before the older cork: "
+         << (kAttempts - expired_before_fin - ties) << " control first, "
+         << ties << " tied, " << expired_before_fin << " expired before FIN";
+}
+
+}  // namespace
+
+TEST_P(TCPSocketPairTest, TCPCorkFlushOnClose) {
+  CheckCorkedFIN(GetParam(), /*close_sender=*/true);
+}
+
+TEST_P(TCPSocketPairTest, TCPCorkFlushOnShutdown) {
+  CheckCorkedFIN(GetParam(), /*close_sender=*/false);
+}
+
 TEST_P(TCPSocketPairTest, TCPQuickAckDefault) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
