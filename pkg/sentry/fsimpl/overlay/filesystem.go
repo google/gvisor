@@ -1669,12 +1669,31 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 	// Changes to d's attributes are serialized by d.copyMu.
 	d.copyMu.Lock()
 	defer d.copyMu.Unlock()
-	if err := d.fs.vfsfs.VirtualFilesystem().SetStatAt(ctx, d.fs.creds, &vfs.PathOperation{
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	upperPop := vfs.PathOperation{
 		Root:  d.upperVD,
 		Start: d.upperVD,
-	}, &opts); err != nil {
+	}
+	if err := vfsObj.SetStatAt(ctx, d.fs.creds, &upperPop, &opts); err != nil {
 		return err
 	}
+
+	// Changing owners or truncating may clear one or both of the setuid and
+	// setgid bits, so we may have to update opts before setting d.mode.
+	hadSetid := d.mode.Load()&(linux.S_ISUID|linux.S_ISGID) != 0
+	setsMode := opts.Stat.Mask&linux.STATX_MODE != 0
+	mayClearSetid := opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID|linux.STATX_SIZE) != 0
+	if (hadSetid || setsMode) && mayClearSetid {
+		stat, err := vfsObj.StatAt(ctx, d.fs.creds, &upperPop, &vfs.StatOptions{
+			Mask: linux.STATX_MODE,
+		})
+		if err != nil {
+			return err
+		}
+		opts.Stat.Mode = stat.Mode
+		opts.Stat.Mask |= linux.STATX_MODE
+	}
+
 	d.updateAfterSetStatLocked(&opts)
 	return nil
 }

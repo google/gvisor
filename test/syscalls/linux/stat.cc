@@ -629,6 +629,32 @@ TEST_F(StatTest, LstatELOOPPath) {
   ASSERT_THAT(lstat(path.c_str(), &s), SyscallFailsWithErrno(ELOOP));
 }
 
+TEST_F(StatTest, ChownClearsSetuidWithOpenFD) {
+  ASSERT_THAT(fchmod(test_file_fd_.get(), S_ISUID | 0755), SyscallSucceeds());
+  struct stat st;
+  ASSERT_THAT(fstat(test_file_fd_.get(), &st), SyscallSucceeds());
+  ASSERT_EQ(st.st_mode & 07777, S_ISUID | 0755);
+
+  // Even a chown(2) to the current owner clears the setuid bit.
+  ASSERT_THAT(chown(test_file_name_.c_str(), st.st_uid, st.st_gid),
+              SyscallSucceeds());
+
+  ASSERT_THAT(stat(test_file_name_.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode & 07777, 0755);
+}
+
+TEST_F(StatTest, TruncateClearsSetuidWithOpenFD) {
+  // truncate(2) leaves the setuid bit alone for callers with CAP_FSETID.
+  AutoCapability cap(CAP_FSETID, false);
+  ASSERT_THAT(fchmod(test_file_fd_.get(), S_ISUID | 0755), SyscallSucceeds());
+
+  ASSERT_THAT(truncate(test_file_name_.c_str(), 1), SyscallSucceeds());
+
+  struct stat st;
+  ASSERT_THAT(stat(test_file_name_.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode & 07777, 0755);
+}
+
 TEST(SimpleStatTest, DifferentFilesHaveDifferentDeviceInodeNumberPairs) {
   TempPath file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   TempPath file2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
