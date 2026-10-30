@@ -476,7 +476,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 		return err
 	}
 	// Configure the network.
-	if err := setupNetwork(conn, pid, conf, disableIPv6, false); err != nil {
+	if err := setupNetwork(conn, pid, conf, disableIPv6, specutils.RDMAEnabled(spec, conf), false); err != nil {
 		return fmt.Errorf("setting up network: %w", err)
 	}
 
@@ -664,7 +664,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		}
 		// Scrape the host network to get the network config and store it in the
 		// loader. The kernel will restore loaded network stack with this config.
-		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6, true); err != nil {
+		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6, specutils.RDMAEnabled(spec, conf), true); err != nil {
 			return fmt.Errorf("setting up network: %w", err)
 		}
 	} else {

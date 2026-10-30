@@ -17,6 +17,7 @@ package sandbox
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 )
@@ -325,7 +327,7 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, false)
+	args, err := collectLinksAndRoutes(conf, false, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
@@ -383,6 +385,80 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 	}
 }
 
+func TestCollectLinksAndRoutes_RDMAExclusion(t *testing.T) {
+	requireRoot(t)
+	setupTestNamespace(t)
+
+	interfaces := []struct {
+		name string
+		ipv4 string
+		ipv6 string
+	}{
+		{"testveth0", "192.0.2.1/24", "2001:db8:1::1/64"},
+		{"rdmatest0", "198.51.100.1/24", "2001:db8:2::1/64"},
+	}
+	for _, iface := range interfaces {
+		link := createVethPair(t, iface.name)
+		if err := netlink.LinkSetUp(link); err != nil {
+			t.Fatalf("bringing up %s: %v", iface.name, err)
+		}
+		for _, cidr := range []string{iface.ipv4, iface.ipv6} {
+			addr, err := netlink.ParseAddr(cidr)
+			if err != nil {
+				t.Fatalf("parsing %s: %v", cidr, err)
+			}
+			addr.Flags = unix.IFA_F_NODAD
+			if err := netlink.AddrAdd(link, addr); err != nil {
+				t.Fatalf("adding %s to %s: %v", cidr, iface.name, err)
+			}
+		}
+	}
+
+	rdmaDevice := fmt.Sprintf("rxe_%x", time.Now().UnixNano())
+	if err := netlink.RdmaLinkAdd(rdmaDevice, "rxe", "rdmatest0"); err != nil {
+		if errors.Is(err, unix.EPROTONOSUPPORT) || errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENOENT) {
+			t.Skipf("RXE is unavailable: %v", err)
+		}
+		if errors.Is(err, unix.EINVAL) {
+			if _, statErr := os.Stat("/sys/module/rdma_rxe"); os.IsNotExist(statErr) {
+				t.Skipf("RXE is unavailable: %v", err)
+			}
+		}
+		t.Fatalf("creating RXE device: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := netlink.RdmaLinkDel(rdmaDevice); err != nil {
+			t.Errorf("deleting RXE device: %v", err)
+		}
+	})
+
+	rdmaLinks, err := rdmaNetdevs()
+	if err != nil {
+		t.Fatalf("discovering RDMA interfaces: %v", err)
+	}
+	if !rdmaLinks["rdmatest0"] || rdmaLinks["testveth0"] {
+		t.Fatalf("RDMA interfaces = %v, want rdmatest0 and not testveth0", rdmaLinks)
+	}
+
+	// Add default routes through rdmatest0 to check that excluding
+	// the interface also excludes its default routes.
+	for _, gateway := range []string{"198.51.100.254", "2001:db8:2::ffff"} {
+		addRoute(t, nil, net.ParseIP(gateway))
+	}
+	conf := &config.Config{XDP: config.XDP{Mode: config.XDPModeOff}}
+
+	args, err := collectLinksAndRoutes(conf, false, true)
+	if err != nil {
+		t.Fatalf("collecting with RDMA exclusion: %v", err)
+	}
+	if len(args.FDBasedLinks) != 1 || args.FDBasedLinks[0].Name != "testveth0" {
+		t.Errorf("FDBasedLinks = %+v, want only testveth0", args.FDBasedLinks)
+	}
+	if !args.Defaultv4Gateway.Route.Empty() || !args.Defaultv6Gateway.Route.Empty() {
+		t.Errorf("RDMA default routes were included: IPv4=%+v, IPv6=%+v", args.Defaultv4Gateway, args.Defaultv6Gateway)
+	}
+}
+
 func mustParseMAC(s string) net.HardwareAddr {
 	hw, _ := net.ParseMAC(s)
 	return hw
@@ -397,7 +473,7 @@ func TestCollectLinksAndRoutes_LoopbackOnly(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, false)
+	args, err := collectLinksAndRoutes(conf, false, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
@@ -464,7 +540,7 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, false)
+	args, err := collectLinksAndRoutes(conf, false, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
@@ -555,7 +631,7 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, true)
+	args, err := collectLinksAndRoutes(conf, true, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
@@ -619,7 +695,7 @@ func TestCollectLinksAndRoutes_DownInterface(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, false)
+	args, err := collectLinksAndRoutes(conf, false, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
@@ -651,7 +727,7 @@ func TestCollectLinksAndRoutes_NoUsableAddresses(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, true)
+	args, err := collectLinksAndRoutes(conf, true, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
@@ -697,7 +773,7 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 		XDP: config.XDP{Mode: config.XDPModeOff},
 	}
 
-	args, err := collectLinksAndRoutes(conf, false)
+	args, err := collectLinksAndRoutes(conf, false, false)
 	if err != nil {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
