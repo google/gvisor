@@ -62,7 +62,8 @@ type DeviceFD struct {
 	// mu protects all the queues, maps, buffers and cursors and nextOpID.
 	mu sync.Mutex `state:"nosave"`
 
-	// conn is the FUSE connection that this FD is being used for.
+	// conn is set by mount or clone and stays attached until Release, even
+	// after the connection is aborted.
 	//
 	// +checklocks:mu
 	conn *connection
@@ -163,7 +164,7 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (fd *DeviceFD) EventRegister(e *waiter.Entry) error {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	if !fd.connected() {
+	if fd.conn == nil {
 		return linuxerr.EPERM
 	}
 	fd.conn.waitQueue.EventRegister(e)
@@ -174,7 +175,7 @@ func (fd *DeviceFD) EventRegister(e *waiter.Entry) error {
 func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	if !fd.connected() {
+	if fd.conn == nil {
 		return
 	}
 	fd.conn.waitQueue.EventUnregister(e)

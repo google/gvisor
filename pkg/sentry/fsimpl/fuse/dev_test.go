@@ -156,6 +156,57 @@ func TestReuseFd(t *testing.T) {
 	if fs1.conn != fs2.conn {
 		t.Errorf("second fs connection = %v, want = %v", fs2.conn, fs1.conn)
 	}
+
+	// A second mount of the same descriptor still uses its original
+	// connection after abort. Its registered waiters belong to that queue.
+	fs1.conn.Abort(s.Ctx)
+	fs3, err := newTestFilesystem(s, fd, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestFilesystem after abort: %v", err)
+	}
+	defer fs3.Release(s.Ctx)
+	if fs3.conn != fs1.conn {
+		t.Error("mounting an aborted FUSE device replaced its connection")
+	}
+}
+
+func TestEpollAfterAbort(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+	conn, fd, err := newTestConnection(s, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fd.DecRef(s.Ctx)
+	epfd, err := s.VFS.NewEpollInstanceFD(s.Ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		epfd.DecRef(s.Ctx)
+		if !conn.waitQueue.IsEmpty() {
+			t.Error("closing epoll left a waiter on the aborted connection")
+		}
+	}()
+	ep := epfd.Impl().(*vfs.EpollInstance)
+	event := linux.EpollEvent{Events: linux.EPOLLIN | linux.EPOLLONESHOT}
+	const fdNum = 3
+	if err := ep.AddInterest(fd, fdNum, event); err != nil {
+		t.Fatal(err)
+	}
+	conn.Abort(s.Ctx)
+	if err := ep.DeleteInterest(fd, fdNum); err != nil {
+		t.Fatal(err)
+	}
+	if !conn.waitQueue.IsEmpty() {
+		t.Fatal("EPOLL_CTL_DEL left a waiter on the aborted connection")
+	}
+	if err := ep.AddInterest(fd, fdNum, event); err != nil {
+		t.Fatalf("EPOLL_CTL_ADD after abort: %v", err)
+	}
+	if got := ep.ReadEvents(nil, 1); len(got) != 1 || got[0].Events != linux.EPOLLERR {
+		t.Errorf("events after abort = %v, want one EPOLLERR", got)
+	}
 }
 
 // CallTest makes a request to the server and blocks the invoking
