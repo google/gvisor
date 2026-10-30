@@ -567,9 +567,38 @@ func (h *gValueMapHolder) loadM(_ context.Context, v int64) {
 }
 
 // +stateify savable
+type gOverlapIfaceArrayHolder struct {
+	p2 *[2]gIface
+}
+
+// +stateify savable
+type gOverlapIfaceArrayRoot struct {
+	p1     *[2]gIface
+	holder *gOverlapIfaceArrayHolder
+}
+
+// +stateify savable
 type gBytesRoot struct {
 	b   [1]byte
 	arr [3]byte
 	n   int64
 	s   string
+}
+
+// gAliasNamedMap is an unregistered named map type sharing its underlying type
+// with map[string]int64.
+type gAliasNamedMap map[string]int64
+
+// +stateify savable
+type gAliasMapRoot struct {
+	m  map[string]int64
+	nm gAliasNamedMap
+}
+
+// +stateify savable
+type gSliceOfArraysRoot struct {
+	sliceFirst [][2]int64
+	ptrSecond  *[2][2]int64
+	ptrFirst   *[2][2]int64
+	sliceNext  [][2]int64
 }

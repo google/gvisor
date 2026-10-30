@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/pretty"
@@ -461,6 +462,119 @@ func TestRootZeroFields(t *testing.T) {
 	}
 }
 
+func TestSliceOfArraysRoundTrip(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(true)
+	defer state.EnableGraphEngine(prev)
+
+	s1 := [][2]int64{{1, 2}, {3, 4}, {5, 6}}
+	s2 := [][2]int64{{10, 20}, {30, 40}, {50, 60}}
+	saved := &gSliceOfArraysRoot{
+		sliceFirst: s1,
+		ptrSecond:  (*[2][2]int64)(s1[0:2]),
+		ptrFirst:   (*[2][2]int64)(s2[1:3]),
+		sliceNext:  s2,
+	}
+	var buf bytes.Buffer
+	if _, err := state.Save(t.Context(), &buf, saved); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data := buf.Bytes()
+	var out bytes.Buffer
+	if err := pretty.PrintText(&out, bytes.NewReader(data)); err != nil {
+		t.Fatalf("PrintText: %v", err)
+	}
+	var got gSliceOfArraysRoot
+	if _, err := state.Load(t.Context(), bytes.NewReader(data), &got); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got.ptrSecond[1][0] = 99
+	if got.sliceFirst[1][0] != 99 {
+		t.Errorf("ptrSecond does not alias sliceFirst[0:2]: sliceFirst=%v", got.sliceFirst)
+	}
+	got.ptrFirst[0][1] = 88
+	if got.sliceNext[1][1] != 88 {
+		t.Errorf("ptrFirst does not alias sliceNext[1:3]: sliceNext=%v", got.sliceNext)
+	}
+
+	// Slice of arrays of non-pod structs (inlineStruct) where a multi-element
+	// array pointer is encoded (reaching objDone) before the enclosing slice
+	// is discovered in a deeper object.
+	ks := [][2]gKey{
+		{{a: 1, b: "one"}, {a: 2, b: "two"}},
+		{{a: 3, b: "three"}, {a: 4, b: "four"}},
+		{{a: 5, b: "five"}, {a: 6, b: "six"}},
+	}
+	kRoot := &gRoot{
+		any: (*[2][2]gKey)(ks[1:3]),
+		all: []*gNode{{iface: ks}},
+	}
+	buf.Reset()
+	if _, err := state.Save(t.Context(), &buf, kRoot); err != nil {
+		t.Fatalf("Save struct slice-of-arrays: %v", err)
+	}
+	var gotKRoot gRoot
+	if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &gotKRoot); err != nil {
+		t.Fatalf("Load struct slice-of-arrays: %v", err)
+	}
+	gotPtr := gotKRoot.any.(*[2][2]gKey)
+	gotSlice := gotKRoot.all[0].iface.([][2]gKey)
+	gotPtr[0][1] = gKey{a: 42, b: "mutated"}
+	if gotSlice[1][1] != (gKey{a: 42, b: "mutated"}) {
+		t.Errorf("gotPtr does not alias gotSlice[1:3]: gotSlice=%v", gotSlice)
+	}
+
+	// Partially overlapping slices of non-power-of-2-sized [2]gKey elements
+	// where the lower-addressed slice is encoded first.
+	overlapRoot := &gRoot{
+		any: ks[0:2:2],
+		all: []*gNode{{iface: ks[1:3:3]}},
+	}
+	buf.Reset()
+	if _, err := state.Save(t.Context(), &buf, overlapRoot); err != nil {
+		t.Fatalf("Save overlapping slice-of-arrays: %v", err)
+	}
+	var gotOverlap gRoot
+	if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &gotOverlap); err != nil {
+		t.Fatalf("Load overlapping slice-of-arrays: %v", err)
+	}
+	gotLo := gotOverlap.any.([][2]gKey)
+	gotHi := gotOverlap.all[0].iface.([][2]gKey)
+	gotLo[1][0] = gKey{a: 77, b: "shared"}
+	if gotHi[0][0] != (gKey{a: 77, b: "shared"}) {
+		t.Errorf("gotLo[1][0] does not alias gotHi[0][0]: gotHi=%v", gotHi)
+	}
+
+	// Unaligned sub-slice of arrays spanning an outer element boundary,
+	// absorbed by an enclosing slice of the same array element type.
+	flat := [6]gKey{
+		{a: 10, b: "a"}, {a: 20, b: "b"},
+		{a: 30, b: "c"}, {a: 40, b: "d"},
+		{a: 50, b: "e"}, {a: 60, b: "f"},
+	}
+	sInner := unsafe.Slice((*[2]gKey)(unsafe.Pointer(&flat[1])), 1)
+	sOuter := unsafe.Slice((*[2]gKey)(unsafe.Pointer(&flat[0])), 3)
+	uRoot := &gRoot{
+		any: sInner,
+		all: []*gNode{{iface: sOuter}},
+	}
+	buf.Reset()
+	if _, err := state.Save(t.Context(), &buf, uRoot); err != nil {
+		t.Fatalf("Save unaligned slice-of-arrays: %v", err)
+	}
+	var gotURoot gRoot
+	if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &gotURoot); err != nil {
+		t.Fatalf("Load unaligned slice-of-arrays: %v", err)
+	}
+	gotInner := gotURoot.any.([][2]gKey)
+	gotOuter := gotURoot.all[0].iface.([][2]gKey)
+	gotInner[0][0] = gKey{a: 98, b: "aliased-lo"}
+	gotInner[0][1] = gKey{a: 99, b: "aliased-hi"}
+	if gotOuter[0][1] != (gKey{a: 98, b: "aliased-lo"}) || gotOuter[1][0] != (gKey{a: 99, b: "aliased-hi"}) {
+		t.Errorf("gotInner does not alias gotOuter across boundary: gotOuter=%v", gotOuter)
+	}
+}
+
 type gReverseOrderStruct struct {
 	lo gSpliceChild
 	hi gSpliceChild
@@ -737,4 +851,258 @@ func TestAbsorbedSupersededReferencesPruned(t *testing.T) {
 			t.Errorf("unexpected mid: %+v", gotContainer.mid)
 		}
 	})
+}
+
+func TestOverlappingArrayPointersAndSlicesGraph(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(true)
+	defer state.EnableGraphEngine(prev)
+
+	t.Run("ArrayPtrBeforeOverlappingSlice", func(t *testing.T) {
+		ks := [][2]gKey{
+			{{a: 1, b: "one"}, {a: 2, b: "two"}},
+			{{a: 3, b: "three"}, {a: 4, b: "four"}},
+			{{a: 5, b: "five"}, {a: 6, b: "six"}},
+		}
+		root := &gRoot{
+			any: (*[2][2]gKey)(ks[0:2]),
+			all: []*gNode{{iface: ks[1:3:3]}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotPtr := got.any.(*[2][2]gKey)
+		gotSlice := got.all[0].iface.([][2]gKey)
+		gotPtr[1][1] = gKey{a: 99, b: "shared"}
+		if gotSlice[0][1] != (gKey{a: 99, b: "shared"}) {
+			t.Errorf("gotPtr[1][1] does not alias gotSlice[0][1]: gotSlice=%v", gotSlice)
+		}
+	})
+
+	t.Run("SliceBeforeOverlappingArrayPtr", func(t *testing.T) {
+		ks := [][2]gKey{
+			{{a: 1, b: "one"}, {a: 2, b: "two"}},
+			{{a: 3, b: "three"}, {a: 4, b: "four"}},
+			{{a: 5, b: "five"}, {a: 6, b: "six"}},
+		}
+		root := &gRoot{
+			any: ks[1:3:3],
+			all: []*gNode{{iface: (*[2][2]gKey)(ks[0:2])}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotSlice := got.any.([][2]gKey)
+		gotPtr := got.all[0].iface.(*[2][2]gKey)
+		gotSlice[0][0] = gKey{a: 88, b: "shared2"}
+		if gotPtr[1][0] != (gKey{a: 88, b: "shared2"}) {
+			t.Errorf("gotSlice[0][0] does not alias gotPtr[1][0]: gotPtr=%v", gotPtr)
+		}
+	})
+
+	t.Run("TwoOverlappingArrayPointers", func(t *testing.T) {
+		backing := []gSpliceChild{
+			{val: 10, tag: "a"},
+			{val: 20, tag: "b"},
+			{val: 30, tag: "c"},
+		}
+		p1 := (*[2]gSpliceChild)(backing[0:2])
+		p2 := (*[2]gSpliceChild)(backing[1:3])
+		root := &gRoot{
+			any: p1,
+			all: []*gNode{{iface: p2}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		for i := range backing {
+			if backing[i].beforeSaveCalls != 1 {
+				t.Errorf("backing[%d].beforeSaveCalls = %d, want 1", i, backing[i].beforeSaveCalls)
+			}
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotP1 := got.any.(*[2]gSpliceChild)
+		gotP2 := got.all[0].iface.(*[2]gSpliceChild)
+		if &gotP1[1] != &gotP2[0] {
+			t.Fatalf("&gotP1[1] (%p) != &gotP2[0] (%p)", &gotP1[1], &gotP2[0])
+		}
+		if gotP1[0].val != 10 || gotP1[1].val != 20 || gotP2[1].val != 30 {
+			t.Errorf("unexpected values: p1=%+v p2=%+v", gotP1, gotP2)
+		}
+	})
+
+	t.Run("TwoOverlappingInexactInterfaceArrayPointers", func(t *testing.T) {
+		backing := []gIface{
+			&gNode{id: 1},
+			&gNode{id: 2},
+			&gNode{id: 3},
+		}
+		p1 := (*[2]gIface)(backing[0:2])
+		p2 := (*[2]gIface)(backing[1:3])
+		root := &gOverlapIfaceArrayRoot{
+			p1:     p1,
+			holder: &gOverlapIfaceArrayHolder{p2: p2},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var got gOverlapIfaceArrayRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.p1 == nil || got.holder == nil || got.holder.p2 == nil {
+			t.Fatalf("unexpected nil pointers in restored root: %+v", got)
+		}
+		if &got.p1[1] != &got.holder.p2[0] || got.p1[1].gID() != 2 || got.holder.p2[1].gID() != 3 {
+			t.Errorf("unexpected restored interface array pointers: p1=%v p2=%v", got.p1, got.holder.p2)
+		}
+	})
+
+	t.Run("MisalignedNestedArrayPointers", func(t *testing.T) {
+		flat := []gKey{
+			{a: 1, b: "one"},
+			{a: 2, b: "two"},
+			{a: 3, b: "three"},
+			{a: 4, b: "four"},
+			{a: 5, b: "five"},
+		}
+		p1 := (*[2][2]gKey)(unsafe.Slice((*[2]gKey)(unsafe.Pointer(&flat[0])), 2))
+		p2 := (*[2][2]gKey)(unsafe.Slice((*[2]gKey)(unsafe.Pointer(&flat[1])), 2))
+		root := &gRoot{
+			any: p1,
+			all: []*gNode{{iface: p2}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotP1 := got.any.(*[2][2]gKey)
+		gotP2 := got.all[0].iface.(*[2][2]gKey)
+		if &gotP1[0][1] != &gotP2[0][0] || &gotP1[1][1] != &gotP2[1][0] {
+			t.Fatalf("misaligned nested array pointers lost aliasing")
+		}
+		if gotP1[0][0].a != 1 || gotP2[1][1].a != 5 {
+			t.Errorf("unexpected values: p1=%v p2=%v", gotP1, gotP2)
+		}
+	})
+
+	t.Run("CoarseSliceUnusedCapOverlappingFinerArrayPtr", func(t *testing.T) {
+		backing := make([][2]gSpliceChild, 3)
+		backing[0] = [2]gSpliceChild{{val: 10}, {val: 20}}
+		backing[1] = [2]gSpliceChild{{val: 30}, {val: 40}}
+		backing[2] = [2]gSpliceChild{{val: 50}, {val: 60}}
+		s1 := backing[0:1:2] // len=1, cap=2 ([0..4)): flat[2..3] is unused capacity
+		flat := unsafe.Slice(&backing[0][0], 6)
+		p2 := (*[2]gSpliceChild)(flat[3:5]) // [3..5) partially overlaps s1's capacity [0..4), leaving flat[2] uncovered
+		root := &gRoot{
+			any: s1,
+			all: []*gNode{{iface: p2}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		if flat[2].beforeSaveCalls != 0 || flat[5].beforeSaveCalls != 0 {
+			t.Errorf("unused capacity elements ran beforeSave: flat[2]=%d flat[5]=%d, want 0", flat[2].beforeSaveCalls, flat[5].beforeSaveCalls)
+		}
+		for _, idx := range []int{0, 1, 3, 4} {
+			if flat[idx].beforeSaveCalls != 1 {
+				t.Errorf("flat[%d].beforeSaveCalls = %d, want 1", idx, flat[idx].beforeSaveCalls)
+			}
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotS1 := got.any.([][2]gSpliceChild)
+		gotP2 := got.all[0].iface.(*[2]gSpliceChild)
+		gotS1 = gotS1[:2]
+		if &gotS1[1][1] != &gotP2[0] || gotP2[0].val != 40 || gotP2[1].val != 50 {
+			t.Errorf("unexpected restored aliasing: s1=%+v p2=%+v", gotS1, gotP2)
+		}
+	})
+
+	t.Run("CoarseSliceUnusedCapInsideFinerMergedArray", func(t *testing.T) {
+		backing := make([][2]gSpliceChild, 3)
+		backing[0] = [2]gSpliceChild{{val: 10}, {val: 20}}
+		backing[1] = [2]gSpliceChild{{val: 30}, {val: 40}}
+		backing[2] = [2]gSpliceChild{{val: 50}, {val: 60}}
+		flat := unsafe.Slice(&backing[0][0], 6)
+		// Discover finer array [0..6) first via flat[0:1:6], then visit
+		// coarser slice backing[0:1:3] whose unused capacity spans flat[2..5].
+		finer := flat[0:1:6]
+		coarser := backing[0:1:3]
+		root := &gRoot{
+			any: finer,
+			all: []*gNode{{iface: coarser}},
+		}
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, root); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		for _, idx := range []int{2, 3, 4, 5} {
+			if flat[idx].beforeSaveCalls != 0 {
+				t.Errorf("unused capacity flat[%d].beforeSaveCalls = %d, want 0", idx, flat[idx].beforeSaveCalls)
+			}
+		}
+		for _, idx := range []int{0, 1} {
+			if flat[idx].beforeSaveCalls != 1 {
+				t.Errorf("live flat[%d].beforeSaveCalls = %d, want 1", idx, flat[idx].beforeSaveCalls)
+			}
+		}
+		var got gRoot
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		gotFiner := got.any.([]gSpliceChild)
+		gotCoarser := got.all[0].iface.([][2]gSpliceChild)
+		if &gotFiner[0] != &gotCoarser[0][0] || gotCoarser[0][1].val != 20 {
+			t.Errorf("unexpected restored aliasing: finer=%+v coarser=%+v", gotFiner, gotCoarser)
+		}
+	})
+}
+
+func TestMapAliasedThroughNamedType(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(true)
+	defer state.EnableGraphEngine(prev)
+
+	m := map[string]int64{"x": 1}
+	saved := &gAliasMapRoot{m: m, nm: m}
+	var buf bytes.Buffer
+	if _, err := state.Save(t.Context(), &buf, saved); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data := buf.Bytes()
+	var out bytes.Buffer
+	if err := pretty.PrintText(&out, bytes.NewReader(data)); err != nil {
+		t.Fatalf("PrintText: %v", err)
+	}
+	var got gAliasMapRoot
+	if _, err := state.Load(t.Context(), bytes.NewReader(data), &got); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got.m["y"] = 2
+	if got.nm["x"] != 1 || got.nm["y"] != 2 {
+		t.Errorf("map not shared after load: m=%v nm=%v", got.m, got.nm)
+	}
 }
