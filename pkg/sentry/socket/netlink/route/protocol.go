@@ -301,8 +301,7 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 	// RTM_GETADDR dump requests need not contain anything more than the
 	// netlink header and 1 byte protocol family common to all
 	// NETLINK_ROUTE requests.
-	//
-	// TODO(b/68878065): Filter output by passed protocol family.
+	family := dumpFamily(msg)
 
 	// The RTM_GETADDR dump response is a set of RTM_NEWADDR messages each
 	// containing an InterfaceAddrMessage followed by a set of netlink
@@ -322,6 +321,9 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 	for _, id := range stack.InterfaceIDs() {
 		iface := interfaces[id]
 		for _, a := range ifAddrs[id] {
+			if family != linux.AF_UNSPEC && a.Family != family {
+				continue
+			}
 			p.AddAddrMessage(ms, linux.RTM_NEWADDR, id, iface, a)
 		}
 	}
@@ -510,6 +512,15 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 	if hdr.Flags&(linux.NLM_F_DUMP|linux.NLM_F_ROOT) != 0 {
 		// We always send back an NLMSG_DONE.
 		ms.Multi = true
+		if family := dumpFamily(msg); family != linux.AF_UNSPEC {
+			var familyRoutes []inet.Route
+			for _, rt := range routeTables {
+				if rt.Family == family {
+					familyRoutes = append(familyRoutes, rt)
+				}
+			}
+			routeTables = familyRoutes
+		}
 	} else if hdr.Flags&linux.NLM_F_REQUEST != 0 {
 		family, dst, err := parseForDestination(msg)
 		if err != nil {
@@ -692,6 +703,23 @@ func (p *Protocol) delAddr(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 	}
 
 	return nil
+}
+
+// dumpFamily returns the address family that an RTM_GETADDR or RTM_GETROUTE
+// dump is restricted to, or AF_UNSPEC if it covers all families. As in Linux,
+// families without a dedicated dump handler fall back to the AF_UNSPEC one.
+// See net/core/rtnetlink.c:rtnetlink_rcv_msg.
+func dumpFamily(msg *nlmsg.Message) uint8 {
+	var family primitive.Uint8
+	if _, ok := msg.GetData(&family); !ok {
+		return linux.AF_UNSPEC
+	}
+	switch uint8(family) {
+	case linux.AF_INET, linux.AF_INET6:
+		return uint8(family)
+	default:
+		return linux.AF_UNSPEC
+	}
 }
 
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
