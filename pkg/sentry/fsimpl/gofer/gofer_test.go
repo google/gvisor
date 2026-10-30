@@ -18,7 +18,9 @@ import (
 	"slices"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
@@ -195,4 +197,96 @@ func TestXattrCacheList(t *testing.T) {
 	if !found || !slices.Equal(list, wantList) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
 	}
+}
+
+func TestDirectfsUtimensatReplacedSymlink(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fs := filesystem{
+		mf:          pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:    make(map[inoKey]uint64),
+		inodeByKey:  make(map[inoKey]*inode),
+		clock:       ktime.RealtimeClockFromContext(ctx),
+		dentryCache: &dentryCache{maxCachedDentries: 0},
+		client:      &lisafs.Client{},
+	}
+
+	dirPath := t.TempDir()
+	parentFD, err := unix.Open(dirPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("unix.Open(%q): %v", dirPath, err)
+	}
+	parent, err := fs.newDirectfsDentry(parentFD)
+	if err != nil {
+		t.Fatalf("fs.newDirectfsDentry(parentFD): %v", err)
+	}
+	defer func() {
+		fs.renameMu.Lock()
+		parent.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+		fs.renameMu.Unlock()
+	}()
+
+	if err := unix.Symlinkat("target1", parentFD, "sym"); err != nil {
+		t.Fatalf("unix.Symlinkat: %v", err)
+	}
+	symFD, err := unix.Openat(parentFD, "sym", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("unix.Openat(sym): %v", err)
+	}
+	child, err := fs.newDirectfsDentry(symFD)
+	if err != nil {
+		t.Fatalf("fs.newDirectfsDentry(symFD): %v", err)
+	}
+	parent.opMu.Lock()
+	parent.childrenMu.Lock()
+	parent.cacheNewChildLocked(child, "sym")
+	parent.childrenMu.Unlock()
+	parent.opMu.Unlock()
+
+	// Replace "sym" on the host with a different symlink.
+	if err := unix.Unlinkat(parentFD, "sym", 0); err != nil {
+		t.Fatalf("unix.Unlinkat(sym): %v", err)
+	}
+	if err := unix.Symlinkat("target2", parentFD, "sym"); err != nil {
+		t.Fatalf("unix.Symlinkat(target2): %v", err)
+	}
+	const wantSec = 123456
+	if err := fsutil.Utimensat(parentFD, "sym", [2]unix.Timespec{{Sec: wantSec}, {Sec: wantSec}}, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		t.Fatalf("fsutil.Utimensat: %v", err)
+	}
+
+	fs.renameMu.RLock()
+	err = child.inode.impl.(*directfsInode).utimensat(ctx, &linux.Statx{
+		Mask:  linux.STATX_ATIME | linux.STATX_MTIME,
+		Atime: linux.StatxTimestamp{Sec: 999999},
+		Mtime: linux.StatxTimestamp{Sec: 999999},
+	}, child)
+	fs.renameMu.RUnlock()
+	if err != unix.ESTALE {
+		t.Fatalf("utimensat on replaced symlink got err %v, want %v", err, unix.ESTALE)
+	}
+
+	st, err := fsutil.StatAt(parentFD, "sym")
+	if err != nil {
+		t.Fatalf("fsutil.StatAt(sym): %v", err)
+	}
+	if st.Mtim.Sec != wantSec {
+		t.Errorf("replacement symlink mtime.Sec = %d, want %d", st.Mtim.Sec, wantSec)
+	}
+
+	// Mark child deleted and verify utimensat returns ENOENT.
+	child.setDeleted()
+	fs.renameMu.RLock()
+	err = child.inode.impl.(*directfsInode).utimensat(ctx, &linux.Statx{
+		Mask:  linux.STATX_ATIME | linux.STATX_MTIME,
+		Atime: linux.StatxTimestamp{Sec: 999999},
+		Mtime: linux.StatxTimestamp{Sec: 999999},
+	}, child)
+	fs.renameMu.RUnlock()
+	if err != unix.ENOENT {
+		t.Fatalf("utimensat on deleted symlink got err %v, want %v", err, unix.ENOENT)
+	}
+
+	fs.renameMu.Lock()
+	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	fs.renameMu.Unlock()
 }

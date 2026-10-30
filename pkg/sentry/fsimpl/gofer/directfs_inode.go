@@ -491,7 +491,18 @@ func (i *directfsInode) utimensat(ctx context.Context, stat *linux.Statx, d *den
 	// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 	// name.
 	if parent := d.parent.Load(); parent != nil {
-		return fsutil.Utimensat(parent.inode.impl.(*directfsInode).controlFD, d.name, utimes, unix.AT_SYMLINK_NOFOLLOW)
+		if d.isDeleted() {
+			return unix.ENOENT
+		}
+		parentFD := parent.inode.impl.(*directfsInode).controlFD
+		var st unix.Statx_t
+		if err := unix.Statx(parentFD, d.name, unix.AT_SYMLINK_NOFOLLOW|unix.AT_NO_AUTOMOUNT, unix.STATX_TYPE|unix.STATX_INO, &st); err != nil {
+			return err
+		}
+		if inoKeyFromUnixStatx(&st) != i.inoKey || uint32(st.Mode)&unix.S_IFMT != i.inode.fileType() {
+			return unix.ESTALE
+		}
+		return fsutil.Utimensat(parentFD, d.name, utimes, unix.AT_SYMLINK_NOFOLLOW)
 	}
 
 	// This is a mount point symlink. We don't have a parent FD. Fallback to

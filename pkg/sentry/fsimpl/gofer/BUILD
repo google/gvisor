@@ -142,9 +142,11 @@ go_test(
     embed = [":gofer"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/fsutil",
         "//pkg/lisafs",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/ktime",
         "//pkg/sentry/pgalloc",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
