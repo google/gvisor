@@ -1738,6 +1738,7 @@ func (m *MountOptions) StateFields() []string {
 		"ReadOnly",
 		"GetFilesystemOptions",
 		"Locked",
+		"lockReadOnly",
 	}
 }
 
@@ -1750,6 +1751,7 @@ func (m *MountOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveBool(1, &m.ReadOnly)
 	stateSinkObject.Save(2, &m.GetFilesystemOptions)
 	stateSinkObject.SaveBool(3, &m.Locked)
+	stateSinkObject.SaveBool(4, &m.lockReadOnly)
 }
 
 func (m *MountOptions) afterLoad(context.Context) {}
@@ -1760,6 +1762,7 @@ func (m *MountOptions) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.LoadBool(1, &m.ReadOnly)
 	stateSourceObject.Load(2, &m.GetFilesystemOptions)
 	stateSourceObject.LoadBool(3, &m.Locked)
+	stateSourceObject.LoadBool(4, &m.lockReadOnly)
 }
 
 func (o *OpenOptions) StateTypeName() string {
