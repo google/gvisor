@@ -78,6 +78,7 @@ go_library(
         "filesystem.go",
         "keys.go",
         "nvproxy.go",
+        "save_restore.go",
         "subtasks.go",
         "subtasks_inode_refs.go",
         "task.go",
