@@ -148,15 +148,15 @@ func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
 	// only passed to l immediately: generated StateLoadValue methods copy
 	// them. Values passed later, or whose decoding ran code that may keep
 	// their address, keep their storage.
-	p, ok := ds.valueScratch[ti]
-	if !ok {
+	p := ds.valueScratch[ti]
+	if p == nil {
 		p = reflect.New(ti.typ).UnsafePointer()
-		if ds.valueScratch == nil {
-			ds.valueScratch = make(map[*typeInfo]unsafe.Pointer)
+	} else {
+		// A nested LoadValueTo of the same type must not reuse p.
+		delete(ds.valueScratch, ti)
+		if ti.partial {
+			reflect.NewAt(ti.typ, p).Elem().SetZero()
 		}
-		ds.valueScratch[ti] = p
-	} else if ti.partial {
-		reflect.NewAt(ti.typ, p).Elem().SetZero()
 	}
 	hooks, deferred, refs := ds.hooks, ds.deferred, ds.refs
 	ds.lastRef = -1
@@ -164,9 +164,6 @@ func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
 	ds.keepZero = false
 	ds.decodeValue(ti, p)
 	ds.keepZero = keepZero
-	if ds.hooks != hooks {
-		delete(ds.valueScratch, ti)
-	}
 	if ds.deferred != deferred {
 		if ds.lastRef >= 0 && ds.lastRef != ds.cur && ds.lastRef != 0 {
 			ds.wait(ds.cur, ds.lastRef, decodeCallback{waiter: -1})
@@ -180,18 +177,25 @@ func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
 	cb := decodeCallback{valueLoader: l, slot: slot, value: makeAny(ti, p), waiter: -1}
 	if ds.lastRef >= 0 {
 		if ds.lastRef != ds.cur && ds.lastRef != 0 {
-			delete(ds.valueScratch, ti)
 			ds.wait(ds.cur, ds.lastRef, cb)
 			return
 		}
 	} else if ds.refs != refs {
-		delete(ds.valueScratch, ti)
 		if !ds.noCallbacks {
 			ds.addCallback(ds.cur, cb)
 		}
 		return
 	}
+	// A hook invoked during decoding may retain p even without a deferred
+	// callback. StateLoadValue itself copies the value.
+	reusable := ds.hooks == hooks
 	ds.runCallback(&cb)
+	if reusable {
+		if ds.valueScratch == nil {
+			ds.valueScratch = make(map[*typeInfo]unsafe.Pointer)
+		}
+		ds.valueScratch[ti] = p
+	}
 }
 
 // runCallbacks runs the callbacks of objects as they become complete.

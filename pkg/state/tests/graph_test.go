@@ -1330,3 +1330,20 @@ func TestBothEnginesStatefulCallbacks(t *testing.T) {
 	crossGraph := loadBytes[gRoot](t, gRun.data)
 	checkIsomorphic(t, wRun.loaded, crossGraph)
 }
+
+func TestNestedValueConversion(t *testing.T) {
+	forEachEngine(t, func(t *testing.T) {
+		in := &gConvertedValue{gNestedValue{
+			tag:  11,
+			next: gConvertedValue{gNestedValue{tag: 22}},
+		}}
+		out := loadBytes[gConvertedValue](t, saveBytes(t, in))
+		inner, ok := out.value.next.(gConvertedValue)
+		if !ok {
+			t.Fatalf("restored nested value has type %T, want gConvertedValue", out.value.next)
+		}
+		if outer, inner := out.value.tag, inner.value.tag; outer != 11 || inner != 22 {
+			t.Errorf("restored outer, inner = (%d, %d), want (11, 22)", outer, inner)
+		}
+	})
+}
