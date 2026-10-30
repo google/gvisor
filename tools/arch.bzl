@@ -18,6 +18,20 @@ arch_transition = transition(
     outputs = _arch_config,
 )
 
+# Normal Go builds use only the generated files for their target platform.
+# The source archive is consumed by Go on both architectures.
+def _go_source_transition_impl(settings, attr):
+    arches = arch_transition_impl(settings, attr)
+    if settings["//tools:export_go_sources"] or not attr.target_arch:
+        return arches
+    return {attr.target_arch: arches[attr.target_arch]}
+
+_go_source_transition = transition(
+    implementation = _go_source_transition_impl,
+    inputs = ["//tools:export_go_sources"],
+    outputs = _arch_config,
+)
+
 def _arch_genrule_impl(ctx):
     outputs = []
     for arch, src in ctx.split_attr.src.items():
@@ -27,19 +41,29 @@ def _arch_genrule_impl(ctx):
         outputs.append(output)
     return [DefaultInfo(files = depset(outputs))]
 
-arch_genrule = rule(
+_arch_genrule = rule(
     implementation = _arch_genrule_impl,
     attrs = {
         "src": attr.label(
             doc = "Target producing one file per architecture.",
-            cfg = arch_transition,
+            cfg = _go_source_transition,
             mandatory = True,
         ),
+        "target_arch": attr.string(),
         "template": attr.string(
             doc = "Template for the output files.",
             mandatory = True,
         ),
     },
-    doc = "Copies an output built for each architecture to its formatted name.",
+    doc = "Copies a generated file under its architecture-specific name.",
     toolchains = _COPY_FILE_TOOLCHAINS,
 )
+
+def arch_genrule(name, src, template):
+    """Copies src to template for each requested target architecture."""
+    _arch_genrule(
+        name = name,
+        src = src,
+        template = template,
+        target_arch = _select_arch(amd64 = "amd64", arm64 = "arm64", default = ""),
+    )
