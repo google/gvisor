@@ -31,9 +31,11 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 
 #ifndef SIOCGSTAMP
 #include <linux/sockios.h>
@@ -129,6 +131,116 @@ TEST_P(UdpSocketRawTest, ReceiveWithZeroSourcePort) {
   ASSERT_EQ(absl::string_view(received, kMessage.size()), kMessage);
 }
 
+enum class QuotedPacket {
+  kPlain,
+  kDestinationOptions,
+  kFirstFragment,
+  kAtomicFragment,
+  kNoninitialFragment,
+  kTruncatedOptions,
+};
+
+class QuotedUdpErrorTest : public ::testing::TestWithParam<QuotedPacket> {};
+
+TEST_P(QuotedUdpErrorTest, PortUnreachable) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(
+          HaveRawIPSocketCapability(AF_INET6, IPPROTO_ICMPV6))) {
+    GTEST_SKIP();
+  }
+  auto pair = ASSERT_NO_ERRNO_AND_VALUE(UDPBidirectionalBindSocketPairCreator(
+      AF_INET6, SOCK_DGRAM, IPPROTO_UDP, /*dual_stack=*/false)());
+  const auto& src = *reinterpret_cast<const sockaddr_in6*>(pair->first_addr());
+  const auto& dst = *reinterpret_cast<const sockaddr_in6*>(pair->second_addr());
+
+  // A port-unreachable error may quote just enough of a packet to identify
+  // the UDP socket. Leave the application payload out of every quote.
+  const char payload[128] = {};
+  const auto kind = GetParam();
+  const bool has_options = kind != QuotedPacket::kPlain;
+  const bool has_fragment = kind == QuotedPacket::kFirstFragment ||
+                            kind == QuotedPacket::kAtomicFragment ||
+                            kind == QuotedPacket::kNoninitialFragment;
+  uint8_t options[8] = {};
+  options[0] = has_fragment ? IPPROTO_FRAGMENT : IPPROTO_UDP;
+  // The length counts eight-byte units after the first eight bytes.
+  options[1] = kind == QuotedPacket::kTruncatedOptions ? 2 : 0;
+  ip6_frag fragment = {};
+  fragment.ip6f_nxt = IPPROTO_UDP;
+  fragment.ip6f_ident = htonl(1);
+  if (kind == QuotedPacket::kFirstFragment) {
+    fragment.ip6f_offlg = htons(1);  // More fragments at offset zero.
+  } else if (kind == QuotedPacket::kNoninitialFragment) {
+    fragment.ip6f_offlg = htons(8);  // Nonzero fragment offset.
+  }
+  const size_t options_len = has_options ? sizeof(options) : 0;
+  const size_t fragment_len = has_fragment ? sizeof(fragment) : 0;
+  ip6_hdr ip = {};
+  ip.ip6_vfc = 6 << 4;
+  ip.ip6_plen =
+      htons(options_len + fragment_len + sizeof(udphdr) + sizeof(payload));
+  ip.ip6_nxt = has_options ? IPPROTO_DSTOPTS : IPPROTO_UDP;
+  ip.ip6_hlim = 64;
+  ip.ip6_src = src.sin6_addr;
+  ip.ip6_dst = dst.sin6_addr;
+  udphdr udp = {
+      .source = src.sin6_port,
+      .dest = dst.sin6_port,
+      .len = htons(sizeof(udphdr) + sizeof(payload)),
+  };
+  udp.check = UDPChecksum(ip, udp, payload, sizeof(payload));
+  if (udp.check == 0) {
+    udp.check = 0xffff;  // A computed zero checksum is transmitted as all ones.
+  }
+
+  icmp6_hdr error = {};
+  error.icmp6_type = ICMP6_DST_UNREACH;
+  error.icmp6_code = ICMP6_DST_UNREACH_NOPORT;
+  iovec vec[] = {{&error, sizeof(error)},
+                 {&ip, sizeof(ip)},
+                 {options, options_len},
+                 {&fragment, fragment_len},
+                 {&udp, sizeof(udp)}};
+  sockaddr_in6 local = src;
+  local.sin6_port = 0;
+  msghdr message = {};
+  message.msg_name = &local;
+  message.msg_namelen = sizeof(local);
+  message.msg_iov = vec;
+  message.msg_iovlen = std::size(vec);
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6));
+  ASSERT_THAT(
+      sendmsg(raw.get(), &message, 0),
+      SyscallSucceedsWithValue(sizeof(error) + sizeof(ip) + options_len +
+                               fragment_len + sizeof(udp)));
+
+  pollfd pfd = {.fd = pair->first_fd(), .events = POLLERR};
+  if (kind == QuotedPacket::kNoninitialFragment ||
+      kind == QuotedPacket::kTruncatedOptions) {
+    EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
+    return;
+  }
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(pfd.revents, POLLERR);
+  int socket_error;
+  socklen_t len = sizeof(socket_error);
+  ASSERT_THAT(getsockopt(pfd.fd, SOL_SOCKET, SO_ERROR, &socket_error, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(socket_error, ECONNREFUSED);
+}
+
+INSTANTIATE_TEST_SUITE_P(Plain, QuotedUdpErrorTest,
+                         ::testing::Values(QuotedPacket::kPlain));
+INSTANTIATE_TEST_SUITE_P(DestinationOptions, QuotedUdpErrorTest,
+                         ::testing::Values(QuotedPacket::kDestinationOptions));
+INSTANTIATE_TEST_SUITE_P(FirstFragment, QuotedUdpErrorTest,
+                         ::testing::Values(QuotedPacket::kFirstFragment));
+INSTANTIATE_TEST_SUITE_P(AtomicFragment, QuotedUdpErrorTest,
+                         ::testing::Values(QuotedPacket::kAtomicFragment));
+INSTANTIATE_TEST_SUITE_P(NoninitialFragment, QuotedUdpErrorTest,
+                         ::testing::Values(QuotedPacket::kNoninitialFragment));
+INSTANTIATE_TEST_SUITE_P(TruncatedOptions, QuotedUdpErrorTest,
+                         ::testing::Values(QuotedPacket::kTruncatedOptions));
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketRawTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
