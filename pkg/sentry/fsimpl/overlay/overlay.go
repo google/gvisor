@@ -606,6 +606,10 @@ type dentry struct {
 	children map[string]*dentry
 	dirents  []vfs.Dirent
 
+	// direntsStale is set without dirMu when copy-up changes a child's inode
+	// number; getDirentsLocked then rebuilds dirents.
+	direntsStale atomicbitops.Bool
+
 	// upperVD and lowerVDs are the files from the overlay filesystem's layers
 	// that comprise the file on the overlay filesystem.
 	//
