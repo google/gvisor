@@ -1,5 +1,6 @@
 """Meta and miscellaneous rules."""
 
+load("@bazel_lib//lib:copy_file.bzl", _COPY_FILE_TOOLCHAINS = "COPY_FILE_TOOLCHAINS", _copy_file_action = "copy_file_action")
 load("@bazel_skylib//:bzl_library.bzl", _bzl_library = "bzl_library")
 load("@bazel_skylib//rules:build_test.bzl", _build_test = "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag", _string_flag = "string_flag")
@@ -8,6 +9,8 @@ load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
 load("@com_google_protobuf//bazel:proto_library.bzl", _proto_library = "proto_library")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
+COPY_FILE_TOOLCHAINS = _COPY_FILE_TOOLCHAINS
+copy_file_action = _copy_file_action
 build_test = _build_test
 bzl_library = _bzl_library
 bool_flag = _bool_flag
