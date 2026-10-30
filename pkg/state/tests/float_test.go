@@ -17,6 +17,8 @@ package tests
 import (
 	"math"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 var safeFloat32s = []float32{
@@ -40,28 +42,37 @@ var safeFloat64s = []float64{
 var allFloat64s = append(safeFloat64s, math.NaN())
 
 func TestFloat(t *testing.T) {
-	runTestCases(t, false, "plain", flatten(
-		allFloat32s,
-		allFloat64s,
-	))
-	// See checkEqual for why NaNs are missing.
-	runTestCases(t, false, "pointers", pointersTo(flatten(
-		safeFloat32s,
-		safeFloat64s,
-	)))
-	runTestCases(t, false, "interfaces", interfacesTo(flatten(
-		safeFloat32s,
-		safeFloat64s,
-	)))
-	runTestCases(t, false, "interfacesToPointers", interfacesTo(pointersTo(flatten(
-		safeFloat32s,
-		safeFloat64s,
-	))))
+	runWithBothEngines(t, func(t *testing.T) {
+		runTestCases(t, false, "plain", flatten(
+			allFloat32s,
+			allFloat64s,
+		))
+		// See checkEqual for why NaNs are missing.
+		runTestCases(t, false, "pointers", pointersTo(flatten(
+			safeFloat32s,
+			safeFloat64s,
+		)))
+		runTestCases(t, false, "interfaces", interfacesTo(flatten(
+			safeFloat32s,
+			safeFloat64s,
+		)))
+		runTestCases(t, false, "interfacesToPointers", interfacesTo(pointersTo(flatten(
+			safeFloat32s,
+			safeFloat64s,
+		))))
+	})
 }
 
 const onlyDouble float64 = 1.0000000000000002
 
+// TestFloatTruncation tests wire-engine float narrowing checks when saving a
+// float64 and loading a float32. It runs only in wire mode because the graph
+// engine uses untagged fixed-size encodings (8 bytes vs 4 bytes) rather than
+// the self-tagged wire format.
 func TestFloatTruncation(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(false)
+	defer state.EnableGraphEngine(prev)
 	runTestCases(t, true, "pass", []any{
 		truncatingFloat32{save: onlyDouble},
 	})
@@ -87,26 +98,35 @@ var allComplex128s = combine(allFloat64s, allFloat64s, func(i, j any) any {
 })
 
 func TestComplex(t *testing.T) {
-	runTestCases(t, false, "plain", flatten(
-		allComplex64s,
-		allComplex128s,
-	))
-	// See TestFloat; same issue.
-	runTestCases(t, false, "pointers", pointersTo(flatten(
-		safeComplex64s,
-		safeComplex128s,
-	)))
-	runTestCases(t, false, "interfacse", interfacesTo(flatten(
-		safeComplex64s,
-		safeComplex128s,
-	)))
-	runTestCases(t, false, "interfacesTo", interfacesTo(pointersTo(flatten(
-		safeComplex64s,
-		safeComplex128s,
-	))))
+	runWithBothEngines(t, func(t *testing.T) {
+		runTestCases(t, false, "plain", flatten(
+			allComplex64s,
+			allComplex128s,
+		))
+		// See TestFloat; same issue.
+		runTestCases(t, false, "pointers", pointersTo(flatten(
+			safeComplex64s,
+			safeComplex128s,
+		)))
+		runTestCases(t, false, "interfacse", interfacesTo(flatten(
+			safeComplex64s,
+			safeComplex128s,
+		)))
+		runTestCases(t, false, "interfacesTo", interfacesTo(pointersTo(flatten(
+			safeComplex64s,
+			safeComplex128s,
+		))))
+	})
 }
 
+// TestComplexTruncation tests wire-engine complex narrowing checks when saving
+// a complex128 and loading a complex64. It runs only in wire mode because the
+// graph engine uses untagged fixed-size encodings (16 bytes vs 8 bytes) rather
+// than the self-tagged wire format.
 func TestComplexTruncation(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(false)
+	defer state.EnableGraphEngine(prev)
 	runTestCases(t, true, "pass", []any{
 		truncatingComplex64{save: complex(onlyDouble, onlyDouble)},
 		truncatingComplex64{save: complex(1.0, onlyDouble)},

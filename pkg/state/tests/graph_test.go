@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"unsafe"
 
@@ -113,16 +114,12 @@ func reachable[T any](root any, fn func(*T)) {
 	walk(reflect.ValueOf(root))
 }
 
-// sliceWindowsSupported indicates whether the state package supports saving
-// slices that share a backing array at different offsets, or with elements of
-// one slice beyond the length of another. The legacy encoder clears elements
-// beyond a slice's length in the saved graph, and can't express a slice that
-// starts within another slice's array.
-const sliceWindowsSupported = false
-
+// skipUnlessSliceWindows skips the test on the legacy wire engine, which
+// clears elements beyond a slice's length in the saved graph and cannot
+// express a slice that starts within another slice's array.
 func skipUnlessSliceWindows(t *testing.T) {
 	t.Helper()
-	if !sliceWindowsSupported {
+	if !state.GraphEngineEnabled() {
 		t.Skip("slice windows are not supported")
 	}
 }
@@ -139,215 +136,233 @@ var graphConfigs = []graphOptions{
 
 // TestRandomGraphs tests graph save/load.
 func TestRandomGraphs(t *testing.T) {
-	seeds := int64(25)
-	if testing.Short() {
-		seeds = 5
-	}
-	for _, opts := range graphConfigs {
-		for seed := int64(0); seed < seeds; seed++ {
-			t.Run(fmt.Sprintf("nodes=%d,all=%v,windows=%v/seed=%d", opts.nodes, opts.all, opts.windows, seed), func(t *testing.T) {
-				if opts.windows {
-					skipUnlessSliceWindows(t)
-				}
-				original := randomGraph(seed, opts)
-				saved := randomGraph(seed, opts)
-				data := saveBytes(t, saved)
-
-				// Save must not modify the saved graph.
-				if err := isomorphic(original, saved); err != nil {
-					t.Fatalf("Save modified the graph: %v", err)
-				}
-				// beforeSave must be called exactly once per object.
-				reachable(saved, func(n *gNode) {
-					if n.saveCalls != 1 {
-						t.Errorf("node %d: beforeSave called %d times, want 1", n.id, n.saveCalls)
-					}
-				})
-
-				loaded := loadBytes[gRoot](t, data)
-				checkIsomorphic(t, original, loaded)
-				reachable(loaded, func(n *gNode) {
-					if !n.loaded || n.skipped != 0 {
-						t.Errorf("node %d: loaded=%v skipped=%d, want true/0", n.id, n.loaded, n.skipped)
-					}
-				})
-
-				// Saving the loaded graph must produce an equivalent graph.
-				reloaded := loadBytes[gRoot](t, saveBytes(t, loaded))
-				checkIsomorphic(t, original, reloaded)
-			})
+	runWithBothEngines(t, func(t *testing.T) {
+		seeds := int64(25)
+		if testing.Short() {
+			seeds = 5
 		}
-	}
+		for _, opts := range graphConfigs {
+			for seed := int64(0); seed < seeds; seed++ {
+				t.Run(fmt.Sprintf("nodes=%d,all=%v,windows=%v/seed=%d", opts.nodes, opts.all, opts.windows, seed), func(t *testing.T) {
+					if opts.windows {
+						skipUnlessSliceWindows(t)
+					}
+					original := randomGraph(seed, opts)
+					saved := randomGraph(seed, opts)
+					data := saveBytes(t, saved)
+
+					// Save must not modify the saved graph.
+					if err := isomorphic(original, saved); err != nil {
+						t.Fatalf("Save modified the graph: %v", err)
+					}
+					// beforeSave must be called exactly once per object.
+					reachable(saved, func(n *gNode) {
+						if n.saveCalls != 1 {
+							t.Errorf("node %d: beforeSave called %d times, want 1", n.id, n.saveCalls)
+						}
+					})
+
+					loaded := loadBytes[gRoot](t, data)
+					checkIsomorphic(t, original, loaded)
+					reachable(loaded, func(n *gNode) {
+						if !n.loaded || n.skipped != 0 {
+							t.Errorf("node %d: loaded=%v skipped=%d, want true/0", n.id, n.loaded, n.skipped)
+						}
+					})
+
+					// Saving the loaded graph must produce an equivalent graph.
+					reloaded := loadBytes[gRoot](t, saveBytes(t, loaded))
+					checkIsomorphic(t, original, reloaded)
+				})
+			}
+		}
+	})
 }
 
 // TestSharedSliceWindows tests graph save/load.
 func TestSharedSliceWindows(t *testing.T) {
-	newBacking := func() []gInner {
-		b := make([]gInner, 4, 6)
-		for i := range b {
-			b[i] = gInner{x: int64(100 + i), s: fmt.Sprintf("e%d", i)}
+	runWithBothEngines(t, func(t *testing.T) {
+		newBacking := func() []gInner {
+			b := make([]gInner, 4, 6)
+			for i := range b {
+				b[i] = gInner{x: int64(100 + i), s: fmt.Sprintf("e%d", i)}
+			}
+			return b
 		}
-		return b
-	}
-	for _, test := range []struct {
-		name   string
-		window func(b []gInner) []gInner
-	}{
-		{"prefix", func(b []gInner) []gInner { return b[:1] }},
-		{"middle", func(b []gInner) []gInner { return b[1:2] }},
-		{"empty", func(b []gInner) []gInner { return b[2:2] }},
-		{"suffix", func(b []gInner) []gInner { return b[3:] }},
-		{"beyond_len", func(b []gInner) []gInner { return b[2:6] }},
-		{"full", func(b []gInner) []gInner { return b[:] }},
-	} {
-		for _, windowFirst := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/window_first=%v", test.name, windowFirst), func(t *testing.T) {
-				if test.name != "full" {
-					skipUnlessSliceWindows(t)
-				}
-				build := func() *gRoot {
-					full, part := &gNode{id: 1}, &gNode{id: 2}
-					full.vals = newBacking()
-					part.window = test.window(full.vals)
-					if windowFirst {
-						return &gRoot{entries: []*gNode{part, full}}
+		for _, test := range []struct {
+			name   string
+			window func(b []gInner) []gInner
+		}{
+			{"prefix", func(b []gInner) []gInner { return b[:1] }},
+			{"middle", func(b []gInner) []gInner { return b[1:2] }},
+			{"empty", func(b []gInner) []gInner { return b[2:2] }},
+			{"suffix", func(b []gInner) []gInner { return b[3:] }},
+			{"beyond_len", func(b []gInner) []gInner { return b[2:6] }},
+			{"full", func(b []gInner) []gInner { return b[:] }},
+		} {
+			for _, windowFirst := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/window_first=%v", test.name, windowFirst), func(t *testing.T) {
+					if test.name != "full" {
+						skipUnlessSliceWindows(t)
 					}
-					return &gRoot{entries: []*gNode{full, part}}
-				}
-				original, saved := build(), build()
-				data := saveBytes(t, saved)
-				if err := isomorphic(original, saved); err != nil {
-					t.Fatalf("Save modified the graph: %v", err)
-				}
-				checkIsomorphic(t, original, loadBytes[gRoot](t, data))
-			})
+					build := func() *gRoot {
+						full, part := &gNode{id: 1}, &gNode{id: 2}
+						full.vals = newBacking()
+						part.window = test.window(full.vals)
+						if windowFirst {
+							return &gRoot{entries: []*gNode{part, full}}
+						}
+						return &gRoot{entries: []*gNode{full, part}}
+					}
+					original, saved := build(), build()
+					data := saveBytes(t, saved)
+					if err := isomorphic(original, saved); err != nil {
+						t.Fatalf("Save modified the graph: %v", err)
+					}
+					checkIsomorphic(t, original, loadBytes[gRoot](t, data))
+				})
+			}
 		}
-	}
+	})
 }
 
 // TestInteriorPointersIntoSlices tests graph save/load.
 func TestInteriorPointersIntoSlices(t *testing.T) {
-	for _, ptrFirst := range []bool{false, true} {
-		t.Run(fmt.Sprintf("ptr_first=%v", ptrFirst), func(t *testing.T) {
-			build := func() *gRoot {
-				owner := &gNode{id: 1, vals: []gInner{{x: 1}, {x: 2}, {x: 3}}, blob: []byte("hello")}
-				ptrs := &gNode{id: 2}
-				ptrs.innerPtr = &owner.vals[1]
-				ptrs.intPtr = &owner.vals[2].x
-				ptrs.bytePtr = &owner.blob[4]
-				ptrs.iface = &owner.vals[0]
-				if ptrFirst {
-					return &gRoot{entries: []*gNode{ptrs, owner}}
+	runWithBothEngines(t, func(t *testing.T) {
+		for _, ptrFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("ptr_first=%v", ptrFirst), func(t *testing.T) {
+				build := func() *gRoot {
+					owner := &gNode{id: 1, vals: []gInner{{x: 1}, {x: 2}, {x: 3}}, blob: []byte("hello")}
+					ptrs := &gNode{id: 2}
+					ptrs.innerPtr = &owner.vals[1]
+					ptrs.intPtr = &owner.vals[2].x
+					ptrs.bytePtr = &owner.blob[4]
+					ptrs.iface = &owner.vals[0]
+					if ptrFirst {
+						return &gRoot{entries: []*gNode{ptrs, owner}}
+					}
+					return &gRoot{entries: []*gNode{owner, ptrs}}
 				}
-				return &gRoot{entries: []*gNode{owner, ptrs}}
-			}
-			original := build()
-			loaded := loadBytes[gRoot](t, saveBytes(t, build()))
-			checkIsomorphic(t, original, loaded)
-		})
-	}
+				original := build()
+				loaded := loadBytes[gRoot](t, saveBytes(t, build()))
+				checkIsomorphic(t, original, loaded)
+			})
+		}
+	})
 }
 
 // TestMapIdentity tests graph save/load.
 func TestMapIdentity(t *testing.T) {
-	build := func() *gRoot {
-		a, b := &gNode{id: 1}, &gNode{id: 2}
-		a.shared = map[string]int64{"x": 1, "y": 2}
-		b.shared = a.shared
-		b.sharedPtr = &a.shared
-		b.iface = a.shared
-		return &gRoot{entries: []*gNode{b, a}, any: a.shared}
-	}
-	original := build()
-	loaded := loadBytes[gRoot](t, saveBytes(t, build()))
-	checkIsomorphic(t, original, loaded)
-	a, b := loaded.entries[1], loaded.entries[0]
-	b.shared["z"] = 3
-	if a.shared["z"] != 3 || loaded.any.(map[string]int64)["z"] != 3 || (*b.sharedPtr)["z"] != 3 {
-		t.Errorf("maps are not shared after loading")
-	}
-	if b.sharedPtr != &a.shared {
-		t.Errorf("sharedPtr does not point to a.shared")
-	}
+	runWithBothEngines(t, func(t *testing.T) {
+		build := func() *gRoot {
+			a, b := &gNode{id: 1}, &gNode{id: 2}
+			a.shared = map[string]int64{"x": 1, "y": 2}
+			b.shared = a.shared
+			b.sharedPtr = &a.shared
+			b.iface = a.shared
+			return &gRoot{entries: []*gNode{b, a}, any: a.shared}
+		}
+		original := build()
+		loaded := loadBytes[gRoot](t, saveBytes(t, build()))
+		checkIsomorphic(t, original, loaded)
+		a, b := loaded.entries[1], loaded.entries[0]
+		b.shared["z"] = 3
+		if a.shared["z"] != 3 || loaded.any.(map[string]int64)["z"] != 3 || (*b.sharedPtr)["z"] != 3 {
+			t.Errorf("maps are not shared after loading")
+		}
+		if b.sharedPtr != &a.shared {
+			t.Errorf("sharedPtr does not point to a.shared")
+		}
+	})
 }
 
 // TestNilAndEmpty tests graph save/load.
 func TestNilAndEmpty(t *testing.T) {
-	build := func() *gRoot {
-		nilNode := &gNode{id: 1}
-		emptyNode := &gNode{id: 2, nodes: []*gNode{}, vals: make([]gInner, 0, 3), blob: []byte{}, byID: map[int64]*gNode{}, shared: map[string]int64{}, ifaces: []any{}}
-		return &gRoot{entries: []*gNode{nilNode, emptyNode}}
-	}
-	original := build()
-	loaded := loadBytes[gRoot](t, saveBytes(t, build()))
-	checkIsomorphic(t, original, loaded)
+	runWithBothEngines(t, func(t *testing.T) {
+		build := func() *gRoot {
+			nilNode := &gNode{id: 1}
+			emptyNode := &gNode{id: 2, nodes: []*gNode{}, vals: make([]gInner, 0, 3), blob: []byte{}, byID: map[int64]*gNode{}, shared: map[string]int64{}, ifaces: []any{}}
+			return &gRoot{entries: []*gNode{nilNode, emptyNode}}
+		}
+		original := build()
+		loaded := loadBytes[gRoot](t, saveBytes(t, build()))
+		checkIsomorphic(t, original, loaded)
+	})
 }
 
 // TestWaitOrdering tests graph save/load.
 func TestWaitOrdering(t *testing.T) {
-	for _, field := range []string{"wait", "array"} {
-		t.Run(field, func(t *testing.T) {
-			build := func() *gRoot {
-				nodes := make([]*gNode, 100)
-				for i := range nodes {
-					nodes[i] = &gNode{id: int64(i)}
-				}
-				for i := 0; i+1 < len(nodes); i++ {
-					if field == "wait" {
-						nodes[i].waitFor = nodes[i+1]
-					} else {
-						nodes[i].later[1] = nodes[i+1]
+	runWithBothEngines(t, func(t *testing.T) {
+		for _, field := range []string{"wait", "array"} {
+			t.Run(field, func(t *testing.T) {
+				build := func() *gRoot {
+					nodes := make([]*gNode, 100)
+					for i := range nodes {
+						nodes[i] = &gNode{id: int64(i)}
 					}
-					// Also point backwards, without waiting.
-					nodes[i+1].next = nodes[i]
+					for i := 0; i+1 < len(nodes); i++ {
+						if field == "wait" {
+							nodes[i].waitFor = nodes[i+1]
+						} else {
+							nodes[i].later[1] = nodes[i+1]
+						}
+						// Also point backwards, without waiting.
+						nodes[i+1].next = nodes[i]
+					}
+					return &gRoot{first: nodes[0]}
 				}
-				return &gRoot{first: nodes[0]}
-			}
-			loaded := loadBytes[gRoot](t, saveBytes(t, build()))
-			checkIsomorphic(t, build(), loaded)
-		})
-	}
+				loaded := loadBytes[gRoot](t, saveBytes(t, build()))
+				checkIsomorphic(t, build(), loaded)
+			})
+		}
+	})
 }
 
 // TestValueFields tests graph save/load.
 func TestValueFields(t *testing.T) {
-	build := func() *gRoot {
-		a, b := &gNode{id: 1, saved: 42}, &gNode{id: 2, saved: -7}
-		a.savedNode = b
-		b.savedNode = b
-		a.alias.Store(b)
-		b.next = a
-		return &gRoot{first: a}
-	}
-	loaded := loadBytes[gRoot](t, saveBytes(t, build()))
-	checkIsomorphic(t, build(), loaded)
-	if got := loaded.first.alias.Load().next; got != loaded.first {
-		t.Errorf("alias cycle broken: got %p, want %p", got, loaded.first)
-	}
+	runWithBothEngines(t, func(t *testing.T) {
+		build := func() *gRoot {
+			a, b := &gNode{id: 1, saved: 42}, &gNode{id: 2, saved: -7}
+			a.savedNode = b
+			b.savedNode = b
+			a.alias.Store(b)
+			b.next = a
+			return &gRoot{first: a}
+		}
+		loaded := loadBytes[gRoot](t, saveBytes(t, build()))
+		checkIsomorphic(t, build(), loaded)
+		if got := loaded.first.alias.Load().next; got != loaded.first {
+			t.Errorf("alias cycle broken: got %p, want %p", got, loaded.first)
+		}
+	})
 }
 
 // TestTruncatedStreams tests graph save/load.
 func TestTruncatedStreams(t *testing.T) {
-	data := saveBytes(t, randomGraph(1, graphOptions{nodes: 20, all: true, windows: sliceWindowsSupported}))
-	step := 1
-	if testing.Short() {
-		step = 7
-	}
-	for l := 0; l < len(data); l += step {
-		root := new(gRoot)
-		if _, err := state.Load(context.Background(), bytes.NewReader(data[:l]), root); err == nil {
-			t.Fatalf("Load of %d/%d bytes succeeded", l, len(data))
+	runWithBothEngines(t, func(t *testing.T) {
+		data := saveBytes(t, randomGraph(1, graphOptions{nodes: 20, all: true, windows: state.GraphEngineEnabled()}))
+		step := 1
+		if testing.Short() {
+			step = 7
 		}
-	}
+		for l := 0; l < len(data); l += step {
+			root := new(gRoot)
+			if _, err := state.Load(context.Background(), bytes.NewReader(data[:l]), root); err == nil {
+				t.Fatalf("Load of %d/%d bytes succeeded", l, len(data))
+			}
+		}
+	})
 }
 
 // TestWrongRootType checks that loading into a root of another type fails.
 func TestWrongRootType(t *testing.T) {
-	data := saveBytes(t, randomGraph(1, graphOptions{nodes: 5}))
-	var wrong gNode
-	if _, err := state.Load(context.Background(), bytes.NewReader(data), &wrong); err == nil {
-		t.Fatalf("Load into the wrong root type succeeded")
-	}
+	runWithBothEngines(t, func(t *testing.T) {
+		data := saveBytes(t, randomGraph(1, graphOptions{nodes: 5}))
+		var wrong gNode
+		if _, err := state.Load(context.Background(), bytes.NewReader(data), &wrong); err == nil {
+			t.Fatalf("Load into the wrong root type succeeded")
+		}
+	})
 }
 
 // gIDs is an unregistered named slice type.
@@ -355,12 +370,14 @@ type gIDs []gID
 
 // TestUnregisteredInterfaceValues tests graph save/load.
 func TestUnregisteredInterfaceValues(t *testing.T) {
-	for _, v := range []any{gID(1), gIDs{1, 2}, &gIDs{3}} {
-		var buf bytes.Buffer
-		if _, err := state.Save(context.Background(), &buf, &gRoot{any: v}); err == nil {
-			t.Errorf("Save of %T in an interface succeeded", v)
+	runWithBothEngines(t, func(t *testing.T) {
+		for _, v := range []any{gID(1), gIDs{1, 2}, &gIDs{3}} {
+			var buf bytes.Buffer
+			if _, err := state.Save(context.Background(), &buf, &gRoot{any: v}); err == nil {
+				t.Errorf("Save of %T in an interface succeeded", v)
+			}
 		}
-	}
+	})
 }
 
 // TestIsomorphismChecker tests graph save/load.
@@ -440,9 +457,9 @@ func TestScatteredArrayElements(t *testing.T) {
 
 // TestRootZeroFields checks that zero fields do not overwrite the root on Load.
 func TestRootZeroFields(t *testing.T) {
-	if !sliceWindowsSupported {
-		t.Skip("wire engine overwrites zero root arrays")
-	}
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(true)
+	defer state.EnableGraphEngine(prev)
 	data := saveBytes(t, &gBytesRoot{})
 	want := gBytesRoot{b: [1]byte{7}, arr: [3]byte{1, 2, 3}, n: 5, s: "x"}
 	got := want
@@ -459,6 +476,16 @@ func TestRootZeroFields(t *testing.T) {
 	want.b, want.n = [1]byte{9}, 3
 	if got != want {
 		t.Errorf("Load of non-zero fields: got %+v, want %+v", got, want)
+	}
+
+	// Also verify pod (RegisterNoHooks) structs and arrays keep zero root fields.
+	podData := saveBytes(t, &[2]gPlainInner{{x: 9}, {x: 0}})
+	gotPod := [2]gPlainInner{{x: 1}, {x: 7}}
+	if _, err := state.Load(context.Background(), bytes.NewReader(podData), &gotPod); err != nil {
+		t.Fatalf("Load pod root failed: %v", err)
+	}
+	if wantPod := ([2]gPlainInner{{x: 9}, {x: 7}}); gotPod != wantPod {
+		t.Errorf("Load of pod root: got %+v, want %+v", gotPod, wantPod)
 	}
 }
 
@@ -1105,4 +1132,201 @@ func TestMapAliasedThroughNamedType(t *testing.T) {
 	if got.nm["x"] != 1 || got.nm["y"] != 2 {
 		t.Errorf("map not shared after load: m=%v nm=%v", got.m, got.nm)
 	}
+}
+
+// TestBothEngines verifies that both the legacy wire engine and the graph
+// engine round-trip object graphs and auto-detect stream format on Load.
+func TestBothEngines(t *testing.T) {
+	opts := graphOptions{nodes: 32, all: true}
+	runWithBothEngines(t, func(t *testing.T) {
+		original := randomGraph(42, opts)
+		data := saveBytes(t, randomGraph(42, opts))
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(data)); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		if err := pretty.PrintHTML(&out, bytes.NewReader(data)); err != nil {
+			t.Fatalf("PrintHTML: %v", err)
+		}
+		loaded := loadBytes[gRoot](t, data)
+		checkIsomorphic(t, original, loaded)
+	})
+}
+
+// TestBothEnginesStatefulCallbacks verifies that both engines preserve the
+// execution counts, topological ordering, and state mutations of beforeSave,
+// value-save, value-load, and afterLoad callbacks across wait dependencies.
+func TestBothEnginesStatefulCallbacks(t *testing.T) {
+	opts := graphOptions{nodes: 32, all: true}
+	build := func(saveLog *[]string) *gRoot {
+		root := randomGraph(42, opts)
+		// Construct a multi-layer DAG discovered in reverse topological order
+		// (A -> B, C, E, D, F via early) while wait dependencies flow from A
+		// down to leaves D and F:
+		//   A waits on B (waitSingle) and [C, F] (waitList), and valueDep -> E
+		//   B waits on D (waitSingle) and F (waitList)
+		//   C waits on D (waitSingle)
+		//   E waits on C (waitSingle) and valueDep -> D
+		f := &gCallbackNode{name: "F", base: 2, savedGen: 5, saveLog: saveLog}
+		d := &gCallbackNode{name: "D", base: 3, savedGen: 1, saveLog: saveLog}
+		b := &gCallbackNode{name: "B", base: 5, waitSingle: d, waitList: []*gCallbackNode{f}, saveLog: saveLog}
+		c := &gCallbackNode{name: "C", base: 7, waitSingle: d, saveLog: saveLog}
+		e := &gCallbackNode{name: "E", base: 11, waitSingle: c, saveLog: saveLog}
+		e.valueDep.Store(d)
+		a := &gCallbackNode{
+			name:       "A",
+			base:       13,
+			early:      []*gCallbackNode{b, c, e, d, f},
+			waitSingle: b,
+			waitList:   []*gCallbackNode{c, f},
+			saveLog:    saveLog,
+		}
+		a.valueDep.Store(e)
+
+		root.any = a
+		root.first.ifaces = append(root.first.ifaces, a, e, d)
+		return root
+	}
+
+	type engineRun struct {
+		saved      *gRoot
+		loaded     *gRoot
+		data       []byte
+		loadEvents []string
+		byName     map[string]*gCallbackNode
+	}
+	runs := make(map[string]engineRun)
+
+	runWithBothEngines(t, func(t *testing.T) {
+		engineName := "wire"
+		if state.GraphEngineEnabled() {
+			engineName = "graph"
+		}
+		var saveEvents []string
+		saved := build(&saveEvents)
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, saved); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		data := buf.Bytes()
+
+		// Confirm every callback node ran beforeSave -> saveDerived -> saveValueDep
+		// once during Save and mutated its saved fields before serialization.
+		seenSave := make(map[string]bool)
+		reachable(saved, func(n *gCallbackNode) {
+			seenSave[n.name] = true
+			if n.beforeSaveCalls != 1 || n.saveDerivedRuns != 1 || n.saveDepRuns != 1 {
+				t.Errorf("node %s save callback counts = (%d, %d, %d), want (1, 1, 1)",
+					n.name, n.beforeSaveCalls, n.saveDerivedRuns, n.saveDepRuns)
+			}
+			bsIdx := slices.Index(saveEvents, n.name+":beforeSave")
+			sdIdx := slices.Index(saveEvents, n.name+":saveDerived")
+			vdIdx := slices.Index(saveEvents, n.name+":saveValueDep")
+			if bsIdx < 0 || sdIdx < 0 || vdIdx < 0 || !(bsIdx < sdIdx && sdIdx < vdIdx) {
+				t.Errorf("node %s save callback order invalid: bs=%d sd=%d vd=%d (%v)", n.name, bsIdx, sdIdx, vdIdx, saveEvents)
+			}
+		})
+		if len(seenSave) != 6 {
+			t.Fatalf("visited %d callback nodes on save, want 6", len(seenSave))
+		}
+		if len(saveEvents) != 6*3 {
+			t.Fatalf("got %d save events %v, want 18", len(saveEvents), saveEvents)
+		}
+
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(data)); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		if err := pretty.PrintHTML(&out, bytes.NewReader(data)); err != nil {
+			t.Fatalf("PrintHTML: %v", err)
+		}
+
+		var loadEvents []string
+		ctx := context.WithValue(t.Context(), gCallbackLogKey{}, &loadEvents)
+		loaded := new(gRoot)
+		if _, err := state.Load(ctx, bytes.NewReader(data), loaded); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		checkIsomorphic(t, saved, loaded)
+
+		byName := make(map[string]*gCallbackNode)
+		reachable(loaded, func(n *gCallbackNode) {
+			byName[n.name] = n
+			if n.loadDerivedRuns != 1 || n.loadDepRuns != 1 || n.afterLoadRuns != 1 {
+				t.Errorf("node %s load callback counts = (%d, %d, %d), want (1, 1, 1)",
+					n.name, n.loadDerivedRuns, n.loadDepRuns, n.afterLoadRuns)
+			}
+			wantTag := fmt.Sprintf("%s#%d", n.name, n.savedGen)
+			if n.derivedTag != wantTag {
+				t.Errorf("node %s derivedTag = %q, want %q", n.name, n.derivedTag, wantTag)
+			}
+		})
+		if len(byName) != 6 {
+			t.Fatalf("visited %d callback nodes on load, want 6", len(byName))
+		}
+		if len(loadEvents) != 6*3 {
+			t.Fatalf("got %d load events %v, want 18", len(loadEvents), loadEvents)
+		}
+
+		pos := func(ev string) int {
+			idx := slices.Index(loadEvents, ev)
+			if idx < 0 {
+				t.Fatalf("missing load event %q in %v", ev, loadEvents)
+			}
+			return idx
+		}
+		for _, name := range []string{"A", "B", "C", "D", "E", "F"} {
+			if pos(name+":loadDerived") >= pos(name+":afterLoad") || pos(name+":loadValueDep") >= pos(name+":afterLoad") {
+				t.Errorf("node %s value-load callbacks did not run before afterLoad: %v", name, loadEvents)
+			}
+		}
+		for _, edge := range [][2]string{
+			{"D:afterLoad", "B:afterLoad"},
+			{"F:afterLoad", "B:afterLoad"},
+			{"D:afterLoad", "C:afterLoad"},
+			{"D:afterLoad", "E:afterLoad"},
+			{"C:afterLoad", "E:afterLoad"},
+			{"E:afterLoad", "A:afterLoad"},
+			{"B:afterLoad", "A:afterLoad"},
+			{"C:afterLoad", "A:afterLoad"},
+			{"F:afterLoad", "A:afterLoad"},
+		} {
+			if pos(edge[0]) >= pos(edge[1]) {
+				t.Errorf("topological dependency violated: %s (%d) >= %s (%d) in %v",
+					edge[0], pos(edge[0]), edge[1], pos(edge[1]), loadEvents)
+			}
+		}
+
+		runs[engineName] = engineRun{
+			saved:      saved,
+			loaded:     loaded,
+			data:       data,
+			loadEvents: loadEvents,
+			byName:     byName,
+		}
+	})
+
+	// Confirm both engines produced isomorphic graphs and identical callback
+	// state mutations on every node, and that cross-engine Load auto-detection
+	// preserves identical state as well.
+	wRun, gRun := runs["wire"], runs["graph"]
+	checkIsomorphic(t, wRun.saved, gRun.saved)
+	checkIsomorphic(t, wRun.loaded, gRun.loaded)
+	for _, name := range []string{"A", "B", "C", "D", "E", "F"} {
+		wn, gn := wRun.byName[name], gRun.byName[name]
+		if wn.acc != gn.acc || wn.loadedFromValue != gn.loadedFromValue || wn.derivedTag != gn.derivedTag || !slices.Equal(wn.resolvedDeps, gn.resolvedDeps) {
+			t.Errorf("node %s post-load state differs between wire and graph: wire=(acc=%d, val=%d, tag=%q, deps=%v) vs graph=(acc=%d, val=%d, tag=%q, deps=%v)",
+				name, wn.acc, wn.loadedFromValue, wn.derivedTag, wn.resolvedDeps,
+				gn.acc, gn.loadedFromValue, gn.derivedTag, gn.resolvedDeps)
+		}
+	}
+
+	prev := state.GraphEngineEnabled()
+	defer state.EnableGraphEngine(prev)
+	state.EnableGraphEngine(true)
+	crossWire := loadBytes[gRoot](t, wRun.data)
+	checkIsomorphic(t, gRun.loaded, crossWire)
+	state.EnableGraphEngine(false)
+	crossGraph := loadBytes[gRoot](t, gRun.data)
+	checkIsomorphic(t, wRun.loaded, crossGraph)
 }

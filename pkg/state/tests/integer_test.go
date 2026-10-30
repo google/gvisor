@@ -17,6 +17,8 @@ package tests
 import (
 	"math"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 var (
@@ -51,13 +53,22 @@ var allUints = flatten(
 )
 
 func TestInt(t *testing.T) {
-	runTestCases(t, false, "plain", allInts)
-	runTestCases(t, false, "pointers", pointersTo(allInts))
-	runTestCases(t, false, "interfaces", interfacesTo(allInts))
-	runTestCases(t, false, "interfacesTo", interfacesTo(pointersTo(allInts)))
+	runWithBothEngines(t, func(t *testing.T) {
+		runTestCases(t, false, "plain", allInts)
+		runTestCases(t, false, "pointers", pointersTo(allInts))
+		runTestCases(t, false, "interfaces", interfacesTo(allInts))
+		runTestCases(t, false, "interfacesTo", interfacesTo(pointersTo(allInts)))
+	})
 }
 
+// TestIntTruncation tests wire-engine integer narrowing checks when saving an
+// int64 and loading a narrower integer type. It runs only in wire mode because
+// the graph engine uses untagged width-specific encodings rather than the
+// self-tagged wire format.
 func TestIntTruncation(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(false)
+	defer state.EnableGraphEngine(prev)
 	runTestCases(t, true, "pass", []any{
 		truncatingInt8{save: math.MinInt8 - 1},
 		truncatingInt16{save: math.MinInt16 - 1},
@@ -74,13 +85,22 @@ func TestIntTruncation(t *testing.T) {
 }
 
 func TestUint(t *testing.T) {
-	runTestCases(t, false, "plain", allUints)
-	runTestCases(t, false, "pointers", pointersTo(allUints))
-	runTestCases(t, false, "interfaces", interfacesTo(allUints))
-	runTestCases(t, false, "interfacesTo", interfacesTo(pointersTo(allUints)))
+	runWithBothEngines(t, func(t *testing.T) {
+		runTestCases(t, false, "plain", allUints)
+		runTestCases(t, false, "pointers", pointersTo(allUints))
+		runTestCases(t, false, "interfaces", interfacesTo(allUints))
+		runTestCases(t, false, "interfacesTo", interfacesTo(pointersTo(allUints)))
+	})
 }
 
+// TestUintTruncation tests wire-engine unsigned integer narrowing checks when
+// saving a uint64 and loading a narrower unsigned integer type. It runs only
+// in wire mode because the graph engine uses untagged width-specific encodings
+// rather than the self-tagged wire format.
 func TestUintTruncation(t *testing.T) {
+	prev := state.GraphEngineEnabled()
+	state.EnableGraphEngine(false)
+	defer state.EnableGraphEngine(prev)
 	runTestCases(t, true, "pass", []any{
 		truncatingUint8{save: math.MaxUint8 + 1},
 		truncatingUint16{save: math.MaxUint16 + 1},

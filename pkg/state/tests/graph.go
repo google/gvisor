@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sync/atomic"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 // +stateify savable
@@ -601,4 +603,148 @@ type gSliceOfArraysRoot struct {
 	ptrSecond  *[2][2]int64
 	ptrFirst   *[2][2]int64
 	sliceNext  [][2]int64
+}
+
+type gCallbackLogKey struct{}
+
+// +stateify savable
+type gCallbackValue struct {
+	delta int64
+	tag   string
+}
+
+// +stateify savable
+type gCallbackNode struct {
+	name               string
+	base               int64
+	savedGen           int64
+	prepared           int64
+	mutatedByValueSave int64
+
+	early      []*gCallbackNode
+	waitSingle *gCallbackNode   `state:"wait"`
+	waitList   []*gCallbackNode `state:"wait"`
+
+	derived  int64                         `state:".(gCallbackValue)"`
+	valueDep atomic.Pointer[gCallbackNode] `state:".(*gCallbackNode)"`
+
+	// Non-saved fields modified and checked by save and load callbacks.
+	saveLog         *[]string `state:"nosave"`
+	beforeSaveCalls int       `state:"nosave"`
+	saveDerivedRuns int       `state:"nosave"`
+	saveDepRuns     int       `state:"nosave"`
+	loadDerivedRuns int       `state:"nosave"`
+	loadDepRuns     int       `state:"nosave"`
+	afterLoadRuns   int       `state:"nosave"`
+	derivedTag      string    `state:"nosave"`
+	loadedFromValue int64     `state:"nosave"`
+	acc             int64     `state:"nosave"`
+	resolvedDeps    []string  `state:"nosave"`
+}
+
+func (n *gCallbackNode) beforeSave() {
+	n.beforeSaveCalls++
+	n.savedGen++
+	n.prepared = n.base*3 + n.savedGen
+	n.derived = n.prepared + 7
+	if n.saveLog != nil {
+		*n.saveLog = append(*n.saveLog, n.name+":beforeSave")
+	}
+}
+
+func (n *gCallbackNode) saveDerived() gCallbackValue {
+	if n.beforeSaveCalls != 1 {
+		state.Failf("%s: saveDerived ran with beforeSaveCalls=%d, want 1", n.name, n.beforeSaveCalls)
+	}
+	n.saveDerivedRuns++
+	// Modify a normal field during value computation; generated StateSave
+	// computes values before saving normal fields so this mutation must be
+	// persisted in the serialized stream.
+	n.mutatedByValueSave = n.prepared + 100
+	if n.saveLog != nil {
+		*n.saveLog = append(*n.saveLog, n.name+":saveDerived")
+	}
+	return gCallbackValue{
+		delta: n.prepared + 7,
+		tag:   fmt.Sprintf("%s#%d", n.name, n.savedGen),
+	}
+}
+
+func (n *gCallbackNode) loadDerived(ctx context.Context, v gCallbackValue) {
+	if n.loadDerivedRuns != 0 || n.afterLoadRuns != 0 {
+		state.Failf("%s: loadDerived ran out of order (derivedRuns=%d afterRuns=%d)", n.name, n.loadDerivedRuns, n.afterLoadRuns)
+	}
+	n.loadDerivedRuns++
+	n.derived = v.delta
+	n.derivedTag = v.tag
+	if logPtr, ok := ctx.Value(gCallbackLogKey{}).(*[]string); ok {
+		*logPtr = append(*logPtr, n.name+":loadDerived")
+	}
+}
+
+func (n *gCallbackNode) saveValueDep() *gCallbackNode {
+	if n.beforeSaveCalls != 1 {
+		state.Failf("%s: saveValueDep ran with beforeSaveCalls=%d, want 1", n.name, n.beforeSaveCalls)
+	}
+	n.saveDepRuns++
+	if n.saveLog != nil {
+		*n.saveLog = append(*n.saveLog, n.name+":saveValueDep")
+	}
+	return n.valueDep.Load()
+}
+
+func (n *gCallbackNode) loadValueDep(ctx context.Context, dep *gCallbackNode) {
+	if n.loadDepRuns != 0 || n.afterLoadRuns != 0 {
+		state.Failf("%s: loadValueDep ran out of order (depRuns=%d afterRuns=%d)", n.name, n.loadDepRuns, n.afterLoadRuns)
+	}
+	if dep != nil {
+		if want := dep.prepared + 100; dep.mutatedByValueSave != want {
+			state.Failf("%s: loadValueDep ran before dependency %s decoded fields (mutatedByValueSave=%d, want %d)", n.name, dep.name, dep.mutatedByValueSave, want)
+		}
+		n.loadedFromValue = dep.prepared * 10
+	}
+	n.loadDepRuns++
+	n.valueDep.Store(dep)
+	if logPtr, ok := ctx.Value(gCallbackLogKey{}).(*[]string); ok {
+		*logPtr = append(*logPtr, n.name+":loadValueDep")
+	}
+}
+
+func (n *gCallbackNode) afterLoad(ctx context.Context) {
+	if n.loadDerivedRuns != 1 || n.loadDepRuns != 1 || n.afterLoadRuns != 0 {
+		state.Failf("%s: afterLoad ran out of order (derived=%d dep=%d after=%d)", n.name, n.loadDerivedRuns, n.loadDepRuns, n.afterLoadRuns)
+	}
+	if want := n.prepared + 100; n.mutatedByValueSave != want {
+		state.Failf("%s: mutatedByValueSave = %d, want %d", n.name, n.mutatedByValueSave, want)
+	}
+	acc := n.prepared + n.derived + n.loadedFromValue
+	if dep := n.valueDep.Load(); dep != nil {
+		if dep.afterLoadRuns != 1 {
+			state.Failf("%s: valueDep dependency %s had afterLoadRuns=%d, want 1", n.name, dep.name, dep.afterLoadRuns)
+		}
+		acc = acc*31 + dep.acc
+		n.resolvedDeps = append(n.resolvedDeps, "val:"+dep.name)
+	}
+	if n.waitSingle != nil {
+		if n.waitSingle.afterLoadRuns != 1 {
+			state.Failf("%s: waitSingle dependency %s had afterLoadRuns=%d, want 1", n.name, n.waitSingle.name, n.waitSingle.afterLoadRuns)
+		}
+		acc = acc*31 + n.waitSingle.acc
+		n.resolvedDeps = append(n.resolvedDeps, n.waitSingle.name)
+	}
+	for _, dep := range n.waitList {
+		if dep == nil {
+			continue
+		}
+		if dep.afterLoadRuns != 1 {
+			state.Failf("%s: waitList dependency %s had afterLoadRuns=%d, want 1", n.name, dep.name, dep.afterLoadRuns)
+		}
+		acc = acc*31 + dep.acc
+		n.resolvedDeps = append(n.resolvedDeps, dep.name)
+	}
+	n.acc = acc
+	n.afterLoadRuns++
+	if logPtr, ok := ctx.Value(gCallbackLogKey{}).(*[]string); ok {
+		*logPtr = append(*logPtr, n.name+":afterLoad")
+	}
 }
