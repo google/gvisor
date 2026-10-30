@@ -78,6 +78,22 @@ TEST(EpollTest, AllWritable) {
   }
 }
 
+// A restored open device must also accept watches created after restore.
+TEST(EpollTest, WatchOpenRandomDevice) {
+  const FileDescriptor device =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/random", O_RDONLY | O_NONBLOCK));
+  MaybeSave();
+
+  const FileDescriptor epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(
+      RegisterEpollFD(epollfd.get(), device.get(), EPOLLIN, kMagicConstant));
+  struct epoll_event event;
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &event, 1, 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(event.events, EPOLLIN);
+  EXPECT_EQ(event.data.u64, kMagicConstant);
+}
+
 TEST(EpollTest, LastReadable) {
   auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
   std::vector<FileDescriptor> eventfds;
