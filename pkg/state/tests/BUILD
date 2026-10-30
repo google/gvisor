@@ -17,6 +17,7 @@ go_library(
         "register.go",
         "struct.go",
         "tests.go",
+        "zero_sized.go",
     ],
     deps = [
         "//pkg/state",
@@ -41,6 +42,7 @@ go_test(
         "register_test.go",
         "string_test.go",
         "struct_test.go",
+        "zero_sized_test.go",
     ],
     embed = [":tests"],
     deps = [
