@@ -24,6 +24,7 @@ Each entry under `maintainers:`:
 ```yaml
   - name: Gee Vaïzaur           # Full name or nickname.
     github: gvaizaur            # GitHub username.
+    github_id: 123456789        # GitHub user ID.
     affiliation: Independent    # Current employer, or "Independent".
     past_affiliation:           # Optional.
       - affiliation: Arasaka Corporation
@@ -75,7 +76,7 @@ Most of these are a one-line `status:` edit on an existing entry:
 The two that are not:
 
 -   New maintainer: insert the entry in `started` order, not at the end of the
-    file.
+    file. Look up `github_id` rather than guessing it.
 -   Changed employer: update `affiliation`, and move the old one to
     `past_affiliation` with the date it ended as `until`.
 

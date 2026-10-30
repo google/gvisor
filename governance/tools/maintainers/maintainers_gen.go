@@ -46,6 +46,7 @@ type pastAffiliation struct {
 type maintainer struct {
 	Name             string            `yaml:"name"`
 	GitHub           string            `yaml:"github"`
+	GitHubID         uint64            `yaml:"github_id"`
 	Affiliation      string            `yaml:"affiliation"`
 	PastAffiliations []pastAffiliation `yaml:"past_affiliation"`
 	Started          string            `yaml:"started"`
@@ -132,10 +133,11 @@ func parseRoster(yamlData []byte, areasByName map[string]area) (*roster, error) 
 		return nil, fmt.Errorf("cannot parse roster: %w", err)
 	}
 	seen := make(map[string]bool, len(r.Maintainers))
+	seenIDs := make(map[uint64]bool, len(r.Maintainers))
 	var prev maintainer
 	for _, m := range r.Maintainers {
-		if m.Name == "" || m.GitHub == "" || m.Affiliation == "" || m.Started == "" || m.Status == "" {
-			return nil, fmt.Errorf("maintainer %+v: name, github, affiliation, started and status are required", m)
+		if m.Name == "" || m.GitHub == "" || m.GitHubID == 0 || m.Affiliation == "" || m.Started == "" || m.Status == "" {
+			return nil, fmt.Errorf("maintainer %+v: name, github, github_id, affiliation, started and status are required", m)
 		}
 		if _, err := time.Parse("2006-01-02", m.Started); err != nil {
 			return nil, fmt.Errorf("maintainer %q: invalid started date %q", m.GitHub, m.Started)
@@ -171,6 +173,10 @@ func parseRoster(yamlData []byte, areasByName map[string]area) (*roster, error) 
 			return nil, fmt.Errorf("duplicate maintainer %q", m.GitHub)
 		}
 		seen[m.GitHub] = true
+		if seenIDs[m.GitHubID] {
+			return nil, fmt.Errorf("maintainer %q: duplicate github_id %d", m.GitHub, m.GitHubID)
+		}
+		seenIDs[m.GitHubID] = true
 	}
 	return &r, nil
 }
