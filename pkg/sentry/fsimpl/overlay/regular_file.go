@@ -114,12 +114,12 @@ func (fd *regularFileFD) Release(ctx context.Context) {
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
 func (fd *regularFileFD) OnClose(ctx context.Context) error {
-	// Linux doesn't define ovl_file_operations.flush at all (i.e. its
-	// equivalent to OnClose is a no-op). We pass through to
-	// fd.cachedFD.OnClose() without upgrading if fd.dentry() has been
-	// copied-up, since OnClose is mostly used to define post-close writeback,
-	// and if fd.cachedFD hasn't been updated then it can't have been used to
-	// mutate fd.dentry() anyway.
+	// Linux v6.18 calls flush if the selected underlying file implements it:
+	// https://github.com/torvalds/linux/blob/7d0a66e4b/fs/overlayfs/file.c#L595-L612
+	//
+	// Use cachedFD without switching to the upper layer after a copy-up.
+	// If cachedFD still refers to the lower file, this descriptor hasn't
+	// written to the upper file.
 	fd.mu.Lock()
 	if statusFlags := fd.vfsfd.StatusFlags(); fd.cachedFlags != statusFlags {
 		if err := fd.cachedFD.SetStatusFlags(ctx, fd.filesystem().creds, statusFlags); err != nil {
@@ -129,7 +129,11 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 		fd.cachedFlags = statusFlags
 	}
 	wrappedFD := fd.cachedFD
+	// Once we drop fd.mu, another user of this open description can copy
+	// the file up and release the cache's reference to the selected file.
+	wrappedFD.IncRef()
 	fd.mu.Unlock()
+	defer wrappedFD.DecRef(ctx)
 	return wrappedFD.OnClose(ctx)
 }
 
