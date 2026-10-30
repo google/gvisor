@@ -73,6 +73,7 @@ var (
 	addHostConnector = flag.Bool("add-host-connector", false, "create goroutines that connect to bound UDS that will be created by sandbox")
 	addHostFIFO      = flag.Bool("add-host-fifo", false, "expose a tree of FIFO to test communication with the host")
 	addHostTTY       = flag.Bool("add-host-tty", false, "expose the host's TTY at /dev/tty")
+	addHostVFIO      = flag.Bool("add-host-vfio", false, "expose the VFIO group named by TEST_VFIO_GROUP")
 	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	leakCheck        = flag.Bool("leak-check", false, "check for reference leaks")
 	waitForPid       = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
@@ -1113,6 +1114,34 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 			t.Fatalf("error creating FIFO tree: %v", err)
 		}
 		defer cleanup()
+	}
+
+	if *addHostVFIO {
+		group := os.Getenv("TEST_VFIO_GROUP")
+		if !regexp.MustCompile(`^/dev/vfio/[0-9]+$`).MatchString(group) {
+			t.Fatalf("TEST_VFIO_GROUP must name a numeric /dev/vfio group, got %q", group)
+		}
+		if spec.Linux == nil {
+			spec.Linux = new(specs.Linux)
+		}
+		for _, path := range []string{"/dev/vfio/vfio", group} {
+			var stat unix.Stat_t
+			if err := unix.Stat(path, &stat); err != nil {
+				t.Fatalf("stat %s: %v", path, err)
+			}
+			if stat.Mode&unix.S_IFMT != unix.S_IFCHR {
+				t.Fatalf("%s is not a character device", path)
+			}
+			spec.Linux.Devices = append(spec.Linux.Devices, specs.LinuxDevice{
+				Path:  path,
+				Type:  "c",
+				Major: int64(unix.Major(stat.Rdev)),
+				Minor: int64(unix.Minor(stat.Rdev)),
+			})
+		}
+		// A VFIO device need not be a TPU. This test uses the open device
+		// descriptors directly and does not need TPU-specific PCI sysfs.
+		spec.Mounts = append(spec.Mounts, specs.Mount{Destination: "/sys", Type: "tmpfs"})
 	}
 
 	// Add cgroup mount to enable cgroups for all tests.
