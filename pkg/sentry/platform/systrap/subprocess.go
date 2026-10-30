@@ -951,13 +951,26 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 }
 
 func (s *subprocess) waitOnState(ctx *sharedContext) error {
+	update := ctx.fastPathUpdate
+	ctx.fastPathUpdate = fastPathNoUpdate
 	if s.dead.Load() {
+		// Run the update even subproc is dead -- fastpath update is sentry-global
+		// and others subprocesses still need us!
+		if update != fastPathNoUpdate {
+			fastpath.runUpdate(update)
+		}
 		return errDeadSubprocess
 	}
 	ctx.kicked = false
 	slowPath := false
 	if !s.contextQueue.fastPathEnabled() || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
 		ctx.kicked = s.kickSysmsgThread()
+	}
+	// The context is in the queue and a stub thread was kicked or spins, so
+	// the update runs in parallel with the stub thread that works on the
+	// context.
+	if update != fastPathNoUpdate {
+		fastpath.runUpdate(update)
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
 		if !slowPath {
@@ -992,7 +1005,11 @@ func (s *subprocess) waitOnState(ctx *sharedContext) error {
 		}
 	}
 
-	ctx.recordLatency()
+	// The update can delay the time at which this goroutine sees the state
+	// change, which would inflate the sentry-bound latency.
+	if update == fastPathNoUpdate {
+		ctx.recordLatency()
+	}
 	ctx.resetLatencyMeasures()
 	ctx.enableSentryFastPath()
 
