@@ -635,6 +635,8 @@ type ExecOption func(*execOptions)
 type execOptions struct {
 	args            []string
 	execPath        string
+	gid             *uint32
+	uid             *uint32
 	stdin           io.Reader
 	stdout          io.Writer
 	stderr          io.Writer
@@ -655,6 +657,14 @@ func WithExecStdio(stdin io.Reader, stdout, stderr io.Writer) ExecOption {
 func WithExecSignalRelay() ExecOption {
 	return func(o *execOptions) {
 		o.relaySignals = true
+	}
+}
+
+// WithExecUser sets the uid and gid of the user the command is executed by.
+func WithExecUser(uid, gid uint32) ExecOption {
+	return func(o *execOptions) {
+		o.uid = &uid
+		o.gid = &gid
 	}
 }
 
@@ -714,6 +724,13 @@ func (s *Sandbox) Exec(ctx context.Context, argv []string, opts ...ExecOption) (
 		pidFile = filepath.Join(s.bundleDir, "exec-"+newID()+".pid")
 		defer os.Remove(pidFile)
 		args = append(args, "--internal-pid-file", pidFile)
+	}
+	if options.uid != nil && options.gid != nil {
+		args = append(
+			args,
+			"--user",
+			strconv.FormatUint(uint64(*options.uid), 10)+":"+strconv.FormatUint(uint64(*options.gid), 10),
+		)
 	}
 	if options.execPath != "" {
 		args = append(args, "--exec-path", options.execPath)
