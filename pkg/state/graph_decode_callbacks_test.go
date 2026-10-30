@@ -324,6 +324,315 @@ func TestGraphCallbackOrder(t *testing.T) {
 	}
 }
 
+type defIface interface {
+	defTag() int
+}
+
+type defImpl struct {
+	v         int
+	afterRuns int
+}
+
+func (*defImpl) defTag() int           { return 1 }
+func (*defImpl) StateTypeName() string { return "state.defImpl" }
+func (*defImpl) StateFields() []string { return []string{"v"} }
+func (x *defImpl) StateSave(s Sink)    { s.graph.save(0, &x.v) }
+func (x *defImpl) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.v)
+	s.graph.afterLoad(func() { x.afterRuns++ })
+}
+
+type defInner struct {
+	subMaps    []map[string]defIface
+	fullMaps   []map[string]defIface
+	ifacePtr   *defIface
+	ifaceSlice []defIface
+}
+
+func (*defInner) StateTypeName() string { return "state.defInner" }
+func (*defInner) StateFields() []string {
+	return []string{"subMaps", "fullMaps", "ifacePtr", "ifaceSlice"}
+}
+func (x *defInner) StateSave(s Sink) {
+	s.graph.save(0, &x.subMaps)
+	s.graph.save(1, &x.fullMaps)
+	s.graph.save(2, &x.ifacePtr)
+	s.graph.save(3, &x.ifaceSlice)
+}
+func (x *defInner) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.subMaps)
+	s.graph.load(1, &x.fullMaps)
+	s.graph.load(2, &x.ifacePtr)
+	s.graph.load(3, &x.ifaceSlice)
+}
+
+type defOuter struct {
+	subIn     defInner
+	in        defInner
+	pad       int
+	afterRuns int
+}
+
+func (*defOuter) StateTypeName() string { return "state.defOuter" }
+func (*defOuter) StateFields() []string { return []string{"subIn", "in", "pad"} }
+func (x *defOuter) StateSave(s Sink) {
+	s.graph.save(0, &x.subIn)
+	s.graph.save(1, &x.in)
+	s.graph.save(2, &x.pad)
+}
+func (x *defOuter) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.subIn)
+	s.graph.load(1, &x.in)
+	s.graph.load(2, &x.pad)
+	s.graph.afterLoad(func() { x.afterRuns++ })
+}
+
+type defHolder struct {
+	in    *defInner
+	next  *defHolder
+	outer *defOuter
+}
+
+func (*defHolder) StateTypeName() string { return "state.defHolder" }
+func (*defHolder) StateFields() []string { return []string{"in", "next", "outer"} }
+func (x *defHolder) StateSave(s Sink) {
+	s.graph.save(0, &x.in)
+	s.graph.save(1, &x.next)
+	s.graph.save(2, &x.outer)
+}
+func (x *defHolder) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.in)
+	s.graph.load(1, &x.next)
+	s.graph.load(2, &x.outer)
+}
+
+type defRoot struct {
+	early1      *defInner
+	directSlice []defIface
+	holder      *defHolder
+}
+
+func (*defRoot) StateTypeName() string { return "state.defRoot" }
+func (*defRoot) StateFields() []string { return []string{"early1", "directSlice", "holder"} }
+func (x *defRoot) StateSave(s Sink) {
+	s.graph.save(0, &x.early1)
+	s.graph.save(1, &x.directSlice)
+	s.graph.save(2, &x.holder)
+}
+func (x *defRoot) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.early1)
+	s.graph.load(1, &x.directSlice)
+	s.graph.load(2, &x.holder)
+}
+
+type defMapHolder struct {
+	m map[int]int
+}
+
+func (*defMapHolder) StateTypeName() string { return "state.defMapHolder" }
+func (*defMapHolder) StateFields() []string { return []string{"m"} }
+func (x *defMapHolder) StateSave(s Sink)    { s.graph.save(0, &x.m) }
+func (x *defMapHolder) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.m)
+}
+
+type defTrailingRoot struct {
+	h *defMapHolder
+}
+
+func (*defTrailingRoot) StateTypeName() string { return "state.defTrailingRoot" }
+func (*defTrailingRoot) StateFields() []string { return []string{"h"} }
+func (x *defTrailingRoot) StateSave(s Sink)    { s.graph.save(0, &x.h) }
+func (x *defTrailingRoot) StateLoad(_ context.Context, s Source) {
+	s.graph.load(0, &x.h)
+}
+
+var registerDeferredTestTypes = sync.OnceFunc(func() {
+	Register((*defImpl)(nil))
+	Register((*defInner)(nil))
+	Register((*defOuter)(nil))
+	Register((*defHolder)(nil))
+	Register((*defRoot)(nil))
+	Register((*defMapHolder)(nil))
+	Register((*defTrailingRoot)(nil))
+	fingerprint.Store(0)
+})
+
+func TestGraphDeferredObjectDecode(t *testing.T) {
+	registerDeferredTestTypes()
+
+	t.Run("multi_pass_round_trip", func(t *testing.T) {
+		var ifaceVal defIface = &defImpl{v: 42}
+		nestedMap := map[string]defIface{"nested": &defImpl{v: 99}}
+		// Place subMaps (mapArr[0:1:1]) on outer.subIn at BFS depth 1 so its
+		// 1-element array encodes nestedMap before holder.in (outer.in)
+		// discovers fullMaps (mapArr[0:2:2]) and absorbs the backing array,
+		// while holder.next.outer reparents outer after both. On load:
+		//   - Pass 0 defers nestedMap (map), mapArr (inexact array),
+		//     ifaceVal (inexact value), and ifaceSlice (inexact array), then
+		//     decodes outer at the end of Pass 0, revealing mapArr, ifaceVal,
+		//     and ifaceSlice.
+		//   - Deferred Pass 1 keeps nestedMap in remaining, then decodes
+		//     mapArr, revealing nestedMap's mapType.
+		//   - Deferred Pass 2 decodes nestedMap.
+		mapArr := &[2]map[string]defIface{
+			nestedMap,
+			{"other": &defImpl{v: 5}},
+		}
+		outer := &defOuter{
+			subIn: defInner{subMaps: mapArr[0:1:1]},
+			in: defInner{
+				subMaps:    mapArr[0:1:1],
+				fullMaps:   mapArr[0:2:2],
+				ifacePtr:   &ifaceVal,
+				ifaceSlice: []defIface{&defImpl{v: 10}, &defImpl{v: 20}},
+			},
+			pad: 13,
+		}
+		saved := defRoot{
+			early1:      &outer.subIn,
+			directSlice: []defIface{&defImpl{v: 7}},
+			holder:      &defHolder{in: &outer.in, next: &defHolder{outer: outer}},
+		}
+
+		var buf bytes.Buffer
+		if _, err := saveGraph(t.Context(), &buf, &saved); err != nil {
+			t.Fatalf("saveGraph: %v", err)
+		}
+		allBytes := buf.Bytes()
+		wr := wire.Reader{Reader: bytes.NewReader(allBytes)}
+		hdr, err := ReadHeaderMode(&wr)
+		if err != nil {
+			t.Fatalf("ReadHeaderMode: %v", err)
+		}
+		raw := allBytes[len(allBytes)-int(hdr.Length):]
+		var printed strings.Builder
+		if err := PrintGraph(&printed, raw, 0, false); err != nil {
+			t.Fatalf("PrintGraph: %v", err)
+		}
+		out := printed.String()
+		nestedIdx := strings.Index(out, `"nested"`)
+		mapArrIdx := strings.Index(out, "= [g0r")
+		outerIdx := strings.Index(out, "state.defOuter{")
+		if nestedIdx < 0 || mapArrIdx < 0 || outerIdx < 0 || !(nestedIdx < mapArrIdx && mapArrIdx < outerIdx) {
+			t.Fatalf("stream object order does not exercise 2 deferred passes (nested=%d, mapArr=%d, outer=%d):\n%s", nestedIdx, mapArrIdx, outerIdx, out)
+		}
+
+		var loaded defRoot
+		if _, err := loadGraph(t.Context(), bytes.NewReader(raw), &loaded, hdr.Length, 0); err != nil {
+			t.Fatalf("loadGraph: %v", err)
+		}
+
+		gotOuter := loaded.holder.next.outer
+		if loaded.early1 != &gotOuter.subIn {
+			t.Errorf("early1 %p does not alias &holder.next.outer.subIn %p", loaded.early1, &gotOuter.subIn)
+		}
+		if loaded.holder.in != &gotOuter.in {
+			t.Errorf("holder.in %p does not alias &holder.next.outer.in %p", loaded.holder.in, &gotOuter.in)
+		}
+		if len(loaded.early1.subMaps) != 1 || len(gotOuter.in.subMaps) != 1 || len(gotOuter.in.fullMaps) != 2 {
+			t.Fatalf("subIn.subMaps/in.subMaps/in.fullMaps lengths = %d/%d/%d, want 1/1/2", len(loaded.early1.subMaps), len(gotOuter.in.subMaps), len(gotOuter.in.fullMaps))
+		}
+		if &loaded.early1.subMaps[0] != &gotOuter.in.fullMaps[0] || &gotOuter.in.subMaps[0] != &gotOuter.in.fullMaps[0] {
+			t.Errorf("subMaps[0] does not share backing array with fullMaps[0]")
+		}
+		gotNested, ok := gotOuter.in.fullMaps[0]["nested"].(*defImpl)
+		if !ok || gotNested.v != 99 || gotNested.afterRuns != 1 {
+			t.Errorf("nested map entry = %+v, want v=99 afterRuns=1", gotNested)
+		}
+		gotOther, ok := gotOuter.in.fullMaps[1]["other"].(*defImpl)
+		if !ok || gotOther.v != 5 || gotOther.afterRuns != 1 {
+			t.Errorf("other map entry = %+v, want v=5 afterRuns=1", gotOther)
+		}
+		if got := (*gotOuter.in.ifacePtr).(*defImpl); got.v != 42 || got.afterRuns != 1 {
+			t.Errorf("ifacePtr = %+v, want v=42 afterRuns=1", got)
+		}
+		if len(gotOuter.in.ifaceSlice) != 2 {
+			t.Fatalf("len(ifaceSlice) = %d, want 2", len(gotOuter.in.ifaceSlice))
+		}
+		for i, wantV := range []int{10, 20} {
+			got := gotOuter.in.ifaceSlice[i].(*defImpl)
+			if got.v != wantV || got.afterRuns != 1 {
+				t.Errorf("ifaceSlice[%d] = %+v, want v=%d afterRuns=1", i, got, wantV)
+			}
+		}
+		if len(loaded.directSlice) != 1 {
+			t.Fatalf("len(directSlice) = %d, want 1", len(loaded.directSlice))
+		}
+		if got := loaded.directSlice[0].(*defImpl); got.v != 7 || got.afterRuns != 1 {
+			t.Errorf("directSlice[0] = %+v, want v=7 afterRuns=1", got)
+		}
+		if gotOuter.afterRuns != 1 {
+			t.Errorf("outer.afterRuns = %d, want 1", gotOuter.afterRuns)
+		}
+	})
+
+	t.Run("unknown_deferred_type_error", func(t *testing.T) {
+		var tt typeTable
+		intIdx := tt.rootIndex(typeInfoOf(reflect.TypeFor[int]()))
+		var raw encBuf
+		raw.uint32(streamMagic)
+		raw.uint64(schemaFingerprint())
+		raw.uvarint(uint64(len(tt.types)))
+		raw.bytes(tt.buf.b)
+		// 2 objects: root int + unreferenced empty map.
+		raw.uvarint(2)
+		raw.byte(objKindValue)
+		raw.uvarint(uint64(intIdx))
+		raw.byte(objKindMap)
+		raw.uvarint(0)
+		// 0 targets.
+		raw.uvarint(0)
+		// Object 0 data (0) + Object 1 byteLength (0).
+		raw.uvarint(0)
+		raw.uvarint(0)
+
+		var root int
+		_, err := loadGraph(t.Context(), bytes.NewReader(raw.b), &root, uint64(len(raw.b)), 0)
+		const want = "the type of object 1 (map (0 entries)) is not known from references to it"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("loadGraph = %v, want substring %q", err, want)
+		}
+	})
+
+	t.Run("deferred_trailing_data_error", func(t *testing.T) {
+		var tt typeTable
+		rootIdx := tt.rootIndex(typeInfoOf(reflect.TypeFor[defTrailingRoot]()))
+		holderIdx := tt.exactIndex(typeInfoOf(reflect.TypeFor[defMapHolder]()))
+		var raw encBuf
+		raw.uint32(streamMagic)
+		raw.uint64(schemaFingerprint())
+		raw.uvarint(uint64(len(tt.types)))
+		raw.bytes(tt.buf.b)
+		// 3 objects: 0 = defTrailingRoot, 1 = deferred empty map, 2 = defMapHolder.
+		raw.uvarint(3)
+		raw.byte(objKindValue)
+		raw.uvarint(uint64(rootIdx))
+		raw.byte(objKindMap)
+		raw.uvarint(0)
+		raw.byte(objKindValue)
+		raw.uvarint(uint64(holderIdx))
+		// 2 targets: target 0 -> object 1 (map), target 1 -> object 2 (defMapHolder).
+		raw.uvarint(2)
+		raw.uvarint((1 + 1) << 1)
+		raw.uvarint((2 + 1) << 1)
+		// Object 0: h -> target 1 (encoded as targetIndex+1 = 2).
+		raw.uvarint(2)
+		// Object 1: deferred 0-entry map with 1 trailing byte.
+		raw.uvarint(1)
+		raw.byte(0xff)
+		// Object 2: m -> target 0 (encoded as targetIndex+1 = 1).
+		raw.uvarint(1)
+
+		var root defTrailingRoot
+		_, err := loadGraph(t.Context(), bytes.NewReader(raw.b), &root, uint64(len(raw.b)), 0)
+		const want = "object 1 has 1 bytes of trailing data"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("loadGraph = %v, want substring %q", err, want)
+		}
+	})
+}
+
 // TestGraphLoadNilRoot checks that Load rejects a nil root cleanly.
 func TestGraphLoadNilRoot(t *testing.T) {
 	saved := 7
