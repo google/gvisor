@@ -77,11 +77,36 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 	rc.snd = snd
 }
 
-// update will update the RACK related fields when an ACK has been received.
-// See: https://www.rfc-editor.org/rfc/rfc8985.html#section-6.2
+// rackAck collects the sequence and timing information from one ACK. The
+// sender visits SACKed data before cumulatively ACKed data, whereas RFC 8985
+// section 6.2 processes deliveries in sequence order for reordering and in
+// transmission order for RTT. Both results can be computed without sorting.
+// See https://www.rfc-editor.org/rfc/rfc8985.html#section-6.2.
+type rackAck struct {
+	priorFACK   seqnum.Value
+	priorMinRTT time.Duration
+	sampled     bool
+}
+
+// +checklocks:rc.snd.ep.mu
+func (rc *rackControl) beginAck() rackAck {
+	return rackAck{priorFACK: rc.FACK, priorMinRTT: rc.minRTT}
+}
+
+// update records a newly acknowledged segment. Only a delivery below the
+// highest sequence reported by an earlier ACK proves reordering; ranges in
+// the current ACK do not establish their own arrival order.
 //
 // +checklocks:rc.snd.ep.mu
-func (rc *rackControl) update(seg *segment, ackSeg *segment) {
+func (rc *rackControl) update(seg, ackSeg *segment, ack *rackAck) {
+	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
+	if seg.xmitCount == 1 && endSeq.LessThan(ack.priorFACK) {
+		rc.Reord = true
+	}
+	if rc.FACK.LessThan(endSeq) {
+		rc.FACK = endSeq
+	}
+
 	// Compute the RTT sample against the time the ACK was received at ingress
 	// (ackSeg.rcvdTime), not the current clock. The two differ when the ACK was
 	// delayed inside the stack before being processed (e.g. it sat in the
@@ -105,51 +130,27 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 				return
 			}
 		}
-		if rtt < rc.minRTT {
+		if rtt < ack.priorMinRTT {
 			return
 		}
 	}
 
-	rc.RTT = rtt
-
-	// The sender can either track a simple global minimum of all RTT
-	// measurements from the connection, or a windowed min-filtered value
-	// of recent RTT measurements. This implementation keeps track of the
-	// simple global minimum of all RTTs for the connection.
-	if rtt < rc.minRTT || rc.minRTT == 0 {
+	// The shortest eligible RTT belongs to the segment sent most recently
+	// among those reported by this ACK.
+	if !ack.sampled || rtt < rc.RTT {
+		ack.sampled = true
+		rc.RTT = rtt
+		// Track the connection-wide minimum as well as this ACK's sample.
 		rc.minRTT = rtt
+		if ack.priorMinRTT != 0 {
+			rc.minRTT = min(rtt, ack.priorMinRTT)
+		}
 	}
 
-	// Update rc.xmitTime and rc.endSequence to the transmit time and
-	// ending sequence number of the packet which has been acknowledged
-	// most recently.
-	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
+	// Track the latest transmission across ACKs, breaking ties by end sequence.
 	if rc.XmitTime.Before(seg.xmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
 		rc.XmitTime = seg.xmitTime
 		rc.EndSequence = endSeq
-	}
-}
-
-// detectReorder detects if packet reordering has been observed.
-// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-//   - Step 3: Detect data segment reordering.
-//     To detect reordering, the sender looks for original data segments being
-//     delivered out of order. To detect such cases, the sender tracks the
-//     highest sequence selectively or cumulatively acknowledged in the RACK.fack
-//     variable. The name "fack" stands for the most "Forward ACK" (this term is
-//     adopted from [FACK]). If a never retransmitted segment that's below
-//     RACK.fack is (selectively or cumulatively) acknowledged, it has been
-//     delivered out of order. The sender sets RACK.reord to TRUE if such segment
-//     is identified.
-func (rc *rackControl) detectReorder(seg *segment) {
-	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
-	if rc.FACK.LessThan(endSeq) {
-		rc.FACK = endSeq
-		return
-	}
-
-	if endSeq.LessThan(rc.FACK) && seg.xmitCount == 1 {
-		rc.Reord = true
 	}
 }
 
