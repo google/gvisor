@@ -5319,6 +5319,32 @@ std::vector<RuleWithExprTestParams> GetFibRuleTestParams() {
                             .U32Attr(NFTA_FIB_RESULT, 999)
                             .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
           .expected_error_no = EINVAL},
+      // Narrowing the destination to a byte would turn it into NFT_REG_1.
+      RuleWithExprTestParams{
+          .test_name = "DregWouldTruncate",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, 256 + NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                            .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
+          .expected_error_no = ERANGE},
+      RuleWithExprTestParams{
+          .test_name = "UnknownFlag",
+          .expr_name = "fib",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                  .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                  .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR | (1U << 31)),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "ValidLastRegister",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG32_15)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                            .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
+          .expected_error_no = 0},
       RuleWithExprTestParams{
           .test_name = "ValidOIF",
           .expr_name = "fib",
