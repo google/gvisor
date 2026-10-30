@@ -67,7 +67,8 @@ type IO interface {
 	// partial copy without an error iff src.ReadToBlocks returns a partial
 	// read without an error.
 	//
-	// CopyOutFrom calls src.ReadToBlocks at most once.
+	// CopyOutFrom calls src.ReadToBlocks at most once. CopyOutFromIter permits
+	// multiple calls.
 	//
 	// Preconditions:
 	//	* The caller must not hold mm.MemoryManager.mappingMu or any
@@ -75,6 +76,15 @@ type IO interface {
 	//	* src.ReadToBlocks must not block on mm.MemoryManager.activeMu or
 	//		any preceding locks in the lock order.
 	CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts) (int64, error)
+
+	// CopyOutFromIter is like CopyOutFrom, but may call src.ReadToBlocks
+	// multiple times. It stops after a short read or an error.
+	//
+	// Preconditions:
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* src must advance between calls to src.ReadToBlocks.
+	CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts) (int64, error)
 
 	// CopyInTo copies ars.NumBytes() bytes from the memory mapped at ars to
 	// dst. It returns the number of bytes copied. CopyInTo may return a
@@ -90,10 +100,9 @@ type IO interface {
 	//		any preceding locks in the lock order.
 	CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts IOOpts) (int64, error)
 
-	// TODO(jamieliu): The requirement that CopyOutFrom/CopyInTo call src/dst
-	// at most once, which is unnecessary in most cases, forces implementations
-	// to gather safemem.Blocks into a single slice to pass to src/dst. Add
-	// CopyOutFromIter/CopyInToIter, which relaxes this restriction, to avoid
+	// TODO(jamieliu): The requirement that CopyInTo call dst at most once
+	// forces implementations to gather safemem.Blocks into a single slice.
+	// Allowing an advancing destination to accept multiple writes could avoid
 	// this allocation.
 
 	// SwapUint32 atomically sets the uint32 value at addr to new and
@@ -124,7 +133,7 @@ type IO interface {
 	LoadUint32(ctx context.Context, addr hostarch.Addr, opts IOOpts) (uint32, error)
 }
 
-// IOOpts contains options applicable to all IO methods.
+// IOOpts contains options for accessing user memory.
 type IOOpts struct {
 	// If IgnorePermissions is true, application-defined memory protections set
 	// by mmap(2) or mprotect(2) will be ignored. (Memory protections required
@@ -502,6 +511,13 @@ func (s IOSequence) ZeroOut(ctx context.Context, toZero int64) (int64, error) {
 // Preconditions: Same as IO.CopyOutFrom.
 func (s IOSequence) CopyOutFrom(ctx context.Context, src safemem.Reader) (int64, error) {
 	return s.IO.CopyOutFrom(ctx, s.Addrs, src, s.Opts)
+}
+
+// CopyOutFromIter invokes s.CopyOutFromIter over s.Addrs.
+//
+// Preconditions: Same as IO.CopyOutFromIter.
+func (s IOSequence) CopyOutFromIter(ctx context.Context, src safemem.Reader) (int64, error) {
+	return s.IO.CopyOutFromIter(ctx, s.Addrs, src, s.Opts)
 }
 
 // CopyInTo invokes s.CopyInTo over s.Addrs.

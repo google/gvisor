@@ -20,6 +20,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -59,6 +61,30 @@ func TestPipeRW(t *testing.T) {
 		n, err = r.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
 		if n != wantN || err != nil || !bytes.Equal(buf, msg) {
 			t.Fatalf("Readv: got (%d, %v) %q, wanted (%d, nil) %q", n, err, buf, wantN, msg)
+		}
+	})
+}
+
+func TestCopyOutFromIterStopsOnShortRead(t *testing.T) {
+	runTest(t, MinimumPipeSize, func(ctx context.Context, r, w *vfs.FileDescription) {
+		fd := w.Impl().(*VFSPipeFD)
+		ars := hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{{Start: 0, End: 2}, {Start: 2, End: 4}})
+		calls := 0
+		fd.pipe.mu.Lock()
+		fd.lastAddr = 0
+		n, err := fd.CopyOutFromIter(ctx, ars, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			calls++
+			return safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice([]byte("a"))))
+		}), usermem.IOOpts{})
+		lastAddr := fd.lastAddr
+		fd.pipe.mu.Unlock()
+		if n != 1 || err != nil || calls != 1 || lastAddr != 1 {
+			t.Fatalf("CopyOutFromIter got n=%d err=%v calls=%d lastAddr=%d, want 1, nil, 1, 1", n, err, calls, lastAddr)
+		}
+
+		buf := make([]byte, 1)
+		if n, err := r.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{}); n != 1 || err != nil || buf[0] != 'a' {
+			t.Fatalf("pipe read got n=%d err=%v data=%q, want 1, nil, a", n, err, buf)
 		}
 	})
 }

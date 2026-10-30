@@ -168,6 +168,14 @@ type MemoryManager struct {
 	// +checklocks:activeMu
 	hasPinned bool
 
+	// transientPinLeases identify buffered reads that may still write to pinned
+	// private pages after releasing activeMu. Private pmas are backed by mm.mf,
+	// so their backing ranges identify pages Fork must copy for the child. Kernel
+	// save waits for task and AIO goroutines, so no leases survive checkpoint.
+	//
+	// +checklocks:activeMu
+	transientPinLeases map[*transientPinLease]struct{} `state:"nosave"`
+
 	// gsInUse is true if the application uses the GS register. Only Systrap
 	// cares about this, but it must be defined in mm to preserve the flag
 	// across save/restores.

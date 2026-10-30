@@ -693,6 +693,9 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
+	if invalidatePrivate {
+		mm.revokeTransientPinLeasesLocked(ar)
+	}
 
 	var didUnmapAS bool
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
@@ -757,6 +760,23 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool) ([]PinnedRange, error) {
+	prs, _, err := mm.pin(ctx, ar, at, ignorePermissions, longTermPin)
+	return prs, err
+}
+
+type pinLifetime uint8
+
+const (
+	longTermPin pinLifetime = iota
+	transientPin
+)
+
+// pin also supports short-lived I/O pins of private memory, whose lifetime
+// is tracked by MemoryManager.transientPinLeases instead of MemoryManager.hasPinned.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) pin(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool, lifetime pinLifetime) ([]PinnedRange, *transientPinLease, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -769,20 +789,22 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 	if vendaddr := vend.Start(); vendaddr < ar.End {
 		if vendaddr <= ar.Start {
 			mm.mappingMu.RUnlock()
-			return nil, verr
+			return nil, nil, verr
 		}
 		ar.End = vendaddr
 	}
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	mm.hasPinned = true
+	if lifetime == longTermPin {
+		mm.hasPinned = true
+	}
 	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, false /* callerIndirectCommit */, true /* forPin */)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
 			mm.activeMu.Unlock()
-			return nil, perr
+			return nil, nil, perr
 		}
 		ar.End = pendaddr
 	}
@@ -790,25 +812,144 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	// Gather pmas.
 	var prs []PinnedRange
+	allPrivate := true
 	for pseg.Ok() && pseg.Start() < ar.End {
 		psar := pseg.Range().Intersect(ar)
 		f := pseg.ValuePtr().file
 		fr := pseg.fileRangeOf(psar)
 		f.IncRef(fr, memCgID)
-		prs = append(prs, PinnedRange{
+		pr := PinnedRange{
 			Source: psar,
 			File:   f,
 			Offset: fr.Start,
-		})
+		}
+		allPrivate = allPrivate && pseg.ValuePtr().private
+		prs = append(prs, pr)
 		pseg = pseg.NextSegment()
+	}
+	var lease *transientPinLease
+	if lifetime == transientPin && allPrivate && len(prs) != 0 {
+		lease = &transientPinLease{source: ar, pins: prs}
+		if mm.transientPinLeases == nil {
+			mm.transientPinLeases = make(map[*transientPinLease]struct{})
+		}
+		mm.transientPinLeases[lease] = struct{}{}
 	}
 	mm.activeMu.Unlock()
 
 	// Return the first error in order of progress through ar.
 	if perr != nil {
-		return prs, perr
+		return prs, lease, perr
 	}
-	return prs, verr
+	return prs, lease, verr
+}
+
+// transientPinLease tracks the virtual destination of a buffered read. A mapping
+// change revokes the lease; the read then copies its completed bytes to the
+// current mapping before releasing its references to the old pages.
+type transientPinLease struct {
+	source  hostarch.AddrRange
+	pins    []PinnedRange
+	revoked bool
+}
+
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) revokeTransientPinLeasesLocked(ar hostarch.AddrRange) {
+	for lease := range mm.transientPinLeases {
+		if lease.source.Overlaps(ar) {
+			lease.revoked = true
+		}
+	}
+}
+
+func (mm *MemoryManager) finishTransientPinLease(lease *transientPinLease) bool {
+	mm.activeMu.Lock()
+	revoked := lease.revoked
+	delete(mm.transientPinLeases, lease)
+	mm.activeMu.Unlock()
+	return revoked
+}
+
+// firstTransientPinOverlapLocked returns the first overlap with a transient pin.
+//
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) firstTransientPinOverlapLocked(fr memmap.FileRange) (memmap.FileRange, bool) {
+	var first memmap.FileRange
+	found := false
+	for lease := range mm.transientPinLeases {
+		for _, pin := range lease.pins {
+			if overlap := pin.FileRange().Intersect(fr); overlap.Length() != 0 && (!found || overlap.Start < first.Start) {
+				first = overlap
+				found = true
+			}
+		}
+	}
+	return first, found
+}
+
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) transientPinOverlapsLocked(fr memmap.FileRange) bool {
+	_, ok := mm.firstTransientPinOverlapLocked(fr)
+	return ok
+}
+
+// detachTransientPinPMAsLocked preserves the current mapping when mprotect or
+// mremap changes a PMA while an in-flight read still targets its old pages.
+// The read repairs into the current mapping after the source completes.
+//
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) detachTransientPinPMAsLocked(ctx context.Context, ar hostarch.AddrRange) error {
+	if len(mm.transientPinLeases) == 0 {
+		return nil
+	}
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+	for pseg := mm.pmas.LowerBoundSegment(ar.Start); pseg.Ok() && pseg.Start() < ar.End; {
+		part := pseg.Range().Intersect(ar)
+		if !pseg.ValuePtr().private {
+			pseg = pseg.NextSegment()
+			continue
+		}
+		fr := pseg.fileRangeOf(part)
+		pinned, ok := mm.firstTransientPinOverlapLocked(fr)
+		if !ok {
+			pseg = pseg.NextSegment()
+			continue
+		}
+		part = hostarch.AddrRange{
+			Start: part.Start + hostarch.Addr(pinned.Start-fr.Start),
+			End:   part.Start + hostarch.Addr(pinned.End-fr.Start),
+		}
+		ims, err := pseg.getInternalMappingsLocked(part)
+		if err != nil {
+			return err
+		}
+		reader := safemem.BlockSeqReader{Blocks: ims}
+		newFR, err := mm.mf.Allocate(uint64(part.Length()), pgalloc.AllocOpts{
+			Kind:       usage.Anonymous,
+			MemCgID:    memCgID,
+			Mode:       pgalloc.AllocateAndWritePopulate,
+			ReaderFunc: reader.ReadToBlocks,
+		})
+		if err != nil || newFR.Length() != uint64(part.Length()) {
+			if newFR.Length() != 0 {
+				mm.mf.DecRef(newFR)
+			}
+			if err != nil {
+				return err
+			}
+			return linuxerr.ENOMEM
+		}
+		pseg = mm.pmas.Isolate(pseg, part)
+		oldFR := pseg.fileRange()
+		pma := pseg.ValuePtr()
+		mm.unmapASLocked(part)
+		pma.off = newFR.Start
+		pma.huge = false
+		pma.internalMappings = safemem.BlockSeq{}
+		mm.mf.DecRef(oldFR)
+		pseg = pseg.NextSegment()
+	}
+	return nil
 }
 
 // PinnedRanges are returned by MemoryManager.Pin.
@@ -861,6 +1002,8 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR hostarch.AddrRange) {
 		}
 		// mm.pmas.IsEmptyRange is checked by mm.pmas.Insert.
 	}
+	mm.revokeTransientPinLeasesLocked(oldAR)
+	mm.revokeTransientPinLeasesLocked(newAR)
 
 	type movedPMA struct {
 		oldAR hostarch.AddrRange

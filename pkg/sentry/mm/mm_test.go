@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,7 +146,7 @@ func TestDataASUpdates(t *testing.T) {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
-	mm.MProtect(addr+pageSizeAddr, pageSize, hostarch.Read, false)
+	mm.MProtect(ctx, addr+pageSizeAddr, pageSize, hostarch.Read, false)
 	realDataAS = mm.realDataAS()
 	if got := mm.VirtualDataSize(); got != realDataAS {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
@@ -215,6 +216,308 @@ func TestIOAfterUnmap(t *testing.T) {
 	}
 }
 
+type advancingTestReader struct {
+	data  []byte
+	calls int
+}
+
+func (r *advancingTestReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
+	r.calls++
+	n, err := safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(r.data)))
+	r.data = r.data[n:]
+	return n, err
+}
+
+func TestCopyOutFromIterAcrossWindows(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	// The buffer extends past CopyOutFromIter's 1 MiB window.
+	data := make([]byte, 1<<20+pageSizeInt)
+	for i := range data {
+		data[i] = byte(i/pageSizeInt%251 + 1)
+	}
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   uint64(len(data)),
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := &advancingTestReader{data: data}
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + hostarch.Addr(len(data))})
+	n, err := mm.CopyOutFromIter(ctx, ars, src, usermem.IOOpts{})
+	if n != int64(len(data)) || err != nil || src.calls != 2 || len(src.data) != 0 {
+		t.Fatalf("CopyOutFromIter got n=%d err=%v calls=%d remaining=%d", n, err, src.calls, len(src.data))
+	}
+	got := make([]byte, len(data))
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatal("CopyOutFromIter wrote different data")
+	}
+}
+
+func TestCopyOutFromIterPartialFault(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   pageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + 2*pageSizeAddr})
+	src := &advancingTestReader{data: bytes.Repeat([]byte{'x'}, 2*pageSizeInt)}
+	n, err := mm.CopyOutFromIter(ctx, ars, src, usermem.IOOpts{})
+	if n != int64(pageSize) || !linuxerr.Equals(linuxerr.EFAULT, err) {
+		t.Fatalf("partial fault: n=%d err=%v", n, err)
+	}
+}
+
+func TestCopyOutFromIterSharedMappingShortRead(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(2*pageSize, pgalloc.AllocOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappable := NewSpecialMappable("test_mappable", mf, fr)
+	defer mappable.DecRef(ctx)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:          2 * pageSize,
+		MappingIdentity: mappable,
+		Mappable:        mappable,
+		Perms:           hostarch.ReadWrite,
+		MaxPerms:        hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := bytes.Repeat([]byte{'A'}, 2*pageSizeInt)
+	if _, err := mm.CopyOut(ctx, addr, initial, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + 2*pageSizeAddr})
+	src := &advancingTestReader{data: bytes.Repeat([]byte{'B'}, pageSizeInt)}
+	n, err := mm.CopyOutFromIter(ctx, ars, src, usermem.IOOpts{})
+	if n != int64(pageSize) || err != nil {
+		t.Fatalf("CopyOutFrom got n=%d err=%v, want n=%d err=nil", n, err, pageSize)
+	}
+	got := make([]byte, len(initial))
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	want := append(bytes.Repeat([]byte{'B'}, pageSizeInt), initial[pageSizeInt:]...)
+	if !bytes.Equal(got, want) {
+		t.Errorf("shared mapping contains %q..., want %q...", got[:4], want[:4])
+	}
+}
+
+func TestCopyOutFromIterForkAfterMRemapMove(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   pageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	before := bytes.Repeat([]byte{'A'}, pageSizeInt)
+	if _, err := mm.CopyOut(ctx, addr, before, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+
+	started := make(chan struct{})
+	resume := make(chan struct{})
+	type result struct {
+		n   int64
+		err error
+	}
+	readDone := make(chan result, 1)
+	after := bytes.Repeat([]byte{'B'}, pageSizeInt)
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + pageSizeAddr})
+	go func() {
+		n, err := mm.CopyOutFromIter(ctx, ars, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			close(started)
+			<-resume
+			return safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(after)))
+		}), usermem.IOOpts{})
+		readDone <- result{n, err}
+	}()
+	<-started
+
+	newAddr := mm.layout.MaxAddr - pageSizeAddr
+	if got, err := mm.MRemap(ctx, addr, pageSize, pageSize, MRemapOpts{Move: MRemapMustMove, NewAddr: newAddr}); err != nil || got != newAddr {
+		close(resume)
+		t.Fatalf("MRemap got addr=%#x err=%v, want addr=%#x err=nil", got, err, newAddr)
+	}
+
+	child, err := mm.Fork(ctx)
+	if err != nil {
+		close(resume)
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer child.DecUsers(ctx)
+	close(resume)
+	if got := <-readDone; got.n != 0 || !linuxerr.Equals(linuxerr.EFAULT, got.err) {
+		t.Fatalf("CopyOutFromIter got n=%d err=%v, want n=0 err=EFAULT", got.n, got.err)
+	}
+
+	parentData := make([]byte, pageSizeInt)
+	if _, err := mm.CopyIn(ctx, newAddr, parentData, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	childData := make([]byte, pageSizeInt)
+	if _, err := child.CopyIn(ctx, newAddr, childData, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	if !bytes.Equal(parentData, before) || !bytes.Equal(childData, before) {
+		t.Errorf("moved or forked mapping observed the pinned write: parent %q..., child %q..., want both %q...", parentData[:4], childData[:4], before[:4])
+	}
+	parentOff, parentCOW := pmaAt(t, mm, newAddr)
+	childOff, _ := pmaAt(t, child, newAddr)
+	if !parentCOW || parentOff != childOff {
+		t.Errorf("moved mapping did not retain COW: parent off=%#x COW=%v, child off=%#x", parentOff, parentCOW, childOff)
+	}
+}
+
+func TestCopyOutFromIterForkCopiesOnlyPinnedPageWithinPMA(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const npages = 64
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   npages * pageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	if _, err := mm.CopyOut(ctx, addr, bytes.Repeat([]byte{'A'}, npages*pageSizeInt), usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+
+	const pinnedPage = npages / 2
+	pinnedAddr := addr + pinnedPage*pageSizeAddr
+	started := make(chan struct{})
+	resume := make(chan struct{})
+	type result struct {
+		n   int64
+		err error
+	}
+	readDone := make(chan result, 1)
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: pinnedAddr, End: pinnedAddr + pageSizeAddr})
+	go func() {
+		n, err := mm.CopyOutFromIter(ctx, ars, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			close(started)
+			<-resume
+			return safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bytes.Repeat([]byte{'B'}, pageSizeInt))))
+		}), usermem.IOOpts{})
+		readDone <- result{n, err}
+	}()
+	<-started
+	child, err := mm.Fork(ctx)
+	if err != nil {
+		close(resume)
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer child.DecUsers(ctx)
+	close(resume)
+	if got := <-readDone; got.n != int64(pageSize) || got.err != nil {
+		t.Fatalf("CopyOutFromIter got n=%d err=%v, want n=%d err=nil", got.n, got.err, pageSizeInt)
+	}
+
+	var copied []int
+	for i := 0; i < npages; i++ {
+		pageAddr := addr + hostarch.Addr(i)*pageSizeAddr
+		parentOff, parentCOW := pmaAt(t, mm, pageAddr)
+		childOff, _ := pmaAt(t, child, pageAddr)
+		if parentOff != childOff {
+			copied = append(copied, i)
+			if parentCOW {
+				t.Errorf("page %d: copied but parent pma is copy-on-write", i)
+			}
+		} else if !parentCOW {
+			t.Errorf("page %d: parent pma is not copy-on-write", i)
+		}
+	}
+	if len(copied) != 1 || copied[0] != pinnedPage {
+		t.Errorf("Fork eagerly copied pages %v, want only page %d", copied, pinnedPage)
+	}
+
+	childData := make([]byte, npages*pageSizeInt)
+	if _, err := child.CopyIn(ctx, addr, childData, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	if !bytes.Equal(childData, bytes.Repeat([]byte{'A'}, npages*pageSizeInt)) {
+		t.Errorf("child observed the pinned write")
+	}
+}
+
+func TestCopyOutFromIterForkAfterUnpinIsCopyOnWrite(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   pageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	read := bytes.Repeat([]byte{'B'}, pageSizeInt)
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + pageSizeAddr})
+	src := &advancingTestReader{data: read}
+	if n, err := mm.CopyOutFromIter(ctx, ars, src, usermem.IOOpts{}); n != int64(pageSize) || err != nil {
+		t.Fatalf("CopyOutFromIter got n=%d err=%v, want n=%d err=nil", n, err, pageSizeInt)
+	}
+
+	child, err := mm.Fork(ctx)
+	if err != nil {
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer child.DecUsers(ctx)
+
+	parentOff, parentCOW := pmaAt(t, mm, addr)
+	childOff, _ := pmaAt(t, child, addr)
+	if !parentCOW || parentOff != childOff {
+		t.Errorf("page not copy-on-write after fork: parent off=%#x COW=%v, child off=%#x", parentOff, parentCOW, childOff)
+	}
+
+	if _, err := mm.CopyOut(ctx, addr, bytes.Repeat([]byte{'C'}, pageSizeInt), usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+	childBuf := make([]byte, pageSizeInt)
+	if _, err := child.CopyIn(ctx, addr, childBuf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	if !bytes.Equal(childBuf, read) {
+		t.Errorf("child read %q..., want %q...", childBuf[:4], read[:4])
+	}
+}
+
 // TestIOAfterMProtect tests IO interaction with mprotect permissions.
 func TestIOAfterMProtect(t *testing.T) {
 	ctx := contexttest.Context(t)
@@ -241,7 +544,7 @@ func TestIOAfterMProtect(t *testing.T) {
 		t.Errorf("CopyOut got %d want 1", n)
 	}
 
-	err = mm.MProtect(addr, pageSize, hostarch.Read, false)
+	err = mm.MProtect(ctx, addr, pageSize, hostarch.Read, false)
 	if err != nil {
 		t.Errorf("MProtect got err %v want nil", err)
 	}
@@ -1031,8 +1334,8 @@ func TestSealedMapping(t *testing.T) {
 
 	wantError(t, linuxerr.EPERM, "MUnmap(sealed)", mm.MUnmap(ctx, sealedAddr, pageSize))
 	wantError(t, linuxerr.EPERM, "MUnmap(all)", mm.MUnmap(ctx, base, all))
-	wantError(t, linuxerr.EPERM, "MProtect(sealed)", mm.MProtect(sealedAddr, pageSize, hostarch.ReadWrite, false))
-	wantError(t, linuxerr.EPERM, "MProtect(all)", mm.MProtect(base, all, hostarch.Read, false))
+	wantError(t, linuxerr.EPERM, "MProtect(sealed)", mm.MProtect(ctx, sealedAddr, pageSize, hostarch.ReadWrite, false))
+	wantError(t, linuxerr.EPERM, "MProtect(all)", mm.MProtect(ctx, base, all, hostarch.Read, false))
 	wantError(t, linuxerr.EPERM, "Decommit(sealed)", mm.Decommit(sealedAddr, pageSize))
 	wantError(t, linuxerr.EPERM, "SetDontFork(all)", mm.SetDontFork(base, all, true))
 	_, err = mm.MRemap(ctx, sealedAddr, pageSize, 2*pageSize, MRemapOpts{Move: MRemapMayMove})
@@ -1217,5 +1520,226 @@ func TestIODuringAsyncPageLoad(t *testing.T) {
 	}
 	if want := bytes.Repeat([]byte{1}, len(b)); !bytes.Equal(b, want) {
 		t.Errorf("CopyIn got %v want %v", b, want)
+	}
+}
+
+type gatedReadResult struct {
+	n   int64
+	err error
+}
+
+type gatedRead struct {
+	resume chan struct{}
+	done   chan gatedReadResult
+	once   sync.Once
+}
+
+func startGatedIterRead(t *testing.T, ctx context.Context, mm *MemoryManager, addr hostarch.Addr, fill []byte) *gatedRead {
+	t.Helper()
+	g := &gatedRead{
+		resume: make(chan struct{}),
+		done:   make(chan gatedReadResult, 1),
+	}
+	started := make(chan struct{})
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + hostarch.Addr(len(fill))})
+	go func() {
+		n, err := mm.CopyOutFromIter(ctx, ars, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			close(started)
+			<-g.resume
+			return safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(fill)))
+		}), usermem.IOOpts{})
+		g.done <- gatedReadResult{n, err}
+	}()
+	<-started
+	t.Cleanup(func() { g.once.Do(func() { close(g.resume) }) })
+	return g
+}
+
+func (g *gatedRead) finish() gatedReadResult {
+	g.once.Do(func() { close(g.resume) })
+	return <-g.done
+}
+
+func mmapRacePage(t *testing.T, ctx context.Context, mm *MemoryManager, fill []byte) hostarch.Addr {
+	t.Helper()
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   pageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	if _, err := mm.CopyOut(ctx, addr, fill, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+	return addr
+}
+
+func requireReadResult(t *testing.T, res gatedReadResult, wantN int64, wantErr *errors.Error) {
+	t.Helper()
+	if res.n != wantN || !linuxerr.Equals(wantErr, res.err) {
+		t.Fatalf("read got n=%d err=%v, want n=%d err=%v", res.n, res.err, wantN, wantErr)
+	}
+}
+
+func copyInPage(t *testing.T, ctx context.Context, mm *MemoryManager, addr hostarch.Addr, ignorePermissions bool) []byte {
+	t.Helper()
+	buf := make([]byte, pageSizeInt)
+	if _, err := mm.CopyIn(ctx, addr, buf, usermem.IOOpts{IgnorePermissions: ignorePermissions}); err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	return buf
+}
+
+func TestCopyOutFromIterRacingMunmap(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr := mmapRacePage(t, ctx, mm, bytes.Repeat([]byte{'A'}, pageSizeInt))
+
+	g := startGatedIterRead(t, ctx, mm, addr, bytes.Repeat([]byte{'B'}, pageSizeInt))
+	if err := mm.MUnmap(ctx, addr, pageSize); err != nil {
+		t.Fatalf("MUnmap got err %v want nil", err)
+	}
+	requireReadResult(t, g.finish(), 0, linuxerr.EFAULT)
+
+	buf := make([]byte, pageSizeInt)
+	if n, err := mm.CopyIn(ctx, addr, buf, usermem.IOOpts{}); !linuxerr.Equals(linuxerr.EFAULT, err) {
+		t.Errorf("CopyIn after unmap got n=%d err=%v, want EFAULT", n, err)
+	}
+}
+
+func TestCopyOutFromIterRacingMProtectReadOnly(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr := mmapRacePage(t, ctx, mm, bytes.Repeat([]byte{'A'}, pageSizeInt))
+
+	g := startGatedIterRead(t, ctx, mm, addr, bytes.Repeat([]byte{'B'}, pageSizeInt))
+	if err := mm.MProtect(ctx, addr, pageSize, hostarch.Read, false /* growsDown */); err != nil {
+		t.Fatalf("MProtect got err %v want nil", err)
+	}
+	requireReadResult(t, g.finish(), 0, linuxerr.EFAULT)
+
+	if _, err := mm.CopyOut(ctx, addr, bytes.Repeat([]byte{'C'}, pageSizeInt), usermem.IOOpts{}); !linuxerr.Equals(linuxerr.EFAULT, err) {
+		t.Errorf("CopyOut to read-only page got err %v, want EFAULT", err)
+	}
+	want := bytes.Repeat([]byte{'A'}, pageSizeInt)
+	if got := copyInPage(t, ctx, mm, addr, true /* ignorePermissions */); !bytes.Equal(got, want) {
+		t.Errorf("page contains %q..., want %q...", got[:4], want[:4])
+	}
+}
+
+func TestCopyOutFromIterMProtectCopiesOnlyPinnedPage(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const npages = 64
+	initial := bytes.Repeat([]byte{'A'}, npages*pageSizeInt)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   uint64(len(initial)),
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mm.CopyOut(ctx, addr, initial, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+
+	const pinnedPage = npages / 2
+	before := make([]uint64, npages)
+	for i := range before {
+		before[i], _ = pmaAt(t, mm, addr+hostarch.Addr(i)*pageSizeAddr)
+	}
+	g := startGatedIterRead(t, ctx, mm, addr+pinnedPage*pageSizeAddr, bytes.Repeat([]byte{'B'}, pageSizeInt))
+	if err := mm.MProtect(ctx, addr, uint64(len(initial)), hostarch.Read, false); err != nil {
+		t.Fatal(err)
+	}
+	for i, old := range before {
+		newOffset, _ := pmaAt(t, mm, addr+hostarch.Addr(i)*pageSizeAddr)
+		if (newOffset != old) != (i == pinnedPage) {
+			t.Errorf("page %d: backing offset changed from %#x to %#x, pinned page is %d", i, old, newOffset, pinnedPage)
+		}
+	}
+	requireReadResult(t, g.finish(), 0, linuxerr.EFAULT)
+	got := make([]byte, len(initial))
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, initial) {
+		t.Error("mprotect changed the mapping contents")
+	}
+}
+
+func TestCopyOutFromIterRacingDecommit(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr := mmapRacePage(t, ctx, mm, bytes.Repeat([]byte{'A'}, pageSizeInt))
+
+	g := startGatedIterRead(t, ctx, mm, addr, bytes.Repeat([]byte{'B'}, pageSizeInt))
+	if err := mm.Decommit(addr, pageSize); err != nil {
+		t.Fatalf("Decommit got err %v want nil", err)
+	}
+	requireReadResult(t, g.finish(), int64(pageSize), nil)
+
+	want := bytes.Repeat([]byte{'B'}, pageSizeInt)
+	if got := copyInPage(t, ctx, mm, addr, false /* ignorePermissions */); !bytes.Equal(got, want) {
+		t.Errorf("page contains %q..., want %q...", got[:4], want[:4])
+	}
+}
+
+func TestCopyOutFromIterRacingMMapFixedReplace(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr := mmapRacePage(t, ctx, mm, bytes.Repeat([]byte{'A'}, pageSizeInt))
+
+	g := startGatedIterRead(t, ctx, mm, addr, bytes.Repeat([]byte{'B'}, pageSizeInt))
+	if _, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   pageSize,
+		Addr:     addr,
+		Fixed:    true,
+		Unmap:    true,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	}); err != nil {
+		t.Fatalf("MMap(MAP_FIXED) got err %v want nil", err)
+	}
+	requireReadResult(t, g.finish(), int64(pageSize), nil)
+
+	want := bytes.Repeat([]byte{'B'}, pageSizeInt)
+	if got := copyInPage(t, ctx, mm, addr, false /* ignorePermissions */); !bytes.Equal(got, want) {
+		t.Errorf("replacement page contains %q..., want %q...", got[:4], want[:4])
+	}
+}
+
+func TestCopyOutFromIterRacingMRemapMove(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	addr := mmapRacePage(t, ctx, mm, bytes.Repeat([]byte{'A'}, pageSizeInt))
+
+	g := startGatedIterRead(t, ctx, mm, addr, bytes.Repeat([]byte{'B'}, pageSizeInt))
+	newAddr := mm.layout.MaxAddr - pageSizeAddr
+	if got, err := mm.MRemap(ctx, addr, pageSize, pageSize, MRemapOpts{Move: MRemapMustMove, NewAddr: newAddr}); err != nil || got != newAddr {
+		t.Fatalf("MRemap got addr=%#x err=%v, want addr=%#x err=nil", got, err, newAddr)
+	}
+	requireReadResult(t, g.finish(), 0, linuxerr.EFAULT)
+
+	buf := make([]byte, pageSizeInt)
+	if n, err := mm.CopyIn(ctx, addr, buf, usermem.IOOpts{}); !linuxerr.Equals(linuxerr.EFAULT, err) {
+		t.Errorf("CopyIn at old address got n=%d err=%v, want EFAULT", n, err)
+	}
+	want := bytes.Repeat([]byte{'A'}, pageSizeInt)
+	if got := copyInPage(t, ctx, mm, newAddr, false /* ignorePermissions */); !bytes.Equal(got, want) {
+		t.Errorf("moved mapping contains %q..., want %q...", got[:4], want[:4])
 	}
 }

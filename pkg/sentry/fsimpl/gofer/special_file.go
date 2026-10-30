@@ -209,6 +209,8 @@ func (fd *specialFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	return fd.FileDescriptionDefaultImpl.Allocate(ctx, mode, offset, length)
 }
 
+const largeBufferedReadThreshold = 1 << 20
+
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	start := fsmetric.StartReadWait()
@@ -262,7 +264,15 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	}
 
 	rw := getHandleReadWriter(ctx, &fd.handle, offset)
-	n, err := dst.CopyOutFrom(ctx, rw)
+	nonDirectRegularFile := fd.isRegularFile && fd.vfsfd.StatusFlags()&linux.O_DIRECT == 0
+	multiRead := nonDirectRegularFile && dst.NumBytes() >= largeBufferedReadThreshold
+	var n int64
+	var err error
+	if multiRead {
+		n, err = dst.CopyOutFromIter(ctx, rw)
+	} else {
+		n, err = dst.CopyOutFrom(ctx, rw)
+	}
 	putHandleReadWriter(rw)
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = linuxerr.ErrWouldBlock

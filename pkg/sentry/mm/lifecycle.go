@@ -221,7 +221,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	mm2.activeMu.NestedLock(activeLockForked)
 	defer mm2.activeMu.NestedUnlock(activeLockForked)
 	mm2.gsInUse = gsInUse
-	if dontforks || mm.hasPinned {
+	if dontforks || mm.hasPinned || len(mm.transientPinLeases) != 0 {
 		defer mm.pmas.MergeInsideRange(mm.applicationAddrRange())
 	}
 	srcvseg := mm.vmas.FirstSegment()
@@ -266,7 +266,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 			}
 		}
 
-		if mm.hasPinned && !pma.needCOW {
+		if (mm.hasPinned || mm.transientPinOverlapsLocked(srcpseg.fileRange())) && !pma.needCOW {
 			// Pinned pages must not be made copy-on-write: breaking
 			// copy-on-write moves the writing process to a new copy of the
 			// page, while any DMA registered against the original page
