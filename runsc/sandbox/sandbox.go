@@ -3012,7 +3012,7 @@ func deviceFileForPlatform(name, devicePath string) (*fd.FD, error) {
 func getNvproxyDriverVersion(conf *config.Config) (string, error) {
 	switch conf.NVProxyDriverVersion {
 	case "":
-		return nvconf.HostDriverVersion()
+		return specutils.NVProxyHostDriverVersion(conf)
 	case "latest":
 		return conf.NVProxyDriverVersion, nil
 	default:

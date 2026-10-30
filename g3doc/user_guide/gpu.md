@@ -80,6 +80,19 @@ When using CDI, the `nvidia-container-runtime` shim is not required. `runsc` is
 invoked directly as the low-level runtime, and the higher-level runtime applies
 the CDI spec.
 
+By default, `runsc` takes the NVIDIA device files listed in the container spec
+from the host's `/dev`. The `--nvproxy-dev-roots` flag changes where it looks.
+It is an ordered, comma-separated list of absolute host directories, and it
+defaults to `/,/run/nvidia/driver`, which also covers the root that the NVIDIA
+GPU Operator's driver container publishes. `runsc` uses the first directory
+whose `dev/nvidiactl` is the NVIDIA control device, and takes all the NVIDIA
+device files from it, so every NVIDIA device the container needs must exist
+under that directory. To look in one place only, set the flag to a single
+directory, for example `--nvproxy-dev-roots=/run/nvidia/driver`. The devices
+still appear in the sandbox at the paths given in the spec. The flag has no
+effect with `--gpus` or the legacy `nvidia-container-runtime` mode, where
+`nvidia-container-cli` sets up the devices.
+
 ### Docker
 
 The "legacy" mode of `nvidia-container-runtime` is directly compatible with the

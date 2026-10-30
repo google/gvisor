@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -515,6 +516,14 @@ func ShouldExposeNvidiaDevice(path string) bool {
 	return nvidiaDevPathReg.MatchString(path)
 }
 
+// hasNvidiaDevice returns true if any of devices is an NVIDIA device which
+// should be exposed to the container.
+func hasNvidiaDevice(devices []specs.LinuxDevice) bool {
+	return slices.ContainsFunc(devices, func(dev specs.LinuxDevice) bool {
+		return ShouldExposeNvidiaDevice(dev.Path)
+	})
+}
+
 // ShouldExposeVFIODevice returns true if path refers to a VFIO device
 // which should be exposed to the container.
 func ShouldExposeVFIODevice(path string) bool {
@@ -537,6 +546,35 @@ func ShouldExposeRDMADevice(path string) bool {
 	return strings.HasPrefix(path, "/dev/infiniband/uverbs")
 }
 
+// openCharDevice opens the character device at src and checks that it is the
+// device that dev names. src may be under a directory that belongs to something
+// else, such as a driver container's root filesystem, so it is not trusted to
+// be what it looks like: it is opened without following a symlink.
+//
+// The returned file is named by the path to mount it from, under the procfs at
+// procPath, so that what was checked is what gets mounted.
+func openCharDevice(src string, dev specs.LinuxDevice, procPath string) (*os.File, error) {
+	fd, err := unix.Open(src, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("open(%q): %w", src, err)
+	}
+	f := os.NewFile(uintptr(fd), fmt.Sprintf("%s/self/fd/%d", procPath, fd))
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("fstat(%q): %w", src, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFCHR {
+		f.Close()
+		return nil, fmt.Errorf("%q is not a character device", src)
+	}
+	if major, minor := unix.Major(uint64(st.Rdev)), unix.Minor(uint64(st.Rdev)); int64(major) != dev.Major || int64(minor) != dev.Minor {
+		f.Close()
+		return nil, fmt.Errorf("%q is device %d:%d, but the spec says %d:%d", src, major, minor, dev.Major, dev.Minor)
+	}
+	return f, nil
+}
+
 // SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
 func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
 	if err := os.MkdirAll(filepath.Join(root, "dev"), 0777); err != nil {
@@ -549,12 +587,35 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
 	tpuproxyEnabled := specutils.TPUProxyEnabled(spec, conf)
 	rdmaproxyEnabled := specutils.RDMAEnabled(spec, conf)
+	// The driver may be installed under a different root, e.g. by a driver
+	// container. Resolve it once, so all the devices come from the same root.
+	// The devices are still exposed at their paths in the spec.
+	var nvidiaDevRoot string
+	if nvproxyEnabled && hasNvidiaDevice(spec.Linux.Devices) {
+		devRoot, err := specutils.NVProxyDevRoot(conf)
+		if err != nil {
+			return fmt.Errorf("nvproxy: %w", err)
+		}
+		nvidiaDevRoot = devRoot
+	}
 	for _, dev := range spec.Linux.Devices {
 		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
 			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path)) ||
 			(rdmaproxyEnabled && ShouldExposeRDMADevice(dev.Path))
 		if !shouldMount {
 			continue
+		}
+		src := dev.Path
+		if nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path) {
+			// ShouldExposeNvidiaDevice only accepts a fixed set of names under
+			// /dev, with no "/" or "..", so the join stays inside the root.
+			// Revisit this if that matcher is loosened.
+			f, err := openCharDevice(filepath.Join(nvidiaDevRoot, dev.Path), dev, procPath)
+			if err != nil {
+				return fmt.Errorf("nvproxy: %w", err)
+			}
+			defer f.Close()
+			src = f.Name()
 		}
 		// The rootfs may contain symlinks at dev.Path; resolve them within
 		// root so the mount point is never created outside the rootfs.
@@ -563,7 +624,7 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 			return fmt.Errorf("resolving symlinks to %q: %v", dev.Path, err)
 		}
 		log.Infof("Mounting device %q as bind mount at %q", dev.Path, dst)
-		if err := specutils.SafeSetupAndMount(dev.Path, dst, "bind", unix.MS_BIND, procPath); err != nil {
+		if err := specutils.SafeSetupAndMount(src, dst, "bind", unix.MS_BIND, procPath); err != nil {
 			return fmt.Errorf("mounting %q: %v", dev.Path, err)
 		}
 	}

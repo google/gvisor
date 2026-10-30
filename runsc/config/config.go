@@ -409,6 +409,10 @@ type Config struct {
 	// unsupported driver version.
 	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
 
+	// NVProxyDevRoots is a comma-separated, ordered list of host directories to
+	// search for the NVIDIA device files.
+	NVProxyDevRoots string `flag:"nvproxy-dev-roots"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
@@ -652,6 +656,9 @@ func (c *Config) Validate() error {
 	}
 	if unsupported := allowedCaps & ^nvconf.SupportedDriverCaps; unsupported != 0 {
 		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: unsupported capabilities: %v", c.NVProxyAllowedDriverCapabilities, unsupported)
+	}
+	if _, err := nvconf.ParseDevRoots(c.NVProxyDevRoots); err != nil {
+		return fmt.Errorf("--nvproxy-dev-roots=%q: %w", c.NVProxyDevRoots, err)
 	}
 	return nil
 }
