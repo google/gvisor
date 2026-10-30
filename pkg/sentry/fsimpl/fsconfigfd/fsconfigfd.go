@@ -179,10 +179,9 @@ type awaitingMountContext struct {
 	// The root of the filesystem created using FSCONFIG_CMD_CREATE.
 	root *vfs.Dentry
 
-	// The MountOptions which will be used to mount the filesystem by fsmount(2).
-	// Note that the filesystem-specific options have already been processed by
-	// FSCONFIG_CMD_CREATE, so only the mount-specific options are relevant here.
-	opts *vfs.MountOptions
+	// fsmount inherits the read-only setting from fsconfig. Filesystem-specific
+	// options have already been consumed by FSCONFIG_CMD_CREATE.
+	readOnly bool
 
 	// The credentials of the process that mounted the filesystem.
 	creds *auth.Credentials
@@ -192,6 +191,8 @@ func (awaitingMountContext) isFSContext() {}
 
 // reconfParamsContext represents a filesystem configuration context after fsmount(2) has
 // been called.
+//
+// +stateify savable
 type reconfParamsContext struct {
 	// The credentials of the process that mounted the filesystem.
 	creds *auth.Credentials
@@ -332,7 +333,7 @@ func (fd *Fd) DoCmdCreate(ctx context.Context, vfsObj *vfs.VirtualFilesystem) er
 	fd.context = &awaitingMountContext{
 		filesystem: fs,
 		root:       root,
-		opts:       opts,
+		readOnly:   opts.ReadOnly,
 		creds:      creds,
 	}
 
@@ -385,7 +386,7 @@ func (fd *Fd) GetFilesystem() (*vfs.Filesystem, *vfs.Dentry, *vfs.MountOptions, 
 
 	fs := fdContext.filesystem
 	root := fdContext.root
-	opts := fdContext.opts
+	opts := &vfs.MountOptions{ReadOnly: fdContext.readOnly}
 
 	// Transition into reconfParamsContext
 	fd.context = &reconfParamsContext{
