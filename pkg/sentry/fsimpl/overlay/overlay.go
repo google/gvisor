@@ -20,6 +20,7 @@
 //
 //	directoryFD.mu / regularFileFD.mu
 //		filesystem.renameMu
+//			filesystem.dentryCache.mu
 //			dentry.dirMu
 //		    dentry.copyMu
 //		      filesystem.devMu
@@ -147,7 +148,49 @@ type filesystem struct {
 
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
 	maxFilenameLen uint64
+
+	// dentryCache holds dentries that had no references when they were last
+	// dropped, so that path resolution can reuse them and destroying them can
+	// be batched under one renameMu write lock.
+	dentryCache dentryCache
+
+	// released is set once the filesystem is released; dentries are then
+	// destroyed as soon as they lose their last reference.
+	released atomicbitops.Bool
+
+	// lowerDecRefs, if not nil, collects the lower layer references of
+	// destroyed dentries so that they are dropped together once renameMu is
+	// unlocked. lowerDecRefs is protected by renameMu.
+	lowerDecRefs *[]vfs.VirtualDentry `state:"nosave"`
 }
+
+// dentryCache is an LRU cache of unreferenced dentries, like fsimpl/gofer's,
+// except that an overflow evicts dentryCacheEvictBatch dentries at once.
+//
+// +stateify savable
+type dentryCache struct {
+	// mu protects the below fields and dentry.cached.
+	mu sync.Mutex `state:"nosave"`
+	// dentries contains all dentries with 0 references, most recently used
+	// first. Due to race conditions, it may also contain dentries with non-zero
+	// references.
+	dentries dentryList
+	// dentriesLen is the number of dentries in dentries.
+	dentriesLen uint64
+	// evicting is set while a goroutine evicts cached dentries.
+	evicting bool `state:"nosave"`
+}
+
+const (
+	// maxCachedDentries is the number of unreferenced dentries each overlay
+	// filesystem keeps.
+	maxCachedDentries = 1000
+
+	// dentryCacheEvictBatch is how far below maxCachedDentries an overflow
+	// shrinks the cache, destroying least recently used dentries under one
+	// renameMu write lock.
+	dentryCacheEvictBatch = 250
+)
 
 // +stateify savable
 type layerDevNumber struct {
@@ -472,6 +515,10 @@ func clonePrivateMount(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	fs.released.Store(true)
+	fs.renameMu.Lock()
+	fs.evictCachedLocked(ctx, 0)
+	fs.renameMu.Unlock()
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 	vfsObj.PutAnonBlockDevMinor(fs.dirDevMinor)
 	for _, lowerDevMinor := range fs.lowerDevMinors {
@@ -606,6 +653,10 @@ type dentry struct {
 	children map[string]*dentry
 	dirents  []vfs.Dirent
 
+	// direntsStale is set without dirMu when copy-up changes a child's inode
+	// number; getDirentsLocked then rebuilds dirents.
+	direntsStale atomicbitops.Bool
+
 	// upperVD and lowerVDs are the files from the overlay filesystem's layers
 	// that comprise the file on the overlay filesystem.
 	//
@@ -619,6 +670,20 @@ type dentry struct {
 	// inlineLowerVDs backs lowerVDs in the common case where len(lowerVDs) <=
 	// len(inlineLowerVDs).
 	inlineLowerVDs [1]vfs.VirtualDentry
+
+	// cached is true if d is in fs.dentryCache.dentries. cached is protected
+	// by fs.dentryCache.mu.
+	cached bool
+
+	// dentryEntry links d into fs.dentryCache.dentries. It is protected by
+	// fs.dentryCache.mu.
+	dentryEntry
+
+	// hardLinked is set if d's upper file may have other hard links. d is then
+	// never cached, since metadata changes made through another link do not
+	// update d. It is set by lookup and LinkAt, since checking the link count
+	// when d loses its last reference would cost a stat.
+	hardLinked atomicbitops.Bool
 
 	// devMajor, devMinor, and ino are the device major/minor and inode numbers
 	// used by this dentry. These fields are protected by copyMu.
@@ -732,9 +797,7 @@ func (d *dentry) DecRef(ctx context.Context) {
 		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
-		d.fs.renameMu.Lock()
-		d.checkDropLocked(ctx)
-		d.fs.renameMu.Unlock()
+		d.fs.cacheOrDrop(ctx, []*dentry{d})
 	} else if r < 0 {
 		panic("overlay.dentry.DecRef() called without holding a reference")
 	}
@@ -750,6 +813,124 @@ func (d *dentry) decRefLocked(ctx context.Context) {
 	} else if r < 0 {
 		panic("overlay.dentry.decRefLocked() called without holding a reference")
 	}
+}
+
+// cacheOrDrop is called with fs.renameMu unlocked after the dentries in ds
+// may have lost their last reference. Unreferenced dentries that path
+// resolution can still reach move to the front of the cache; the rest are
+// destroyed. If the cache overflows, its least recently used dentries are
+// destroyed.
+func (fs *filesystem) cacheOrDrop(ctx context.Context, ds []*dentry) {
+	mustDrop := func(d *dentry) bool {
+		return d.vfsd.IsDead() || d.hardLinked.Load() || fs.released.Load()
+	}
+	drop := false
+	fs.dentryCache.mu.Lock()
+	for _, d := range ds {
+		if d.refs.Load() != 0 {
+			fs.removeFromCacheLocked(d)
+			continue
+		}
+		if mustDrop(d) {
+			drop = true
+			continue
+		}
+		if d.cached {
+			fs.dentryCache.dentries.Remove(d) // immediate move to front below
+		} else {
+			d.cached = true
+			fs.dentryCache.dentriesLen++
+		}
+		fs.dentryCache.dentries.PushFront(d)
+	}
+	evict := fs.dentryCache.dentriesLen > maxCachedDentries && !fs.dentryCache.evicting
+	if evict {
+		fs.dentryCache.evicting = true
+	}
+	fs.dentryCache.mu.Unlock()
+	if !drop && !evict {
+		return
+	}
+	var lowers []vfs.VirtualDentry
+	fs.renameMu.Lock()
+	fs.lowerDecRefs = &lowers
+	if drop {
+		for _, d := range ds {
+			if d.refs.Load() == 0 && mustDrop(d) {
+				d.checkDropLocked(ctx)
+			}
+		}
+	}
+	if evict {
+		fs.evictCachedLocked(ctx, maxCachedDentries-dentryCacheEvictBatch)
+	}
+	fs.lowerDecRefs = nil
+	fs.renameMu.Unlock()
+	decRefLowers(ctx, lowers)
+}
+
+// lowerBatchDecRefer is implemented by lower filesystems, like fsimpl/gofer,
+// that can drop references on many of their dentries under one lock.
+type lowerBatchDecRefer interface {
+	DecRefDentries(ctx context.Context, ds []*vfs.Dentry)
+}
+
+// decRefLowers drops the references in vds, in one batch per lower filesystem
+// that supports it.
+func decRefLowers(ctx context.Context, vds []vfs.VirtualDentry) {
+	if len(vds) == 0 {
+		return
+	}
+	batches := make(map[lowerBatchDecRefer][]*vfs.Dentry)
+	for _, vd := range vds {
+		if lowerFS, ok := vd.Mount().Filesystem().Impl().(lowerBatchDecRefer); ok {
+			batches[lowerFS] = append(batches[lowerFS], vd.Dentry())
+		} else {
+			vd.Dentry().DecRef(ctx)
+		}
+	}
+	for lowerFS, ds := range batches {
+		lowerFS.DecRefDentries(ctx, ds)
+	}
+	for _, vd := range vds {
+		vd.Mount().DecRef(ctx)
+	}
+}
+
+// Preconditions: fs.dentryCache.mu must be locked.
+func (fs *filesystem) removeFromCacheLocked(d *dentry) {
+	if d.cached {
+		fs.dentryCache.dentries.Remove(d)
+		fs.dentryCache.dentriesLen--
+		d.cached = false
+	}
+}
+
+// evictCachedLocked destroys least recently used cached dentries until keep
+// remain, repeating while the cache refilled past its limit meanwhile, then
+// clears fs.dentryCache.evicting.
+//
+// Preconditions: fs.renameMu must be locked for writing.
+func (fs *filesystem) evictCachedLocked(ctx context.Context, keep uint64) {
+	fs.dentryCache.mu.Lock()
+	for {
+		var victims []*dentry
+		for fs.dentryCache.dentriesLen > keep {
+			d := fs.dentryCache.dentries.Back()
+			fs.removeFromCacheLocked(d)
+			victims = append(victims, d)
+		}
+		fs.dentryCache.mu.Unlock()
+		for _, d := range victims {
+			d.checkDropLocked(ctx)
+		}
+		fs.dentryCache.mu.Lock()
+		if fs.dentryCache.dentriesLen <= maxCachedDentries {
+			break
+		}
+	}
+	fs.dentryCache.evicting = false
+	fs.dentryCache.mu.Unlock()
 }
 
 // checkDropLocked should be called after d's reference count becomes 0 or it
@@ -793,11 +974,22 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		panic("overlay.dentry.destroyLocked() called with references on the dentry")
 	}
 
+	d.fs.dentryCache.mu.Lock()
+	d.fs.removeFromCacheLocked(d)
+	d.fs.dentryCache.mu.Unlock()
+
 	if d.upperVD.Ok() {
 		d.upperVD.DecRef(ctx)
 	}
 	for _, lowerVD := range d.lowerVDs {
-		lowerVD.DecRef(ctx)
+		// The lower dentry is reachable again only through a new overlay
+		// dentry, so the lower filesystem need not cache it.
+		lowerVD.Dentry().MarkEvictable()
+		if d.fs.lowerDecRefs != nil {
+			*d.fs.lowerDecRefs = append(*d.fs.lowerDecRefs, lowerVD)
+		} else {
+			lowerVD.DecRef(ctx)
+		}
 	}
 
 	d.watches.HandleDeletion(ctx)

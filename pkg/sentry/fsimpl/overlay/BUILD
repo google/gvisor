@@ -82,6 +82,18 @@ declare_mutex(
 )
 
 go_template_instance(
+    name = "dentry_list",
+    out = "dentry_list.go",
+    package = "overlay",
+    prefix = "dentry",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*dentry",
+        "Linker": "*dentry",
+    },
+)
+
+go_template_instance(
     name = "fstree",
     out = "fstree.go",
     package = "overlay",
@@ -100,6 +112,7 @@ go_library(
         "copy_up.go",
         "create_creds_mutex.go",
         "data_rwmutex.go",
+        "dentry_list.go",
         "dev_mutex.go",
         "dir_cache_mutex.go",
         "dir_fd_mutex.go",
