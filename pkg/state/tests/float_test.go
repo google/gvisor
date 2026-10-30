@@ -15,8 +15,11 @@
 package tests
 
 import (
+	"bytes"
 	"math"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 var safeFloat32s = []float32{
@@ -115,4 +118,39 @@ func TestComplexTruncation(t *testing.T) {
 	runTestCases(t, false, "fail", []any{
 		truncatingComplex64{save: complex(1.0, 1.0)},
 	})
+}
+
+func TestSignalingNaN(t *testing.T) {
+	roundTrip := func(src, dst any) {
+		t.Helper()
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, src); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.Load(t.Context(), &buf, dst); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const positive, negative uint32 = 0x7f801234, 0xff801234
+	type amplitude float32
+	samples := []amplitude{amplitude(math.Float32frombits(positive)), amplitude(math.Float32frombits(negative))}
+	var restored []amplitude
+	roundTrip(&samples, &restored)
+	for i, x := range samples {
+		if got, want := math.Float32bits(float32(restored[i])), math.Float32bits(float32(x)); got != want {
+			t.Errorf("sample %d: got %#08x, want %#08x", i, got, want)
+		}
+	}
+
+	type coefficient complex64
+	const positiveInf, negativeInf uint32 = 0x7f800000, 0xff800000
+	for _, want := range [][2]uint32{{negative, positive}, {negative, positiveInf}, {negativeInf, positive}} {
+		m := map[int]coefficient{0: coefficient(complex(math.Float32frombits(want[0]), math.Float32frombits(want[1])))}
+		var out map[int]coefficient
+		roundTrip(&m, &out)
+		z := out[0]
+		if got := [2]uint32{math.Float32bits(real(z)), math.Float32bits(imag(z))}; got != want {
+			t.Errorf("complex bits: got %#08x, want %#08x", got, want)
+		}
+	}
 }

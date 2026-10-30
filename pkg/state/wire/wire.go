@@ -183,7 +183,7 @@ func (f Float64) save(w *Writer) {
 }
 
 // Complex64 is a 64-bit complex number.
-type Complex64 complex128
+type Complex64 complex64
 
 // save implements Object.save.
 func (c *Complex64) save(w *Writer) {
