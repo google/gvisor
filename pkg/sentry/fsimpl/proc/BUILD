@@ -155,8 +155,6 @@ go_test(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
         "//pkg/tcpip",
-        "//pkg/tcpip/network/ipv4",
-        "//pkg/tcpip/network/ipv6",
         "//pkg/usermem",
     ],
 )
