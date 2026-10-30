@@ -15,9 +15,11 @@
 package transport
 
 import (
+	"errors"
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -132,5 +134,56 @@ func TestSeveredRecvSend(t *testing.T) {
 	}
 	if _, _, serr := ep.Send(nil, [][]byte{{1}}, ControlMessages{}, Address{}); serr != syserr.ErrClosedForSend {
 		t.Errorf("Send on severed endpoint returned %v, want %v", serr, syserr.ErrClosedForSend)
+	}
+}
+
+func TestFailedHostWaiterRegistration(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fds[1])
+	endpoint := baseEndpoint{WaitQueue: &waiter.Queue{}}
+	peer, sysErr := NewSCMSender(fds[0], endpoint.WaitQueue, "")
+	if sysErr != nil {
+		unix.Close(fds[0])
+		t.Fatal(sysErr)
+	}
+	if err := peer.Init(); err != nil {
+		unix.Close(fds[0])
+		t.Fatal(err)
+	}
+	defer peer.Release(context.Background()) // sender
+	defer peer.Release(context.Background()) // receiver
+	endpoint.peer = peer
+
+	// Keep one working registration while a second host epoll update fails.
+	live, ready := waiter.NewChannelEntry(waiter.EventIn)
+	if err := endpoint.EventRegister(&live); err != nil {
+		t.Fatal(err)
+	}
+	defer endpoint.EventUnregister(&live)
+	null, err := unix.Open("/dev/null", unix.O_RDONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(null)
+	if err := unix.Dup3(null, fds[0], unix.O_CLOEXEC); err != nil {
+		t.Fatal(err)
+	}
+	entry, ch := waiter.NewChannelEntry(waiter.EventIn)
+	if got, want := endpoint.EventRegister(&entry), error(unix.EPERM); !errors.Is(got, want) {
+		t.Fatalf("EventRegister: got %v, want %v", got, want)
+	}
+	endpoint.WaitQueue.Notify(waiter.EventIn)
+	select {
+	case <-ready:
+	default:
+		t.Error("existing registration did not receive the notification")
+	}
+	select {
+	case <-ch:
+		t.Fatal("failed registration received a notification")
+	default:
 	}
 }
