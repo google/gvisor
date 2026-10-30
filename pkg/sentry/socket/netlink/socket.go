@@ -984,7 +984,9 @@ func (s *Socket) ProcessMessages(ctx context.Context, buf []byte) *syserr.Error 
 		ms := nlmsg.NewMessageSet(s.GetPortID(), hdr.Seq)
 		if err := s.protocol.ProcessMessage(ctx, s, msg, ms); err != nil {
 			DumpErrorMessage(hdr, ms, err)
-		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
+		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK && !ms.Multi {
+			// Linux does not ack a dump that started. See
+			// net/netlink/af_netlink.c:netlink_rcv_skb.
 			DumpAckMessage(hdr, ms)
 		}
 
