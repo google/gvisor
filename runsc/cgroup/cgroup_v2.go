@@ -401,35 +401,42 @@ func (c *cgroupV2) NumCPU() (int, error) {
 	return countCpuset(strings.TrimSpace(cpuset))
 }
 
-func getMemoryLimit(path string) (string, error) {
-	limStr, err := getValue(path, memoryLimitCgroup)
-	if err != nil {
-		return "", err
+// memoryLimitAt returns the ceiling set in this cgroup.
+func memoryLimitAt(path string) (uint64, error) {
+	value, err := getValue(path, memoryLimitCgroup)
+	if errors.Is(err, os.ErrNotExist) {
+		// The hierarchy root and groups where the memory controller is not
+		// enabled have no memory.max. A missing group is still an error.
+		if _, err := os.Stat(path); err != nil {
+			return 0, err
+		}
+		return math.MaxUint64, nil
 	}
-	return strings.TrimSpace(limStr), nil
-}
-
-// MemoryLimit returns the memory limit.
-func (c *cgroupV2) MemoryLimit() (uint64, error) {
-	limStr, err := getMemoryLimit(c.MakePath(""))
 	if err != nil {
 		return 0, err
 	}
-	// In cgroupv2+systemd, limits are set in the parent slice rather
-	// than the leaf node. Check the parent to see if this is the case.
-	if limStr == maxLimitStr {
-		parentLimStr, err := getMemoryLimit(filepath.Dir(c.MakePath("")))
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
+	value = strings.TrimSpace(value)
+	if value == maxLimitStr {
+		return math.MaxUint64, nil
+	}
+	return strconv.ParseUint(value, 10, 64)
+}
+
+// MemoryLimit returns the tightest limit imposed by a visible cgroup.
+func (c *cgroupV2) MemoryLimit() (uint64, error) {
+	limit := uint64(math.MaxUint64)
+	for group := filepath.Join("/", c.Path); ; group = filepath.Dir(group) {
+		n, err := memoryLimitAt(filepath.Join(c.Mountpoint, group))
+		if err != nil {
 			return 0, err
 		}
-		if parentLimStr != "" {
-			limStr = parentLimStr
-		}
-		if limStr == maxLimitStr {
-			return math.MaxUint64, nil
+		limit = min(limit, n)
+		// The mount may expose a delegated subtree. Its root can itself
+		// have a memory.max; nothing above it is visible to runsc.
+		if group == "/" {
+			return limit, nil
 		}
 	}
-	return strconv.ParseUint(limStr, 10, 64)
 }
 
 // MakePath builds a path to the given controller.
