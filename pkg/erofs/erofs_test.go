@@ -43,6 +43,13 @@ func TestOnDiskStructureSizes(t *testing.T) {
 		t.Errorf("wrong dirent size: want %d, got %d", DirentSize, d.SizeBytes())
 	}
 
+	if h := new(xattrIbodyHeader); h.SizeBytes() != xattrIbodyHeaderSize {
+		t.Errorf("wrong xattr header size: want %d, got %d", xattrIbodyHeaderSize, h.SizeBytes())
+	}
+	if e := new(xattrEntryHeader); e.SizeBytes() != xattrEntrySize {
+		t.Errorf("wrong xattr entry size: want %d, got %d", xattrEntrySize, e.SizeBytes())
+	}
+
 	if c := new(ChunkIndex); c.SizeBytes() != ChunkIndexSize {
 		t.Errorf("wrong chunk index size: want %d, got %d", ChunkIndexSize, c.SizeBytes())
 	}
