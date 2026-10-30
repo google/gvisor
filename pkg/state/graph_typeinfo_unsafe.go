@@ -56,7 +56,7 @@ type typeInfo struct {
 	pod          bool      // saved as raw memory representation
 	inlineStruct bool      // contains inline structs with StateSave methods
 	emptyIface   bool      // interface with no methods
-	needsExact   bool      // contains inline non-empty interfaces or maps
+	needsExact   bool      // contains or points to non-empty interfaces or maps
 	partial      bool      // decode may leave unsaved memory untouched
 	hooks        bool      // StateLoad may run non-generated code
 	structKind   structKind
@@ -106,6 +106,9 @@ func findTypeInfo(rt unsafe.Pointer) *typeInfo {
 
 // typeInfoForRtype returns the typeInfo for a runtime type descriptor.
 func typeInfoForRtype(rt unsafe.Pointer) *typeInfo {
+	if rt == nil {
+		Failf("nil type")
+	}
 	if ti := findTypeInfo(rt); ti != nil {
 		return ti
 	}
@@ -114,6 +117,9 @@ func typeInfoForRtype(rt unsafe.Pointer) *typeInfo {
 
 // typeInfoOf returns the typeInfo for t.
 func typeInfoOf(t reflect.Type) *typeInfo {
+	if t == nil {
+		Failf("nil type")
+	}
 	if ti := findTypeInfo(rtypeOf(t)); ti != nil {
 		return ti
 	}
@@ -162,6 +168,20 @@ func buildTypeInfo(t reflect.Type) *typeInfo {
 	var pending [8]*typeInfo
 	b := typeInfoBuilder{pending: pending[:0]}
 	ti := b.get(t)
+	if len(b.pending) > 1 {
+		for {
+			changed := false
+			for _, p := range b.pending {
+				if !p.needsExact && (p.kind == reflect.Pointer || p.kind == reflect.Slice || p.kind == reflect.Array) && p.elem.needsExact {
+					p.needsExact = true
+					changed = true
+				}
+			}
+			if !changed {
+				break
+			}
+		}
+	}
 	if typeInfos == nil {
 		typeInfos = make(map[unsafe.Pointer]*typeInfo)
 	}
@@ -245,9 +265,11 @@ func (b *typeInfoBuilder) get(t reflect.Type) *typeInfo {
 		ti.pod = true
 	case reflect.Pointer:
 		ti.elem = b.get(t.Elem())
+		ti.needsExact = ti.elem.needsExact
 		ti.ptrSlot = slotEntry{rtype: rtype, ti: ti.elem, ptr: true}
 	case reflect.Slice:
 		ti.elem = b.get(t.Elem())
+		ti.needsExact = ti.elem.needsExact
 	case reflect.Array:
 		ti.elem = b.get(t.Elem())
 		ti.length = uintptr(t.Len())
@@ -256,9 +278,9 @@ func (b *typeInfoBuilder) get(t reflect.Type) *typeInfo {
 		ti.needsExact = ti.elem.needsExact
 		ti.partial = ti.elem.partial
 	case reflect.Map:
+		ti.needsExact = true
 		ti.key = b.get(t.Key())
 		ti.elem = b.get(t.Elem())
-		ti.needsExact = true
 	case reflect.Interface:
 		ti.emptyIface = t.NumMethod() == 0
 		ti.needsExact = !ti.emptyIface

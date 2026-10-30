@@ -158,25 +158,33 @@ func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
 	} else if ti.partial {
 		reflect.NewAt(ti.typ, p).Elem().SetZero()
 	}
-	hooks, refs := ds.hooks, ds.refs
+	hooks, deferred, refs := ds.hooks, ds.deferred, ds.refs
 	ds.lastRef = -1
 	keepZero := ds.keepZero
 	ds.keepZero = false
 	ds.decodeValue(ti, p)
 	ds.keepZero = keepZero
-	var cb decodeCallback
-	if ti.kind == reflect.Interface && ds.hooks != hooks {
-		cb = decodeCallback{fn: func() { l.StateLoadValue(ds.ctx, slot, makeAny(ti, p)) }, waiter: -1}
-	} else {
-		cb = decodeCallback{valueLoader: l, slot: slot, value: makeAny(ti, p), waiter: -1}
+	if ds.hooks != hooks {
+		delete(ds.valueScratch, ti)
 	}
+	if ds.deferred != deferred {
+		if ds.lastRef >= 0 && ds.lastRef != ds.cur && ds.lastRef != 0 {
+			ds.wait(ds.cur, ds.lastRef, decodeCallback{waiter: -1})
+		}
+		if !ds.noCallbacks {
+			valPtr := p
+			ds.addCallback(ds.cur, decodeCallback{fn: func() { l.StateLoadValue(ds.ctx, slot, makeAny(ti, valPtr)) }, waiter: -1})
+		}
+		return
+	}
+	cb := decodeCallback{valueLoader: l, slot: slot, value: makeAny(ti, p), waiter: -1}
 	if ds.lastRef >= 0 {
 		if ds.lastRef != ds.cur && ds.lastRef != 0 {
 			delete(ds.valueScratch, ti)
 			ds.wait(ds.cur, ds.lastRef, cb)
 			return
 		}
-	} else if ds.refs != refs || ds.hooks != hooks {
+	} else if ds.refs != refs {
 		delete(ds.valueScratch, ti)
 		if !ds.noCallbacks {
 			ds.addCallback(ds.cur, cb)
@@ -343,25 +351,29 @@ func (gd *graphStructDecoder) loadValue(slot int, objPtr any, fn func(any)) {
 	e := efaceOf(&objPtr)
 	ti := gd.st.slotType(slot, e.typ, true)
 	ds := gd.ds
-	hooks, refs := ds.hooks, ds.refs
+	deferred, refs := ds.deferred, ds.refs
 	ds.lastRef = -1
 	keepZero := ds.keepZero
 	ds.keepZero = false
 	ds.decodeValue(ti, e.data)
 	ds.keepZero = keepZero
-	var cb decodeCallback
-	if ti.kind == reflect.Interface && ds.hooks != hooks {
-		p := e.data
-		cb = decodeCallback{fn: func() { fn(makeAny(ti, p)) }, waiter: -1}
-	} else {
-		cb = decodeCallback{valueFn: fn, value: makeAny(ti, e.data), waiter: -1}
+	if ds.deferred != deferred {
+		if ds.lastRef >= 0 && ds.lastRef != ds.cur && ds.lastRef != 0 {
+			ds.wait(ds.cur, ds.lastRef, decodeCallback{waiter: -1})
+		}
+		if !ds.noCallbacks {
+			p := e.data
+			ds.addCallback(ds.cur, decodeCallback{fn: func() { fn(makeAny(ti, p)) }, waiter: -1})
+		}
+		return
 	}
+	cb := decodeCallback{valueFn: fn, value: makeAny(ti, e.data), waiter: -1}
 	if ds.lastRef >= 0 {
 		if ds.lastRef != ds.cur && ds.lastRef != 0 {
 			ds.wait(ds.cur, ds.lastRef, cb)
 			return
 		}
-	} else if ds.refs != refs || ds.hooks != hooks {
+	} else if ds.refs != refs {
 		if !ds.noCallbacks {
 			ds.addCallback(ds.cur, cb)
 		}
