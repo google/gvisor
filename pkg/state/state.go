@@ -116,9 +116,16 @@ func Load(ctx context.Context, r io.Reader, rootPtr any) (Stats, error) {
 		deferred: make(map[objectID]wire.Object),
 	}
 
+	hdr, err := ReadHeaderMode(&ds.r)
+	if err != nil {
+		return ds.stats, err
+	}
+	if !hdr.Object {
+		return ds.stats, fmt.Errorf("expected an object graph, got %d bytes of raw data", hdr.Length)
+	}
 	// Attempt our decode.
-	err := safely(func() {
-		ds.Load(reflect.ValueOf(rootPtr).Elem())
+	err = safely(func() {
+		ds.Load(reflect.ValueOf(rootPtr).Elem(), hdr.Length)
 	})
 	return ds.stats, err
 }
