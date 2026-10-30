@@ -651,28 +651,15 @@ type ipForwarding struct {
 	kernfs.DynamicBytesFile
 
 	stack    inet.Stack `state:"wait"`
-	mu       sync.Mutex `state:"nosave"`
 	protocol tcpip.NetworkProtocolNumber
-
-	// enabled is the last value successfully written here, which may differ
-	// from the forwarding state of individual interfaces.
-	//
-	// +checklocks:mu
-	enabled bool
 }
 
 var _ vfs.WritableDynamicBytesSource = (*ipForwarding)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-//
-// +checklocksexclude:ipf.mu
 func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	ipf.mu.Lock()
-	enabled := ipf.enabled
-	ipf.mu.Unlock()
-
 	val := "0\n"
-	if enabled {
+	if ipf.stack.Forwarding(ipf.protocol) {
 		// Linux preserves the written integer; this file reports a boolean,
 		// so a nonzero value such as "2" is read back as "1".
 		val = "1\n"
@@ -682,8 +669,6 @@ func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error 
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-//
-// +checklocksexclude:ipf.mu
 func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
@@ -694,13 +679,9 @@ func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src 
 	if err != nil || n == 0 {
 		return 0, err
 	}
-	enabled := buf[0] != 0
-	ipf.mu.Lock()
-	defer ipf.mu.Unlock()
-	if err := ipf.stack.SetForwarding(ipf.protocol, enabled); err != nil {
+	if err := ipf.stack.SetForwarding(ipf.protocol, buf[0] != 0); err != nil {
 		return 0, err
 	}
-	ipf.enabled = enabled
 	return n, nil
 }
 

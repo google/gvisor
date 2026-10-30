@@ -502,6 +502,9 @@ func (*Stack) CleanupEndpoints() []stack.TransportEndpoint { return nil }
 // RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
 func (*Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
+// Forwarding implements inet.Stack.Forwarding.
+func (*Stack) Forwarding(tcpip.NetworkProtocolNumber) bool { return false }
+
 // SetForwarding implements inet.Stack.SetForwarding.
 func (*Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
 	return linuxerr.EACCES

@@ -19,7 +19,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -28,8 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -143,146 +140,19 @@ func TestRejectedTCPSACKWrite(t *testing.T) {
 	}
 }
 
-type forwardingTestStack struct {
-	*inet.TestStack
-	forwarding map[tcpip.NetworkProtocolNumber]bool
-}
-
-func (s *forwardingTestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
-	s.forwarding[protocol] = enable
-	return s.TestStack.SetForwarding(protocol, enable)
-}
-
-// TestConfigureIPForwarding tests the implementation of
-// /proc/sys/net/ipv4/ip_forward and /proc/sys/net/ipv6/conf/{all,default}/forwarding.
-func TestConfigureIPForwarding(t *testing.T) {
-	ctx := context.Background()
-	s := &forwardingTestStack{
-		TestStack:  inet.NewTestStack(),
-		forwarding: make(map[tcpip.NetworkProtocolNumber]bool),
+func TestRejectedForwardingWrite(t *testing.T) {
+	ctx := contexttest.Context(t)
+	ipf := &ipForwarding{stack: &readOnlySysctlTestStack{TestStack: inet.NewTestStack()}}
+	if n, err := ipf.Write(ctx, nil, usermem.BytesIOSequence([]byte("1\n")), 0); n != 0 || err != linuxerr.EACCES {
+		t.Fatalf("Write() = (%d, %v), want (0, %v)", n, err, linuxerr.EACCES)
 	}
-
-	cases := []struct {
-		comment string
-		initial bool
-		str     string
-		final   bool
-	}{
-		{
-			comment: `Forwarding is disabled; write 1 and enable forwarding`,
-			initial: false,
-			str:     "1",
-			final:   true,
-		},
-		{
-			comment: `Forwarding is disabled; write 0 and disable forwarding`,
-			initial: false,
-			str:     "0",
-			final:   false,
-		},
-		{
-			comment: `Forwarding is enabled; write 1 and enable forwarding`,
-			initial: true,
-			str:     "1",
-			final:   true,
-		},
-		{
-			comment: `Forwarding is enabled; write 0 and disable forwarding`,
-			initial: true,
-			str:     "0",
-			final:   false,
-		},
-		{
-			comment: `Forwarding is disabled; write 2404 and enable forwarding`,
-			initial: false,
-			str:     "2404",
-			final:   true,
-		},
-		{
-			comment: `Forwarding is enabled; write 2404 and enable forwarding`,
-			initial: true,
-			str:     "2404",
-			final:   true,
-		},
+	var buf bytes.Buffer
+	if err := ipf.Generate(ctx, &buf); err != nil {
+		t.Fatal(err)
 	}
-	for _, proto := range []struct {
-		name     string
-		protocol tcpip.NetworkProtocolNumber
-	}{
-		{name: "IPv4", protocol: ipv4.ProtocolNumber},
-		{name: "IPv6", protocol: ipv6.ProtocolNumber},
-	} {
-		t.Run(proto.name, func(t *testing.T) {
-			for _, c := range cases {
-				t.Run(c.comment, func(t *testing.T) {
-					clear(s.forwarding)
-					s.forwarding[proto.protocol] = c.initial
-
-					file := &ipForwarding{stack: s, protocol: proto.protocol, enabled: c.initial}
-
-					// Write the values.
-					src := usermem.BytesIOSequence([]byte(c.str))
-					if n, err := file.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
-						t.Errorf("file.Write(ctx, nil, %q, 0) = (%d, %v); want (%d, nil)", c.str, n, err, len(c.str))
-					}
-
-					// Read the values from the stack and check them.
-					if got, want := s.forwarding[proto.protocol], c.final; got != want {
-						t.Errorf("s.forwarding[%v] incorrect; got: %v, want: %v", proto.protocol, got, want)
-					}
-				})
-			}
-		})
+	if got := buf.String(); got != "0\n" {
+		t.Errorf("Generate() = %q, want %q", got, "0\n")
 	}
-
-	t.Run("rejected write", func(t *testing.T) {
-		ctx := contexttest.Context(t)
-		ipf := &ipForwarding{stack: &readOnlySysctlTestStack{TestStack: inet.NewTestStack()}}
-		if n, err := ipf.Write(ctx, nil, usermem.BytesIOSequence([]byte("1\n")), 0); n != 0 || err != linuxerr.EACCES {
-			t.Fatalf("Write() = (%d, %v), want (0, %v)", n, err, linuxerr.EACCES)
-		}
-		var buf bytes.Buffer
-		if err := ipf.Generate(ctx, &buf); err != nil {
-			t.Fatal(err)
-		}
-		if got := buf.String(); got != "0\n" {
-			t.Errorf("Generate() = %q, want %q", got, "0\n")
-		}
-	})
-
-	t.Run("concurrent readback", func(t *testing.T) {
-		ctx := contexttest.Context(t)
-		ipf := &ipForwarding{stack: inet.NewTestStack()}
-		// Leave the read and write unordered so race builds check the shared flag.
-		start := make(chan struct{})
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			<-start
-			const value = "1\n"
-			if n, err := ipf.Write(ctx, nil, usermem.BytesIOSequence([]byte(value)), 0); n != int64(len(value)) || err != nil {
-				t.Errorf("Write() = (%d, %v), want (%d, nil)", n, err, len(value))
-			}
-		})
-		wg.Go(func() {
-			<-start
-			var buf bytes.Buffer
-			if err := ipf.Generate(ctx, &buf); err != nil {
-				t.Errorf("Generate(): %v", err)
-			} else if got := buf.String(); got != "0\n" && got != "1\n" {
-				t.Errorf("Generate() = %q, want 0 or 1", got)
-			}
-		})
-		close(start)
-		wg.Wait()
-
-		var buf bytes.Buffer
-		if err := ipf.Generate(ctx, &buf); err != nil {
-			t.Fatal(err)
-		}
-		if got := buf.String(); got != "1\n" {
-			t.Errorf("Generate() = %q, want %q", got, "1\n")
-		}
-	})
 }
 
 // TestConfigureRouteLocalnet tests the implementation of

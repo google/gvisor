@@ -169,8 +169,8 @@ void CheckSysctlAcrossProcMounts(absl::string_view sysctl,
   const Cleanup unmount(
       [&] { EXPECT_THAT(umount(target), SyscallSucceeds()); });
 
-  const std::string original_path = JoinPath("/proc/sys/net/ipv4", sysctl);
-  const std::string mounted_path = JoinPath(dir.path(), "sys/net/ipv4", sysctl);
+  const std::string original_path = JoinPath("/proc/sys/net", sysctl);
+  const std::string mounted_path = JoinPath(dir.path(), "sys/net", sysctl);
   const std::string original =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents(original_path));
   ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(mounted_path)), original);
@@ -186,17 +186,26 @@ void CheckSysctlAcrossProcMounts(absl::string_view sysctl,
   ASSERT_NO_ERRNO(SetContents(mounted_path, updated));
   const Cleanup restore(
       [&] { EXPECT_NO_ERRNO(SetContents(mounted_path, original)); });
+  MaybeSave();
   EXPECT_EQ(fields(ASSERT_NO_ERRNO_AND_VALUE(GetContents(original_path))),
             fields(updated));
 }
 
 TEST(ProcSysNetIpv4Sack, SharedAcrossProcMounts) {
-  CheckSysctlAcrossProcMounts("tcp_sack", "0\n", "1\n");
+  CheckSysctlAcrossProcMounts("ipv4/tcp_sack", "0\n", "1\n");
 }
 
 TEST(ProcSysNetPortRange, SharedAcrossProcMounts) {
-  CheckSysctlAcrossProcMounts("ip_local_port_range", "40000 50001\n",
+  CheckSysctlAcrossProcMounts("ipv4/ip_local_port_range", "40000 50001\n",
                               "40002 50003\n");
+}
+
+TEST(ProcSysNetIPv4Forwarding, SharedAcrossProcMounts) {
+  CheckSysctlAcrossProcMounts("ipv4/ip_forward", "0\n", "1\n");
+}
+
+TEST(ProcSysNetIPv6Forwarding, SharedAcrossProcMounts) {
+  CheckSysctlAcrossProcMounts("ipv6/conf/all/forwarding", "0\n", "1\n");
 }
 
 // DeviceEntry is an entry in /proc/net/dev

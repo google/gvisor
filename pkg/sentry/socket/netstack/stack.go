@@ -1330,6 +1330,11 @@ func (s *Stack) RestoreCleanupEndpoints(es []stack.TransportEndpoint) {
 	s.Stack.RestoreCleanupEndpoints(es)
 }
 
+// Forwarding implements inet.Stack.Forwarding.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	return s.Stack.ForwardingDefault(protocol)
+}
+
 // SetForwarding implements inet.Stack.SetForwarding.
 func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
 	if err := s.Stack.SetForwardingDefaultAndAllNICs(protocol, enable); err != nil {
