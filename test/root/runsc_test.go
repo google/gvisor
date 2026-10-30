@@ -327,6 +327,71 @@ func TestSandboxCreationCPULimit(t *testing.T) {
 	}
 }
 
+// TestNestedMemoryLimit reads MemTotal inside a sandbox whose enclosing pod
+// and container can set different limits.
+func TestNestedMemoryLimit(t *testing.T) {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("memory.max requires cgroup v2")
+	}
+	const parentLimit = 512 << 20
+	parentPath := "/" + testutil.RandomID("runsc-memory-")
+	parent, err := cgroup.NewFromPath(parentPath, false /* useSystemd */)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.Install(&specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: new(int64(parentLimit))}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := parent.Uninstall(); err != nil {
+			t.Errorf("removing parent cgroup: %v", err)
+		}
+	})
+	for _, tc := range []struct {
+		name      string
+		leafLimit *int64
+		want      uint64
+	}{
+		{"unlimited", nil, parentLimit},
+		{"larger", new(int64(768 << 20)), parentLimit},
+		{"smaller", new(int64(384 << 20)), 384 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := testutil.NewSpecWithArgs("/bin/cat", "/proc/meminfo")
+			spec.Mounts = nil
+			spec.Linux = &specs.Linux{
+				CgroupsPath: filepath.Join(parentPath, "pod", tc.name),
+				Resources:   &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: tc.leafLimit}},
+			}
+			bundle, cleanup, err := testutil.SetupBundleDir(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(cleanup)
+			root, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(cleanup)
+			cmd := exec.Command(specutils.ExePath,
+				"--root="+root, "--network=none", "--platform=systrap", "--overlay2=none",
+				"run", "--bundle="+bundle, testutil.RandomContainerID())
+			cmd.Stderr = os.Stderr
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var kib uint64
+			if _, err := fmt.Sscanf(string(out), "MemTotal: %d kB", &kib); err != nil {
+				t.Fatalf("reading MemTotal: %v\n%s", err, out)
+			}
+			if got, want := kib<<10, tc.want; got != want {
+				t.Errorf("guest MemTotal = %d bytes, want %d", got, want)
+			}
+		})
+	}
+}
+
 // TestDoKill checks that when "runsc do..." is killed, the sandbox process is
 // also terminated. This ensures that parent death signal is propagate to the
 // sandbox process correctly.
