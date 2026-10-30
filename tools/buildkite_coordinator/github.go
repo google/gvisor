@@ -19,14 +19,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v84/github"
-)
-
-const (
-	githubOwner = "google"
-	githubRepo  = "gvisor"
 )
 
 type authorID uint64
@@ -36,17 +32,46 @@ func parseAuthorID(s string) (authorID, error) {
 	return authorID(v), err
 }
 
-// githubClient is a GitHub API client.
+// githubRepository identifies a GitHub repository.
+type githubRepository struct {
+	owner string
+	name  string
+}
+
+// parseGitHubRepository parses a repository of the form github.com/OWNER/NAME.
+func parseGitHubRepository(s string) (githubRepository, error) {
+	path, ok := strings.CutPrefix(s, "github.com/")
+	if !ok {
+		return githubRepository{}, fmt.Errorf("repository %q does not start with github.com/", s)
+	}
+	owner, name, ok := strings.Cut(path, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return githubRepository{}, fmt.Errorf("repository %q is not of the form github.com/OWNER/NAME", s)
+	}
+	return githubRepository{owner: owner, name: name}, nil
+}
+
+// String implements fmt.Stringer.
+func (r githubRepository) String() string {
+	return "github.com/" + r.owner + "/" + r.name
+}
+
+// githubClient is a GitHub API client for a repository.
 //
 // Safe for concurrent use.
 type githubClient struct {
 	client *github.Client
+	repo   githubRepository
 }
 
-// newGitHubClient returns a client that authenticates with the given token.
-func newGitHubClient(token []byte) *githubClient {
+// newGitHubClient returns a client for the given repository that authenticates
+// with the given token.
+func newGitHubClient(token []byte, repo githubRepository) *githubClient {
 	httpClient := &http.Client{Timeout: 30 * time.Second}
-	return &githubClient{client: github.NewClient(httpClient).WithAuthToken(string(token))}
+	return &githubClient{
+		client: github.NewClient(httpClient).WithAuthToken(string(token)),
+		repo:   repo,
+	}
 }
 
 // prAuthor returns the GitHub user ID of the account that opened the given pull
@@ -55,7 +80,7 @@ func newGitHubClient(token []byte) *githubClient {
 // On success, the returned ID is guaranteed to be non-zero.
 func (g *githubClient) prAuthor(ctx context.Context, prNumber int) (authorID, error) {
 	ctx = context.WithValue(ctx, github.SleepUntilPrimaryRateLimitResetWhenRateLimited, true)
-	pr, _, err := g.client.PullRequests.Get(ctx, githubOwner, githubRepo, prNumber)
+	pr, _, err := g.client.PullRequests.Get(ctx, g.repo.owner, g.repo.name, prNumber)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get pull request %d: %w", prNumber, err)
 	}
@@ -64,4 +89,22 @@ func (g *githubClient) prAuthor(ctx context.Context, prNumber int) (authorID, er
 		return 0, fmt.Errorf("pull request %d has no or invalid author", prNumber)
 	}
 	return authorID(id), nil
+}
+
+// fileContents returns the contents of the file at the given path on the
+// repository's default branch.
+func (g *githubClient) fileContents(ctx context.Context, path string) ([]byte, error) {
+	ctx = context.WithValue(ctx, github.SleepUntilPrimaryRateLimitResetWhenRateLimited, true)
+	file, _, _, err := g.client.Repositories.GetContents(ctx, g.repo.owner, g.repo.name, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting %q in %v: %w", path, g.repo, err)
+	}
+	if file == nil {
+		return nil, fmt.Errorf("%q in %v is not a file", path, g.repo)
+	}
+	content, err := file.GetContent()
+	if err != nil {
+		return nil, fmt.Errorf("decoding %q in %v: %w", path, g.repo, err)
+	}
+	return []byte(content), nil
 }

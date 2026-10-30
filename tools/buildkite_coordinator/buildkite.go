@@ -144,24 +144,24 @@ type JobPool struct {
 	// It is immutable.
 	jobsPerBuild uint
 
-	// trustedAuthors lists author IDs whose builds will be placed in trustedBuilds.
-	// It is immutable.
-	trustedAuthors map[authorID]struct{}
-
-	// mu protects queues.
+	// mu protects queues and trustedAuthors.
 	mu sync.Mutex
 
 	// queues stores pool data associated with each queue.
 	// queues is protected by mu.
 	queues map[string]Queue
+
+	// trustedAuthors lists author IDs whose builds will be placed in trustedBuilds.
+	// trustedAuthors is protected by mu.
+	trustedAuthors map[authorID]struct{}
 }
 
 // NewJobPool returns an empty job pool.
 func NewJobPool(jobsPerBuild uint, queues map[string]struct{}, trustedAuthors map[authorID]struct{}) *JobPool {
 	p := &JobPool{
 		jobsPerBuild:   jobsPerBuild,
-		trustedAuthors: trustedAuthors,
 		queues:         make(map[string]Queue),
+		trustedAuthors: trustedAuthors,
 	}
 	for queue := range queues {
 		p.queues[queue] = Queue{
@@ -170,6 +170,15 @@ func NewJobPool(jobsPerBuild uint, queues map[string]struct{}, trustedAuthors ma
 		}
 	}
 	return p
+}
+
+// setTrustedAuthors replaces the set of trusted authors.
+//
+// It doesn't affect the builds already in the pool.
+func (p *JobPool) setTrustedAuthors(trustedAuthors map[authorID]struct{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.trustedAuthors = trustedAuthors
 }
 
 // countLocked returns how many jobs from the given build on the given queue are in
@@ -192,7 +201,7 @@ func (p *JobPool) addLocked(queue string, uuid BuildUUID, metadata BuildMetadata
 
 	q := p.queues[queue]
 	builds := q.untrustedBuilds
-	if p.trusted(metadata) {
+	if p.trustedLocked(metadata) {
 		builds = q.trustedBuilds
 	}
 	b, ok := builds[uuid]
@@ -230,6 +239,15 @@ func (p *JobPool) jobIDsLocked() []JobUUID {
 // trusted returns whether a build with the given metadata may run on trusted
 // agents.
 func (p *JobPool) trusted(metadata BuildMetadata) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.trustedLocked(metadata)
+}
+
+// trustedLocked implements trusted.
+//
+// p.mu must be held.
+func (p *JobPool) trustedLocked(metadata BuildMetadata) bool {
 	switch metadata.source {
 	case buildSourceSchedule:
 		// Scheduled builds run from branches configured by pipeline admins,

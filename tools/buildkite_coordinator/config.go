@@ -40,11 +40,15 @@ type config struct {
 	// queues is the set of Buildkite queues the coordinator serves.
 	queues map[string]struct{}
 
-	// trustedAuthors is the set of GitHub logins whose pull requests are
-	// trusted.
-	//
-	// TODO: we should eventually fetch this from governance/maintainers.yaml.
+	// trustedAuthors is the set of GitHub user IDs whose pull requests are
+	// trusted in addition to the maintainers in maintainersFile.
 	trustedAuthors map[authorID]struct{}
+
+	// githubRepo is the GitHub repository whose pull requests are built.
+	githubRepo githubRepository
+
+	// maintainersFile is the path of the maintainers file in githubRepo.
+	maintainersFile string
 
 	// bkTokenProject and bkTokenSecret identify the Secret Manager secret that
 	// holds the Buildkite agent token.
@@ -101,6 +105,10 @@ func loadConfig(ctx context.Context) (config, error) {
 		}
 		trustedAuthors[id] = struct{}{}
 	}
+	githubRepo, err := parseGitHubRepository(envOr("GITHUB_REPOSITORY", "github.com/google/gvisor"))
+	if err != nil {
+		return config{}, fmt.Errorf("GITHUB_REPOSITORY: %w", err)
+	}
 	stackKeyPrefix := envOr("STACK_KEY_PREFIX", "bk-test-stack")
 	idHash, err := instanceIDHash(ctx)
 	if err != nil {
@@ -113,6 +121,8 @@ func loadConfig(ctx context.Context) (config, error) {
 		stackKey:            stackKey,
 		queues:              queues,
 		trustedAuthors:      trustedAuthors,
+		githubRepo:          githubRepo,
+		maintainersFile:     envOr("MAINTAINERS_FILE", "governance/maintainers.yaml"),
 		bkTokenProject:      envOr("BUILDKITE_TOKEN_PROJECT", "gvisor-kokoro-testing"),
 		bkTokenSecret:       envOr("BUILDKITE_TOKEN_SECRET", "buildkite-default-token"),
 		githubTokenProject:  envOr("GITHUB_TOKEN_PROJECT", "gvisor-kokoro-testing"),

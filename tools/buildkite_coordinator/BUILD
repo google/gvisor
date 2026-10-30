@@ -34,6 +34,7 @@ go_binary(
         "@com_google_cloud_go_auth//credentials/impersonate:go_default_library",
         "@com_google_cloud_go_compute_metadata//:go_default_library",
         "@com_google_cloud_go_firestore//:go_default_library",
+        "@in_gopkg_yaml_v3//:go_default_library",
         "@org_golang_google_api//compute/v1:go_default_library",
         "@org_golang_google_api//googleapi:go_default_library",
         "@org_golang_google_api//idtoken:go_default_library",
