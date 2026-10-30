@@ -85,8 +85,9 @@ type segment struct {
 	// xmitTime is the last transmit time of this segment.
 	xmitTime  tcpip.MonotonicTime
 	xmitCount uint32
-	// acked indicates if the segment has already been SACKed.
-	acked bool `state:"nosave"`
+	// acked indicates whether RACK has observed a SACK for this transmission.
+	// Resetting the scoreboard does not change which transmission it was.
+	acked bool
 
 	// dataMemSize is the memory used by pkt initially. The value is used for
 	// memory accounting in the receive buffer instead of pkt.MemSize() because

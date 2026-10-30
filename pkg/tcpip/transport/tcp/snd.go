@@ -666,7 +666,6 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	s.SackedOut = 0
 	for seg := s.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
 		seg.sackCredit = 0
-		seg.acked = false
 	}
 	s.updateWriteNext(s.writeList.Front())
 
@@ -1898,6 +1897,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 
 	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
 	if err == nil {
+		seg.acked = false
 		mss := seg.logicalLen()
 		if s.gso && s.ep.gso.MSS != 0 {
 			mss = min(mss, seqnum.Size(s.ep.gso.MSS))
