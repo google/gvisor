@@ -957,6 +957,9 @@ steps:
   - <<: *benchmarks_nodocker
     label: ":stopwatch: Shim Lifecycle benchmarks"
     command: make benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=shim_lifecycle BENCHMARKS_TARGETS=shim/tests:lifecycle_benchmark_test
+  - <<: *benchmarks_nodocker
+    label: ":stopwatch: Sandboxexec benchmarks"
+    command: make benchmark-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=sandboxexec BENCHMARKS_TARGETS=sandboxexec/sandbox:sandbox_benchmark_test
   - <<: *benchmarks
     label: ":computer: sysbench benchmarks"
     command: make benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test

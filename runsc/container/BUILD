@@ -146,7 +146,10 @@ go_test(
 go_test(
     name = "lifecycle_benchmark_test",
     size = "large",
-    srcs = ["lifecycle_bench_test.go"],
+    srcs = [
+        "cli_bench_test.go",
+        "lifecycle_bench_test.go",
+    ],
     args = [
         "-test.bench=.",
         "-test.run=^$$",

@@ -679,16 +679,15 @@ run_benchmark = \
 	fi; \
 	exit $$exit_code)
 
-# $(1) is the platform name.
-# TODO: b/567563387 - consider not using --runtime here to describe the platform
-# in the BigQuery parser for these non-docker tests.
-run_platform_benchmark = \
+# $(1) is the runtime name reported to BigQuery, and $(2) holds extra arguments
+# for the benchmark binary.
+run_nodocker_benchmark = \
 	($(call header,BENCHMARK $(1)); \
 	set -euo pipefail; \
 	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
 	trap 'rm -rf "$$T"' EXIT; \
 	exit_code=0; \
-	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T || exit_code=$$?; \
+	$(call sudo,$(BENCHMARKS_TARGETS),$(2) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T || exit_code=$$?; \
 	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
 	  upload_ret=0; \
 	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)) || upload_ret=$$?; \
@@ -697,6 +696,11 @@ run_platform_benchmark = \
 	  fi; \
 	fi; \
 	exit $$exit_code)
+
+# $(1) is the platform name.
+# TODO: b/567563387 - consider not using --runtime here to describe the platform
+# in the BigQuery parser for these non-docker tests.
+run_platform_benchmark = $(call run_nodocker_benchmark,$(1),--test_platforms=$(1))
 
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.
@@ -738,6 +742,10 @@ benchmark-platforms-nodocker: $(RUNTIME_BIN) ## Runs non-Docker benchmarks for a
 	done; \
 	exit $$exit_code
 .PHONY: benchmark-platforms-nodocker
+
+benchmark-nodocker: ## Runs non-Docker benchmarks once, without selecting a platform.
+	@$(call run_nodocker_benchmark,runsc)
+.PHONY: benchmark-nodocker
 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))

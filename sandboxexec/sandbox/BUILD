@@ -5,6 +5,8 @@ package(
     licenses = ["notice"],
 )
 
+# gazelle:exclude sandbox_bench_test.go
+
 go_library(
     name = "sandbox",
     srcs = [
@@ -37,5 +39,28 @@ go_test(
         ":sandbox",
         "//pkg/test/testutil",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+# Benchmarks for the sandboxexec Go bindings.
+go_test(
+    name = "sandbox_benchmark_test",
+    size = "large",
+    srcs = ["sandbox_bench_test.go"],
+    args = [
+        "-test.bench=.",
+        "-test.run=^$$",
+        "-test.benchtime=30x",  # A fixed iteration count.
+        "-test.v",
+    ],
+    data = ["//:release"],
+    tags = [
+        "manual",
+        "nogotsan",
+        "notap",
+    ],
+    deps = [
+        ":sandbox",
+        "//pkg/test/testutil",
     ],
 )

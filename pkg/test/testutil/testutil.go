@@ -373,7 +373,10 @@ func PlatformConfigs(tb testing.TB, platforms string, newConf func() *config.Con
 
 // Measure executes fn while the benchmark timer is running. It starts the timer
 // immediately before calling fn, pauses it when fn returns (even if fn panics or
-// fails), and returns the elapsed duration of fn.
+// fails), and returns the elapsed duration of fn. The benchmark framework uses
+// the timer to report the average duration of fn as ns/op. The framework does
+// not keep each duration, so Measure returns it for percentiles (see
+// ReportPercentiles).
 func Measure(b *testing.B, fn func()) time.Duration {
 	b.StartTimer()
 	start := time.Now()
