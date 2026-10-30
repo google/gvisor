@@ -537,25 +537,32 @@ func ShouldExposeRDMADevice(path string) bool {
 	return strings.HasPrefix(path, "/dev/infiniband/uverbs")
 }
 
-// SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
-func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
-	if err := os.MkdirAll(filepath.Join(root, "dev"), 0777); err != nil {
-		return fmt.Errorf("creating dev directory: %v", err)
-	}
-	// Mount any devices specified in the spec.
+// ExposedDevices returns the devices in the OCI spec that the sandbox proxies
+// to the container, and therefore opens on the host.
+func ExposedDevices(spec *specs.Spec, conf *config.Config) []specs.LinuxDevice {
 	if spec.Linux == nil {
 		return nil
 	}
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
 	tpuproxyEnabled := specutils.TPUProxyEnabled(spec, conf)
 	rdmaproxyEnabled := specutils.RDMAEnabled(spec, conf)
+	var devs []specs.LinuxDevice
 	for _, dev := range spec.Linux.Devices {
-		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
+		if (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
 			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path)) ||
-			(rdmaproxyEnabled && ShouldExposeRDMADevice(dev.Path))
-		if !shouldMount {
-			continue
+			(rdmaproxyEnabled && ShouldExposeRDMADevice(dev.Path)) {
+			devs = append(devs, dev)
 		}
+	}
+	return devs
+}
+
+// SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
+func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
+	if err := os.MkdirAll(filepath.Join(root, "dev"), 0777); err != nil {
+		return fmt.Errorf("creating dev directory: %v", err)
+	}
+	for _, dev := range ExposedDevices(spec, conf) {
 		// The rootfs may contain symlinks at dev.Path; resolve them within
 		// root so the mount point is never created outside the rootfs.
 		dst, err := ResolveSymlinks(root, dev.Path)
