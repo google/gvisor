@@ -15,11 +15,13 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -41,10 +43,14 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
+#include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
@@ -683,6 +689,57 @@ TEST(ReaddirTest, GoneAfterRenameCache) {
 
   contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(dst.path(), true));
   EXPECT_THAT(contents, Contains(name));
+}
+
+// Returns the inode number that readdir(3) reports for name, reading dir from
+// its start.
+PosixErrorOr<ino_t> DirentIno(DIR* dir, absl::string_view name) {
+  rewinddir(dir);
+  errno = 0;
+  while (struct dirent* d = readdir(dir)) {
+    if (name == d->d_name) {
+      return d->d_ino;
+    }
+  }
+  if (errno != 0) {
+    return PosixError(errno, "readdir");
+  }
+  return PosixError(ENOENT, absl::StrCat(name, " not found"));
+}
+
+// Overlay copy-up must not leave getdents disagreeing with stat(2) about a
+// file's inode number, even if the parent was read before the copy-up.
+TEST(ReaddirTest, InoMatchesStatAfterOverlayCopyUp) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  // Linux overlayfs needs CAP_DAC_OVERRIDE. It creates its work
+  // directory with mode 0 and accesses it with the mounter's credentials.
+  SKIP_IF(GvisorPlatform() == Platform::kNative &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE)));
+
+  auto base = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base.path(), "tmpfs", 0, "", MNT_DETACH));
+  auto lower = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base.path()));
+  auto upper = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base.path()));
+  auto merged = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base.path()));
+  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(lower.path(), "file"), ""));
+  const std::string opts =
+      absl::StrCat("lowerdir=", lower.path(), ",upperdir=", upper.path(),
+                   ",workdir=", work.path());
+  auto overlay_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", merged.path(), "overlay", 0, opts, MNT_DETACH));
+
+  const std::string file = JoinPath(merged.path(), "file");
+  DIR* dir = opendir(merged.path().c_str());
+  ASSERT_THAT(dir, NotNull());
+  auto dir_cleanup = Cleanup([dir] { closedir(dir); });
+  struct stat st = ASSERT_NO_ERRNO_AND_VALUE(Stat(file));
+  EXPECT_THAT(DirentIno(dir, "file"), IsPosixErrorOkAndHolds(st.st_ino));
+
+  ASSERT_THAT(chmod(file.c_str(), 0600), SyscallSucceeds());
+  st = ASSERT_NO_ERRNO_AND_VALUE(Stat(file));
+  EXPECT_THAT(DirentIno(dir, "file"), IsPosixErrorOkAndHolds(st.st_ino));
 }
 
 }  // namespace
