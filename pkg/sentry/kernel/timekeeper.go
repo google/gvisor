@@ -221,9 +221,11 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 	}
 
 	// In a restored sentry, monotonic and boot time stay at their values at
-	// save time until the kernel resumes; see Resume.
+	// save time until the kernel resumes; see Resume. Monotonic time then
+	// continues from there, so it must not go below this value either.
 	if t.restored != nil {
 		t.saveBoottime = t.saveMonotonic + t.boottimeOffset
+		t.monotonicLowerBound.Store(t.saveMonotonic)
 		t.restoring.Store(true)
 	}
 
@@ -279,36 +281,41 @@ func (t *Timekeeper) update(parked bool) {
 	// Call Update within a Write block to prevent the VDSO from using the old
 	// params between Update and Write.
 	if err := t.params.Write(func() vdsoParams {
-		res := t.clocks.Update(parked)
-
-		var p vdsoParams
-		if res.MonotonicOk && !t.restoring.Load() {
-			p.monotonicReady = 1
-			p.monotonicBaseCycles = int64(res.Monotonic.BaseCycles)
-			p.monotonicBaseRef = int64(res.Monotonic.BaseRef) + t.monotonicOffset
-			p.monotonicFrequency = res.Monotonic.Frequency
-			p.boottimeOffset = t.boottimeOffset
-		}
-		if res.RealtimeOk {
-			p.realtimeReady = 1
-			p.realtimeBaseCycles = int64(res.Realtime.BaseCycles)
-			p.realtimeBaseRef = int64(res.Realtime.BaseRef)
-			p.realtimeFrequency = res.Realtime.Frequency
-		}
-		if t.monotonicRawClock == nil {
-			p.monotonicRawAlias = 1
-		} else if res.MonotonicRawOk {
-			// Raw tracks absolute host CLOCK_MONOTONIC_RAW, so unlike
-			// monotonic its base ref is published without monotonicOffset.
-			p.monotonicRawReady = 1
-			p.monotonicRawBaseCycles = int64(res.MonotonicRaw.BaseCycles)
-			p.monotonicRawBaseRef = int64(res.MonotonicRaw.BaseRef)
-			p.monotonicRawFrequency = res.MonotonicRaw.Frequency
-		}
-		return p
+		return t.vdsoParamsLocked(t.clocks.Update(parked))
 	}); err != nil {
 		log.Warningf("Unable to update VDSO parameter page: %v", err)
 	}
+}
+
+// vdsoParamsLocked returns the VDSO parameters for the clock parameters in res.
+//
+// Preconditions: updateMu must be held
+func (t *Timekeeper) vdsoParamsLocked(res sentrytime.UpdateResult) vdsoParams {
+	var p vdsoParams
+	if res.MonotonicOk && !t.restoring.Load() {
+		p.monotonicReady = 1
+		p.monotonicBaseCycles = int64(res.Monotonic.BaseCycles)
+		p.monotonicBaseRef = int64(res.Monotonic.BaseRef) + t.monotonicOffset
+		p.monotonicFrequency = res.Monotonic.Frequency
+		p.boottimeOffset = t.boottimeOffset
+	}
+	if res.RealtimeOk {
+		p.realtimeReady = 1
+		p.realtimeBaseCycles = int64(res.Realtime.BaseCycles)
+		p.realtimeBaseRef = int64(res.Realtime.BaseRef)
+		p.realtimeFrequency = res.Realtime.Frequency
+	}
+	if t.monotonicRawClock == nil {
+		p.monotonicRawAlias = 1
+	} else if res.MonotonicRawOk {
+		// Raw tracks absolute host CLOCK_MONOTONIC_RAW, so unlike
+		// monotonic its base ref is published without monotonicOffset.
+		p.monotonicRawReady = 1
+		p.monotonicRawBaseCycles = int64(res.MonotonicRaw.BaseCycles)
+		p.monotonicRawBaseRef = int64(res.MonotonicRaw.BaseRef)
+		p.monotonicRawFrequency = res.MonotonicRaw.Frequency
+	}
+	return p
 }
 
 // startUpdater starts an update goroutine that keeps the clocks updated.
@@ -502,22 +509,34 @@ func (t *Timekeeper) endRestore() {
 	t.updateMu.Lock()
 	defer t.updateMu.Unlock()
 
-	nowMonotonic, err := t.clocks.GetTime(sentrytime.Monotonic)
-	if err != nil {
-		panic("Unable to get current monotonic time: " + err.Error())
+	// Compute the offsets from the clock parameters that this update writes
+	// to the VDSO, and publish them together before the application resumes.
+	// Then monotonic time continues from exactly saveMonotonic. A time read
+	// before the update can differ by the clock error that the update
+	// corrects.
+	if err := t.params.Write(func() vdsoParams {
+		res := t.clocks.Update(t.updaterState.Load() == updaterParked)
+		nowMonotonic, nowRealtime := int64(res.Monotonic.BaseRef), int64(res.Realtime.BaseRef)
+		var err error
+		if !res.MonotonicOk {
+			if nowMonotonic, err = t.clocks.GetTime(sentrytime.Monotonic); err != nil {
+				panic("Unable to get current monotonic time: " + err.Error())
+			}
+		}
+		if !res.RealtimeOk {
+			if nowRealtime, err = t.clocks.GetTime(sentrytime.Realtime); err != nil {
+				panic("Unable to get current realtime: " + err.Error())
+			}
+		}
+		t.monotonicOffset = t.saveMonotonic - nowMonotonic
+		if elapsed := nowRealtime - t.saveRealtime; elapsed > 0 {
+			t.boottimeOffset += elapsed
+		}
+		t.restoring.Store(false)
+		return t.vdsoParamsLocked(res)
+	}); err != nil {
+		panic("Unable to update VDSO parameter page: " + err.Error())
 	}
-	nowRealtime, err := t.clocks.GetTime(sentrytime.Realtime)
-	if err != nil {
-		panic("Unable to get current realtime: " + err.Error())
-	}
-	t.monotonicOffset = t.saveMonotonic - nowMonotonic
-	if elapsed := nowRealtime - t.saveRealtime; elapsed > 0 {
-		t.boottimeOffset += elapsed
-	}
-	t.restoring.Store(false)
-
-	// Publish the new offsets to the VDSO before the application resumes.
-	t.update(t.updaterState.Load() == updaterParked)
 }
 
 // TSCSnapshot returns the clock source's realtime base point in the guest TSC

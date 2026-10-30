@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -71,6 +72,63 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 	default:
 		return 0, linuxerr.EINVAL
 	}
+}
+
+// driftingClocks is a mockClocks with calibrated clock parameters. Its
+// monotonic time differs from the reference clock by drift, which an update
+// after a parked period corrects at once, as for sentrytime.CalibratedClock.
+type driftingClocks struct {
+	mockClocks
+	drift int64
+}
+
+// Update implements sentrytime.Clocks.Update.
+func (c *driftingClocks) Update(parked bool) sentrytime.UpdateResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if parked {
+		c.drift = 0
+	}
+	return sentrytime.UpdateResult{
+		Monotonic: sentrytime.Parameters{
+			BaseRef:   sentrytime.ReferenceNS(c.monotonic + c.drift),
+			Frequency: 1000000000,
+		},
+		MonotonicOk: true,
+		Realtime: sentrytime.Parameters{
+			BaseRef:   sentrytime.ReferenceNS(c.realtime),
+			Frequency: 1000000000,
+		},
+		RealtimeOk: true,
+	}
+}
+
+// GetTime implements sentrytime.Clocks.GetTime.
+func (c *driftingClocks) GetTime(id sentrytime.ClockID) (int64, error) {
+	now, err := c.mockClocks.GetTime(id)
+	if id == sentrytime.Monotonic {
+		c.mu.Lock()
+		now += c.drift
+		c.mu.Unlock()
+	}
+	return now, err
+}
+
+// readVDSOParams returns the parameters in the VDSO parameter page.
+func readVDSOParams(tb testing.TB, params *VDSOParamPage) vdsoParams {
+	tb.Helper()
+	paramPage, err := params.access()
+	if err != nil {
+		tb.Fatalf("failed to access VDSO parameter page: %v", err)
+	}
+	var p vdsoParams
+	buf := make([]byte, p.SizeBytes())
+	// Skip the sequence counter.
+	if _, err := safemem.Copy(safemem.BlockFromSafeSlice(buf), paramPage.DropFirst(8)); err != nil {
+		tb.Fatalf("failed to read VDSO parameter page: %v", err)
+	}
+	p.UnmarshalUnsafe(buf)
+	return p
 }
 
 // stateTestClocklessTimekeeper returns a test Timekeeper which has not had
@@ -241,6 +299,58 @@ func TestTimekeeperRestore(t *testing.T) {
 				if now, err := tk.GetTime(id); err != nil || now != wantNow+10 {
 					t.Errorf("GetTime(%v) got (%d, %v) want (%d, nil)", id, now, err, wantNow+10)
 				}
+			}
+		})
+	}
+}
+
+// TestTimekeeperRestoreClockError tests that after restore, monotonic time
+// continues from exactly its value at save time, in both GetTime and the VDSO,
+// when the update as the kernel resumes corrects a clock error.
+func TestTimekeeperRestoreClockError(t *testing.T) {
+	for _, test := range []struct {
+		name string
+
+		// active is true if the updater is active when the kernel resumes.
+		// Otherwise it is parked, and the update corrects the clock error
+		// at once.
+		active bool
+	}{
+		{name: "parked"},
+		{name: "active", active: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const saveMonotonic = 100000
+			c := &driftingClocks{
+				mockClocks: mockClocks{
+					monotonic: 900000,
+					realtime:  600000,
+				},
+			}
+
+			tk, params := stateTestClocklessTimekeeper(t)
+			tk.restored = make(chan struct{})
+			tk.saveMonotonic = saveMonotonic
+			tk.saveRealtime = 400000
+			tk.SetClocks(c, params)
+			defer tk.Destroy()
+
+			if test.active {
+				// Reading realtime during restore activates the updater.
+				if _, err := tk.GetTime(sentrytime.Realtime); err != nil {
+					t.Fatalf("GetTime(Realtime) failed: %v", err)
+				}
+			}
+			c.mu.Lock()
+			c.drift = 1000
+			c.mu.Unlock()
+			tk.Resume(params)
+
+			if now, err := tk.GetTime(sentrytime.Monotonic); err != nil || now != saveMonotonic {
+				t.Errorf("GetTime(Monotonic) got (%d, %v) want (%d, nil)", now, err, saveMonotonic)
+			}
+			if p := readVDSOParams(t, params); p.monotonicReady != 1 || p.monotonicBaseRef != saveMonotonic {
+				t.Errorf("VDSO monotonic parameters got (ready %d, base ref %d) want (ready 1, base ref %d)", p.monotonicReady, p.monotonicBaseRef, saveMonotonic)
 			}
 		})
 	}
