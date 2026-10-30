@@ -299,6 +299,19 @@ img_pull(
     tag = "1.31.1",
 )
 
+img_pull(
+    name = "test_bun",
+    digest = "sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "oven/bun",
+    tag = "1.4.3",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
