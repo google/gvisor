@@ -153,6 +153,9 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 //   - d.dirMu must be locked.
 //   - d.isDir().
 func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
+	if d.direntsStale.Swap(false) {
+		d.dirents = nil
+	}
 	if d.dirents != nil {
 		return d.dirents, nil
 	}
