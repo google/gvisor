@@ -36,8 +36,8 @@ go_library(
         "tsc_arm64.s",
         "tsc_offset_unsafe.go",
         "vdso.go",
-        "vdso_amd64.s",
-        "vdso_arm64.s",
+        "vdso_amd64.tmpl.s",
+        "vdso_arm64.tmpl.s",
     ],
     visibility = ["//:sandbox"],
     deps = [
@@ -64,6 +64,18 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "vdso_test",
+    srcs = ["vdso_test.go"],
+    embed = [":time"],
+    pure = True,
+    tags = ["nogotsan"],
+    deps = [
+        "//pkg/abi/linux",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

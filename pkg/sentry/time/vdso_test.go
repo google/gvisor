@@ -15,6 +15,7 @@
 package time
 
 import (
+	"runtime"
 	"syscall"
 	"testing"
 	"unsafe"
@@ -45,4 +46,42 @@ func TestClockGetTimeEINVAL(t *testing.T) {
 	if ret := vdsoClockGettime(-1, &ts); ret != -int(syscall.EINVAL) {
 		t.Fatalf("Unexpected error code: %v", ret)
 	}
+}
+
+// TestClockGetTimeSignal verifies that asynchronous signals delivered while a
+// thread is calling vdsoClockGettime are handled safely.
+func TestClockGetTimeSignal(t *testing.T) {
+	tidCh := make(chan int, 1)
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+
+	go func() {
+		defer close(doneCh)
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		tidCh <- unix.Gettid()
+		var ts unix.Timespec
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+			}
+			if ret := vdsoClockGettime(linux.CLOCK_MONOTONIC, &ts); ret != 0 {
+				t.Errorf("Unexpected error code: %v", ret)
+				return
+			}
+		}
+	}()
+
+	pid := unix.Getpid()
+	tid := <-tidCh
+	for i := 0; i < 10000; i++ {
+		if err := unix.Tgkill(pid, tid, unix.SIGCHLD); err != nil {
+			t.Fatalf("Tgkill failed: %v", err)
+		}
+	}
+	close(stopCh)
+	<-doneCh
 }
