@@ -705,31 +705,63 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 	defer timer.Log()
 	defer timeline.End()
 
-	timeline.Reached("scheduled")
-	if err := control.PostRestore(k, timeline); err != nil {
-		r.cm.onRestoreFailed(fmt.Errorf("post restore work failed: %w", err))
-		log.Warningf("Killing the sandbox after post restore work failed: %v", err)
+	fail := func(err error) {
+		r.cm.onRestoreFailed(err)
+		log.Warningf("Killing the sandbox after restore failed: %v", err)
 		k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 		r.cm.l.stopIfKilled()
-		return
 	}
-	timeline.Reached("post restore done")
+	postRestoreDone := func() {
+		timeline.Reached("post restore done")
+		// The saved count predates checkpoint completion. Increment it only
+		// after post-restore work succeeds.
+		k.IncCheckpointGenOnRestore()
+	}
 
-	// Now that post restore work succeeded, increment the checkpoint gen
-	// manually. The count was saved while the previous kernel was being saved
-	// and checkpoint success was unknown at that time. Now we know the had
-	// checkpoint succeeded. Allow the application to proceed while pages may
-	// keep loading in the background.
-	k.IncCheckpointGenOnRestore()
+	timeline.Reached("scheduled")
+	if r.background && r.asyncMFLoader != nil {
+		// PostRestore may wait for an application hook. Observe page loading
+		// independently so its failures are reported immediately.
+		postRestoreResult := make(chan error, 1)
+		pageLoadResult := make(chan error, 1)
+		postRestoreTimeline := timeline.Fork("work")
+		go func() {
+			defer postRestoreTimeline.End()
+			postRestoreResult <- control.PostRestore(k, postRestoreTimeline)
+		}()
+		go func() {
+			pageLoadResult <- r.asyncMFLoader.Wait()
+		}()
 
-	// Wait for page loading to complete if happening in the background.
-	if r.asyncMFLoader != nil {
-		if err := r.asyncMFLoader.Wait(); err != nil {
-			r.cm.onRestoreFailed(fmt.Errorf("async MemoryFile loading failed: %w", err))
-			log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
-			k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
-			r.cm.l.stopIfKilled()
+		for postRestoreResult != nil || pageLoadResult != nil {
+			select {
+			case err := <-postRestoreResult:
+				postRestoreResult = nil
+				if err != nil {
+					fail(fmt.Errorf("post restore work failed: %w", err))
+					return
+				}
+				postRestoreDone()
+			case err := <-pageLoadResult:
+				pageLoadResult = nil
+				if err != nil {
+					fail(fmt.Errorf("async MemoryFile loading failed: %w", err))
+					return
+				}
+			}
+		}
+	} else {
+		if err := control.PostRestore(k, timeline); err != nil {
+			fail(fmt.Errorf("post restore work failed: %w", err))
 			return
+		}
+		postRestoreDone()
+
+		if r.asyncMFLoader != nil {
+			if err := r.asyncMFLoader.Wait(); err != nil {
+				fail(fmt.Errorf("async MemoryFile loading failed: %w", err))
+				return
+			}
 		}
 	}
 

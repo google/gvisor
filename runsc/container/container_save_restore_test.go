@@ -393,6 +393,84 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 }
 
+func TestBackgroundRestorePageLoadFailureDoesNotWaitForPostRestore(t *testing.T) {
+	baseDir := makeTempDir(t, "background-restore-page-load-failure")
+	tmpfsPath := filepath.Join(baseDir, "tmpfs")
+	if err := os.Mkdir(tmpfsPath, 0777); err != nil {
+		t.Fatalf("creating tmpfs mount directory: %v", err)
+	}
+	blockPath := filepath.Join(baseDir, "block-restore-hook")
+	if err := unix.Mkfifo(blockPath, 0666); err != nil {
+		t.Fatalf("creating restore hook FIFO: %v", err)
+	}
+	hookPath := filepath.Join(baseDir, "hook.sh")
+	hook := fmt.Sprintf("#!/bin/sh\nif [ \"${GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE}\" = restore ]; then\n  read value < %q\nfi\n", blockPath)
+	if err := os.WriteFile(hookPath, []byte(hook), 0777); err != nil {
+		t.Fatalf("writing restore hook: %v", err)
+	}
+	imagePath := filepath.Join(baseDir, "image")
+	if err := os.Mkdir(imagePath, 0777); err != nil {
+		t.Fatalf("creating checkpoint directory: %v", err)
+	}
+
+	spec, conf := sleepSpecConf(t)
+	addTmpfsMount(spec, "page-load-failure", tmpfsPath, tmpfsPath)
+	cont := startContainer(t, conf, spec, setupBundle(t, conf, spec), nil)
+	privateFile := filepath.Join(tmpfsPath, "private-pages")
+	if ws, err := execute(conf, cont, "/bin/cp", "/bin/sh", privateFile); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("populating private tmpfs: status %v, error %v", ws, err)
+	}
+	containerID := cont.ID
+	checkpointOpts := sandbox.CheckpointOpts{
+		Compression:                statefile.CompressionLevelNone,
+		Resume:                     true,
+		SaveRestoreExecArgv:        hookPath,
+		SaveRestoreExecTimeout:     controlapi.DefaultSaveRestoreExecTimeout,
+		SaveRestoreExecContainerID: containerID,
+	}
+	if err := cont.Checkpoint(conf, imagePath, checkpointOpts); err != nil {
+		t.Fatalf("checkpointing container: %v", err)
+	}
+	if err := cont.Destroy(); err != nil {
+		t.Fatalf("destroying checkpointed container: %v", err)
+	}
+
+	pagesPath := filepath.Join(imagePath, checkpointfiles.PagesFileName)
+	pagesInfo, err := os.Stat(pagesPath)
+	if err != nil {
+		t.Fatalf("stating pages file: %v", err)
+	}
+	truncatedSize := pagesInfo.Size() - int64(os.Getpagesize())
+	if truncatedSize <= 0 {
+		t.Fatalf("pages file is too small to truncate: %d bytes", pagesInfo.Size())
+	}
+	if err := os.Truncate(pagesPath, truncatedSize); err != nil {
+		t.Fatalf("truncating pages file: %v", err)
+	}
+
+	restoreSpec, _ := sleepSpecConf(t)
+	addTmpfsMount(restoreSpec, "page-load-failure", tmpfsPath, tmpfsPath)
+	restored := newContainer(t, conf, restoreSpec, setupBundle(t, conf, restoreSpec), func(args *Args) {
+		args.ID = containerID
+	})
+	if err := restored.Restore(conf, imagePath, false /* direct */, true /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("starting background restore: %v", err)
+	}
+
+	restoreResult := make(chan error, 1)
+	go func() {
+		restoreResult <- restored.WaitRestore()
+	}()
+	select {
+	case err := <-restoreResult:
+		if err == nil {
+			t.Fatal("waiting for restore succeeded after a page load failure")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("page load failure was not reported while the post-restore hook was blocked")
+	}
+}
+
 // TestCheckpointCPUFeaturesMetadata verifies that the checkpoint metadata
 // records the sandbox's CPU features, matching the CPUID FeatureSet saved in
 // the state file.
