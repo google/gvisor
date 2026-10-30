@@ -42,6 +42,11 @@ const (
 
 func createSACKConnection(t *testing.T) (testbench.DUT, testbench.TCPIPv4, int32, int) {
 	t.Helper()
+	return createSACKConnectionWithPeerRTT(t, 0)
+}
+
+func createSACKConnectionWithPeerRTT(t *testing.T, rtt time.Duration) (testbench.DUT, testbench.TCPIPv4, int32, int) {
+	t.Helper()
 	dut := testbench.NewDUT(t)
 	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	t.Cleanup(func() { dut.Close(t, listenFd) })
@@ -55,7 +60,16 @@ func createSACKConnection(t *testing.T) (testbench.DUT, testbench.TCPIPv4, int32
 	optsOff += header.EncodeNOP(opts[optsOff:])
 	optsOff += header.EncodeSACKPermittedOption(opts[optsOff:])
 
-	conn.ConnectWithOptions(t, opts[:optsOff])
+	if rtt == 0 {
+		conn.ConnectWithOptions(t, opts[:optsOff])
+	} else {
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: opts[:optsOff]})
+		if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second); err != nil {
+			t.Fatalf("waiting for SYN+ACK: %s", err)
+		}
+		time.Sleep(rtt)
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	}
 	acceptFd, _ := dut.Accept(t, listenFd)
 	t.Cleanup(func() { dut.Close(t, acceptFd) })
 
@@ -434,4 +448,55 @@ func TestRACKWithLostRetransmission(t *testing.T) {
 	if info.CaState != linux.TCP_CA_Recovery {
 		t.Fatalf("expected connection to be in fast recovery, want: %v got: %v", linux.TCP_CA_Recovery, info.CaState)
 	}
+}
+
+// A receiver may repeat a SACK after a timeout. If it names the same
+// transmission, the repeat provides no new evidence of reordering.
+func TestRACKRepeatedSACKAfterRTO(t *testing.T) {
+	const peerRTT = 150 * time.Millisecond
+	dut, conn, fd, mss := createSACKConnectionWithPeerRTT(t, peerRTT)
+	dut.SetSockOpt(t, fd, unix.IPPROTO_TCP, unix.TCP_CONGESTION, []byte("cubic"))
+	for range 4 {
+		sendAndReceive(t, dut, conn, 1, fd, mss, false)
+		time.Sleep(peerRTT)
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	}
+	first := *conn.RemoteSeqNum(t)
+	sendAndReceive(t, dut, conn, 5, fd, mss, false)
+	time.Sleep(peerRTT)
+	block := func(i int) header.SACKBlock {
+		start := first.Add(seqnum.Size(i * mss))
+		return header.SACKBlock{Start: start, End: start.Add(seqnum.Size(mss))}
+	}
+	ack := func(tag byte, next seqnum.Value, blocks ...header.SACKBlock) {
+		t.Helper()
+		var options [40]byte
+		n := header.EncodeNOP(options[:])
+		n += header.EncodeNOP(options[n:])
+		n += header.EncodeSACKBlocks(blocks, options[n:])
+		conn.Send(t, testbench.TCP{
+			Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(next)), Options: options[:n],
+		}, &testbench.Payload{Bytes: []byte{tag}})
+		// Read the byte so TCP has processed this ACK before sampling TCP_INFO.
+		if got := dut.Recv(t, fd, 1, 0); len(got) != 1 || got[0] != tag {
+			t.Fatalf("recv = %v, want tag %d", got, tag)
+		}
+		if got := dut.GetSockOptTCPInfo(t, fd).ReordSeen; got != 0 {
+			t.Fatalf("ACK %d: TCP_INFO.ReordSeen = %d, want 0", tag, got)
+		}
+	}
+	ack(1, first, block(4), block(2))
+	ack(2, first, block(2))
+
+	// Fast recovery can retransmit the first segment before the RTO.
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(uint32(first))}, &testbench.Payload{Bytes: make([]byte, mss)}, time.Until(deadline)); err != nil {
+			t.Fatalf("waiting for retransmission of first segment in Loss: %v", err)
+		}
+		if dut.GetSockOptTCPInfo(t, fd).CaState == linux.TCP_CA_Loss {
+			break
+		}
+	}
+	ack(3, first.Add(seqnum.Size(mss)), block(2))
 }
