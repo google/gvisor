@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -35,6 +36,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
@@ -44,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -2805,5 +2808,142 @@ func TestCheckpointRestoreCrossEngineChained(t *testing.T) {
 				})
 			})
 		})
+	}
+}
+
+// TestRestoreCgroupMemoryLimit verifies that restoring a checkpoint with a
+// large Sentry Go heap inside a limited host memory cgroup falls back to GC
+// instead of triggering a host cgroup OOM kill.
+func TestRestoreCgroupMemoryLimit(t *testing.T) {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("cgroup v2 required")
+	}
+	testAppPath, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("FindFile(test_app): %v", err)
+	}
+
+	cgPath := "/" + testutil.RandomID("gvisor-test-cg")
+	probe, err := cgroup.NewFromPath(cgPath, false /* useSystemd */)
+	if err != nil {
+		t.Skipf("cgroup v2 unavailable: %v", err)
+	}
+	if err := probe.Install(&specs.LinuxResources{}); err != nil {
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, unix.EROFS) || errors.Is(err, unix.EBUSY) {
+			t.Skipf("writable cgroup v2 hierarchy unavailable: %v", err)
+		}
+		t.Fatalf("probe.Install(): %v", err)
+	}
+	if _, err := os.Stat(probe.MakePath("memory.max")); os.IsNotExist(err) {
+		_ = probe.Uninstall()
+		t.Skip("cgroup v2 memory controller unavailable")
+	}
+	_, swapErr := os.Stat(probe.MakePath("memory.swap.max"))
+	if err := probe.Uninstall(); err != nil {
+		t.Fatalf("probe.Uninstall(): %v", err)
+	}
+
+	// Cap the container cgroup at 200 MiB (with swap disabled when supported).
+	// Restoring 50k tmpfs files requires ~151 MiB peak RSS when GC runs vs
+	// ~255 MiB if GC remained suspended under the 1 GiB default cap.
+	memLimit := int64(200 << 20)
+	memRes := &specs.LinuxMemory{Limit: &memLimit}
+	if swapErr == nil {
+		memRes.Swap = &memLimit
+	}
+
+	spec, conf := sleepSpecConf(t)
+	conf.Overlay2.Set("none")
+	conf.Strace = false
+	spec.Mounts = []specs.Mount{{Type: "tmpfs", Destination: "/tmpfs"}}
+	spec.Linux = &specs.Linux{
+		CgroupsPath: cgPath,
+		Resources:   &specs.LinuxResources{Memory: memRes},
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("SetupContainer: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("creating container: %v", err)
+	}
+	defer func() {
+		if cont != nil {
+			_ = cont.Destroy()
+		}
+	}()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+	if err := waitForProcessCount(cont, 1); err != nil {
+		t.Fatalf("waiting for init process: %v", err)
+	}
+
+	// Populate 50,000 zero-byte files in /tmpfs (~82 MiB live Sentry Go heap).
+	execFile, err := os.Open(testAppPath)
+	if err != nil {
+		t.Fatalf("Open(%q): %v", testAppPath, err)
+	}
+	ws, err := cont.executeSync(conf, &controlapi.ExecArgs{
+		Argv: []string{
+			"test_app",
+			"fsTreeCreate",
+			"--target-dir=/tmpfs",
+			"--depth=50",
+			"--file-per-level=1000",
+			"--file-size=0",
+		},
+		FilePayload: controlapi.NewFilePayload(map[int]*os.File{
+			0: os.Stdin,
+			1: os.Stdout,
+			2: os.Stderr,
+		}, execFile),
+	})
+	execFile.Close()
+	if err != nil || !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Fatalf("fsTreeCreate failed: ws=%v, err=%v", ws, err)
+	}
+
+	imageDir := t.TempDir()
+	if err := os.Chmod(imageDir, 0777); err != nil {
+		t.Fatalf("Chmod(%q): %v", imageDir, err)
+	}
+	if err := cont.Checkpoint(conf, imageDir, sandbox.CheckpointOpts{
+		Compression: statefile.CompressionLevelFlateBestSpeed,
+	}); err != nil {
+		t.Fatalf("checkpointing container: %v", err)
+	}
+	if _, err := cont.Wait(); err != nil {
+		t.Fatalf("waiting after checkpoint: %v", err)
+	}
+	if err := cont.Destroy(); err != nil {
+		t.Fatalf("destroying checkpointed container: %v", err)
+	}
+	cont = nil
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("creating restored container: %v", err)
+	}
+	defer cont2.Destroy()
+
+	if err := cont2.Restore(conf, imageDir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		events, _ := os.ReadFile(probe.MakePath("memory.events"))
+		t.Fatalf("restoring container under %d MiB cgroup limit: %v\nmemory.events:\n%s", memLimit>>20, err, events)
+	}
+	if err := waitForProcessCount(cont2, 1); err != nil {
+		t.Fatalf("waiting for restored init process: %v", err)
+	}
+	if ws, err := execute(conf, cont2, "/bin/sh", "-c", "test -d /tmpfs"); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("verifying restored /tmpfs failed: ws=%v, err=%v", ws, err)
 	}
 }

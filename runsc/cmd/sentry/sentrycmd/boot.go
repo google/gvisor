@@ -31,9 +31,11 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/gccontrol"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -354,6 +356,21 @@ func (b *Boot) willReexec() bool {
 	return false
 }
 
+var bootGCResumeDelay = boot.StartupGCResumeDelay
+
+// suspendGCForBoot suspends GC for sandbox boot, bounded by bootGCResumeDelay
+// so sandboxes waiting to start do not keep GC disabled indefinitely.
+func suspendGCForBoot(totalMem uint64) *gccontrol.Suspension {
+	if totalMem == 0 {
+		totalMem = gccontrol.NoMemoryLimit
+	}
+	s := gccontrol.Suspend(totalMem, 0 /* untrackedMem */)
+	if s != nil {
+		time.AfterFunc(bootGCResumeDelay, s.End)
+	}
+	return s
+}
+
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
@@ -367,6 +384,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	timer := starttime.Timer("runsc boot")
 	timer.ReachedAt("Go code running", starttime.GoStartTime())
 	timer.Reached("boot subcommand dispatched")
+
+	// Suspend GC across sandbox boot and initial startup to avoid scanning the
+	// growing startup heap on the boot critical path.
+	startupGC := suspendGCForBoot(b.totalMem)
 
 	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
 		util.Fatalf("host page size (%d) does not match compiled page size (%d)", hostPageSize, hostarch.PageSize)
@@ -504,6 +525,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				defer cmd.Wait()
 				defer w.Close()
 			} else {
+				// UmountProcFile reaps the child directly via wait4 rather
+				// than cmd.Wait, so release cmd.Process now to close its pidfd.
+				if err := cmd.Process.Release(); err != nil {
+					util.Fatalf("error releasing proc umounter process: %v", err)
+				}
 				// Keep `w` alive until UmountProcFile uses it.
 				b.procMountSyncFile = w
 			}
@@ -750,6 +776,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		RootfsUpperTarFD:         b.rootfsUpperTarFD,
 		NoRootContainer:          b.noRootContainer,
 		StartupTimer:             timer,
+		StartupGC:                startupGC,
 	}
 	timer.Reached("creating loader")
 	l, err := boot.New(bootArgs)

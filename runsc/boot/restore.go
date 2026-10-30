@@ -372,6 +372,12 @@ func (r *restoreMounts) String() string {
 
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
+	// Using cleanup to end gcSuspension on failure.
+	// On success the ownership is transferred to l.startupGC
+	// and cleanup is cancelled.
+	gcSuspension := state.SuspendGCForRestore(r.metadata)
+	gcCleanup := cleanup.Make(gcSuspension.End)
+	defer gcCleanup.Clean()
 
 	// Validate the container specs to ensure they did not meaningfully change
 	// between checkpoint and restore.
@@ -674,6 +680,10 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	r.stateFile.Close()
+	// Transfer gcSuspension to l.startupGC so
+	// post restore ends it on idle or timeout.
+	gcCleanup.Release()
+	l.setStartupGC(gcSuspension)
 
 	// Transfer ownership of the `timer` to a new goroutine.
 	// This is because `timer.Log` blocks until all timed tasks are finished,

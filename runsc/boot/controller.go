@@ -597,6 +597,7 @@ func getRestoreReadersForCheckpointGofer(o *sentryapi.RestoreOpts) (io.ReadClose
 }
 
 func (cm *containerManager) onRestoreFailed(err error) {
+	cm.l.startupGC.Swap(nil).End()
 	cm.l.lifecycleCPUs.releaseForRestore()
 	cm.l.mu.Lock()
 	cm.l.state = restoreFailed
