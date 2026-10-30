@@ -152,6 +152,7 @@ GAZELLE_PACKAGES = [
     "runsc/flag",
     "runsc/gofer/fs/extension",
     "runsc/gofer/fs/filter/config",
+    "runsc/gofer/net/filter/config",
     "runsc/gvisorbinaries",
     "runsc/metricserver/containermetrics",
     "runsc/profile",
