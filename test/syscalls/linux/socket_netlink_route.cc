@@ -291,6 +291,40 @@ TEST(NetlinkRouteTest, GetLinkDump) {
   EXPECT_TRUE(loopbackFound);
 }
 
+TEST(NetlinkRouteTest, GetLinkDumpWithAck) {
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+
+  // A successful dump ends with NLMSG_DONE and is not acked.
+  bool doneFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_NE(hdr->nlmsg_type, NLMSG_ERROR);
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          doneFound = true;
+        }
+      },
+      false));
+  EXPECT_TRUE(doneFound);
+
+  char buf[4096];
+  EXPECT_THAT(recv(fd.get(), buf, sizeof(buf), MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
 // CheckLinkMsg checks a netlink message against an expected link.
 void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
   ASSERT_THAT(hdr->nlmsg_type, Eq(RTM_NEWLINK));
