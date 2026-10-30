@@ -160,6 +160,50 @@ func TestDataASUpdates(t *testing.T) {
 	}
 }
 
+// TestMRemapCopyOntoSource checks mremap(addr, 0, n, MREMAP_MAYMOVE |
+// MREMAP_FIXED, addr): unmapping the destination removes the source vma, so
+// MRemap must fail with EFAULT, as Linux does.
+func TestMRemapCopyOntoSource(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		oldSize uint64
+	}{
+		{
+			name:    "zero",
+			oldSize: 0,
+		},
+		{
+			// Rounds up to 0, as in Linux.
+			name:    "rounds up to zero",
+			oldSize: 0xfffffffffffff001,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManager(ctx, t)
+			defer mm.DecUsers(ctx)
+
+			addr, err := mm.MMap(ctx, memmap.MMapOpts{
+				Length:   hostarch.PageSize,
+				Private:  true,
+				Perms:    hostarch.ReadWrite,
+				MaxPerms: hostarch.AnyAccess,
+			})
+			if err != nil {
+				t.Fatalf("MMap got err %v want nil", err)
+			}
+
+			newAddr, err := mm.MRemap(ctx, addr, test.oldSize, hostarch.PageSize, MRemapOpts{
+				Move:    MRemapMustMove,
+				NewAddr: addr,
+			})
+			if !linuxerr.Equals(linuxerr.EFAULT, err) {
+				t.Errorf("MRemap got (%#x, %v), want (_, EFAULT)", newAddr, err)
+			}
+		})
+	}
+}
+
 func TestBrkDataLimitUpdates(t *testing.T) {
 	limitSet := limits.NewLimitSet()
 	limitSet.Set(limits.Data, limits.Limit{}, true /* privileged */) // zero RLIMIT_DATA
