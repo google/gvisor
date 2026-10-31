@@ -1940,11 +1940,11 @@ type StateEnginePolicy int
 
 // StateEnginePolicy values.
 const (
-	// StateEngineWire uses the legacy wire serialization engine.
-	StateEngineWire StateEnginePolicy = iota
-
 	// StateEngineGraph uses the reflection-free graph serialization engine.
-	StateEngineGraph
+	StateEngineGraph StateEnginePolicy = iota
+
+	// StateEngineWire uses the legacy wire serialization engine.
+	StateEngineWire
 )
 
 // Set implements flag.Value. Set(String()) should be idempotent.

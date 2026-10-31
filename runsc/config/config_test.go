@@ -1290,8 +1290,8 @@ func TestIsFlagExplicitlySet(t *testing.T) {
 		want bool
 	}{
 		{name: "omitted", args: nil, want: false},
-		{name: "explicit_default", args: []string{"--state-engine=wire"}, want: true},
-		{name: "explicit_non_default", args: []string{"--state-engine=graph"}, want: true},
+		{name: "explicit_default", args: []string{"--state-engine=graph"}, want: true},
+		{name: "explicit_non_default", args: []string{"--state-engine=wire"}, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)

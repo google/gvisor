@@ -192,7 +192,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
-	flagSet.Var(StateEngineWire.Ptr(), "state-engine", "selects the state serialization engine used when saving checkpoints: wire (default) or graph.")
+	flagSet.Var(StateEngineGraph.Ptr(), "state-engine", "selects the state serialization engine used when saving checkpoints: graph (default) or wire.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")

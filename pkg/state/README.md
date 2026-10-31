@@ -6,153 +6,80 @@ encoding packages, e.g. `gob` and `json`. Principally:
 
 *   This package operates on complex object graphs and accurately serializes and
     restores all relationships. That is, you can have things like: intrusive
-    pointers, cycles, and pointer chains of arbitrary depths. These are not
-    handled appropriately by existing encoders. This is not an implementation
-    flaw: the formats themselves are not capable of representing these graphs,
-    as they can only generate directed trees.
+    pointers, cycles, pointers into the middle of objects, slices sharing
+    backing arrays, and pointer chains of arbitrary depths.
 
 *   This package allows installing order-dependent load callbacks and then
-    resolves that graph at load time, with cycle detection. Similarly, there is
-    no analogous feature possible in the standard encoders.
+    resolves that graph at load time, with cycle detection.
 
 *   This package handles the resolution of interfaces, based on a registered
-    type name. For interface objects type information is saved in the serialized
-    format. This is generally true for `gob` as well, but it works differently.
+    type name.
 
-Here's an overview of how encoding and decoding works.
+*   Streams can only be loaded by the binary that saved them (more precisely, by
+    a binary with the same registered types; this is checked with a schema
+    fingerprint). This allows a compact format without field names or type tags,
+    decoded without reflection.
+
+## Engines
+
+The package provides two serialization engines:
+
+*   The **graph engine** (enabled by default, or via `EnableGraphEngine(true)` /
+    `--state-engine=graph`), documented below, which encodes and decodes object
+    graphs without runtime reflection.
+*   The legacy **wire engine** (`EnableGraphEngine(false)` /
+    `--state-engine=wire`), which encodes tagged `pkg/state/wire` objects via
+    `reflect`.
+
+`Load` and `pkg/state/pretty` inspect the stream header and automatically decode
+either format.
+
+## Types
+
+Each Go type is described by a `typeInfo`, built once on first use and cached.
+Values are saved and loaded by switching on their kind and using `unsafe`
+pointers. Generated `StateSave` and `StateLoad` methods call typed `Sink` and
+`Source` methods (`SaveInt64`, `LoadInt64`, etc.) for predeclared scalar,
+string, and byte-slice fields, `LoadValueTo` and `AfterLoadTo` to avoid closure
+allocations, and `Save`/`Load` (passing field pointers as `any`, whose interface
+type word identifies the cached `typeInfo`) for other fields. Pure scalar
+structs and `identtype` wrappers without hooks are registered via
+`RegisterNoHooks` / `RegisterIdent` and copied directly as raw bytes.
+
+`StateSave` must save fields in the same order as `StateLoad` loads them.
 
 ## Encoding
 
-Encoding produces a `statefile`, which contains a list of chunks of the form
-`(header, payload)`. The payload can either be some raw data, or a series of
-encoded wire objects representing some object graph. All encoded objects are
-defined in the `wire` subpackage.
+Encoding begins with `graphEncodeState.save`.
 
-Encoding of an object graph begins with `encodeState.Save`.
+The graph is divided into *objects*: regions of memory saved as a unit, which
+pointers may point into. An object is either a single value (the target of a
+pointer), an array (the backing array of slices), or a map. Pointers are saved
+as indices of *targets*: a location (object and byte offset) within an object.
 
-### 1. Memory Map & Encoding
+Objects are encoded as they are found, starting from the root, in a breadth
+first order. When a pointer is saved, its target is looked up by address. If it
+is not known, the object index (which maps blocks of memory to the objects
+intersecting them) is searched for an object containing it. If there is none, a
+new object is created, which absorbs any objects that it contains: their targets
+are relocated into the new object, and their encodings (if done) are reused when
+the new object is encoded, so that `StateSave` is called once per value.
 
-To discover relationships between potentially interdependent data structures
-(for example, a struct may contain pointers to members of other data
-structures), the encoder first walks the object graph and constructs a memory
-map of the objects in the input graph. As this walk progresses, objects are
-queued in the `pending` list and items are placed on the `deferred` list as they
-are discovered. No single object will be encoded multiple times, but the
-discovered relationships between objects may change as more parts of the overall
-object graph are discovered.
+Of arrays, only the elements within slices, or pointed to, are saved.
 
-The encoder starts at the root object and recursively visits all reachable
-objects, recording the address ranges containing the underlying data for each
-object. This is stored as a segment set (`addrSet`), mapping address ranges to
-the of the object occupying the range; see `encodeState.values`. Note that there
-is special handling for zero-sized types and map objects during this process.
+The stream is:
 
-Additionally, the encoder assigns each object a unique identifier which is used
-to indicate relationships between objects in the statefile; see `objectID` in
-`encode.go`.
-
-### 2. Type Serialization
-
-The enoder will subsequently serialize all information about discovered types,
-including field names. These are used during decoding to reconcile these types
-with other internally registered types.
-
-### 3. Object Serialization
-
-With a full address map, and all objects correctly encoded, all object encodings
-are serialized. The assigned `objectID`s aren't explicitly encoded in the
-statefile. The order of object messages in the stream determine their IDs.
-
-### Example
-
-Given the following data structure definitions:
-
-```go
-type system struct {
-    o *outer
-    i *inner
-}
-
-type outer struct {
-    a  int64
-    cn *container
-}
-
-type container struct {
-    n    uint64
-    elem *inner
-}
-
-type inner struct {
-    c    container
-    x, y uint64
-}
-```
-
-Initialized like this:
-
-```go
-o := outer{
-    a: 10,
-    cn: nil,
-}
-i := inner{
-    x: 20,
-    y: 30,
-    c: container{},
-}
-s := system{
-    o: &o,
-    i: &i,
-}
-
-o.cn = &i.c
-o.cn.elem = &i
-
-```
-
-Encoding will produce an object stream like this:
-
-```
-g0r1 = struct{
-     i: g0r3,
-     o: g0r2,
-}
-g0r2 = struct{
-     a: 10,
-     cn: g0r3.c,
-}
-g0r3 = struct{
-     c: struct{
-             elem: g0r3,
-             n: 0u,
-     },
-     x: 20u,
-     y: 30u,
-}
-```
-
-Note how `g0r3.c` is correctly encoded as the underlying `container` object for
-`inner.c`, and how the pointer from `outer.cn` points to it, despite `system.i`
-being discovered after the pointer to it in `system.o.cn`. Also note that
-decoding isn't strictly reliant on the order of encoded object stream, as long
-as the relationship between objects are correctly encoded.
+1.  A magic number and the schema fingerprint.
+2.  The type table: the types of objects, and of values held in interfaces.
+3.  The object table: the kind and type of each object.
+4.  The target table: the object and offset of each target.
+5.  The data of each object, in order.
 
 ## Decoding
 
-Decoding reads the statefile and reconstructs the object graph. Decoding begins
-in `decodeState.Load`. Decoding is performed in a single pass over the object
-stream in the statefile, and a subsequent pass over all deserialized objects is
-done to fire off all loading callbacks in the correctly defined order. Note that
-introducing cycles is possible here, but these are detected and an error will be
-returned.
-
-Decoding is relatively straight forward. For most primitive values, the decoder
-constructs an appropriate object and fills it with the values encoded in the
-statefile. Pointers need special handling, as they must point to a value
-allocated elsewhere. When values are constructed, the decoder indexes them by
-their `objectID`s in `decodeState.objectsByID`. The target of pointers are
-resolved by searching for the target in this index by their `objectID`; see
-`decodeState.register`. For pointers to values inside another value (fields in a
-pointer, elements of an array), the decoder uses the accessor path to walk to
-the appropriate location; see `walkChild`.
+Decoding begins with `graphDecodeState.load`. It allocates all objects (except
+maps, which are allocated when they are first referred to, since their exact
+type is only known then), resolves all targets to pointers, and then decodes the
+data of each object in a single pass. Then, the load callbacks of objects are
+run once the objects they wait for are complete. Cycles of waiting objects are
+detected and reported as errors.
