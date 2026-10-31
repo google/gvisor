@@ -477,6 +477,9 @@ func (es *graphEncodeState) release() {
 		sc.k.SetZero()
 		sc.e.SetZero()
 	}
+	if len(es.mapSlots) > 256 {
+		es.mapSlots = nil
+	}
 	// copies holds pre-allocated reflect.Value scratch buffers that were
 	// already zeroed via SetZero after use, kept across Save calls to avoid
 	// re-allocating per type unless the map grew too large.

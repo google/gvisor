@@ -20,13 +20,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -102,8 +103,8 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...any) sub
 		return util.Errorf("error opening input: %v", err)
 	}
 	defer input.Close()
-	inInfo, err := input.Stat()
-	if err != nil {
+	var inStat unix.Stat_t
+	if err := fstatEINTR(int(input.Fd()), &inStat); err != nil {
 		return util.Errorf("error statting input: %v", err)
 	}
 
@@ -114,172 +115,384 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...any) sub
 		return subcommands.ExitSuccess
 	}
 
-	var (
-		outInfo os.FileInfo
-		hasOut  bool
-	)
-	if info, err := os.Stat(s.output); err == nil {
-		if os.SameFile(inInfo, info) {
-			return util.Errorf("error: input and output refer to the same file: %s", s.output)
-		}
-		outInfo = info
-		hasOut = true
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return util.Errorf("error statting output: %v", err)
+	if err := writeOutputFile(s.output, &inStat, func(outFile *os.File) error {
+		return s.writeTo(outFile, input)
+	}); err != nil {
+		return util.Errorf("%v", err)
 	}
-
-	targetPath, directOpen, err := resolveOutputPath(s.output)
-	if err != nil {
-		return util.Errorf("error resolving output: %v", err)
-	}
-
-	// Non-regular targets (such as /dev/null, FIFOs, or procfs file-descriptor
-	// links) cannot be replaced via rename; write to them directly without O_TRUNC.
-	if directOpen || (hasOut && !outInfo.Mode().IsRegular()) {
-		outFile, err := os.OpenFile(s.output, os.O_WRONLY, 0)
-		if err != nil {
-			return util.Errorf("error opening output: %v", err)
-		}
-		writeErr := s.writeTo(outFile, input)
-		closeErr := outFile.Close()
-		if writeErr != nil {
-			return util.Errorf("%v", writeErr)
-		}
-		if closeErr != nil {
-			return util.Errorf("error flushing output: %v", closeErr)
-		}
-		return subcommands.ExitSuccess
-	}
-
-	// Stage regular output in a temporary file in the destination directory and
-	// rename into place only on success so failures never clobber existing files
-	// or leave truncated outputs behind.
-	var existingPerm os.FileMode
-	if hasOut {
-		existingPerm = outInfo.Mode().Perm()
-	}
-	tmpFile, err := createTempOutput(filepath.Dir(targetPath), hasOut, existingPerm)
-	if err != nil {
-		return util.Errorf("error creating temporary output: %v", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		if tmpPath != "" {
-			os.Remove(tmpPath)
-		}
-	}()
-	writeErr := s.writeTo(tmpFile, input)
-	closeErr := tmpFile.Close()
-	if writeErr != nil {
-		return util.Errorf("%v", writeErr)
-	}
-	if closeErr != nil {
-		return util.Errorf("error flushing output: %v", closeErr)
-	}
-	if err := os.Rename(tmpPath, targetPath); err != nil {
-		return util.Errorf("error renaming output: %v", err)
-	}
-	tmpPath = ""
 	return subcommands.ExitSuccess
 }
 
 const maxSymlinkHops = 40
 
-// resolveOutputPath walks symlinks along outPath so staged output is renamed
-// onto the resolved regular-file destination without overwriting symlinks.
-// When directOpen is true, outPath refers to a procfs magic link or non-regular
-// path that must be opened directly rather than staged and renamed.
-func resolveOutputPath(outPath string) (targetPath string, directOpen bool, err error) {
-	cur := outPath
-	for range maxSymlinkHops {
-		if strings.HasSuffix(cur, string(filepath.Separator)) {
-			return cur, true, nil
-		}
-		base := filepath.Base(cur)
-		if base == "." || base == ".." || base == string(filepath.Separator) {
-			return cur, true, nil
-		}
-		absDir, err := filepath.Abs(filepath.Dir(cur))
-		if err != nil {
-			return "", false, err
-		}
-		realDir, err := filepath.EvalSymlinks(absDir)
-		if err != nil {
-			return "", false, err
-		}
-		candidate := filepath.Join(realDir, base)
-		if realDir == "/proc" || strings.HasPrefix(realDir, "/proc/") {
-			return candidate, true, nil
-		}
-		linfo, err := os.Lstat(candidate)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return candidate, false, nil
-			}
-			return "", false, err
-		}
-		if linfo.Mode()&os.ModeSymlink == 0 {
-			return candidate, !linfo.Mode().IsRegular(), nil
-		}
-		linkDest, err := os.Readlink(candidate)
-		if err != nil {
-			return "", false, err
-		}
-		trailingSep := strings.HasSuffix(linkDest, string(filepath.Separator))
-		if !filepath.IsAbs(linkDest) {
-			linkDest = filepath.Join(realDir, linkDest)
-			if trailingSep && !strings.HasSuffix(linkDest, string(filepath.Separator)) {
-				linkDest += string(filepath.Separator)
-			}
-		}
-		cur = linkDest
-	}
-	return "", false, fmt.Errorf("too many levels of symbolic links: %s", outPath)
+func sameStat(a, b *unix.Stat_t) bool {
+	return a.Dev == b.Dev && a.Ino == b.Ino
 }
 
-// createTempOutput creates a temporary file in dir for staging output. When
-// overwriting an existing file (hasOut), existingPerm is preserved; when
-// creating a new file, mode 0644 is passed to open(O_CREAT|O_EXCL) so the
-// kernel applies the process umask.
-func createTempOutput(dir string, hasOut bool, existingPerm os.FileMode) (*os.File, error) {
-	if hasOut {
-		f, err := os.CreateTemp(dir, ".statefile-*")
-		if err != nil {
-			return nil, err
-		}
-		if err := f.Chmod(existingPerm); err != nil {
-			name := f.Name()
-			f.Close()
-			os.Remove(name)
-			return nil, err
-		}
-		return f, nil
+// splitParentAndBase splits p on its last '/' without lexical '..' cleaning so
+// that parent directory lookup traverses symlinks and '..' in kernel order.
+func splitParentAndBase(p string) (parent, base string, hasParent, trailingSlash bool) {
+	if strings.HasSuffix(p, "/") {
+		return "", "", false, true
 	}
+	idx := strings.LastIndexByte(p, '/')
+	if idx < 0 {
+		return "", p, false, false
+	}
+	if idx == 0 {
+		return "/", p[1:], true, false
+	}
+	return p[:idx], p[idx+1:], true, false
+}
+
+// checkStickyDirOwnership enforces Linux fs.protected_symlinks and
+// fs.protected_regular ownership rules on an entry in dirStat: inside a
+// world-writable sticky directory, the entry must be owned by either the
+// effective UID of the caller or the directory owner.
+func checkStickyDirOwnership(dirStat *unix.Stat_t, entryUID uint32, euid int) error {
+	if euid < 0 {
+		return unix.EACCES
+	}
+	if dirStat.Mode&(unix.S_ISVTX|0002) == (unix.S_ISVTX|0002) &&
+		entryUID != uint32(euid) &&
+		entryUID != dirStat.Uid {
+		return unix.EACCES
+	}
+	return nil
+}
+
+func openatEINTR(dirfd int, path string, flags int, mode uint32) (int, error) {
+	for {
+		fd, err := unix.Openat(dirfd, path, flags, mode)
+		if !errors.Is(err, unix.EINTR) {
+			return fd, err
+		}
+	}
+}
+
+func fstatEINTR(fd int, st *unix.Stat_t) error {
+	for {
+		err := unix.Fstat(fd, st)
+		if !errors.Is(err, unix.EINTR) {
+			return err
+		}
+	}
+}
+
+func fstatatEINTR(dirfd int, path string, st *unix.Stat_t, flags int) error {
+	for {
+		err := unix.Fstatat(dirfd, path, st, flags)
+		if !errors.Is(err, unix.EINTR) {
+			return err
+		}
+	}
+}
+
+func fstatfsEINTR(fd int, sfs *unix.Statfs_t) error {
+	for {
+		err := unix.Fstatfs(fd, sfs)
+		if !errors.Is(err, unix.EINTR) {
+			return err
+		}
+	}
+}
+
+func readlinkFD(pathFD int) (string, error) {
+	for size := 128; ; size *= 2 {
+		buf := make([]byte, size)
+		var (
+			n   int
+			err error
+		)
+		for {
+			n, err = unix.Readlinkat(pathFD, "", buf)
+			if !errors.Is(err, unix.EINTR) {
+				break
+			}
+		}
+		if err != nil {
+			return "", err
+		}
+		if n < size {
+			return string(buf[:n]), nil
+		}
+	}
+}
+
+// writeOutputFile resolves outPath using pinned directory file descriptors and
+// writes output via writeFn without truncating existing files on error or
+// replacing symlinks.
+func writeOutputFile(outPath string, inStat *unix.Stat_t, writeFn func(*os.File) error) error {
+	dirFD := unix.AT_FDCWD
+	defer func() {
+		if dirFD != unix.AT_FDCWD {
+			unix.Close(dirFD)
+		}
+	}()
+
+	cur := outPath
+	for range maxSymlinkHops {
+		parent, base, hasParent, trailingSlash := splitParentAndBase(cur)
+		if trailingSlash || base == "" || base == "." || base == ".." {
+			fd, err := openatEINTR(dirFD, cur, unix.O_WRONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+			if err != nil {
+				return fmt.Errorf("error opening output: %w", err)
+			}
+			unix.Close(fd)
+			return fmt.Errorf("error opening output: %w", unix.EISDIR)
+		}
+		if hasParent || dirFD == unix.AT_FDCWD {
+			lookupDir := parent
+			if !hasParent {
+				lookupDir = "."
+			}
+			nextDirFD, err := openatEINTR(dirFD, lookupDir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+			if err != nil {
+				return fmt.Errorf("error resolving output: %w", err)
+			}
+			if dirFD != unix.AT_FDCWD {
+				unix.Close(dirFD)
+			}
+			dirFD = nextDirFD
+		}
+
+		var dirStat unix.Stat_t
+		if err := fstatEINTR(dirFD, &dirStat); err != nil {
+			return fmt.Errorf("error statting output directory: %w", err)
+		}
+		// Procfs magic links (such as /proc/self/fd/1) cannot be replaced via
+		// rename; open them directly through the pinned procfs directory FD.
+		var sfs unix.Statfs_t
+		if err := fstatfsEINTR(dirFD, &sfs); err == nil && sfs.Type == unix.PROC_SUPER_MAGIC {
+			return writeDirectOpenat(dirFD, base, 0, outPath, inStat, false, writeFn)
+		}
+
+		pathFD, err := openatEINTR(dirFD, base, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			if errors.Is(err, unix.ENOENT) {
+				return writeStagedNewFile(dirFD, base, writeFn)
+			}
+			return fmt.Errorf("error opening output: %w", err)
+		}
+		var lst unix.Stat_t
+		if err := fstatEINTR(pathFD, &lst); err != nil {
+			unix.Close(pathFD)
+			return fmt.Errorf("error statting output: %w", err)
+		}
+
+		switch lst.Mode & unix.S_IFMT {
+		case unix.S_IFLNK:
+			if err := checkStickyDirOwnership(&dirStat, lst.Uid, os.Geteuid()); err != nil {
+				unix.Close(pathFD)
+				return fmt.Errorf("error resolving output: %w", err)
+			}
+			var followStat unix.Stat_t
+			if err := fstatatEINTR(dirFD, base, &followStat, 0); err != nil && !errors.Is(err, unix.ENOENT) {
+				unix.Close(pathFD)
+				return fmt.Errorf("error resolving output: %w", err)
+			}
+			linkDest, err := readlinkFD(pathFD)
+			unix.Close(pathFD)
+			if err != nil {
+				return fmt.Errorf("error reading output symlink: %w", err)
+			}
+			if linkDest == "" {
+				return fmt.Errorf("error resolving output: %w", unix.ENOENT)
+			}
+			cur = linkDest
+			continue
+
+		case unix.S_IFREG:
+			unix.Close(pathFD)
+			if sameStat(inStat, &lst) {
+				return fmt.Errorf("error: input and output refer to the same file: %s", outPath)
+			}
+			if err := checkStickyDirOwnership(&dirStat, lst.Uid, os.Geteuid()); err != nil {
+				return fmt.Errorf("error opening output: %w", err)
+			}
+			return writeStagedExistingFile(dirFD, base, outPath, inStat, &lst, writeFn)
+
+		case unix.S_IFDIR:
+			unix.Close(pathFD)
+			return fmt.Errorf("error opening output: %w", unix.EISDIR)
+
+		default:
+			// Non-regular targets (such as /dev/null or FIFOs) cannot be replaced
+			// via rename; open them directly with O_NOFOLLOW and without O_TRUNC.
+			unix.Close(pathFD)
+			return writeDirectOpenat(dirFD, base, unix.O_NOFOLLOW, outPath, inStat, true, writeFn)
+		}
+	}
+	return fmt.Errorf("error resolving output: %w", unix.ELOOP)
+}
+
+func writeDirectOpenat(dirFD int, base string, extraFlags int, outPath string, inStat *unix.Stat_t, requireNonRegular bool, writeFn func(*os.File) error) error {
+	outFD, err := openatEINTR(dirFD, base, unix.O_WRONLY|unix.O_CLOEXEC|extraFlags, 0)
+	if err != nil {
+		return fmt.Errorf("error opening output: %w", err)
+	}
+	var outStat unix.Stat_t
+	if err := fstatEINTR(outFD, &outStat); err != nil {
+		unix.Close(outFD)
+		return fmt.Errorf("error statting output: %w", err)
+	}
+	if sameStat(inStat, &outStat) {
+		unix.Close(outFD)
+		return fmt.Errorf("error: input and output refer to the same file: %s", outPath)
+	}
+	if requireNonRegular && outStat.Mode&unix.S_IFMT == unix.S_IFREG {
+		unix.Close(outFD)
+		return fmt.Errorf("error: output changed file type during open: %s", outPath)
+	}
+	outFile := os.NewFile(uintptr(outFD), outPath)
+	writeErr := writeFn(outFile)
+	closeErr := outFile.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("error flushing output: %w", closeErr)
+	}
+	return nil
+}
+
+func createTempOutputAt(dirFD int, mode uint32) (*os.File, string, error) {
 	for range 256 {
 		var rnd [8]byte
 		if _, err := rand.Read(rnd[:]); err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		candidate := filepath.Join(dir, ".statefile-"+hex.EncodeToString(rnd[:]))
-		f, err := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-		if errors.Is(err, os.ErrExist) {
+		tmpName := ".statefile-" + hex.EncodeToString(rnd[:])
+		fd, err := openatEINTR(dirFD, tmpName, unix.O_CREAT|unix.O_EXCL|unix.O_WRONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, mode)
+		if errors.Is(err, unix.EEXIST) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return f, nil
+		return os.NewFile(uintptr(fd), tmpName), tmpName, nil
 	}
-	return nil, os.ErrExist
+	return nil, "", os.ErrExist
+}
+
+func writeStagedNewFile(dirFD int, base string, writeFn func(*os.File) error) error {
+	// Pass 0644 to openat(O_CREAT|O_EXCL) so the kernel applies the process umask.
+	tmpFile, tmpName, err := createTempOutputAt(dirFD, 0644)
+	if err != nil {
+		return fmt.Errorf("error creating temporary output: %w", err)
+	}
+	keepTemp := false
+	defer func() {
+		if !keepTemp {
+			unix.Unlinkat(dirFD, tmpName, 0)
+		}
+	}()
+	writeErr := writeFn(tmpFile)
+	closeErr := tmpFile.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("error flushing output: %w", closeErr)
+	}
+	if err := commitNewFileNoReplace(dirFD, tmpName, base); err != nil {
+		return fmt.Errorf("error renaming output: %w", err)
+	}
+	keepTemp = true
+	return nil
+}
+
+func commitNewFileNoReplace(dirFD int, tmpName, base string) error {
+	err := unix.Renameat2(dirFD, tmpName, dirFD, base, unix.RENAME_NOREPLACE)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, unix.ENOSYS) && !errors.Is(err, unix.EINVAL) {
+		return err
+	}
+	// Fall back to linkat (which never overwrites or follows symlinks at base)
+	// followed by unlinkat of tmpName on filesystems without RENAME_NOREPLACE.
+	if linkErr := unix.Linkat(dirFD, tmpName, dirFD, base, 0); linkErr == nil {
+		unix.Unlinkat(dirFD, tmpName, 0)
+		return nil
+	} else if !errors.Is(linkErr, unix.EPERM) && !errors.Is(linkErr, unix.EOPNOTSUPP) && !errors.Is(linkErr, unix.EXDEV) {
+		return linkErr
+	}
+	var st unix.Stat_t
+	if statErr := fstatatEINTR(dirFD, base, &st, unix.AT_SYMLINK_NOFOLLOW); statErr == nil {
+		return unix.EEXIST
+	} else if !errors.Is(statErr, unix.ENOENT) {
+		return statErr
+	}
+	return unix.Renameat(dirFD, tmpName, dirFD, base)
+}
+
+func writeStagedExistingFile(dirFD int, base, outPath string, inStat, origStat *unix.Stat_t, writeFn func(*os.File) error) error {
+	// Open the existing regular file with O_WRONLY|O_CREAT|O_NOFOLLOW (without
+	// O_TRUNC) so the kernel enforces DAC write permissions, LSM checks, and
+	// fs.protected_regular before staging output.
+	probeFD, err := openatEINTR(dirFD, base, unix.O_WRONLY|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0644)
+	if err != nil {
+		return fmt.Errorf("error opening output: %w", err)
+	}
+	defer unix.Close(probeFD)
+
+	var probeStat unix.Stat_t
+	if err := fstatEINTR(probeFD, &probeStat); err != nil {
+		return fmt.Errorf("error statting output: %w", err)
+	}
+	if probeStat.Mode&unix.S_IFMT != unix.S_IFREG || !sameStat(origStat, &probeStat) {
+		return fmt.Errorf("error: output changed during open: %s", outPath)
+	}
+	if sameStat(inStat, &probeStat) {
+		return fmt.Errorf("error: input and output refer to the same file: %s", outPath)
+	}
+
+	tmpFile, tmpName, err := createTempOutputAt(dirFD, 0600)
+	if err != nil {
+		return fmt.Errorf("error creating temporary output: %w", err)
+	}
+	keepTemp := false
+	defer func() {
+		if !keepTemp {
+			unix.Unlinkat(dirFD, tmpName, 0)
+		}
+	}()
+	if err := unix.Fchmod(int(tmpFile.Fd()), uint32(probeStat.Mode&0777)); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("error setting temporary output permissions: %w", err)
+	}
+	writeErr := writeFn(tmpFile)
+	closeErr := tmpFile.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("error flushing output: %w", closeErr)
+	}
+
+	var curStat unix.Stat_t
+	if err := fstatatEINTR(dirFD, base, &curStat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return fmt.Errorf("error verifying output before rename: %w", err)
+	}
+	if !sameStat(&probeStat, &curStat) {
+		return fmt.Errorf("error: output changed before commit: %s", outPath)
+	}
+	if err := unix.Renameat(dirFD, tmpName, dirFD, base); err != nil {
+		return fmt.Errorf("error renaming output: %w", err)
+	}
+	keepTemp = true
+	return nil
 }
 
 func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
+	var key []byte
+	if s.key != "" {
+		key = []byte(s.key)
+	}
+
 	// Dump the full file?
 	if !s.list && s.get == "" {
-		var key []byte
-		if s.key != "" {
-			key = []byte(s.key)
-		}
 		rc, _, err := statefile.NewReader(input, key)
 		if err != nil {
 			return fmt.Errorf("error parsing statefile: %w", err)
@@ -292,6 +505,9 @@ func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
 			if err := pretty.PrintHTML(output, rc); err != nil {
 				return fmt.Errorf("error printing state: %w", err)
 			}
+			if err := rc.Verify(); err != nil {
+				return fmt.Errorf("error verifying statefile: %w", err)
+			}
 			if _, err := fmt.Fprintf(output, "</body></html>\n"); err != nil {
 				return fmt.Errorf("error writing output: %w", err)
 			}
@@ -299,12 +515,15 @@ func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
 			if err := pretty.PrintText(output, rc); err != nil {
 				return fmt.Errorf("error printing state: %w", err)
 			}
+			if err := rc.Verify(); err != nil {
+				return fmt.Errorf("error verifying statefile: %w", err)
+			}
 		}
 		return nil
 	}
 
 	// Load just the metadata.
-	metadata, err := statefile.MetadataUnsafe(input)
+	metadata, err := statefile.Metadata(input, key)
 	if err != nil {
 		return fmt.Errorf("error reading metadata: %w", err)
 	}
@@ -323,6 +542,7 @@ func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
 			val = mask
 		}
 		if s.html {
+			val = html.EscapeString(val)
 			if _, err := fmt.Fprintf(output, "<html><body>\n"); err != nil {
 				return fmt.Errorf("error writing output: %w", err)
 			}
@@ -344,15 +564,15 @@ func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
 			return fmt.Errorf("error writing output: %w", err)
 		}
 	}
-	for key := range metadata {
-		var err error
+	for k := range metadata {
+		var writeErr error
 		if s.html {
-			_, err = fmt.Fprintf(output, "  <li>%s</li>\n", key)
+			_, writeErr = fmt.Fprintf(output, "  <li>%s</li>\n", html.EscapeString(k))
 		} else {
-			_, err = fmt.Fprintf(output, "%s\n", key)
+			_, writeErr = fmt.Fprintf(output, "%s\n", k)
 		}
-		if err != nil {
-			return fmt.Errorf("error writing output: %w", err)
+		if writeErr != nil {
+			return fmt.Errorf("error writing output: %w", writeErr)
 		}
 	}
 	if s.html {
