@@ -36,15 +36,14 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 		description    string
 		makeTestingTCP func(t *testing.T, conn *testbench.TCPIPv4, seqNumOffset, windowSize seqnum.Size) testbench.TCP
 		seqNumOffset   seqnum.Size
-		expectAck      bool
 		restoreSeq     bool
 	}{
-		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 0, expectAck: true, restoreSeq: true},
-		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 1, expectAck: true, restoreSeq: true},
-		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 2, expectAck: true, restoreSeq: true},
-		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 0, expectAck: true, restoreSeq: false},
-		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 1, expectAck: false, restoreSeq: true},
-		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 2, expectAck: false, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 0, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 1, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 2, restoreSeq: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 0, restoreSeq: false},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 1, restoreSeq: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 2, restoreSeq: true},
 	} {
 		t.Run(fmt.Sprintf("%s:offset=%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
@@ -54,7 +53,8 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 			defer conn.Close(t)
 
 			conn.Connect(t)
-			dut.Accept(t, listenFD)
+			acceptFD, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, acceptFD)
 
 			sampleData := []byte("Sample Data")
 			samplePayload := &testbench.Payload{Bytes: sampleData}
@@ -65,6 +65,9 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 				t.Fatalf("expected ack %s", err)
 			}
 			windowSize := seqnum.Size(*gotTCP.WindowSize)
+			if got, want := string(dut.Recv(t, acceptFD, int32(len(sampleData)), unix.MSG_DONTWAIT)), string(sampleData); got != want {
+				t.Fatalf("initial payload = %q, want %q", got, want)
+			}
 
 			origSeq := *conn.LocalSeqNum(t)
 			// Send a segment with OTW Seq / unacc ACK.
@@ -74,12 +77,22 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 				// ACK matches the TCP layer state.
 				*conn.LocalSeqNum(t) = origSeq
 			}
-			gotAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
-			if tt.expectAck && err != nil {
-				t.Fatalf("expected an ack but got none: %s", err)
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
+				t.Errorf("expected ACK for probe: %s", err)
 			}
-			if err == nil && !tt.expectAck && gotAck != nil {
-				t.Fatalf("expected no ack but got one: %s", gotAck)
+			if tt.restoreSeq {
+				_, payload, err := dut.RecvWithErrno(t.Context(), t, acceptFD, int32(len(sampleData)), unix.MSG_DONTWAIT)
+				if got, want := err, unix.EAGAIN; got != want {
+					t.Fatalf("recv after rejected segment returned payload %q and error %v, want %v", payload, got, want)
+				}
+				// The rejected payload must not prevent valid data from being received.
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, samplePayload)
+				if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
+					t.Fatalf("expected ACK for valid continuation: %s", err)
+				}
+			}
+			if got, want := string(dut.Recv(t, acceptFD, int32(len(sampleData)), unix.MSG_DONTWAIT)), string(sampleData); got != want {
+				t.Fatalf("valid payload = %q, want %q", got, want)
 			}
 		})
 	}
