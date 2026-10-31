@@ -1094,7 +1094,11 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 		// Enable timers if we have pending data.
 		if shouldScheduleProbe && s.shouldSchedulePTO() {
 			// Schedule PTO after transmitting new data that wasn't itself a TLP probe.
-			s.schedulePTO()
+			// With nothing sent, as when sendData runs after an ACK, keep the PTO
+			// already scheduled, as Linux does.
+			if dataSent || !s.probeTimer.enabled() {
+				s.schedulePTO(false /* advancingRTO */)
+			}
 		} else if !s.resendTimer.enabled() {
 			s.probeTimer.disable()
 			if s.Outstanding > 0 {
@@ -1682,7 +1686,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if s.shouldSchedulePTO() {
 			// Schedule PTO upon receiving an ACK that cumulatively acknowledges data.
 			// See https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
-			s.schedulePTO()
+			s.schedulePTO(true /* advancingRTO */)
 		} else {
 			// When an ack is received we must rearm the timer.
 			// RFC 6298 5.3

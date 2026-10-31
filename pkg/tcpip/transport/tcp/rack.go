@@ -174,10 +174,12 @@ func (s *sender) shouldSchedulePTO() bool {
 
 // schedulePTO schedules the probe timeout as defined in
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
+// advancingRTO is true when an ACK that advances SND.UNA restarts the RTO,
+// as opposed to scheduling after a transmission.
 //
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
-func (s *sender) schedulePTO() {
+func (s *sender) schedulePTO(advancingRTO bool) {
 	pto := time.Second
 	s.rtt.Lock()
 	if s.rtt.TCPRTTState.SRTTInited && s.rtt.TCPRTTState.SRTT > 0 {
@@ -194,6 +196,23 @@ func (s *sender) schedulePTO() {
 			pto = s.resendTimer.target.Sub(now)
 		}
 		s.resendTimer.disable()
+	} else {
+		// The PTO must not be later than an RTO would fire (RFC 8985
+		// section 7.2). With no RTO timer armed, as after a segment is sent
+		// on an idle connection, that is one RTO from an ACK that advances
+		// SND.UNA, or else one RTO from the transmission of the oldest
+		// outstanding segment, so that re-arming the PTO on every send
+		// cannot push it out. This follows tcp_schedule_loss_probe() in
+		// Linux, which also leaves the PTO alone once that time has passed.
+		rto := s.RTO
+		if !advancingRTO {
+			if oldest := s.writeList.Front(); oldest != nil && oldest.xmitCount > 0 {
+				rto = oldest.xmitTime.Add(s.RTO).Sub(now)
+			}
+		}
+		if rto > 0 && pto > rto {
+			pto = rto
+		}
 	}
 
 	s.probeTimer.enable(pto)
