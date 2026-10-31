@@ -21,11 +21,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 )
@@ -340,6 +346,7 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
 			Routes: []sentryapi.Route{
+				{Destination: *parseCIDR(t, "0.0.0.0/0"), Gateway: net.ParseIP("10.0.0.254")},
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -364,16 +371,8 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
 	}
 
-	wantGW := sentryapi.DefaultRoute{
-		Name: "testveth0",
-		Route: sentryapi.Route{
-			Destination: net.IPNet{
-				IP:   net.IPv4zero,
-				Mask: net.IPMask(net.IPv4zero),
-			},
-			Gateway: net.ParseIP("10.0.0.254"),
-		},
-	}
+	// The pinned netlink decoder returns explicit /0 routes in the link list.
+	wantGW := sentryapi.DefaultRoute{}
 	if !defaultRouteEqual(args.Defaultv4Gateway, wantGW) {
 		t.Errorf("Defaultv4Gateway mismatch:\ngot  %+v\nwant %+v", args.Defaultv4Gateway, wantGW)
 	}
@@ -479,6 +478,7 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
 			Routes: []sentryapi.Route{
+				{Destination: *parseCIDR(t, "0.0.0.0/0"), Gateway: net.ParseIP("10.0.0.254")},
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -509,18 +509,14 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
 	}
 
-	wantGW := sentryapi.DefaultRoute{
-		Name: "testveth0",
-		Route: sentryapi.Route{
-			Destination: net.IPNet{
-				IP:   net.IPv4zero,
-				Mask: net.IPMask(net.IPv4zero),
-			},
-			Gateway: net.ParseIP("10.0.0.254"),
-		},
-	}
+	// The pinned netlink decoder returns explicit /0 routes in the link list.
+	wantGW := sentryapi.DefaultRoute{}
 	if !defaultRouteEqual(args.Defaultv4Gateway, wantGW) {
 		t.Errorf("Defaultv4Gateway mismatch:\ngot  %+v\nwant %+v", args.Defaultv4Gateway, wantGW)
+	}
+
+	if name, err := primaryInterface(&args); err != nil || name != "testveth0" {
+		t.Errorf("primaryInterface = (%q, %v), want (testveth0, nil)", name, err)
 	}
 
 	if !loopbackLinksEqual(args.LoopbackLinks, defaultLoopbackLinks()) {
@@ -570,6 +566,7 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
 			Routes: []sentryapi.Route{
+				{Destination: *parseCIDR(t, "0.0.0.0/0"), Gateway: net.ParseIP("10.0.0.254")},
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -1010,4 +1007,366 @@ func TestPrimaryInterface(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoopbackLinkDefaultRoute(t *testing.T) {
+	requireRoot(t)
+	setupTestNamespace(t)
+	setupLoopback(t)
+	iface, err := net.InterfaceByName("lo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := net.ParseIP("127.0.0.2")
+	if err := netlink.RouteAdd(&netlink.Route{
+		LinkIndex: iface.Index,
+		Dst:       parseCIDR(t, "0.0.0.0/0"),
+		Gw:        gateway,
+		MTU:       1420,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	link, err := loopbackLink(&config.Config{}, *iface, addrs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range link.Routes {
+		if r.Destination.String() == "0.0.0.0/0" && r.Gateway.Equal(gateway) && r.MTU == 1420 {
+			return
+		}
+	}
+	t.Fatalf("loopback default route was lost: %+v", link.Routes)
+}
+
+func TestPrimaryInterfacePerLinkDefaults(t *testing.T) {
+	route := func(cidr string) sentryapi.Route { return sentryapi.Route{Destination: *parseCIDR(t, cidr)} }
+	v4, v6 := route("0.0.0.0/0"), route("::/0")
+	for _, tc := range []struct {
+		name        string
+		args        sentryapi.CreateLinksAndRoutesArgs
+		want        string
+		wantErr     bool
+		errContains string
+	}{
+		{name: "IPv4 overrides eth0 fallback", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1", Routes: []sentryapi.Route{v4}}}}, want: "eth1"},
+		{name: "IPv6 overrides eth0 fallback", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1", Routes: []sentryapi.Route{v6}}}}, want: "eth1"},
+		{name: "gatewayless first default wins", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "first", Routes: []sentryapi.Route{v4}}, {Name: "second", Routes: []sentryapi.Route{{Destination: v4.Destination, Gateway: net.ParseIP("10.0.0.254")}}}}}, want: "first"},
+		{name: "per-link default precedes appended default", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "first", Routes: []sentryapi.Route{v4}}, {Name: "second"}}, Defaultv4Gateway: sentryapi.DefaultRoute{Name: "second", Route: v4}}, want: "first"},
+		{name: "dual stack same link", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "first"}, {Name: "second", Routes: []sentryapi.Route{v4, v6}}}}, want: "second"},
+		{name: "dual stack split rejects fallback", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0", Routes: []sentryapi.Route{v4}}, {Name: "eth1", Routes: []sentryapi.Route{v6}}}}, wantErr: true},
+		{name: "loopback precedes FD", args: sentryapi.CreateLinksAndRoutesArgs{LoopbackLinks: []sentryapi.LoopbackLink{{Name: "lo", Routes: []sentryapi.Route{v4}}}, FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0", Routes: []sentryapi.Route{v4}}}}, wantErr: true},
+		{name: "XDP default is not proxyable", errContains: "xdp0", args: sentryapi.CreateLinksAndRoutesArgs{XDPLinks: []sentryapi.XDPLink{{Name: "xdp0", Routes: []sentryapi.Route{v6}}}}, wantErr: true},
+		{name: "FD links take precedence over unused XDP links", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0", Routes: []sentryapi.Route{v4}}}, XDPLinks: []sentryapi.XDPLink{{Name: "xdp0", Routes: []sentryapi.Route{v6}}}}, want: "eth0"},
+		{name: "zero networks are not defaults", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1", Routes: []sentryapi.Route{route("0.0.0.0/8"), route("::/64")}}}}, want: "eth0"},
+		{name: "empty and invalid masks are not defaults", args: sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1", Routes: []sentryapi.Route{{Destination: net.IPNet{IP: net.IPv4zero}}, {Destination: net.IPNet{IP: net.IPv4zero, Mask: net.IPMask{0, 255, 0, 0}}}}}}}, want: "eth0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// These selection cases model dual-stack links. Address-family
+			// eligibility is covered separately below.
+			addresses := []sentryapi.IPWithPrefix{{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24}, {Address: net.ParseIP("2001:db8::1"), PrefixLen: 64}}
+			for i := range tc.args.FDBasedLinks {
+				tc.args.FDBasedLinks[i].Addresses = addresses
+			}
+			for i := range tc.args.LoopbackLinks {
+				tc.args.LoopbackLinks[i].Addresses = addresses
+			}
+			for i := range tc.args.XDPLinks {
+				tc.args.XDPLinks[i].Addresses = addresses
+			}
+			got, err := primaryInterface(&tc.args)
+			if tc.errContains != "" && (err == nil || !strings.Contains(err.Error(), tc.errContains)) {
+				t.Fatalf("error = %v, want it to name %q", err, tc.errContains)
+			}
+			if (err != nil) != tc.wantErr || got != tc.want {
+				t.Fatalf("primaryInterface = (%q, %v), want (%q, error=%t)", got, err, tc.want, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestRouteCollectionPreservesDefaults(t *testing.T) {
+	requireRoot(t)
+	for _, ipv6 := range []bool{false, true} {
+		family := "IPv4"
+		if ipv6 {
+			family = "IPv6"
+		}
+		for _, kind := range []string{"gateway", "on-link", "mixed", "two-gateways"} {
+			for _, disabled := range []bool{false, true} {
+				if disabled && !ipv6 {
+					continue
+				}
+				name := family + "/" + kind
+				if disabled {
+					name += "/disabled"
+				}
+				t.Run(name, func(t *testing.T) {
+					address, gateway, otherGateway, cidr, prefix, bits := "10.0.0.1", "10.0.0.254", "10.0.0.253", "0.0.0.0/0", 24, 32
+					if ipv6 {
+						address, gateway, otherGateway, cidr, prefix, bits = "2001:db8::1", "2001:db8::ffff", "2001:db8::fffe", "::/0", 64, 128
+					}
+					link := setupVethInterface(t, "testroute0", address, prefix, bits)
+					if disabled {
+						// Retain the link when IPv6 is disabled, so the test
+						// exercises route filtering rather than skipping it.
+						if err := netlink.AddrAdd(link, &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.CIDRMask(24, 32)}}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					setupLoopback(t)
+					preferred := netlink.Route{LinkIndex: link.Attrs().Index, Dst: parseCIDR(t, cidr), Gw: net.ParseIP(gateway), Priority: 10, MTU: 1420}
+					if kind == "on-link" {
+						preferred.Gw = nil
+						preferred.Scope = netlink.SCOPE_LINK
+					}
+					wantGateways := []net.IP{preferred.Gw}
+					if kind == "mixed" || kind == "two-gateways" {
+						// Add the less preferred route FIRST to distinguish metric
+						// precedence from insertion order in the kernel dump.
+						other := preferred
+						other.Priority, other.MTU = 100, 1400
+						if kind == "mixed" {
+							other.Gw = nil
+							other.Scope = netlink.SCOPE_LINK
+						} else {
+							other.Gw = net.ParseIP(otherGateway)
+						}
+						if err := netlink.RouteAdd(&other); err != nil {
+							t.Fatal(err)
+						}
+						wantGateways = append(wantGateways, other.Gw)
+					}
+					if err := netlink.RouteAdd(&preferred); err != nil {
+						t.Fatal(err)
+					}
+					args, err := collectLinksAndRoutes(&config.Config{}, disabled)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(args.FDBasedLinks) != 1 || args.FDBasedLinks[0].Name != "testroute0" {
+						t.Fatalf("test link was not retained: %+v", args.FDBasedLinks)
+					}
+					if !args.Defaultv4Gateway.Route.Empty() || !args.Defaultv6Gateway.Route.Empty() {
+						t.Fatal("collection extracted defaults from their per-link positions")
+					}
+					if disabled {
+						wantGateways = nil
+					}
+					var defaults []sentryapi.Route
+					for _, l := range args.FDBasedLinks {
+						for _, r := range l.Routes {
+							if r.Destination.String() == cidr {
+								defaults = append(defaults, r)
+							}
+						}
+					}
+					if len(defaults) != len(wantGateways) {
+						t.Fatalf("defaults = %+v, want %d routes", defaults, len(wantGateways))
+					}
+					for i, r := range defaults {
+						mtu := uint32(1420)
+						if i == 1 {
+							mtu = 1400
+						}
+						if !r.Gateway.Equal(wantGateways[i]) || r.MTU != mtu {
+							t.Errorf("default %d = %+v, want gateway %s MTU %d", i, r, wantGateways[i], mtu)
+						}
+					}
+					if !disabled {
+						if name, err := primaryInterface(&args); err != nil || name != "testroute0" {
+							t.Errorf("primaryInterface = (%q, %v)", name, err)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCollectedDefaultsAcrossInterfaces(t *testing.T) {
+	requireRoot(t)
+	for _, ipv6 := range []bool{false, true} {
+		family := "IPv4"
+		if ipv6 {
+			family = "IPv6"
+		}
+		for _, kind := range []string{"gateway-first", "on-link-first", "two-gateways"} {
+			t.Run(family+"/"+kind, func(t *testing.T) {
+				address, address2, gateway, gateway2, cidr, prefix, bits := "10.0.0.1", "10.1.0.1", "10.0.0.254", "10.1.0.254", "0.0.0.0/0", 24, 32
+				if ipv6 {
+					address, address2, gateway, gateway2, cidr, prefix, bits = "2001:db8::1", "2001:db8:1::1", "2001:db8::ffff", "2001:db8:1::ffff", "::/0", 64, 128
+				}
+				first := setupVethInterface(t, "testfirst", address, prefix, bits)
+				setupLoopback(t)
+				second := createVethPair(t, "testsecond")
+				if err := netlink.LinkSetUp(second); err != nil {
+					t.Fatal(err)
+				}
+				if err := netlink.AddrAdd(second, &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP(address2), Mask: net.CIDRMask(prefix, bits)}}); err != nil {
+					t.Fatal(err)
+				}
+				routes := []netlink.Route{
+					{LinkIndex: first.Attrs().Index, Dst: parseCIDR(t, cidr), Gw: net.ParseIP(gateway), Priority: 100, MTU: 1420},
+					{LinkIndex: second.Attrs().Index, Dst: parseCIDR(t, cidr), Gw: net.ParseIP(gateway2), Priority: 10, MTU: 1400},
+				}
+				if kind == "gateway-first" {
+					routes[1].Gw = nil
+					routes[1].Scope = netlink.SCOPE_LINK
+				}
+				if kind == "on-link-first" {
+					routes[0].Gw = nil
+					routes[0].Scope = netlink.SCOPE_LINK
+				}
+				for i := len(routes) - 1; i >= 0; i-- {
+					if err := netlink.RouteAdd(&routes[i]); err != nil {
+						t.Fatal(err)
+					}
+				}
+				args, err := collectLinksAndRoutes(&config.Config{}, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(args.FDBasedLinks) != 2 {
+					t.Fatalf("FD links = %+v", args.FDBasedLinks)
+				}
+				if !args.Defaultv4Gateway.Route.Empty() || !args.Defaultv6Gateway.Route.Empty() {
+					t.Fatal("default routes were extracted")
+				}
+				for i, link := range args.FDBasedLinks {
+					wantName := "testfirst"
+					if i == 1 {
+						wantName = "testsecond"
+					}
+					if link.Name != wantName {
+						t.Fatalf("link %d = %s, want %s", i, link.Name, wantName)
+					}
+					found := 0
+					for _, r := range link.Routes {
+						if r.Destination.String() == cidr {
+							found++
+							if !r.Gateway.Equal(routes[i].Gw) || r.MTU != uint32(routes[i].MTU) {
+								t.Errorf("default on %s changed: %+v", link.Name, r)
+							}
+						}
+					}
+					if found != 1 {
+						t.Fatalf("default count on %s = %d, want 1", link.Name, found)
+					}
+				}
+				// Boot installs per-interface routes in interface order. It does
+				// not compare metrics across interfaces, even with reverse insertion.
+				if name, err := primaryInterface(&args); err != nil || name != "testfirst" {
+					t.Fatalf("primaryInterface = (%q, %v), want testfirst", name, err)
+				}
+			})
+		}
+	}
+}
+
+// checkPrimaryAgainstNetstack validates unbound route selection without sending
+// packets. Install collected FD routes and addresses in their existing order.
+func checkPrimaryAgainstNetstack(t *testing.T, args *sentryapi.CreateLinksAndRoutesArgs, destination, want string) {
+	t.Helper()
+	s := stack.New(stack.Options{NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol}})
+	defer s.Close()
+	address := func(ip net.IP) tcpip.Address {
+		if v4 := ip.To4(); v4 != nil {
+			return tcpip.AddrFromSlice(v4)
+		}
+		return tcpip.AddrFromSlice(ip.To16())
+	}
+	var routes []tcpip.Route
+	names := make(map[tcpip.NICID]string)
+	for i, link := range args.FDBasedLinks {
+		id := tcpip.NICID(i + 1)
+		names[id] = link.Name
+		if err := s.CreateNIC(id, channel.New(1, 1500, "")); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range link.Addresses {
+			proto := ipv6.ProtocolNumber
+			if a.Address.To4() != nil {
+				proto = ipv4.ProtocolNumber
+			}
+			if err := s.AddProtocolAddress(id, tcpip.ProtocolAddress{Protocol: proto, AddressWithPrefix: tcpip.AddressWithPrefix{Address: address(a.Address), PrefixLen: a.PrefixLen}}, stack.AddressProperties{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, r := range link.Routes {
+			subnet, err := tcpip.NewSubnet(address(r.Destination.IP), tcpip.MaskFromBytes(r.Destination.Mask))
+			if err != nil {
+				t.Fatal(err)
+			}
+			routes = append(routes, tcpip.Route{Destination: subnet, Gateway: address(r.Gateway), NIC: id, MTU: r.MTU})
+		}
+	}
+	s.SetRouteTable(routes)
+	remote := net.ParseIP(destination)
+	proto := ipv6.ProtocolNumber
+	if remote.To4() != nil {
+		proto = ipv4.ProtocolNumber
+	}
+	r, err := s.FindRoute(0, tcpip.Address{}, address(remote), proto, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Release()
+	actual := names[r.NICID()]
+	if actual != want {
+		t.Fatalf("netstack selected %q, want %q", actual, want)
+	}
+	if got, err := primaryInterface(args); err != nil || got != actual {
+		t.Fatalf("primaryInterface = (%q, %v), netstack selected %q", got, err, actual)
+	}
+}
+
+func TestPrimaryInterfaceAddressFamily(t *testing.T) {
+	for _, tc := range []struct {
+		name, unsupported, supported, cidr, remote string
+		unsupportedBits, supportedBits             int
+	}{
+		{"IPv4", "2001:db8::1", "10.0.0.1", "0.0.0.0/0", "198.51.100.1", 64, 24},
+		{"IPv6", "10.0.0.1", "2001:db8::1", "::/0", "2001:db8:ffff::1", 24, 64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := &sentryapi.CreateLinksAndRoutesArgs{FDBasedLinks: []sentryapi.FDBasedLink{
+				{Name: "wrongfamily", Addresses: []sentryapi.IPWithPrefix{{Address: net.ParseIP(tc.unsupported), PrefixLen: tc.unsupportedBits}}, Routes: []sentryapi.Route{{Destination: *parseCIDR(t, tc.cidr)}}},
+				{Name: "eth0", Addresses: []sentryapi.IPWithPrefix{{Address: net.ParseIP(tc.supported), PrefixLen: tc.supportedBits}}, Routes: []sentryapi.Route{{Destination: *parseCIDR(t, tc.cidr)}}},
+			}}
+			checkPrimaryAgainstNetstack(t, args, tc.remote, "eth0")
+		})
+	}
+}
+
+func TestCollectedDefaultWithoutFamilyAddress(t *testing.T) {
+	requireRoot(t)
+	first := setupVethInterface(t, "v6only", "2001:db8::1", 64, 128)
+	setupLoopback(t)
+	second := createVethPair(t, "eth0")
+	if err := netlink.LinkSetUp(second); err != nil {
+		t.Fatal(err)
+	}
+	if err := netlink.AddrAdd(second, &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.CIDRMask(24, 32)}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []netlink.Route{
+		{LinkIndex: first.Attrs().Index, Dst: parseCIDR(t, "0.0.0.0/0"), Scope: netlink.SCOPE_LINK, Priority: 10},
+		{LinkIndex: second.Attrs().Index, Dst: parseCIDR(t, "0.0.0.0/0"), Gw: net.ParseIP("10.0.0.254"), Priority: 100},
+	} {
+		if err := netlink.RouteAdd(&r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args, err := collectLinksAndRoutes(&config.Config{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(args.FDBasedLinks) != 2 || args.FDBasedLinks[0].Name != "v6only" {
+		t.Fatalf("unexpected link order: %+v", args.FDBasedLinks)
+	}
+	checkPrimaryAgainstNetstack(t, &args, "198.51.100.1", "eth0")
 }
