@@ -22,7 +22,10 @@ go_library(
 go_test(
     name = "fdnotifier_test",
     size = "small",
-    srcs = ["startup_test.go"],
+    srcs = [
+        "fdnotifier_test.go",
+        "startup_test.go",
+    ],
     embed = [":fdnotifier"],
     deps = [
         "//pkg/waiter",
