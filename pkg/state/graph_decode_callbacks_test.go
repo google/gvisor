@@ -467,9 +467,9 @@ func TestGraphDeferredObjectDecode(t *testing.T) {
 	t.Run("multi_pass_round_trip", func(t *testing.T) {
 		var ifaceVal defIface = &defImpl{v: 42}
 		nestedMap := map[string]defIface{"nested": &defImpl{v: 99}}
-		// Place subMaps (mapArr[0:1:1]) on outer.subIn at BFS depth 1 so its
+		// Place subMaps (mapArr[1:2:2]) on outer.subIn at BFS depth 1 so its
 		// 1-element array encodes nestedMap before holder.in (outer.in)
-		// discovers fullMaps (mapArr[0:2:2]) and absorbs the backing array,
+		// discovers fullMaps (mapArr[0:2:2]) and absorbs it from the left,
 		// while holder.next.outer reparents outer after both. On load:
 		//   - Pass 0 defers nestedMap (map), mapArr (inexact array),
 		//     ifaceVal (inexact value), and ifaceSlice (inexact array), then
@@ -479,13 +479,13 @@ func TestGraphDeferredObjectDecode(t *testing.T) {
 		//     mapArr, revealing nestedMap's mapType.
 		//   - Deferred Pass 2 decodes nestedMap.
 		mapArr := &[2]map[string]defIface{
-			nestedMap,
 			{"other": &defImpl{v: 5}},
+			nestedMap,
 		}
 		outer := &defOuter{
-			subIn: defInner{subMaps: mapArr[0:1:1]},
+			subIn: defInner{subMaps: mapArr[1:2:2]},
 			in: defInner{
-				subMaps:    mapArr[0:1:1],
+				subMaps:    mapArr[1:2:2],
 				fullMaps:   mapArr[0:2:2],
 				ifacePtr:   &ifaceVal,
 				ifaceSlice: []defIface{&defImpl{v: 10}, &defImpl{v: 20}},
@@ -536,14 +536,14 @@ func TestGraphDeferredObjectDecode(t *testing.T) {
 		if len(loaded.early1.subMaps) != 1 || len(gotOuter.in.subMaps) != 1 || len(gotOuter.in.fullMaps) != 2 {
 			t.Fatalf("subIn.subMaps/in.subMaps/in.fullMaps lengths = %d/%d/%d, want 1/1/2", len(loaded.early1.subMaps), len(gotOuter.in.subMaps), len(gotOuter.in.fullMaps))
 		}
-		if &loaded.early1.subMaps[0] != &gotOuter.in.fullMaps[0] || &gotOuter.in.subMaps[0] != &gotOuter.in.fullMaps[0] {
-			t.Errorf("subMaps[0] does not share backing array with fullMaps[0]")
+		if &loaded.early1.subMaps[0] != &gotOuter.in.fullMaps[1] || &gotOuter.in.subMaps[0] != &gotOuter.in.fullMaps[1] {
+			t.Errorf("subMaps[0] does not share backing array with fullMaps[1]")
 		}
-		gotNested, ok := gotOuter.in.fullMaps[0]["nested"].(*defImpl)
+		gotNested, ok := gotOuter.in.fullMaps[1]["nested"].(*defImpl)
 		if !ok || gotNested.v != 99 || gotNested.afterRuns != 1 {
 			t.Errorf("nested map entry = %+v, want v=99 afterRuns=1", gotNested)
 		}
-		gotOther, ok := gotOuter.in.fullMaps[1]["other"].(*defImpl)
+		gotOther, ok := gotOuter.in.fullMaps[0]["other"].(*defImpl)
 		if !ok || gotOther.v != 5 || gotOther.afterRuns != 1 {
 			t.Errorf("other map entry = %+v, want v=5 afterRuns=1", gotOther)
 		}
