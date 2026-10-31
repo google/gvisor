@@ -1068,6 +1068,10 @@ func sandboxProcessEnv(conf *config.Config, opts sandboxProcessEnvOptions) []str
 		// the glibc rseq, because they unmap everything from a process
 		// address space.
 		env = append(env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
+		// glibc can open /sys/devices/system/cpu/online to size its malloc
+		// arena pool after seccomp is installed. Set the limit up front using
+		// glibc's 64-bit scale and the CPUs available to runsc.
+		env = append(env, "MALLOC_ARENA_MAX="+strconv.Itoa(8*runtime.NumCPU()))
 	}
 	return env
 }
