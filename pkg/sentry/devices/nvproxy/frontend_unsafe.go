@@ -46,15 +46,24 @@ func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams
 }
 
 func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *Params) (uintptr, error) {
+	n, err := rmControlInvokeHost(fi, ioctlParams, ctrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// rmControlInvokeHost is rmControlInvoke without the copy-out of ioctlParams.
+func rmControlInvokeHost[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *Params) (uintptr, error) {
 	defer runtime.KeepAlive(ctrlParams) // since we convert to non-pointer-typed P64
 	origParams := ioctlParams.Params
 	ioctlParams.Params = p64FromPtr(unsafe.Pointer(ctrlParams))
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	ioctlParams.Params = origParams
 	if err != nil {
-		return n, err
-	}
-	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
