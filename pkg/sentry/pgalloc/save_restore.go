@@ -386,19 +386,19 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	// f.mu is unlocked below, allowing concurrent calls to f.UpdateUsage() to
 	// observe pages that we transiently commit (for comparisons to zero) or
 	// leave committed (if opts.ExcludeCommittedZeroPages is true). Set
-	// f.isSaving to prevent this.
-	if f.isSaving {
+	// f.inhibitUsageScans to prevent this.
+	if f.inhibitUsageScans {
 		panic(fmt.Sprintf("pgalloc.MemoryFile(%p).SaveTo() called concurrently", f))
 	}
-	f.isSaving = true
-	defer func() { f.isSaving = false }()
+	f.inhibitUsageScans = true
+	defer func() { f.inhibitUsageScans = false }()
 	// An f.updateUsageLocked() that is still in progress skips merging the
 	// segments it split in f.memAcct, since we hold an iterator into it
 	// across f.mu unlocks below.
 	f.memAcct.MergeAll()
 	// Reset f.commitSeq and memAcctInfo.commitSeq to 0 to make more segments
 	// in f.memAcct mergeable. This is safe because f.updateUsageLocked() is
-	// excluded by f.isSaving being set to true.
+	// excluded by f.inhibitUsageScans being set to true.
 	f.commitSeq = 0
 	maseg := f.memAcct.FirstSegment()
 	unscannedStart := uint64(0)
@@ -433,7 +433,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 			}
 			// f.UpdateUsage() may be called concurrently with f.SaveTo();
 			// occasionally unlock f.mu to ensure that the former can promptly
-			// observe f.isSaving and return. Assume that maseg is not
+			// observe f.inhibitUsageScans and return. Assume that maseg is not
 			// invalidated while f.mu is unlocked, since it should still be the
 			// case that nothing is concurrently trying to mutate f.
 			f.mu.Unlock()
@@ -1117,7 +1117,8 @@ type LoadOpts struct {
 	Timeline *timing.Timeline
 }
 
-// LoadFrom loads MemoryFile state from the given stream.
+// LoadFrom loads the given stream into a fresh MemoryFile. On failure,
+// the caller must discard the partially restored file.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) (err error) {
 	mfTimeline := opts.Timeline.Fork(fmt.Sprintf("mf:%p", f)).Lease()
 	defer mfTimeline.End()
@@ -1143,6 +1144,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	if err := proto.Unmarshal(data, &pb); err != nil {
 		return fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
+	// LoadFrom uses the saved commitment ranges to locate page data. A
+	// usage scan must not mark an omitted page committed between reads.
+	f.mu.Lock()
+	f.inhibitUsageScans = true
+	f.mu.Unlock()
 	if err := f.importMetadataProto(&pb); err != nil {
 		return fmt.Errorf("failed to import metadata: %w", err)
 	}
@@ -1316,6 +1322,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %.3f MB/s)", f, durPages, f.knownCommittedBytes, float64(f.knownCommittedBytes)*1e-6/durPages.Seconds())
 	}
 
+	// A failed load may leave incomplete mappings. Only resume scans
+	// once all page ranges are installed; background reads can continue.
+	f.mu.Lock()
+	f.inhibitUsageScans = false
+	f.mu.Unlock()
 	return nil
 }
 
