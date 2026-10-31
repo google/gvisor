@@ -106,13 +106,25 @@ func TestShutdownSocketCleanup(t *testing.T) {
 	}
 }
 
-// fakeTaskService is an extension.TaskServiceExt that only implements
-// Shutdown. Calling any other method panics.
+// fakeTaskService is an extension.TaskServiceExt that only implements the
+// methods needed by tests in this file. Calling any other method panics.
 type fakeTaskService struct {
 	extension.TaskServiceExt
 
+	creates      int
+	createPid    uint32
 	shutdownResp *types.Empty
 	shutdownErr  error
+}
+
+func (f *fakeTaskService) Create(context.Context, *task.CreateTaskRequest) (*task.CreateTaskResponse, error) {
+	f.creates++
+	return &task.CreateTaskResponse{Pid: f.createPid}, nil
+}
+
+func (f *fakeTaskService) CreateWithFSRestore(context.Context, *extension.CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error) {
+	f.creates++
+	return &task.CreateTaskResponse{Pid: f.createPid}, nil
 }
 
 func (f *fakeTaskService) Shutdown(context.Context, *task.ShutdownRequest) (*types.Empty, error) {
@@ -174,4 +186,127 @@ func TestShutdownResponse(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPodExtensionCalledOncePerPod verifies that NewPodExtension is invoked at
+// most once per pod once it succeeds, including when it returns (nil, nil) to
+// decline handling the pod.
+func TestPodExtensionCalledOncePerPod(t *testing.T) {
+	origNewPodExt := extension.NewPodExtension
+	t.Cleanup(func() {
+		extension.NewPodExtension = origNewPodExt
+	})
+
+	t.Run("caches nil extension", func(t *testing.T) {
+		main := &fakeTaskService{createPid: 123}
+		s := &shimRedirector{
+			main:     main,
+			grouping: true,
+		}
+		var podExtCalls int
+		extension.NewPodExtension = func(context.Context, extension.TaskServiceExt, *task.CreateTaskRequest) (extension.TaskServiceExt, error) {
+			podExtCalls++
+			return nil, nil
+		}
+
+		ctx := context.Background()
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "sandbox"}); err != nil {
+			t.Fatalf("Create(sandbox) failed: %v", err)
+		} else if resp.GetPid() != main.createPid {
+			t.Errorf("Create(sandbox) pid = %d, want %d", resp.GetPid(), main.createPid)
+		}
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "container-1"}); err != nil {
+			t.Fatalf("Create(container-1) failed: %v", err)
+		} else if resp.GetPid() != main.createPid {
+			t.Errorf("Create(container-1) pid = %d, want %d", resp.GetPid(), main.createPid)
+		}
+		if resp, err := s.CreateWithFSRestore(ctx, &extension.CreateWithFSRestoreRequest{
+			Create: &task.CreateTaskRequest{ID: "container-2"},
+		}); err != nil {
+			t.Fatalf("CreateWithFSRestore(container-2) failed: %v", err)
+		} else if resp.GetPid() != main.createPid {
+			t.Errorf("CreateWithFSRestore(container-2) pid = %d, want %d", resp.GetPid(), main.createPid)
+		}
+
+		if podExtCalls != 1 {
+			t.Errorf("NewPodExtension called %d times, want 1", podExtCalls)
+		}
+		if main.creates != 3 {
+			t.Errorf("main received %d creates, want 3", main.creates)
+		}
+	})
+
+	t.Run("caches non-nil extension", func(t *testing.T) {
+		main := &fakeTaskService{createPid: 123}
+		ext := &fakeTaskService{createPid: 456}
+		s := &shimRedirector{
+			main:     main,
+			grouping: true,
+		}
+		var podExtCalls int
+		extension.NewPodExtension = func(context.Context, extension.TaskServiceExt, *task.CreateTaskRequest) (extension.TaskServiceExt, error) {
+			podExtCalls++
+			return ext, nil
+		}
+
+		ctx := context.Background()
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "sandbox"}); err != nil {
+			t.Fatalf("Create(sandbox) failed: %v", err)
+		} else if resp.GetPid() != ext.createPid {
+			t.Errorf("Create(sandbox) pid = %d, want %d", resp.GetPid(), ext.createPid)
+		}
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "container-1"}); err != nil {
+			t.Fatalf("Create(container-1) failed: %v", err)
+		} else if resp.GetPid() != ext.createPid {
+			t.Errorf("Create(container-1) pid = %d, want %d", resp.GetPid(), ext.createPid)
+		}
+
+		if podExtCalls != 1 {
+			t.Errorf("NewPodExtension called %d times, want 1", podExtCalls)
+		}
+		if ext.creates != 2 {
+			t.Errorf("ext received %d creates, want 2", ext.creates)
+		}
+		if main.creates != 0 {
+			t.Errorf("main received %d creates, want 0", main.creates)
+		}
+	})
+
+	t.Run("retries after error", func(t *testing.T) {
+		main := &fakeTaskService{createPid: 123}
+		s := &shimRedirector{
+			main:     main,
+			grouping: true,
+		}
+		var podExtCalls int
+		extension.NewPodExtension = func(context.Context, extension.TaskServiceExt, *task.CreateTaskRequest) (extension.TaskServiceExt, error) {
+			podExtCalls++
+			if podExtCalls == 1 {
+				return nil, errors.New("transient error")
+			}
+			return nil, nil
+		}
+
+		ctx := context.Background()
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "sandbox"}); err == nil || resp != nil {
+			t.Fatalf("Create(sandbox) = (%v, %v) on first attempt, want (nil, error)", resp, err)
+		}
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "sandbox"}); err != nil {
+			t.Fatalf("Create(sandbox) retry failed: %v", err)
+		} else if resp.GetPid() != main.createPid {
+			t.Errorf("Create(sandbox) pid = %d, want %d", resp.GetPid(), main.createPid)
+		}
+		if resp, err := s.Create(ctx, &task.CreateTaskRequest{ID: "container-1"}); err != nil {
+			t.Fatalf("Create(container-1) failed: %v", err)
+		} else if resp.GetPid() != main.createPid {
+			t.Errorf("Create(container-1) pid = %d, want %d", resp.GetPid(), main.createPid)
+		}
+
+		if podExtCalls != 2 {
+			t.Errorf("NewPodExtension called %d times, want 2", podExtCalls)
+		}
+		if main.creates != 2 {
+			t.Errorf("main received %d creates, want 2", main.creates)
+		}
+	})
 }
