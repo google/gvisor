@@ -164,10 +164,10 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (fd *DeviceFD) EventRegister(e *waiter.Entry) error {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	if fd.conn == nil {
-		return linuxerr.EPERM
+	// Before mount, Readiness reports EventErr without a queue to wait on.
+	if fd.conn != nil {
+		fd.conn.waitQueue.EventRegister(e)
 	}
-	fd.conn.waitQueue.EventRegister(e)
 	return nil
 }
 
@@ -178,6 +178,7 @@ func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 	if fd.conn == nil {
 		return
 	}
+	// An entry registered before mount has no links, so removal is a no-op.
 	fd.conn.waitQueue.EventUnregister(e)
 }
 
