@@ -514,6 +514,53 @@ func TestReplyPacketType(t *testing.T) {
 
 }
 
+func TestDropOtherHostPackets(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		pktType tcpip.PacketType
+		// wantHandled is the number of requests ARP counts and answers.
+		wantHandled uint64
+	}{
+		{name: "host", pktType: tcpip.PacketHost, wantHandled: 1},
+		{name: "other host", pktType: tcpip.PacketOtherHost, wantHandled: 0},
+		{name: "broadcast", pktType: tcpip.PacketBroadcast, wantHandled: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// The request adds a neighbor entry, and cleanup removes it.
+			c := makeTestContext(t, 2, 1)
+			defer c.cleanup()
+
+			packetsRecv := c.s.Stats().ARP.PacketsReceived.Value()
+			outgoingReplies := c.s.Stats().ARP.OutgoingRepliesSent.Value()
+
+			v := make([]byte, header.ARPSize)
+			h := header.ARP(v)
+			h.SetIPv4OverEthernet()
+			h.SetOp(header.ARPRequest)
+			copy(h.HardwareAddressSender(), remoteLinkAddr)
+			copy(h.ProtocolAddressSender(), remoteAddr.AsSlice())
+			copy(h.ProtocolAddressTarget(), stackAddr.AsSlice())
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(v),
+			})
+			pkt.PktType = test.pktType
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			// As in Linux, dropped other-host frames are not counted.
+			if got, want := c.s.Stats().ARP.PacketsReceived.Value()-packetsRecv, test.wantHandled; got != want {
+				t.Errorf("got PacketsReceived delta = %d, want = %d", got, want)
+			}
+			if got, want := c.s.Stats().ARP.OutgoingRepliesSent.Value()-outgoingReplies, test.wantHandled; got != want {
+				t.Errorf("got OutgoingRepliesSent delta = %d, want = %d", got, want)
+			}
+			if reply := c.linkEP.Read(); reply != nil {
+				reply.DecRef()
+			}
+		})
+	}
+}
+
 var _ stack.LinkEndpoint = (*testLinkEndpoint)(nil)
 
 type testLinkEndpoint struct {

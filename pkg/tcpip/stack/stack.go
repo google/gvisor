@@ -1214,6 +1214,9 @@ func (s *Stack) SetNICAddress(id tcpip.NICID, addr tcpip.LinkAddress) tcpip.Erro
 		return &tcpip.ErrUnknownNICID{}
 	}
 	nic.NetworkLinkEndpoint.SetLinkAddress(addr)
+	if nic.Primary != nil {
+		nic.Primary.NetworkLinkEndpoint.(CoordinatorNIC).NICAddressChanged(nic)
+	}
 	return nil
 }
 

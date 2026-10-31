@@ -280,6 +280,58 @@ func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 	}
 }
 
+func TestDropOtherHostPackets(t *testing.T) {
+	tests := []struct {
+		name    string
+		pktType tcpip.PacketType
+		want    uint64
+	}{
+		{name: "host", pktType: tcpip.PacketHost, want: 1},
+		{name: "other host", pktType: tcpip.PacketOtherHost, want: 0},
+		{name: "broadcast", pktType: tcpip.PacketBroadcast, want: 1},
+		{name: "multicast", pktType: tcpip.PacketMulticast, want: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
+			e := channel.New(10, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(1, _): %s", err)
+			}
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: addr2.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(1, %+v, {}): %s", protocolAddr, err)
+			}
+
+			hdr := make([]byte, header.IPv6MinimumSize)
+			header.IPv6(hdr).Encode(&header.IPv6Fields{
+				TransportProtocol: udp.ProtocolNumber,
+				HopLimit:          64,
+				SrcAddr:           addr1,
+				DstAddr:           addr2,
+			})
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(hdr),
+			})
+			pkt.PktType = test.pktType
+			received := s.Stats().IP.PacketsReceived
+			before := received.Value()
+			e.InjectInbound(ProtocolNumber, pkt)
+			pkt.DecRef()
+			if got := received.Value() - before; got != test.want {
+				t.Errorf("got PacketsReceived delta = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
 // TestReceiveOnSolicitedNodeAddr tests that IPv6 endpoints receive ICMP and UDP
 // packets destined to the IPv6 solicited-node address of an assigned IPv6
 // address.

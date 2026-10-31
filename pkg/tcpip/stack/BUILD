@@ -364,6 +364,8 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/veth",
+        "//pkg/tcpip/network/arp",
+        "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
     ],
 )
