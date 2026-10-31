@@ -223,9 +223,6 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestIPv6MulticastIf) {
   ASSERT_THAT(setsockopt(sock->get(), SOL_SOCKET, SO_BINDTODEVICE, ifname,
                          strlen(ifname) + 1),
               SyscallSucceeds());
-  struct sockaddr_in6 bind_addr = eth_if_addr();
-  ASSERT_THAT(bind(sock->get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
-              SyscallSucceeds());
 
   int mcast_idx;
   socklen_t slen = sizeof(mcast_idx);
@@ -234,26 +231,37 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestIPv6MulticastIf) {
               SyscallSucceeds());
   EXPECT_EQ(mcast_idx, 0);  // Default is 0.
 
-  // A conflicting selection must preserve the current interface. Clearing
-  // the multicast selection must preserve the socket's device binding.
-  for (const auto& [selected, expected_errno, expected] :
-       {std::tuple{eth_if_idx(), 0, eth_if_idx()},
-        std::tuple{lo_if_idx(), EINVAL, eth_if_idx()}, std::tuple{0, 0, 0},
-        std::tuple{lo_if_idx(), EINVAL, 0}}) {
-    SCOPED_TRACE(selected);
-    if (expected_errno == 0) {
-      ASSERT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                             &selected, sizeof(selected)),
+  // A scoped address can independently constrain the interface. Exercise the
+  // device binding on its own before binding a local address.
+  for (bool bind_address : {false, true}) {
+    SCOPED_TRACE(bind_address ? "device and address" : "device only");
+    if (bind_address) {
+      struct sockaddr_in6 bind_addr = eth_if_addr();
+      ASSERT_THAT(bind(sock->get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
                   SyscallSucceeds());
-    } else {
-      ASSERT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                             &selected, sizeof(selected)),
-                  SyscallFailsWithErrno(expected_errno));
     }
-    ASSERT_THAT(getsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                           &mcast_idx, &slen),
-                SyscallSucceeds());
-    EXPECT_EQ(mcast_idx, expected);
+
+    // A conflicting selection must preserve the current interface. Clearing
+    // the multicast selection must preserve the socket's device binding.
+    for (const auto& [selected, expected_errno, expected] :
+         {std::tuple{eth_if_idx(), 0, eth_if_idx()},
+          std::tuple{lo_if_idx(), EINVAL, eth_if_idx()}, std::tuple{0, 0, 0},
+          std::tuple{lo_if_idx(), EINVAL, 0}}) {
+      SCOPED_TRACE(selected);
+      if (expected_errno == 0) {
+        ASSERT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                               &selected, sizeof(selected)),
+                    SyscallSucceeds());
+      } else {
+        ASSERT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                               &selected, sizeof(selected)),
+                    SyscallFailsWithErrno(expected_errno));
+      }
+      ASSERT_THAT(getsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                             &mcast_idx, &slen),
+                  SyscallSucceeds());
+      EXPECT_EQ(mcast_idx, expected);
+    }
   }
 }
 
