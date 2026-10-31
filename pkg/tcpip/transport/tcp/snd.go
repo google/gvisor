@@ -17,6 +17,7 @@ package tcp
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"time"
 
@@ -188,6 +189,10 @@ type sender struct {
 	// spuriousRecovery indicates whether the sender entered recovery
 	// spuriously as described in RFC3522 Section 3.2.
 	spuriousRecovery bool
+
+	// peerReportsDSACK records whether this peer has ever reported a
+	// duplicate segment on this connection (RFC 3522, section 3.2).
+	peerReportsDSACK bool
 
 	// retransmitTS is the timestamp at which the sender sends retransmitted
 	// segment after entering an RTO for the first time as described in
@@ -1364,41 +1369,24 @@ func (s *sender) isDupAck(seg *segment) bool {
 // Iterate the writeList and update RACK for each segment which is newly acked
 // either cumulatively or selectively. Loop through the segments which are
 // sacked, and update the RACK related variables and check for reordering.
-// Returns true when the DSACK block has been detected in the received ACK.
 //
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 // steps 2 and 3.
 //
 // +checklocks:s.ep.mu
-func (s *sender) walkSACK(rcvdSeg *segment) bool {
-	s.rc.setDSACKSeen(false)
-
-	// Look for DSACK block.
-	hasDSACK := false
-	idx := 0
-	n := len(rcvdSeg.parsedOptions.SACKBlocks)
-	if checkDSACK(rcvdSeg) {
-		dsackBlock := rcvdSeg.parsedOptions.SACKBlocks[0]
-		numDSACK := uint64(dsackBlock.End-dsackBlock.Start) / uint64(s.MaxPayloadSize)
-		// numDSACK can be zero when DSACK is sent for subsegments.
-		if numDSACK < 1 {
-			numDSACK = 1
-		}
-		s.ep.stack.Stats().TCP.SegmentsAckedWithDSACK.IncrementBy(numDSACK)
-		s.rc.setDSACKSeen(true)
-		idx = 1
-		n--
-		hasDSACK = true
+func (s *sender) walkSACK(rcvdSeg *segment, hasDSACK bool) {
+	s.rc.setDSACKSeen(hasDSACK)
+	sackBlocks := rcvdSeg.parsedOptions.SACKBlocks
+	if hasDSACK {
+		sackBlocks = sackBlocks[1:]
 	}
-
-	if n == 0 {
-		return hasDSACK
+	if len(sackBlocks) == 0 {
+		return
 	}
 
 	// Sort the SACK blocks. The first block is the most recent unacked
 	// block. The following blocks can be in arbitrary order.
-	sackBlocks := make([]header.SACKBlock, n)
-	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks[idx:])
+	sackBlocks = slices.Clone(sackBlocks)
 	sort.Slice(sackBlocks, func(i, j int) bool {
 		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
 	})
@@ -1415,7 +1403,6 @@ func (s *sender) walkSACK(rcvdSeg *segment) bool {
 			seg = seg.Next()
 		}
 	}
-	return hasDSACK
 }
 
 // checkDSACK checks if a DSACK is reported.
@@ -1517,8 +1504,7 @@ func (s *sender) detectSpuriousRecovery(hasDSACK bool, tsEchoReply uint32) {
 	// previously received an ACK with a DSACK option, or the acceptable ACK
 	// does not acknowledge all outstanding data, then proceed to next step,
 	// else return.
-	numDSACK := s.ep.stack.Stats().TCP.SegmentsAckedWithDSACK.Value()
-	if numDSACK == 0 && s.SndUna == s.SndNxt {
+	if !s.peerReportsDSACK && s.SndUna == s.SndNxt {
 		return
 	}
 
@@ -1576,6 +1562,14 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Insert SACKBlock information into our scoreboard.
 	hasDSACK := false
 	if s.ep.SACKPermitted {
+		hasDSACK = checkDSACK(rcvdSeg)
+		if hasDSACK {
+			s.peerReportsDSACK = true
+			block := rcvdSeg.parsedOptions.SACKBlocks[0]
+			// A duplicate smaller than one full segment still counts.
+			n := max(1, uint64(block.End-block.Start)/uint64(s.MaxPayloadSize))
+			s.ep.stack.Stats().TCP.SegmentsAckedWithDSACK.IncrementBy(n)
+		}
 		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
 			// Only insert the SACK block if the following holds
 			// true:
@@ -1609,7 +1603,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//		RACK.fack, then the corresponding packet has been
 		//		reordered and RACK.reord is set to TRUE.
 		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-			hasDSACK = s.walkSACK(rcvdSeg)
+			s.walkSACK(rcvdSeg, hasDSACK)
 		}
 		s.SetPipe()
 	}
