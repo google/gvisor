@@ -1337,6 +1337,10 @@ type AsyncPagesFileLoad struct {
 	// no other read is in flight.
 	throttled atomicbitops.Bool
 
+	// If lazy is true, reads of pages without waiters never start. lazy is
+	// immutable.
+	lazy bool
+
 	// lfStatus communicates MemoryFile.LoadFrom() state to the async page
 	// loader goroutine.
 	lfStatus syncevent.Waiter
@@ -1525,6 +1529,11 @@ type AsyncPagesFileLoadOpts struct {
 	// If Throttled is true, reads of pages without waiters are throttled
 	// until AsyncPagesFileLoad.Unthrottle() is called.
 	Throttled bool
+
+	// If Lazy is true, only pages with waiters are read. Other pages stay
+	// unloaded until a caller waits for them, e.g. MemoryFile.AwaitLoadAll()
+	// before the next checkpoint.
+	Lazy bool
 }
 
 // StartAsyncPagesFileLoad constructs asynchronous loading state for the pages
@@ -1544,6 +1553,7 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 		ar:               ar,
 		maxReadBytes:     maxReadBytes,
 		throttled:        atomicbitops.FromBool(opts.Throttled),
+		lazy:             opts.Lazy,
 		qavail:           maxParallel,
 		opsBusy:          bitmap.New(uint32(maxParallel)),
 		ops:              make([]aplOp, maxParallel),
@@ -1625,6 +1635,7 @@ func (amfl *asyncMemoryFileLoad) awaitLoad(fr memmap.FileRange) error {
 	defer aplWaiterPool.Put(w)
 	w.fr = fr
 	w.pending = 0
+	queued := false
 	amfl.unloaded.MutateRange(fr, func(ulseg aplUnloadedIterator) bool {
 		ul := ulseg.ValuePtr()
 		ulFR := ulseg.Range()
@@ -1633,6 +1644,7 @@ func (amfl *asyncMemoryFileLoad) awaitLoad(fr memmap.FileRange) error {
 			apfl.bytesWaited += ullen
 			if !ul.started {
 				apfl.priority.PushBack(aplFileRange{amfl, ulFR})
+				queued = true
 			}
 			if logAwaitedLoads {
 				log.Infof("MemoryFile(%p): prioritize %v", amfl.f, ulFR)
@@ -1652,6 +1664,11 @@ func (amfl *asyncMemoryFileLoad) awaitLoad(fr memmap.FileRange) error {
 		apfl.totalWaiters++
 	}
 	apfl.mu.Unlock()
+	if queued {
+		// The async page loader goroutine may be idle, e.g. if it does not
+		// read pages without waiters.
+		apfl.lfStatus.Notify(aplLFPending)
+	}
 	if pending {
 		if logAwaitedLoads {
 			log.Infof("MemoryFile(%p): awaitLoad goid %d start: %v (%d bytes)", amfl.f, goid.Get(), fr, fr.Length())
@@ -1663,6 +1680,13 @@ func (amfl *asyncMemoryFileLoad) awaitLoad(fr memmap.FileRange) error {
 		}
 	}
 	return apfl.err()
+}
+
+// allLoaded returns true if all registered MemoryFiles have been loaded.
+func (apfl *AsyncPagesFileLoad) allLoaded() bool {
+	apfl.amflsMu.Lock()
+	defer apfl.amflsMu.Unlock()
+	return apfl.amfls.Empty()
 }
 
 func (apfl *AsyncPagesFileLoad) canEnqueue() bool {
@@ -1864,6 +1888,10 @@ func (apfl *AsyncPagesFileLoad) main() {
 	}
 	defer dropDelayedDecRefs()
 
+	// lfDone is true if all MemoryFiles have been registered, i.e. aplLFDone
+	// has been received.
+	lfDone := false
+
 	// Don't start timing until we have pages to load.
 	apfl.lfStatus.Wait()
 	timeStart := gohacks.Nanotime()
@@ -1962,7 +1990,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 		apfl.mu.Unlock()
 		// Fill remaining queue with reads for pages with no waiters.
 		throttled := apfl.throttled.Load()
-		if apfl.canEnqueue() && (!throttled || (apfl.qavail == maxParallel && apfl.curOp == nil)) {
+		if !apfl.lazy && apfl.canEnqueue() && (!throttled || (apfl.qavail == maxParallel && apfl.curOp == nil)) {
 			apfl.amflsMu.Lock()
 			// Unawaited loads from earlier MemoryFiles are prioritized over
 			// unawaited loads from later MemoryFiles. Callers of
@@ -2027,20 +2055,26 @@ func (apfl *AsyncPagesFileLoad) main() {
 
 		if apfl.qavail == maxParallel {
 			// We are out of work to do.
-			ev := apfl.lfStatus.Wait()
-			if ev&aplLFPending != 0 {
-				// We may have raced with MemoryFile.LoadFrom() inserting into
-				// asyncMemoryFileLoad.unloaded.
-				apfl.lfStatus.Ack(aplLFPending)
-				continue
-			}
-			if ev&aplLFDone != 0 {
+			if lfDone && apfl.allLoaded() {
 				// Successfully completed all loading for all MemoryFiles.
 				durTotal := time.Duration(gohacks.Nanotime() - timeStart)
 				apfl.mu.Lock()
 				log.Infof("Async page loading completed in %s (%d bytes, %.3f MB/s); %d waiters waited %v~%v for %d bytes", durTotal.Round(time.Millisecond), apfl.bytesLoaded, float64(apfl.bytesLoaded)*1e-6/durTotal.Seconds(), apfl.totalWaiters, apfl.durWaitedOne.Round(time.Millisecond), apfl.durWaitedTotal.Round(time.Millisecond), apfl.bytesWaited)
 				apfl.mu.Unlock()
 				return
+			}
+			// Wait for MemoryFile.LoadFrom() to insert into
+			// asyncMemoryFileLoad.unloaded, a caller to wait for unloaded
+			// pages, or all MemoryFiles to be registered.
+			ev := apfl.lfStatus.Wait()
+			if ev&aplLFPending != 0 {
+				apfl.lfStatus.Ack(aplLFPending)
+				continue
+			}
+			if ev&aplLFDone != 0 {
+				apfl.lfStatus.Ack(aplLFDone)
+				lfDone = true
+				continue
 			}
 			panic(fmt.Sprintf("unknown events in lfStatus: %#x", ev))
 		}

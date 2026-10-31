@@ -605,8 +605,53 @@ func (d DirectIO) String() string {
 	panic(fmt.Sprintf("invalid direct I/O mode %d", d))
 }
 
+// BackgroundLoad controls how checkpoint pages are loaded after a background
+// restore.
+type BackgroundLoad int
+
+// BackgroundLoad values.
+const (
+	// BackgroundLoadEager loads all pages as fast as possible.
+	BackgroundLoadEager BackgroundLoad = iota
+
+	// BackgroundLoadLazy loads pages only when the application faults on
+	// them or the next checkpoint needs them. Page faults never wait behind
+	// reads of other pages, but the pages file must stay available until the
+	// next checkpoint.
+	BackgroundLoadLazy
+)
+
+// Set implements flag.Value.
+func (b *BackgroundLoad) Set(v string) error {
+	switch v {
+	case "eager":
+		*b = BackgroundLoadEager
+	case "lazy":
+		*b = BackgroundLoadLazy
+	default:
+		return fmt.Errorf("invalid background load mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (b BackgroundLoad) Get() any {
+	return b
+}
+
+// String implements flag.Value.
+func (b BackgroundLoad) String() string {
+	switch b {
+	case BackgroundLoadEager:
+		return "eager"
+	case BackgroundLoadLazy:
+		return "lazy"
+	}
+	panic(fmt.Sprintf("invalid background load mode %d", b))
+}
+
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, directIO DirectIO, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, directIO DirectIO, background bool, backgroundLoad BackgroundLoad, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
 	waitRegisteredMetrics := s.fetchRegisteredMetrics()
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
@@ -627,6 +672,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	opt := sentryapi.RestoreOpts{
 		Background:     background,
+		LazyLoad:       background && backgroundLoad == BackgroundLoadLazy,
 		SplitFSRestore: s.FSRestore,
 	}
 	defer func() {

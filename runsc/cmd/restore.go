@@ -58,6 +58,9 @@ type Restore struct {
 	// uncompressed for background to work; if the checkpoint is compressed,
 	// background has no effect.
 	background bool
+
+	// backgroundLoad controls how pages are loaded if background is true.
+	backgroundLoad sandbox.BackgroundLoad
 }
 
 // Name implements subcommands.Command.Name.
@@ -83,6 +86,7 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.direct, "direct", false, "deprecated, use --direct-io=on")
 	f.Var(&r.directIO, "direct-io", "use O_DIRECT for reading checkpoint pages file. Values: auto|on|off (default auto). auto enables it for GPU restores if the filesystem supports it.")
 	f.BoolVar(&r.background, "background", true, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
+	f.Var(&r.backgroundLoad, "background-load", "how to load the image after restore exits. Values: eager|lazy (default eager). eager loads all pages as fast as possible. lazy loads pages only when the application faults on them or the next checkpoint needs them; the image must stay available until then. Requires --background.")
 
 	// Unimplemented flags necessary for compatibility with docker.
 
@@ -143,6 +147,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	if r.direct && r.directIO == sandbox.DirectIOAuto {
 		r.directIO = sandbox.DirectIOOn
 	}
+	if r.backgroundLoad == sandbox.BackgroundLoadLazy && !r.background {
+		return util.Errorf("background-load=lazy requires background")
+	}
 
 	var cu cleanup.Cleanup
 	defer cu.Clean()
@@ -202,7 +209,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	err = c.Restore(conf, r.imagePath, r.directIO, r.background, nil /* networkArgs */)
+	err = c.Restore(conf, r.imagePath, r.directIO, r.background, r.backgroundLoad, nil /* networkArgs */)
 	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}

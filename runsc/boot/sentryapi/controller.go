@@ -122,6 +122,11 @@ type RestoreOpts struct {
 	HaveDeviceFile bool
 	Background     bool
 
+	// If LazyLoad is true, checkpoint pages are read only when the
+	// application faults on them or the next checkpoint needs them.
+	// LazyLoad requires Background.
+	LazyLoad bool `json:"lazy_load"`
+
 	// If UseCheckpointGofer is true, the first file in FilePayload is a Unix
 	// domain socket connected to a URPC server implementing
 	// stateipc.AsyncFileServer and providing checkpoint files. In this case,

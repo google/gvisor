@@ -434,7 +434,7 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		// This immediately starts loading the main MemoryFile asynchronously.
 		// For background restore, throttle page loading until the kernel is
 		// restored, so that restore does not wait behind page reads.
-		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"), pgalloc.AsyncPagesFileLoadOpts{Throttled: o.Background}) // transfers ownership
+		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"), pgalloc.AsyncPagesFileLoadOpts{Throttled: o.Background, Lazy: o.LazyLoad}) // transfers ownership
 		pagesMetadata = nil
 		pagesFile = nil
 		timer.Reached("created async MF loader")
