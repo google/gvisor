@@ -237,6 +237,11 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		defer fdRelease()
 
 	case DmaCQCreate, DmaQPCreate, DmaSRQCreate:
+		if schema.Dma == DmaQPCreate {
+			if err := validateQPCreate(attrs); err != nil {
+				return 0, err
+			}
+		}
 		mp, err := fd.prepareCreateDMA(t, staged)
 		if err != nil {
 			log.Warningf("rdmaproxy: CQ/QP/SRQ CREATE page mirroring: %v", err)
@@ -421,6 +426,24 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		return n, errno
 	}
 	return n, nil
+}
+
+// validateQPCreate rejects QP modes with unsupported send queue layouts.
+func validateQPCreate(attrs []ib.UverbsAttr) error {
+	for i := range attrs {
+		switch attrs[i].AttrID {
+		case ib.UVERBS_ATTR_CREATE_QP_TYPE:
+			if attrs[i].Len != 8 {
+				return linuxerr.EINVAL
+			}
+			if attrs[i].Data == ib.IB_UVERBS_QPT_RAW_PACKET {
+				return linuxerr.EOPNOTSUPP
+			}
+		case ib.UVERBS_ATTR_CREATE_QP_SOURCE_QPN:
+			return linuxerr.EOPNOTSUPP
+		}
+	}
+	return nil
 }
 
 // copyInPtr stages a guest PTR_IN payload of len bytes into a fresh sentry
