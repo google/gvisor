@@ -1142,10 +1142,10 @@
   sha256: dbad4a23abcca6171e47b79edc53bd6a41067a3b75f9e8b104656b459ff25046
   license: Apache-2.0
 - dependency: protobuf
-  version: https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.bazel.tar.gz
-  retrieved: "2026-10-06"
-  commit: 35cd01f9fe9afbeea38cc7b979a3b6bfcde82c03
-  sha256: 75b7b0b36b630c7b6e3aeb07b2e58993fb9494fbb2b08bba0891aaa231d4e4d1
+  version: https://github.com/protocolbuffers/protobuf/releases/download/v37.0-rc1/protobuf-37.0-rc1.bazel.tar.gz
+  retrieved: "2026-10-23"
+  commit: 51a9b17260f86e7bbb30107d6241ddcec5fc4089
+  sha256: 21089c701f5932b74a0580a1fe3e9811df5bfca1133f80bcc3fe2b4db50d45af
   license: BSD-3-Clause
 - dependency: protoc-gen-validate
   version: https://github.com/bufbuild/protoc-gen-validate/archive/refs/tags/v1.3.0.tar.gz
