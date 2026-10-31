@@ -6412,6 +6412,73 @@ func TestCompatMASQTargetEvaluation(t *testing.T) {
 	})
 }
 
+// TestEvaluateMasqTruncatedTransportHeader tests that a masquerade operation
+// without a port range drops TCP and UDP packets whose transport header is
+// shorter than the minimum header size instead of reading the source port
+// past the end of the header.
+func TestEvaluateMasqTruncatedTransportHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		netProto    tcpip.NetworkProtocolNumber
+		transProto  tcpip.TransportProtocolNumber
+		transHdrLen int
+	}{
+		{name: "IPv4 TCP empty header", netProto: header.IPv4ProtocolNumber, transProto: header.TCPProtocolNumber, transHdrLen: 0},
+		{name: "IPv4 TCP 1-byte header", netProto: header.IPv4ProtocolNumber, transProto: header.TCPProtocolNumber, transHdrLen: 1},
+		{name: "IPv4 TCP header one byte too short", netProto: header.IPv4ProtocolNumber, transProto: header.TCPProtocolNumber, transHdrLen: header.TCPMinimumSize - 1},
+		{name: "IPv4 UDP empty header", netProto: header.IPv4ProtocolNumber, transProto: header.UDPProtocolNumber, transHdrLen: 0},
+		{name: "IPv4 UDP 1-byte header", netProto: header.IPv4ProtocolNumber, transProto: header.UDPProtocolNumber, transHdrLen: 1},
+		{name: "IPv4 UDP header one byte too short", netProto: header.IPv4ProtocolNumber, transProto: header.UDPProtocolNumber, transHdrLen: header.UDPMinimumSize - 1},
+		{name: "IPv6 TCP empty header", netProto: header.IPv6ProtocolNumber, transProto: header.TCPProtocolNumber, transHdrLen: 0},
+		{name: "IPv6 TCP 1-byte header", netProto: header.IPv6ProtocolNumber, transProto: header.TCPProtocolNumber, transHdrLen: 1},
+		{name: "IPv6 TCP header one byte too short", netProto: header.IPv6ProtocolNumber, transProto: header.TCPProtocolNumber, transHdrLen: header.TCPMinimumSize - 1},
+		{name: "IPv6 UDP empty header", netProto: header.IPv6ProtocolNumber, transProto: header.UDPProtocolNumber, transHdrLen: 0},
+		{name: "IPv6 UDP 1-byte header", netProto: header.IPv6ProtocolNumber, transProto: header.UDPProtocolNumber, transHdrLen: 1},
+		{name: "IPv6 UDP header one byte too short", netProto: header.IPv6ProtocolNumber, transProto: header.UDPProtocolNumber, transHdrLen: header.UDPMinimumSize - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pkt *stack.PacketBuffer
+			switch tc.netProto {
+			case header.IPv4ProtocolNumber:
+				fields := arbitraryIPv4Fields()
+				fields.TotalLength = uint16(header.IPv4MinimumSize + tc.transHdrLen)
+				fields.Protocol = uint8(tc.transProto)
+				pkt = makeIPv4Packet(header.IPv4MinimumSize+tc.transHdrLen, fields)
+			case header.IPv6ProtocolNumber:
+				fields := arbitraryIPv6Fields()
+				fields.PayloadLength = uint16(tc.transHdrLen)
+				fields.TransportProtocol = tc.transProto
+				pkt = makeIPv6Packet(header.IPv6MinimumSize+tc.transHdrLen, fields)
+			default:
+				t.Fatalf("unsupported network protocol: %d", tc.netProto)
+			}
+			defer pkt.DecRef()
+			// Adds a transport header shorter than the minimum header size.
+			pkt.TransportHeader().Push(tc.transHdrLen)
+			pkt.TransportProtocolNumber = tc.transProto
+
+			// Without a port range, the default range is picked based on the source
+			// port in the transport header.
+			op, err := newMasqOp(-1 /* sregProtoMin */, -1 /* sregProtoMax */, 0 /* flags */)
+			if err != nil {
+				t.Fatalf("newMasqOp() failed: %v", err)
+			}
+			regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("evaluate panicked: %v", r)
+				}
+			}()
+			// The packet must be dropped before masquerade is configured, so no
+			// route or NFTables state is needed.
+			op.evaluate(regs, opEvalCtx{pkt: pkt})
+			if got, want := regs.verdict.Code, VC(linux.NF_DROP); got != want {
+				t.Errorf("evaluate verdict = %s, want %s", VerdictCodeToString(got), VerdictCodeToString(want))
+			}
+		})
+	}
+}
+
 // TestCompatNATTargetEvaluation tests evaluation of compatNATTarget.
 func TestCompatNATTargetEvaluation(t *testing.T) {
 	t.Run("protocol mismatch skips NAT", func(t *testing.T) {
