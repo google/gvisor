@@ -422,11 +422,24 @@ func BenchmarkSaveToDiskBacked(b *testing.B) {
 }
 
 // shortPageBatch returns each set of queued reads together. If one is short,
-// put it between the successful reads so that they straddle the error.
+// put it between the successful reads so that they straddle the error. Like
+// the checkpoint gofer, it rejects destination registrations after Close.
 type shortPageBatch struct {
 	stateio.AsyncReader
-	queued int
-	sizes  []uint64
+	queued      int
+	sizes       []uint64
+	registerErr error
+}
+
+func (*shortPageBatch) NeedRegisterDestinationFD() bool { return true }
+
+func (r *shortPageBatch) RegisterDestinationFD(int32, uint64, []stateio.ClientFileRangeSetting) (stateio.DestinationFile, error) {
+	return nil, r.registerErr
+}
+
+func (r *shortPageBatch) Close() error {
+	r.registerErr = os.ErrClosed
+	return r.AsyncReader.Close()
 }
 
 func (r *shortPageBatch) AddRead(id int, off int64, file stateio.DestinationFile, fr memmap.FileRange, dst []byte) {
@@ -469,7 +482,22 @@ func TestAsyncLoadShortRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	dst := newSaveTestMemoryFile(t, "", false)
-	err = dst.LoadFrom(t.Context(), bytes.NewReader(meta), &LoadOpts{PagesFile: loader})
+	firstDone := make(chan error, 1)
+	opts := &LoadOpts{PagesFile: loader, DoneCallback: func(err error) { firstDone <- err }}
+	err = dst.LoadFrom(t.Context(), bytes.NewReader(meta), opts)
+	if err == nil {
+		t.Run("next file", func(t *testing.T) {
+			if got, want := <-firstDone, linuxerr.EIO; got != want {
+				t.Fatalf("first file: got %v, want %v", got, want)
+			}
+			next := newSaveTestMemoryFile(t, "", false)
+			err := next.LoadFrom(t.Context(), bytes.NewReader(meta), &LoadOpts{PagesFile: loader})
+			t.Cleanup(func() { next.DecRef(fr) })
+			if got, want := err, linuxerr.EIO; got != want {
+				t.Errorf("second file: got %v, want %v", got, want)
+			}
+		})
+	}
 	loader.MemoryFilesDone()
 	loadErr := <-done
 	if err != nil {
