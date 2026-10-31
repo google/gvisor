@@ -3970,6 +3970,174 @@ TEST(NetlinkRouteTest, LinkInfoKind) {
   EXPECT_EQ(link_kinds["lo"], "");
 }
 
+struct LinkRequest {
+  struct nlmsghdr hdr;
+  struct ifinfomsg ifm;
+  char buf[256];
+};
+
+// Builds an RTM_SETLINK request for the interface with the given index.
+LinkRequest GetSetLinkRequest(uint32_t seq, int family, int ifindex) {
+  LinkRequest req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  req.hdr.nlmsg_type = RTM_SETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = seq;
+  req.ifm.ifi_family = family;
+  req.ifm.ifi_index = ifindex;
+  return req;
+}
+
+// Appends a nested IFLA_PROTINFO that holds the given bridge port attributes.
+void AddBridgePortInfo(LinkRequest* req,
+                       const std::vector<std::pair<uint16_t, uint8_t>>& attrs) {
+  struct rtattr* protinfo = NLMSG_TAIL(&req->hdr);
+  addattr(&req->hdr, sizeof(*req), IFLA_PROTINFO | NLA_F_NESTED, nullptr, 0);
+  for (const auto& [type, value] : attrs) {
+    addattr(&req->hdr, sizeof(*req), type, &value, sizeof(value));
+  }
+  protinfo->rta_len = (uint64_t)NLMSG_TAIL(&req->hdr) - (uint64_t)protinfo;
+}
+
+// Creates a bridge "br0" with the veth "veth1" as a port, and the veth
+// "veth2", which is not on a bridge. Skips the test if the kernel has no
+// bridge.
+class BridgePortTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    SKIP_IF(IsRunningWithHostinet());
+
+    curr_nsfd_ =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+    restore_netns_ = true;
+
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+    ASSERT_NO_ERRNO(
+        NetlinkRequestAckOrError(fd_, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+    BridgeRequest br_req = GetBridgeRequest(kSeq + 1, "br0");
+    PosixError err =
+        NetlinkRequestAckOrError(fd_, kSeq + 1, &br_req, br_req.hdr.nlmsg_len);
+    // Native Linux kernels may not be built with CONFIG_BRIDGE.
+    SKIP_IF(!IsRunningOnGvisor() && err.errno_value() == EOPNOTSUPP);
+    ASSERT_NO_ERRNO(err);
+
+    veth1_ = if_nametoindex("veth1");
+    veth2_ = if_nametoindex("veth2");
+    br_ = if_nametoindex("br0");
+    ASSERT_NE(veth1_, 0);
+    ASSERT_NE(veth2_, 0);
+    ASSERT_NE(br_, 0);
+
+    LinkRequest master_req = GetSetLinkRequest(kSeq + 2, AF_UNSPEC, veth1_);
+    uint32_t master = br_;
+    addattr(&master_req.hdr, sizeof(master_req), IFLA_MASTER, &master,
+            sizeof(master));
+    ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd_, kSeq + 2, &master_req,
+                                             master_req.hdr.nlmsg_len));
+  }
+
+  void TearDown() override {
+    if (restore_netns_) {
+      EXPECT_THAT(setns(curr_nsfd_.get(), CLONE_NEWNET),
+                  SyscallSucceedsWithValue(0));
+    }
+  }
+
+  PosixError SetBridgePort(
+      int ifindex, const std::vector<std::pair<uint16_t, uint8_t>>& attrs) {
+    static uint32_t seq = kSeq + 100;
+    LinkRequest req = GetSetLinkRequest(++seq, AF_BRIDGE, ifindex);
+    AddBridgePortInfo(&req, attrs);
+    return NetlinkRequestAckOrError(fd_, seq, &req, req.hdr.nlmsg_len);
+  }
+
+  FileDescriptor fd_;
+  FileDescriptor curr_nsfd_;
+  bool restore_netns_ = false;
+  int veth1_ = 0;
+  int veth2_ = 0;
+  int br_ = 0;
+};
+
+TEST_F(BridgePortTest, SetHairpinAndLearning) {
+  EXPECT_NO_ERRNO(SetBridgePort(veth1_, {{IFLA_BRPORT_MODE, 1}}));
+  EXPECT_NO_ERRNO(SetBridgePort(veth1_, {{IFLA_BRPORT_MODE, 0}}));
+  EXPECT_NO_ERRNO(SetBridgePort(veth1_, {{IFLA_BRPORT_LEARNING, 0}}));
+  EXPECT_NO_ERRNO(SetBridgePort(
+      veth1_, {{IFLA_BRPORT_MODE, 1}, {IFLA_BRPORT_LEARNING, 1}}));
+}
+
+TEST_F(BridgePortTest, SetNoAttributes) {
+  uint32_t seq = kSeq + 50;
+  LinkRequest req = GetSetLinkRequest(seq, AF_BRIDGE, veth1_);
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd_, seq, &req, req.hdr.nlmsg_len));
+}
+
+TEST_F(BridgePortTest, SetUnknownInterface) {
+  EXPECT_THAT(SetBridgePort(veth1_ + 100, {{IFLA_BRPORT_MODE, 1}}),
+              PosixErrorIs(ENODEV, _));
+}
+
+TEST_F(BridgePortTest, SetNotBridgePort) {
+  EXPECT_THAT(SetBridgePort(veth2_, {{IFLA_BRPORT_MODE, 1}}),
+              PosixErrorIs(EOPNOTSUPP, _));
+
+  // The bridge is not a port of a bridge either.
+  EXPECT_THAT(SetBridgePort(br_, {{IFLA_BRPORT_MODE, 1}}),
+              PosixErrorIs(EOPNOTSUPP, _));
+}
+
+TEST_F(BridgePortTest, SetEmptyAttribute) {
+  uint32_t seq = kSeq + 51;
+  auto request = [&seq](int ifindex) {
+    LinkRequest req = GetSetLinkRequest(++seq, AF_BRIDGE, ifindex);
+    struct rtattr* protinfo = NLMSG_TAIL(&req.hdr);
+    addattr(&req.hdr, sizeof(req), IFLA_PROTINFO | NLA_F_NESTED, nullptr, 0);
+    addattr(&req.hdr, sizeof(req), IFLA_BRPORT_MODE, nullptr, 0);
+    protinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)protinfo;
+    return req;
+  };
+  LinkRequest req = request(veth1_);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd_, seq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(ERANGE, _));
+
+  // Linux reports that veth2 is not a bridge port before the bad attribute;
+  // gVisor reports the bad attribute.
+  req = request(veth2_);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd_, seq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(AnyOf(EOPNOTSUPP, ERANGE), _));
+}
+
+// Linux applies the flags that gVisor does not model, so only gVisor rejects
+// them. They are not sent to Linux so that the test never changes a port there.
+TEST_F(BridgePortTest, SetUnmodeledFlagRejected) {
+  SKIP_IF(!IsRunningOnGvisor());
+  EXPECT_THAT(SetBridgePort(veth1_, {{IFLA_BRPORT_GUARD, 1}}),
+              PosixErrorIs(EOPNOTSUPP, _));
+  // The request is rejected as a whole.
+  EXPECT_THAT(
+      SetBridgePort(veth1_, {{IFLA_BRPORT_MODE, 1}, {IFLA_BRPORT_GUARD, 1}}),
+      PosixErrorIs(EOPNOTSUPP, _));
+
+  // So are the spanning tree port state, which is a non-nested IFLA_PROTINFO,
+  // and IFLA_AF_SPEC.
+  uint32_t seq = kSeq + 52;
+  LinkRequest req = GetSetLinkRequest(seq, AF_BRIDGE, veth1_);
+  uint8_t state = 0;
+  addattr(&req.hdr, sizeof(req), IFLA_PROTINFO, &state, sizeof(state));
+  EXPECT_THAT(NetlinkRequestAckOrError(fd_, seq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(EOPNOTSUPP, _));
+
+  seq = kSeq + 53;
+  req = GetSetLinkRequest(seq, AF_BRIDGE, veth1_);
+  addattr(&req.hdr, sizeof(req), IFLA_AF_SPEC | NLA_F_NESTED, nullptr, 0);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd_, seq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(EOPNOTSUPP, _));
+}
+
 struct RouteRequest {
   struct nlmsghdr hdr;
   struct rtmsg rtm;

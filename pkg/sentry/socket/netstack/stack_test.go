@@ -20,10 +20,14 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -72,5 +76,60 @@ func TestRemoveRouteRemovesFirstMatchOnly(t *testing.T) {
 	}
 	if err := delRoute(); err != syserr.ErrNoProcess {
 		t.Fatalf("third RemoveRoute = %v, want %v", err, syserr.ErrNoProcess)
+	}
+}
+
+func TestSetBridgePort(t *testing.T) {
+	const (
+		bridgeID = 1
+		portID   = 2
+		loneID   = 3
+	)
+	s := &netstack.Stack{Stack: stack.New(stack.Options{})}
+	defer s.Stack.Destroy()
+	if err := s.Stack.CreateNIC(bridgeID, stack.NewBridgeEndpoint(1500)); err != nil {
+		t.Fatalf("CreateNIC(%d): %s", bridgeID, err)
+	}
+	for _, id := range []tcpip.NICID{portID, loneID} {
+		ch := channel.New(1, header.EthernetMinimumSize, "\x02\x02\x03\x04\x05\x06")
+		defer ch.Close()
+		if err := s.Stack.CreateNIC(id, ethernet.New(ch)); err != nil {
+			t.Fatalf("CreateNIC(%d): %s", id, err)
+		}
+	}
+	if err := s.Stack.SetNICCoordinator(portID, bridgeID); err != nil {
+		t.Fatalf("SetNICCoordinator(%d, %d): %s", portID, bridgeID, err)
+	}
+
+	wantFlags := func(want stack.BridgePortFlags) {
+		t.Helper()
+		if got, err := s.Stack.BridgePortFlags(portID); err != nil || got != want {
+			t.Errorf("BridgePortFlags(%d) = %#x, %v, want %#x", portID, got, err, want)
+		}
+	}
+	ctx := context.Background()
+	on, off := true, false
+
+	if err := s.SetBridgePort(ctx, portID, inet.BridgePortConfig{Hairpin: &on, Learning: &off}); err != nil {
+		t.Fatalf("SetBridgePort(hairpin on, learning off) = %v", err)
+	}
+	wantFlags(stack.BridgePortHairpin)
+	if err := s.SetBridgePort(ctx, portID, inet.BridgePortConfig{Learning: &on}); err != nil {
+		t.Fatalf("SetBridgePort(learning on) = %v", err)
+	}
+	wantFlags(stack.BridgePortHairpin | stack.BridgePortLearning)
+
+	for _, test := range []struct {
+		name string
+		id   int32
+		want *syserr.Error
+	}{
+		{"unknown interface", 99, syserr.ErrUnknownNICID},
+		{"interface without a bridge", loneID, syserr.ErrNotSupported},
+		{"the bridge itself", bridgeID, syserr.ErrNotSupported},
+	} {
+		if err := s.SetBridgePort(ctx, test.id, inet.BridgePortConfig{Hairpin: &on}); err != test.want {
+			t.Errorf("%s: SetBridgePort() = %v, want %v", test.name, err, test.want)
+		}
 	}
 }
