@@ -350,6 +350,11 @@ func (d *Dentry) releaseKeptDentriesLocked(ctx context.Context) {
 	}
 }
 
+// DrainDentryCache implements vfs.FilesystemImpl.DrainDentryCache.
+func (fs *Filesystem) DrainDentryCache(ctx context.Context) error {
+	return linuxerr.EOPNOTSUPP
+}
+
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *Filesystem) Sync(ctx context.Context) error {
 	// All filesystem state is in-memory.

@@ -3235,6 +3235,13 @@ func SetUserMappings(spec *specs.Spec, pid int) error {
 	return nil
 }
 
+// DrainDentryCache drains unused dentries in the filesystem selected by path in
+// the container's init process view. It does not disable caching or pause tasks.
+func (s *Sandbox) DrainDentryCache(cid, path string) error {
+	args := sentryapi.DrainDentryCacheArgs{ContainerID: cid, Path: path}
+	return s.call(sentryapi.ContMgrDrainDentryCache, &args, nil)
+}
+
 // Mount mounts a filesystem in a container.
 func (s *Sandbox) Mount(cid, fstype, src, dest string) error {
 	var files []*os.File

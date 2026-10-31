@@ -53,7 +53,7 @@ func (fs *filesystem) PrepareSave(ctx context.Context, opts vfs.PrepareSaveOptio
 	// Purge cached dentries, which may not be reopenable after restore due to
 	// permission changes.
 	fs.renameMu.Lock()
-	fs.evictAllCachedDentriesLocked(ctx)
+	fs.evictAllCachedDentriesLocked(ctx, false /* keepRenameMu */)
 	fs.renameMu.Unlock()
 	fs.savedDentryRW = make(map[*dentry]savedDentryRW)
 
