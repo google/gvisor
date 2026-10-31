@@ -48,11 +48,6 @@ const (
 type rackControl struct {
 	TCPRACKState
 
-	// exitedRecovery indicates if the connection is exiting loss recovery.
-	// This flag is set if the sender is leaving the recovery after
-	// receiving an ACK and is reset during updating of reorder window.
-	exitedRecovery bool
-
 	// minRTT is the estimated minimum RTT of the connection.
 	minRTT time.Duration
 
@@ -301,7 +296,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 //
 // +checklocks:rc.snd.ep.mu
 // +checklocksexclude:rc.snd.rtt.rttMutex
-func (rc *rackControl) updateRACKReorderWindow() {
+func (rc *rackControl) updateRACKReorderWindow(exitedRecovery bool) {
 	dsackSeen := rc.DSACKSeen
 	snd := rc.snd
 
@@ -322,16 +317,15 @@ func (rc *rackControl) updateRACKReorderWindow() {
 		dsackSeen = false
 		rc.RTTSeq = snd.SndNxt
 		rc.ReoWndPersist = tcpRACKRecoveryThreshold
-	} else if rc.exitedRecovery {
+	} else if exitedRecovery && rc.ReoWndPersist > 0 {
 		// Else if exiting loss recovery:
 		//   RACK.reo_wnd_persist -= 1
 		//   If RACK.reo_wnd_persist <= 0:
 		//      RACK.reo_wnd_incr = 1
 		rc.ReoWndPersist--
-		if rc.ReoWndPersist <= 0 {
+		if rc.ReoWndPersist == 0 {
 			rc.ReoWndIncr = 1
 		}
-		rc.exitedRecovery = false
 	}
 
 	// Reorder window is zero during loss recovery, or when the number of
@@ -365,10 +359,6 @@ func (rc *rackControl) updateRACKReorderWindow() {
 	if srtt < rc.ReoWnd {
 		rc.ReoWnd = srtt
 	}
-}
-
-func (rc *rackControl) exitRecovery() {
-	rc.exitedRecovery = true
 }
 
 // detectLoss marks the segment as lost if the reordering window has elapsed
