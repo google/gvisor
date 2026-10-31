@@ -53,6 +53,8 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_alpine=//images/basic:alpine_context \
   basic_busybox=//images/basic:busybox_context \
   basic_fsstress=//images/basic:fsstress_context \
+  basic_nginx=//images/basic:nginx_context \
+  basic_redis=//images/basic:redis_context \
   basic_tmpfile=//images/basic:tmpfile_context \
   benchmarks_bun-spawn=//images/benchmarks/bun-spawn:bun_spawn_context
 ifeq ($(ARCH),x86_64)
