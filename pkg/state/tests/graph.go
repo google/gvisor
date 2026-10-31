@@ -748,3 +748,24 @@ func (n *gCallbackNode) afterLoad(ctx context.Context) {
 		*logPtr = append(*logPtr, n.name+":afterLoad")
 	}
 }
+
+// +stateify savable
+type gConvertedBox struct {
+	a     int64
+	b     string
+	inner any
+	extra int64 `state:"nosave"`
+}
+
+// +stateify savable
+type gNestedValue struct {
+	v gConvertedBox `state:".(gConvertedBox)"`
+}
+
+func (n *gNestedValue) saveV() gConvertedBox {
+	return n.v
+}
+
+func (n *gNestedValue) loadV(_ context.Context, v gConvertedBox) {
+	n.v = v
+}

@@ -43,13 +43,11 @@ type decObject struct {
 type decodeCallback struct {
 	// fn is a user callback.
 	fn func()
-	// valueFn is called with value.
-	valueFn func(any)
-	value   any
 	// afterLoader is a generated AfterLoad callback.
 	afterLoader AfterLoader
 	// valueLoader is called with slot and value.
 	valueLoader ValueLoader
+	value       any
 	slot        int
 	// waiter is an object that waits for the object, or -1.
 	waiter int32
@@ -413,7 +411,7 @@ func (ds *graphDecodeState) noteRef(obj int32, t unsafe.Pointer, ti *typeInfo) {
 
 // user returns true if cb runs user code.
 func (cb *decodeCallback) user() bool {
-	return cb.fn != nil || cb.valueFn != nil || cb.afterLoader != nil || cb.valueLoader != nil
+	return cb.fn != nil || cb.afterLoader != nil || cb.valueLoader != nil
 }
 
 func (ds *graphDecodeState) appendCallback(head, tail *int32, cb decodeCallback) {
@@ -447,9 +445,6 @@ func (ds *graphDecodeState) runCallback(cb *decodeCallback) {
 	case cb.fn != nil:
 		ds.hooks++
 		cb.fn()
-	case cb.valueFn != nil:
-		ds.hooks++
-		cb.valueFn(cb.value)
 	case cb.afterLoader != nil:
 		ds.hooks++
 		cb.afterLoader.StateAfterLoad(ds.ctx)

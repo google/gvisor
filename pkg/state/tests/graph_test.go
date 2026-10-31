@@ -1330,3 +1330,43 @@ func TestBothEnginesStatefulCallbacks(t *testing.T) {
 	crossGraph := loadBytes[gRoot](t, gRun.data)
 	checkIsomorphic(t, wRun.loaded, crossGraph)
 }
+
+func TestNestedValueConversion(t *testing.T) {
+	forEachEngine(t, func(t *testing.T) {
+		saved := &[3]gNestedValue{
+			{v: gConvertedBox{a: 1, b: "warm"}},
+			{
+				v: gConvertedBox{
+					a: 10,
+					b: "outer",
+					inner: gNestedValue{
+						v: gConvertedBox{
+							a: 20,
+							b: "middle",
+							inner: gNestedValue{
+								v: gConvertedBox{a: 30, b: "inner"},
+							},
+						},
+					},
+				},
+			},
+			{v: gConvertedBox{a: 2, b: "after"}},
+		}
+
+		var buf bytes.Buffer
+		if _, err := state.Save(t.Context(), &buf, saved); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var out bytes.Buffer
+		if err := pretty.PrintText(&out, bytes.NewReader(buf.Bytes())); err != nil {
+			t.Fatalf("PrintText: %v", err)
+		}
+		var got [3]gNestedValue
+		if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &got); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got != *saved {
+			t.Fatalf("Load = %#v, want %#v", got, *saved)
+		}
+	})
+}

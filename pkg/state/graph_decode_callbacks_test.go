@@ -18,7 +18,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1065,4 +1067,308 @@ func TestGraphDecodeMapPopulatedBeforeCallbacks(t *testing.T) {
 			}
 		})
 	}
+}
+
+type refSnapshotVal struct {
+	p *int
+	n int64
+}
+
+func (*refSnapshotVal) StateTypeName() string { return "state.refSnapshotVal" }
+func (*refSnapshotVal) StateFields() []string { return []string{"p", "n"} }
+func (x *refSnapshotVal) StateSave(s Sink) {
+	s.Save(0, &x.p)
+	s.Save(1, &x.n)
+}
+func (x *refSnapshotVal) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &x.p)
+	s.Load(1, &x.n)
+}
+
+type deferredSnapshotVal struct {
+	a, b int64
+}
+
+func (*deferredSnapshotVal) StateTypeName() string { return "state.deferredSnapshotVal" }
+func (*deferredSnapshotVal) StateFields() []string { return []string{"a", "b"} }
+func (x *deferredSnapshotVal) StateSave(s Sink) {
+	s.Save(0, &x.a)
+	s.Save(1, &x.b)
+}
+func (x *deferredSnapshotVal) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &x.a)
+	s.Load(1, &x.b)
+	s.AfterLoad(func() {})
+}
+
+type loadValueSnapshotNode struct {
+	scalar      int64
+	pair        [2]int64
+	waitPair    [2]*int
+	refVal      refSnapshotVal
+	deferredVal deferredSnapshotVal
+
+	retainedScalar   any
+	retainedPair     any
+	retainedWait     any
+	retainedRef      any
+	retainedDeferred any
+}
+
+func (*loadValueSnapshotNode) StateTypeName() string { return "state.loadValueSnapshotNode" }
+func (*loadValueSnapshotNode) StateFields() []string {
+	return []string{"scalar", "pair", "waitPair", "refVal", "deferredVal"}
+}
+func (n *loadValueSnapshotNode) StateSave(s Sink) {
+	s.SaveValue(0, n.scalar)
+	s.SaveValue(1, n.pair)
+	s.SaveValue(2, n.waitPair)
+	s.SaveValue(3, n.refVal)
+	s.SaveValue(4, n.deferredVal)
+}
+func (n *loadValueSnapshotNode) StateLoad(_ context.Context, s Source) {
+	s.LoadValue(0, &n.scalar, func(v any) {
+		n.retainedScalar = v
+		n.scalar = -1
+	})
+	s.LoadValue(1, &n.pair, func(v any) {
+		n.retainedPair = v
+		n.pair = [2]int64{-1, -2}
+	})
+	s.LoadValue(2, &n.waitPair, func(v any) {
+		n.retainedWait = v
+	})
+	s.LoadValue(3, &n.refVal, func(v any) {
+		n.retainedRef = v
+	})
+	s.LoadValue(4, &n.deferredVal, func(v any) {
+		n.retainedDeferred = v
+	})
+	s.AfterLoad(func() {
+		other := 999
+		n.waitPair = [2]*int{&other, &other}
+		n.refVal = refSnapshotVal{p: &other, n: -1}
+		n.deferredVal = deferredSnapshotVal{a: -1, b: -2}
+	})
+}
+
+type loadValueSnapshotRoot struct {
+	dep  *int
+	node *loadValueSnapshotNode
+}
+
+func (*loadValueSnapshotRoot) StateTypeName() string { return "state.loadValueSnapshotRoot" }
+func (*loadValueSnapshotRoot) StateFields() []string { return []string{"dep", "node"} }
+func (r *loadValueSnapshotRoot) StateSave(s Sink) {
+	s.Save(0, &r.dep)
+	s.Save(1, &r.node)
+}
+func (r *loadValueSnapshotRoot) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &r.dep)
+	s.Load(1, &r.node)
+}
+
+var registerLoadValueSnapshotTypes = sync.OnceFunc(func() {
+	Register((*refSnapshotVal)(nil))
+	Register((*deferredSnapshotVal)(nil))
+	Register((*loadValueSnapshotNode)(nil))
+	Register((*loadValueSnapshotRoot)(nil))
+	fingerprint.Store(0)
+})
+
+func TestLoadValueSnapshot(t *testing.T) {
+	registerLoadValueSnapshotTypes()
+
+	prev := GraphEngineEnabled()
+	defer EnableGraphEngine(prev)
+
+	for _, tc := range []struct {
+		name  string
+		graph bool
+	}{
+		{name: "wire", graph: false},
+		{name: "graph", graph: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			EnableGraphEngine(tc.graph)
+			dep := 42
+			saved := loadValueSnapshotRoot{
+				dep: &dep,
+				node: &loadValueSnapshotNode{
+					scalar:      17,
+					pair:        [2]int64{11, 22},
+					waitPair:    [2]*int{&dep, &dep},
+					refVal:      refSnapshotVal{p: &dep, n: 9},
+					deferredVal: deferredSnapshotVal{a: 5, b: 8},
+				},
+			}
+
+			var buf bytes.Buffer
+			if _, err := Save(t.Context(), &buf, &saved); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			var loaded loadValueSnapshotRoot
+			if _, err := Load(t.Context(), &buf, &loaded); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+
+			got := loaded.node
+			if got.retainedScalar != int64(17) {
+				t.Errorf("retainedScalar = %#v, want int64(17)", got.retainedScalar)
+			}
+			if got.retainedPair != ([2]int64{11, 22}) {
+				t.Errorf("retainedPair = %#v, want [2]int64{11, 22}", got.retainedPair)
+			}
+			wp, ok := got.retainedWait.([2]*int)
+			if !ok || wp[0] == nil || *wp[0] != 42 || wp[1] != wp[0] {
+				t.Errorf("retainedWait = %#v, want [2]*int pointing to 42", got.retainedWait)
+			}
+			rv, ok := got.retainedRef.(refSnapshotVal)
+			if !ok || rv.p == nil || *rv.p != 42 || rv.n != 9 {
+				t.Errorf("retainedRef = %#v, want refSnapshotVal{*p=42, n=9}", got.retainedRef)
+			}
+			wantDeferred := deferredSnapshotVal{a: 5, b: 8}
+			if got.retainedDeferred != wantDeferred {
+				t.Errorf("retainedDeferred = %#v, want %#v", got.retainedDeferred, wantDeferred)
+			}
+		})
+	}
+}
+
+func TestZeroSizedSliceLargeCapacity(t *testing.T) {
+	prev := GraphEngineEnabled()
+	EnableGraphEngine(true)
+	defer EnableGraphEngine(prev)
+
+	for _, c := range []int{7, 1 << 40, (1 << 40) + 1, math.MaxInt} {
+		saved := make([]struct{}, 0, c)
+		var buf bytes.Buffer
+		if _, err := Save(t.Context(), &buf, &saved); err != nil {
+			t.Fatalf("Save(cap=%d): %v", c, err)
+		}
+		allBytes := buf.Bytes()
+		wr := wire.Reader{Reader: bytes.NewReader(allBytes)}
+		hdr, err := ReadHeaderMode(&wr)
+		if err != nil {
+			t.Fatalf("ReadHeaderMode(cap=%d): %v", c, err)
+		}
+		raw := allBytes[len(allBytes)-int(hdr.Length):]
+		var printed strings.Builder
+		if err := PrintGraph(&printed, raw, 0, false); err != nil {
+			t.Fatalf("PrintGraph(cap=%d): %v", c, err)
+		}
+		wantSub := fmt.Sprintf("[:0:%d]", c)
+		if !strings.Contains(printed.String(), wantSub) {
+			t.Errorf("PrintGraph(cap=%d) = %q, want substring %q", c, printed.String(), wantSub)
+		}
+		var loaded []struct{}
+		if _, err := Load(t.Context(), &buf, &loaded); err != nil {
+			t.Fatalf("Load(cap=%d): %v", c, err)
+		}
+		if loaded == nil || len(loaded) != 0 || cap(loaded) != c {
+			t.Errorf("Load(cap=%d): nil=%v len=%d cap=%d", c, loaded == nil, len(loaded), cap(loaded))
+		}
+	}
+
+	// Capacities exceeding math.MaxInt must be rejected cleanly.
+	var tt typeTable
+	idx := tt.rootIndex(typeInfoOf(reflect.TypeFor[[]struct{}]()))
+	var raw encBuf
+	raw.uint32(streamMagic)
+	raw.uint64(schemaFingerprint())
+	raw.uvarint(uint64(len(tt.types)))
+	raw.bytes(tt.buf.b)
+	raw.uvarint(1)
+	raw.byte(objKindValue)
+	raw.uvarint(uint64(idx))
+	raw.uvarint(0)
+	raw.uvarint(1) // length + 1 => length = 0
+	raw.uvarint(uint64(math.MaxInt) + 1)
+	var out []struct{}
+	if _, err := loadGraph(t.Context(), bytes.NewReader(raw.b), &out, uint64(len(raw.b)), 0); err == nil || !strings.Contains(err.Error(), "invalid slice capacity") {
+		t.Fatalf("loadGraph(MaxInt+1) = %v, want invalid slice capacity error", err)
+	}
+}
+
+type scratchAliasVal struct {
+	payload   *[4096]byte
+	aliasSelf bool
+}
+
+func (*scratchAliasVal) StateTypeName() string { return "state.scratchAliasVal" }
+func (*scratchAliasVal) StateFields() []string { return []string{"payload", "aliasSelf", "selfPtr"} }
+func (v *scratchAliasVal) StateSave(s Sink) {
+	s.Save(0, &v.payload)
+	s.Save(1, &v.aliasSelf)
+	var selfPtr *bool
+	if v.aliasSelf {
+		selfPtr = &v.aliasSelf
+	}
+	s.SaveValue(2, selfPtr)
+}
+func (v *scratchAliasVal) StateLoad(_ context.Context, s Source) {
+	s.Load(0, &v.payload)
+	s.Load(1, &v.aliasSelf)
+	s.LoadValue(2, new(*bool), func(any) {})
+}
+
+var registerScratchAliasTypes = sync.OnceFunc(func() {
+	Register((*scratchAliasVal)(nil))
+	fingerprint.Store(0)
+})
+
+func TestPooledEncoderScratchReleasesPointers(t *testing.T) {
+	registerScratchAliasTypes()
+	ti := typeInfoOf(reflect.TypeFor[scratchAliasVal]())
+	if !ti.inlineStruct || ti.direct {
+		t.Fatalf("scratchAliasVal must have inlineStruct=true and direct=false (got inlineStruct=%v direct=%v)", ti.inlineStruct, ti.direct)
+	}
+
+	collected := make(chan struct{}, 1)
+	func() {
+		userAlloc := new([4096]byte)
+		userAlloc[0] = 42
+		runtime.AddCleanup(userAlloc, func(ch chan struct{}) {
+			ch <- struct{}{}
+		}, collected)
+
+		// Element 0 populates es.copies[ti]; element 1 pops that copy slot,
+		// copies userAlloc into it, and aliases the copy so it is not returned
+		// to es.copies[ti].
+		saved := [2]any{
+			scratchAliasVal{aliasSelf: false},
+			scratchAliasVal{payload: userAlloc, aliasSelf: true},
+		}
+		var buf bytes.Buffer
+		if _, err := saveGraph(t.Context(), &buf, &saved); err != nil {
+			t.Fatalf("saveGraph: %v", err)
+		}
+	}()
+
+	// Hold all currently pooled encoders alive across GC so sync.Pool eviction
+	// cannot mask any pointer retained inside a pooled graphEncodeState.
+	var held []any
+	for {
+		v := graphEncodeStatePool.Get()
+		if v == nil {
+			break
+		}
+		held = append(held, v)
+	}
+	defer func() {
+		for _, v := range held {
+			graphEncodeStatePool.Put(v)
+		}
+		runtime.KeepAlive(held)
+	}()
+
+	for i := 0; i < 4; i++ {
+		runtime.GC()
+		select {
+		case <-collected:
+			return
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	t.Fatal("pooled graphEncodeState retained user allocation across GC")
 }

@@ -16,6 +16,7 @@ package state
 
 import (
 	"encoding/binary"
+	"math"
 	"reflect"
 	"unsafe"
 )
@@ -343,7 +344,7 @@ func (ds *graphDecodeState) decodeSlice(ti *typeInfo, h *sliceHeader) {
 	}
 	length := v - 1
 	capacity := length + d.uvarint()
-	if capacity < length || capacity > 1<<40 {
+	if capacity < length || capacity > uint64(math.MaxInt) {
 		Failf("invalid slice capacity %d", capacity)
 	}
 	esz := ti.elem.size
@@ -361,6 +362,9 @@ func (ds *graphDecodeState) decodeSlice(ti *typeInfo, h *sliceHeader) {
 	if capacity == 0 {
 		*h = sliceHeader{data: zeroSizedPtr(), len: int(length), cap: 0}
 		return
+	}
+	if capacity > 1<<40 {
+		Failf("invalid slice capacity %d", capacity)
 	}
 	t, obj := ds.target(d.uvarint() + 1)
 	if obj < 0 || t == nil {

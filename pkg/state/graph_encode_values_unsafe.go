@@ -211,6 +211,7 @@ func (es *graphEncodeState) encodeValueCopy(ti *typeInfo, p unsafe.Pointer) {
 	var c reflect.Value
 	if n := len(free); n > 0 {
 		c = free[n-1]
+		free[n-1] = reflect.Value{}
 		es.copies[ti] = free[:n-1]
 	} else {
 		c = reflect.New(ti.typ).Elem()
