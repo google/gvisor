@@ -41,6 +41,58 @@ const (
 	mtu          = header.TCPMinimumSize + header.IPv4MinimumSize + e2e.MaxTCPOptionSize + maxPayload
 )
 
+func TestReceiverDSACK(t *testing.T) {
+	for _, sackPermitted := range []bool{true, false} {
+		t.Run(fmt.Sprintf("SACK=%t", sackPermitted), func(t *testing.T) {
+			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
+			e2e.SetStackSACKPermitted(t, c, true)
+			rep := c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{SACKPermitted: sackPermitted})
+			first := rep.NextSeqNum
+			send := func(seq seqnum.Value, payload string, wantAck seqnum.Value, blocks ...header.SACKBlock) {
+				t.Helper()
+				rep.NextSeqNum = seq
+				rep.SendPacket([]byte(payload), nil)
+				rep.NextSeqNum = wantAck
+				if !sackPermitted {
+					blocks = nil
+				}
+				rep.VerifyACKHasSACK(blocks)
+			}
+
+			// An empty keepalive and data beyond the window report no
+			// duplicate payload.
+			send(first-1, "", first)
+			send(first+(1<<30), "x", first)
+			send(first, "abcd", first+4)
+
+			// A queued range remains in the ACK after the duplicate block.
+			queued := header.SACKBlock{Start: first + 7, End: first + 9}
+			send(first+7, "hi", first+4, queued)
+			send(first, "abc", first+4, header.SACKBlock{Start: first, End: first + 3}, queued)
+
+			// Only "cd" is duplicate. The new bytes fill the gap and advance
+			// the cumulative ACK through the queued range.
+			send(first+2, "cdefg", first+9, header.SACKBlock{Start: first + 2, End: first + 4})
+			send(first+9, "j", first+10)
+
+			// Queue the final data and FIN. Filling the gap with an overlapping
+			// segment must report its duplicate byte in the FIN ACK.
+			rep.Flags |= header.TCPFlagFin
+			send(first+12, "mn", first+10, header.SACKBlock{Start: first + 12, End: first + 14})
+			rep.Flags &^= header.TCPFlagFin
+			send(first+9, "jkl", first+15, header.SACKBlock{Start: first + 9, End: first + 10})
+
+			// A retransmission in CLOSE-WAIT includes the FIN sequence number.
+			rep.Flags |= header.TCPFlagFin
+			send(first+12, "mn", first+15, header.SACKBlock{Start: first + 12, End: first + 15})
+			if sackPermitted {
+				send(first+14, "", first+15, header.SACKBlock{Start: first + 14, End: first + 15})
+			}
+		})
+	}
+}
+
 // TestSackPermittedConnect establishes a connection with the SACK option
 // enabled.
 func TestSackPermittedConnect(t *testing.T) {
