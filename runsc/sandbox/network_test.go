@@ -1011,3 +1011,76 @@ func TestPrimaryInterface(t *testing.T) {
 		})
 	}
 }
+
+func TestKeepHostAddrs(t *testing.T) {
+	testCases := []struct {
+		name          string
+		keepHostAddrs string
+		linkName      string
+		want          bool
+	}{
+		{
+			name:          "empty list keeps nothing",
+			keepHostAddrs: "",
+			linkName:      "pn0",
+			want:          false,
+		},
+		{
+			name:          "single exact match",
+			keepHostAddrs: "pn0",
+			linkName:      "pn0",
+			want:          true,
+		},
+		{
+			name:          "single no match",
+			keepHostAddrs: "pn0",
+			linkName:      "eth0",
+			want:          false,
+		},
+		{
+			name:          "match in a multi-entry list",
+			keepHostAddrs: "pn0,pn1,pn2",
+			linkName:      "pn1",
+			want:          true,
+		},
+		{
+			name:          "no match in a multi-entry list",
+			keepHostAddrs: "pn0,pn1,pn2",
+			linkName:      "eth0",
+			want:          false,
+		},
+		{
+			name:          "surrounding whitespace is trimmed",
+			keepHostAddrs: "pn0, pn1 , pn2",
+			linkName:      "pn1",
+			want:          true,
+		},
+		{
+			name:          "match is exact, not a prefix",
+			keepHostAddrs: "pn0",
+			linkName:      "pn",
+			want:          false,
+		},
+		{
+			name:          "match is exact, not an extension",
+			keepHostAddrs: "pn0",
+			linkName:      "pn00",
+			want:          false,
+		},
+		{
+			name:          "trailing empty entry does not match a real interface",
+			keepHostAddrs: "pn0,",
+			linkName:      "eth0",
+			want:          false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{KeepHostAddrs: tc.keepHostAddrs}
+			if got := keepHostAddrs(conf, tc.linkName); got != tc.want {
+				t.Errorf("keepHostAddrs(%q, %q) = %v, want %v", tc.keepHostAddrs, tc.linkName, got, tc.want)
+			}
+		})
+	}
+}
