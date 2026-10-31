@@ -18,8 +18,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/rand"
 )
 
@@ -61,6 +64,49 @@ func TestBufReader(t *testing.T) {
 					})
 				}
 			}
+		}
+	}
+}
+
+func TestBufReaderFDReader(t *testing.T) {
+	// The file length is not a multiple of the chunk length, so the last read
+	// is short and the reads after it are past the end of the file.
+	const (
+		maxReadBytes = 64 << 10
+		dataLen      = 5*maxReadBytes + 123
+	)
+	data := make([]byte, dataLen)
+	_, _ = rand.Read(data)
+	path := filepath.Join(t.TempDir(), "state")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	for _, maxParallel := range []int{1, 4, 8} {
+		for _, maxBufSize := range []int{maxReadBytes, 4 * maxReadBytes, 2 * dataLen} {
+			t.Run(fmt.Sprintf("MaxParallel%d_MaxBufSize%d", maxParallel, maxBufSize), func(t *testing.T) {
+				fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC, 0)
+				if err != nil {
+					t.Fatalf("Open failed: %v", err)
+				}
+				r, err := NewBufReader(NewFDReader(int32(fd), maxReadBytes, 1 /* maxRanges */, maxParallel), maxBufSize)
+				if err != nil {
+					t.Fatalf("NewBufReader failed: %v", err)
+				}
+				got, err := io.ReadAll(r)
+				if err != nil {
+					t.Fatalf("ReadAll failed: %v", err)
+				}
+				if !bytes.Equal(got, data) {
+					t.Errorf("got %d bytes that differ from the %d bytes in the file", len(got), dataLen)
+				}
+				if n, err := r.Read(make([]byte, 1)); n != 0 || err != io.EOF {
+					t.Errorf("Read after EOF: got (%d, %v), want (0, EOF)", n, err)
+				}
+				if err := r.Close(); err != nil {
+					t.Errorf("Close failed: %v", err)
+				}
+			})
 		}
 	}
 }
