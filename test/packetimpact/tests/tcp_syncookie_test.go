@@ -31,9 +31,8 @@ func init() {
 	testbench.Initialize(flag.CommandLine)
 }
 
-// TestTCPSynCookie tests for ACK handling for connections in SYNRCVD state
-// connections with and without syncookies. It verifies if the passive open
-// connection is indeed using syncookies before proceeding.
+// TestTCPSynCookie checks which final handshake flags a listener accepts
+// for a saved SYN and for a SYN cookie.
 func TestTCPSynCookie(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	for _, tt := range []struct {
@@ -55,51 +54,63 @@ func TestTCPSynCookie(t *testing.T) {
 
 			t.Parallel()
 
-			// Listening endpoint accepts one more connection than the listen
-			// backlog. Listener starts using syncookies when it sees a new SYN
-			// and has backlog size of connections in SYNRCVD state. Keep the
-			// listen backlog 1, so that the test can define 2 connections
-			// without and with using syncookies.
-			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1 /*backlog*/)
+			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1 /* backlog */)
 			defer dut.Close(t, listenFD)
 
-			var withoutSynCookieConn testbench.TCPIPv4
-			var withSynCookieConn testbench.TCPIPv4
-
-			for _, conn := range []*testbench.TCPIPv4{&withoutSynCookieConn, &withSynCookieConn} {
-				*conn = dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			// Offer SACK without timestamps. Like gVisor, Linux omits SACK
+			// from a cookie SYN-ACK when the peer hasn't offered timestamps:
+			// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_input.c#L7232-L7239
+			var options [4]byte
+			n := header.EncodeSACKPermittedOption(options[:])
+			header.AddTCPOptionPadding(options[:], n)
+			synACK := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}
+			sendSYN := func() (*testbench.TCPIPv4, bool) {
+				t.Helper()
+				conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+				t.Cleanup(func() { conn.Close(t) })
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: options[:]})
+				reply, err := conn.Expect(t, synACK, time.Second)
+				if err != nil {
+					t.Fatalf("waiting for SYN-ACK: %v", err)
+				}
+				return &conn, header.ParseSynOptions(reply.Options, true /* isAck */).SACKPermitted
 			}
-			defer withoutSynCookieConn.Close(t)
-			defer withSynCookieConn.Close(t)
 
-			// Setup the 2 connections in SYNRCVD state and verify if one of the
-			// connection is indeed using syncookies by checking for absence of
-			// SYNACK retransmits.
+			withoutSynCookieConn, sack := sendSYN()
+			if !sack {
+				t.Fatal("first SYN-ACK did not negotiate SACK on an empty queue")
+			}
+			// Keep each SYN outstanding. Linux and gVisor can save different
+			// numbers of half-open connections for the same listen backlog.
+			var withSynCookieConn *testbench.TCPIPv4
+			for range 16 {
+				conn, sack := sendSYN()
+				if !sack {
+					withSynCookieConn = conn
+					break
+				}
+			}
+			if withSynCookieConn == nil {
+				t.Fatal("listener never switched to SYN cookies")
+			}
+
 			for _, c := range []struct {
 				desc             string
 				conn             *testbench.TCPIPv4
 				expectRetransmit bool
 			}{
-				{desc: "without syncookies", conn: &withoutSynCookieConn, expectRetransmit: true},
-				{desc: "with syncookies", conn: &withSynCookieConn, expectRetransmit: false},
+				{desc: "without syncookies", conn: withoutSynCookieConn, expectRetransmit: true},
+				{desc: "with syncookies", conn: withSynCookieConn, expectRetransmit: false},
 			} {
 				t.Run(c.desc, func(t *testing.T) {
-					// Expect dut connection to have transitioned to SYNRCVD state.
-					c.conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)})
-					if _, err := c.conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
-						t.Fatalf("expected SYNACK, but got %s", err)
-					}
-
-					// If the DUT listener is using syn cookies, it will not retransmit SYNACK.
-					got, err := c.conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(uint32(*c.conn.RemoteSeqNum(t) - 1)), Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, nil, 2*time.Second)
+					retransmit := synACK
+					retransmit.SeqNum = testbench.Uint32(uint32(*c.conn.RemoteSeqNum(t) - 1))
+					got, err := c.conn.Expect(t, retransmit, 2*time.Second)
 					if c.expectRetransmit && err != nil {
 						t.Fatalf("expected retransmitted SYNACK, but got %s", err)
 					}
 					if !c.expectRetransmit && err == nil {
-						// FIXME(b/421034671): it always fails on Linux.
-						if !dut.Uname.IsLinux() {
-							t.Fatalf("expected no retransmitted SYNACK, but got %s", got)
-						}
+						t.Fatalf("expected no retransmitted SYNACK, but got %s", got)
 					}
 				})
 			}
@@ -109,8 +120,8 @@ func TestTCPSynCookie(t *testing.T) {
 				desc string
 				conn *testbench.TCPIPv4
 			}{
-				{desc: "with syncookies", conn: &withSynCookieConn},
-				{desc: "without syncookies", conn: &withoutSynCookieConn},
+				{desc: "with syncookies", conn: withSynCookieConn},
+				{desc: "without syncookies", conn: withoutSynCookieConn},
 			} {
 				t.Run(c.desc, func(t *testing.T) {
 					pfds := dut.Poll(t, []unix.PollFd{{Fd: listenFD, Events: math.MaxInt16}}, 0 /*timeout*/)
