@@ -148,42 +148,28 @@ func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t 
 		l.locks = new(LockSet)
 	}
 	for {
-
-		// Blocking locks must run in a loop because we'll be woken up whenever an unlock event
-		// happens for this lock. We will then attempt to take the lock again and if it fails
-		// continue blocking.
 		err := l.locks.lock(uid, ownerPID, t, r, ofd)
-		if err == linuxerr.ErrWouldBlock && block {
-			// Note: we release the lock in EventRegister below, in
-			// order to avoid a possible race.
-			ok := ctx.BlockOn(l, waiter.EventIn)
-			l.mu.Lock() // +checklocksforce: see above.
-			if ok {
-				continue // Try again now that someone has unlocked.
-			}
-			// Must be interrupted.
+		if err != linuxerr.ErrWouldBlock || !block {
+			return err
+		}
+		if err := l.waitForUnlock(ctx); err != nil {
 			return linuxerr.ErrInterrupted
 		}
-
-		return err
+		// The unlock may have been for a different range. Try again.
 	}
 }
 
-// Readiness always returns zero.
-func (l *Locks) Readiness(waiter.EventMask) waiter.EventMask {
-	return 0
-}
-
-// EventRegister implements waiter.Waitable.EventRegister.
-func (l *Locks) EventRegister(e *waiter.Entry) error {
-	defer l.mu.Unlock() // +checklocksforce: see above.
-	l.blockedQueue.EventRegister(e)
-	return nil
-}
-
-// EventUnregister implements waiter.Waitable.EventUnregister.
-func (l *Locks) EventUnregister(e *waiter.Entry) {
-	l.blockedQueue.EventUnregister(e)
+// waitForUnlock registers before releasing mu so an unlock can't wake the
+// queue between the failed lock attempt and registration.
+//
+// +checklocks:l.mu
+func (l *Locks) waitForUnlock(ctx context.Context) error {
+	e, ch := waiter.NewChannelEntry(waiter.EventIn)
+	l.blockedQueue.EventRegister(&e)
+	l.mu.Unlock()
+	defer l.mu.Lock()
+	defer l.blockedQueue.EventUnregister(&e)
+	return ctx.Block(ch)
 }
 
 // UnlockRegion attempts to release a lock for the uid on a region of a file.
@@ -194,9 +180,6 @@ func (l *Locks) UnlockRegion(uid UniqueID, r LockRange) {
 	defer l.mu.Unlock()
 	l.unlock(uid, r)
 
-	// Now that we've released the lock, we need to wake up any waiters.
-	// We track how many notifications have happened since the last attempt
-	// to acquire the lock, in order to ensure that we avoid races.
 	l.blockedQueue.Notify(waiter.EventIn)
 }
 
