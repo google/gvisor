@@ -6539,6 +6539,106 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 	}
 }
 
+// startNetSysctlContainer starts a sleeping container with the given network
+// and spec sysctls.
+func startNetSysctlContainer(t *testing.T, network config.NetworkType, sysctl map[string]string) (*Container, *config.Config, error) {
+	t.Helper()
+	conf := testutil.TestConfig(t)
+	conf.Network = network
+	spec := testutil.NewSpecWithArgs("sleep", "infinity")
+	spec.Linux = &specs.Linux{Sysctl: sysctl}
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	t.Cleanup(cleanup)
+	cont, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	t.Cleanup(func() { cont.Destroy() })
+	if err := cont.Start(conf); err != nil {
+		return nil, nil, err
+	}
+	return cont, conf, nil
+}
+
+const (
+	unprivilegedPortStartFile = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+	pingGroupRangeFile        = "/proc/sys/net/ipv4/ping_group_range"
+)
+
+// TestNetSysctls checks that the OCI net.ipv4.ip_unprivileged_port_start and
+// net.ipv4.ping_group_range sysctls are applied to the sandbox's network stack.
+func TestNetSysctls(t *testing.T) {
+	for _, network := range []config.NetworkType{config.NetworkSandbox, config.NetworkNone} {
+		for _, tc := range []struct {
+			name   string
+			sysctl map[string]string
+			want   string
+		}{
+			{
+				name: "Defaults",
+				want: "1024\n1\t0\n",
+			},
+			{
+				name: "FromSpec",
+				sysctl: map[string]string{
+					"net.ipv4.ip_unprivileged_port_start": "0",
+					"net.ipv4.ping_group_range":           "0 2147483647",
+				},
+				want: "0\n0\t2147483647\n",
+			},
+			{
+				name: "EmptyPingRange",
+				sysctl: map[string]string{
+					"net.ipv4.ping_group_range": "10 5",
+				},
+				want: "1024\n1\t0\n",
+			},
+		} {
+			t.Run(fmt.Sprintf("%s/%s", network, tc.name), func(t *testing.T) {
+				cont, conf, err := startNetSysctlContainer(t, network, tc.sysctl)
+				if err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+				out, err := executeCombinedOutput(conf, cont, nil, "/bin/cat", unprivilegedPortStartFile, pingGroupRangeFile)
+				if err != nil {
+					t.Fatalf("error reading sysctls: %v, output: %q", err, out)
+				}
+				if got := string(out); got != tc.want {
+					t.Errorf("sysctls = %q, want %q", got, tc.want)
+				}
+			})
+		}
+	}
+}
+
+// TestNetSysctlsInvalid checks that an invalid value fails container start, as
+// a failed write to /proc/sys does for other runtimes.
+func TestNetSysctlsInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		key, val string
+	}{
+		{"net.ipv4.ip_unprivileged_port_start", "abc"},
+		{"net.ipv4.ip_unprivileged_port_start", "65536"},
+		// Above the low end of the default ip_local_port_range.
+		{"net.ipv4.ip_unprivileged_port_start", "40000"},
+		{"net.ipv4.ping_group_range", "0 4294967295"},
+		{"net.ipv4.ping_group_range", "-1 0"},
+	} {
+		t.Run(fmt.Sprintf("%s=%s", tc.key, tc.val), func(t *testing.T) {
+			if _, _, err := startNetSysctlContainer(t, config.NetworkSandbox, map[string]string{tc.key: tc.val}); err == nil {
+				t.Errorf("container started with %s=%q, want error", tc.key, tc.val)
+			}
+		})
+	}
+}
+
 func TestReadFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	spec, _ := sleepSpecConf(t)
