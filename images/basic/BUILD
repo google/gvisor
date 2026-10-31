@@ -69,6 +69,23 @@ image_outputs(
     image_name = "basic/fsstress",
 )
 
+# Load the original config, including Docker's health check, without an OCI
+# manifest conversion.
+alias(
+    name = "mysql",
+    actual = select({
+        "@platforms//cpu:aarch64": "@test_mysql_arm64",
+        "@platforms//cpu:x86_64": "@test_mysql_amd64",
+    }),
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "mysql",
+    image = ":mysql",
+    image_name = "basic/mysql",
+)
+
 # The integration test checks that mounting /tmp preserves image contents.
 image_layer(
     name = "tmpfile_layer",
