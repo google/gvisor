@@ -20,5 +20,5 @@ import (
 
 // BasePtr returns a pointer to the view's chunk.
 func (v *View) BasePtr() *byte {
-	return unsafe.SliceData(v.chunk.data)
+	return unsafe.SliceData(v.chunk.bytes())
 }

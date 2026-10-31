@@ -70,12 +70,41 @@ func getChunkPool(size int) *sync.Pool {
 	return &chunkPools[idx]
 }
 
-// Chunk represents a slice of pooled memory.
+// ExternalStorage owns memory supplied to a View by another package. The caller
+// must not otherwise access the memory after transferring ownership to a View.
+//
+// To support checkpointing, the concrete implementation must be savable and
+// own restoration of the backing memory.
+type ExternalStorage interface {
+	// Bytes returns the same writable, nonempty slice until Release. Its length
+	// must not exceed MaxChunkSize, which bounds the heap copy when a shared
+	// external chunk detaches on write. Access must not require a fallible
+	// operation.
+	//
+	// Bytes must be usable before restored buffers are accessed. Loading a
+	// Buffer does not call Bytes.
+	Bytes() []byte
+
+	// Release relinquishes the backing memory. It is called exactly once, when
+	// the last chunk reference is released, and must not require calling Bytes.
+	Release()
+}
+
+// chunk represents reference-counted heap or externally owned memory. It holds
+// either heap bytes in data or an owner in external, never both.
 //
 // +stateify savable
 type chunk struct {
 	chunkRefs
-	data []byte
+	data     []byte
+	external ExternalStorage
+}
+
+func (c *chunk) bytes() []byte {
+	if c.external != nil {
+		return c.external.Bytes()
+	}
+	return c.data
 }
 
 func newChunk(size int) *chunk {
@@ -94,6 +123,11 @@ func newChunk(size int) *chunk {
 }
 
 func (c *chunk) destroy() {
+	if c.external != nil {
+		c.external.Release()
+		c.external = nil
+		return
+	}
 	if len(c.data) > MaxChunkSize {
 		c.data = nil
 		return
@@ -107,7 +141,8 @@ func (c *chunk) DecRef() {
 }
 
 func (c *chunk) Clone() *chunk {
-	cpy := newChunk(len(c.data))
-	copy(cpy.data, c.data)
+	data := c.bytes()
+	cpy := newChunk(len(data))
+	copy(cpy.data, data)
 	return cpy
 }
