@@ -28,6 +28,7 @@ glaze_ignore = [
 
 exports_files(
     srcs = [
+        "load_programs.go.in",
         "precompile_gen.go",
         "precompiled_lib.tmpl.go",
     ],
@@ -42,6 +43,7 @@ bzl_library(
     visibility = [
         "//:sandbox",
     ],
+    deps = ["//tools:defs_bzl"],
 )
 
 go_test(
