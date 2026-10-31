@@ -3185,6 +3185,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_data_transfer_stress_test",
+    testonly = 1,
+    srcs = ["socket_data_transfer_stress.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":ip_socket_test_util",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_binary(
     name = "socket_stress_test",
     testonly = 1,
     srcs = [
@@ -3194,13 +3211,10 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
-        "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
-        "//test/util:thread_util",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
     ],
 )
