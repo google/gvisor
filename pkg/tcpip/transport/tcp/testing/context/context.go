@@ -128,6 +128,9 @@ type Options struct {
 	// MTU indicates the maximum transmission unit on the link layer.
 	MTU uint32
 
+	// GSO specifies the segmentation offload supported by the primary NIC.
+	GSO stack.SupportedGSO
+
 	// Clock that is used by Stack.
 	Clock tcpip.Clock
 
@@ -248,6 +251,7 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 	// Some of the congestion control tests send up to 640 packets, we so
 	// set the channel size to 1000.
 	ep := channel.New(1000, opts.MTU, "")
+	ep.SupportedGSOKind = opts.GSO
 	wep := stack.LinkEndpoint(ep)
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
@@ -416,7 +420,9 @@ func (c *Context) packetView(pkt *stack.PacketBuffer) *buffer.View {
 	cu := cleanup.Make(view.Release)
 	defer cu.Clean()
 
-	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
+	// L3HdrLen describes host offload. sendTCPBatch has already segmented
+	// software-GSO output, which the checkers validate as ordinary packets.
+	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.Type != stack.GSOGvisor && pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
 		c.t.Errorf("got L3HdrLen = %d, want = %d", pkt.GSOOptions.L3HdrLen, header.IPv4MinimumSize)
 	}
 
