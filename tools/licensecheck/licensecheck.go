@@ -28,6 +28,7 @@
 // @google_root_pem) are maintained by hand: Fetch preserves an existing entry
 // whenever fetching fails. Explicit license_source notices are re-fetched on
 // every audit and fail closed if the notice or its artifact binding is invalid.
+// Terms audited from the artifact itself are retained while its pin matches.
 package licensecheck
 
 import (
@@ -77,8 +78,7 @@ type Entry struct {
 	LicenseSource string `yaml:"license_source,omitempty"`
 }
 
-// License is an SPDX license identifier (https://spdx.org/licenses/), one of
-// knownLicenses.
+// License is a recognized SPDX identifier or a document-local LicenseRef.
 type License string
 
 const (
@@ -208,6 +208,8 @@ const (
 # by --mode=fetch, so you can hand-edit the file for these.
 # license_source selects an immutable upstream notice for a pinned binary artifact;
 # changing its artifact URL/hash requires renewing that explicit source audit.
+# A local LicenseRef records terms reviewed from the artifact itself.
+# Re-audit these terms when the artifact URL or SHA256 changes.
 `
 	dateFormat   = "2006-01-02"
 	fetchWorkers = 8
@@ -219,13 +221,35 @@ func Fetch(p Paths) error {
 	if err != nil {
 		return err
 	}
+	return fetch(p, deps)
+}
+
+func fetch(p Paths, deps []dep) error {
 	old, err := readEntries(p.YAML)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	oldByName := make(map[string]Entry)
 	for _, e := range old {
+		if _, ok := oldByName[e.Dependency]; ok {
+			return fmt.Errorf("duplicate entry for %s in %s", e.Dependency, p.YAML)
+		}
 		oldByName[e.Dependency] = e
+	}
+	// Validate every retained audit before starting network requests or
+	// rewriting the catalog. A changed pin needs a new artifact audit.
+	reviewed := make(map[string]Entry)
+	for _, d := range deps {
+		e := oldByName[d.name]
+		// Discovery emits only known licenses. Check any other recorded
+		// terms before discovery can overwrite a reviewed or malformed entry.
+		if !slices.ContainsFunc(e.License, func(l License) bool { return !knownLicenses[l] }) {
+			continue
+		}
+		if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 0 {
+			return fmt.Errorf("re-audit the license of %s: %s", d.name, strings.Join(problems, "; "))
+		}
+		reviewed[d.name] = e
 	}
 
 	type result struct {
@@ -236,6 +260,9 @@ func Fetch(p Paths) error {
 	sem := make(chan struct{}, fetchWorkers)
 	var wg sync.WaitGroup
 	for i, d := range deps {
+		if _, ok := reviewed[d.name]; ok {
+			continue
+		}
 		wg.Add(1)
 		go func(i int, d dep) {
 			defer wg.Done()
@@ -251,6 +278,11 @@ func Fetch(p Paths) error {
 	var entries []Entry
 	var failed []string
 	for i, d := range deps {
+		if e, ok := reviewed[d.name]; ok {
+			fmt.Fprintf(os.Stderr, "%-60s %s (kept artifact audit)\n", d.name, e.License)
+			entries = append(entries, e)
+			continue
+		}
 		r := results[i]
 		if r.err != nil {
 			if e := oldByName[d.name]; e.LicenseSource != "" {
@@ -360,13 +392,29 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 			if d.sha256 != "" && e.SHA256 != d.sha256 {
 				problems = append(problems, fmt.Sprintf("%s was audited with sha256 %q, but is now pinned to %q", d.name, e.SHA256, d.sha256))
 			}
+			hasLicenseRef := false
 			for i, license := range e.License {
 				if !knownLicenses[license] {
-					problems = append(problems, fmt.Sprintf("%s has unknown license %q", d.name, license))
+					// SPDX 2.3, Annex D: a local reference ends in a nonempty idstring.
+					const idChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-"
+					id, ok := strings.CutPrefix(string(license), "LicenseRef-")
+					if !ok || id == "" || strings.Trim(id, idChars) != "" {
+						problems = append(problems, fmt.Sprintf("%s has unknown license %q", d.name, license))
+					} else {
+						hasLicenseRef = true
+					}
 				}
 				if i > 0 && e.License[i-1] >= license {
 					problems = append(problems, fmt.Sprintf("licenses of %s are not sorted and unique", d.name))
 					break
+				}
+			}
+			if hasLicenseRef {
+				if e.LicenseSource != "" {
+					problems = append(problems, fmt.Sprintf("%s: LicenseRef cannot be combined with license_source", d.name))
+				}
+				if d.kind != kindArchive || !artifactSHA256RE.MatchString(d.sha256) {
+					problems = append(problems, fmt.Sprintf("%s: artifact audit requires a pinned SHA256", d.name))
 				}
 			}
 			if _, err := time.Parse(dateFormat, e.Retrieved); err != nil {
