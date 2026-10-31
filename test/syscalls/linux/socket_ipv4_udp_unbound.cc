@@ -1922,6 +1922,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPPKTINFO) {
   msghdr sent_msg = {};
   iovec sent_iov = {};
   char sent_data[kDataLength];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
   sent_iov.iov_base = sent_data;
   sent_iov.iov_len = kDataLength;
   sent_msg.msg_iov = &sent_iov;
@@ -2004,6 +2005,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPReceiveOrigDstAddr) {
   msghdr sent_msg = {};
   iovec sent_iov = {};
   char sent_data[kDataLength];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
   sent_iov.iov_base = sent_data;
   sent_iov.iov_len = kDataLength;
   sent_msg.msg_iov = &sent_iov;
