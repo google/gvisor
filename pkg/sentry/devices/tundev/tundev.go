@@ -141,14 +141,7 @@ func (fd *tunFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 		return 0, err
 	}
 	defer data.Release()
-
-	size := data.Size()
-	n, err := io.CopyN(dst.Writer(ctx), data, dst.NumBytes())
-	if n > 0 && n < int64(size) {
-		// Not an error for partial copying. Packet truncated.
-		err = nil
-	}
-	return int64(n), err
+	return data.ReadToWriter(dst.Writer(ctx), dst.NumBytes())
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
@@ -168,12 +161,14 @@ func (fd *tunFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 	if int64(mtu) < src.NumBytes() {
 		return 0, unix.EMSGSIZE
 	}
-	data := buffer.NewView(int(src.NumBytes()))
-	defer data.Release()
-	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
+	view := buffer.NewView(int(src.NumBytes()))
+	if _, err := io.CopyN(view, src.Reader(ctx), src.NumBytes()); err != nil {
+		view.Release()
 		return 0, err
 	}
-	return fd.device.Write(data)
+	data := buffer.MakeWithView(view)
+	defer data.Release()
+	return fd.device.Write(&data)
 }
 
 // Readiness implements watier.Waitable.Readiness.
