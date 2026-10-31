@@ -129,8 +129,8 @@ type Pipe struct {
 	// The number of active writers for this pipe.
 	writers atomicbitops.Int32
 
-	// The total number of writers for this pipe.
-	totalWriters atomicbitops.Int32
+	// writerGeneration advances when a writer opens.
+	writerGeneration atomicbitops.Int32
 
 	// mu protects all pipe internal state below.
 	mu pipeMutex `state:"nosave"`
@@ -153,14 +153,6 @@ type Pipe struct {
 	//
 	// This is protected by mu.
 	max int64
-
-	// hadWriter indicates if this pipe ever had a writer. Note that this
-	// does not necessarily indicate there is *currently* a writer, just
-	// that there has been a writer at some point since the pipe was
-	// created.
-	//
-	// This is protected by mu.
-	hadWriter bool
 }
 
 // NewPipe initializes and returns a pipe.
@@ -181,6 +173,17 @@ func initPipe(pipe *Pipe, isNamed bool, sizeBytes int64) {
 	}
 	pipe.isNamed = isNamed
 	pipe.max = sizeBytes
+	pipe.writerGeneration.Store(pipe.initialWriterGeneration())
+}
+
+// Linux starts a FIFO at generation 1, distinct from the zero stored by
+// readers that do not suppress hangups. An anonymous pipe reaches generation
+// 1 when ReaderWriterPair opens its initial writer.
+func (p *Pipe) initialWriterGeneration() int32 {
+	if p.isNamed {
+		return 1
+	}
+	return 0
 }
 
 // peekLocked passes the first count bytes in the pipe, starting at offset off,
@@ -324,21 +327,25 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 	return done, nil
 }
 
-// rOpen signals a new reader of the pipe.
-func (p *Pipe) rOpen() {
+// rOpen registers a reader and reports the writer generation and whether a
+// writer was present. A FIFO reader uses that snapshot to distinguish a
+// writer that closed before registration from one that closed afterward.
+func (p *Pipe) rOpen() (generation int32, hasWriter bool) {
+	defer p.queue.Notify(waiter.EventInternal)
+	if p.isNamed {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+	}
 	p.readers.Add(1)
 	p.totalReaders.Add(1)
-
-	// Notify for blocking openers.
-	p.queue.Notify(waiter.EventInternal)
+	return p.writerGeneration.Load(), p.HasWriters()
 }
 
 // wOpen signals a new writer of the pipe.
 func (p *Pipe) wOpen() {
 	p.mu.Lock()
-	p.hadWriter = true
 	p.writers.Add(1)
-	p.totalWriters.Add(1)
+	p.writerGeneration.Add(1)
 	p.mu.Unlock()
 
 	// Notify for blocking openers.
@@ -372,16 +379,13 @@ func (p *Pipe) HasWriters() bool {
 // rReadinessLocked calculates the read readiness.
 //
 // Precondition: mu must be held.
-func (p *Pipe) rReadinessLocked() waiter.EventMask {
+// +checklocks:p.mu
+func (p *Pipe) rReadinessLocked(initialWriters int32) waiter.EventMask {
 	ready := waiter.EventMask(0)
 	if p.HasReaders() && p.size != 0 {
 		ready |= waiter.ReadableEvents
 	}
-	if !p.HasWriters() && p.hadWriter {
-		// POLLHUP must be suppressed until the pipe has had at least one writer
-		// at some point. Otherwise a reader thread may poll and immediately get
-		// a POLLHUP before the writer ever opens the pipe, which the reader may
-		// interpret as the writer opening then closing the pipe.
+	if !p.HasWriters() && p.writerGeneration.Load() != initialWriters {
 		ready |= waiter.EventHUp
 	}
 	return ready
@@ -389,10 +393,10 @@ func (p *Pipe) rReadinessLocked() waiter.EventMask {
 
 // rReadiness returns a mask that states whether the read end of the pipe is
 // ready for reading.
-func (p *Pipe) rReadiness() waiter.EventMask {
+func (p *Pipe) rReadiness(initialWriters int32) waiter.EventMask {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.rReadinessLocked()
+	return p.rReadinessLocked(initialWriters)
 }
 
 // wReadinessLocked calculates the write readiness.
@@ -422,7 +426,7 @@ func (p *Pipe) wReadiness() waiter.EventMask {
 func (p *Pipe) rwReadiness() waiter.EventMask {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.rReadinessLocked() | p.wReadinessLocked()
+	return p.rReadinessLocked(p.initialWriterGeneration()) | p.wReadinessLocked()
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
