@@ -52,6 +52,10 @@ type nic struct {
 	minMTU uint32
 	maxMTU uint32
 
+	// multicast indicates whether the interface reports multicast support.
+	// It is immutable.
+	multicast bool
+
 	stats sharedStats
 
 	// enableDisableMu is used to synchronize attempts to enable/disable the NIC.
@@ -204,6 +208,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		kind:                      opts.Kind,
 		minMTU:                    opts.MinMTU,
 		maxMTU:                    opts.MaxMTU,
+		multicast:                 opts.Multicast,
 	}
 	nic.linkResQueue.init(nic)
 

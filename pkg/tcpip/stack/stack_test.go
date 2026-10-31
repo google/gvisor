@@ -2741,6 +2741,36 @@ func TestNICContextPreservation(t *testing.T) {
 	}
 }
 
+func TestNICMulticastPreservation(t *testing.T) {
+	for _, multicast := range []bool{false, true} {
+		t.Run(fmt.Sprintf("multicast=%t", multicast), func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			t.Cleanup(s.Destroy)
+			peer := stack.New(stack.Options{})
+			t.Cleanup(peer.Destroy)
+			const id = tcpip.NICID(1)
+			ep := channel.New(0, 1500, linkAddr1)
+			if err := s.CreateNICWithOptions(id, ep, stack.NICOptions{Multicast: multicast}); err != nil {
+				t.Fatalf("CreateNICWithOptions: %s", err)
+			}
+			if got := s.NICInfo()[id].Flags.Multicast; got != multicast {
+				t.Errorf("NICInfo().Flags.Multicast = %t, want %t", got, multicast)
+			}
+			newID, err := s.SetNICStack(id, peer)
+			if err != nil {
+				t.Fatalf("SetNICStack: %s", err)
+			}
+			info, ok := peer.SingleNICInfo(newID)
+			if !ok {
+				t.Fatalf("moved NIC %d missing from destination stack", newID)
+			}
+			if got := info.Flags.Multicast; got != multicast {
+				t.Errorf("moved NIC Flags.Multicast = %t, want %t", got, multicast)
+			}
+		})
+	}
+}
+
 // TestNICKindPreservation tests the NIC kind is present in NICInfo.
 func TestNICKindPreservation(t *testing.T) {
 	tests := []struct {

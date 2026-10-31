@@ -960,6 +960,10 @@ type NICOptions struct {
 	// LinkEndpoint.
 	Disabled bool
 
+	// Multicast specifies whether the interface reports multicast support.
+	// It does not control reception of multicast packets.
+	Multicast bool
+
 	// Context specifies user-defined data that will be returned in stack.NICInfo
 	// for the NIC. Clients of this library can use it to add metadata that
 	// should be tracked alongside a NIC, to avoid having to keep a
@@ -1318,6 +1322,7 @@ func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 		Running:     nic.Enabled(),
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
+		Multicast:   nic.multicast,
 	}
 
 	netStats := make(map[tcpip.NetworkProtocolNumber]NetworkEndpointStats)
@@ -1394,6 +1399,9 @@ type NICStateFlags struct {
 
 	// Loopback indicates whether the interface is a loopback.
 	Loopback bool
+
+	// Multicast indicates whether the interface reports multicast support.
+	Multicast bool
 }
 
 // AddProtocolAddress adds an address to the specified NIC, possibly with extra
@@ -2726,10 +2734,11 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
 	opts := NICOptions{
-		Name:   nic.Name(),
-		Kind:   nic.kind,
-		MinMTU: nic.minMTU,
-		MaxMTU: nic.maxMTU,
+		Name:      nic.Name(),
+		Kind:      nic.kind,
+		Multicast: nic.multicast,
+		MinMTU:    nic.minMTU,
+		MaxMTU:    nic.maxMTU,
 	}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
