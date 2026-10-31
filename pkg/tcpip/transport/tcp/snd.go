@@ -69,7 +69,9 @@ type congestionControl interface {
 	HandleLossDetected()
 
 	// HandleRTOExpired is invoked when the retransmit timer expires.
-	HandleRTOExpired()
+	// reduceThreshold is false on a repeated timeout, when ssthresh
+	// must be held constant (RFC 5681 section 3.1).
+	HandleRTOExpired(reduceThreshold bool)
 
 	// HandleWindowRestart is invoked when the sender reduces its window
 	// after an idle period (RFC 5681 section 4.1). Linux tcp_cwnd_restart()
@@ -128,6 +130,10 @@ type sender struct {
 	// firstRetransmittedSegXmitTime is the original transmit time of
 	// the first segment that was retransmitted due to RTO expiration.
 	firstRetransmittedSegXmitTime tcpip.MonotonicTime
+
+	// rtoRepeat is true if the retransmit timer has retransmitted data
+	// since the last cumulative ACK that advanced SND.UNA.
+	rtoRepeat bool
 
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
@@ -623,6 +629,13 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	if s.RTO > remaining {
 		s.RTO = remaining
 	}
+	// A closed receive window with no data in flight calls for a persist
+	// probe, not loss recovery. Linux tcp_probe_timer() makes the same
+	// distinction from an RTO on outstanding data after a window shrink.
+	if s.zeroWindowProbing && s.SndUna == s.SndNxt {
+		s.sendZeroWindowProbe()
+		return nil
+	}
 
 	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
 	//
@@ -644,7 +657,11 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	s.recordRetransmitTS()
 
 	s.state = tcpip.RTORecovery
-	s.cc.HandleRTOExpired()
+	// As in Linux tcp_enter_loss(), reduce ssthresh only on the first
+	// timeout after the cumulative ACK advances.
+	s.cc.HandleRTOExpired(!s.rtoRepeat)
+	// RFC 5681 section 3.1: the loss window is one segment regardless of IW.
+	s.SndCwnd = 1
 
 	// Mark the next segment to be sent as the first unacknowledged one and
 	// start sending again. Set the number of outstanding packets to 0 so
@@ -690,6 +707,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		return &tcpip.ErrTimeout{}
 	}
 
+	s.rtoRepeat = true
 	s.sendData()
 
 	return nil
@@ -1693,6 +1711,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// Remove all acknowledged data from the write list.
 		acked := s.SndUna.Size(ack)
 		s.SndUna = ack
+		s.rtoRepeat = false
 		ackLeft := acked
 		originalOutstanding := s.Outstanding
 		for ackLeft > 0 {
