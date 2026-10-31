@@ -581,6 +581,8 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	// Set TLPRxtOut to false according to
 	// https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.6.1.
 	s.rc.tlpRxtOut = false
+	// The RTO also ends the wait for a probe that sent new data.
+	s.rc.tlpNewDataOut = false
 
 	// Give up if we've waited more than a minute since the last resend or
 	// if a user time out is set and we have exceeded the user specified

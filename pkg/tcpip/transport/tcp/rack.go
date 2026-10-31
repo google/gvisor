@@ -64,6 +64,11 @@ type rackControl struct {
 	// a TLP retransmission.
 	tlpHighRxt seqnum.Value
 
+	// tlpNewDataOut indicates whether there is an unacknowledged TLP that
+	// sent new data, and tlpNewDataEnd is sender.SndNxt after it.
+	tlpNewDataOut bool
+	tlpNewDataEnd seqnum.Value
+
 	// snd is a reference to the sender.
 	snd *sender
 }
@@ -169,7 +174,13 @@ func (s *sender) shouldSchedulePTO() bool {
 		// The connection is not in loss recovery.
 		(s.state != tcpip.RTORecovery && s.state != tcpip.SACKRecovery) &&
 		// The connection has no SACKed sequences in the SACK scoreboard.
-		s.ep.scoreboard.Sacked() == 0
+		s.ep.scoreboard.Sacked() == 0 &&
+		// No loss probe is unacknowledged, so that at most one packet is in
+		// flight beyond the congestion window (RFC 8985, section 7.3; Linux's
+		// tlp_high_seq). Scheduling a PTO disables the retransmission timer,
+		// so checking here also keeps writes and ACKs from postponing the
+		// RTO while a probe is out.
+		!s.rc.tlpRxtOut && !s.rc.tlpNewDataOut
 }
 
 // schedulePTO schedules the probe timeout as defined in
@@ -210,11 +221,19 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 	}
 
 	var dataSent bool
-	if s.writeNext != nil && s.writeNext.xmitCount == 0 && s.Outstanding < s.SndCwnd {
+	// The probe is new data when there is some and the receive window allows,
+	// even if the congestion window is full: it may then go one segment past
+	// the window (RFC 8985, sections 7.3 and 9.3; Linux's
+	// tcp_send_loss_probe). RACK can use the SACK of a new segment, but it
+	// ignores the SACK of a retransmission when it is ambiguous, and then only
+	// the RTO recovers the tail.
+	if s.writeNext != nil && s.writeNext.xmitCount == 0 && s.Outstanding <= s.SndCwnd {
 		dataSent = s.maybeSendSegment(s.writeNext, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd))
 		if dataSent {
 			s.Outstanding += s.pCount(s.writeNext, s.MaxPayloadSize)
 			s.updateWriteNext(s.writeNext.Next())
+			s.rc.tlpNewDataOut = true
+			s.rc.tlpNewDataEnd = s.SndNxt
 		}
 	}
 
@@ -256,6 +275,13 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 //
 // +checklocks:s.ep.mu
 func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
+	// A probe that sent new data is done once it is cumulatively
+	// acknowledged (RFC 8985, section 7.4). An ACK of data not yet sent is
+	// not acceptable (RFC 9293, section 3.10.7.4) and does not end it.
+	if s.rc.tlpNewDataOut && s.rc.tlpNewDataEnd.LessThanEq(ack) && ack.LessThanEq(s.SndNxt) {
+		s.rc.tlpNewDataOut = false
+	}
+
 	if !(s.ep.SACKPermitted && s.rc.tlpRxtOut) {
 		return
 	}
