@@ -3201,6 +3201,44 @@ TEST(ProcTask, ProcRootNeverListsZeroTID) {
   EXPECT_FALSE(listed_zero.load(std::memory_order_relaxed));
 }
 
+TEST(ProcTask, ImmutableTaskDirectories) {
+  struct statvfs st;
+  ASSERT_THAT(statvfs("/proc", &st), SyscallSucceeds());
+  SKIP_IF(st.f_flag & ST_RDONLY);  // rename requires a writable mount.
+
+  for (const char* dir : {"/proc/self", "/proc/thread-self"}) {
+    SCOPED_TRACE(dir);
+    EXPECT_THAT(access(dir, R_OK | X_OK), SyscallSucceeds());
+    EXPECT_THAT(access(dir, W_OK), SyscallFailsWithErrno(EPERM));
+  }
+
+  // Immutability takes precedence over the directory's mode bits.
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
+  EXPECT_THAT(rename("/proc/self/status", "/proc/version"),
+              SyscallFailsWithErrno(EPERM));
+}
+
+TEST(ProcTask, OpenImmutableTaskDirectories) {
+  const bool has_override =
+      ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE));
+  for (const bool with_override : {true, false}) {
+    if (with_override && !has_override) {
+      continue;
+    }
+    SCOPED_TRACE(with_override ? "with CAP_DAC_OVERRIDE"
+                               : "without CAP_DAC_OVERRIDE");
+    AutoCapability cap(CAP_DAC_OVERRIDE, with_override);
+    for (const char* dir : {"/proc/self", "/proc/thread-self"}) {
+      SCOPED_TRACE(dir);
+      for (const int flags :
+           {O_WRONLY, O_RDWR, O_RDONLY | O_TRUNC, O_CREAT | O_RDONLY}) {
+        SCOPED_TRACE(flags);
+        EXPECT_THAT(Open(dir, flags, 0600), PosixErrorIs(EISDIR));
+      }
+    }
+  }
+}
+
 TEST(ProcTask, TaskDirCannotBeDeleted) {
   // Drop capabilities that allow us to override file and directory permissions.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
