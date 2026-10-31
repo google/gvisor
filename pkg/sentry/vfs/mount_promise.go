@@ -107,7 +107,7 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 	// Unblock waiter entries that were created after this mount promise was
 	// resolved by a racing thread.
 	if mp.resolved.Load() {
-		close(ch)
+		e.NotifyEvent(waiter.EventOut)
 	} else {
 		root := RootFromContext(ctx)
 		defer root.DecRef(ctx)
