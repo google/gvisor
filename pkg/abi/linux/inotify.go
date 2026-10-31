@@ -71,6 +71,8 @@ const (
 	// IN_EXCL_UNLINK indicates events to this watch from unlinked objects
 	// should be filtered out.
 	IN_EXCL_UNLINK = 0x04000000
+	// IN_MASK_CREATE requires a new watch rather than updating an existing one.
+	IN_MASK_CREATE = 0x10000000
 	// IN_MASK_ADD indicates the provided mask should be ORed into any existing
 	// watch on the provided path.
 	IN_MASK_ADD = 0x20000000
@@ -93,5 +95,5 @@ const (
 const ALL_INOTIFY_BITS = IN_ACCESS | IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE |
 	IN_CLOSE_NOWRITE | IN_OPEN | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
 	IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF | IN_UNMOUNT | IN_Q_OVERFLOW |
-	IN_IGNORED | IN_ONLYDIR | IN_DONT_FOLLOW | IN_EXCL_UNLINK | IN_MASK_ADD |
-	IN_ISDIR | IN_ONESHOT
+	IN_IGNORED | IN_ONLYDIR | IN_DONT_FOLLOW | IN_EXCL_UNLINK | IN_MASK_CREATE |
+	IN_MASK_ADD | IN_ISDIR | IN_ONESHOT
