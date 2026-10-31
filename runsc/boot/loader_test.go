@@ -16,10 +16,12 @@ package boot
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"os"
 	"runtime"
+	runtimedebug "runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/gccontrol"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -337,6 +340,179 @@ func TestStartupHeapReleaseOnRestore(t *testing.T) {
 	// A second trigger while the release is pending doesn't add a release.
 	l.releaseStartupHeapWhenIdle()
 	expectOneStartupHeapRelease(t, released)
+}
+
+func TestStartupGC(t *testing.T) {
+	gcPercent := func() int {
+		p := runtimedebug.SetGCPercent(-1 /* percent */)
+		runtimedebug.SetGCPercent(p)
+		return p
+	}
+	resetRuntimeGC := func(t *testing.T) {
+		t.Helper()
+		runtime.GC()
+		origPercent := runtimedebug.SetGCPercent(100 /* percent */)
+		origLimit := runtimedebug.SetMemoryLimit(math.MaxInt64)
+		t.Cleanup(func() {
+			runtimedebug.SetGCPercent(origPercent)
+			runtimedebug.SetMemoryLimit(origLimit)
+		})
+	}
+	newSuspendedLoader := func(t *testing.T) (*Loader, func()) {
+		t.Helper()
+		resetRuntimeGC(t)
+		l, cleanup, err := createLoader(testConfig(), testSpec())
+		if err != nil {
+			t.Fatalf("createLoader: %v", err)
+		}
+		var destroyed bool
+		destroy := func() {
+			if destroyed {
+				return
+			}
+			destroyed = true
+			l.Destroy()
+		}
+		s := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if s == nil {
+			destroy()
+			cleanup()
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		t.Cleanup(func() {
+			s.End()
+			cleanup()
+			destroy()
+		})
+		l.startupGC.Store(s)
+		if got := gcPercent(); got >= 0 {
+			t.Fatalf("GCPercent after Suspend = %d, want < 0", got)
+		}
+		return l, destroy
+	}
+
+	t.Run("resumesBeforeIdleRelease", func(t *testing.T) {
+		l, _ := newSuspendedLoader(t)
+		gotAtRelease := make(chan int, 1)
+		l.freeOSMemory = func() { gotAtRelease <- gcPercent() }
+		l.releaseStartupHeapWhenIdle()
+		if got := <-gotAtRelease; got < 0 {
+			t.Fatalf("GCPercent during freeOSMemory = %d, want >= 0", got)
+		}
+	})
+
+	t.Run("resumesRestoreGCBeforeIdleRelease", func(t *testing.T) {
+		l, _ := newSuspendedLoader(t)
+		restoreGC := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if restoreGC == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer restoreGC.End()
+		gotAtRelease := make(chan int, 1)
+		l.freeOSMemory = func() { gotAtRelease <- gcPercent() }
+		l.setStartupGC(restoreGC)
+		l.ctrl.manager.onRestoreDone(sentryapi.Savings{})
+		if got := <-gotAtRelease; got < 0 {
+			t.Fatalf("GCPercent during post-restore freeOSMemory = %d, want >= 0", got)
+		}
+	})
+
+	t.Run("resumesAfterStartupGCDelay", func(t *testing.T) {
+		origDelay := startupGCResumeDelay
+		startupGCResumeDelay = 10 * time.Millisecond
+		t.Cleanup(func() { startupGCResumeDelay = origDelay })
+
+		l, _ := newSuspendedLoader(t)
+		restoreGC := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if restoreGC == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer restoreGC.End()
+		// Simulate restore where setStartupGC runs before post-restore work
+		// reaches onRestoreDone.
+		l.setStartupGC(restoreGC)
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if runtimedebug.SetMemoryLimit(-1 /* limit */) == math.MaxInt64 {
+				if got := gcPercent(); got != 100 {
+					t.Fatalf("GCPercent after startupGCResumeDelay = %d, want 100", got)
+				}
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatal("GC remained suspended past startupGCResumeDelay")
+	})
+
+	t.Run("resumesOnNewError", func(t *testing.T) {
+		resetRuntimeGC(t)
+		s := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if s == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer s.End()
+		l, err := New(Args{
+			ID:               "new-error",
+			Spec:             testSpec(),
+			Conf:             testConfig(),
+			StdioFDs:         []int{-1},
+			DevGoferFD:       -1,
+			PodInitConfigFD:  -1,
+			ExecFD:           -1,
+			RootfsUpperTarFD: -1,
+			CPUDMALatencyFD:  -1,
+			StartupGC:        s,
+		})
+		if err == nil {
+			l.Destroy()
+			t.Fatal("New with invalid StdioFDs succeeded")
+		}
+		if got := gcPercent(); got < 0 {
+			t.Fatalf("GCPercent after failed New = %d, want >= 0", got)
+		}
+	})
+
+	t.Run("resumesOnDestroy", func(t *testing.T) {
+		_, destroy := newSuspendedLoader(t)
+		destroy()
+		if got := gcPercent(); got < 0 {
+			t.Fatalf("GCPercent after Destroy = %d, want >= 0", got)
+		}
+	})
+
+	t.Run("resumesOnRestoreFailed", func(t *testing.T) {
+		l, _ := newSuspendedLoader(t)
+		l.ctrl.manager.onRestoreFailed(fmt.Errorf("restore failed"))
+		if got := gcPercent(); got < 0 {
+			t.Fatalf("GCPercent after failed restore = %d, want >= 0", got)
+		}
+	})
+
+	t.Run("resumesOnRunError", func(t *testing.T) {
+		l, _ := newSuspendedLoader(t)
+		l.mu.Lock()
+		l.state = restoreFailed
+		l.mu.Unlock()
+		if err := l.run(); err == nil {
+			t.Fatal("l.run() in state=restoreFailed succeeded")
+		}
+		if got := gcPercent(); got < 0 {
+			t.Fatalf("GCPercent after failed run = %d, want >= 0", got)
+		}
+	})
+
+	t.Run("resumesOnRestoreRun", func(t *testing.T) {
+		l, _ := newSuspendedLoader(t)
+		l.mu.Lock()
+		l.state = restoringUnstarted
+		l.mu.Unlock()
+		if err := l.run(); err != nil {
+			t.Fatalf("l.run() in state=restoringUnstarted: %v", err)
+		}
+		if got := gcPercent(); got < 0 {
+			t.Fatalf("GCPercent after restore run = %d, want >= 0", got)
+		}
+	})
 }
 
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the
