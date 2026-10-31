@@ -508,10 +508,8 @@ func ComputeRange(start, length, offset int64) (LockRange, error) {
 // of type t on range r. It returns a Flock struct representing this
 // information as the F_GETLK fcntl does.
 //
-// Note that the PID returned in the flock structure is relative to the root PID
-// namespace. It needs to be converted to the caller's PID namespace before
-// returning to userspace.
-func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange, ofd bool) linux.Flock {
+// A positive PID is relative to the root PID namespace. OFD locks report -1.
+func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange) linux.Flock {
 	f := linux.Flock{Type: linux.F_UNLCK}
 	switch t {
 	case ReadLock:
@@ -528,11 +526,11 @@ func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r Lock
 	case WriteLock:
 		l.testRegion(r, func(lock Lock, start, length uint64) bool {
 			if lock.Writer == nil {
-				for k, v := range lock.Readers {
-					if k != uid && v.OFD == ofd {
+				for reader, owner := range lock.Readers {
+					if reader != uid {
 						// Stop at the first conflict detected.
 						f.Type = linux.F_RDLCK
-						f.PID = v.PID
+						f.PID = owner.PID
 						f.Start = int64(start)
 						f.Len = int64(length)
 						return false

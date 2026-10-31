@@ -117,6 +117,5 @@ func (fl *FileLocks) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fsloc
 	if l == nil {
 		return linux.Flock{Type: linux.F_UNLCK}, nil
 	}
-	_, ofd := uid.(*FileDescription)
-	return l.posix.TestRegion(ctx, uid, t, r, ofd), nil
+	return l.posix.TestRegion(ctx, uid, t, r), nil
 }

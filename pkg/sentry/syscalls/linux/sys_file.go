@@ -922,6 +922,9 @@ func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDes
 	}
 	uid := lock.UniqueID(t.FDTable())
 	if ofd {
+		if flock.PID != 0 {
+			return linuxerr.EINVAL
+		}
 		uid = lock.UniqueID(file)
 	}
 
@@ -929,7 +932,7 @@ func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDes
 	if err != nil {
 		return err
 	}
-	if !ofd {
+	if newFlock.PID > 0 {
 		newFlock.PID = translatePID(t.PIDNamespace().Root(), t.PIDNamespace(), newFlock.PID)
 	}
 	if _, err = newFlock.CopyOut(t, flockAddr); err != nil {

@@ -1938,8 +1938,7 @@ TEST_F(FcntlLockTest, GetWriteLockOnWriteLock) {
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
-// Tests that the pid returned from F_GETLK is relative to the caller's PID
-// namespace.
+// The conflicting lock's PID is relative to the caller's PID namespace.
 TEST_F(FcntlLockTest, GetLockRespectsPIDNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -1959,15 +1958,17 @@ TEST_F(FcntlLockTest, GetLockRespectsPIDNamespace) {
     int fd = open((char*)filename, O_RDWR, 0666);
     TEST_CHECK(fd >= 0);
 
-    struct flock fl;
-    fl.l_type = F_WRLCK;
-    fl.l_whence = SEEK_SET;
-    fl.l_start = 0;
-    fl.l_len = 40;
-    TEST_CHECK(fcntl(fd, F_GETLK, &fl) >= 0);
-    TEST_CHECK(fl.l_type == F_WRLCK);
-    // Parent PID should be 0 in the child PID namespace.
-    TEST_CHECK(fl.l_pid == 0);
+    for (int cmd : {F_GETLK, F_OFD_GETLK}) {
+      struct flock fl = {.l_type = F_WRLCK,
+                         .l_whence = SEEK_SET,
+                         .l_start = 0,
+                         .l_len = 40,
+                         .l_pid = 0};
+      TEST_CHECK(fcntl(fd, cmd, &fl) >= 0);
+      TEST_CHECK(fl.l_type == F_WRLCK);
+      // The parent is not visible in the child's PID namespace.
+      TEST_CHECK(fl.l_pid == 0);
+    }
     close(fd);
     return 0;
   };
@@ -2029,6 +2030,9 @@ TEST_F(FcntlLockTest, TestOFDLockNonZeroPidFails) {
       .l_pid = 1,
   };
   ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl),
+              SyscallFailsWithErrno(EINVAL));
+  fl.l_len = 40;
+  EXPECT_THAT(fcntl(fd1.get(), F_OFD_GETLK, &fl),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -2162,6 +2166,35 @@ TEST_F(FcntlLockTest, TestOFDGetLkReturnsNegPID) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
   ASSERT_THAT(fcntl(fd2.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
   ASSERT_EQ(fl.l_pid, -1);
+
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd2.get(), F_GETLK, &fl), SyscallSucceeds());
+  EXPECT_EQ(fl.l_type, F_WRLCK);
+  EXPECT_EQ(fl.l_pid, -1);
+}
+
+TEST_F(FcntlLockTest, GetLockWithMixedReaders) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+
+  // Each query owns one read lock and conflicts only with the other.
+  struct flock lock = {.l_type = F_RDLCK,
+                       .l_whence = SEEK_SET,
+                       .l_start = 8,
+                       .l_len = 40,
+                       .l_pid = 0};
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &lock), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_OFD_SETLK, &lock), SyscallSucceeds());
+  for (int cmd : {F_GETLK, F_OFD_GETLK}) {
+    SCOPED_TRACE(cmd);
+    struct flock query = lock;
+    query.l_type = F_WRLCK;
+    ASSERT_THAT(fcntl(fd.get(), cmd, &query), SyscallSucceeds());
+    EXPECT_EQ(query.l_type, F_RDLCK);
+    EXPECT_EQ(query.l_pid, cmd == F_GETLK ? -1 : getpid());
+    EXPECT_EQ(query.l_start, lock.l_start);
+    EXPECT_EQ(query.l_len, lock.l_len);
+  }
 }
 
 TEST_F(FcntlLockTest, TestOFDCanUpgradeLock) {
