@@ -500,7 +500,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (s *sock) Release(ctx context.Context) {
 	kernel.KernelFromContext(ctx).DeleteSocket(&s.vfsfd)
-	e, ch := waiter.NewChannelEntry(waiter.EventHUp | waiter.EventErr)
+	e, ch := waiter.NewChannelEntry(waiter.EventHUp | waiter.EventErr | waiter.EventInternal)
 	s.EventRegister(&e)
 	defer s.EventUnregister(&e)
 
@@ -511,15 +511,36 @@ func (s *sock) Release(ctx context.Context) {
 	if family, skType, _ := s.Type(); skType == linux.SOCK_STREAM && (family == linux.AF_INET || family == linux.AF_INET6) {
 		v := s.Endpoint.SocketOptions().GetLinger()
 		// The case for zero timeout is handled in tcp endpoint close function.
-		// Close is blocked until either:
+		// As in Linux, close does not linger if the task is exiting.
+		// Otherwise, close is blocked until one of these happens:
 		// 1. The endpoint state is not in any of the states: FIN-WAIT1,
 		// CLOSING and LAST_ACK.
 		// 2. Timeout is reached.
-		if v.Enabled && v.Timeout != 0 {
-			_, _ = ctx.BlockWithTimeout(ch, true, v.Timeout)
+		// 3. The task is interrupted, for example by a signal.
+		t := kernel.TaskFromContext(ctx)
+		exiting := t != nil && t.ExitState() >= kernel.TaskExitInitiated
+		if v.Enabled && v.Timeout != 0 && !exiting {
+			timeout := v.Timeout
+			for isClosing(tcp.EndpointState(s.Endpoint.State())) {
+				var err error
+				if timeout, err = ctx.BlockWithTimeout(ch, true, timeout); err != nil {
+					break
+				}
+			}
 		}
 	}
 	s.namespace.DecRef(ctx)
+}
+
+// isClosing returns true if a TCP endpoint in state st waits for the peer to
+// acknowledge its FIN, like Linux's sk_stream_closing.
+func isClosing(st tcp.EndpointState) bool {
+	switch st {
+	case tcp.StateFinWait1, tcp.StateClosing, tcp.StateLastAck:
+		return true
+	default:
+		return false
+	}
 }
 
 // Epollable implements FileDescriptionImpl.Epollable.
