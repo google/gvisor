@@ -1088,7 +1088,9 @@ func tryPopulate(b safemem.Block) bool {
 	return tryPopulateMlock(b)
 }
 
-// Decommit uncommits the given pages, causing them to become zeroed.
+// Decommit uncommits the given pages, causing them to become zeroed. If async
+// page loading is in progress, Decommit may wait for in-flight reads of pages
+// in fr.
 //
 // Preconditions:
 //   - fr.Start and fr.End must be page-aligned.
@@ -1099,7 +1101,11 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
-	f.decommitOrManuallyZero(fr)
+	if amfl := f.asyncPageLoad.Load(); amfl != nil {
+		amfl.decommit(fr)
+	} else {
+		f.decommitOrManuallyZero(fr)
+	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
