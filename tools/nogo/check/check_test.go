@@ -28,9 +28,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/gcexportdata"
 	"gvisor.dev/gvisor/pkg/zip"
-	"gvisor.dev/gvisor/tools/nogo/facts"
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
@@ -133,6 +131,10 @@ func TestDeclaredFactsErrors(t *testing.T) {
 }
 
 func TestDeprecatedImportedMethods(t *testing.T) {
+	savedImports, savedFacts := flags.ImportMap, flags.FactMap
+	t.Cleanup(func() {
+		flags.ImportMap, flags.FactMap = savedImports, savedFacts
+	})
 	for _, exported := range []bool{false, true} {
 		for _, indirect := range []bool{false, true} {
 			t.Run(fmt.Sprintf("exported=%t/indirect=%t", exported, indirect), func(t *testing.T) {
@@ -170,33 +172,6 @@ type Value struct{}
 func (Value) Old() {}
 func (Value) New() {}
 `)
-				if exported {
-					pkg, err := i.importPackage(depPath, "")
-					if err != nil {
-						t.Fatal(err)
-					}
-					// Facts originate from source, but consumers normally use the
-					// compiled type information. Method identities must agree.
-					var typeData, factData bytes.Buffer
-					if err := gcexportdata.Write(&typeData, i.fset, pkg); err != nil {
-						t.Fatal(err)
-					}
-					if err := i.fastFacts(pkg).Serialize(&factData); err != nil {
-						t.Fatal(err)
-					}
-					i.imports = make(map[string]*types.Package)
-					pkg, err = gcexportdata.Read(&typeData, i.fset, i.imports, depPath)
-					if err != nil {
-						t.Fatal(err)
-					}
-					decoded := facts.NewPackage()
-					if err := decoded.ReadFrom(pkg, &factData); err != nil {
-						t.Fatal(err)
-					}
-					i.mu.Lock()
-					i.cache[depPath] = &importerEntry{pkg: pkg, facts: decoded}
-					i.mu.Unlock()
-				}
 				importPath, value := depPath, "dep.Value{}"
 				if indirect {
 					importPath, value = "gvisor.dev/gvisor/bridge", "bridge.Value()"
@@ -204,6 +179,37 @@ func (Value) New() {}
 import %q
 func Value() dep.Value { return dep.Value{} }
 `, depPath))
+				}
+				if exported {
+					// Produce types and facts from the same source package, then
+					// load them through the real file-based consumer boundary.
+					flags.ImportMap, flags.FactMap = make(map[string]string), make(map[string]string)
+					paths := []string{depPath}
+					if indirect {
+						paths = append(paths, importPath)
+					}
+					for _, path := range paths {
+						pkg, err := i.importPackage(path, "")
+						if err != nil {
+							t.Fatal(err)
+						}
+						dir := t.TempDir()
+						flags.ImportMap[path] = filepath.Join(dir, "types.export")
+						if err := writeExport(flags.ImportMap[path], i.fset, pkg); err != nil {
+							t.Fatal(err)
+						}
+						var factData bytes.Buffer
+						if err := i.fastFacts(pkg).Serialize(&factData); err != nil {
+							t.Fatal(err)
+						}
+						flags.FactMap[path] = filepath.Join(dir, "facts")
+						if err := os.WriteFile(flags.FactMap[path], factData.Bytes(), 0600); err != nil {
+							t.Fatal(err)
+						}
+					}
+					i.sources = make(map[string][]string)
+					i.cache = make(map[string]*importerEntry)
+					i.imports = make(map[string]*types.Package)
 				}
 				source := fmt.Sprintf(`package consumer
 import %q
@@ -221,7 +227,184 @@ func use() {
 				if len(findings) != 1 || findings[0].Category != "SA1019" || findings[0].Position.Line != 5 || !strings.Contains(findings[0].Message, "Old is deprecated") {
 					t.Fatalf("findings = %v, want exactly the deprecated Old method on line 5", findings)
 				}
+				if exported && indirect {
+					// Loading bridge introduces dep's types before dep is explicitly
+					// imported. The later import must retain those exact identities.
+					introduced := i.imports[depPath]
+					loaded, err := i.Import(depPath)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got, want := loaded, introduced; want == nil || got != want {
+						t.Fatalf("later import = %p, want introduced package %p", got, want)
+					}
+				}
+
 			})
 		}
+	}
+}
+
+func TestExportDataInputs(t *testing.T) {
+	savedImports, savedPaths, savedStdlib := flags.ImportMap, flags.ImportPaths, flags.Stdlib
+	t.Cleanup(func() {
+		flags.ImportMap, flags.ImportPaths, flags.Stdlib = savedImports, savedPaths, savedStdlib
+	})
+	const canonical = "example.org/private/dep"
+	for _, tc := range []struct {
+		name     string
+		data     string
+		stdlib   bool
+		missing  bool
+		wantText string
+	}{
+		{name: "direct"},
+		{name: "stdlib", stdlib: true},
+		{name: "missing", missing: true},
+		{name: "malformed", data: "?", wantText: `unexpected export data with prefix "?"`},
+		{name: "compiler_archive", data: "!<arch>\n", wantText: "directly from an archive file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.ImportMap = make(map[string]string)
+			flags.ImportPaths = map[string]string{"alias": canonical}
+			flags.Stdlib = t.TempDir()
+			filename := filepath.Join(flags.Stdlib, canonical+".export")
+			if !tc.missing {
+				pkg := types.NewPackage(canonical, "dep")
+				pkg.MarkComplete()
+				if err := writeExport(filename, token.NewFileSet(), pkg); err != nil {
+					t.Fatal(err)
+				}
+				if tc.data != "" {
+					if err := os.WriteFile(filename, []byte(tc.data), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if !tc.stdlib {
+				flags.ImportMap[canonical] = filename
+			}
+			i := &importer{fset: token.NewFileSet(), cache: make(map[string]*importerEntry), imports: make(map[string]*types.Package)}
+			pkg, err := i.Import("alias")
+			switch {
+			case tc.missing:
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("Import() error = %v, want %v", err, os.ErrNotExist)
+				}
+			case tc.wantText != "":
+				if err == nil || !strings.Contains(err.Error(), tc.wantText) {
+					t.Errorf("Import() error = %v, want %q", err, tc.wantText)
+				}
+			case err != nil:
+				t.Fatal(err)
+			default:
+				if got, want := pkg.Path(), canonical; got != want {
+					t.Errorf("package path = %q, want %q", got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestExportTargetSizes(t *testing.T) {
+	savedArch := flags.GOARCH
+	t.Cleanup(func() { flags.GOARCH = savedArch })
+	src := filepath.Join(t.TempDir(), "source.go")
+	if err := os.WriteFile(src, []byte(`package sizes
+import "unsafe"
+const Word = unsafe.Sizeof(uintptr(0))
+type Value [Word]byte
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		arch string
+		size int64
+	}{{"amd64", 8}, {"arm64", 8}, {"386", 4}} {
+		t.Run(tc.arch, func(t *testing.T) {
+			flags.GOARCH = tc.arch
+			i := &importer{fset: token.NewFileSet(), cache: make(map[string]*importerEntry), imports: make(map[string]*types.Package)}
+			pkg, _, _, err := i.checkPackage("sizes", []string{src})
+			if err != nil {
+				t.Fatal(err)
+			}
+			filename := filepath.Join(t.TempDir(), "sizes.export")
+			if err := writeExport(filename, i.fset, pkg); err != nil {
+				t.Fatal(err)
+			}
+			savedImports := flags.ImportMap
+			flags.ImportMap = map[string]string{"sizes": filename}
+			defer func() { flags.ImportMap = savedImports }()
+			consumer := &importer{fset: token.NewFileSet(), cache: make(map[string]*importerEntry), imports: make(map[string]*types.Package)}
+			loaded, err := consumer.Import("sizes")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := loaded.Scope().Lookup("Value").Type().Underlying().(*types.Array).Len(), tc.size; got != want {
+				t.Errorf("exported array length = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestBundleAndPackageExports(t *testing.T) {
+	savedAnalyzers, savedStdlib := allAnalyzers, flags.Stdlib
+	t.Cleanup(func() {
+		allAnalyzers, flags.Stdlib = savedAnalyzers, savedStdlib
+	})
+	// This fixture checks the export protocol independently of individual
+	// analyzers, which have their own binary and fact inputs.
+	allAnalyzers = nil
+	dir := t.TempDir()
+	sources := make(map[string][]string)
+	for path, source := range map[string]string{
+		"internal/abi": "package abi; type MapType struct { Size uintptr }",
+		"outer": `package outer
+import "internal/abi"
+type Value[T any] struct { Map abi.MapType; Data T }
+`,
+	} {
+		filename := filepath.Join(dir, path, "source.go")
+		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+		sources[path] = []string{filename}
+	}
+	flags.Stdlib = filepath.Join(dir, "exports")
+	if _, _, err := Bundle(sources, nil, flags.Stdlib); err != nil {
+		t.Fatal(err)
+	}
+	consumer := filepath.Join(dir, "consumer.go")
+	if err := os.WriteFile(consumer, []byte(`package consumer
+import "outer"
+type Value = outer.Value[string]
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var exported bytes.Buffer
+	if _, _, err := Package("consumer", []string{consumer}, &exported); err != nil {
+		t.Fatal(err)
+	}
+	// Package's consumer preloads internal/abi before importing outer. Its
+	// exported generic alias must still refer to that one canonical package.
+	filename := filepath.Join(flags.Stdlib, "consumer.export")
+	if err := os.WriteFile(filename, exported.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	i := &importer{fset: token.NewFileSet(), cache: make(map[string]*importerEntry), imports: make(map[string]*types.Package)}
+	pkg, err := i.Import("consumer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	internal, err := i.Import("internal/abi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := pkg.Scope().Lookup("Value").Type().Underlying().(*types.Struct)
+	if got, want := value.Field(0).Type().(*types.Named).Obj().Pkg(), internal; got != want {
+		t.Errorf("exported field package = %p, want canonical internal package %p", got, want)
 	}
 }
