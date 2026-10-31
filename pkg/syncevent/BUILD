@@ -26,6 +26,7 @@ go_test(
     size = "small",
     srcs = [
         "broadcaster_test.go",
+        "goroutineleak_test.go",
         "syncevent_example_test.go",
         "waiter_test.go",
     ],

@@ -26,6 +26,9 @@ go_test(
     ],
     embed = [":watchdog"],
     deps = [
+        "//pkg/log",
+        "//pkg/sleep",
+        "//pkg/syncevent",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

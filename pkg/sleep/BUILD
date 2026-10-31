@@ -18,6 +18,7 @@ go_test(
     name = "sleep_test",
     size = "medium",
     srcs = [
+        "goroutineleak_test.go",
         "sleep_test.go",
     ],
     embed = [":sleep"],

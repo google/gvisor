@@ -20,6 +20,9 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/syncevent"
 )
 
 func TestStuckWatchdogUsesTaskAction(t *testing.T) {
@@ -79,4 +82,70 @@ gvisor.dev/gvisor/pkg/sentry/kernel.(*Task).doSyscall(0xc000fae160?)
 	if diff := cmp.Diff(wantStacks, gotStuckStacks); diff != "" {
 		t.Errorf("stuckGoroutineStacks() returned unexpected diff (-want +got):\n%s", diff)
 	}
+}
+
+// TestIdleWaitersNotStuck checks that goroutines idle in sleep.Sleeper.Fetch
+// or syncevent.Waiter.WaitAndAckAll are not collated as stuck. Idle netstack
+// processors and systrap task goroutines wait there, and a sandbox can have
+// enough of them to fill the stuck goroutine section.
+func TestIdleWaitersNotStuck(t *testing.T) {
+	var s sleep.Sleeper
+	var wk sleep.Waker
+	s.AddWaker(&wk)
+	sleeperDone := make(chan struct{})
+	go func() {
+		s.Fetch(true /* block */)
+		close(sleeperDone)
+	}()
+	defer func() {
+		wk.Assert()
+		<-sleeperDone
+		s.Done()
+	}()
+
+	var w syncevent.Waiter
+	w.Init()
+	waiterDone := make(chan struct{})
+	go func() {
+		w.WaitAndAckAll()
+		close(waiterDone)
+	}()
+	defer func() {
+		w.Notify(1)
+		<-waiterDone
+	}()
+
+	idle := []string{
+		"pkg/sleep.(*Sleeper).Fetch",
+		"pkg/syncevent.(*Waiter).WaitAndAckAll",
+	}
+	var stacks string
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		stacks = string(log.Stacks(true))
+		if parked(stacks, idle[0]) && parked(stacks, idle[1]) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines did not park:\n%s", stacks)
+		}
+	}
+
+	got := string(stuckGoroutineStacks([]byte(stacks), nil))
+	for _, fn := range idle {
+		if strings.Contains(got, fn) {
+			t.Errorf("stuck goroutine section contains idle %s:\n%s", fn, got)
+		}
+	}
+}
+
+// parked returns true if stacks has a goroutine that is parked with fn on its
+// stack.
+func parked(stacks, fn string) bool {
+	for _, g := range strings.Split(stacks, "\n\n") {
+		hdr, _, _ := strings.Cut(g, "\n")
+		if strings.Contains(g, fn) && !strings.Contains(hdr, "[running") && !strings.Contains(hdr, "[runnable") {
+			return true
+		}
+	}
+	return false
 }
