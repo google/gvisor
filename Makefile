@@ -985,9 +985,12 @@ $(RELEASE_KEY):
 
 $(RELEASE_ARTIFACTS)/%:
 	@mkdir -p $@
-	@$(call copy,//debian:debian,$@)
-	@$(call copy,//debian:gvisor-release-tar-bz2,$@)
-	@$(call copy,//debian:gvisor-release-tar-zstd,$@)
+	@$(call copy,//debian:release-packages,$@)
+
+artifacts-all: ## Builds release packages for x86_64 and aarch64.
+	@mkdir -p $(RELEASE_ARTIFACTS)
+	@$(call copy,//debian:release-archives,$(RELEASE_ARTIFACTS))
+.PHONY: artifacts-all
 
 artifacts-python: ensure-bazel-server ## Builds Python SandboxExec wheels into $(RELEASE_ARTIFACTS)/python.
 	@mkdir -p $(RELEASE_ARTIFACTS)/python

@@ -1,5 +1,6 @@
 """Rules assembling the gVisor release binaries in their installed layout."""
 
+load("//tools:arch.bzl", "arch_transition")
 load("//tools:defs.bzl", "cov_available", "pkg_tar")
 
 # FLAVORS are the instrumentation flavors of gVisor binaries.
@@ -79,6 +80,25 @@ def _single_file(target):
     if len(files) != 1:
         fail("expected exactly one file in %s, got %d" % (target.label, len(files)))
     return files[0]
+
+def _release_archives_impl(ctx):
+    outputs = []
+    for arch, packages in ctx.split_attr.packages.items():
+        # Match the architecture directories used by the Make release targets.
+        directory = {"amd64": "x86_64", "arm64": "aarch64"}[arch]
+        for src in packages[DefaultInfo].files.to_list():
+            out = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, directory, src.basename))
+            ctx.actions.symlink(output = out, target_file = src)
+            outputs.append(out)
+    return [DefaultInfo(files = depset(outputs))]
+
+release_archives = rule(
+    implementation = _release_archives_impl,
+    attrs = {
+        "packages": attr.label(cfg = arch_transition, mandatory = True),
+    },
+    doc = "Builds release packages for both architectures, keeping their identical filenames in separate directories.",
+)
 
 def _release_files_impl(ctx):
     outputs = []
