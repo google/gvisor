@@ -1,5 +1,5 @@
 load("//pkg/seccomp/precompiledseccomp:defs.bzl", "precompiled_seccomp_rules")
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "cc_objcopy", "cc_objdump", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
@@ -175,9 +175,18 @@ go_test(
         "vdso_stub_test.go",
         "vdso_test.go",
     ],
+    args = [
+        "--objcopy=$(location {})".format(cc_objcopy),
+        "--objdump=$(location {})".format(cc_objdump),
+    ],
+    data = [
+        cc_objcopy,
+        cc_objdump,
+    ],
     embed = [":kvm"],
     nogo = False,
     pure = True,
+    rundir = ".",
     tags = ["nogotsan"],
 )
 
