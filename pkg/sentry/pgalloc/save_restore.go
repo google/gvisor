@@ -1216,28 +1216,10 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	// been provided.
 	var amfl *asyncMemoryFileLoad
 	if opts.PagesFile != nil {
-		var df stateio.DestinationFile
-		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
-			var err error
-			df, err = opts.PagesFile.ar.RegisterDestinationFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
-			if err != nil {
-				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
-			}
-		}
-		amfl = &asyncMemoryFileLoad{
-			f:            f,
-			pf:           opts.PagesFile,
-			df:           df,
-			doneCallback: opts.DoneCallback,
-			timeline:     mfTimeline.Transfer(),
-		}
-		amfl.pf.amflsMu.Lock()
-		if err := amfl.pf.err(); err != nil {
-			amfl.pf.amflsMu.Unlock()
+		amfl, err = opts.PagesFile.registerMemoryFile(f, fileSize, opts.DoneCallback, mfTimeline)
+		if err != nil {
 			return err
 		}
-		amfl.pf.amfls.PushBack(amfl)
-		amfl.pf.amflsMu.Unlock()
 		f.asyncPageLoad.Store(amfl)
 		opts.DoneCallback = nil
 		defer func() {
@@ -1362,10 +1344,13 @@ type AsyncPagesFileLoad struct {
 	// Padding before state used mostly by the async page loader goroutine:
 	_ [hostarch.CacheLineSize]byte
 
-	// amfls tracks MemoryFiles that are currently loading from the pages file.
-	// amfls is protected by amflsMu.
+	// amflsMu serializes destination registration with closing the pages file.
 	amflsMu amflsMutex
-	amfls   asyncMemoryFileLoadList
+
+	// amfls tracks MemoryFiles that are currently loading from the pages file.
+	//
+	// +checklocks:amflsMu
+	amfls asyncMemoryFileLoadList
 
 	// numWaiters is the current number of waiting waiters. numWaiters is
 	// protected by mu.
@@ -1683,6 +1668,33 @@ func (amfl *asyncMemoryFileLoad) awaitLoad(fr memmap.FileRange) error {
 	return apfl.err()
 }
 
+// A failed read can close the pages file before LoadFrom is called for the
+// last MemoryFile. Check for that error before using the reader.
+func (apfl *AsyncPagesFileLoad) registerMemoryFile(f *MemoryFile, size uint64, done func(error), timeline *timing.Lease) (*asyncMemoryFileLoad, error) {
+	apfl.amflsMu.Lock()
+	defer apfl.amflsMu.Unlock()
+	if err := apfl.err(); err != nil {
+		return nil, err
+	}
+	var df stateio.DestinationFile
+	if apfl.ar.NeedRegisterDestinationFD() {
+		var err error
+		df, err = apfl.ar.RegisterDestinationFD(int32(f.file.Fd()), size, f.getClientFileRangeSettings(size))
+		if err != nil {
+			return nil, fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+		}
+	}
+	amfl := &asyncMemoryFileLoad{
+		f:            f,
+		pf:           apfl,
+		df:           df,
+		doneCallback: done,
+		timeline:     timeline.Transfer(),
+	}
+	apfl.amfls.PushBack(amfl)
+	return amfl, nil
+}
+
 func (apfl *AsyncPagesFileLoad) canEnqueue() bool {
 	return apfl.qavail > 0
 }
@@ -1853,7 +1865,9 @@ func (apfl *AsyncPagesFileLoad) main() {
 		decRefs = decRefs[:0]
 	}
 	defer func() {
-		// Close ar first since this synchronously stops inflight I/O.
+		// Close synchronously stops in-flight reads before their ranges are
+		// released. Exclude new registrations while closing the reader.
+		apfl.amflsMu.Lock()
 		if err := apfl.ar.Close(); err != nil {
 			// Completed reads are complete irrespective of err, so log err
 			// rather than propagating it.
@@ -1864,7 +1878,6 @@ func (apfl *AsyncPagesFileLoad) main() {
 		// Leave all segments in asyncMemoryFileLoad.unloaded so that new
 		// callers of awaitLoad() will still observe the correct (permanently
 		// unloaded) segments.
-		apfl.amflsMu.Lock()
 		apfl.mu.Lock()
 		for amfl := apfl.amfls.Front(); amfl != nil; amfl = amfl.Next() {
 			for ulseg := amfl.unloaded.FirstSegment(); ulseg.Ok(); ulseg = ulseg.NextSegment() {
