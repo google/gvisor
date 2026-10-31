@@ -601,6 +601,125 @@ TEST(NetlinkRouteTest, LinkUp) {
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
 }
 
+// Returns the errno of connecting a fresh UDP socket to 127.0.0.1 (AF_INET) or
+// ::1 (AF_INET6), or 0.
+int ConnectUdpToLoopback(int family = AF_INET) {
+  int fd = socket(family, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    return errno;
+  }
+  TestAddress addr =
+      (family == AF_INET ? V4Loopback() : V6Loopback()).WithPort(9);
+  int rc = connect(fd, AsSockAddr(&addr.addr), addr.addr_len);
+  int err = rc < 0 ? errno : 0;
+  close(fd);
+  return err;
+}
+
+TEST(NetlinkRouteTest, LinkDownUp) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  // A new network namespace's loopback may start down; bring it up. Bits that
+  // are not user-settable (IFF_RUNNING, IFF_LOWER_UP) are ignored.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP | IFF_RUNNING | IFF_LOWER_UP,
+                                  IFF_UP | IFF_RUNNING | IFF_LOWER_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET6), 0);
+
+  // ifi_change selects the bits; with IFF_UP not selected it is unchanged even
+  // though ifi_flags has it clear.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_DEBUG));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & IFF_UP, IFF_UP);
+
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & (IFF_UP | IFF_RUNNING | IFF_LOWER_UP), 0);
+  // NETDEV_DOWN leaves host-scope IPv4 local routes in place
+  // (fib_sync_down_dev), so the route lookup still succeeds. rt6_disable_ip
+  // deletes the IPv6 local route for ::1.
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET6), EADDRNOTAVAIL);
+
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET6), 0);
+}
+
+// netstack cannot model these user-settable flags, so a request that changes
+// one fails instead of being silently ignored. Linux applies them.
+TEST(NetlinkRouteTest, LinkUnsupportedFlagChange) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  const unsigned int current = lo.flags;
+
+  // Selecting a flag in ifi_change without changing its value is accepted.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_PROMISC));
+
+  for (unsigned int flag :
+       {IFF_PROMISC, IFF_ALLMULTI, IFF_NOARP, IFF_DEBUG, IFF_NOTRAILERS,
+        IFF_DYNAMIC, IFF_MULTICAST, IFF_PORTSEL, IFF_AUTOMEDIA}) {
+    SCOPED_TRACE(flag);
+    // The request also clears IFF_UP: nothing is applied if any part fails.
+    EXPECT_THAT(LinkChangeFlags(lo.index, flag, flag | IFF_UP),
+                PosixErrorIs(EOPNOTSUPP, _));
+    lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    EXPECT_EQ(lo.flags, current);
+  }
+}
+
+TEST(NetlinkRouteTest, LinkDownRequiresNetAdmin) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+  {
+    AutoCapability cap(CAP_NET_ADMIN, false);
+    EXPECT_THAT(LinkChangeFlags(lo.index, 0, IFF_UP), PosixErrorIs(EPERM, _));
+  }
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & IFF_UP, IFF_UP);
+}
+
 TEST(NetlinkRouteTest, GetLinkByName) {
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
@@ -4177,6 +4296,73 @@ PosixError AddNoDadAddr(FileDescriptor& fd, int index, int family,
   TEST_CHECK(inet_pton(family, local, addr) == 1);
   addattr(&req.hdr, sizeof(req), IFA_LOCAL, addr, addr_len);
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+// When a device goes down, the local route for its IPv4 address survives
+// (fib_sync_down_dev skips host-scope routes), so the address is still
+// reachable through lo. rt6_disable_ip deletes every IPv6 route through the
+// device, including the local route, so its IPv6 address is unreachable.
+TEST_P(NetlinkRouteIpInvariantTest, DownedLinkAddress) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+  const int veth1_idx = if_nametoindex("veth1");
+  ASSERT_NE(veth1_idx, 0);
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1_idx, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(if_nametoindex("veth2"), IFF_UP, IFF_UP));
+
+  const int family = GetParam();
+  const bool ipv4 = family == AF_INET;
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, veth1_idx, family, ipv4 ? 24 : 64,
+                               ipv4 ? "192.0.2.1" : "2001:db8::1"));
+  TestAddress local = ipv4 ? V4AddrStr("local", "192.0.2.1")
+                           : V6AddrStr("local", "2001:db8::1");
+
+  FileDescriptor listener =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, 0));
+  ASSERT_THAT(bind(listener.get(), AsSockAddr(&local.addr), local.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(
+      getsockname(listener.get(), AsSockAddr(&local.addr), &local.addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(listen(listener.get(), 1), SyscallSucceeds());
+
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1_idx, 0, IFF_UP));
+  for (const Link& link : ASSERT_NO_ERRNO_AND_VALUE(DumpLinks())) {
+    if (link.index == veth1_idx) {
+      EXPECT_EQ(link.flags & IFF_UP, 0);
+    }
+  }
+
+  FileDescriptor conn =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, 0));
+  if (!ipv4) {
+    EXPECT_THAT(RetryEINTR(connect)(conn.get(), AsSockAddr(&local.addr),
+                                    local.addr_len),
+                SyscallFailsWithErrno(ENETUNREACH));
+    return;
+  }
+  ASSERT_THAT(
+      RetryEINTR(connect)(conn.get(), AsSockAddr(&local.addr), local.addr_len),
+      SyscallSucceeds());
+  FileDescriptor accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listener.get(), nullptr, nullptr));
 }
 
 TEST_P(NetlinkRouteIpInvariantTest, NewRouteWithoutOif) {
