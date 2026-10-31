@@ -19,12 +19,19 @@ import (
 	"time"
 )
 
-// beforeSave is invoked by stateify.
-func (s *stdClock) beforeSave() {
-	s.monotonicOffset = s.NowMonotonic()
+// saveMonotonicOffset returns the reading to resume from without changing
+// the base time or offset still used by the running clock.
+func (s *stdClock) saveMonotonicOffset() MonotonicTime {
+	return s.NowMonotonic()
 }
 
-// afterLoad is invoked by stateify.
+// loadMonotonicOffset is invoked by stateify.
+func (s *stdClock) loadMonotonicOffset(_ context.Context, offset MonotonicTime) {
+	s.monotonicOffset = offset
+}
+
+// afterLoad starts the restored clock after the checkpoint graph has been
+// decoded, so time spent decoding it does not advance the clock.
 func (s *stdClock) afterLoad(context.Context) {
 	s.baseTime = time.Now()
 }
