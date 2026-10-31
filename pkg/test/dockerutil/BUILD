@@ -1,3 +1,4 @@
+load("@bazel_lib//lib:copy_file.bzl", "copy_file")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -5,15 +6,12 @@ package(
     licenses = ["notice"],
 )
 
-# We copy the `run_sniffer` binary here because `go:embed` can only embed
-# from the current directory or subdirectories, not parents of it.
-genrule(
+# go:embed can only match files in this package or a subdirectory.
+copy_file(
     name = "run_sniffer_bin",
-    srcs = [
-        "//tools/ioctl_sniffer:run_sniffer",
-    ],
-    outs = ["run_sniffer_copy"],
-    cmd = "cat < $(SRCS) > $@",
+    src = "//tools/ioctl_sniffer:run_sniffer",
+    out = "run_sniffer_copy",
+    allow_symlink = True,
 )
 
 go_library(
