@@ -1686,6 +1686,83 @@ func TestMultiContainerCheckpointRestoreJoinCgroupNamespace(t *testing.T) {
 	}
 }
 
+// TestMultiContainerCheckpointRestoreStartSubcontainer checks that `runsc start`
+// on a sub-container of a restoring sandbox restores that sub-container.
+func TestMultiContainerCheckpointRestoreStartSubcontainer(t *testing.T) {
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testMultiContainerCheckpointRestoreStartSubcontainer(t, conf)
+		})
+	}
+}
+
+func testMultiContainerCheckpointRestoreStartSubcontainer(t *testing.T, conf *config.Config) {
+	setupTestRootDir(t, conf)
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	podSpecs, ids := createSpecs(sleepCmd, sleepCmd)
+	conts, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+	if err := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("error checkpointing: %v", err)
+	}
+
+	newIDs := []string{testutil.RandomContainerID(), testutil.RandomContainerID()}
+	podSpecs[1].Annotations[specutils.ContainerdSandboxIDAnnotation] = newIDs[0]
+	// Give the restored sandbox a CPU limit below its lifecycle CPU limit.
+	cgroupPath := "/" + newIDs[0]
+	podSpecs[0].Linux = &specs.Linux{
+		CgroupsPath: cgroupPath,
+		Resources: &specs.LinuxResources{
+			CPU: &specs.LinuxCPU{Quota: new(int64(25000)), Period: new(uint64(100000))},
+		},
+	}
+	restored := make([]*Container, 0, len(podSpecs))
+	for i, spec := range podSpecs {
+		bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up bundle: %v", err)
+		}
+		defer cleanupBundle()
+		c, err := New(conf, Args{ID: newIDs[i], Spec: spec, BundleDir: bundle, CheckpointDirPath: dir})
+		if err != nil {
+			t.Fatalf("error creating container %q: %v", newIDs[i], err)
+		}
+		defer c.Destroy()
+		restored = append(restored, c)
+	}
+	if err := restored[0].Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring the root container: %v", err)
+	}
+	if err := restored[1].Start(conf); err != nil {
+		t.Fatalf("error starting the sub-container in a restoring sandbox: %v", err)
+	}
+	if err := restored[0].WaitRestore(); err != nil {
+		t.Fatalf("error waiting for restore: %v", err)
+	}
+	if _, err := executeCombinedOutput(conf, restored[1], nil, "/bin/true"); err != nil {
+		t.Errorf("error executing in the restored sub-container: %v", err)
+	}
+	cpuMax, err := os.ReadFile(filepath.Join("/sys/fs/cgroup", cgroupPath, "cpu.max"))
+	if err != nil {
+		t.Fatalf("error reading the sandbox CPU limit: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(cpuMax)), "25000 100000"; got != want {
+		t.Errorf("sandbox cpu.max is %q after the last container was restored, want %q", got, want)
+	}
+}
+
 // restoreNoRootContainer restores imagePath into a new sandbox sbID with no root
 // container, then restores subSpecs in checkpoint order.
 func restoreNoRootContainer(t *testing.T, conf *config.Config, imagePath, sbID string, subSpecs []*specs.Spec) (*Container, []*Container) {

@@ -546,10 +546,16 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		IsRootfsUpperTarFilePresent: rootfsUpperTarFile != nil,
 		FilePayload:                 payload,
 	}
-	if err := s.call(sentryapi.ContMgrStartSubcontainer, &args, nil); err != nil {
+	// A sub-container started in a restoring sandbox is restored instead, and
+	// may be the last container that the restore was waiting for.
+	var reply sentryapi.RestoreReply
+	if err := s.call(sentryapi.ContMgrStartSubcontainer, &args, &reply); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
 	}
-	return nil
+	if !reply.KernelStarted {
+		return nil
+	}
+	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
 // DirectIO controls whether the checkpoint pages file is read with O_DIRECT.
