@@ -1372,6 +1372,49 @@ func TestCheckpointResume(t *testing.T) {
 	}
 }
 
+// TestUsageDiskBackedOverlay checks that data in a disk backed overlay is not
+// reported as memory usage, before or after a checkpoint and restore.
+func TestUsageDiskBackedOverlay(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint not supported")
+	}
+	conf := overlayTestConfig(t)
+
+	const size = 64 << 20
+	file := filepath.Join(testutil.TmpDir(), "usage-overlay")
+	done := file + ".done"
+	script := fmt.Sprintf("dd if=/dev/urandom of=%q bs=1M count=%d && echo ok > %q; while true; do sleep 1; done", file, size>>20, done)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+	bundleDir := setupBundle(t, conf, spec)
+	cont := startContainer(t, conf, spec, bundleDir, nil)
+	waitForGuestFiles(t, conf, cont, done)
+
+	checkUsage := func(cont *Container, when string) {
+		t.Helper()
+		m, err := cont.Sandbox.Usage(true /* Full */)
+		if err != nil {
+			t.Fatalf("error getting usage %s: %v", when, err)
+		}
+		if m.Tmpfs >= size {
+			t.Errorf("overlay data reported as tmpfs memory %s: got Tmpfs = %d, want < %d", when, m.Tmpfs, size)
+		}
+	}
+	checkUsage(cont, "before checkpoint")
+
+	dir := makeTempDir(t, "checkpoint")
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	cont2 := newContainer(t, conf, spec, bundleDir, func(args *Args) {
+		args.CheckpointDirPath = dir
+	})
+	if err := cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+	waitForGuestFiles(t, conf, cont2, file)
+	checkUsage(cont2, "after restore")
+}
+
 func TestSplitFSCheckpointRestore(t *testing.T) {
 	// We only run this test if checkpoint/restore is supported.
 	if !testutil.IsCheckpointSupported() {
