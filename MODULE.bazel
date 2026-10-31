@@ -73,7 +73,14 @@ http_archive(
 
 llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
 
-llvm_configure(name = "llvm-project")
+# The NVIDIA ABI parser only inspects gVisor's supported CPU architectures.
+llvm_configure(
+    name = "llvm-project",
+    targets = [
+        "AArch64",
+        "X86",
+    ],
+)
 
 http_archive(
     name = "kythe_release",
