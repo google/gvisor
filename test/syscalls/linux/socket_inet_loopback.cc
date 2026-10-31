@@ -226,6 +226,76 @@ INSTANTIATE_TEST_SUITE_P(
       return s;
     });
 
+TEST(SocketInetLoopback, WildcardBoundPortReleasedOnClose) {
+  for (int family : {AF_INET, AF_INET6}) {
+    SCOPED_TRACE(family);
+    const auto listener =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+    auto server = V4Loopback();
+    ASSERT_THAT(bind(listener.get(), AsSockAddr(&server.addr), server.addr_len),
+                SyscallSucceeds());
+    ASSERT_THAT(listen(listener.get(), 1), SyscallSucceeds());
+    ASSERT_THAT(
+        getsockname(listener.get(), AsSockAddr(&server.addr), &server.addr_len),
+        SyscallSucceeds());
+
+    auto client =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, IPPROTO_TCP));
+    if (family == AF_INET6) {
+      const int off = 0;
+      ASSERT_THAT(setsockopt(client.get(), IPPROTO_IPV6, IPV6_V6ONLY, &off,
+                             sizeof(off)),
+                  SyscallSucceeds());
+    }
+    auto bound = family == AF_INET ? V4Any() : V6Any();
+    ASSERT_THAT(bind(client.get(), AsSockAddr(&bound.addr), bound.addr_len),
+                SyscallSucceeds());
+    ASSERT_THAT(
+        getsockname(client.get(), AsSockAddr(&bound.addr), &bound.addr_len),
+        SyscallSucceeds());
+
+    const uint16_t server_port =
+        ASSERT_NO_ERRNO_AND_VALUE(AddrPort(AF_INET, server.addr));
+    auto peer_addr = family == AF_INET ? V4Loopback() : V4MappedLoopback();
+    ASSERT_NO_ERRNO(SetAddrPort(family, &peer_addr.addr, server_port));
+    ASSERT_THAT(RetryEINTR(connect)(client.get(), AsSockAddr(&peer_addr.addr),
+                                    peer_addr.addr_len),
+                SyscallSucceeds());
+    const auto peer =
+        ASSERT_NO_ERRNO_AND_VALUE(Accept(listener.get(), nullptr, nullptr));
+
+    // An abortive close lets us test the port reservation without TIME_WAIT.
+    const struct linger rst = {.l_onoff = 1, .l_linger = 0};
+    ASSERT_THAT(
+        setsockopt(client.get(), SOL_SOCKET, SO_LINGER, &rst, sizeof(rst)),
+        SyscallSucceeds());
+    client.reset();
+    char c;
+    ASSERT_THAT(RetryEINTR(read)(peer.get(), &c, sizeof(c)),
+                SyscallFailsWithErrno(ECONNRESET));
+
+    const auto v4 =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+    const uint16_t port =
+        ASSERT_NO_ERRNO_AND_VALUE(AddrPort(family, bound.addr));
+    auto v4_addr = V4Any();
+    ASSERT_NO_ERRNO(SetAddrPort(AF_INET, &v4_addr.addr, port));
+    EXPECT_THAT(bind(v4.get(), AsSockAddr(&v4_addr.addr), v4_addr.addr_len),
+                SyscallSucceeds());
+
+    const auto v6 =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP));
+    const int on = 1;
+    ASSERT_THAT(
+        setsockopt(v6.get(), IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on)),
+        SyscallSucceeds());
+    auto v6_addr = V6Any();
+    ASSERT_NO_ERRNO(SetAddrPort(AF_INET6, &v6_addr.addr, port));
+    EXPECT_THAT(bind(v6.get(), AsSockAddr(&v6_addr.addr), v6_addr.addr_len),
+                SyscallSucceeds());
+  }
+}
+
 using DualStackAfMismatchTest = ::testing::TestWithParam<ProtocolTestParam>;
 
 TEST_P(DualStackAfMismatchTest, V6ListenerV4Connect) {
