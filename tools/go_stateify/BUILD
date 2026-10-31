@@ -9,7 +9,10 @@ go_binary(
     name = "stateify",
     srcs = ["main.go"],
     visibility = ["//:sandbox"],
-    deps = ["//tools/constraintutil"],
+    deps = [
+        "//tools/constraintutil",
+        "@org_golang_x_tools//imports",
+    ],
 )
 
 bzl_library(
