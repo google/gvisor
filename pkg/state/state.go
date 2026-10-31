@@ -89,8 +89,8 @@ func (e *ErrState) Unwrap() error {
 	return e.err
 }
 
-// useGraphEngine is set by EnableGraphEngine.
-var useGraphEngine atomic.Bool
+// useLegacyEngine is set by EnableGraphEngine(false).
+var useLegacyEngine atomic.Bool
 
 // EnableGraphEngine enables or disables the reflection-free graph engine for
 // Save. Load automatically detects which engine produced a stream from its
@@ -99,13 +99,13 @@ var useGraphEngine atomic.Bool
 // EnableGraphEngine mutates process-global state and must not be called
 // concurrently with Save.
 func EnableGraphEngine(enable bool) {
-	useGraphEngine.Store(enable)
+	useLegacyEngine.Store(!enable)
 }
 
 // GraphEngineEnabled reports whether Save uses the reflection-free graph
 // engine.
 func GraphEngineEnabled() bool {
-	return useGraphEngine.Load()
+	return !useLegacyEngine.Load()
 }
 
 // Save saves the given object state.
