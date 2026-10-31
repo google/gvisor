@@ -36,6 +36,7 @@ import (
 
 	"github.com/docker/docker/api/types/mount"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -326,5 +327,97 @@ func TestPIDFDSelftests(t *testing.T) {
 		t.Fatalf("docker run failed; output: %v, err: %v", out, err)
 	} else {
 		t.Logf("docker run succeeded; output: %v", out)
+	}
+}
+
+func TestRDMAProxyNetstackExclusion(t *testing.T) {
+	ctx := context.Background()
+	const rdmaNetdev = "rdmatest0"
+
+	// Use Docker to create a private network namespace.
+	native := dockerutil.MakeNativeContainer(ctx, t)
+	defer native.CleanUp(ctx)
+	if err := native.Spawn(ctx, dockerutil.RunOpts{
+		Image:      "basic/rdma",
+		Privileged: true,
+	}, "sleep", "600"); err != nil {
+		t.Fatalf("starting network namespace container: %v", err)
+	}
+
+	// Set up a dummy netdev with addresses and routes.
+	// Later, we will test that gVisor excludes these.
+	for _, args := range [][]string{
+		{"ip", "link", "add", rdmaNetdev, "type", "dummy"},
+		{"ip", "link", "set", rdmaNetdev, "up"},
+		{"ip", "addr", "add", "192.0.2.1/24", "dev", rdmaNetdev},
+		{"ip", "-6", "addr", "add", "2001:db8::1/64", "dev", rdmaNetdev},
+		{"ip", "route", "add", "default", "dev", rdmaNetdev, "metric", "100"},
+		{"ip", "-6", "route", "add", "default", "dev", rdmaNetdev, "metric", "100"},
+	} {
+		if out, err := native.Exec(ctx, dockerutil.ExecOpts{}, args...); err != nil {
+			t.Fatalf("%v: %v, output: %s", args, err, out)
+		}
+	}
+
+	// Associate the dummy netdev with a software RoCE device.
+	rdmaDevice := "rxe_" + testutil.RandomID("")[:12]
+	out, err := native.Exec(ctx, dockerutil.ExecOpts{}, "rdma", "link", "add", rdmaDevice, "type", "rxe", "netdev", rdmaNetdev)
+	if err != nil {
+		if strings.Contains(strings.ToLower(out), "not supported") || strings.Contains(strings.ToLower(out), "no such file") {
+			t.Skipf("software RoCE is unavailable: %v, output: %s", err, out)
+		}
+		t.Fatalf("creating software RoCE device: %v, output: %s", err, out)
+	}
+	defer func() {
+		if out, err := native.Exec(ctx, dockerutil.ExecOpts{}, "rdma", "link", "delete", rdmaDevice); err != nil {
+			t.Errorf("deleting software RoCE device: %v, output: %s", err, out)
+		}
+	}()
+
+	// Start nginx under gVisor with rdmaproxy enabled in the same namespace.
+	server := dockerutil.MakeContainerWithRuntime(ctx, t, "-rdma")
+	defer server.CleanUp(ctx)
+	opts := dockerutil.RunOpts{Image: "basic/nginx", NetworkMode: "container:" + native.Name}
+	cfg, hostCfg, netCfg, err := server.ConfigsFrom(ctx, opts)
+	if err != nil {
+		t.Fatalf("configuring nginx: %v", err)
+	}
+	hostCfg.PublishAllPorts = false
+	if err := server.CreateFrom(ctx, opts.Image, cfg, hostCfg, netCfg); err != nil {
+		t.Fatalf("creating nginx: %v", err)
+	}
+	if err := server.Start(ctx); err != nil {
+		t.Fatalf("starting nginx: %v", err)
+	}
+
+	// Verify that netstack excludes the RDMA interface and its routes.
+	for _, file := range []string{"/proc/net/dev", "/proc/net/route", "/proc/net/ipv6_route"} {
+		out, err := server.Exec(ctx, dockerutil.ExecOpts{}, "cat", file)
+		if err != nil {
+			t.Fatalf("reading %s: %v, output: %s", file, err, out)
+		}
+		if strings.Contains(out, rdmaNetdev) {
+			t.Errorf("excluded interface %s appears in netstack's %s: %s", rdmaNetdev, file, out)
+		}
+	}
+
+	// Verify that Linux retains the excluded interface's IPv4/IPv6 addresses.
+	out, err = native.Exec(ctx, dockerutil.ExecOpts{}, "ip", "-o", "addr", "show", "dev", rdmaNetdev)
+	if err != nil {
+		t.Fatalf("reading native RDMA addresses: %v, output: %s", err, out)
+	}
+	for _, addr := range []string{"192.0.2.1/24", "2001:db8::1/64"} {
+		if !strings.Contains(out, addr) {
+			t.Errorf("RDMA address %s was removed from Linux: %s", addr, out)
+		}
+	}
+
+	// Verify that inbound HTTP over the ordinary interface from the host still works.
+	ip, err := native.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("finding server IP: %v", err)
+	}
+	if err := testutil.WaitForHTTP(ip.String(), 80, defaultWait); err != nil {
+		t.Fatalf("reaching rdmaproxy container from host: %v", err)
 	}
 }

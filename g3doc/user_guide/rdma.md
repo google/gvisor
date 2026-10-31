@@ -20,6 +20,10 @@ sandbox as on the host.
 RDMA support is enabled with the `--rdmaproxy` flag and applies to containers
 whose OCI spec lists one or more `/dev/infiniband/uverbs*` devices.
 
+If sandbox networking is enabled, `rdmaproxy` will exclude network interfaces
+associated with RDMA devices from gVisor's network stack so that they remain
+owned by Linux.
+
 When combined with GPUs (see [GPU Support](gpu.md)), gVisor supports GPUDirect
 RDMA, allowing the NIC to transfer data directly to and from GPU memory.
 

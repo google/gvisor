@@ -23,10 +23,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netlink/nl"
 	"golang.org/x/sys/unix"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -257,6 +261,43 @@ func addrBitLength(ip net.IP) int {
 	return 8 * net.IPv6len
 }
 
+// rdmaNetdevs returns the netdevs associated with RDMA ports in the current
+// network namespace so that we can later exclude them from netstack.
+func rdmaNetdevs() (map[string]bool, error) {
+	devices, err := netlink.RdmaLinkList()
+	if errors.Is(err, unix.EPROTONOSUPPORT) || errors.Is(err, unix.EOPNOTSUPP) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing RDMA devices: %w", err)
+	}
+
+	netdevs := make(map[string]bool, len(devices))
+	for _, device := range devices {
+		proto := int(linux.RDMANetlinkTypeFor(linux.RDMA_NLDEV_CMD_PORT_GET))
+		req := nl.NewNetlinkRequest(proto, unix.NLM_F_ACK|unix.NLM_F_DUMP)
+		req.AddData(nl.NewRtAttr(nl.RDMA_NLDEV_ATTR_DEV_INDEX, nl.Uint32Attr(device.Attrs.Index)))
+		msgs, err := req.Execute(unix.NETLINK_RDMA, 0)
+		if err != nil {
+			return nil, fmt.Errorf("listing ports for RDMA device %q: %w", device.Attrs.Name, err)
+		}
+
+		for _, msg := range msgs {
+			attrs, err := nl.ParseRouteAttr(msg)
+			if err != nil {
+				return nil, fmt.Errorf("parsing RDMA port attributes: %w", err)
+			}
+			for _, attr := range attrs {
+				if attr.Attr.Type == nl.RDMA_NLDEV_ATTR_NDEV_NAME {
+					netdevs[strings.TrimRight(string(attr.Value), "\x00")] = true
+				}
+			}
+		}
+	}
+
+	return netdevs, nil
+}
+
 // removeLinkAddresses removes IP addresses from the host NIC for a link.
 func removeLinkAddresses(linkName string, addresses []sentryapi.IPWithPrefix) error {
 	ifaceLink, err := netlink.LinkByName(linkName)
@@ -292,12 +333,24 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 		return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("querying interfaces: %w", err)
 	}
 
+	var rdmaLinks map[string]bool
+	if conf.RDMAProxy {
+		rdmaLinks, err = rdmaNetdevs()
+		if err != nil {
+			return sentryapi.CreateLinksAndRoutesArgs{}, err
+		}
+	}
+
 	args := sentryapi.CreateLinksAndRoutesArgs{
 		PauseExternalNetworking: conf.PauseExternalNetworking,
 		AllowConnectedOnSave:    conf.AllowConnectedOnSave,
 	}
 
 	for _, iface := range ifaces {
+		if rdmaLinks[iface.Name] {
+			log.Infof("Excluding RDMA interface from netstack: %s", iface.Name)
+			continue
+		}
 		if iface.Flags&net.FlagUp == 0 {
 			log.Infof("Skipping down interface: %+v", iface)
 			continue
