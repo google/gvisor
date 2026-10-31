@@ -19,6 +19,7 @@ package pgalloc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -484,5 +485,45 @@ func TestAsyncLoadShortRead(t *testing.T) {
 	}
 	if !dst.HasUniqueRef(fr) {
 		t.Error("page loader still holds a reference after reporting EIO")
+	}
+}
+
+func TestSaveToAfterPageWriteError(t *testing.T) {
+	full, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var writeErr error
+	done := make(chan struct{})
+	saver, err := StartAsyncPagesFileSave(stateio.NewIOWriter(full, uint64(hostarch.PageSize), 1, 1), func(err error) {
+		writeErr = err
+		close(done)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		saver.MemoryFilesDone()
+		<-done
+	}()
+
+	// Two nonzero pages force a one-page writer to submit its first write
+	// before the caller has finished supplying memory files.
+	first := newSaveTestMemoryFile(t, "", false)
+	fr := allocateSaveTestPages(t, first)
+	pwritePage(t, first, fr, 0, 1)
+	pwritePage(t, first, fr, 1, 1)
+	opts := &SaveOpts{PagesFile: saver}
+	if err := first.SaveTo(t.Context(), io.Discard, opts); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if got, want := writeErr, unix.ENOSPC; !errors.Is(got, want) {
+		t.Fatalf("page write: got %v, want %v", got, want)
+	}
+
+	next := newSaveTestMemoryFile(t, "", false)
+	if got, want := next.SaveTo(t.Context(), io.Discard, opts), unix.ENOSPC; !errors.Is(got, want) {
+		t.Errorf("saving next memory file: got %v, want %v", got, want)
 	}
 }
