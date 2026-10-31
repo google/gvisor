@@ -18,9 +18,9 @@
 // mod` in the dockerized build environment): the root module's direct
 // bazel_deps, the http_archive/http_file repos declared in MODULE.bazel, and
 // the Go repos imported from the go_deps extension, unioned with go.mod's
-// requirements, plus the user-mode archives exposed by the QEMU toolchain.
-// Fetch downloads each dependency's license text from the Go module proxy
-// for Go modules and from GitHub for everything else, classifies
+// requirements, the user-mode archives exposed by the QEMU toolchain, and
+// the wheels exposed by imported pip hubs. Fetch downloads each dependency's
+// license text from the Go module proxy, pinned wheels or GitHub, classifies
 // it, and records it in a YAML file. Verify checks that the YAML file has an
 // entry for every dependency, without fetching any licenses.
 //
@@ -45,7 +45,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -102,22 +102,22 @@ const (
 )
 
 // knownLicenses is the set of known license identifiers.
-var knownLicenses = map[License]bool{
-	apache2:     true,
-	apache2LLVM: true,
-	bsd2:        true,
-	bsd3:        true,
-	bsd4:        true,
-	cc0:         true,
-	gpl2:        true,
-	gpl3:        true,
-	isc:         true,
-	lgpl21:      true,
-	lgpl3:       true,
-	mit:         true,
-	mpl2:        true,
-	unlicense:   true,
-	noAssertion: true,
+var knownLicenses = map[License]struct{}{
+	apache2:     {},
+	apache2LLVM: {},
+	bsd2:        {},
+	bsd3:        {},
+	bsd4:        {},
+	cc0:         {},
+	gpl2:        {},
+	gpl3:        {},
+	isc:         {},
+	lgpl21:      {},
+	lgpl3:       {},
+	mit:         {},
+	mpl2:        {},
+	unlicense:   {},
+	noAssertion: {},
 }
 
 // Licenses is the sorted set of licenses that apply to a dependency. It
@@ -179,6 +179,7 @@ type depKind int
 const (
 	kindGoModule depKind = iota
 	kindArchive
+	kindWheel
 )
 
 // dep is a single external dependency.
@@ -186,8 +187,8 @@ type dep struct {
 	name    string
 	kind    depKind
 	version string // kindGoModule.
-	url     string // kindArchive.
-	sha256  string // kindArchive: the hash Bazel pins for the archive.
+	url     string // kindArchive or kindWheel.
+	sha256  string // kindArchive or kindWheel: Bazel's pinned artifact hash.
 }
 
 // source identifies the audited version of a dependency: the Go module
@@ -316,7 +317,7 @@ func Verify(p Paths) error {
 	}
 	problems := append(verifyProblems(deps, entries), CheckPolicy(entries, policy)...)
 	if len(problems) > 0 {
-		sort.Strings(problems)
+		slices.Sort(problems)
 		for _, problem := range problems {
 			fmt.Fprintln(os.Stderr, problem)
 		}
@@ -337,9 +338,9 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 		}
 		byName[e.Dependency] = e
 	}
-	depSet := make(map[string]bool)
+	depSet := make(map[string]struct{})
 	for _, d := range deps {
-		depSet[d.name] = true
+		depSet[d.name] = struct{}{}
 		e, ok := byName[d.name]
 		switch {
 		case !ok:
@@ -361,7 +362,7 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 				problems = append(problems, fmt.Sprintf("%s was audited with sha256 %q, but is now pinned to %q", d.name, e.SHA256, d.sha256))
 			}
 			for i, license := range e.License {
-				if !knownLicenses[license] {
+				if _, ok := knownLicenses[license]; !ok {
 					problems = append(problems, fmt.Sprintf("%s has unknown license %q", d.name, license))
 				}
 				if i > 0 && e.License[i-1] >= license {
@@ -375,7 +376,7 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 		}
 	}
 	for name := range byName {
-		if !depSet[name] {
+		if _, ok := depSet[name]; !ok {
 			problems = append(problems, fmt.Sprintf("stale entry for %s, which is no longer a dependency", name))
 		}
 	}
@@ -431,6 +432,8 @@ func enumerate(p Paths) ([]dep, error) {
 			}
 			refs = append(refs, qemuRefs...)
 			continue
+		case strings.HasSuffix(u.Key, "%pip"):
+			// Imported pip hubs own the wheel selection, including variants.
 		default:
 			// Toolchain extensions (crosstool, llvm_zlib, python, go_sdk,
 			// ...) are not audited.
@@ -467,7 +470,10 @@ func enumerate(p Paths) ([]dep, error) {
 		goVersions[r.Mod.Path] = r.Mod.Version
 	}
 
-	var deps []dep
+	deps, err := enumerateWheels(repos)
+	if err != nil {
+		return nil, err
+	}
 	for _, r := range refs {
 		repo, ok := repos[r.ref]
 		if !ok {
@@ -493,6 +499,8 @@ func enumerate(p Paths) ([]dep, error) {
 		case "local_repository", "new_local_repository":
 			// Local paths are part of the gVisor checkout, not external
 			// dependencies.
+		case "hub_repository", "whl_library":
+			// Already expanded by enumerateWheels.
 		default:
 			return nil, fmt.Errorf("unsupported repository rule %s for %s", repo.rule, r.name)
 		}
@@ -500,7 +508,7 @@ func enumerate(p Paths) ([]dep, error) {
 	for path, version := range goVersions {
 		deps = append(deps, dep{name: path, kind: kindGoModule, version: version})
 	}
-	sort.Slice(deps, func(i, j int) bool { return deps[i].name < deps[j].name })
+	slices.SortFunc(deps, func(a, b dep) int { return strings.Compare(a.name, b.name) })
 	for i := 1; i < len(deps); i++ {
 		if deps[i].name == deps[i-1].name {
 			return nil, fmt.Errorf("duplicate dependency name %q", deps[i].name)
@@ -621,7 +629,7 @@ func parseShowRepos(out string) (map[string]repoInfo, error) {
 			end = headers[i+1][0]
 		}
 		info := repoInfo{attrs: make(map[string][]string)}
-		for _, line := range strings.Split(out[h[1]:end], "\n") {
+		for line := range strings.SplitSeq(out[h[1]:end], "\n") {
 			if strings.HasPrefix(line, "#") {
 				continue
 			}
@@ -632,7 +640,11 @@ func parseShowRepos(out string) (map[string]repoInfo, error) {
 			if m := repoAttrRE.FindStringSubmatch(line); m != nil {
 				var values []string
 				for _, q := range quotedRE.FindAllStringSubmatch(m[2], -1) {
-					values = append(values, q[1])
+					value, err := strconv.Unquote(q[0])
+					if err != nil {
+						return nil, fmt.Errorf("invalid string in %s attribute %s: %w", ref, m[1], err)
+					}
+					values = append(values, value)
 				}
 				info.attrs[m[1]] = values
 			}
@@ -742,6 +754,17 @@ func fetchLicense(d dep, previous Entry) (*fetched, error) {
 	}
 	if d.kind == kindGoModule {
 		return fetchGoModule(d.name, d.version)
+	}
+	if d.kind == kindWheel {
+		body, err := httpGet(d.url, nil)
+		if err != nil {
+			return nil, err
+		}
+		licenses, err := wheelLicenses(body, d.sha256)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", d.url, err)
+		}
+		return &fetched{sha256: d.sha256, license: licenses}, nil
 	}
 	f, err := fetchGitHub(d.url)
 	if err != nil {
@@ -1049,13 +1072,13 @@ func ReadPolicy(path string) (*Policy, error) {
 // neither all in policy.AllowedLicenses nor covered by an exception, and for
 // every malformed, stale, or unnecessary exception.
 func CheckPolicy(entries []Entry, policy *Policy) []string {
-	allowed := make(map[License]bool)
+	allowed := make(map[License]struct{})
 	for _, license := range policy.AllowedLicenses {
-		allowed[license] = true
+		allowed[license] = struct{}{}
 	}
 	conforms := func(l Licenses) bool {
 		for _, license := range l {
-			if !allowed[license] {
+			if _, ok := allowed[license]; !ok {
 				return false
 			}
 		}
@@ -1066,12 +1089,12 @@ func CheckPolicy(entries []Entry, policy *Policy) []string {
 		byName[e.Dependency] = e
 	}
 	var problems []string
-	exceptions := make(map[string]bool)
+	exceptions := make(map[string]struct{})
 	for i, x := range policy.Exceptions {
-		if exceptions[x.Dependency] {
+		if _, ok := exceptions[x.Dependency]; ok {
 			problems = append(problems, fmt.Sprintf("duplicate exception for %s", x.Dependency))
 		}
-		exceptions[x.Dependency] = true
+		exceptions[x.Dependency] = struct{}{}
 		if i > 0 && policy.Exceptions[i-1].Dependency >= x.Dependency {
 			problems = append(problems, fmt.Sprintf("exceptions are not sorted by dependency at %s", x.Dependency))
 		}
@@ -1089,7 +1112,7 @@ func CheckPolicy(entries []Entry, policy *Policy) []string {
 		}
 	}
 	for _, e := range entries {
-		if !conforms(e.License) && !exceptions[e.Dependency] {
+		if _, ok := exceptions[e.Dependency]; !conforms(e.License) && !ok {
 			problems = append(problems, fmt.Sprintf("%s uses disallowed licenses %v and has no exception in the policy", e.Dependency, e.License))
 		}
 	}
