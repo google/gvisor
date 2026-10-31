@@ -518,16 +518,19 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	return nil
 }
 
+func (h *handshake) setSendWindow(s *segment) {
+	h.sndWnd = s.window
+	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
+		h.sndWnd <<= uint8(h.sndWndScale)
+	}
+}
+
 // +checklocks:h.ep.mu
 // +checklocksexclude:h.ep.segmentQueue.mu
 // +checklocksexclude:h.ep.pendingProcessingMu
 // +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) handleSegment(s *segment) tcpip.Error {
-	h.sndWnd = s.window
-	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
-		h.sndWnd <<= uint8(h.sndWndScale)
-	}
-
+	h.setSendWindow(s)
 	switch h.state {
 	case handshakeSynRcvd:
 		return h.synRcvdState(s)

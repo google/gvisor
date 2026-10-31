@@ -229,17 +229,9 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 // that Timestamp option is enabled in both cases if requested in the original
 // SYN.
 func TestTimeStampEnabledAccept(t *testing.T) {
-	testCases := []struct {
-		cookieEnabled bool
-		wndScale      int
-		wndSize       uint16
-	}{
-		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be 1/2 of that.
-		{false, 5, 0x4000},
-	}
-	for _, tc := range testCases {
-		timeStampEnabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
+	// The default 1 MiB receive buffer advertises half its size with a shift of 5.
+	for _, cookieEnabled := range []bool{false, true} {
+		timeStampEnabledAccept(t, cookieEnabled, 5, 0x4000)
 	}
 }
 
@@ -292,7 +284,7 @@ func TestTimeStampDisabledAccept(t *testing.T) {
 		wndScale      int
 		wndSize       uint16
 	}{
-		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
+		{true, -1, 0xffff}, // A SYN cookie cannot preserve the shift without timestamps.
 		// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be half of
 		// that.
 		{false, 5, 0x4000},
