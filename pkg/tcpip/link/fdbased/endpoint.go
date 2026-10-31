@@ -56,8 +56,13 @@ import (
 
 // linkDispatcher reads packets from the link FD and dispatches them to the
 // NetworkDispatcher.
+//
+// A dispatcher runs in cycles to support attaching and reattaching on the same
+// endpoint. The cycle is Attach() -> prepare() -> dispatch() -> release() ->
+// Attach() and so on.
 type linkDispatcher interface {
 	Stop()
+	prepare()
 	dispatch() (bool, tcpip.Error)
 	release()
 	close()
@@ -509,6 +514,7 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 		// saved, they stop sending outgoing packets and all incoming packets
 		// are rejected.
 		for i := range e.inboundDispatchers {
+			e.inboundDispatchers[i].prepare()
 			e.wg.Add(1)
 			go func(i int) { // S/R-SAFE: See above.
 				e.dispatchLoop(e.inboundDispatchers[i])
