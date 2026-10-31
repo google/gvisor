@@ -223,6 +223,12 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteClo
 	return compressio.NewSimpleWriter(w, key, stateFileChunkSize), nil
 }
 
+// Metadata reads out the metadata from a state file, verifying the metadata
+// HMAC when key is non-empty.
+func Metadata(r io.Reader, key []byte) (map[string]string, error) {
+	return metadata(r, key)
+}
+
 // MetadataUnsafe reads out the metadata from a state file without verifying any
 // HMAC. This function shouldn't be called for untrusted input files.
 func MetadataUnsafe(r io.Reader) (map[string]string, error) {

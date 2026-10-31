@@ -16,6 +16,8 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"io"
 	"os"
 	"os/exec"
@@ -25,7 +27,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
+	pkgstate "gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/state/wire"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
@@ -715,6 +719,371 @@ func TestStatefileOutputSymlinks(t *testing.T) {
 		}
 		if string(got) != "v\n" {
 			t.Errorf("stdout content = %q, want %q", got, "v\n")
+		}
+	})
+
+	t.Run("dir_symlink_dotdot_does_not_clobber_input", func(t *testing.T) {
+		root := t.TempDir()
+		workDir := filepath.Join(root, "work")
+		otherChild := filepath.Join(root, "other", "child")
+		if err := os.MkdirAll(workDir, 0755); err != nil {
+			t.Fatalf("MkdirAll(workDir): %v", err)
+		}
+		if err := os.MkdirAll(otherChild, 0755); err != nil {
+			t.Fatalf("MkdirAll(otherChild): %v", err)
+		}
+		if err := os.Symlink(filepath.Join("..", "other", "child"), filepath.Join(workDir, "link")); err != nil {
+			t.Fatalf("Symlink: %v", err)
+		}
+
+		localImg := filepath.Join(workDir, "checkpoint")
+		wantInput := writeSyntheticStatefile(t, localImg, map[string]string{"k": "v"}, []byte("unused"))
+
+		outArg := filepath.Join(workDir, "link") + "/../checkpoint"
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output="+outArg, localImg).CombinedOutput(); err != nil {
+			t.Fatalf("statefile -output=%s failed: %v\n%s", outArg, err, out)
+		}
+		gotInput, err := os.ReadFile(localImg)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", localImg, err)
+		}
+		if !bytes.Equal(gotInput, wantInput) {
+			t.Errorf("input statefile %s was clobbered", localImg)
+		}
+		gotOut, err := os.ReadFile(filepath.Join(root, "other", "checkpoint"))
+		if err != nil {
+			t.Fatalf("ReadFile(other/checkpoint): %v", err)
+		}
+		if string(gotOut) != "v\n" {
+			t.Errorf("other/checkpoint = %q, want %q", gotOut, "v\n")
+		}
+	})
+
+	t.Run("leaf_symlink_with_relative_dotdot_target", func(t *testing.T) {
+		root := t.TempDir()
+		workDir := filepath.Join(root, "work")
+		realSub := filepath.Join(root, "real_dir", "sub")
+		if err := os.MkdirAll(workDir, 0755); err != nil {
+			t.Fatalf("MkdirAll(workDir): %v", err)
+		}
+		if err := os.MkdirAll(realSub, 0755); err != nil {
+			t.Fatalf("MkdirAll(realSub): %v", err)
+		}
+		if err := os.Symlink(realSub, filepath.Join(workDir, "sublink")); err != nil {
+			t.Fatalf("Symlink(sublink): %v", err)
+		}
+		outLink := filepath.Join(workDir, "outlink")
+		if err := os.Symlink("sublink/../checkpoint", outLink); err != nil {
+			t.Fatalf("Symlink(outlink): %v", err)
+		}
+
+		localImg := filepath.Join(workDir, "checkpoint")
+		wantInput := writeSyntheticStatefile(t, localImg, map[string]string{"k": "v"}, []byte("unused"))
+
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output="+outLink, localImg).CombinedOutput(); err != nil {
+			t.Fatalf("statefile -output=%s failed: %v\n%s", outLink, err, out)
+		}
+		gotInput, err := os.ReadFile(localImg)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", localImg, err)
+		}
+		if !bytes.Equal(gotInput, wantInput) {
+			t.Errorf("work/checkpoint was clobbered")
+		}
+		gotOut, err := os.ReadFile(filepath.Join(root, "real_dir", "checkpoint"))
+		if err != nil {
+			t.Fatalf("ReadFile(real_dir/checkpoint): %v", err)
+		}
+		if string(gotOut) != "v\n" {
+			t.Errorf("real_dir/checkpoint = %q, want %q", gotOut, "v\n")
+		}
+	})
+
+	t.Run("symlinked_pwd_with_dotdot_output", func(t *testing.T) {
+		root := t.TempDir()
+		realNested := filepath.Join(root, "real", "nested")
+		if err := os.MkdirAll(realNested, 0755); err != nil {
+			t.Fatalf("MkdirAll(realNested): %v", err)
+		}
+		symCWD := filepath.Join(root, "symcwd")
+		if err := os.Symlink(realNested, symCWD); err != nil {
+			t.Fatalf("Symlink(symCWD): %v", err)
+		}
+		bystander := filepath.Join(root, "checkpoint")
+		wantBystander := []byte("do-not-overwrite")
+		if err := os.WriteFile(bystander, wantBystander, 0644); err != nil {
+			t.Fatalf("WriteFile(bystander): %v", err)
+		}
+
+		cmd := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output=../checkpoint", img)
+		cmd.Dir = symCWD
+		env := make([]string, 0, len(os.Environ())+1)
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "PWD=") {
+				env = append(env, kv)
+			}
+		}
+		cmd.Env = append(env, "PWD="+symCWD)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("statefile from symlinked PWD failed: %v\n%s", err, out)
+		}
+
+		gotBystander, err := os.ReadFile(bystander)
+		if err != nil {
+			t.Fatalf("ReadFile(bystander): %v", err)
+		}
+		if !bytes.Equal(gotBystander, wantBystander) {
+			t.Errorf("bystander file clobbered: got %q, want %q", gotBystander, wantBystander)
+		}
+		gotOut, err := os.ReadFile(filepath.Join(root, "real", "checkpoint"))
+		if err != nil {
+			t.Fatalf("ReadFile(real/checkpoint): %v", err)
+		}
+		if string(gotOut) != "v\n" {
+			t.Errorf("real/checkpoint = %q, want %q", gotOut, "v\n")
+		}
+	})
+
+	t.Run("proc_fd_pointing_to_input_rejected_without_corrupting_input", func(t *testing.T) {
+		dir := t.TempDir()
+		localImg := filepath.Join(dir, "input.img")
+		want := writeSyntheticStatefile(t, localImg, map[string]string{"k": "v"}, []byte("payload"))
+
+		rwFile, err := os.OpenFile(localImg, os.O_RDWR, 0)
+		if err != nil {
+			t.Fatalf("OpenFile: %v", err)
+		}
+		defer rwFile.Close()
+
+		linkToFD3 := filepath.Join(dir, "fd3_link")
+		if err := os.Symlink("/proc/self/fd/3", linkToFD3); err != nil {
+			t.Fatalf("Symlink: %v", err)
+		}
+
+		for _, outTarget := range []string{"/proc/self/fd/3", linkToFD3} {
+			cmd := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output="+outTarget, localImg)
+			cmd.ExtraFiles = []*os.File{rwFile}
+			if out, err := cmd.CombinedOutput(); err == nil {
+				t.Fatalf("statefile -output=%s unexpectedly succeeded:\n%s", outTarget, out)
+			}
+			got, err := os.ReadFile(localImg)
+			if err != nil {
+				t.Fatalf("ReadFile(%s): %v", localImg, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("after -output=%s: input clobbered (len=%d, want %d)", outTarget, len(got), len(want))
+			}
+		}
+	})
+
+	t.Run("readonly_existing_file_rejected_when_unprivileged", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root bypasses 0444 DAC write permission check")
+		}
+		dir := t.TempDir()
+		roFile := filepath.Join(dir, "readonly.txt")
+		want := []byte("immutable-to-owner")
+		if err := os.WriteFile(roFile, want, 0444); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output="+roFile, img).CombinedOutput(); err == nil {
+			t.Fatalf("statefile -output=<0444 file> unexpectedly succeeded:\n%s", out)
+		}
+		got, err := os.ReadFile(roFile)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("readonly file modified: got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("dirs_without_read_perm_succeed_when_unprivileged", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root bypasses DAC directory read permission check")
+		}
+		root := t.TempDir()
+
+		wxDir := filepath.Join(root, "wx_only")
+		if err := os.Mkdir(wxDir, 0700); err != nil {
+			t.Fatalf("Mkdir(wxDir): %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(wxDir, 0700) })
+		if err := os.Chmod(wxDir, 0300); err != nil {
+			t.Fatalf("Chmod(wxDir, 0300): %v", err)
+		}
+
+		wxOut := filepath.Join(wxDir, "out.txt")
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output="+wxOut, img).CombinedOutput(); err != nil {
+			t.Fatalf("statefile -output in 0300 dir failed: %v\n%s", err, out)
+		}
+		if got, err := os.ReadFile(wxOut); err != nil {
+			t.Fatalf("ReadFile(%s): %v", wxOut, err)
+		} else if string(got) != "v\n" {
+			t.Errorf("ReadFile(%s) = %q, want %q", wxOut, got, "v\n")
+		}
+
+		cwdCmd := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output=cwd_out.txt", img)
+		cwdCmd.Dir = wxDir
+		if out, err := cwdCmd.CombinedOutput(); err != nil {
+			t.Fatalf("statefile relative -output in 0300 cwd failed: %v\n%s", err, out)
+		}
+		cwdOut := filepath.Join(wxDir, "cwd_out.txt")
+		if got, err := os.ReadFile(cwdOut); err != nil {
+			t.Fatalf("ReadFile(%s): %v", cwdOut, err)
+		} else if string(got) != "v\n" {
+			t.Errorf("ReadFile(%s) = %q, want %q", cwdOut, got, "v\n")
+		}
+
+		realDir := filepath.Join(root, "real")
+		if err := os.Mkdir(realDir, 0700); err != nil {
+			t.Fatalf("Mkdir(realDir): %v", err)
+		}
+		xDir := filepath.Join(root, "x_only")
+		if err := os.Mkdir(xDir, 0700); err != nil {
+			t.Fatalf("Mkdir(xDir): %v", err)
+		}
+		linkPath := filepath.Join(xDir, "outlink")
+		targetPath := filepath.Join(realDir, "linked.txt")
+		if err := os.Symlink(targetPath, linkPath); err != nil {
+			t.Fatalf("Symlink: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(xDir, 0700) })
+		if err := os.Chmod(xDir, 0100); err != nil {
+			t.Fatalf("Chmod(xDir, 0100): %v", err)
+		}
+
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=k", "-output="+linkPath, img).CombinedOutput(); err != nil {
+			t.Fatalf("statefile -output through 0100 dir symlink failed: %v\n%s", err, out)
+		}
+		if got, err := os.ReadFile(targetPath); err != nil {
+			t.Fatalf("ReadFile(%s): %v", targetPath, err)
+		} else if string(got) != "v\n" {
+			t.Errorf("ReadFile(%s) = %q, want %q", targetPath, got, "v\n")
+		}
+	})
+}
+
+func TestStatefileHTMLAndKeyVerification(t *testing.T) {
+	t.Run("html_escapes_metadata_and_wire_strings", func(t *testing.T) {
+		dir := t.TempDir()
+		img := filepath.Join(dir, "xss.img")
+
+		var wirePayload bytes.Buffer
+		ww := wire.Writer{Writer: &wirePayload}
+		if err := pkgstate.WriteHeader(&ww, 1, true); err != nil {
+			t.Fatalf("WriteHeader: %v", err)
+		}
+		s := wire.String("</pre><script>alert(1)</script>")
+		wire.Save(&ww, wire.Uint(1))
+		wire.Save(&ww, &s)
+
+		evilKey := "key<script>alert(2)</script>"
+		evilVal := "val<img src=x onerror=alert(3)>&"
+		writeSyntheticStatefile(t, img, map[string]string{
+			evilKey: evilVal,
+		}, wirePayload.Bytes())
+
+		listOut, err := exec.Command(specutils.ExePath, "statefile", "-list", "-html", img).CombinedOutput()
+		if err != nil {
+			t.Fatalf("statefile -list -html failed: %v\n%s", err, listOut)
+		}
+		if bytes.Contains(listOut, []byte("<script>")) || !bytes.Contains(listOut, []byte("&lt;script&gt;alert(2)&lt;/script&gt;")) {
+			t.Errorf("statefile -list -html did not escape metadata key:\n%s", listOut)
+		}
+
+		getOut, err := exec.Command(specutils.ExePath, "statefile", "-get="+evilKey, "-html", img).CombinedOutput()
+		if err != nil {
+			t.Fatalf("statefile -get -html failed: %v\n%s", err, getOut)
+		}
+		if bytes.Contains(getOut, []byte("<img")) || !bytes.Contains(getOut, []byte("&lt;img src=x onerror=alert(3)&gt;&amp;")) {
+			t.Errorf("statefile -get -html did not escape metadata value:\n%s", getOut)
+		}
+
+		dumpOut, err := runRunsc("statefile", "-html", img)
+		if err != nil {
+			t.Fatalf("statefile -html dump failed: %v\n%s", err, dumpOut)
+		}
+		if bytes.Contains(dumpOut, []byte("<script>")) || !bytes.Contains(dumpOut, []byte("&lt;/pre&gt;&lt;script&gt;alert(1)&lt;/script&gt;")) {
+			t.Errorf("statefile -html dump did not escape wire string:\n%s", dumpOut)
+		}
+	})
+
+	t.Run("key_enforced_for_metadata_and_dump_verify", func(t *testing.T) {
+		dir := t.TempDir()
+		keyStr := "0123456789abcdef0123456789abcdef"
+		wrongKeyStr := "X123456789abcdef0123456789abcdef"
+
+		var wirePayload bytes.Buffer
+		ww := wire.Writer{Writer: &wirePayload}
+		if err := pkgstate.WriteHeader(&ww, 1, true); err != nil {
+			t.Fatalf("WriteHeader: %v", err)
+		}
+		s := wire.String("authenticated")
+		wire.Save(&ww, wire.Uint(1))
+		wire.Save(&ww, &s)
+
+		keyedImg := filepath.Join(dir, "keyed.img")
+		f, err := os.Create(keyedImg)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		md := statefile.CompressionLevelNone.ToMetadata()
+		md["secret_meta"] = "ok"
+		w, err := statefile.NewWriter(f, []byte(keyStr), md)
+		if err != nil {
+			f.Close()
+			t.Fatalf("NewWriter: %v", err)
+		}
+		if _, err := w.Write(wirePayload.Bytes()); err != nil {
+			w.Close()
+			t.Fatalf("Write: %v", err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-list", "-key="+wrongKeyStr, keyedImg).CombinedOutput(); err == nil {
+			t.Errorf("statefile -list with wrong key unexpectedly succeeded:\n%s", out)
+		}
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=secret_meta", "-key="+wrongKeyStr, keyedImg).CombinedOutput(); err == nil {
+			t.Errorf("statefile -get with wrong key unexpectedly succeeded:\n%s", out)
+		}
+		if out, err := exec.Command(specutils.ExePath, "statefile", "-get=secret_meta", "-key="+keyStr, keyedImg).CombinedOutput(); err != nil {
+			t.Fatalf("statefile -get with valid key failed: %v\n%s", err, out)
+		} else if string(out) != "ok\n" {
+			t.Errorf("statefile -get output = %q, want %q", out, "ok\n")
+		}
+		if out, err := runRunsc("statefile", "-key="+keyStr, keyedImg); err != nil {
+			t.Fatalf("statefile dump with valid key failed: %v\n%s", err, out)
+		}
+
+		// Craft a statefile with a valid keyed metadata header but an unhashed
+		// truncated chunk claiming more bytes than present, which Reader.Verify()
+		// must reject.
+		raw, err := os.ReadFile(keyedImg)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		metaLen := int(binary.BigEndian.Uint64(raw[8:16]))
+		headerEnd := 16 + metaLen + sha256.Size
+		var crafted bytes.Buffer
+		crafted.Write(raw[:headerEnd])
+		var chunkHdr [4]byte
+		binary.BigEndian.PutUint32(chunkHdr[:], uint32(wirePayload.Len())+4096)
+		crafted.Write(chunkHdr[:])
+		crafted.Write(wirePayload.Bytes())
+
+		craftedImg := filepath.Join(dir, "crafted.img")
+		if err := os.WriteFile(craftedImg, crafted.Bytes(), 0644); err != nil {
+			t.Fatalf("WriteFile(crafted): %v", err)
+		}
+		craftedOut := filepath.Join(dir, "crafted_dump.txt")
+		if out, err := runRunsc("statefile", "-key="+keyStr, "-output="+craftedOut, craftedImg); err == nil {
+			t.Errorf("statefile dump accepted unhashed crafted data section:\n%s", out)
+		}
+		if _, err := os.Stat(craftedOut); !os.IsNotExist(err) {
+			t.Errorf("failed crafted dump left output file behind: err=%v", err)
 		}
 	})
 }

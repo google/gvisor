@@ -18,6 +18,7 @@ import (
 	"bytes"
 	crand "crypto/rand"
 	"encoding/base64"
+	"errors"
 	"io"
 	"math/rand"
 	"runtime"
@@ -176,6 +177,61 @@ func TestStatefile(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestMetadataKeyVerification(t *testing.T) {
+	key, err := randomKey()
+	if err != nil {
+		t.Fatalf("randomKey: %v", err)
+	}
+	wrongKey := append([]byte(nil), key...)
+	wrongKey[0] ^= 0xff
+
+	var keyedBuf bytes.Buffer
+	w, err := NewWriter(&keyedBuf, key, map[string]string{"k": "v"})
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	if _, err := w.Write([]byte("payload")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	md, err := Metadata(bytes.NewReader(keyedBuf.Bytes()), key)
+	if err != nil {
+		t.Fatalf("Metadata with valid key failed: %v", err)
+	}
+	if md["k"] != "v" {
+		t.Errorf("Metadata[\"k\"] = %q, want %q", md["k"], "v")
+	}
+
+	if _, err := Metadata(bytes.NewReader(keyedBuf.Bytes()), wrongKey); !errors.Is(err, compressio.ErrHashMismatch) {
+		t.Errorf("Metadata with wrong key = %v, want %v", err, compressio.ErrHashMismatch)
+	}
+
+	tampered := append([]byte(nil), keyedBuf.Bytes()...)
+	idx := bytes.Index(tampered, []byte(`"v"`))
+	if idx < 0 {
+		t.Fatalf("metadata value not found in serialized header")
+	}
+	tampered[idx+1] = 'x'
+	if _, err := Metadata(bytes.NewReader(tampered), key); !errors.Is(err, compressio.ErrHashMismatch) {
+		t.Errorf("Metadata on tampered header = %v, want %v", err, compressio.ErrHashMismatch)
+	}
+
+	var unkeyedBuf bytes.Buffer
+	uw, err := NewWriter(&unkeyedBuf, nil, map[string]string{"k": "v"})
+	if err != nil {
+		t.Fatalf("NewWriter(nil): %v", err)
+	}
+	if err := uw.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := Metadata(bytes.NewReader(unkeyedBuf.Bytes()), key); !errors.Is(err, compressio.ErrHashMismatch) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("Metadata with key on unkeyed statefile = %v, want ErrHashMismatch or ErrUnexpectedEOF", err)
 	}
 }
 
