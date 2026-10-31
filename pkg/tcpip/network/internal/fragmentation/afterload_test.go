@@ -51,7 +51,14 @@ func (c *restoreClock) Now() time.Time {
 	return time.Unix(0, int64(c.now))
 }
 
+// restoreClockReady, when set, blocks NowMonotonic until it is closed. This
+// matches the sentry's clock, which is unusable until the kernel has loaded.
+var restoreClockReady chan struct{}
+
 func (c *restoreClock) NowMonotonic() tcpip.MonotonicTime {
+	if restoreClockReady != nil {
+		<-restoreClockReady
+	}
 	return tcpip.MonotonicTime{}.Add(c.now)
 }
 
@@ -140,15 +147,29 @@ func TestFragmentationReleaseJobAfterLoad(t *testing.T) {
 	}
 	f.Release()
 
+	restoreClockReady = make(chan struct{})
 	var loaded Fragmentation
+	// This deadlocks if afterLoad reads the clock before returning.
 	if _, err := state.Load(ctx, bytes.NewReader(saved.Bytes()), &loaded); err != nil {
 		t.Fatalf("state.Load: %v", err)
 	}
+	close(restoreClockReady)
 	defer loaded.Release()
 
 	loadedClock, ok := loaded.clock.(*restoreClock)
 	if !ok {
 		t.Fatalf("loaded.clock has type %T, want *restoreClock", loaded.clock)
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(time.Millisecond) {
+		loaded.mu.Lock()
+		scheduled := loadedClock.timer != nil
+		loaded.mu.Unlock()
+		if scheduled {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("release job was not rescheduled after restore")
+		}
 	}
 	if !loadedClock.runNext() {
 		t.Fatal("release job was not rescheduled after restore")
