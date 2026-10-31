@@ -112,11 +112,6 @@ type sender struct {
 
 	ep *Endpoint
 
-	// finSent is set when the FIN segment is actually transmitted.
-	// The endpoint may be in FIN_WAIT1/LAST_ACK while the FIN is still
-	// queued behind blocked data; finSent guards closing ACK completions.
-	finSent bool
-
 	// smallSegmentEnd is the sequence number after the last newly sent
 	// partial-MSS segment, including a partial tail in a GSO packet. Minshall's
 	// variant of Nagle holds another small segment until this one is ACKed.
@@ -132,6 +127,11 @@ type sender struct {
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
 	zeroWindowProbing bool `state:"nosave"`
+
+	// finSent is set when the FIN segment is actually transmitted.
+	// The endpoint may be in FIN_WAIT1/LAST_ACK while the FIN is still
+	// queued behind blocked data; finSent guards closing ACK completions.
+	finSent bool
 
 	// unackZeroWindowProbes is the number of unacknowledged zero
 	// window probes.
@@ -156,6 +156,14 @@ type sender struct {
 	// section 2 of RFC 6298.
 	rtt rtt
 
+	// minRTT is fed by unambiguous handshake and ACK measurements, separately
+	// from RACK's heuristic RTT of the most recently delivered transmission.
+	minRTT rttMinimum
+
+	// deliveryGeneration counts ACKs that deliver new cumulative or selective
+	// information. A segment snapshots it to detect intervening deliveries.
+	deliveryGeneration uint64
+
 	// minRTO is the minimum permitted value for sender.rto.
 	minRTO time.Duration
 
@@ -167,6 +175,9 @@ type sender struct {
 
 	// gso is set if generic segmentation offload is enabled.
 	gso bool
+
+	// startCork start corking the segments.
+	startCork bool
 
 	// state is the current state of congestion control for this endpoint.
 	state tcpip.CongestionControlState
@@ -193,9 +204,6 @@ type sender struct {
 	// segment after entering an RTO for the first time as described in
 	// RFC3522 Section 3.2.
 	retransmitTS uint32
-
-	// startCork start corking the segments.
-	startCork bool
 
 	// corkTimer is used to drain the segments which are held when TCP_CORK
 	// option is enabled.
@@ -259,6 +267,114 @@ type rtt struct {
 
 	// +checklocks:rttMutex
 	TCPRTTState
+}
+
+// ackRTTSamples keeps minimum-RTT eligibility separate from the existing SRTT
+// measurement. Original deliveries provide exact transmission times; a
+// cumulative ACK covering retransmitted data requires SACK or timestamp timing
+// instead (RFC 6298, section 3). This follows tcp_ack_update_rtt and
+// tcp_clean_rtx_queue without changing SRTT's sampling rate:
+// https://github.com/torvalds/linux/blob/ab185e0c4/net/ipv4/tcp_input.c
+// Negative durations mean that no eligible sample was observed.
+type ackRTTSamples struct {
+	cumulative, selective, timestamp time.Duration
+	retransmitted                    bool
+	maybeDelayed                     bool
+}
+
+func minimumRTTSample(previous, sample time.Duration) time.Duration {
+	if sample >= 0 && (previous < 0 || sample < previous) {
+		return sample
+	}
+	return previous
+}
+
+func (samples ackRTTSamples) minimum() (time.Duration, bool) {
+	if samples.selective >= 0 {
+		return samples.selective, false
+	}
+	if !samples.retransmitted && samples.cumulative >= 0 {
+		return samples.cumulative, samples.maybeDelayed
+	}
+	return samples.timestamp, false
+}
+
+// minRTTWindow matches Linux's default tcp_min_rtt_wlen. RFC 8985, section 6.2,
+// recommends a windowed minimum so that a connection can adapt to a longer
+// path; a five-minute window also filters short-lived queueing increases.
+const minRTTWindow = 5 * time.Minute
+
+// +stateify savable
+type rttMinimumSample struct {
+	rtt time.Duration
+	at  tcpip.MonotonicTime
+}
+
+// rttMinimum implements Kathleen Nichols' constant-space windowed minimum
+// algorithm, also used by Linux:
+// https://github.com/torvalds/linux/blob/ab185e0c4/lib/win_minmax.c
+// The best sample survives its full window. Two later candidates, separated
+// in time, replace it when it expires. This approximates a sliding minimum
+// without retaining every RTT measurement or allocating on the ACK path.
+//
+// +stateify savable
+type rttMinimum struct {
+	samples    [3]rttMinimumSample
+	lastUpdate tcpip.MonotonicTime
+}
+
+func (m *rttMinimum) value() time.Duration {
+	return m.samples[0].rtt
+}
+
+func (m *rttMinimum) update(rtt time.Duration, at tcpip.MonotonicTime, maybeDelayed bool) {
+	// A zero-duration observation can result from clock quantization. It
+	// remains useful to latest RACK delivery tracking, but does not establish
+	// a positive path minimum. Match handshake admission without adding a
+	// clock-dependent floor; zero in samples[0] means no estimate yet.
+	if rtt <= 0 {
+		return
+	}
+	if m.value() != 0 {
+		// The filter consumes ingress times in order. A queued older ACK must
+		// not move its window backwards or refresh an expired measurement.
+		if at.Before(m.lastUpdate) {
+			return
+		}
+		// As in tcp_update_rtt_min, suspected delayed ACKs
+		// may lower the estimate, but must not raise it by expiring the old
+		// minimum. No eligible sample means no change, including across idle.
+		// https://github.com/torvalds/linux/blob/ab185e0c4/net/ipv4/tcp_input.c
+		if maybeDelayed && rtt > m.value() {
+			return
+		}
+	}
+	m.lastUpdate = at
+	sample := rttMinimumSample{rtt: rtt, at: at}
+	if m.value() == 0 || rtt <= m.value() || at.Sub(m.samples[2].at) > minRTTWindow {
+		m.samples = [3]rttMinimumSample{sample, sample, sample}
+		return
+	}
+	for i := 1; i < len(m.samples); i++ {
+		if rtt <= m.samples[i].rtt {
+			for j := i; j < len(m.samples); j++ {
+				m.samples[j] = sample
+			}
+			break
+		}
+	}
+	if at.Sub(m.samples[0].at) > minRTTWindow {
+		for at.Sub(m.samples[0].at) > minRTTWindow {
+			m.samples[0], m.samples[1], m.samples[2] = m.samples[1], m.samples[2], sample
+		}
+		return
+	}
+	age := at.Sub(m.samples[0].at)
+	if m.samples[1].at == m.samples[0].at && age > minRTTWindow/4 {
+		m.samples[1], m.samples[2] = sample, sample
+	} else if m.samples[2].at == m.samples[1].at && age > minRTTWindow/2 {
+		m.samples[2] = sample
+	}
 }
 
 // initSender creates a new sender while the endpoint is locked. Its helpers
@@ -716,7 +832,10 @@ func (s *sender) splitSeg(seg *segment, size int) {
 	}
 	// Split this segment up.
 	nSeg := seg.clone()
-	nSeg.pkt.Data().TrimFront(size)
+	nSeg.TrimFront(seqnum.Size(size))
+	if seg.xmitCount != 0 {
+		seg.payloadTrimmed = true
+	}
 	nSeg.sequenceNumber.UpdateForward(seqnum.Size(size))
 	s.writeList.InsertAfter(seg, nSeg)
 
@@ -1370,7 +1489,7 @@ func (s *sender) isDupAck(seg *segment) bool {
 // steps 2 and 3.
 //
 // +checklocks:s.ep.mu
-func (s *sender) walkSACK(rcvdSeg *segment) bool {
+func (s *sender) walkSACK(rcvdSeg *segment, samples *ackRTTSamples) bool {
 	s.rc.setDSACKSeen(false)
 
 	// Look for DSACK block.
@@ -1407,6 +1526,10 @@ func (s *sender) walkSACK(rcvdSeg *segment) bool {
 	for _, sb := range sackBlocks {
 		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
 			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
+				if seg.xmitCount == 1 && rcvdSeg.ackNumber.LessThan(sb.Start) &&
+					s.SndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.SndNxt) {
+					samples.selective = minimumRTTSample(samples.selective, rcvdSeg.rcvdTime.Sub(seg.xmitTime))
+				}
 				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
 				seg.acked = true
@@ -1556,6 +1679,8 @@ func (s *sender) inRecovery() bool {
 // +checklocksexclude:s.rtt.rttMutex
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	bestRTT := unknownRTT
+	samples := ackRTTSamples{cumulative: unknownRTT, selective: unknownRTT, timestamp: unknownRTT}
+	priorSACK := s.ep.scoreboard.Sacked() != 0
 
 	// Check if we can extract an RTT measurement from this ack. Measure against
 	// the ACK's ingress time (rcvdSeg.rcvdTime), not the current clock: if the
@@ -1609,12 +1734,15 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//		RACK.fack, then the corresponding packet has been
 		//		reordered and RACK.reord is set to TRUE.
 		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-			hasDSACK = s.walkSACK(rcvdSeg)
+			hasDSACK = s.walkSACK(rcvdSeg, &samples)
 		}
 		s.SetPipe()
 	}
 
 	ack := rcvdSeg.ackNumber
+	if (ack-1).InRange(s.SndUna, s.SndNxt) || rcvdSeg.hasNewSACKInfo {
+		s.deliveryGeneration++
+	}
 	fastRetransmit := false
 	// Do not leave fast recovery, if the ACK is out of range.
 	if s.FastRecovery.Active {
@@ -1671,6 +1799,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// not inflate the timestamp-based RTT sample (and thus SRTT/RTO).
 			tsRTT := s.ep.elapsed(rcvdSeg.rcvdTime, rcvdSeg.parsedOptions.TSEcr)
 			s.updateRTO(tsRTT)
+			samples.timestamp = tsRTT
 			// Following Linux, prefer RTT computed from ACKs to TSEcr because,
 			// "broken middle-boxes or peers may corrupt TS-ECR fields"
 			// https://github.com/torvalds/linux/blob/39cd87c4eb2b893354f3b850f916353f2658ae6f/net/ipv4/tcp_input.c#L3141C1-L3144C24
@@ -1706,6 +1835,22 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			}
 
 			datalen := seg.logicalLen()
+			if seg.xmitCount > 1 {
+				samples.retransmitted = true
+			} else if !seg.acked && seg.payloadSize() != 0 {
+				samples.cumulative = minimumRTTSample(samples.cumulative, rcvdSeg.rcvdTime.Sub(seg.xmitTime))
+				// This is the narrow lone-runt heuristic in tcp_clean_rtx_queue:
+				// https://github.com/torvalds/linux/blob/ab185e0c4/net/ipv4/tcp_input.c
+				// Payload trimming excludes partial ACKs and
+				// post-transmission splits; the generation excludes any
+				// intervening delivery ACK.
+				samples.maybeDelayed = ackLeft == acked && int(acked) == seg.payloadSize() &&
+					!seg.payloadTrimmed &&
+					seg.payloadSize() < int(s.ep.scoreboard.SMSS()) &&
+					seg.deliveryGeneration+1 == s.deliveryGeneration &&
+					!priorSACK && !rcvdSeg.hasNewSACKInfo && !hasDSACK &&
+					!rcvdSeg.flags.Contains(header.TCPFlagEce)
+			}
 			if datalen > ackLeft {
 				prevCount := s.pCount(seg, s.MaxPayloadSize)
 				seg.TrimFront(ackLeft)
@@ -1786,6 +1931,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		}
 	}
 
+	if sample, maybeDelayed := samples.minimum(); sample >= 0 {
+		s.minRTT.update(sample, rcvdSeg.rcvdTime, maybeDelayed)
+	}
+
 	if s.ep.SACKPermitted && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 		// Update RACK reorder window.
 		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
@@ -1842,6 +1991,9 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 		if s.SndCwnd < s.Ssthresh {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}
+	} else {
+		seg.deliveryGeneration = s.deliveryGeneration
+		seg.payloadTrimmed = false
 	}
 	seg.xmitTime = s.ep.stack.Clock().NowMonotonic()
 	seg.xmitCount++
