@@ -397,48 +397,9 @@ func enumerate(p Paths) ([]dep, error) {
 	if err != nil {
 		return nil, err
 	}
-	// refs are the repos to audit: modules as name@version, everything else
-	// by apparent or canonical repo name.
-	var refs []repoRef
-	for _, m := range graph.Dependencies {
-		refs = append(refs, repoRef{m.Key, m.Name})
-	}
-	for _, u := range graph.ExtensionUsages {
-		switch {
-		case strings.HasPrefix(u.Key, "@@//:MODULE.bazel%") &&
-			(strings.HasSuffix(u.Key, " http_archive") || strings.HasSuffix(u.Key, " http_file")):
-			// http_archive/http_file declared directly in MODULE.bazel.
-		case strings.HasSuffix(u.Key, "%go_deps"):
-			// Go repos imported from the gazelle go_deps extension.
-		case strings.HasSuffix(u.Key, "//qemu/extension:qemu.bzl%qemu"):
-			// The public user toolchain refers to indirect archive repos. Audit
-			// its complete user-mode family, including unselected architectures.
-			root, err := readRepoMapping("")
-			if err != nil {
-				return nil, err
-			}
-			hub := root["qemu_user_toolchains"]
-			if hub == "" {
-				return nil, errors.New("QEMU user toolchain repository is not imported")
-			}
-			mapping, err := readRepoMapping(hub)
-			if err != nil {
-				return nil, err
-			}
-			qemuRefs, err := qemuUserRepoRefs(mapping)
-			if err != nil {
-				return nil, err
-			}
-			refs = append(refs, qemuRefs...)
-			continue
-		default:
-			// Toolchain extensions (crosstool, llvm_zlib, python, go_sdk,
-			// ...) are not audited.
-			continue
-		}
-		for _, r := range u.UsedRepos {
-			refs = append(refs, repoRef{"@" + r, r})
-		}
+	refs, err := graph.repoRefs()
+	if err != nil {
+		return nil, err
 	}
 	refNames := make([]string, 0, len(refs)+1)
 	refNames = append(refNames, "show_repo")
@@ -484,12 +445,12 @@ func enumerate(p Paths) ([]dep, error) {
 			if v, ok := goVersions[path]; !ok || semver.Compare(version, v) > 0 {
 				goVersions[path] = version
 			}
-		case "http_archive", "http_file":
-			urls := append(repo.attrs["url"], repo.attrs["urls"]...)
-			if len(urls) == 0 {
-				return nil, fmt.Errorf("%s %s has no URL", repo.rule, r.name)
+		case "http_archive", "http_file", "llvm_project_archive":
+			d, err := repo.archiveDependency(r.name)
+			if err != nil {
+				return nil, err
 			}
-			deps = append(deps, dep{name: r.name, kind: kindArchive, url: pickURL(urls), sha256: repoSHA256(repo)})
+			deps = append(deps, d)
 		case "local_repository", "new_local_repository":
 			// Local paths are part of the gVisor checkout, not external
 			// dependencies.
@@ -573,6 +534,54 @@ type modGraph struct {
 	} `json:"extensionUsages"`
 }
 
+// repoRefs selects source dependencies imported by the root module.
+func (graph *modGraph) repoRefs() ([]repoRef, error) {
+	var refs []repoRef
+	for _, m := range graph.Dependencies {
+		refs = append(refs, repoRef{m.Key, m.Name})
+	}
+	for _, u := range graph.ExtensionUsages {
+		switch {
+		case strings.HasPrefix(u.Key, "@@//:MODULE.bazel%") &&
+			(strings.HasSuffix(u.Key, " http_archive") || strings.HasSuffix(u.Key, " http_file")):
+			// http_archive/http_file declared directly in MODULE.bazel.
+		case u.Key == "@@llvm+//extensions:llvm.bzl%llvm":
+			// The public LLVM source extension supplies linked Clang libraries.
+		case strings.HasSuffix(u.Key, "%go_deps"):
+			// Go repos imported from the gazelle go_deps extension.
+		case strings.HasSuffix(u.Key, "//qemu/extension:qemu.bzl%qemu"):
+			// The public user toolchain refers to indirect archive repos. Audit
+			// its complete user-mode family, including unselected architectures.
+			root, err := readRepoMapping("")
+			if err != nil {
+				return nil, err
+			}
+			hub := root["qemu_user_toolchains"]
+			if hub == "" {
+				return nil, errors.New("QEMU user toolchain repository is not imported")
+			}
+			mapping, err := readRepoMapping(hub)
+			if err != nil {
+				return nil, err
+			}
+			qemuRefs, err := qemuUserRepoRefs(mapping)
+			if err != nil {
+				return nil, err
+			}
+			refs = append(refs, qemuRefs...)
+			continue
+		default:
+			// Toolchain extensions (crosstool, llvm_zlib, python, go_sdk,
+			// ...) are not audited.
+			continue
+		}
+		for _, r := range u.UsedRepos {
+			refs = append(refs, repoRef{"@" + r, r})
+		}
+	}
+	return refs, nil
+}
+
 // parseModGraph parses `bazel mod graph --output json` output, skipping any
 // container-management noise preceding the JSON document.
 func parseModGraph(out string) (*modGraph, error) {
@@ -600,6 +609,19 @@ func (r repoInfo) first(attr string) string {
 		return v[0]
 	}
 	return ""
+}
+
+// archiveDependency reads the selected source identity from repository metadata.
+func (r repoInfo) archiveDependency(name string) (dep, error) {
+	urls := append(r.attrs["url"], r.attrs["urls"]...)
+	if len(urls) == 0 || pickURL(urls) == "" {
+		return dep{}, fmt.Errorf("%s %s has no URL", r.rule, name)
+	}
+	sha256 := repoSHA256(r)
+	if r.rule == "llvm_project_archive" && sha256 == "" {
+		return dep{}, fmt.Errorf("%s %s has no SHA-256", r.rule, name)
+	}
+	return dep{name: name, kind: kindArchive, url: pickURL(urls), sha256: sha256}, nil
 }
 
 var (
