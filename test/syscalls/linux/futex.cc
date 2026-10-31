@@ -134,6 +134,21 @@ int futex_wake_op(bool priv, std::atomic<int>* uaddr1, std::atomic<int>* uaddr2,
   return syscall(SYS_futex, uaddr1, op, nwake1, nwake2, uaddr2, sub_op);
 }
 
+// Retries until a waiter is woken, so sub_op must not change *uaddr2.
+int futex_wake_op_until_woken(bool priv, std::atomic<int>* uaddr1,
+                              std::atomic<int>* uaddr2, uint32_t sub_op) {
+  absl::Time const deadline = absl::Now() + kIneffectiveWakeTimeout;
+  int ret;
+  do {
+    ret = futex_wake_op(priv, uaddr1, uaddr2, 0, 1, sub_op);
+    if (ret != 0) {
+      return ret;
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  } while (absl::Now() < deadline);
+  return ret;
+}
+
 int futex_lock_pi(bool priv, std::atomic<int>* uaddr) {
   int op = FUTEX_LOCK_PI;
   if (priv) {
@@ -470,6 +485,43 @@ TEST_P(PrivateAndSharedFutexTest, WakeOpCondFailure) {
   EXPECT_EQ(b, kInitialValue + 2);
 }
 
+TEST_P(PrivateAndSharedFutexTest, WakeOpCondNegativeCmparg) {
+  constexpr int kValue = -1;
+  std::atomic<int> a(0);
+  std::atomic<int> b(kValue);
+
+  DisableSave ds;
+  ScopedThread thread_b([&] {
+    EXPECT_THAT(futex_wait(IsPrivate(), &b, kValue, kIneffectiveWakeTimeout),
+                SyscallSucceeds());
+  });
+
+  EXPECT_THAT(
+      futex_wake_op_until_woken(IsPrivate(), &a, &b,
+                                FUTEX_OP(FUTEX_OP_ADD, 0, FUTEX_OP_CMP_EQ, -1)),
+      SyscallSucceedsWithValue(1));
+  EXPECT_EQ(b, kValue);
+}
+
+TEST_P(PrivateAndSharedFutexTest, WakeOpCondSignedCompare) {
+  constexpr int kValue = static_cast<int>(0x80000001);
+  std::atomic<int> a(0);
+  std::atomic<int> b(kValue);
+
+  DisableSave ds;
+  ScopedThread thread_b([&] {
+    EXPECT_THAT(futex_wait(IsPrivate(), &b, kValue, kIneffectiveWakeTimeout),
+                SyscallSucceeds());
+  });
+
+  EXPECT_THAT(
+      futex_wake_op_until_woken(
+          IsPrivate(), &a, &b,
+          FUTEX_OP(FUTEX_OP_OR | FUTEX_OP_OPARG_SHIFT, 31, FUTEX_OP_CMP_LT, 0)),
+      SyscallSucceedsWithValue(1));
+  EXPECT_EQ(b, kValue);
+}
+
 TEST_P(PrivateAndSharedFutexTest, NoWakeInterprocessPrivateAnon) {
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
@@ -595,6 +647,22 @@ TEST(PrivateFutexTest, WakeOp0Xor) {
   EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(a, 0b0110);
+}
+
+TEST(PrivateFutexTest, WakeOpNegativeOparg) {
+  std::atomic<int> a(1);
+  int futex_op = FUTEX_OP(FUTEX_OP_ADD, -1, 0, 0);
+  EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(a, 0);
+}
+
+TEST(PrivateFutexTest, WakeOpShiftMasked) {
+  std::atomic<int> a(0);
+  int futex_op = FUTEX_OP(FUTEX_OP_SET | FUTEX_OP_OPARG_SHIFT, 33, 0, 0);
+  EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(a, 2);
 }
 
 TEST(SharedFutexTest, WakeInterprocessSharedAnon) {
