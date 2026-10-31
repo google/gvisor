@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
         software-properties-common \
         pkg-config libffi-dev patch diffutils libssl-dev iptables kmod \
         clang clangd crossbuild-essential-amd64 erofs-utils busybox-static \
-        iproute2 netcat-openbsd libnuma-dev
+        iproute2 netcat-openbsd
 
 #-------------------------------------------------------------------------------
 # The rest of the file is unnecessary for building `runsc`, but are necessary
