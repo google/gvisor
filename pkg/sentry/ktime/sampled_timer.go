@@ -235,6 +235,45 @@ func (t *SampledTimer) Set(s Setting, f func()) (Time, Setting) {
 	return now, oldS
 }
 
+// SetWithClock is like Set, except that it also changes the SampledTimer's
+// Clock to c before applying s. The returned Time is according to the previous
+// Clock.
+//
+// +checklocksexclude:t.mu
+func (t *SampledTimer) SetWithClock(c SampledClock, s Setting, f func()) (Time, Setting) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pauseState != timerUnpaused {
+		panic(fmt.Sprintf("SampledTimer(%p).SetWithClock called in pause state %v", t, t.pauseState))
+	}
+	now := t.clock.Now()
+	oldS, oldExp := t.setting.At(now)
+	if oldExp > 0 {
+		t.listener.NotifyTimer(oldExp)
+	}
+	if f != nil {
+		f()
+	}
+	newNow := now
+	if oldC := t.clock; oldC != c {
+		oldC.EventUnregister(&t.entry)
+		if err := c.EventRegister(&t.entry); err != nil {
+			panic(err)
+		}
+		t.clockSeq.BeginWrite()
+		t.clock = c
+		t.clockSeq.EndWrite()
+		newNow = c.Now()
+	}
+	newS, newExp := s.At(newNow)
+	t.setting = newS
+	if newExp > 0 {
+		t.listener.NotifyTimer(newExp)
+	}
+	t.resetKickerLocked(newNow)
+	return now, oldS
+}
+
 // SetClock atomically changes a SampledTimer's Clock and Setting.
 //
 // +checklocksexclude:t.mu
@@ -248,7 +287,9 @@ func (t *SampledTimer) SetClock(c SampledClock, s Setting) {
 	t.setting = s
 	if oldC := t.clock; oldC != c {
 		oldC.EventUnregister(&t.entry)
-		c.EventRegister(&t.entry)
+		if err := c.EventRegister(&t.entry); err != nil {
+			panic(err)
+		}
 		t.clockSeq.BeginWrite()
 		t.clock = c
 		t.clockSeq.EndWrite()

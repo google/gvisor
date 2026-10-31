@@ -38,7 +38,12 @@ type TimerFileDescription struct {
 	vfs.NoLockFD
 
 	events waiter.Queue
-	timer  ktime.Timer
+	timer  *ktime.SampledTimer
+
+	// clock is the clock that the timer fd was created with. timer runs on
+	// clock, except when it is armed with a relative CLOCK_REALTIME time (see
+	// SetTime). clock is immutable.
+	clock ktime.SampledClock
 
 	// val is the number of timer expirations since the last successful
 	// call to PRead, or SetTime. val must be accessed using atomic memory
@@ -50,11 +55,11 @@ var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)
 var _ ktime.Listener = (*TimerFileDescription)(nil)
 
 // New returns a new timer fd.
-func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
+func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.SampledClock, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[timerfd]")
 	defer vd.DecRef(ctx)
-	tfd := &TimerFileDescription{}
-	tfd.timer = clock.NewTimer(tfd)
+	tfd := &TimerFileDescription{clock: clock}
+	tfd.timer = ktime.NewSampledTimer(clock, tfd)
 	if err := tfd.vfsfd.Init(tfd, flags, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
@@ -84,9 +89,9 @@ func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 	return 0, linuxerr.ErrWouldBlock
 }
 
-// Clock returns the timer fd's Clock.
-func (tfd *TimerFileDescription) Clock() ktime.Clock {
-	return tfd.timer.Clock()
+// Clock returns the Clock that the timer fd was created with.
+func (tfd *TimerFileDescription) Clock() ktime.SampledClock {
+	return tfd.clock
 }
 
 // GetTime returns the associated Timer's setting and the time at which it was
@@ -95,11 +100,11 @@ func (tfd *TimerFileDescription) GetTime() (ktime.Time, ktime.Setting) {
 	return tfd.timer.Get()
 }
 
-// SetTime atomically changes the associated Timer's setting, resets the number
-// of expirations to 0, and returns the previous setting and the time at which
-// it was observed.
-func (tfd *TimerFileDescription) SetTime(s ktime.Setting) (ktime.Time, ktime.Setting) {
-	return tfd.timer.Set(s, func() { tfd.val.Store(0) })
+// SetTime atomically changes the associated Timer's setting, and the clock it
+// runs on to c, resets the number of expirations to 0, and returns the
+// previous setting and the time at which it was observed.
+func (tfd *TimerFileDescription) SetTime(c ktime.SampledClock, s ktime.Setting) (ktime.Time, ktime.Setting) {
+	return tfd.timer.SetWithClock(c, s, func() { tfd.val.Store(0) })
 }
 
 // Readiness implements waiter.Waitable.Readiness.

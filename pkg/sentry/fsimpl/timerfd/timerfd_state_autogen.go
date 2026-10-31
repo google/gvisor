@@ -20,6 +20,7 @@ func (tfd *TimerFileDescription) StateFields() []string {
 		"NoLockFD",
 		"events",
 		"timer",
+		"clock",
 		"val",
 	}
 }
@@ -35,7 +36,8 @@ func (tfd *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &tfd.NoLockFD)
 	stateSinkObject.Save(4, &tfd.events)
 	stateSinkObject.Save(5, &tfd.timer)
-	stateSinkObject.Save(6, &tfd.val)
+	stateSinkObject.Save(6, &tfd.clock)
+	stateSinkObject.Save(7, &tfd.val)
 }
 
 func (tfd *TimerFileDescription) afterLoad(context.Context) {}
@@ -48,7 +50,8 @@ func (tfd *TimerFileDescription) StateLoad(ctx context.Context, stateSourceObjec
 	stateSourceObject.Load(3, &tfd.NoLockFD)
 	stateSourceObject.Load(4, &tfd.events)
 	stateSourceObject.Load(5, &tfd.timer)
-	stateSourceObject.Load(6, &tfd.val)
+	stateSourceObject.Load(6, &tfd.clock)
+	stateSourceObject.Load(7, &tfd.val)
 }
 
 func init() {

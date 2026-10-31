@@ -22,10 +22,14 @@ import (
 type ClockID int32
 
 // These are the supported Linux clock identifiers.
+//
+// Boottime is not read from the host; kernel.Timekeeper derives it from
+// Monotonic.
 const (
 	Realtime     ClockID = 0
 	Monotonic    ClockID = 1
 	MonotonicRaw ClockID = 4
+	Boottime     ClockID = 7
 )
 
 // String implements fmt.Stringer.String.
@@ -37,6 +41,8 @@ func (c ClockID) String() string {
 		return "Monotonic"
 	case MonotonicRaw:
 		return "MonotonicRaw"
+	case Boottime:
+		return "Boottime"
 	default:
 		return strconv.Itoa(int(c))
 	}

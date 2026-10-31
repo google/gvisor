@@ -1164,6 +1164,7 @@ func (it *IntervalTimer) StateTypeName() string {
 func (it *IntervalTimer) StateFields() []string {
 	return []string{
 		"timer",
+		"clock",
 		"target",
 		"signo",
 		"id",
@@ -1182,15 +1183,16 @@ func (it *IntervalTimer) beforeSave() {}
 func (it *IntervalTimer) StateSave(stateSinkObject state.Sink) {
 	it.beforeSave()
 	stateSinkObject.Save(0, &it.timer)
-	stateSinkObject.Save(1, &it.target)
-	stateSinkObject.Save(2, &it.signo)
-	stateSinkObject.Save(3, &it.id)
-	stateSinkObject.SaveUint64(4, &it.sigval)
-	stateSinkObject.SaveBool(5, &it.group)
-	stateSinkObject.SaveBool(6, &it.sigpending)
-	stateSinkObject.SaveBool(7, &it.sigorphan)
-	stateSinkObject.SaveUint64(8, &it.overrunCur)
-	stateSinkObject.SaveUint64(9, &it.overrunLast)
+	stateSinkObject.Save(1, &it.clock)
+	stateSinkObject.Save(2, &it.target)
+	stateSinkObject.Save(3, &it.signo)
+	stateSinkObject.Save(4, &it.id)
+	stateSinkObject.SaveUint64(5, &it.sigval)
+	stateSinkObject.SaveBool(6, &it.group)
+	stateSinkObject.SaveBool(7, &it.sigpending)
+	stateSinkObject.SaveBool(8, &it.sigorphan)
+	stateSinkObject.SaveUint64(9, &it.overrunCur)
+	stateSinkObject.SaveUint64(10, &it.overrunLast)
 }
 
 func (it *IntervalTimer) afterLoad(context.Context) {}
@@ -1198,15 +1200,16 @@ func (it *IntervalTimer) afterLoad(context.Context) {}
 // +checklocksignore
 func (it *IntervalTimer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &it.timer)
-	stateSourceObject.Load(1, &it.target)
-	stateSourceObject.Load(2, &it.signo)
-	stateSourceObject.Load(3, &it.id)
-	stateSourceObject.LoadUint64(4, &it.sigval)
-	stateSourceObject.LoadBool(5, &it.group)
-	stateSourceObject.LoadBool(6, &it.sigpending)
-	stateSourceObject.LoadBool(7, &it.sigorphan)
-	stateSourceObject.LoadUint64(8, &it.overrunCur)
-	stateSourceObject.LoadUint64(9, &it.overrunLast)
+	stateSourceObject.Load(1, &it.clock)
+	stateSourceObject.Load(2, &it.target)
+	stateSourceObject.Load(3, &it.signo)
+	stateSourceObject.Load(4, &it.id)
+	stateSourceObject.LoadUint64(5, &it.sigval)
+	stateSourceObject.LoadBool(6, &it.group)
+	stateSourceObject.LoadBool(7, &it.sigpending)
+	stateSourceObject.LoadBool(8, &it.sigorphan)
+	stateSourceObject.LoadUint64(9, &it.overrunCur)
+	stateSourceObject.LoadUint64(10, &it.overrunLast)
 }
 
 func (l *processGroupList) StateTypeName() string {
@@ -3115,7 +3118,9 @@ func (t *Timekeeper) StateFields() []string {
 	return []string{
 		"realtimeClock",
 		"monotonicClock",
+		"boottimeClock",
 		"bootTime",
+		"boottimeOffset",
 		"saveMonotonic",
 		"saveRealtime",
 	}
@@ -3126,18 +3131,22 @@ func (t *Timekeeper) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.realtimeClock)
 	stateSinkObject.Save(1, &t.monotonicClock)
-	stateSinkObject.Save(2, &t.bootTime)
-	stateSinkObject.SaveInt64(3, &t.saveMonotonic)
-	stateSinkObject.SaveInt64(4, &t.saveRealtime)
+	stateSinkObject.Save(2, &t.boottimeClock)
+	stateSinkObject.Save(3, &t.bootTime)
+	stateSinkObject.SaveInt64(4, &t.boottimeOffset)
+	stateSinkObject.SaveInt64(5, &t.saveMonotonic)
+	stateSinkObject.SaveInt64(6, &t.saveRealtime)
 }
 
 // +checklocksignore
 func (t *Timekeeper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.realtimeClock)
 	stateSourceObject.Load(1, &t.monotonicClock)
-	stateSourceObject.Load(2, &t.bootTime)
-	stateSourceObject.LoadInt64(3, &t.saveMonotonic)
-	stateSourceObject.LoadInt64(4, &t.saveRealtime)
+	stateSourceObject.Load(2, &t.boottimeClock)
+	stateSourceObject.Load(3, &t.bootTime)
+	stateSourceObject.LoadInt64(4, &t.boottimeOffset)
+	stateSourceObject.LoadInt64(5, &t.saveMonotonic)
+	stateSourceObject.LoadInt64(6, &t.saveRealtime)
 	stateSourceObject.AfterLoadTo(t)
 }
 

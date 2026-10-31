@@ -2209,6 +2209,11 @@ func (k *Kernel) MonotonicClock() ktime.SampledClock {
 	return k.timekeeper.monotonicClock
 }
 
+// BoottimeClock returns the application CLOCK_BOOTTIME clock.
+func (k *Kernel) BoottimeClock() ktime.SampledClock {
+	return k.timekeeper.boottimeClock
+}
+
 // MonotonicRawClock returns the system CLOCK_MONOTONIC_RAW clock. When it is
 // not enabled as a distinct clock this is the same as MonotonicClock.
 func (k *Kernel) MonotonicRawClock() ktime.SampledClock {
