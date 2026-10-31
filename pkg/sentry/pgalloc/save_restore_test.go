@@ -19,6 +19,7 @@ package pgalloc
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -30,21 +31,28 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 )
 
-func newSaveTestMemoryFile(t *testing.T, diskBacked bool) *MemoryFile {
-	t.Helper()
-	var file *os.File
-	if diskBacked {
-		var err error
-		if file, err = os.CreateTemp(t.TempDir(), "pgalloc-save-test"); err != nil {
-			t.Fatalf("CreateTemp: %v", err)
-		}
-	} else {
+// openSaveTestFile returns a file in dir, or a memfd if dir is empty.
+func openSaveTestFile(tb testing.TB, dir string) *os.File {
+	tb.Helper()
+	if dir == "" {
 		fd, err := memutil.CreateMemFD("pgalloc-save-test", 0)
 		if err != nil {
-			t.Fatalf("CreateMemFD: %v", err)
+			tb.Fatalf("CreateMemFD: %v", err)
 		}
-		file = os.NewFile(uintptr(fd), "pgalloc-save-test")
+		return os.NewFile(uintptr(fd), "pgalloc-save-test")
 	}
+	file, err := os.CreateTemp(dir, "pgalloc-save-test")
+	if err != nil {
+		tb.Fatalf("CreateTemp: %v", err)
+	}
+	return file
+}
+
+// newSaveTestMemoryFile returns a MemoryFile backed by a file in dir, or by a
+// memfd if dir is empty.
+func newSaveTestMemoryFile(t *testing.T, dir string, diskBacked bool) *MemoryFile {
+	t.Helper()
+	file := openSaveTestFile(t, dir)
 	f, err := NewMemoryFile(file, MemoryFileOpts{
 		DelayedEviction:         DelayedEvictionDisabled,
 		DisableMemoryAccounting: true,
@@ -68,6 +76,15 @@ func allocateSaveTestPages(t *testing.T, f *MemoryFile) memmap.FileRange {
 	return fr
 }
 
+// writeMappedPage writes b to byte 17 of the given page through f's mapping
+// rather than with pwrite(2), so the page stays dirty in the page cache.
+func writeMappedPage(f *MemoryFile, fr memmap.FileRange, page int, b byte) {
+	start := fr.Start + uint64(page)*uint64(hostarch.PageSize)
+	f.forEachMappingSlice(memmap.FileRange{Start: start, End: start + uint64(hostarch.PageSize)}, func(bs []byte) {
+		bs[17] = b
+	})
+}
+
 func pwritePage(t *testing.T, f *MemoryFile, fr memmap.FileRange, page int, b byte) {
 	t.Helper()
 	buf := make([]byte, hostarch.PageSize)
@@ -78,7 +95,7 @@ func pwritePage(t *testing.T, f *MemoryFile, fr memmap.FileRange, page int, b by
 }
 
 func TestHostFileDataSeeker(t *testing.T) {
-	f := newSaveTestMemoryFile(t, false)
+	f := newSaveTestMemoryFile(t, "", true /* diskBacked */)
 	fr := allocateSaveTestPages(t, f)
 	pwritePage(t, f, fr, 2, 1)
 	pwritePage(t, f, fr, 3, 1)
@@ -86,6 +103,9 @@ func TestHostFileDataSeeker(t *testing.T) {
 	pwritePage(t, f, fr, 12, 0)
 	page := func(n uint64) uint64 { return fr.Start + n*uint64(hostarch.PageSize) }
 	d := f.newHostFileDataSeeker()
+	if d == nil {
+		t.Fatal("newHostFileDataSeeker returned nil for a disk-backed file on tmpfs")
+	}
 	for _, call := range []struct {
 		off  uint64
 		want memmap.FileRange
@@ -111,12 +131,16 @@ func TestSaveToPreservesContents(t *testing.T) {
 		exclude       bool
 		wantCommitted uint64
 	}{
-		{name: "memfd", wantCommitted: 2 * uint64(hostarch.PageSize)},
-		{name: "memfd excluding committed zero pages", exclude: true, wantCommitted: uint64(hostarch.PageSize)},
-		{name: "disk-backed", diskBacked: true, wantCommitted: 2 * uint64(hostarch.PageSize)},
+		{name: "memfd", wantCommitted: 3 * uint64(hostarch.PageSize)},
+		{name: "memfd excluding committed zero pages", exclude: true, wantCommitted: 2 * uint64(hostarch.PageSize)},
+		{name: "disk-backed", diskBacked: true, wantCommitted: 3 * uint64(hostarch.PageSize)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newSaveTestMemoryFile(t, tc.diskBacked)
+			var dir string
+			if tc.diskBacked {
+				dir = t.TempDir()
+			}
+			f := newSaveTestMemoryFile(t, dir, tc.diskBacked)
 			fr := allocateSaveTestPages(t, f)
 			pwritePage(t, f, fr, 2, 1)
 			pwritePage(t, f, fr, 13, 2)
@@ -125,8 +149,10 @@ func TestSaveToPreservesContents(t *testing.T) {
 			}
 			pwritePage(t, f, fr, 9, 0)
 			pwritePage(t, f, fr, 13, 0)
+			writeMappedPage(f, fr, 5, 3)
 			want := make([]byte, fr.Length())
 			want[2*hostarch.PageSize+17] = 1
+			want[5*hostarch.PageSize+17] = 3
 
 			var checkpoint bytes.Buffer
 			if err := f.SaveTo(context.Background(), &checkpoint, &SaveOpts{ExcludeCommittedZeroPages: tc.exclude}); err != nil {
@@ -136,7 +162,7 @@ func TestSaveToPreservesContents(t *testing.T) {
 				t.Errorf("knownCommittedBytes: got %d, want %d", got, tc.wantCommitted)
 			}
 
-			restored := newSaveTestMemoryFile(t, tc.diskBacked)
+			restored := newSaveTestMemoryFile(t, dir, tc.diskBacked)
 			if err := restored.LoadFrom(context.Background(), &checkpoint, &LoadOpts{}); err != nil {
 				t.Fatalf("LoadFrom: %v", err)
 			}
@@ -162,7 +188,11 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 		{name: "disk-backed", diskBacked: true, wantCommitted: 2 * uint64(hostarch.PageSize)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newSaveTestMemoryFile(t, tc.diskBacked)
+			var dir string
+			if tc.diskBacked {
+				dir = t.TempDir()
+			}
+			f := newSaveTestMemoryFile(t, dir, tc.diskBacked)
 			fr := allocateSaveTestPages(t, f)
 			pwritePage(t, f, fr, 2, 1)
 			pwritePage(t, f, fr, 13, 2)
@@ -206,7 +236,7 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 				t.Errorf("knownCommittedBytes: got %d, want %d", got, tc.wantCommitted)
 			}
 
-			restored := newSaveTestMemoryFile(t, tc.diskBacked)
+			restored := newSaveTestMemoryFile(t, dir, tc.diskBacked)
 			loadDone := make(chan error, 1)
 			apfl, err := StartAsyncPagesFileLoad(
 				stateio.NewIOReader(bytes.NewReader(pages), uint64(hostarch.PageSize), 1 /* maxRanges */, 2 /* maxParallel */),
@@ -248,7 +278,7 @@ func TestSaveToExitAfterSaving(t *testing.T) {
 		{name: "exit after saving", exitAfterSaving: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newSaveTestMemoryFile(t, false)
+			f := newSaveTestMemoryFile(t, "", false)
 			fr := allocateSaveTestPages(t, f)
 			pwritePage(t, f, fr, 2, 1)
 			pwritePage(t, f, fr, 5, 0)
@@ -313,6 +343,54 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 				})
 				b.StartTimer()
 				if err := f.SaveTo(context.Background(), io.Discard, &SaveOpts{ExitAfterSaving: bc.exitAfterSaving}); err != nil {
+					b.Fatalf("SaveTo: %v", err)
+				}
+				b.StopTimer()
+				f.DecRef(fr)
+				f.Destroy()
+			}
+		})
+	}
+}
+
+// BenchmarkSaveToDiskBacked measures SaveTo for a 256 MiB disk-backed
+// MemoryFile with 1% or all of its pages written through its mapping.
+func BenchmarkSaveToDiskBacked(b *testing.B) {
+	const size = 256 << 20
+	pages := size / hostarch.PageSize
+	dir := b.TempDir()
+	for _, bc := range []struct {
+		file    string
+		dir     string
+		percent int
+	}{
+		{file: "memfd", percent: 1},
+		{file: "memfd", percent: 100},
+		{file: "tempdir", dir: dir, percent: 1},
+		{file: "tempdir", dir: dir, percent: 100},
+	} {
+		b.Run(fmt.Sprintf("file=%s/written=%dpct", bc.file, bc.percent), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				file := openSaveTestFile(b, bc.dir)
+				f, err := NewMemoryFile(file, MemoryFileOpts{
+					DelayedEviction:         DelayedEvictionDisabled,
+					DisableMemoryAccounting: true,
+					DiskBackedFile:          true,
+					DecommitOnDestroy:       true,
+				})
+				if err != nil {
+					b.Fatalf("NewMemoryFile: %v", err)
+				}
+				fr, err := f.Allocate(size, AllocOpts{Mode: AllocateUncommitted})
+				if err != nil {
+					b.Fatalf("Allocate: %v", err)
+				}
+				for page := 0; page < pages; page += 100 / bc.percent {
+					writeMappedPage(f, fr, page, 1)
+				}
+				b.StartTimer()
+				if err := f.SaveTo(context.Background(), io.Discard, &SaveOpts{}); err != nil {
 					b.Fatalf("SaveTo: %v", err)
 				}
 				b.StopTimer()
