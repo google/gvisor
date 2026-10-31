@@ -1370,7 +1370,7 @@ func (s *sender) isDupAck(seg *segment) bool {
 // steps 2 and 3.
 //
 // +checklocks:s.ep.mu
-func (s *sender) walkSACK(rcvdSeg *segment) bool {
+func (s *sender) walkSACK(rcvdSeg *segment, delivery *rackAck) bool {
 	s.rc.setDSACKSeen(false)
 
 	// Look for DSACK block.
@@ -1407,8 +1407,7 @@ func (s *sender) walkSACK(rcvdSeg *segment) bool {
 	for _, sb := range sackBlocks {
 		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
 			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
-				s.rc.update(seg, rcvdSeg)
-				s.rc.detectReorder(seg)
+				s.rc.update(seg, rcvdSeg, delivery)
 				seg.acked = true
 				s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
 			}
@@ -1574,6 +1573,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	}
 
 	// Insert SACKBlock information into our scoreboard.
+	delivery := s.rc.beginAck()
 	hasDSACK := false
 	if s.ep.SACKPermitted {
 		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
@@ -1609,7 +1609,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//		RACK.fack, then the corresponding packet has been
 		//		reordered and RACK.reord is set to TRUE.
 		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-			hasDSACK = s.walkSACK(rcvdSeg)
+			hasDSACK = s.walkSACK(rcvdSeg, &delivery)
 		}
 		s.SetPipe()
 	}
@@ -1720,8 +1720,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			// Update the RACK fields if SACK is enabled.
 			if s.ep.SACKPermitted && !seg.acked && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-				s.rc.update(seg, rcvdSeg)
-				s.rc.detectReorder(seg)
+				s.rc.update(seg, rcvdSeg, &delivery)
 			}
 
 			s.writeList.Remove(seg)
