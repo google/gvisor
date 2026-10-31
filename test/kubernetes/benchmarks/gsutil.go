@@ -32,9 +32,8 @@ import (
 )
 
 const (
-	imageAMD = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/benchmarks/gsutil_x86_64:7eba9c02d11172d4"
-	imageARM = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/benchmarks/gsutil_aarch64:7eba9c02d11172d4"
-	bigfile  = "gs://gvisor-benchmark-testdata/bigrandomfile"
+	gsutilImage = "gcr.io/google.com/cloudsdktool/google-cloud-cli:591.0.0-stable@sha256:d3f74bb21280869467e4e901c66280d4610e0bda81bab1cd7d9c112ccd1d2276"
+	bigfile     = "gs://gvisor-benchmark-testdata/bigrandomfile"
 )
 
 // RunGSUtil runs a series of gsutil speed benchmarks.
@@ -55,20 +54,8 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 	}
 	defer cluster.DeletePersistentVolume(ctx, persistentVol)
 
-	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
+	image, err := k8sCtx.ResolveImage(ctx, gsutilImage)
 	if err != nil {
-		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
-	}
-	var image string
-	switch testCPUArch {
-	case testcluster.CPUArchitectureX86:
-		image = imageAMD
-	case testcluster.CPUArchitectureARM:
-		image = imageARM
-	default:
-		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
-	}
-	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
 	supportsPV, err := cluster.SupportsPersistentVolumes(ctx)
