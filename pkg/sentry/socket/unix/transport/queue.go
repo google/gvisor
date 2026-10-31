@@ -36,11 +36,22 @@ type queue struct {
 	readerWaiters *waiter.Queue
 	writerWaiters *waiter.Queue
 
-	mu       queueMutex `state:"nosave"`
-	closed   atomicbitops.Bool
-	unread   bool
-	used     int64
-	limit    int64
+	mu queueMutex `state:"nosave"`
+
+	// +checklocks:mu
+	// +checkatomic
+	closed atomicbitops.Bool
+
+	// +checklocks:mu
+	unread bool
+
+	// +checklocks:mu
+	used int64
+
+	// +checklocks:mu
+	limit int64
+
+	// +checklocks:mu
 	dataList messageList
 }
 
@@ -100,6 +111,8 @@ func (q *queue) IsReadable() bool {
 // free.
 //
 // See net/unix/af_unix.c:unix_writeable.
+//
+// +checklocks:q.mu
 func (q *queue) bufWritable() bool {
 	return 4*q.used < q.limit
 }
