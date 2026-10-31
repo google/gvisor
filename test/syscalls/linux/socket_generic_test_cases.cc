@@ -487,6 +487,29 @@ TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
   tryBeatingCapWithUnshare();
 }
 
+// SO_RCVBUFFORCE fails without CAP_NET_ADMIN in the initial user namespace,
+// whether or not the network stack itself could set it.
+TEST_P(AllSocketPairTest, SetSocketRecvBufForceWithoutCapability) {
+  std::unique_ptr<SocketPair> sockets =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int fd = sockets->first_fd();
+  constexpr int kRcvBufSz = 1 << 20;
+
+  EXPECT_THAT(InForkedProcess([&] {
+                TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER));
+                TEST_CHECK_ERRNO(
+                    syscall(SYS_setsockopt, fd, SOL_SOCKET, SO_RCVBUFFORCE,
+                            &kRcvBufSz, sizeof(kRcvBufSz)),
+                    EPERM);
+              }),
+              IsPosixErrorOkAndHolds(0));
+
+  AutoCapability cap(CAP_NET_ADMIN, false);
+  EXPECT_THAT(
+      setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &kRcvBufSz, sizeof(kRcvBufSz)),
+      SyscallFailsWithErrno(EPERM));
+}
+
 #endif  // __linux__
 
 TEST_P(AllSocketPairTest, GetSndBufSucceeds) {
