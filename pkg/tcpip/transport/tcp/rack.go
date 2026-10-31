@@ -30,6 +30,17 @@ const (
 	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.
 	wcDelayedACKTimeout = 200 * time.Millisecond
 
+	// tcpTimeoutMin is the PTO inflation applied when FlightSize is greater
+	// than one segment. It mirrors TCP_TIMEOUT_MIN_US in Linux's
+	// tcp_schedule_loss_probe, which is the implementation RFC 8985
+	// documents. On paths whose RTT is of the same order as end-host or
+	// transport jitter (e.g. receiver-side GRO/batched delivery on
+	// loopback-class transports), a bare 2*SRTT PTO fires while ACKs are
+	// merely delayed; the resulting probe typically overtakes the original
+	// transmission, so no DSACK is generated and TLP recovery detection
+	// converts the spurious probe into a congestion response.
+	tcpTimeoutMin = 2 * time.Millisecond
+
 	// tcpRACKRecoveryThreshold is the number of loss recoveries for which
 	// the reorder window is inflated and after that the reorder window is
 	// reset to its initial value of minRTT/4.
@@ -184,6 +195,8 @@ func (s *sender) schedulePTO() {
 		pto = s.rtt.TCPRTTState.SRTT * 2
 		if s.Outstanding == 1 {
 			pto += wcDelayedACKTimeout
+		} else {
+			pto += tcpTimeoutMin
 		}
 	}
 	s.rtt.Unlock()
