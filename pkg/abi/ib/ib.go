@@ -274,6 +274,10 @@ const (
 	UVERBS_ATTR_CREATE_QP_SQ_BUF_UMEM      = 17
 )
 
+// IB_UVERBS_QPT_RAW_PACKET is the raw-packet queue pair type from enum
+// ib_uverbs_qp_type in include/uapi/rdma/ib_user_ioctl_verbs.h.
+const IB_UVERBS_QPT_RAW_PACKET = 8
+
 // enum uverbs_attrs_destroy_qp_cmd_attr_ids.
 const (
 	UVERBS_ATTR_DESTROY_QP_HANDLE = 0
