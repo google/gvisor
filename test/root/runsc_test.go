@@ -474,7 +474,10 @@ func TestSandboxProcessEnv(t *testing.T) {
 	godebug := regexp.QuoteMeta("GODEBUG=" + sandboxposture.GoDebug(conf.Platform, conf.ProfileEnable))
 	got = regexp.MustCompile("(^|\x00)"+godebug+"\x00").ReplaceAll(got, []byte("$1"))
 	got = regexp.MustCompile("(^|\x00)GOMAXPROCS=\\d+\x00").ReplaceAll(got, []byte("$1"))
-	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
-		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
+	if len(got) != 0 {
+		limit, ok := strings.CutPrefix(strings.TrimSuffix(string(got), "\x00"), "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00")
+		if !ok || !sandboxposture.IsSentryMallocArenaMax(limit) {
+			t.Errorf("unexpected sandbox process environment: %q", got)
+		}
 	}
 }
