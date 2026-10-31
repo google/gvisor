@@ -16,7 +16,9 @@ package tun
 
 import (
 	"fmt"
+	"io"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -297,47 +299,48 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 	return dataLen, nil
 }
 
-// Read reads one outgoing packet from the network interface.
+// Read copies one outgoing packet to a destination of the given size.
 //
 // +checklocksexclude:d.mu
-func (d *Device) Read() (*buffer.View, error) {
+func (d *Device) Read(dst io.Writer, size int64) (int64, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
 	noPacketInfo := d.flags.NoPacketInfo
 	d.mu.RUnlock()
 	if endpoint == nil {
-		return nil, linuxerr.EBADFD
+		return 0, linuxerr.EBADFD
 	}
-
+	if size == 0 {
+		return 0, nil
+	}
 	pkt := endpoint.Read()
 	if pkt == nil {
-		return nil, linuxerr.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
-	v := encodePkt(pkt, noPacketInfo)
-	pkt.DecRef()
-	return v, nil
-}
+	defer pkt.DecRef()
 
-// encodePkt encodes packet for fd side.
-func encodePkt(pkt *stack.PacketBuffer, noPacketInfo bool) *buffer.View {
-	var view *buffer.View
-
-	// Packet information.
+	var headerSize int64
 	if !noPacketInfo {
-		view = buffer.NewView(PacketInfoHeaderSize + pkt.Size())
-		view.Grow(PacketInfoHeaderSize)
-		hdr := PacketInfoHeader(view.AsSlice())
-		hdr.Encode(&PacketInfoFields{
-			Protocol: pkt.NetworkProtocolNumber,
-		})
-		pktView := pkt.ToView()
-		view.Write(pktView.AsSlice())
-		pktView.Release()
-	} else {
-		view = pkt.ToView()
+		if size < PacketInfoHeaderSize {
+			return 0, linuxerr.EINVAL
+		}
+		fields := PacketInfoFields{Protocol: pkt.NetworkProtocolNumber}
+		if size < PacketInfoHeaderSize+int64(pkt.Size()) {
+			fields.Flags = linux.TUN_PKT_STRIP
+		}
+		var hdr [PacketInfoHeaderSize]byte
+		PacketInfoHeader(hdr[:]).Encode(&fields)
+		// tun_put_user requires the whole packet information header, even
+		// when the destination faults after copying some of it.
+		if n, _ := dst.Write(hdr[:]); n != len(hdr) {
+			return 0, linuxerr.EFAULT
+		}
+		headerSize = PacketInfoHeaderSize
 	}
-
-	return view
+	data := pkt.ToBuffer()
+	defer data.Release()
+	n, err := data.ReadToWriter(dst, size-headerSize)
+	return headerSize + n, err
 }
 
 // Name returns the name of the attached network interface. Empty string if
