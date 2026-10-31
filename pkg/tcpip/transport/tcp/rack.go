@@ -99,8 +99,22 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// 2. When RTT calculated for the packet is less than the minimum RTT
 	// for the connection.
 	// See: https://www.rfc-editor.org/rfc/rfc8985.html#section-6.2, step 2.
+	//
+	// The TSecr check is skipped only when the segment is SACKed in full.
+	// A receiver updates the timestamp it echoes only from segments at the
+	// left edge of its window (RFC 7323, section 4.3), so an ACK that SACKs
+	// a retransmission above a hole, such as a tail loss probe, usually
+	// echoes an older timestamp even when the retransmission arrived. Linux
+	// makes the same split: tcp_clean_rtx_queue applies its TSecr test
+	// (tcp_skb_spurious_retrans) to cumulatively acknowledged segments, and
+	// tcp_sacktag_one passes SACKed ones to tcp_rack_advance, which checks
+	// only the minimum RTT. Linux tags a packet as SACKed only when a SACK
+	// block covers all of it (tcp_match_skb_to_sack), so a SACK that ends
+	// partway through the segment keeps the TSecr check.
+	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 	if seg.xmitCount > 1 {
-		if ackSeg.parsedOptions.TS && ackSeg.parsedOptions.TSEcr != 0 {
+		sacked := ackSeg.ackNumber.LessThan(endSeq) && rc.snd.ep.scoreboard.IsSACKED(seg.sackBlock())
+		if !sacked && ackSeg.parsedOptions.TS && ackSeg.parsedOptions.TSEcr != 0 {
 			if ackSeg.parsedOptions.TSEcr < rc.snd.ep.tsVal(seg.xmitTime) {
 				return
 			}
@@ -123,7 +137,6 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// Update rc.xmitTime and rc.endSequence to the transmit time and
 	// ending sequence number of the packet which has been acknowledged
 	// most recently.
-	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 	if rc.XmitTime.Before(seg.xmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
 		rc.XmitTime = seg.xmitTime
 		rc.EndSequence = endSeq
