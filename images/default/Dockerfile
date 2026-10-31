@@ -40,11 +40,6 @@ RUN ARCH="$(uname -m | sed s/aarch64/arm/)" && \
     google-cloud-sdk/install.sh --quiet && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
 
-# Install buildifier.
-RUN ARCH="$(uname -m | sed -e s/aarch64/arm64/ -e s/x86_64/amd64/)" && \
-    curl -fsSL https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-${ARCH} -o /usr/local/bin/buildifier && \
-    chmod ugo+x /usr/local/bin/buildifier
-
 # Download the official bazel binary. The APT repository isn't used because there is not packages for arm64.
 COPY bazelversion .
 RUN ARCH="$(uname -m | sed s/aarch64/arm64/)" BAZEL_VERSION="$(cat ./bazelversion)" && \
