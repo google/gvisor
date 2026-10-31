@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -411,5 +412,47 @@ func TestRACKZeroClockResolutionPreservesLossBoundary(t *testing.T) {
 
 	if got := ctx.snd.rc.detectLoss(tcpip.MonotonicTime{}); got != 1 {
 		t.Fatalf("detectLoss at zero-resolution boundary got %d losses, want 1", got)
+	}
+}
+
+func TestSACKBridgesRetransmittedQueueFragment(t *testing.T) {
+	clock := faketime.NewManualClock()
+	ctx := newRACKTestContext(clock, 0)
+	defer ctx.cleanup()
+	s := &ctx.snd
+	s.ep.mu.Lock()
+	defer s.ep.mu.Unlock()
+	s.ep.SACKPermitted = true
+	s.ep.scoreboard = NewSACKScoreboard(1000, 0)
+	first := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.MakeWithView(buffer.NewViewSize(1000)), 0)
+	first.sequenceNumber, first.gsoStart, first.gsoMSS, first.xmitCount = 2000, 2000, 1000, 1
+	s.MaxPayloadSize = 500
+	first.acked, first.lost = true, true
+	s.writeList.PushBack(first)
+	s.splitSeg(first, 300)
+	middle := first.Next()
+	s.splitSeg(middle, 400)
+	last := middle.Next()
+	ctx.segs = append(ctx.segs, first, middle, last)
+	for _, seg := range ctx.segs {
+		if !seg.acked || !seg.lost || seg.flags&header.TCPFlagPsh != 0 {
+			t.Errorf("split segment at %d: acked=%t, lost=%t, flags=%v", seg.sequenceNumber, seg.acked, seg.lost, seg.flags)
+		}
+	}
+	// The middle fragment has since been transmitted separately. The last
+	// fragment still owns the original transmitted unit [2000,3000).
+	middle.gsoStart, middle.gsoMSS, middle.truncatedTail = 2300, 400, false
+	apply := func(block header.SACKBlock) {
+		merged := s.ep.scoreboard.Insert(block)
+		block.End = s.ep.scoreboard.creditEnd(block.End, merged.End)
+		s.walkSACK(&segment{}, []header.SACKBlock{block})
+	}
+	apply(header.SACKBlock{Start: 2100, End: 3000})
+	if last.sackCredit != 0 {
+		t.Fatalf("incomplete original unit counts as %d", last.sackCredit)
+	}
+	apply(header.SACKBlock{Start: 2000, End: 2100})
+	if last.sackCredit != 1 {
+		t.Fatalf("last fragment lost its fully SACKed original unit: %d", last.sackCredit)
 	}
 }
