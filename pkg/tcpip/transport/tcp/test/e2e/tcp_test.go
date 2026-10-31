@@ -3920,6 +3920,61 @@ func TestMSSNotDelayed(t *testing.T) {
 	}
 }
 
+func TestCorkFlushBeforeFIN(t *testing.T) {
+	for _, how := range []string{"close", "shutdown"} {
+		t.Run(how, func(t *testing.T) {
+			c := context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				MTU:      e2e.DefaultMTU,
+				Clock:    faketime.NewManualClock(),
+			})
+			defer c.Cleanup()
+			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1)
+			c.EP.SocketOptions().SetCorkOption(true)
+			payload := []byte("corked payload")
+			if n, err := c.EP.Write(bytes.NewReader(payload), tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write: %s", err)
+			} else if got, want := n, int64(len(payload)); got != want {
+				t.Fatalf("Write = %d, want %d", got, want)
+			}
+			if pkt := c.GetPacketNonBlocking(); pkt != nil {
+				pkt.Release()
+				t.Fatal("corked write sent a partial segment")
+			}
+			if how == "close" {
+				c.EP.Close()
+			} else if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
+				t.Fatalf("Shutdown: %s", err)
+			}
+
+			// The entire write and FIN should reach the peer without
+			// advancing the cork timer, whether in one segment or more.
+			var received []byte
+			for {
+				pkt := c.GetPacketNonBlocking()
+				if pkt == nil {
+					t.Fatalf("received %q before the cork timeout, missing FIN", received)
+				}
+				defer pkt.Release()
+				h := header.TCP(header.IPv4(pkt.AsSlice()).Payload())
+				if got, want := h.SequenceNumber(), uint32(c.IRS.Add(seqnum.Size(len(received)+1))); got != want {
+					t.Fatalf("sequence number = %d, want %d", got, want)
+				}
+				if h.Flags()&header.TCPFlagRst != 0 {
+					t.Fatal("connection reset before FIN")
+				}
+				received = append(received, h.Payload()...)
+				if h.Flags()&header.TCPFlagFin != 0 {
+					break
+				}
+			}
+			if !bytes.Equal(received, payload) {
+				t.Errorf("received %q before FIN, want %q", received, payload)
+			}
+		})
+	}
+}
+
 // TestMinshallPartialSegment checks that Nagle waits for an outstanding small
 // segment, rather than for every outstanding full segment.
 func TestMinshallPartialSegment(t *testing.T) {
