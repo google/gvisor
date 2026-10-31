@@ -167,13 +167,16 @@ func (op metaLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 		secs := now.Hour()*3600 + now.Minute()*60 + now.Second()
 		target = binary.NativeEndian.AppendUint32(nil, uint32(secs))
 
+	// Output Interface Index (32-bit, host order), 0 without one.
+	case linux.NFT_META_OIF:
+		target = binary.NativeEndian.AppendUint32(nil, uint32(evalCtx.outNICID))
+
 	// Output Interface Name (string, host order).
 	case linux.NFT_META_OIFNAME:
 		dst := regs.data[op.dregIdx:]
 		clear(dst[:linux.IFNAMSIZ])
-		if evalCtx.route != nil {
-			nic := evalCtx.route.OutgoingNIC()
-			name := evalCtx.nftState.stack.FindNICNameFromID(nic)
+		if evalCtx.outNICID != 0 {
+			name := evalCtx.nftState.stack.FindNICNameFromID(evalCtx.outNICID)
 			copy(dst, name)
 		}
 		return
