@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -5924,4 +5925,58 @@ func TestFindRoute(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNetworkProtocolEnabled verifies the global, default, and per-NIC network
+// protocol enable/disable state.
+func TestNetworkProtocolEnabled(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+	})
+	defer s.Destroy()
+
+	checkState := func(wantGlobal, wantDefault bool, wantNICs map[tcpip.NICID]bool) {
+		t.Helper()
+		if got, err := s.GlobalNetworkProtocolEnabled(ipv6.ProtocolNumber); err != nil || got != wantGlobal {
+			t.Errorf("GlobalNetworkProtocolEnabled(ipv6) = (%t, %v), want (%t, nil)", got, err, wantGlobal)
+		}
+		if got, err := s.DefaultNetworkProtocolEnabled(ipv6.ProtocolNumber); err != nil || got != wantDefault {
+			t.Errorf("DefaultNetworkProtocolEnabled(ipv6) = (%t, %v), want (%t, nil)", got, err, wantDefault)
+		}
+		for id, want := range wantNICs {
+			if got, err := s.NICNetworkProtocolEnabled(id, ipv6.ProtocolNumber); err != nil || got != want {
+				t.Errorf("NICNetworkProtocolEnabled(%d, ipv6) = (%t, %v), want (%t, nil)", id, got, err, want)
+			}
+		}
+	}
+
+	const (
+		nicID1 = 1
+		nicID2 = 2
+	)
+	if err := s.CreateNIC(nicID1, loopback.New()); err != nil {
+		t.Fatalf("CreateNIC(%d): %s", nicID1, err)
+	}
+	checkState(true /* wantGlobal */, true /* wantDefault */, map[tcpip.NICID]bool{nicID1: true})
+
+	// Disabling default IPv6 affects newly created NICs, but not existing NICs or global.
+	if err := s.SetDefaultNetworkProtocolEnabled(ipv6.ProtocolNumber, false); err != nil {
+		t.Fatalf("SetDefaultNetworkProtocolEnabled(ipv6, false): %s", err)
+	}
+	if err := s.CreateNIC(nicID2, channel.New(1, defaultMTU, "")); err != nil {
+		t.Fatalf("CreateNIC(%d): %s", nicID2, err)
+	}
+	checkState(true /* wantGlobal */, false /* wantDefault */, map[tcpip.NICID]bool{nicID1: true, nicID2: false})
+
+	// Disabling global IPv6 disables default and all existing NICs.
+	if err := s.SetGlobalNetworkProtocolEnabled(ipv6.ProtocolNumber, false); err != nil {
+		t.Fatalf("SetGlobalNetworkProtocolEnabled(ipv6, false): %s", err)
+	}
+	checkState(false /* wantGlobal */, false /* wantDefault */, map[tcpip.NICID]bool{nicID1: false, nicID2: false})
+
+	// Re-enabling a single NIC leaves global and default disabled.
+	if err := s.SetNICNetworkProtocolEnabled(nicID1, ipv6.ProtocolNumber, true); err != nil {
+		t.Fatalf("SetNICNetworkProtocolEnabled(%d, ipv6, true): %s", nicID1, err)
+	}
+	checkState(false /* wantGlobal */, false /* wantDefault */, map[tcpip.NICID]bool{nicID1: true, nicID2: false})
 }
