@@ -68,6 +68,11 @@ type nic struct {
 	// enabled indicates whether the NIC is enabled.
 	enabled atomicbitops.Bool
 
+	// adminDown indicates whether the NIC is administratively down, i.e. its
+	// IFF_UP flag is cleared. A NIC that is administratively up stays disabled
+	// while external networking is paused, unless it is a loopback NIC.
+	adminDown atomicbitops.Bool
+
 	// spoofing indicates whether the NIC is spoofing.
 	spoofing atomicbitops.Bool
 
@@ -204,6 +209,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		kind:                      opts.Kind,
 		minMTU:                    opts.MinMTU,
 		maxMTU:                    opts.MaxMTU,
+		adminDown:                 atomicbitops.FromBool(opts.Disabled),
 	}
 	nic.linkResQueue.init(nic)
 
@@ -305,7 +311,13 @@ func (n *nic) disableLocked() {
 func (n *nic) enable() tcpip.Error {
 	n.enableDisableMu.Lock()
 	defer n.enableDisableMu.Unlock()
+	return n.enableLocked()
+}
 
+// enableLocked enables n. See enable.
+//
+// +checklocks:n.enableDisableMu
+func (n *nic) enableLocked() tcpip.Error {
 	if !n.setEnabled(true) {
 		return nil
 	}
@@ -317,6 +329,24 @@ func (n *nic) enable() tcpip.Error {
 	}
 
 	return nil
+}
+
+// setAdminState sets the administrative state of n and enables or disables n
+// to match. If paused is true, n stays disabled even when it is
+// administratively up.
+func (n *nic) setAdminState(up, paused bool) tcpip.Error {
+	n.enableDisableMu.Lock()
+	defer n.enableDisableMu.Unlock()
+
+	n.adminDown.Store(!up)
+	if !up {
+		n.disableLocked()
+		return nil
+	}
+	if paused {
+		return nil
+	}
+	return n.enableLocked()
 }
 
 // remove detaches NIC from the link endpoint and releases network endpoint
@@ -575,6 +605,25 @@ func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
 		}
 	}
 	return addrs
+}
+
+func (n *nic) allAddressInfo() []ProtocolAddressInfo {
+	var infos []ProtocolAddressInfo
+	for p, ep := range n.networkEndpoints {
+		addressableEndpoint, ok := ep.(AddressableEndpoint)
+		if !ok {
+			continue
+		}
+
+		for _, info := range addressableEndpoint.AddressInfos() {
+			infos = append(infos, ProtocolAddressInfo{
+				Protocol:          p,
+				AddressWithPrefix: info.AddressWithPrefix,
+				Permanent:         info.Permanent,
+			})
+		}
+	}
+	return infos
 }
 
 // primaryAddresses returns the primary addresses associated with this NIC.

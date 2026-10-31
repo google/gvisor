@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
@@ -54,6 +55,9 @@ type Stack struct {
 	// id is a unique identifier for this stack, it is currently only
 	// used for a deterministic lock ordering.
 	id uint64
+
+	// ipv6KeepAddrOnDown backs /proc/sys/net/ipv6/conf/all/keep_addr_on_down.
+	ipv6KeepAddrOnDown atomicbitops.Bool
 }
 
 // NewStack creates a new netstack.Stack which wraps the given tcpip.Stack.
@@ -240,6 +244,9 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	if flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
 		return syserr.ErrExists
 	}
+	// setUp tracks a requested administrative up/down state change (IFF_UP).
+	// It is nil when the message does not change IFF_UP.
+	var setUp *bool
 	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
 		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
 			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
@@ -249,7 +256,10 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Flags)
 			return syserr.ErrInvalidArgument
 		}
-		// Netstack interfaces are always up.
+		if ifinfomsg.Change&uint32(linux.IFF_UP) != 0 {
+			up := ifinfomsg.Flags&uint32(linux.IFF_UP) != 0
+			setUp = &up
+		}
 	}
 
 	dstNs, err := s.lockSrcAndDst(ctx, attrs)
@@ -257,7 +267,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
-	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs, setUp)
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and
@@ -339,7 +349,10 @@ func (s *Stack) unlockSrcAndDst(ctx context.Context, ns *inet.Namespace) {
 
 // precondition: s.linkLock is held. If dstNs is not nil, dstNs.Stack.linkMu is
 // also held.
-func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace) *syserr.Error {
+//
+// setUp, when non-nil, requests an administrative up (true) or down (false)
+// state change for the interface (IFF_UP).
+func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace, setUp *bool) *syserr.Error {
 	src := s
 	changed := false
 	nicInfo, ok := src.Stack.SingleNICInfo(id)
@@ -377,19 +390,9 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 	for t, v := range linkAttrs {
 		switch t {
 		case linux.IFLA_MASTER:
-			master, ok := v.Uint32()
-			if !ok {
-				return syserr.ErrInvalidArgument
-			}
-			if mid, ok := src.Stack.GetNICCoordinatorID(id); ok && mid == tcpip.NICID(master) {
-				continue
-			}
-			if master != 0 {
-				if err := src.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
-					return syserr.TranslateNetstackError(err)
-				}
-				changed = true
-			}
+			// Enslavement is applied after the up/down change below, to match
+			// Linux's do_setlink, which calls do_set_master after
+			// dev_change_flags.
 		case linux.IFLA_ADDRESS:
 			if len(v) != tcpip.LinkAddressSize {
 				return syserr.ErrInvalidArgument
@@ -427,10 +430,173 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 		}
 	}
 
+	// Apply the administrative up/down change after the attribute changes
+	// above. Skip it, like the attribute changes do, when the interface is
+	// already in the requested state: Linux performs no work and sends no
+	// notification for a no-op flag change.
+	if setUp != nil && *setUp != nicInfo.Flags.Up {
+		if *setUp {
+			if err := src.Stack.EnableNIC(id); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+			// Restore the connected routes of IPv6 addresses
+			// that keep_addr_on_down kept across the down.
+			for _, addr := range src.Stack.AllAddressInfo()[id] {
+				if addr.Protocol == ipv6.ProtocolNumber {
+					src.addConnectedRoute(ctx, id, addr.AddressWithPrefix)
+				}
+			}
+			// Like Linux, auto-configure the interface's addresses when it
+			// is brought up.
+			if err := src.addrconfInitAutoAddrs(ctx, id); err != nil {
+				return err
+			}
+		} else {
+			// Snapshot addresses before disabling the NIC, since IPv6 address
+			// enumeration hides addresses while disabled.
+			addrs := src.Stack.AllAddressInfo()[id]
+			if err := src.Stack.DisableNIC(id); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+			src.removeIPv6Addrs(id, addrs)
+		}
+		changed = true
+	}
+
+	// Apply enslavement (IFLA_MASTER) after the up/down change, matching
+	// Linux's do_setlink ordering.
+	if v, ok := linkAttrs[linux.IFLA_MASTER]; ok {
+		master, ok := v.Uint32()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		if master != 0 {
+			if mid, ok := src.Stack.GetNICCoordinatorID(id); !ok || mid != tcpip.NICID(master) {
+				if err := src.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+					return syserr.TranslateNetstackError(err)
+				}
+				changed = true
+			}
+		}
+	}
+
 	if changed {
 		src.sendChangeEvent(ctx, id)
 	}
 	return nil
+}
+
+// addrconfInitAutoAddrs adds the addresses Linux auto-configures when an
+// interface comes up (addrconf_init_auto_addrs): the loopback addresses for a
+// loopback interface, an IPv6 link-local address for any other.
+func (s *Stack) addrconfInitAutoAddrs(ctx context.Context, id tcpip.NICID) *syserr.Error {
+	nicInfo, ok := s.Stack.SingleNICInfo(id)
+	if !ok {
+		return syserr.ErrUnknownNICID
+	}
+	if nicInfo.Flags.Loopback {
+		return s.addLoopbackAddrs(ctx, id)
+	}
+	return s.addLinkLocalAddr(ctx, id, nicInfo.LinkAddress)
+}
+
+// loopbackAddrs are the addresses Linux automatically assigns to a loopback
+// interface when it is brought up: 127.0.0.1/8 and ::1/128. They mirror
+// boot.DefaultLoopbackLink, which configures the loopback interface of the
+// initial network namespace.
+var loopbackAddrs = []tcpip.ProtocolAddress{
+	{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   header.IPv4Loopback,
+			PrefixLen: 8,
+		},
+	},
+	{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   header.IPv6Loopback,
+			PrefixLen: header.IPv6AddressSize * 8,
+		},
+	},
+}
+
+// addLoopbackAddrs assigns the default loopback addresses to the loopback
+// interface id. Like the Linux kernel, netstack does this when the loopback
+// interface is brought up rather than when it is created, so a freshly created
+// network namespace starts with an unconfigured loopback interface. Each address
+// is added through addInterfaceAddr, so its connected route is installed too,
+// just as for any other address.
+//
+// An address that is already assigned (ErrDuplicateAddress) is left as it is.
+func (s *Stack) addLoopbackAddrs(ctx context.Context, id tcpip.NICID) *syserr.Error {
+	for _, pa := range loopbackAddrs {
+		if pa.Protocol == ipv6.ProtocolNumber && !s.SupportsIPv6() {
+			continue
+		}
+		if err := s.addInterfaceAddr(ctx, id, pa); err != nil && err != syserr.ErrDuplicateAddress {
+			return err
+		}
+	}
+	return nil
+}
+
+// addLinkLocalAddr adds the EUI-64 IPv6 link-local address of linkAddr and its
+// fe80::/64 route, like Linux's addrconf_dev_config. It is a no-op when IPv6 is
+// unsupported, linkAddr is not a unicast Ethernet address, or the address
+// already exists.
+func (s *Stack) addLinkLocalAddr(ctx context.Context, id tcpip.NICID, linkAddr tcpip.LinkAddress) *syserr.Error {
+	if !s.SupportsIPv6() || !header.IsValidUnicastEthernetAddress(linkAddr) {
+		return nil
+	}
+	pa := tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   header.LinkLocalAddr(linkAddr),
+			PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
+		},
+	}
+	if err := s.addInterfaceAddr(ctx, id, pa); err != nil && err != syserr.ErrDuplicateAddress {
+		return err
+	}
+	return nil
+}
+
+// removeIPv6Addrs handles IPv6 state when interface id is brought down, like
+// Linux's addrconf_ifdown. It removes addresses as keep_addr_on_down dictates
+// and, like rt6_disable_ip, flushes every IPv6 route through the interface
+// whether or not the addresses are kept. When the interface comes back up,
+// addrconfInitAutoAddrs assigns its auto-configured link-local or loopback
+// addresses again.
+func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []stack.ProtocolAddressInfo) {
+	keepAddrOnDown := s.IPv6KeepAddrOnDown()
+	for _, addr := range addrs {
+		if !shouldRemoveIPv6AddrOnDown(addr, keepAddrOnDown) {
+			continue
+		}
+		if err := s.Stack.RemoveAddress(id, addr.AddressWithPrefix.Address); err != nil {
+			if _, ok := err.(*tcpip.ErrBadLocalAddress); !ok {
+				log.Warningf("Failed to remove IPv6 address %s from NIC %d on interface down: %s", addr.AddressWithPrefix, id, err)
+			}
+		}
+	}
+	s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
+		return rt.NIC == id && rt.Destination.ID().BitLen() == header.IPv6AddressSize*8
+	})
+}
+
+func shouldRemoveIPv6AddrOnDown(addr stack.ProtocolAddressInfo, keepAddrOnDown bool) bool {
+	if addr.Protocol != ipv6.ProtocolNumber {
+		return false
+	}
+	if !keepAddrOnDown {
+		return true
+	}
+	return !addr.Permanent || ipv6AddrIsLocal(addr.AddressWithPrefix.Address)
+}
+
+func ipv6AddrIsLocal(addr tcpip.Address) bool {
+	return header.IsV6LinkLocalUnicastAddress(addr) || header.IsV6LoopbackAddress(addr)
 }
 
 const defaultMTU = 1500
@@ -526,7 +692,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs, nil /* setUp */); err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
 		peerEP.Close()
 		return err
@@ -553,7 +719,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs); err != nil {
+		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs, nil /* setUp */); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -587,7 +753,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs, nil /* setUp */); err != nil {
 		return err
 	}
 
@@ -618,6 +784,8 @@ func (s *Stack) newInterface(ctx context.Context, msg *nlmsg.Message, linkAttrs 
 			}
 		}
 	}
+	// TODO(gvisor.dev/issue/16069): Like Linux, create interfaces down, and
+	// bring them up only when the request sets IFF_UP.
 	switch kind {
 	case "":
 		return syserr.ErrInvalidArgument
@@ -699,23 +867,50 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 	return protocolAddress, nil
 }
 
+// makeInterfaceAddr converts an IPv4 or IPv6 ProtocolAddress to an
+// InterfaceAddr, the reverse of convertAddr.
+func makeInterfaceAddr(protocolAddress tcpip.ProtocolAddress) inet.InterfaceAddr {
+	family := uint8(linux.AF_INET)
+	if protocolAddress.Protocol == ipv6.ProtocolNumber {
+		family = linux.AF_INET6
+	}
+	addr := protocolAddress.AddressWithPrefix.Address
+	return inet.InterfaceAddr{
+		Family:    family,
+		PrefixLen: uint8(protocolAddress.AddressWithPrefix.PrefixLen),
+		Addr:      addr.AsSlice(),
+	}
+}
+
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
 func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.InterfaceAddr) error {
 	protocolAddress, err := convertAddr(addr)
 	if err != nil {
 		return err
 	}
-
-	// Attach address to interface.
-	nicID := tcpip.NICID(idx)
-	if err := s.Stack.AddProtocolAddress(nicID, protocolAddress, stack.AddressProperties{}); err != nil {
-		return syserr.TranslateNetstackError(err).ToError()
+	if err := s.addInterfaceAddr(ctx, tcpip.NICID(idx), protocolAddress); err != nil {
+		return err.ToError()
 	}
-	s.sendAddressEvent(ctx, nicID, addr, true /* added */)
+	return nil
+}
 
-	// Add route for local network if it doesn't exist already.
+// addInterfaceAddr attaches protocolAddress to the NIC and, like the Linux
+// kernel, adds the connected route for its subnet if it does not already exist.
+func (s *Stack) addInterfaceAddr(ctx context.Context, nicID tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *syserr.Error {
+	if err := s.Stack.AddProtocolAddress(nicID, protocolAddress, stack.AddressProperties{}); err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+	s.sendAddressEvent(ctx, nicID, makeInterfaceAddr(protocolAddress), true /* added */)
+
+	s.addConnectedRoute(ctx, nicID, protocolAddress.AddressWithPrefix)
+	return nil
+}
+
+// addConnectedRoute adds the connected route for addr's subnet on nicID, like
+// Linux's addrconf_prefix_route, unless it already exists.
+func (s *Stack) addConnectedRoute(ctx context.Context, nicID tcpip.NICID, addr tcpip.AddressWithPrefix) {
 	localRoute := tcpip.Route{
-		Destination: protocolAddress.AddressWithPrefix.Subnet(),
+		Destination: addr.Subnet(),
 		Gateway:     tcpip.Address{}, // No gateway for local network.
 		NIC:         nicID,
 	}
@@ -723,7 +918,7 @@ func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.Inter
 	sameDst := false
 	for _, rt := range s.Stack.GetRouteTable() {
 		if rt.Equal(localRoute) {
-			return nil
+			return
 		}
 		if rt.Destination.Equal(localRoute.Destination) {
 			sameDst = true
@@ -737,12 +932,10 @@ func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.Inter
 	// addrconf_prefix_route() requests no flags.
 	s.Stack.AddRoute(localRoute)
 	var reqFlags uint16
-	if protocolAddress.Protocol == ipv4.ProtocolNumber {
+	if addr.Address.Len() == header.IPv4AddressSize {
 		reqFlags = linux.NLM_F_APPEND
 	}
 	s.sendRouteEvent(inet.WithNetlinkOrigin(ctx, inet.NetlinkOrigin{}), localRoute, true /* added */, newRouteFlags(localRoute, sameDst, reqFlags))
-
-	return nil
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
@@ -751,13 +944,20 @@ func (s *Stack) RemoveInterfaceAddr(ctx context.Context, idx int32, addr inet.In
 	if err != nil {
 		return err
 	}
-
-	// Remove addresses matching the address and prefix.
-	nicID := tcpip.NICID(idx)
-	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Address); err != nil {
-		return syserr.TranslateNetstackError(err).ToError()
+	if err := s.removeInterfaceAddr(ctx, tcpip.NICID(idx), protocolAddress); err != nil {
+		return err.ToError()
 	}
-	s.sendAddressEvent(ctx, nicID, addr, false /* added */)
+	return nil
+}
+
+// removeInterfaceAddr removes protocolAddress from nicID and removes the
+// connected route for its subnet.
+func (s *Stack) removeInterfaceAddr(ctx context.Context, nicID tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *syserr.Error {
+	// Remove addresses matching the address and prefix.
+	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Address); err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+	s.sendAddressEvent(ctx, nicID, makeInterfaceAddr(protocolAddress), false /* added */)
 
 	// Remove the corresponding local network route if it exists.
 	localRoute := tcpip.Route{
@@ -779,6 +979,17 @@ func (s *Stack) RemoveInterfaceAddr(ctx context.Context, idx int32, addr inet.In
 		s.sendRouteEvent(inet.WithNetlinkOrigin(ctx, inet.NetlinkOrigin{}), rt, false /* added */, 0)
 	}
 
+	return nil
+}
+
+// IPv6KeepAddrOnDown implements inet.Stack.IPv6KeepAddrOnDown.
+func (s *Stack) IPv6KeepAddrOnDown() bool {
+	return s.ipv6KeepAddrOnDown.Load()
+}
+
+// SetIPv6KeepAddrOnDown implements inet.Stack.SetIPv6KeepAddrOnDown.
+func (s *Stack) SetIPv6KeepAddrOnDown(enabled bool) error {
+	s.ipv6KeepAddrOnDown.Store(enabled)
 	return nil
 }
 

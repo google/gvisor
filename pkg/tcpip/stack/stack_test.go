@@ -1000,8 +1000,13 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 		nicInfo, ok := allNICInfo[nicID]
 		if !ok {
 			t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
-		} else if nicInfo.Flags.Running != enabled {
-			t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+		} else {
+			if nicInfo.Flags.Up != enabled {
+				t.Errorf("got nicInfo.Flags.Up = %t, want = %t", nicInfo.Flags.Up, enabled)
+			}
+			if nicInfo.Flags.Running != enabled {
+				t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+			}
 		}
 
 		if got := s.CheckNIC(nicID); got != enabled {
@@ -1027,6 +1032,83 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
 	}
 	checkNIC(false)
+}
+
+// TestAdminStateWithPausedExternalNetworking tests that pausing external
+// networking and the administrative state of a NIC don't override each other.
+func TestAdminStateWithPausedExternalNetworking(t *testing.T) {
+	const (
+		loopbackNICID = 1
+		externalNICID = 2
+	)
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
+	})
+	if err := s.CreateNIC(loopbackNICID, loopback.New()); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", loopbackNICID, err)
+	}
+	if err := s.CreateNIC(externalNICID, channel.New(0, defaultMTU, "")); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", externalNICID, err)
+	}
+
+	checkNIC := func(nicID tcpip.NICID, wantUp, wantRunning bool) {
+		t.Helper()
+
+		allNICInfo := s.NICInfo()
+		nicInfo, ok := allNICInfo[nicID]
+		if !ok {
+			t.Fatalf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
+		}
+		if nicInfo.Flags.Up != wantUp {
+			t.Errorf("NIC %d: got nicInfo.Flags.Up = %t, want = %t", nicID, nicInfo.Flags.Up, wantUp)
+		}
+		if nicInfo.Flags.Running != wantRunning {
+			t.Errorf("NIC %d: got nicInfo.Flags.Running = %t, want = %t", nicID, nicInfo.Flags.Running, wantRunning)
+		}
+		if got := s.CheckNIC(nicID); got != wantRunning {
+			t.Errorf("got s.CheckNIC(%d) = %t, want = %t", nicID, got, wantRunning)
+		}
+	}
+
+	// Pausing disables the external NIC but leaves it administratively up.
+	s.DisableAllNonLoopbackNICs()
+	checkNIC(loopbackNICID, true, true)
+	checkNIC(externalNICID, true, false)
+
+	// Bringing the external NIC up while paused does not enable it.
+	if err := s.EnableNIC(externalNICID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", externalNICID, err)
+	}
+	checkNIC(externalNICID, true, false)
+
+	// The pause does not apply to loopback.
+	if err := s.DisableNIC(loopbackNICID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", loopbackNICID, err)
+	}
+	checkNIC(loopbackNICID, false, false)
+	if err := s.EnableNIC(loopbackNICID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", loopbackNICID, err)
+	}
+	checkNIC(loopbackNICID, true, true)
+
+	// Resuming enables the external NIC because it is administratively up.
+	s.EnableAllNonLoopbackNICs()
+	checkNIC(externalNICID, true, true)
+
+	// An administratively down NIC stays down across a pause and resume.
+	if err := s.DisableNIC(externalNICID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", externalNICID, err)
+	}
+	s.DisableAllNonLoopbackNICs()
+	s.EnableAllNonLoopbackNICs()
+	checkNIC(externalNICID, false, false)
+
+	// Bringing it up again enables it.
+	if err := s.EnableNIC(externalNICID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", externalNICID, err)
+	}
+	checkNIC(externalNICID, true, true)
 }
 
 func TestRemoveUnknownNIC(t *testing.T) {
