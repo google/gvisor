@@ -155,17 +155,21 @@ page faults from the sandboxed workload. These are called
 "[gVisor platforms](https://gvisor.dev/docs/architecture_guide/platforms/)".
 There are currently two supported platforms:
 
-*   "Systrap" (the default). This platform is based on the use of Linux's
-    `seccomp-bpf` subsystem for system call ***interception*** (as opposed to
-    the typical use-case of `seccomp-bpf` being for system call
-    ***filtering***). It does not require virtualization support from the host
-    and is therefore well-suited to run *inside* a virtual machine. Read our
+*   "Systrap". This platform is based on the use of Linux's `seccomp-bpf`
+    subsystem for system call ***interception*** (as opposed to the typical
+    use-case of `seccomp-bpf` being for system call ***filtering***). It does
+    not require virtualization support from the host and is therefore
+    well-suited to run *inside* a virtual machine. Read our
     [announcement post for more details on Systrap](https://gvisor.dev/blog/2023/04/28/systrap-release/).
 *   "KVM". This platform is based on the use of Linux's KVM subsystem and uses
     virtualization as a means to provide address space isolation and
     interception of page faults. Sandboxed workload code runs in guest ring 3.
     This platform requires virtualization support. It can also work with nested
     virtualization, but is generally slower than Systrap in such a mode.
+
+By default, `runsc` picks a platform automatically: KVM on bare-metal hosts that
+support it, and Systrap otherwise. See
+[Changing Platforms](https://gvisor.dev/docs/user_guide/platforms/) for details.
 
 Platforms are meant to be transparently interchangeable from the system
 administrator's perspective. However, they are still different from a security

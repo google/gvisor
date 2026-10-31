@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/sandboxposture"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/autoplatform"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -50,6 +51,11 @@ func postureConfig(t *testing.T) *config.Config {
 		if !supported {
 			t.Skip("This kernel does not support core scheduling, or SMT is inactive")
 		}
+	}
+	// The sandbox resolves --platform=auto itself; resolve it the same way
+	// here so that the expected posture matches its platform.
+	if err := autoplatform.Resolve(conf, nil); err != nil {
+		t.Fatalf("Resolving the platform: %v", err)
 	}
 	return conf
 }
