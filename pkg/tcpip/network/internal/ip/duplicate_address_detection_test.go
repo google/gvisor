@@ -16,10 +16,12 @@ package ip_test
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -37,7 +39,7 @@ type mockDADProtocol struct {
 		dad ip.DAD
 
 		// +checklocks:Mutex
-		sentNonces map[tcpip.Address][][]byte
+		sentNonces map[netip.Addr][][]byte
 	}
 }
 
@@ -53,18 +55,18 @@ func (m *mockDADProtocol) init(t *testing.T, c stack.DADConfigurations, opts ip.
 
 // +checklocks:m.mu.Mutex
 func (m *mockDADProtocol) initLocked() {
-	m.mu.sentNonces = make(map[tcpip.Address][][]byte)
+	m.mu.sentNonces = make(map[netip.Addr][][]byte)
 }
 
-func (m *mockDADProtocol) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {
+func (m *mockDADProtocol) SendDADMessage(addr netip.Addr, nonce []byte) tcpip.Error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.sentNonces[addr] = append(m.mu.sentNonces[addr], nonce)
 	return nil
 }
 
-func (m *mockDADProtocol) check(addrs []tcpip.Address) string {
-	sentNonces := make(map[tcpip.Address][][]byte)
+func (m *mockDADProtocol) check(addrs []netip.Addr) string {
+	sentNonces := make(map[netip.Addr][][]byte)
 	for _, a := range addrs {
 		sentNonces[a] = append(sentNonces[a], nil)
 	}
@@ -72,7 +74,7 @@ func (m *mockDADProtocol) check(addrs []tcpip.Address) string {
 	return m.checkWithNonce(sentNonces)
 }
 
-func (m *mockDADProtocol) checkWithNonce(expectedSentNonces map[tcpip.Address][][]byte) string {
+func (m *mockDADProtocol) checkWithNonce(expectedSentNonces map[netip.Addr][][]byte) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -81,19 +83,19 @@ func (m *mockDADProtocol) checkWithNonce(expectedSentNonces map[tcpip.Address][]
 	return diff
 }
 
-func (m *mockDADProtocol) checkDuplicateAddress(addr tcpip.Address, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
+func (m *mockDADProtocol) checkDuplicateAddress(addr netip.Addr, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.mu.dad.CheckDuplicateAddressLocked(addr, h)
 }
 
-func (m *mockDADProtocol) stop(addr tcpip.Address, reason stack.DADResult) {
+func (m *mockDADProtocol) stop(addr netip.Addr, reason stack.DADResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.dad.StopLocked(addr, reason)
 }
 
-func (m *mockDADProtocol) extendIfNonceEqual(addr tcpip.Address, nonce []byte) ip.ExtendIfNonceEqualLockedDisposition {
+func (m *mockDADProtocol) extendIfNonceEqual(addr netip.Addr, nonce []byte) ip.ExtendIfNonceEqualLockedDisposition {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.mu.dad.ExtendIfNonceEqualLocked(addr, nonce)
@@ -106,18 +108,18 @@ func (m *mockDADProtocol) setConfigs(c stack.DADConfigurations) {
 }
 
 var (
-	addr1 = tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00"))
-	addr2 = tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00"))
-	addr3 = tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00"))
-	addr4 = tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00"))
+	addr1 = netip.AddrFrom4([4]byte{1, 0, 0, 0})
+	addr2 = netip.AddrFrom4([4]byte{2, 0, 0, 0})
+	addr3 = netip.AddrFrom4([4]byte{3, 0, 0, 0})
+	addr4 = netip.AddrFrom4([4]byte{4, 0, 0, 0})
 )
 
 type dadResult struct {
-	Addr tcpip.Address
+	Addr netip.Addr
 	R    stack.DADResult
 }
 
-func handler(ch chan<- dadResult, a tcpip.Address) func(stack.DADResult) {
+func handler(ch chan<- dadResult, a netip.Addr) func(stack.DADResult) {
 	return func(r stack.DADResult) {
 		ch <- dadResult{Addr: a, R: r}
 	}
@@ -133,7 +135,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	ch := make(chan dadResult, 2)
 
 	// DAD should initially be disabled.
-	if res := dad.checkDuplicateAddress(addr1, handler(nil, tcpip.Address{})); res != stack.DADDisabled {
+	if res := dad.checkDuplicateAddress(addr1, handler(nil, netip.Addr{})); res != stack.DADDisabled {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADDisabled)
 	}
 	// Wait for any initially fired timers to complete.
@@ -152,7 +154,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADStarting)
 	}
 	clock.RunImmediatelyScheduledJobs()
-	if diff := dad.check([]tcpip.Address{addr1}); diff != "" {
+	if diff := dad.check([]netip.Addr{addr1}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 	// The second request for DAD on the same address should use the original
@@ -175,7 +177,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr2, res, stack.DADStarting)
 	}
 	clock.RunImmediatelyScheduledJobs()
-	if diff := dad.check([]tcpip.Address{addr2}); diff != "" {
+	if diff := dad.check([]netip.Addr{addr2}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 
@@ -190,7 +192,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	}
 	clock.Advance(delta)
 	for i := 0; i < 2; i++ {
-		if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+		if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 			t.Errorf("(i=%d) dad result mismatch (-want +got):\n%s", i, diff)
 		}
 	}
@@ -204,7 +206,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	default:
 	}
 	clock.Advance(delta)
-	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADSucceeded{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -213,11 +215,11 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr2, res, stack.DADStarting)
 	}
 	clock.RunImmediatelyScheduledJobs()
-	if diff := dad.check([]tcpip.Address{addr2, addr2}); diff != "" {
+	if diff := dad.check([]netip.Addr{addr2, addr2}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 	clock.Advance(dadConfig2Duration)
-	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADSucceeded{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -252,23 +254,23 @@ func TestDADStop(t *testing.T) {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr2, res, stack.DADStarting)
 	}
 	clock.RunImmediatelyScheduledJobs()
-	if diff := dad.check([]tcpip.Address{addr1, addr2, addr3}); diff != "" {
+	if diff := dad.check([]netip.Addr{addr1, addr2, addr3}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 
 	dad.stop(addr1, &stack.DADAborted{})
-	if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADAborted{}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADAborted{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
 	dad.stop(addr2, &stack.DADDupAddrDetected{})
-	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADDupAddrDetected{}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADDupAddrDetected{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
 	dadResolutionDuration := time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer
 	clock.Advance(dadResolutionDuration)
-	if diff := cmp.Diff(dadResult{Addr: addr3, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr3, R: &stack.DADSucceeded{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -277,11 +279,11 @@ func TestDADStop(t *testing.T) {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADStarting)
 	}
 	clock.RunImmediatelyScheduledJobs()
-	if diff := dad.check([]tcpip.Address{addr1}); diff != "" {
+	if diff := dad.check([]netip.Addr{addr1}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 	clock.Advance(dadResolutionDuration)
-	if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -359,7 +361,7 @@ func TestNonce(t *testing.T) {
 			}
 
 			for i := 0; i < test.expectedTransmits; i++ {
-				if diff := dad.checkWithNonce(map[tcpip.Address][][]byte{
+				if diff := dad.checkWithNonce(map[netip.Addr][][]byte{
 					addr1: {
 						secureRNGBytes[nonceSize*i:][:nonceSize],
 					},
@@ -370,7 +372,7 @@ func TestNonce(t *testing.T) {
 				clock.Advance(dadConfigs.RetransmitTimer)
 			}
 
-			if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+			if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 				t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 			}
 

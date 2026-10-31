@@ -17,11 +17,11 @@ package stack_test
 import (
 	"bytes"
 	"context"
+	"net/netip"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/state"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -142,7 +142,7 @@ func TestNDPRouteAndPrefixLifetimesAfterRestore(t *testing.T) {
 			} else {
 				clock.RunImmediatelyScheduledJobs()
 			}
-			wantRoutes := map[tcpip.Subnet]tcpip.Address{
+			wantRoutes := map[netip.Prefix]netip.Addr{
 				header.IPv6EmptySubnet: llAddr2,
 				moreSpecificSubnet:     llAddr3,
 			}
@@ -194,7 +194,7 @@ func TestNDPSLAACLifetimesAfterRestore(t *testing.T) {
 			infinitePrefix, _, infiniteAddr := prefixSubnetAddr(1, linkAddr1)
 			e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, infinitePrefix, false, true, infiniteVLSeconds, infiniteVLSeconds))
 			e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, false, true, 10, 5))
-			for _, addr := range []tcpip.AddressWithPrefix{infiniteAddr, addr} {
+			for _, addr := range []netip.Prefix{infiniteAddr, addr} {
 				if _, err := expectAutoGenAddrNewEvent(disp, addr); err != nil {
 					t.Fatal(err)
 				}
@@ -259,10 +259,10 @@ func TestNDPTemporarySLAACLifetimesAfterRestore(t *testing.T) {
 			prefix, _, stableAddr := prefixSubnetAddr(0, linkAddr1)
 			var history [header.IIDSize]byte
 			header.InitialTempIID(history[:], nil, 1)
-			tempAddr := header.GenerateTempIPv6SLAACAddr(history[:], stableAddr.Address)
-			nextTempAddr := header.GenerateTempIPv6SLAACAddr(history[:], stableAddr.Address)
+			tempAddr := header.GenerateTempIPv6SLAACAddr(history[:], stableAddr.Addr())
+			nextTempAddr := header.GenerateTempIPv6SLAACAddr(history[:], stableAddr.Addr())
 			e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, false, true, 10000, 10000))
-			for _, addr := range []tcpip.AddressWithPrefix{stableAddr, tempAddr} {
+			for _, addr := range []netip.Prefix{stableAddr, tempAddr} {
 				if _, err := expectAutoGenAddrNewEvent(disp, addr); err != nil {
 					t.Fatal(err)
 				}
@@ -271,7 +271,7 @@ func TestNDPTemporarySLAACLifetimesAfterRestore(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetNetworkEndpoint: %s", err)
 			}
-			addrEP := networkEP.(stack.AddressableEndpoint).AcquireAssignedAddress(tempAddr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint, false /* readOnly */)
+			addrEP := networkEP.(stack.AddressableEndpoint).AcquireAssignedAddress(tempAddr.Addr(), false /* allowTemp */, stack.NeverPrimaryEndpoint, false /* readOnly */)
 			if addrEP == nil {
 				t.Fatal("temporary address is not assigned")
 			}

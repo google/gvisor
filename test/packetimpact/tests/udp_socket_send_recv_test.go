@@ -17,12 +17,12 @@ package generic_dgram_socket_send_recv_test
 import (
 	"context"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -85,13 +85,13 @@ func (test *udpTest) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo net.I
 		udpConn := dut.Net.NewUDPIPv4(t, outgoingUDP, incomingUDP)
 		conn = &udpConn
 		ipLayer = &testbench.IPv4{
-			DstAddr: testbench.Address(tcpip.AddrFrom4Slice(addr)),
+			DstAddr: testbench.Address(netip.AddrFrom4([4]byte(addr))),
 		}
 	} else {
 		udpConn := dut.Net.NewUDPIPv6(t, outgoingUDP, incomingUDP)
 		conn = &udpConn
 		ipLayer = &testbench.IPv6{
-			DstAddr: testbench.Address(tcpip.AddrFrom16Slice(sendTo.To16())),
+			DstAddr: testbench.Address(netip.AddrFrom16([16]byte(sendTo.To16()))),
 		}
 	}
 	t.Cleanup(func() {

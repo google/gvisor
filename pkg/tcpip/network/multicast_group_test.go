@@ -16,7 +16,7 @@ package ip_test
 
 import (
 	"fmt"
-	"strings"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -81,7 +81,7 @@ var (
 
 // validateMLDPacket checks that a passed PacketInfo is an IPv6 MLD packet
 // sent to the provided address with the passed fields set.
-func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.Address, mldType uint8, maxRespTime byte, groupAddress tcpip.Address) {
+func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress netip.Addr, mldType uint8, maxRespTime byte, groupAddress netip.Addr) {
 	t.Helper()
 
 	payload := stack.PayloadSince(p.NetworkHeader())
@@ -101,7 +101,7 @@ func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.
 	)
 }
 
-func validateMLDv2ReportPacket(t *testing.T, p *stack.PacketBuffer, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+func validateMLDv2ReportPacket(t *testing.T, p *stack.PacketBuffer, addrs []netip.Addr, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
 	payload := stack.PayloadSince(p.NetworkHeader())
 	defer payload.Release()
@@ -110,7 +110,7 @@ func validateMLDv2ReportPacket(t *testing.T, p *stack.PacketBuffer, addrs []tcpi
 
 // validateIGMPPacket checks that a passed PacketInfo is an IPv4 IGMP packet
 // sent to the provided address with the passed fields set.
-func validateIGMPPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.Address, igmpType uint8, maxRespTime byte, groupAddress tcpip.Address) {
+func validateIGMPPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress netip.Addr, igmpType uint8, maxRespTime byte, groupAddress netip.Addr) {
 	t.Helper()
 
 	payload := stack.PayloadSince(p.NetworkHeader())
@@ -129,7 +129,7 @@ func validateIGMPPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip
 	)
 }
 
-func validateIGMPv3ReportPacket(t *testing.T, p *stack.PacketBuffer, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+func validateIGMPv3ReportPacket(t *testing.T, p *stack.PacketBuffer, addrs []netip.Addr, recordType header.IGMPv3ReportRecordType) {
 	t.Helper()
 
 	payload := stack.PayloadSince(p.NetworkHeader())
@@ -188,18 +188,15 @@ func createStackWithLinkEndpoint(t *testing.T, v4, mgpEnabled bool, e stack.Link
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 	addr := tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   stackIPv4Addr,
-			PrefixLen: defaultIPv4PrefixLength,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(stackIPv4Addr, defaultIPv4PrefixLength),
 	}
 	if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
 	}
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv6.ProtocolNumber,
-		AddressWithPrefix: linkLocalIPv6Addr1.WithPrefix(),
+		AddressWithPrefix: tcpip.FullPrefix(linkLocalIPv6Addr1),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -225,7 +222,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 		t.Fatal("expected a report message to be sent")
 	} else {
 		v := stack.PayloadSince(p.NetworkHeader())
-		iptestutil.ValidateMLDv2Report(t, v, linkLocalIPv6Addr1, []tcpip.Address{ipv6AddrSNMC}, header.MLDv2ReportRecordChangeToExcludeMode)
+		iptestutil.ValidateMLDv2Report(t, v, linkLocalIPv6Addr1, []netip.Addr{ipv6AddrSNMC}, header.MLDv2ReportRecordChangeToExcludeMode)
 		v.Release()
 		p.DecRef()
 	}
@@ -242,7 +239,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 			t.Fatal("expected a report message to be sent")
 		} else {
 			v := stack.PayloadSince(p.NetworkHeader())
-			iptestutil.ValidateMLDv2Report(t, v, linkLocalIPv6Addr1, []tcpip.Address{ipv6AddrSNMC}, header.MLDv2ReportRecordChangeToIncludeMode)
+			iptestutil.ValidateMLDv2Report(t, v, linkLocalIPv6Addr1, []netip.Addr{ipv6AddrSNMC}, header.MLDv2ReportRecordChangeToIncludeMode)
 			v.Release()
 			p.DecRef()
 		}
@@ -261,7 +258,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 
 // createAndInjectIGMPPacket creates and injects an IGMP packet with the
 // specified fields.
-func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime byte, groupAddress tcpip.Address, extraLength int) {
+func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime byte, groupAddress netip.Addr, extraLength int) {
 	options := header.IPv4OptionsSerializer{
 		&header.IPv4SerializableRouterAlertOption{},
 	}
@@ -292,7 +289,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 
 // createAndInjectMLDPacket creates and injects an MLD packet with the
 // specified fields.
-func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay byte, groupAddress tcpip.Address, extraLength int) {
+func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay byte, groupAddress netip.Addr, extraLength int) {
 	extensionHeaders := header.IPv6ExtHdrSerializer{
 		header.IPv6SerializableHopByHopExtHdr{
 			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
@@ -337,7 +334,7 @@ func TestMGPDisabled(t *testing.T) {
 	tests := []struct {
 		name              string
 		protoNum          tcpip.NetworkProtocolNumber
-		multicastAddr     tcpip.Address
+		multicastAddr     netip.Addr
 		sentReportStat    func(*stack.Stack) *tcpip.StatCounter
 		receivedQueryStat func(*stack.Stack) *tcpip.StatCounter
 		rxQuery           func(*channel.Endpoint)
@@ -423,9 +420,9 @@ func TestMGPReceiveCounters(t *testing.T) {
 		name         string
 		headerType   uint8
 		maxRespTime  byte
-		groupAddress tcpip.Address
+		groupAddress netip.Addr
 		statCounter  func(*stack.Stack) *tcpip.StatCounter
-		rxMGPkt      func(*channel.Endpoint, byte, byte, tcpip.Address, int)
+		rxMGPkt      func(*channel.Endpoint, byte, byte, netip.Addr, int)
 	}{
 		{
 			name:         "IGMP Membership Query",
@@ -501,7 +498,7 @@ func TestMGPReceiveCounters(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx := newMulticastTestContext(t, test.groupAddress.Len() == header.IPv4AddressSize /* v4 */, true /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, test.groupAddress.Is4() /* v4 */, true /* mgpEnabled */)
 			defer ctx.cleanup()
 
 			test.rxMGPkt(ctx.e, test.headerType, test.maxRespTime, test.groupAddress, 0 /* extraLength */)
@@ -525,7 +522,7 @@ func TestMGPJoinGroup(t *testing.T) {
 	tests := []struct {
 		name                        string
 		protoNum                    tcpip.NetworkProtocolNumber
-		multicastAddr               tcpip.Address
+		multicastAddr               netip.Addr
 		maxUnsolicitedResponseDelay time.Duration
 		receivedQueryStat           func(*stack.Stack) *tcpip.StatCounter
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) uint64
@@ -559,7 +556,7 @@ func TestMGPJoinGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					checkStats: iptestutil.CheckIGMPv3Stats,
 				},
@@ -594,7 +591,7 @@ func TestMGPJoinGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					checkStats: iptestutil.CheckMLDv2Stats,
 				},
@@ -678,7 +675,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 	tests := []struct {
 		name                        string
 		protoNum                    tcpip.NetworkProtocolNumber
-		multicastAddr               tcpip.Address
+		multicastAddr               netip.Addr
 		maxUnsolicitedResponseDelay time.Duration
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) uint64
 		subTests                    []subTest
@@ -714,12 +711,12 @@ func TestMGPLeaveGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToIncludeMode)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckIGMPv3Stats,
@@ -758,12 +755,12 @@ func TestMGPLeaveGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToIncludeMode)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckMLDv2Stats,
@@ -839,13 +836,13 @@ func TestMGPQueryMessages(t *testing.T) {
 		enterVersion   func(e *channel.Endpoint)
 		validateReport func(*testing.T, *stack.PacketBuffer, bool)
 		checkStats     func(*testing.T, *stack.Stack, uint64, uint64, uint64)
-		rxQuery        func(*channel.Endpoint, uint8, tcpip.Address)
+		rxQuery        func(*channel.Endpoint, uint8, netip.Addr)
 	}
 
 	tests := []struct {
 		name                        string
 		protoNum                    tcpip.NetworkProtocolNumber
-		multicastAddr               tcpip.Address
+		multicastAddr               netip.Addr
 		maxUnsolicitedResponseDelay time.Duration
 		receivedQueryStat           func(*stack.Stack) *tcpip.StatCounter
 		maxRespTimeToDuration       func(uint16) time.Duration
@@ -873,7 +870,7 @@ func TestMGPQueryMessages(t *testing.T) {
 
 						validateIGMPPacket(t, p, ipv4MulticastAddr1, igmpv2MembershipReport, 0, ipv4MulticastAddr1)
 					},
-					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
+					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress netip.Addr) {
 						createAndInjectIGMPPacket(e, igmpMembershipQuery, maxRespTime, groupAddress, 0 /* extraLength */)
 					},
 					checkStats: iptestutil.CheckIGMPv2Stats,
@@ -889,9 +886,9 @@ func TestMGPQueryMessages(t *testing.T) {
 							recordType = header.IGMPv3ReportRecordModeIsExclude
 						}
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, recordType)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{ipv4MulticastAddr1}, recordType)
 					},
-					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
+					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress netip.Addr) {
 						createAndInjectIGMPPacket(e, igmpMembershipQuery, maxRespTime, groupAddress, header.IGMPv3QueryMinimumSize-header.IGMPQueryMinimumSize /* extraLength */)
 					},
 					checkStats: iptestutil.CheckIGMPv3Stats,
@@ -922,7 +919,7 @@ func TestMGPQueryMessages(t *testing.T) {
 
 						validateMLDPacket(t, p, ipv6MulticastAddr1, mldReport, 0, ipv6MulticastAddr1)
 					},
-					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
+					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress netip.Addr) {
 						createAndInjectMLDPacket(e, mldQuery, maxRespTime, groupAddress, 0 /* extraLength */)
 					},
 					checkStats: iptestutil.CheckMLDv1Stats,
@@ -938,9 +935,9 @@ func TestMGPQueryMessages(t *testing.T) {
 							recordType = header.MLDv2ReportRecordModeIsExclude
 						}
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, recordType)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{ipv6MulticastAddr1}, recordType)
 					},
-					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
+					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress netip.Addr) {
 						createAndInjectMLDPacket(e, mldQuery, maxRespTime, groupAddress, header.MLDv2QueryMinimumSize-header.MLDMinimumSize /* extraLength */)
 					},
 					checkStats: iptestutil.CheckMLDv2Stats,
@@ -953,12 +950,12 @@ func TestMGPQueryMessages(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			addrTests := []struct {
 				name          string
-				multicastAddr tcpip.Address
+				multicastAddr netip.Addr
 				expectReport  bool
 			}{
 				{
 					name:          "Unspecified",
-					multicastAddr: tcpip.AddrFromSlice([]byte(strings.Repeat("\x00", test.multicastAddr.Len()))),
+					multicastAddr: netip.PrefixFrom(test.multicastAddr, 0).Masked().Addr(),
 					expectReport:  true,
 				},
 				{
@@ -968,11 +965,15 @@ func TestMGPQueryMessages(t *testing.T) {
 				},
 				{
 					name: "Specified other address",
-					multicastAddr: func() tcpip.Address {
+					multicastAddr: func() netip.Addr {
 						addrCopy := test.multicastAddr
 						addrBytes := addrCopy.AsSlice()
 						addrBytes[len(addrBytes)-1]++
-						return tcpip.AddrFromSlice(addrBytes)
+						addr, ok := netip.AddrFromSlice(addrBytes)
+						if !ok {
+							t.Fatalf("invalid multicast address length: %d", len(addrBytes))
+						}
+						return addr
 					}(),
 					expectReport: false,
 				},
@@ -1068,7 +1069,7 @@ func TestMGPReportMessages(t *testing.T) {
 	tests := []struct {
 		name                        string
 		protoNum                    tcpip.NetworkProtocolNumber
-		multicastAddr               tcpip.Address
+		multicastAddr               netip.Addr
 		maxUnsolicitedResponseDelay time.Duration
 		rxReport                    func(*channel.Endpoint)
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) uint64
@@ -1103,12 +1104,12 @@ func TestMGPReportMessages(t *testing.T) {
 					validateReport: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToIncludeMode)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckIGMPv3Stats,
@@ -1145,12 +1146,12 @@ func TestMGPReportMessages(t *testing.T) {
 					validateReport: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p *stack.PacketBuffer) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToIncludeMode)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckMLDv2Stats,
@@ -1238,21 +1239,21 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 		name            string
 		v1Compatibility bool
 		enterVersion    func(e *channel.Endpoint)
-		validateReport  func(*testing.T, *stack.PacketBuffer, tcpip.Address)
-		validateLeave   func(*testing.T, *channel.Endpoint, []tcpip.Address)
+		validateReport  func(*testing.T, *stack.PacketBuffer, netip.Addr)
+		validateLeave   func(*testing.T, *channel.Endpoint, []netip.Addr)
 		checkStats      func(*testing.T, *stack.Stack, uint64, uint64, uint64)
 	}
 
 	tests := []struct {
 		name                        string
 		protoNum                    tcpip.NetworkProtocolNumber
-		multicastAddrs              []tcpip.Address
-		finalMulticastAddr          tcpip.Address
+		multicastAddrs              []netip.Addr
+		finalMulticastAddr          netip.Addr
 		maxUnsolicitedResponseDelay time.Duration
 		sentReportStat              func(*stack.Stack) *tcpip.StatCounter
 		sentLeaveStat               func(*stack.Stack) *tcpip.StatCounter
-		validateReport              func(*testing.T, *channel.Endpoint, []tcpip.Address)
-		validateLeave               func(*testing.T, *stack.PacketBuffer, tcpip.Address)
+		validateReport              func(*testing.T, *channel.Endpoint, []netip.Addr)
+		validateLeave               func(*testing.T, *stack.PacketBuffer, netip.Addr)
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) uint64
 		checkStats                  func(*testing.T, *stack.Stack, uint64, uint64, uint64)
 		subTests                    []subTest
@@ -1260,7 +1261,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 		{
 			name:                        "IGMP",
 			protoNum:                    ipv4.ProtocolNumber,
-			multicastAddrs:              []tcpip.Address{ipv4MulticastAddr1, ipv4MulticastAddr2},
+			multicastAddrs:              []netip.Addr{ipv4MulticastAddr1, ipv4MulticastAddr2},
 			finalMulticastAddr:          ipv4MulticastAddr3,
 			maxUnsolicitedResponseDelay: ipv4.UnsolicitedReportIntervalMax,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
@@ -1269,14 +1270,14 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().IGMP.PacketsSent.LeaveGroup
 			},
-			validateReport: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+			validateReport: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 				t.Helper()
 				iptestutil.ValidateIGMPv3RecordsAcrossReports(t, e, stackIPv4Addr, addrs, header.IGMPv3ReportRecordChangeToExcludeMode)
 			},
-			validateLeave: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateLeave: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 				t.Helper()
 
-				validateIGMPv3ReportPacket(t, p, []tcpip.Address{addr}, header.IGMPv3ReportRecordChangeToIncludeMode)
+				validateIGMPv3ReportPacket(t, p, []netip.Addr{addr}, header.IGMPv3ReportRecordChangeToIncludeMode)
 			},
 			checkStats: iptestutil.CheckIGMPv3Stats,
 			subTests: []subTest{
@@ -1287,12 +1288,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 						// V2 query for unrelated group.
 						createAndInjectIGMPPacket(e, igmpMembershipQuery, 1, ipv4MulticastAddr3, 0 /* extraLength */)
 					},
-					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 						t.Helper()
 
 						validateIGMPPacket(t, p, addr, igmpv2MembershipReport, 0, addr)
 					},
-					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 						t.Helper()
 						iptestutil.ValidMultipleIGMPv2ReportLeaves(t, e, stackIPv4Addr, addrs, true /* leave */)
 					},
@@ -1302,12 +1303,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					name:            "V3",
 					v1Compatibility: false,
 					enterVersion:    func(*channel.Endpoint) {},
-					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, []tcpip.Address{addr}, header.IGMPv3ReportRecordChangeToExcludeMode)
+						validateIGMPv3ReportPacket(t, p, []netip.Addr{addr}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
-					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 						t.Helper()
 						iptestutil.ValidateIGMPv3RecordsAcrossReports(t, e, stackIPv4Addr, addrs, header.IGMPv3ReportRecordChangeToIncludeMode)
 					},
@@ -1318,7 +1319,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 		{
 			name:                        "MLD",
 			protoNum:                    ipv6.ProtocolNumber,
-			multicastAddrs:              []tcpip.Address{ipv6MulticastAddr1, ipv6MulticastAddr2},
+			multicastAddrs:              []netip.Addr{ipv6MulticastAddr1, ipv6MulticastAddr2},
 			finalMulticastAddr:          ipv6MulticastAddr3,
 			maxUnsolicitedResponseDelay: ipv6.UnsolicitedReportIntervalMax,
 			sentReportStat: func(s *stack.Stack) *tcpip.StatCounter {
@@ -1327,15 +1328,15 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone
 			},
-			validateReport: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+			validateReport: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 				t.Helper()
 
 				iptestutil.ValidateMLDv2RecordsAcrossReports(t, e, linkLocalIPv6Addr1, addrs, header.MLDv2ReportRecordChangeToExcludeMode)
 			},
-			validateLeave: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateLeave: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 				t.Helper()
 
-				validateMLDv2ReportPacket(t, p, []tcpip.Address{addr}, header.MLDv2ReportRecordChangeToIncludeMode)
+				validateMLDv2ReportPacket(t, p, []netip.Addr{addr}, header.MLDv2ReportRecordChangeToIncludeMode)
 			},
 			checkInitialGroups: checkInitialIPv6Groups,
 			checkStats:         iptestutil.CheckMLDv2Stats,
@@ -1347,12 +1348,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 						// V1 query for unrelated group.
 						createAndInjectMLDPacket(e, mldQuery, 0, ipv6MulticastAddr3, 0 /* extraLength */)
 					},
-					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 						t.Helper()
 
 						validateMLDPacket(t, p, addr, mldReport, 0, addr)
 					},
-					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 						t.Helper()
 
 						iptestutil.ValidMultipleMLDv1ReportLeaves(t, e, linkLocalIPv6Addr1, addrs, true /* leave */)
@@ -1363,12 +1364,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					name:            "V2",
 					v1Compatibility: false,
 					enterVersion:    func(*channel.Endpoint) {},
-					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+					validateReport: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, []tcpip.Address{addr}, header.MLDv2ReportRecordChangeToExcludeMode)
+						validateMLDv2ReportPacket(t, p, []netip.Addr{addr}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
-					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+					validateLeave: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 						t.Helper()
 
 						iptestutil.ValidateMLDv2RecordsAcrossReports(t, e, linkLocalIPv6Addr1, addrs, header.MLDv2ReportRecordChangeToIncludeMode)
@@ -1478,12 +1479,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					}
 					reportV2Counter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					test.validateReport(t, e, []tcpip.Address{test.finalMulticastAddr})
+					test.validateReport(t, e, []netip.Addr{test.finalMulticastAddr})
 
 					clock.Advance(test.maxUnsolicitedResponseDelay)
 					reportV2Counter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					test.validateReport(t, e, []tcpip.Address{test.finalMulticastAddr})
+					test.validateReport(t, e, []netip.Addr{test.finalMulticastAddr})
 
 					// Should not send any more packets.
 					clock.Advance(time.Hour)
@@ -1502,7 +1503,7 @@ func TestMGPDisabledOnLoopback(t *testing.T) {
 	tests := []struct {
 		name           string
 		protoNum       tcpip.NetworkProtocolNumber
-		multicastAddr  tcpip.Address
+		multicastAddr  netip.Addr
 		sentReportStat func(*stack.Stack) *tcpip.StatCounter
 	}{
 		{
@@ -1565,10 +1566,14 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 		checkStats     func(*testing.T, *stack.Stack, uint64, uint64, uint64)
 	}
 
-	genAddr := func(bytes []byte, i uint16) tcpip.Address {
+	genAddr := func(bytes []byte, i uint16) netip.Addr {
 		bytes[len(bytes)-1] = byte(i & 0xFF)
 		bytes[len(bytes)-2] = byte(i >> 8)
-		return tcpip.AddrFromSlice(bytes[:])
+		addr, ok := netip.AddrFromSlice(bytes)
+		if !ok {
+			t.Fatalf("invalid generated address length: %d", len(bytes))
+		}
+		return addr
 	}
 
 	calcMaxRecordsPerMessage := func(hdrLen, recordLen uint16) uint16 {
@@ -1581,12 +1586,12 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 		maxUnsolicitedResponseDelay       time.Duration
 		receivedQueryStat                 func(*stack.Stack) *tcpip.StatCounter
 		checkInitialGroups                func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) uint64
-		validateReport                    func(*testing.T, *stack.PacketBuffer, tcpip.Address)
+		validateReport                    func(*testing.T, *stack.PacketBuffer, netip.Addr)
 		checkStats                        func(*testing.T, *stack.Stack, uint64)
-		genAddr                           func(uint16) tcpip.Address
+		genAddr                           func(uint16) netip.Addr
 		maxRecordsPerMessage              uint16
 		rxQuery                           func(*channel.Endpoint, uint8)
-		validateReportWithMultipleRecords func(*testing.T, *channel.Endpoint, []tcpip.Address)
+		validateReportWithMultipleRecords func(*testing.T, *channel.Endpoint, []netip.Addr)
 	}{
 		{
 			name:                        "IGMP",
@@ -1595,16 +1600,16 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 			receivedQueryStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().IGMP.PacketsReceived.MembershipQuery
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateReport: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 				t.Helper()
 
-				validateIGMPv3ReportPacket(t, p, []tcpip.Address{addr}, header.IGMPv3ReportRecordChangeToExcludeMode)
+				validateIGMPv3ReportPacket(t, p, []netip.Addr{addr}, header.IGMPv3ReportRecordChangeToExcludeMode)
 			},
 			checkStats: func(t *testing.T, s *stack.Stack, reports uint64) {
 				t.Helper()
 				iptestutil.CheckIGMPv3Stats(t, s, 0, 0, reports)
 			},
-			genAddr: func(i uint16) tcpip.Address {
+			genAddr: func(i uint16) netip.Addr {
 				bytes := [header.IPv4AddressSize]byte{224, 1, 0, 0}
 				return genAddr(bytes[:], i)
 			},
@@ -1612,7 +1617,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8) {
 				createAndInjectIGMPPacket(e, igmpMembershipQuery, maxRespTime, header.IPv4Any, header.IGMPv3QueryMinimumSize-header.IGMPQueryMinimumSize /* extraLength */)
 			},
-			validateReportWithMultipleRecords: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+			validateReportWithMultipleRecords: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 				t.Helper()
 				iptestutil.ValidateIGMPv3RecordsAcrossReports(t, e, stackIPv4Addr, addrs, header.IGMPv3ReportRecordModeIsExclude)
 			},
@@ -1625,16 +1630,16 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerQuery
 			},
 			checkInitialGroups: checkInitialIPv6Groups,
-			validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateReport: func(t *testing.T, p *stack.PacketBuffer, addr netip.Addr) {
 				t.Helper()
 
-				validateMLDv2ReportPacket(t, p, []tcpip.Address{addr}, header.MLDv2ReportRecordChangeToExcludeMode)
+				validateMLDv2ReportPacket(t, p, []netip.Addr{addr}, header.MLDv2ReportRecordChangeToExcludeMode)
 			},
 			checkStats: func(t *testing.T, s *stack.Stack, reports uint64) {
 				t.Helper()
 				iptestutil.CheckMLDv2Stats(t, s, 0, 0, reports)
 			},
-			genAddr: func(i uint16) tcpip.Address {
+			genAddr: func(i uint16) netip.Addr {
 				bytes := [header.IPv6AddressSize]byte{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0}
 				return genAddr(bytes[:], i)
 			},
@@ -1642,7 +1647,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8) {
 				createAndInjectMLDPacket(e, mldQuery, maxRespTime, header.IPv6Any, header.MLDv2QueryMinimumSize-header.MLDMinimumSize /* extraLength */)
 			},
-			validateReportWithMultipleRecords: func(t *testing.T, e *channel.Endpoint, addrs []tcpip.Address) {
+			validateReportWithMultipleRecords: func(t *testing.T, e *channel.Endpoint, addrs []netip.Addr) {
 				t.Helper()
 
 				iptestutil.ValidateMLDv2RecordsAcrossReports(t, e, linkLocalIPv6Addr1, addrs, header.MLDv2ReportRecordModeIsExclude)
@@ -1685,7 +1690,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 						reportV2Counter = test.checkInitialGroups(t, e, s, clock)
 					}
 
-					addrs := make([]tcpip.Address, test.maxRecordsPerMessage+subTest.extraRecords)
+					addrs := make([]netip.Addr, test.maxRecordsPerMessage+subTest.extraRecords)
 					for i := 0; i < len(addrs); i++ {
 						addr := test.genAddr(uint16(i))
 						addrs[i] = addr

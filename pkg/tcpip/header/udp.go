@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"math"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -118,7 +119,7 @@ func (b UDP) CalculateChecksum(partialChecksum uint16) uint16 {
 }
 
 // IsChecksumValid returns true iff the UDP header's checksum is valid.
-func (b UDP) IsChecksumValid(src, dst tcpip.Address, payloadChecksum uint16) bool {
+func (b UDP) IsChecksumValid(src, dst netip.Addr, payloadChecksum uint16) bool {
 	xsum := PseudoHeaderChecksum(UDPProtocolNumber, dst, src, b.Length())
 	xsum = checksum.Combine(xsum, payloadChecksum)
 	return b.CalculateChecksum(xsum) == 0xffff
@@ -157,7 +158,7 @@ func (b UDP) SetDestinationPortWithChecksumUpdate(new uint16) {
 }
 
 // UpdateChecksumPseudoHeaderAddress implements ChecksummableTransport.
-func (b UDP) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address, fullChecksum bool) {
+func (b UDP) UpdateChecksumPseudoHeaderAddress(old, new netip.Addr, fullChecksum bool) {
 	if fullChecksum && b.Checksum() == 0 {
 		return
 	}
@@ -180,7 +181,7 @@ func (b UDP) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address, fullCheck
 //   - The checksum is invalid.
 //
 // UDPValid corresponds to net/netfilter/nf_conntrack_proto_udp.c:udp_error.
-func UDPValid(hdr UDP, payloadChecksum func() uint16, payloadSize uint16, netProto tcpip.NetworkProtocolNumber, srcAddr, dstAddr tcpip.Address, skipChecksumValidation bool) (lengthValid, csumValid bool) {
+func UDPValid(hdr UDP, payloadChecksum func() uint16, payloadSize uint16, netProto tcpip.NetworkProtocolNumber, srcAddr, dstAddr netip.Addr, skipChecksumValidation bool) (lengthValid, csumValid bool) {
 	if length := hdr.Length(); length > payloadSize+UDPMinimumSize || length < UDPMinimumSize {
 		return false, false
 	}

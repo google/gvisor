@@ -43,9 +43,9 @@ func (e *Endpoint) Resume(s *stack.Stack) error {
 	switch state := e.State(); state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
 	case transport.DatagramEndpointStateBound:
-		if info.ID.LocalAddress.BitLen() != 0 && !e.isBroadcastOrMulticast(info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress) {
-			if e.stack.CheckLocalAddress(info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress) == 0 {
-				return fmt.Errorf("got e.stack.CheckLocalAddress(%d, %d, %s) = 0, want != 0", info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress)
+		if info.ID.Local.Addr().IsValid() && !e.isBroadcastOrMulticast(info.RegisterNICID, e.effectiveNetProto, info.ID.Local.Addr()) {
+			if e.stack.CheckLocalAddress(info.RegisterNICID, e.effectiveNetProto, info.ID.Local.Addr()) == 0 {
+				return fmt.Errorf("got e.stack.CheckLocalAddress(%d, %d, %s) = 0, want != 0", info.RegisterNICID, e.effectiveNetProto, info.ID.Local.Addr())
 			}
 		}
 	case transport.DatagramEndpointStateConnected:
@@ -55,9 +55,9 @@ func (e *Endpoint) Resume(s *stack.Stack) error {
 		if e.connectedRoute != nil {
 			e.connectedRoute.Release()
 		}
-		e.connectedRoute, err = e.stack.FindRoute(info.RegisterNICID, info.ID.LocalAddress, info.ID.RemoteAddress, e.effectiveNetProto, multicastLoop)
+		e.connectedRoute, err = e.stack.FindRoute(info.RegisterNICID, info.ID.Local.Addr(), info.ID.Remote.Addr(), e.effectiveNetProto, multicastLoop)
 		if err != nil {
-			return fmt.Errorf("e.stack.FindRoute(%d, %s, %s, %d, %t): %s", info.RegisterNICID, info.ID.LocalAddress, info.ID.RemoteAddress, e.effectiveNetProto, multicastLoop, err)
+			return fmt.Errorf("e.stack.FindRoute(%d, %s, %s, %d, %t): %s", info.RegisterNICID, info.ID.Local.Addr(), info.ID.Remote.Addr(), e.effectiveNetProto, multicastLoop, err)
 		}
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))

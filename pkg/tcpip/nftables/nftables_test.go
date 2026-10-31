@@ -19,12 +19,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/netip"
 	"reflect"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -180,8 +182,8 @@ var (
 			TTL:            arbitraryTimeToLive,
 			Protocol:       uint8(tcpTransportProtocol),
 			Checksum:       0,
-			SrcAddr:        tcpip.AddrFrom4(arbitraryIPv4AddrB),
-			DstAddr:        tcpip.AddrFrom4(arbitraryIPv4AddrB2),
+			SrcAddr:        netip.AddrFrom4(arbitraryIPv4AddrB),
+			DstAddr:        netip.AddrFrom4(arbitraryIPv4AddrB2),
 			Options:        nil,
 		}
 	}
@@ -199,8 +201,8 @@ var (
 			PayloadLength:     uint16(ipv6MinPayloadLength),
 			TransportProtocol: tcpTransportProtocol,
 			HopLimit:          arbitraryTimeToLive,
-			SrcAddr:           tcpip.AddrFrom16(arbitraryIPv6AddrB),
-			DstAddr:           tcpip.AddrFrom16(arbitraryIPv6AddrB2),
+			SrcAddr:           netip.AddrFrom16(arbitraryIPv6AddrB),
+			DstAddr:           netip.AddrFrom16(arbitraryIPv6AddrB2),
 		}
 	}
 
@@ -1759,7 +1761,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryIPv4Fields()
-				fields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
+				fields.SrcAddr = netip.AddrFrom4(arbitraryIPv4AddrB2)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv4AddrB2[:], Verdict{}),
@@ -1770,7 +1772,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryIPv4Fields()
-				fields.DstAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB)
+				fields.DstAddr = netip.AddrFrom4(arbitraryIPv4AddrB)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_4, arbitraryIPv4AddrB[:], Verdict{}),
@@ -1816,7 +1818,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields()),
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryIPv6Fields()
-				fields.SrcAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB2)
+				fields.SrcAddr = netip.AddrFrom16(arbitraryIPv6AddrB2)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv6AddrB2[:], Verdict{}),
@@ -1827,7 +1829,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields()),
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryIPv6Fields()
-				fields.DstAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB)
+				fields.DstAddr = netip.AddrFrom16(arbitraryIPv6AddrB)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], Verdict{}),
@@ -1951,7 +1953,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
 			outPkt: func() *stack.PacketBuffer {
 				ipFields := arbitraryIPv4Fields()
-				ipFields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
+				ipFields.SrcAddr = netip.AddrFrom4(arbitraryIPv4AddrB2)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv4AddrB2[:], Verdict{}),
@@ -1962,7 +1964,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
 			outPkt: func() *stack.PacketBuffer {
 				ipFields := arbitraryIPv4Fields()
-				ipFields.DstAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB)
+				ipFields.DstAddr = netip.AddrFrom4(arbitraryIPv4AddrB)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_4, arbitraryIPv4AddrB[:], Verdict{}),
@@ -2077,7 +2079,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryIPv6Fields()
-				fields.SrcAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB2)
+				fields.SrcAddr = netip.AddrFrom16(arbitraryIPv6AddrB2)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv6AddrB2[:], Verdict{}),
@@ -2088,7 +2090,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryIPv6Fields()
-				fields.DstAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB)
+				fields.DstAddr = netip.AddrFrom16(arbitraryIPv6AddrB)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], Verdict{}),
@@ -2354,7 +2356,7 @@ func TestEvaluateCounter(t *testing.T) {
 	// Creates a counter operation.
 	counter := newCounter(0, 0)
 	// Defines the packets to be used in the test.
-	desiredIpv4Address := tcpip.AddrFrom4(arbitraryIPv4AddrB)
+	desiredIpv4Address := netip.AddrFrom4(arbitraryIPv4AddrB)
 	countedIPv4Pkt := func() *stack.PacketBuffer {
 		fields := arbitraryIPv4Fields()
 		fields.SrcAddr = desiredIpv4Address
@@ -2362,7 +2364,7 @@ func TestEvaluateCounter(t *testing.T) {
 	}
 	uncountedIPv4Pkt := func() *stack.PacketBuffer {
 		fields := arbitraryIPv4Fields()
-		fields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
+		fields.SrcAddr = netip.AddrFrom4(arbitraryIPv4AddrB2)
 		return makeIPv4Packet(header.IPv4MinimumSize, fields)
 	}
 	pkts := []*stack.PacketBuffer{countedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt(), countedIPv4Pkt(),
@@ -2512,7 +2514,7 @@ func TestEvaluateRoute(t *testing.T) {
 			tname: "load nexthop4 key to 4-byte register",
 			pkt: func() *stack.PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
-				pkt.EgressRoute.NextHop = tcpip.AddrFrom4(arbitraryIPv4AddrB)
+				pkt.EgressRoute.NextHop = netip.AddrFrom4(arbitraryIPv4AddrB)
 				return pkt
 			}(),
 			op1: mustCreateRoute(t, linux.NFT_RT_NEXTHOP4, linux.NFT_REG32_06),
@@ -2522,7 +2524,7 @@ func TestEvaluateRoute(t *testing.T) {
 			tname: "load nexthop4 key to 16-byte register",
 			pkt: func() *stack.PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
-				pkt.EgressRoute.NextHop = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
+				pkt.EgressRoute.NextHop = netip.AddrFrom4(arbitraryIPv4AddrB2)
 				return pkt
 			}(),
 			op1: mustCreateRoute(t, linux.NFT_RT_NEXTHOP4, linux.NFT_REG_3),
@@ -2533,7 +2535,7 @@ func TestEvaluateRoute(t *testing.T) {
 			tname: "load nexthop6 key to 16-byte register",
 			pkt: func() *stack.PacketBuffer {
 				pkt := makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields())
-				pkt.EgressRoute.NextHop = tcpip.AddrFrom16(arbitraryIPv6AddrB)
+				pkt.EgressRoute.NextHop = netip.AddrFrom16(arbitraryIPv6AddrB)
 				return pkt
 			}(),
 			op1: mustCreateRoute(t, linux.NFT_RT_NEXTHOP6, linux.NFT_REG_1),
@@ -5880,7 +5882,7 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 				info: natTargetInfo{
 					netProto:      header.IPv4ProtocolNumber,
 					natType:       stack.SNAT,
-					address:       tcpip.AddrFrom4([4]byte{192, 168, 1, 1}),
+					address:       netip.AddrFrom4([4]byte{192, 168, 1, 1}),
 					changeAddress: true,
 					changePort:    true,
 					portsOrIdents: stack.PortOrIdentRange{
@@ -5890,7 +5892,7 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 				},
 				infoData: []byte{1, 2, 3},
 			},
-			opts: cmp.AllowUnexported(compatNATTarget{}, natTargetInfo{}),
+			opts: cmp.Options{cmp.AllowUnexported(compatNATTarget{}), cmpopts.EquateComparable(natTargetInfo{})},
 		},
 		{
 			name: "noop match",
@@ -6039,7 +6041,7 @@ func TestCompatOpCompatibility(t *testing.T) {
 	}
 }
 
-func makeUDPv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16) *stack.PacketBuffer {
+func makeUDPv4Packet(srcAddr, dstAddr netip.Addr, srcPort, dstPort uint16) *stack.PacketBuffer {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: header.IPv4MinimumSize + header.UDPMinimumSize,
 	})
@@ -6067,8 +6069,8 @@ func makeUDPv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16) *s
 
 // TestCompatCTMatchEvaluation tests evaluation of compatCTMatch with tracked and untracked packets.
 func TestCompatCTMatchEvaluation(t *testing.T) {
-	srcAddr := tcpip.AddrFrom4([4]byte{10, 0, 0, 1})
-	dstAddr := tcpip.AddrFrom4([4]byte{10, 0, 0, 2})
+	srcAddr := netip.AddrFrom4([4]byte{10, 0, 0, 1})
+	dstAddr := netip.AddrFrom4([4]byte{10, 0, 0, 2})
 	const srcPort = 1234
 	const dstPort = 5678
 
@@ -6259,8 +6261,8 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		matchInfo   addrTypeMatchInfo
-		srcAddr     tcpip.Address
-		dstAddr     tcpip.Address
+		srcAddr     netip.Addr
+		dstAddr     netip.Addr
 		hasRoute    bool
 		noNetHeader bool
 		wantVerdict uint32
@@ -6299,7 +6301,7 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 				checkSrc:   true,
 				sourceMask: linux.XT_ADDRTYPE_MULTICAST,
 			},
-			srcAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			srcAddr:     netip.AddrFrom4([4]byte{224, 0, 0, 1}),
 			wantVerdict: VC(linux.NFT_CONTINUE),
 		},
 		{
@@ -6308,7 +6310,7 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 				checkDst: true,
 				destMask: linux.XT_ADDRTYPE_MULTICAST,
 			},
-			dstAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			dstAddr:     netip.AddrFrom4([4]byte{224, 0, 0, 1}),
 			wantVerdict: VC(linux.NFT_CONTINUE),
 		},
 		{
@@ -6317,7 +6319,7 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 				checkSrc:   true,
 				sourceMask: linux.XT_ADDRTYPE_UNICAST,
 			},
-			srcAddr:     tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+			srcAddr:     netip.AddrFrom4([4]byte{10, 0, 0, 1}),
 			hasRoute:    true,
 			wantVerdict: VC(linux.NFT_CONTINUE),
 		},
@@ -6327,7 +6329,7 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 				checkSrc:   true,
 				sourceMask: linux.XT_ADDRTYPE_UNICAST,
 			},
-			srcAddr:     tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+			srcAddr:     netip.AddrFrom4([4]byte{10, 0, 0, 1}),
 			hasRoute:    false,
 			wantVerdict: VC(linux.NFT_BREAK),
 		},
@@ -6340,7 +6342,7 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 				destMask:   linux.XT_ADDRTYPE_LOCAL,
 			},
 			srcAddr:     header.IPv4Broadcast,
-			dstAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			dstAddr:     netip.AddrFrom4([4]byte{224, 0, 0, 1}),
 			wantVerdict: VC(linux.NFT_BREAK),
 		},
 		{
@@ -6363,10 +6365,10 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 				pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{})
 			} else {
 				fields := arbitraryIPv4Fields()
-				if tc.srcAddr.Len() > 0 {
+				if tc.srcAddr.IsValid() {
 					fields.SrcAddr = tc.srcAddr
 				}
-				if tc.dstAddr.Len() > 0 {
+				if tc.dstAddr.IsValid() {
 					fields.DstAddr = tc.dstAddr
 				}
 				pkt = makeIPv4Packet(header.IPv4MinimumSize, fields)

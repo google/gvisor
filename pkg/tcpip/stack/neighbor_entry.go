@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -32,7 +33,7 @@ const (
 //
 // +stateify savable
 type NeighborEntry struct {
-	Addr      tcpip.Address
+	Addr      netip.Addr
 	LinkAddr  tcpip.LinkAddress
 	State     NeighborState
 	UpdatedAt tcpip.MonotonicTime
@@ -109,7 +110,7 @@ type neighborEntryMu struct {
 	timer timer
 
 	// +checklocks:neighborEntryRWMutex
-	localAddr tcpip.Address
+	localAddr netip.Addr
 
 	// +checklocks:neighborEntryRWMutex
 	pendingPackets []pendingPacket
@@ -136,7 +137,7 @@ type neighborEntry struct {
 // state, Unknown. Transition out of Unknown by calling either
 // `handlePacketQueuedLocked` or `handleProbeLocked` on the newly created
 // neighborEntry.
-func newNeighborEntry(cache *neighborCache, remoteAddr tcpip.Address, nudState *NUDState) *neighborEntry {
+func newNeighborEntry(cache *neighborCache, remoteAddr netip.Addr, nudState *NUDState) *neighborEntry {
 	n := &neighborEntry{
 		cache:    cache,
 		nudState: nudState,
@@ -154,7 +155,7 @@ func newNeighborEntry(cache *neighborCache, remoteAddr tcpip.Address, nudState *
 // newStaticNeighborEntry creates a neighbor cache entry starting at the
 // Static state. The entry can only transition out of Static by directly
 // calling `setStateLocked`.
-func newStaticNeighborEntry(cache *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress, state *NUDState) *neighborEntry {
+func newStaticNeighborEntry(cache *neighborCache, addr netip.Addr, linkAddr tcpip.LinkAddress, state *NUDState) *neighborEntry {
 	entry := NeighborEntry{
 		Addr:      addr,
 		LinkAddr:  linkAddr,
@@ -336,7 +337,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
 				var err tcpip.Error = &tcpip.ErrTimeout{}
 				if remaining != 0 {
-					err = e.cache.linkRes.LinkAddressRequest(addr, tcpip.Address{} /* localAddr */, linkAddr)
+					err = e.cache.linkRes.LinkAddressRequest(addr, netip.Addr{} /* localAddr */, linkAddr)
 				}
 
 				e.mu.Lock()
@@ -375,7 +376,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 // Follows the logic defined in RFC 4861 section 7.3.3.
 //
 // +checklocks:e.mu.neighborEntryRWMutex
-func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
+func (e *neighborEntry) handlePacketQueuedLocked(localAddr netip.Addr) {
 	switch e.mu.neigh.State {
 	case Unknown, Unreachable:
 		prev := e.mu.neigh.State

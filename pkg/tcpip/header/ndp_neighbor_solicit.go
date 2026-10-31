@@ -14,7 +14,9 @@
 
 package header
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"net/netip"
+)
 
 // NDPNeighborSolicit is an NDP Neighbor Solicitation message. It will only
 // contain the body of an ICMPv6 packet.
@@ -37,12 +39,12 @@ const (
 )
 
 // TargetAddress returns the value within the Target Address field.
-func (b NDPNeighborSolicit) TargetAddress() tcpip.Address {
-	return tcpip.AddrFrom16Slice(b[ndpNSTargetAddessOffset:][:IPv6AddressSize])
+func (b NDPNeighborSolicit) TargetAddress() netip.Addr {
+	return netip.AddrFrom16([16]byte(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]))
 }
 
 // SetTargetAddress sets the value within the Target Address field.
-func (b NDPNeighborSolicit) SetTargetAddress(addr tcpip.Address) {
+func (b NDPNeighborSolicit) SetTargetAddress(addr netip.Addr) {
 	copy(b[ndpNSTargetAddessOffset:][:IPv6AddressSize], addr.AsSlice())
 }
 
