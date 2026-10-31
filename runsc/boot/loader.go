@@ -54,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -1440,6 +1441,10 @@ func (l *Loader) run() error {
 			l.startupTimer.Reached("network configured")
 		}
 
+		if err := l.applyTCPBufferSysctls(); err != nil {
+			return err
+		}
+
 		if err := l.pinRing.Finalize(); err != nil {
 			log.Warningf("Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
 		}
@@ -2167,6 +2172,34 @@ func (l *Loader) WaitExit() linux.WaitStatus {
 	l.k.WaitExited()
 
 	return l.k.GlobalInit().ExitStatus()
+}
+
+// applyTCPBufferSysctls configures a new sandbox's private network stack.
+func (l *Loader) applyTCPBufferSysctls() error {
+	if l.root.spec.Linux == nil || len(l.root.spec.Linux.Sysctl) == 0 {
+		return nil
+	}
+	settings := l.root.spec.Linux.Sysctl
+	for _, name := range [...]string{"tcp_rmem", "tcp_wmem"} {
+		key := "net.ipv4." + name
+		value, ok := settings[key]
+		if alias, hasAlias := settings["net/ipv4/"+name]; hasAlias {
+			if ok && value != alias {
+				return fmt.Errorf("conflicting dotted and slashed values for %s", key)
+			}
+			value, ok = alias, true
+		}
+		if !ok {
+			continue
+		}
+		if network := l.root.conf.Network; network != config.NetworkSandbox && network != config.NetworkNone {
+			return fmt.Errorf("%s requires a private netstack", key)
+		}
+		if err := proc.SetTCPBufferSize(l.k.SupervisorContext(), l.k.RootNetworkNamespace().Stack(), name, value); err != nil {
+			return fmt.Errorf("setting %s to %q: %w", key, value, err)
+		}
+	}
+	return nil
 }
 
 func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *auth.UserNamespace, uid uniqueid.Provider) (*inet.Namespace, error) {

@@ -6474,6 +6474,27 @@ func TestMarkerFile(t *testing.T) {
 	}
 }
 
+// TestTCPBufferSysctls checks the network stack seen by the first container.
+func TestTCPBufferSysctls(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	settings := map[string]string{
+		"net.ipv4.tcp_rmem": "8192 524288 268435456",
+		"net.ipv4.tcp_wmem": "8192 262144 134217728",
+	}
+	spec.Linux = &specs.Linux{Sysctl: settings}
+	c := startContainer(t, conf, spec, setupBundle(t, conf, spec), nil)
+	for name, want := range settings {
+		path := "/proc/sys/" + strings.ReplaceAll(name, ".", "/")
+		out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", path)
+		if err != nil {
+			t.Fatalf("reading %s: %v: %s", path, err, out)
+		}
+		if got := strings.Join(strings.Fields(string(out)), " "); got != want {
+			t.Errorf("%s = %q, want %q", path, got, want)
+		}
+	}
+}
+
 func TestIPv6DisableAllSysctl(t *testing.T) {
 	tests := []struct {
 		name         string
