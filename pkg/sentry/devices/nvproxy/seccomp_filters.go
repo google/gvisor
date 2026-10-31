@@ -110,7 +110,7 @@ func uvmIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(nvgpu.UVM_TOOLS_WRITE_PROCESS_MEMORY), nvconf.ValidCapabilities},
 		{seccomp.EqualTo(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_UNMAP_EXTERNAL), compUtil},
-		{seccomp.EqualTo(nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU), nvconf.CapVideo},
+		{seccomp.EqualTo(nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU), compUtil | nvconf.CapVideo},
 		{seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_VALIDATE_VA_RANGE), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_CREATE_EXTERNAL_RANGE), compUtil},
@@ -133,6 +133,21 @@ func uvmIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		}
 	}
 	return ioctlRules
+}
+
+// HostMMIOIoctlRules returns the flat UVM ioctls that can run in an
+// application's host mm. Arguments contain no translated host descriptors or
+// Sentry pointers, since the application can modify them during execution.
+func HostMMIOIoctlRules(enabledCaps nvconf.DriverCaps) seccomp.SyscallRule {
+	if enabledCaps&compUtil == 0 {
+		return nil
+	}
+	return seccomp.Or{
+		seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_INITIALIZE)},
+		seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_POPULATE_PAGEABLE)},
+		seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_SET_PREFERRED_LOCATION)},
+		seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_UNSET_PREFERRED_LOCATION)},
+	}
 }
 
 // Filters returns seccomp-bpf filters for this package when using the given

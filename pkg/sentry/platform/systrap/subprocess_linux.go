@@ -34,6 +34,11 @@ const syscallEvent unix.Signal = 0x80
 //
 // Precondition: the runtime OS thread must be locked.
 func createStub() (*thread, error) {
+	return createStubWithIoctls(nil)
+}
+
+// createStubWithIoctls creates the source process with proxy-authorized ioctls.
+func createStubWithIoctls(ioctlRules seccomp.SyscallRule) (*thread, error) {
 	// When creating the new child process, we specify SIGKILL as the
 	// signal to deliver when the child exits. We never expect a subprocess
 	// to exit; they are pooled and reused. This is done to ensure that if
@@ -41,7 +46,7 @@ func createStub() (*thread, error) {
 	// transitively) will be killed as well. It's simply not possible to
 	// safely handle a single stub getting killed: the exact state of
 	// execution is unknown and not recoverable.
-	t, err := attachedThread(unix.CLONE_FILES | uintptr(unix.SIGCHLD))
+	t, err := attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), ioctlRules)
 	if err != nil {
 		return nil, err
 	}
@@ -58,9 +63,20 @@ func createStub() (*thread, error) {
 // attachedThread returns a new attached thread.
 //
 // Precondition: the runtime OS thread must be locked.
-func attachedThread(flags uintptr) (*thread, error) {
+func attachedThread(flags uintptr, ioctlRules seccomp.SyscallRule) (*thread, error) {
 	vars := stubfilter.StubProcessVars(uint64(stubStart), uint64(stubROMapEnd-stubStart))
-	return forkStub(flags, renderStubFilter(stubfilter.StubProcessName, vars))
+	if ioctlRules == nil {
+		return forkStub(flags, renderStubFilter(stubfilter.StubProcessName, vars))
+	}
+	// The source is created before the Sentry installs its device filters.
+	// Its descendants must inherit the proxy's ioctl restrictions here.
+	program := stubfilter.StubProcess(vars)
+	program.RuleSets[0].Rules.Add(unix.SYS_IOCTL, ioctlRules)
+	instrs, _, err := program.Build()
+	if err != nil {
+		return nil, fmt.Errorf("compile host mm ioctl filters: %w", err)
+	}
+	return forkStub(flags, instrs)
 }
 
 // In the child, this function must not acquire any locks, because they might

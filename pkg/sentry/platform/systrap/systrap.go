@@ -55,6 +55,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -79,6 +80,10 @@ var (
 	//
 	// We attempt to link the stub here, and adjust downward as needed.
 	stubStart uintptr = stubInitAddress
+
+	// hostMMIOIoctlKey identifies the immutable policy inherited by the
+	// process-global source and all pooled address spaces.
+	hostMMIOIoctlKey string
 
 	stubInitProcess uintptr
 
@@ -285,6 +290,11 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New(opts platform.Options) (*Systrap, error) {
+	var ioctlKey strings.Builder
+	if opts.HostMMIOIoctlRules != nil {
+		opts.HostMMIOIoctlRules = opts.HostMMIOIoctlRules.Copy()
+		opts.HostMMIOIoctlRules.Repr(&ioctlKey)
+	}
 	mbCh := hostmm.Probe(false)
 	if !disableSyscallPatching {
 		disableSyscallPatching = opts.DisableSyscallPatching
@@ -307,6 +317,7 @@ func New(opts platform.Options) (*Systrap, error) {
 
 	var stubErr error
 	stubInitialized.Do(func() {
+		hostMMIOIoctlKey = ioctlKey.String()
 		// Configure address space parameters for the current host's
 		// VA width. Must be called before any Context64 is created.
 		configureSystrapAddressSpace()
@@ -326,7 +337,9 @@ func New(opts platform.Options) (*Systrap, error) {
 		// Create the source process for the global pool. This must be
 		// done before initializing any other processes.
 		usesSeccompNotify := false
-		source, err := newSubprocess(createStub, mf, usesSeccompNotify, disableSyscallPatching)
+		source, err := newSubprocess(func() (*thread, error) {
+			return createStubWithIoctls(opts.HostMMIOIoctlRules)
+		}, mf, usesSeccompNotify, disableSyscallPatching)
 		if err != nil {
 			stubErr = fmt.Errorf("initialize systrap: %w", err)
 			return
@@ -341,6 +354,9 @@ func New(opts platform.Options) (*Systrap, error) {
 
 		initSeccompNotify()
 	})
+	if stubErr == nil && hostMMIOIoctlKey != ioctlKey.String() {
+		stubErr = fmt.Errorf("systrap host mm ioctl policy differs from the process-global policy")
+	}
 	if stubErr != nil {
 		mf.Destroy()
 		return nil, stubErr

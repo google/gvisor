@@ -22,7 +22,51 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
+
+// IoctlFlat implements platform.HostMMIO.
+func (s *subprocess) IoctlFlat(hostFD int32, request uint32, buf []byte) (platform.HostIoctlResult, error) {
+	if hostFD < 0 {
+		return platform.HostIoctlResult{}, unix.EBADF
+	}
+	if len(buf) > len(syscallStubMessage{}.ioctlParams) {
+		return platform.HostIoctlResult{}, unix.E2BIG
+	}
+	var result platform.HostIoctlResult
+	err := s.withAliveRLock(func() error {
+		s.syscallThreadMu.Lock()
+		defer s.syscallThreadMu.Unlock()
+		if s.hostMMUnsafe {
+			return unix.EIO
+		}
+		// Serialize against failed thread creation before the driver can
+		// retain this mm. It must never contain aliases of recycled backing
+		// or become another application's address space.
+		s.hostMMBound.Store(true)
+
+		t := s.syscallThread
+		copy(t.stubMessage.ioctlParams[:], buf)
+		paramsAddr := t.stubAddr + syscallStubMessageOffset + unsafe.Offsetof(syscallStubMessage{}.ioctlParams)
+		// CLONE_FILES shares hostFD with the stub. The syscall request page is
+		// read-only there, protecting the FD, command, and parameter address.
+		ret, err := t.syscall(unix.SYS_IOCTL,
+			arch.SyscallArgument{Value: uintptr(hostFD)},
+			arch.SyscallArgument{Value: uintptr(request)},
+			arch.SyscallArgument{Value: paramsAddr})
+		copy(buf, t.stubMessage.ioctlParams[:])
+		// The scratch page and syscall return are guest-writable. Keep the
+		// untrusted errno separate from transport and lifecycle failures.
+		result.Return = ret
+		if errno, ok := err.(unix.Errno); ok {
+			result.Errno = errno
+			return nil
+		}
+		return err
+	})
+	return result, err
+}
 
 func (t *syscallThread) initRequestReplyAddresses(sentryStackAddr uintptr) {
 	// These are safe as these addresses are mmapped and never moved/gced.
