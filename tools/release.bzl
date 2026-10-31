@@ -1,5 +1,6 @@
 """Rules assembling the gVisor release binaries in their installed layout."""
 
+load("@bazel_lib//lib:copy_file.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action")
 load("//tools:defs.bzl", "cov_available", "pkg_tar")
 
 # FLAVORS are the instrumentation flavors of gVisor binaries.
@@ -81,34 +82,19 @@ def _single_file(target):
     return files[0]
 
 def _release_files_impl(ctx):
-    outputs = []
-    inputs = []
-    commands = []
-
-    # Top-level binaries
-    bins = [(target, _single_file(target).basename) for target in ctx.attr.bins]
-    bins.append((ctx.attr.runsc, "runsc"))
-    for target, name in bins:
+    layout = []
+    for target in ctx.attr.bins:
         src = _single_file(target)
-        out = ctx.actions.declare_file("%s/%s" % (ctx.label.name, name))
-        inputs.append(src)
-        outputs.append(out)
-        commands.append('cp -f "%s" "%s"' % (src.path, out.path))
-
-    # Sidecar binaries
+        layout.append((src, src.basename))
+    layout.append((_single_file(ctx.attr.runsc), "runsc"))
     for target, name in ctx.attr.sidecars.items():
-        src = _single_file(target)
-        out = ctx.actions.declare_file("%s/gvisor-bin/%s" % (ctx.label.name, name))
-        inputs.append(src)
-        outputs.append(out)
-        commands.append('mkdir -p "$(dirname "%s")" && cp -f "%s" "%s"' % (out.path, src.path, out.path))
+        layout.append((_single_file(target), "gvisor-bin/" + name))
 
-    ctx.actions.run_shell(
-        inputs = inputs,
-        outputs = outputs,
-        command = "\n".join(commands),
-        mnemonic = "ReleaseFiles",
-    )
+    outputs = []
+    for src, path in layout:
+        out = ctx.actions.declare_file("%s/%s" % (ctx.label.name, path))
+        copy_file_action(ctx, src, out)
+        outputs.append(out)
 
     runfiles = ctx.runfiles(files = outputs)
     return [DefaultInfo(
@@ -141,6 +127,7 @@ release_files = rule(
     doc = "Assembles release binaries in the layout they are installed in: " +
           "`runsc` and each of `bins` at the top level and `sidecars` under a " +
           "`gvisor-bin/` directory.",
+    toolchains = COPY_FILE_TOOLCHAINS,
 )
 
 def instrumented_release_tars(name, flavor, bins = [], visibility = None):
