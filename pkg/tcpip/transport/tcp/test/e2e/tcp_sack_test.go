@@ -192,8 +192,8 @@ func TestSackPermittedAccept(t *testing.T) {
 		wantSACK      bool
 	}{
 		{name: "ordinary", wndScale: 5, wantSACK: true},
-		{name: "cookie", cookieEnabled: true, wndScale: -1, wantSACK: true},
-		{name: "cookie_no_peer_sack", cookieEnabled: true, wndScale: -1, noPeerSACK: true},
+		{name: "cookie", cookieEnabled: true, wndScale: 5, wantSACK: true},
+		{name: "cookie_no_peer_sack", cookieEnabled: true, wndScale: 5, noPeerSACK: true},
 		{name: "cookie_no_timestamp", cookieEnabled: true, wndScale: -1, noTimestamp: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -266,8 +266,8 @@ func TestSackDisabledAccept(t *testing.T) {
 	}
 
 	testCases := []testCase{
-		// When cookie is used window scaling is disabled.
-		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
+		// A SYN cookie cannot preserve the window shift without timestamps.
+		{true, -1, 0xffff},
 		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
 	}
 
