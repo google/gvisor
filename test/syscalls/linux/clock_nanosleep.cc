@@ -25,6 +25,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
 #include "test/util/posix_error.h"
@@ -159,6 +160,61 @@ TEST_P(WallClockNanosleepTest, SleepUntil) {
 
 INSTANTIATE_TEST_SUITE_P(Sleepers, WallClockNanosleepTest,
                          ::testing::Values(CLOCK_REALTIME, CLOCK_MONOTONIC));
+
+struct RelativeNanosleepParam {
+  // The clock to sleep on.
+  clockid_t sleep_clock;
+
+  // The clock that measures the duration of the sleep.
+  clockid_t elapsed_clock;
+};
+
+class RelativeNanosleepTest
+    : public ::testing::TestWithParam<RelativeNanosleepParam> {};
+
+// A relative sleep lasts for at least the requested duration, even if the
+// sandbox is checkpointed and restored during the sleep. Relative
+// CLOCK_REALTIME sleeps measure their duration with CLOCK_MONOTONIC, so that
+// changes to the realtime clock do not affect them.
+TEST_P(RelativeNanosleepTest, SleepsRequestedDurationAcrossSave) {
+  constexpr absl::Duration kSleepDuration = absl::Seconds(2);
+  const RelativeNanosleepParam param = GetParam();
+
+  // Checkpoint and restore during the sleep, if save/restore is enabled.
+  ScopedThread saver([] {
+    absl::SleepFor(absl::Milliseconds(500));
+    MaybeSave();
+  });
+
+  struct timespec before, after;
+  ASSERT_THAT(clock_gettime(param.elapsed_clock, &before), SyscallSucceeds());
+  struct timespec duration = absl::ToTimespec(kSleepDuration);
+  ASSERT_THAT(RetryEINTR(sys_clock_nanosleep)(param.sleep_clock, 0, &duration,
+                                              &duration),
+              SyscallSucceeds());
+  ASSERT_THAT(clock_gettime(param.elapsed_clock, &after), SyscallSucceeds());
+
+  EXPECT_GE(absl::TimeFromTimespec(after) - absl::TimeFromTimespec(before),
+            kSleepDuration);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Sleepers, RelativeNanosleepTest,
+    ::testing::Values(RelativeNanosleepParam{CLOCK_REALTIME, CLOCK_MONOTONIC},
+                      RelativeNanosleepParam{CLOCK_MONOTONIC, CLOCK_MONOTONIC},
+                      RelativeNanosleepParam{CLOCK_BOOTTIME, CLOCK_BOOTTIME}),
+    [](const ::testing::TestParamInfo<RelativeNanosleepParam>& info) {
+      switch (info.param.sleep_clock) {
+        case CLOCK_REALTIME:
+          return "CLOCK_REALTIME";
+        case CLOCK_MONOTONIC:
+          return "CLOCK_MONOTONIC";
+        case CLOCK_BOOTTIME:
+          return "CLOCK_BOOTTIME";
+        default:
+          return "unknown";
+      }
+    });
 
 TEST(ClockNanosleepProcessTest, SleepFiveSeconds) {
   const absl::Duration kSleepDuration = absl::Seconds(5);

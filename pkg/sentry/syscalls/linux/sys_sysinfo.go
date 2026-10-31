@@ -39,10 +39,17 @@ func Sysinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 		memFree = 0
 	}
 
+	// As on Linux, the uptime is CLOCK_BOOTTIME, rounded up to the second.
+	boottime := t.Kernel().BoottimeClock().Now()
+	uptime := boottime.Seconds()
+	if boottime.Nanoseconds()%1e9 != 0 {
+		uptime++
+	}
+
 	// Only a subset of the fields in sysinfo_t make sense to return.
 	si := linux.Sysinfo{
 		Procs:    uint16(t.Kernel().TaskSet().Root.NumTasks()),
-		Uptime:   t.Kernel().MonotonicClock().Now().Seconds(),
+		Uptime:   uptime,
 		TotalRAM: totalSize,
 		FreeRAM:  memFree,
 		Unit:     1,

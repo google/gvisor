@@ -46,6 +46,7 @@ func main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(new(capability), "")
 	subcommands.Register(new(chardevCheck), "")
+	subcommands.Register(new(clocks), "")
 	subcommands.Register(new(echo), "")
 	subcommands.Register(new(execFromThread), "")
 	subcommands.Register(new(fdReceiver), "")

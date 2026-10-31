@@ -29,6 +29,11 @@ import (
 type IntervalTimer struct {
 	timer ktime.Timer
 
+	// clock is the clock that the timer was created with. timer runs on
+	// clock, except when it is armed with a relative CLOCK_REALTIME time (see
+	// Task.IntervalTimerSettime). clock is immutable.
+	clock ktime.Clock
+
 	// If target is not nil, it receives signo from timer expirations. If group
 	// is true, these signals are thread-group-directed. These fields are
 	// immutable.
@@ -189,6 +194,7 @@ func (t *Task) IntervalTimerCreate(c ktime.Clock, sigev *linux.Sigevent) (linux.
 
 	// Construct the timer.
 	it := &IntervalTimer{
+		clock:  c,
 		id:     id,
 		sigval: sigev.Value,
 	}
@@ -246,11 +252,28 @@ func (t *Task) IntervalTimerSettime(id linux.TimerID, its linux.Itimerspec, abs 
 		return linux.Itimerspec{}, linuxerr.EINVAL
 	}
 
-	newS, err := ktime.SettingFromItimerspec(its, abs, it.timer.Clock())
+	// As on Linux, relative CLOCK_REALTIME timers run on CLOCK_MONOTONIC, so
+	// that discontinuous changes to the realtime clock, such as its jump
+	// forward on restore, do not change their duration.
+	c := it.clock
+	if !abs && c == t.k.RealtimeClock() {
+		c = t.k.MonotonicClock()
+	}
+	newS, err := ktime.SettingFromItimerspec(its, abs, c)
 	if err != nil {
 		return linux.Itimerspec{}, err
 	}
-	tm, oldS := it.timer.Set(newS, it.timerSettingChanged)
+	var (
+		tm   ktime.Time
+		oldS ktime.Setting
+	)
+	if c == it.timer.Clock() {
+		tm, oldS = it.timer.Set(newS, it.timerSettingChanged)
+	} else {
+		// Only CLOCK_REALTIME timers change clocks, and timers on the
+		// Timekeeper's clocks are SampledTimers.
+		tm, oldS = it.timer.(*ktime.SampledTimer).SetWithClock(c.(ktime.SampledClock), newS, it.timerSettingChanged)
+	}
 	its = ktime.ItimerspecFromSetting(tm, oldS)
 	return its, nil
 }

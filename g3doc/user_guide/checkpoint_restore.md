@@ -178,6 +178,26 @@ With `--network=host`, host sockets cannot be saved, so:
 -   Network configuration visible inside the sandbox (interface statistics, TCP
     buffer sizes) reflects the host the sandbox was restored on.
 
+## Clocks
+
+The clocks behave across checkpoint and restore as they do across a Linux system
+suspend and resume:
+
+-   `CLOCK_MONOTONIC` does not count the time that the sandbox spends
+    checkpointed, or restoring. When the restored application resumes, it
+    continues from its value at checkpoint time. Timers and timeouts based on
+    it, such as `sleep(3)`, `poll(2)` and `epoll_wait(2)` timeouts, and
+    `CLOCK_MONOTONIC` timers, keep at least the time that they had left at
+    checkpoint time. They do not all expire at once on restore.
+-   `CLOCK_BOOTTIME` counts the time that the sandbox spends checkpointed. After
+    restore, it jumps forward by that time. `CLOCK_BOOTTIME` timers that became
+    due during that time expire on restore.
+-   `CLOCK_REALTIME` is the time of day on the host that the sandbox was
+    restored on, so it also jumps forward by the time that the sandbox spent
+    checkpointed. Timers set for an absolute `CLOCK_REALTIME` time that passed
+    during that time expire on restore. As on Linux, relative `CLOCK_REALTIME`
+    sleeps and timers measure their duration with `CLOCK_MONOTONIC`.
+
 ## Checkpoint & Restore with different CPU features
 
 When restoring a state file, gVisor verifies that the target host machine
