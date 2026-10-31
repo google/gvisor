@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <grp.h>
 #include <linux/capability.h>
+#include <poll.h>
 #include <stdlib.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -28,6 +31,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
@@ -136,6 +140,57 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::Values("TEST_UDS_TREE", "TEST_UDS_ATTACH_TREE"),
         ::testing::Values(ProtocolSocket{SOCK_STREAM, "stream"},
                           ProtocolSocket{SOCK_SEQPACKET, "seqpacket"})));
+
+TEST(GoferDatagramEpollTest, WakesAfterHostDrain) {
+  const char* root = getenv("TEST_UDS_TREE");
+  ASSERT_NE(root, nullptr);
+  auto connect_to = [&](int fd, const char* name) {
+    const std::string path = JoinPath(root, name);
+    struct sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    ASSERT_LT(path.size(), sizeof(addr.sun_path));
+    memcpy(addr.sun_path, path.data(), path.size());
+    ASSERT_THAT(
+        connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+        SyscallSucceeds());
+  };
+  const FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_DGRAM, 0));
+  ASSERT_NO_FATAL_FAILURE(connect_to(sock.get(), "dgram/gated"));
+  const FileDescriptor control =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_NO_FATAL_FAILURE(connect_to(control.get(), "dgram/gated-drain"));
+
+  uint32_t sent = 0;
+  ssize_t n;
+  while ((n = send(sock.get(), "x", 1, MSG_DONTWAIT)) == 1) {
+    ++sent;
+  }
+  ASSERT_THAT(n, SyscallFailsWithErrno(EAGAIN));
+  ASSERT_GT(sent, 0u);
+  const FileDescriptor epoll_fd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epoll_fd.get(), sock.get(), EPOLLOUT, 0));
+  epoll_event event = {};
+  ASSERT_THAT(epoll_wait(epoll_fd.get(), &event, 1, 0),
+              SyscallSucceedsWithValue(0));
+
+  // The host sends back one byte per datagram it removes from the full queue.
+  const uint32_t count = htonl(sent);
+  ASSERT_THAT(WriteFd(control.get(), &count, sizeof(count)),
+              SyscallSucceedsWithValue(sizeof(count)));
+  std::string reply(sent, '\0');
+  ASSERT_THAT(ReadFd(control.get(), reply.data(), reply.size()),
+              SyscallSucceedsWithValue(sent));
+  ASSERT_EQ(reply, std::string(sent, 'x'));
+  const int ready = epoll_wait(epoll_fd.get(), &event, 1, 1000);
+  EXPECT_THAT(ready, SyscallSucceedsWithValue(1));
+  if (ready == 1) {
+    EXPECT_NE(event.events & EPOLLOUT, 0u);
+  }
+  struct pollfd pfd = {.fd = sock.get(), .events = POLLOUT};
+  EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(pfd.revents, POLLOUT);
+}
 
 // Parameter is socket root dir.
 using GoferDgramTest = ::testing::TestWithParam<std::string>;

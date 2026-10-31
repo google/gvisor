@@ -86,13 +86,11 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
 func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Sender, *syserr.Error) {
-	c, err := e.newSender(ctx, linux.SOCK_DGRAM, &waiter.Queue{})
+	// A connected datagram endpoint attaches its wait queue before publishing
+	// this sender. A one-shot send needs no host poll registration.
+	c, err := e.newSender(ctx, linux.SOCK_DGRAM, nil)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := c.Init(); err != nil {
-		return nil, syserr.FromError(err)
 	}
 
 	// We don't need the receiver.
