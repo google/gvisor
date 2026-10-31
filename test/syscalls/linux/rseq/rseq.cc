@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stddef.h>
+
+// asm/signal.h needs size_t from stddef.h.
+#include <asm/signal.h>
+#include <asm/unistd.h>
+#include <linux/time.h>
+
 #include "test/syscalls/linux/rseq/critical.h"
 #include "test/syscalls/linux/rseq/syscalls.h"
 #include "test/syscalls/linux/rseq/test.h"
@@ -51,6 +58,35 @@ int strcmp(const char* s1, const char* s2) {
 
 int sys_rseq(struct rseq* rseq, uint32_t rseq_len, int flags, uint32_t sig) {
   return raw_syscall(kRseqSyscall, rseq, rseq_len, flags, sig);
+}
+
+extern "C" void restore_rt();
+
+// Deliver an interrupt even when host preemption does not interrupt the sentry
+// task, as on KVM. Repeating the signal also covers delivery before the test
+// publishes its critical section. Each test runs in its own child process, so
+// exit (including an expected SIGSEGV) releases the timer and signal handler.
+int RunWithPeriodicSignal(int (*test)()) {
+  static_assert(sizeof(sigset_t) == 8);
+  struct sigaction action = {};
+  action.sa_handler = +[](int) {};
+  action.sa_flags = SA_RESTORER;
+  action.sa_restorer = restore_rt;
+  if (sys_errno(raw_syscall(__NR_rt_sigaction, SIGALRM, &action, nullptr,
+                            sizeof(sigset_t))) != 0) {
+    return 1;
+  }
+  const unsigned long mask = 1UL << (SIGALRM - 1);
+  if (sys_errno(raw_syscall(__NR_rt_sigprocmask, SIG_UNBLOCK, &mask, nullptr,
+                            sizeof(mask))) != 0) {
+    return 1;
+  }
+  const struct itimerval timer = {{0, 10000}, {0, 10000}};
+  if (sys_errno(raw_syscall(__NR_setitimer, ITIMER_REAL, &timer, nullptr)) !=
+      0) {
+    return 1;
+  }
+  return test();
 }
 
 // RSeqRegistration represents a registered struct rseq, which is unregistered
@@ -468,22 +504,22 @@ extern "C" int main(int argc, char** argv, char** envp) {
     return TestCPU();
   }
   if (strcmp(argv[1], kRseqTestAbort) == 0) {
-    return TestAbort();
+    return RunWithPeriodicSignal(TestAbort);
   }
   if (strcmp(argv[1], kRseqTestAbortBefore) == 0) {
-    return TestAbortBefore();
+    return RunWithPeriodicSignal(TestAbortBefore);
   }
   if (strcmp(argv[1], kRseqTestAbortSignature) == 0) {
-    return TestAbortSignature();
+    return RunWithPeriodicSignal(TestAbortSignature);
   }
   if (strcmp(argv[1], kRseqTestAbortPreCommit) == 0) {
-    return TestAbortPreCommit();
+    return RunWithPeriodicSignal(TestAbortPreCommit);
   }
   if (strcmp(argv[1], kRseqTestAbortClearsCS) == 0) {
-    return TestAbortClearsCS();
+    return RunWithPeriodicSignal(TestAbortClearsCS);
   }
   if (strcmp(argv[1], kRseqTestInvalidAbortClearsCS) == 0) {
-    return TestInvalidAbortClearsCS();
+    return RunWithPeriodicSignal(TestInvalidAbortClearsCS);
   }
   if (strcmp(argv[1], kRseqTestMembarrierResetsCpuIdStart) == 0) {
     return TestMembarrierResetsCpuIdStart();
