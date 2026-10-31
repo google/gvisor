@@ -210,14 +210,9 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	// provided.
 	var amfs *asyncMemoryFileSave
 	if opts.PagesFile != nil {
-		var sf stateio.SourceFile
-		if opts.PagesFile.aw.NeedRegisterSourceFD() {
-			fileSize := uint64(len(f.chunksLoad())) * chunkSize
-			var err error
-			sf, err = opts.PagesFile.aw.RegisterSourceFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
-			if err != nil {
-				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
-			}
+		sf, err := opts.PagesFile.registerSource(f)
+		if err != nil {
+			return err
 		}
 		amfs = &asyncMemoryFileSave{
 			f:  f,
@@ -660,6 +655,18 @@ type AsyncPagesFileSave struct {
 	// the goroutine.
 	stStatus syncevent.Waiter
 
+	// registerMu excludes source registration while the writer shuts down.
+	// It is separate from mu so registering one file can overlap writes
+	// from another.
+	registerMu sync.Mutex
+
+	// err is the error that stopped the writer. SaveTo returns it before
+	// scanning another memory file. Unlike AsyncPagesFileLoad.err(), it is
+	// not returned by application syscalls and need not be an errno.
+	//
+	// +checklocks:registerMu
+	err error
+
 	// Padding before fields used mostly by the async page saver goroutine:
 	_ [hostarch.CacheLineSize]byte
 
@@ -712,12 +719,6 @@ type AsyncPagesFileSave struct {
 
 	// ops stores all apsOps.
 	ops []apsOp
-
-	// If err is not nil, it is the error that has terminated async page
-	// saving. Note that unlike AsyncPagesFileLoad.err(),
-	// AsyncPagesFileSave.err is never returned to application syscalls and
-	// hence is not constrained to being an errno.
-	err error
 }
 
 // Possible events in AsyncPagesFileSave.stStatus:
@@ -802,6 +803,23 @@ func (apfs *AsyncPagesFileSave) MemoryFilesDone() {
 // be written.
 func (apfs *AsyncPagesFileSave) PagesFileOffset() uint64 {
 	return apfs.saveOff
+}
+
+func (apfs *AsyncPagesFileSave) registerSource(f *MemoryFile) (stateio.SourceFile, error) {
+	apfs.registerMu.Lock()
+	defer apfs.registerMu.Unlock()
+	if apfs.err != nil {
+		return nil, apfs.err
+	}
+	if !apfs.aw.NeedRegisterSourceFD() {
+		return nil, nil
+	}
+	fileSize := uint64(len(f.chunksLoad())) * chunkSize
+	sf, err := apfs.aw.RegisterSourceFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+	}
+	return sf, nil
 }
 
 func (apfs *AsyncPagesFileSave) canEnqueue() bool {
@@ -931,17 +949,24 @@ func (apfs *AsyncPagesFileSave) combine(mfr apsRange) uint64 {
 }
 
 func (apfs *AsyncPagesFileSave) main() {
+	var saveErr error
 	defer func() {
-		if apfs.err != nil {
-			log.Warningf("Async page saving failed: %v", apfs.err)
+		if saveErr != nil {
+			log.Warningf("Async page saving failed: %v", saveErr)
 		}
+		// Wait for any registration in progress before closing the writer.
+		// After a failure, new registrations return the saved error; on
+		// success, MemoryFilesDone has already ended registration.
+		apfs.registerMu.Lock()
+		apfs.err = saveErr
+		apfs.registerMu.Unlock()
 		if err := apfs.aw.Close(); err != nil {
 			// Saving success is independent of err, so log it rather than
 			// propagating it.
 			log.Warningf("Async page saving: stateio.AsyncWriter.Close failed: %v", err)
 		}
 		if apfs.doneCallback != nil {
-			apfs.doneCallback(apfs.err)
+			apfs.doneCallback(saveErr)
 		}
 	}()
 
@@ -1054,7 +1079,7 @@ func (apfs *AsyncPagesFileSave) main() {
 					continue
 				}
 				if err := apfs.aw.Finalize(); err != nil {
-					apfs.err = fmt.Errorf("stateio.AsyncWriter.Finalize failed: %w", err)
+					saveErr = fmt.Errorf("stateio.AsyncWriter.Finalize failed: %w", err)
 					return
 				}
 				// Successfully completed all saving for all MemoryFiles.
@@ -1082,7 +1107,7 @@ func (apfs *AsyncPagesFileSave) main() {
 		var err error
 		completions, err = apfs.aw.Wait(completions[:0], 1 /* minCompletions */)
 		if err != nil {
-			apfs.err = fmt.Errorf("stateio.AsyncWriter.Wait failed: %w", err)
+			saveErr = fmt.Errorf("stateio.AsyncWriter.Wait failed: %w", err)
 			return
 		}
 
@@ -1094,12 +1119,12 @@ func (apfs *AsyncPagesFileSave) main() {
 			apfs.qavail++
 			if c.Err != nil {
 				apfs.mu.Unlock()
-				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v failed: %w", op.amfs.f, op.frs, c.Err)
+				saveErr = fmt.Errorf("write for MemoryFile(%p) pages %v failed: %w", op.amfs.f, op.frs, c.Err)
 				return
 			}
 			if c.N != op.total {
 				apfs.mu.Unlock()
-				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v (total %d bytes) returned %d bytes", op.amfs.f, op.frs, op.total, c.N)
+				saveErr = fmt.Errorf("write for MemoryFile(%p) pages %v (total %d bytes) returned %d bytes", op.amfs.f, op.frs, op.total, c.N)
 				return
 			}
 			apfs.bytesSaved += op.total
