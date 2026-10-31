@@ -807,12 +807,33 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 
 	// We need to hide the filestore from the containerized application.
 	if mountConf.IsSelfBacked() {
+		// The whiteout is internal and must not change the mtime of the upper
+		// layer's root, which may come from a filesystem checkpoint. Creating
+		// the whiteout does not change atime, and checkpoints do not keep ctime.
+		upperRootPop := &vfs.PathOperation{
+			Root:  upperRootVD,
+			Start: upperRootVD,
+		}
+		upperRootStat, err := c.l.k.VFS().StatAt(ctx, creds, upperRootPop, &vfs.StatOptions{
+			Mask: linux.STATX_MTIME,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to stat upper layer's root: %w", err)
+		}
 		if err := overlay.CreateWhiteout(ctx, c.l.k.VFS(), creds, &vfs.PathOperation{
 			Root:  upperRootVD,
 			Start: upperRootVD,
 			Path:  fspath.Parse(sentryapi.SelfFilestoreName(c.l.sandboxID)),
 		}); err != nil {
 			return nil, nil, fmt.Errorf("failed to create whiteout to hide self overlay filestore: %w", err)
+		}
+		if err := c.l.k.VFS().SetStatAt(ctx, creds, upperRootPop, &vfs.SetStatOptions{
+			Stat: linux.Statx{
+				Mask:  linux.STATX_MTIME,
+				Mtime: upperRootStat.Mtime,
+			},
+		}); err != nil {
+			return nil, nil, fmt.Errorf("failed to restore upper layer's root mtime: %w", err)
 		}
 	}
 

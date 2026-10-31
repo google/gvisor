@@ -1808,6 +1808,69 @@ func TestSplitFSCheckpointRestoreOnlyFS(t *testing.T) {
 	}
 }
 
+// TestFSCheckpointRootMtime checks that a filesystem restore keeps the mtime of
+// the root directory with --overlay2=root:self. The restored sandbox creates a
+// whiteout in the root directory to hide its filestore, and this must not
+// change the mtime of the root directory.
+func TestFSCheckpointRootMtime(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:self")
+
+	// The self filestore is created in the rootfs, so each container needs a
+	// writable rootfs of its own. Mount the host binaries read-only in it.
+	newSpec := func() *specs.Spec {
+		spec := testutil.NewSpecWithArgs("sleep", "1000")
+		spec.Root.Path = makeTempDir(t, "root")
+		spec.Root.Readonly = false
+		for _, dir := range []string{"/bin", "/lib", "/lib64", "/usr"} {
+			if _, err := os.Stat(dir); err == nil {
+				spec.Mounts = append(spec.Mounts, specs.Mount{
+					Type:        "bind",
+					Source:      dir,
+					Destination: dir,
+					Options:     []string{"rbind", "ro"},
+				})
+			}
+		}
+		return spec
+	}
+
+	spec := newSpec()
+	cont := startContainer(t, conf, spec, setupBundle(t, conf, spec), nil)
+	if out, err := executeCombinedOutput(conf, cont, nil, "/bin/touch", "-m", "-d", "@1791000000", "/"); err != nil {
+		t.Fatalf("failed to set mtime of /: %v, output: %s", err, out)
+	}
+	imageDir := makeTempDir(t, "fs-checkpoint")
+	if err := cont.FSSave(conf, imageDir, sandbox.FSSaveOpts{Paths: []string{"/"}}); err != nil {
+		t.Fatalf("error saving filesystem checkpoint: %v", err)
+	}
+
+	spec = newSpec()
+	cont = startContainer(t, conf, spec, setupBundle(t, conf, spec), func(args *Args) {
+		args.FSRestoreImagePath = imageDir
+	})
+	out, err := executeCombinedOutput(conf, cont, nil, "/usr/bin/stat", "-c", "%Y", "/")
+	if err != nil {
+		t.Fatalf("failed to stat /: %v, output: %s", err, out)
+	}
+	if got, want := strings.TrimSpace(string(out)), "1791000000"; got != want {
+		t.Errorf("mtime of / after restore: got %s, want %s", got, want)
+	}
+
+	// The filestore is in the rootfs on the host, but not visible in the sandbox.
+	filestore := sentryapi.SelfFilestoreName(cont.sandboxID())
+	if _, err := os.Stat(filepath.Join(spec.Root.Path, filestore)); err != nil {
+		t.Fatalf("filestore not found in the rootfs: %v", err)
+	}
+	out, err = executeCombinedOutput(conf, cont, nil, "/bin/ls", "-a", "/")
+	if err != nil {
+		t.Fatalf("failed to list /: %v, output: %s", err, out)
+	}
+	if strings.Contains(string(out), filestore) {
+		t.Errorf("filestore %q is visible in /: %s", filestore, out)
+	}
+}
+
 // TestCheckpointRestoreTUN tests that a TUN device created inside a container
 // is preserved across multiple checkpoint (with resume) and restore cycles
 // along with its addresses and routes, and can be modified after each restore.
