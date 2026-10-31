@@ -97,6 +97,85 @@ func sendAndReceive(t *testing.T, dut testbench.DUT, conn testbench.TCPIPv4, num
 	return lastSent
 }
 
+// TestRACKTailProbeACK checks when an ACK establishes that a tail loss probe
+// repaired a loss (RFC 8985 section 7.4.2).
+func TestRACKTailProbeACK(t *testing.T) {
+	for _, tc := range []struct {
+		name                                       string
+		sameSequence, repeatAfterByte, dsack, loss bool
+	}{
+		{name: "DuplicateACK", sameSequence: true},
+		{name: "MatchingDSACK", dsack: true, repeatAfterByte: true},
+		{name: "NoDuplicate", loss: true},
+		{name: "UnrelatedDSACK", dsack: true, loss: true},
+		{name: "WindowUpdate", repeatAfterByte: true, loss: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dut, conn, fd, mss := createSACKConnection(t)
+			dut.SetSockOpt(t, fd, unix.IPPROTO_TCP, unix.TCP_CONGESTION, []byte("reno"))
+			sendAndReceive(t, dut, conn, numPktsForRTT, fd, mss, true /* sendACK */)
+
+			// Withhold ACKs for two segments. A retransmission of the second
+			// segment, rather than the first, identifies the tail loss probe.
+			sendAndReceive(t, dut, conn, 2, fd, mss, false /* sendACK */)
+			end := *conn.RemoteSeqNum(t)
+			start := end - seqnum.Value(mss)
+			if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(uint32(start))}, &testbench.Payload{Bytes: make([]byte, mss)}, time.Second); err != nil {
+				t.Fatalf("did not receive tail probe: %v", err)
+			}
+			before := dut.GetSockOptTCPInfo(t, fd)
+
+			// Reading data carried by the advancing ACK proves the sender has
+			// processed this packet before TCP_INFO is sampled.
+			advance := func(ack seqnum.Value, options []byte) linux.TCPInfo {
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(ack)), Options: options}, &testbench.Payload{Bytes: []byte{'x'}})
+				if got := dut.Recv(t, fd, 1, 0); string(got) != "x" {
+					t.Fatalf("received %q, want byte carried by ACK", got)
+				}
+				return dut.GetSockOptTCPInfo(t, fd)
+			}
+			if tc.sameSequence {
+				// Neither ACK carries data, so their peer sequences, ACKs
+				// and advertised windows are identical.
+				ack := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end))}
+				conn.Send(t, ack)
+				conn.Send(t, ack)
+			}
+			atEnd := advance(end, nil)
+			if atEnd.SndSsthresh != before.SndSsthresh {
+				t.Errorf("ACK at probe end cut ssthresh from %d to %d (cwnd %d to %d)", before.SndSsthresh, atEnd.SndSsthresh, before.SndCwnd, atEnd.SndCwnd)
+			}
+
+			var options []byte
+			if tc.dsack {
+				dsackEnd := end
+				if !tc.repeatAfterByte {
+					// A duplicate of the preceding segment says nothing about
+					// whether both copies of the probe segment arrived.
+					dsackEnd = start
+				}
+				opts := make([]byte, 12)
+				n := header.EncodeNOP(opts)
+				n += header.EncodeNOP(opts[n:])
+				n += header.EncodeSACKBlocks([]header.SACKBlock{{Start: dsackEnd - seqnum.Value(mss), End: dsackEnd}}, opts[n:])
+				options = opts[:n]
+			}
+			if tc.repeatAfterByte {
+				// The byte on the preceding ACK advances the peer sequence.
+				// Without a matching DSACK, this is a window update.
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end)), Options: options})
+				options = nil
+			}
+			sendAndReceive(t, dut, conn, 1, fd, mss, false /* sendACK */)
+			after := advance(end.Add(seqnum.Size(mss)), options)
+			t.Logf("probe cwnd/ssthresh: before=%d/%d end=%d/%d beyond=%d/%d", before.SndCwnd, before.SndSsthresh, atEnd.SndCwnd, atEnd.SndSsthresh, after.SndCwnd, after.SndSsthresh)
+			if got := after.SndSsthresh < before.SndSsthresh; got != tc.loss {
+				t.Errorf("ACK beyond probe: ssthresh changed from %d to %d, want reduction=%t", before.SndSsthresh, after.SndSsthresh, tc.loss)
+			}
+		})
+	}
+}
+
 // TestRACKTLPAllPacketsLost tests TLP when an entire flight of data is lost.
 func TestRACKTLPAllPacketsLost(t *testing.T) {
 	dut, conn, acceptFd, payloadSize := createSACKConnection(t)
