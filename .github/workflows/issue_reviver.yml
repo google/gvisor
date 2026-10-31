@@ -7,14 +7,18 @@ name: "Issue reviver"
 
 jobs:
   issue_reviver:
+    if: github.repository == 'google/gvisor'
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      if: github.repository == 'google/gvisor'
-    - run: make run TARGETS="//tools/github" ARGS="-path=. revive"
-      if: github.repository == 'google/gvisor'
+      with:
+        persist-credentials: false
+    - name: Build the reviver
+      run: bazel run --run_in_cwd --script_path="$RUNNER_TEMP/issue-reviver" //tools/github
+    - name: Revive issues
+      run: '"$RUNNER_TEMP/issue-reviver" -path=. revive'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_REPOSITORY: ${{ github.repository }}
