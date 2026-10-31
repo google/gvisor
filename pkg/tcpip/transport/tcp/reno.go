@@ -85,6 +85,9 @@ func (r *renoState) reduceSlowStartThreshold() {
 //
 // +checklocks:r.s.ep.mu
 func (r *renoState) Update(packetsAcked int, _ time.Duration, _ tcpip.MonotonicTime) {
+	if packetsAcked == 0 {
+		return
+	}
 	if r.s.SndCwnd < r.s.Ssthresh {
 		packetsAcked = r.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {
@@ -120,6 +123,9 @@ func (r *renoState) HandleRTOExpired() {
 func (r *renoState) PostRecovery() {
 	// noop.
 }
+
+// SetApplicationLimited implements congestionControl.SetApplicationLimited. Reno has no epoch.
+func (*renoState) SetApplicationLimited(bool) {}
 
 // HandleWindowRestart implements congestionControl.HandleWindowRestart.
 //

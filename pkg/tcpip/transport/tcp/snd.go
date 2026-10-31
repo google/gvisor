@@ -76,13 +76,15 @@ type congestionControl interface {
 	// notifies congestion control with CA_EVENT_CWND_RESTART.
 	HandleWindowRestart()
 
-	// Update is invoked when processing inbound acks. It's passed the
-	// number of packet's that were acked by the most recent cumulative
-	// acknowledgement.  rtt is the round-trip time, or is set to unknownRTT
-	// (above) to indicate the time is unknown. ackTime is the time the
-	// processed ACK arrived at the stack (its ingress timestamp), used for
-	// arrival-anchored timing such as CUBIC HyStart's ACK-train detection so
-	// that an ACK delayed inside the stack does not distort it.
+	// SetApplicationLimited reports whether the current flight is too small to
+	// earn congestion window growth. Time-based controllers pause their epoch.
+	SetApplicationLimited(bool)
+
+	// Update processes a cumulative ACK. packetsAcked counts packets eligible
+	// for congestion window growth; it is zero when the flight was too small
+	// to earn growth. rtt is the RTT sample, or unknownRTT if unavailable.
+	// ackTime is the ACK's ingress timestamp, so time spent in the stack
+	// does not distort measurements such as CUBIC HyStart's ACK train.
 	Update(packetsAcked int, rtt time.Duration, ackTime tcpip.MonotonicTime)
 
 	// PostRecovery is invoked when the sender is exiting a fast retransmit/
@@ -121,6 +123,16 @@ type sender struct {
 	// partial-MSS segment, including a partial tail in a GSO packet. Minshall's
 	// variant of Nagle holds another small segment until this one is ACKed.
 	smallSegmentEnd seqnum.Value
+
+	// Keep the strongest evidence of window use through the last byte of the
+	// corresponding flight. A partially acknowledged full flight still earns
+	// growth even if there is no more application data to send.
+	// +checklocks:ep.mu
+	cwndUseEnd seqnum.Value
+	// +checklocks:ep.mu
+	cwndUsePeak int
+	// +checklocks:ep.mu
+	cwndUseFull bool
 
 	// lr is the loss recovery algorithm used by the sender.
 	lr lossRecovery
@@ -1106,6 +1118,26 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 	}
 }
 
+// cwndLimited reports whether ACKs of this flight may grow the congestion
+// window. In slow start, allow growth toward twice the flight size so that
+// applications which use more than half the window can still probe for capacity.
+//
+// +checklocks:s.ep.mu
+func (s *sender) cwndLimited() bool {
+	return s.cwndUseFull || (s.SndCwnd < s.Ssthresh && s.cwndUsePeak > s.SndCwnd/2)
+}
+
+// +checklocks:s.ep.mu
+func (s *sender) recordWindowUse() {
+	full := s.Outstanding >= s.SndCwnd
+	if !s.SndUna.LessThan(s.cwndUseEnd) || full || (!s.cwndUseFull && s.Outstanding > s.cwndUsePeak) {
+		s.cwndUseEnd = s.SndNxt
+		s.cwndUsePeak = s.Outstanding
+		s.cwndUseFull = full
+	}
+	s.cc.SetApplicationLimited(!s.cwndLimited())
+}
+
 // sendData sends new data segments. It is called when data becomes available or
 // when the send window opens up.
 // +checklocks:s.ep.mu
@@ -1149,6 +1181,7 @@ func (s *sender) sendData() {
 		s.updateWriteNext(seg.Next())
 	}
 
+	s.recordWindowUse()
 	s.postXmit(dataSent, true /* shouldScheduleProbe */)
 }
 
@@ -1750,7 +1783,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
 		if !s.FastRecovery.Active {
-			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT, rcvdSeg.rcvdTime)
+			// Without evidence that the window was used, retain the RTT
+			// sample but give the ACK no congestion-window growth credit.
+			ackedPackets := 0
+			if s.cwndLimited() {
+				ackedPackets = originalOutstanding - s.Outstanding
+			}
+			s.cc.Update(ackedPackets, bestRTT, rcvdSeg.rcvdTime)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
 				s.state = tcpip.Open
 				// Update RACK when we are exiting fast or RTO
