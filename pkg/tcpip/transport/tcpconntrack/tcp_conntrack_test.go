@@ -518,6 +518,501 @@ func dataLen(tcp header.TCP) int {
 	return len(tcp) - int(tcp.DataOffset())
 }
 
+func TestWindowScaling(t *testing.T) {
+	// Send SYN with WS option (scale 2).
+	opts := make([]byte, 4)
+	header.EncodeWSOption(2, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp := make(header.TCP, header.TCPMinimumSize+len(opts))
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1234,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn,
+		WindowSize: 10000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	tcb := tcpconntrack.TCB{}
+	tcb.Init(tcp, dataLen(tcp))
+
+	// Receive SYN-ACK with WS option (scale 3).
+	header.EncodeWSOption(3, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     789,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn | header.TCPFlagAck,
+		WindowSize: 20000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send another packet from reply to update window with scaling.
+	tcp = make(header.TCP, header.TCPMinimumSize)
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 20000,
+	})
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Now connection is established.
+	// Original window size advertised by reply was 20000 << 3 = 160000.
+	// So reply can accept sequence numbers up to 1235 + 160000 = 161235.
+
+	// Send data from original with sequence number within that range.
+	// Let's send a packet at seq 100000.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     100000,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send FIN from original at seq 100000.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     100000,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Receive ACK for FIN (ack 100001).
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     100001,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Receive FIN from reply.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     100001,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send ACK from original.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     100001,
+		AckNum:     791,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultClosedByOriginator {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultClosedByOriginator)
+	}
+}
+
+func TestWindowScalingDisabled(t *testing.T) {
+	// Send SYN without WS option.
+	tcp := make(header.TCP, header.TCPMinimumSize)
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1234,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagSyn,
+		WindowSize: 10000,
+	})
+
+	tcb := tcpconntrack.TCB{}
+	tcb.Init(tcp, dataLen(tcp))
+
+	// Receive SYN-ACK without WS option.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     789,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagSyn | header.TCPFlagAck,
+		WindowSize: 20000,
+	})
+
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send data from original with sequence number outside unscaled window.
+	// Window is [1235, 1235 + 20000 = 21235).
+	// Let's send a packet at seq 100000.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     100000,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send FIN from original at seq 100000.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     100000,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Receive ACK for FIN (ack 100001).
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     100001,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Receive FIN from reply.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     100001,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send ACK from original.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     100001,
+		AckNum:     791,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+	// Should NOT be closed because the FIN was ignored!
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+}
+
+func TestWindowScalingMaxShiftCapped(t *testing.T) {
+	// Send SYN with WS option (scale 15).
+	opts := make([]byte, 4)
+	header.EncodeWSOption(15, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp := make(header.TCP, header.TCPMinimumSize+len(opts))
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1234,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn,
+		WindowSize: 10000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	tcb := tcpconntrack.TCB{}
+	tcb.Init(tcp, dataLen(tcp))
+
+	// Receive SYN-ACK with WS option (scale 15) and window 1000.
+	// Both sides use 15, so both should cap at 14.
+	header.EncodeWSOption(15, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     789,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn | header.TCPFlagAck,
+		WindowSize: 1000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send another packet from reply to update window with scaling.
+	// Window 1000. Effective window should be 1000 << 14 = 16384000.
+	// If not capped (15), it would be 1000 << 15 = 32768000.
+	tcp = make(header.TCP, header.TCPMinimumSize)
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 1000,
+	})
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send data from original with seq 20,000,000 (out of capped window, in uncapped window).
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 20000000,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	// It should be IGNORED because it is out of window.
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Verify it was ignored by trying to close connection with advanced seq.
+	// If it was accepted, FIN at 1235 + 20000100 would be accepted.
+	// If it was ignored, FIN at 1235 + 20000100 is out of window and ignored.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 20000100,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	tcb.UpdateStateOriginal(tcp, dataLen(tcp))
+
+	// Receive FIN/ACK from reply.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     1235 + 20000101,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	tcb.UpdateStateReply(tcp, dataLen(tcp))
+
+	// Send ACK from original.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 20000101,
+		AckNum:     791,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	// Should NOT be closed because FIN was ignored!
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+}
+
+func TestWindowScalingSynAckNotScaled(t *testing.T) {
+	// Send SYN with WS option (scale 3).
+	opts := make([]byte, 4)
+	header.EncodeWSOption(3, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp := make(header.TCP, header.TCPMinimumSize+len(opts))
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1234,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn,
+		WindowSize: 10000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	tcb := tcpconntrack.TCB{}
+	tcb.Init(tcp, dataLen(tcp))
+
+	// Receive SYN-ACK with WS option (scale 3) and window 1000.
+	header.EncodeWSOption(3, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     789,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn | header.TCPFlagAck,
+		WindowSize: 1000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Now connection is established.
+	// Window in SYN-ACK should NOT be scaled. So window is 1000.
+	// Data at 1235 + 500 should be ACCEPTED.
+	tcp = make(header.TCP, header.TCPMinimumSize+100)
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 500,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Data at 1235 + 1500 should be IGNORED (out of window 1000).
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 1500,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Verify that 1235 + 1500 was ignored by sending ACK for it.
+	// If it was accepted, ACK would be accepted.
+	// If it was ignored, ACK is ahead of nxt and ignored.
+	tcp = make(header.TCP, header.TCPMinimumSize)
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     1235 + 1500,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	// Should not affect state.
+	tcb.UpdateStateReply(tcp, dataLen(tcp))
+
+	// Try to close connection using seq based on 1235 + 500 + 100 = 1235 + 600.
+	// If 1235 + 1500 was ignored, this should work.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 600,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	tcb.UpdateStateOriginal(tcp, dataLen(tcp))
+
+	// Receive FIN/ACK from reply.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     790,
+		AckNum:     1235 + 601,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck | header.TCPFlagFin,
+		WindowSize: 10000,
+	})
+	tcb.UpdateStateReply(tcp, dataLen(tcp))
+
+	// Send ACK from original.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1235 + 601,
+		AckNum:     791,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	// Connection should CLOSE successfully!
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultClosedByOriginator {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultClosedByOriginator)
+	}
+}
+
+func TestWindowScalingSynAckBoundary(t *testing.T) {
+	// Send SYN with WS option (scale 3).
+	opts := make([]byte, 4)
+	header.EncodeWSOption(3, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp := make(header.TCP, header.TCPMinimumSize+len(opts))
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     1234,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn,
+		WindowSize: 10000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	tcb := tcpconntrack.TCB{}
+	tcb.Init(tcp, dataLen(tcp))
+
+	// Receive SYN-ACK with WS option (scale 3) and window 1000.
+	header.EncodeWSOption(3, opts)
+	header.EncodeNOP(opts[3:])
+
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     789,
+		AckNum:     1235,
+		DataOffset: header.TCPMinimumSize + uint8(len(opts)),
+		Flags:      header.TCPFlagSyn | header.TCPFlagAck,
+		WindowSize: 1000,
+	})
+	copy(tcp[header.TCPMinimumSize:], opts)
+
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Now connection is established.
+	// Window in SYN-ACK should NOT be scaled. So window is 1000.
+
+	// Send data from original at boundary: 1235 + 1000 - 1 = 2234.
+	// This should be ACCEPTED.
+	tcp = make(header.TCP, header.TCPMinimumSize+1)
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     2234,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+
+	// Send data from original at boundary: 1235 + 1000 = 2235.
+	// This should be IGNORED.
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     2235,
+		AckNum:     790,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 10000,
+	})
+
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
+		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
