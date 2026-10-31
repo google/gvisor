@@ -395,6 +395,15 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		return nil
 	}
 
+	// PAWS also protects the final handshake ACK, before it can complete
+	// the connection or change SYN-cookie state (RFC 7323 Appendix D).
+	if h.ep.rejectTimestamp(s) {
+		if h.ep.allowOutOfWindowAck() {
+			h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
+		}
+		return nil
+	}
+
 	// It's possible that s is an ACK of a SYN cookie. This can happen if:
 	//
 	//   - We receive a SYN while under load and issue a SYN/ACK with
@@ -1322,6 +1331,13 @@ func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 	// Invoke the tcp probe if installed. The tcp probe function will update
 	// the TCPEndpointState after the segment is processed.
 	defer e.probeSegmentLocked()
+
+	// PAWS precedes sequence and ACK processing, so an old duplicate cannot
+	// deliver data or change the sender's state (RFC 7323 section 5.3).
+	if e.rejectTimestamp(s) {
+		e.snd.maybeSendOutOfWindowAck(s)
+		return true, nil
+	}
 
 	if s.flags.Contains(header.TCPFlagRst) {
 		if ok, err := e.handleReset(s); !ok {

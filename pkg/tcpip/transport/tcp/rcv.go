@@ -541,10 +541,12 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 	// This behavior overrides RFC793 page 70 where we transition to CLOSED
 	// on receiving RST, which is also default Linux behavior.
 	// On Linux the RST can be ignored by setting sysctl net.ipv4.tcp_rfc1337.
-	//
-	// As we do not yet support PAWS, we are being conservative in ignoring
-	// RSTs by default.
 	if s.flags.Contains(header.TCPFlagRst) {
+		return false, false
+	}
+
+	if r.ep.rejectTimestamp(s) {
+		r.ep.snd.maybeSendOutOfWindowAck(s)
 		return false, false
 	}
 
