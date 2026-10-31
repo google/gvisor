@@ -1,0 +1,72 @@
+// Copyright 2023 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//go:build fuzz
+// +build fuzz
+
+package secfuzz
+
+import "gvisor.dev/gvisor/pkg/bpf"
+
+// Go's fuzzer discovers interesting inputs by tracking Go code coverage. It
+// cannot see which BPF instructions were executed. Give each possible
+// instruction a distinct Go branch so that reaching a new BPF instruction
+// also gives the fuzzer new Go code coverage. BPF programs are limited to
+// bpf.MaxInstructions, so we can enumerate every instruction here.
+//
+// Generate these branches separately for the two programs we compare.
+// Reaching an instruction in one program must not count as covering that
+// instruction in the other.
+const coverageBlockSize = {{.BlockSize}}
+
+// Visit blocks and their instructions from the end of the program towards
+// the start. Each block sees the same prefix lengths as the original switch.
+func countExecutedLines(covered []bool, fuzzee *Fuzzee, blocks []func([]bool, *Fuzzee)) {
+	if len(covered) > bpf.MaxInstructions {
+		return
+	}
+	for len(covered) != 0 {
+		block := (len(covered) - 1) / coverageBlockSize
+		blocks[block](covered, fuzzee)
+		covered = covered[:block*coverageBlockSize]
+	}
+}
+
+{{define "blocks"}}[...]func([]bool, *Fuzzee){
+{{range .Blocks}}	func(covered []bool, fuzzee *Fuzzee) {
+		switch len(covered) {
+{{range .}}		case {{.Length}}:
+			if covered[{{.Index}}] {
+				fuzzee.coverage[{{.Index}}].Store(true)
+			}
+{{if .Fallthrough}}			fallthrough
+{{end}}{{end}}		}
+	},
+{{end}}}
+{{- end}}
+// countExecutedLinesProgram1 converts coverage data of the first BPF program
+// to Go coverage data.
+func countExecutedLinesProgram1(execution bpf.ExecutionMetrics, fuzzee *Fuzzee) {
+	countExecutedLines(execution.Coverage, fuzzee, coverageProgram1[:])
+}
+
+var coverageProgram1 = {{template "blocks" .}}
+
+// countExecutedLinesProgram2 converts coverage data of the second BPF
+// program to Go coverage data.
+func countExecutedLinesProgram2(execution bpf.ExecutionMetrics, fuzzee *Fuzzee) {
+	countExecutedLines(execution.Coverage, fuzzee, coverageProgram2[:])
+}
+
+var coverageProgram2 = {{template "blocks" .}}
