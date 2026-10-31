@@ -91,3 +91,15 @@ image_outputs(
     image = ":tmpfile",
     image_name = "basic/tmpfile",
 )
+
+image_manifest(
+    name = "httpd",
+    base = "@test_httpd",
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "httpd",
+    image = ":httpd",
+    image_name = "basic/httpd",
+)

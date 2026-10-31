@@ -312,6 +312,32 @@ img_pull(
     tag = "1.4.3",
 )
 
+img_pull(
+    name = "test_httpd",
+    digest = "sha256:cd88fee4eab37f0d8cd04b06ef97285ca981c27b4d685f0321e65c5d4fd49357",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/httpd",
+    tag = "2.4.43",
+)
+
+img_pull(
+    name = "benchmark_httpd",
+    digest = "sha256:a30cd4cd57f3f3c3be9b2d16384d2488839996bb14c67df2b51f1ecbb3e584a1",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/httpd",
+    tag = "2.4.69-trixie",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
