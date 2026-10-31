@@ -6759,7 +6759,7 @@ func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCooki
 	}
 
 	if synCookieInUse {
-		// When cookies are in use window scaling is disabled.
+		// Without timestamps, a SYN cookie cannot preserve the window shift.
 		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
 			WS:  -1,
 			MSS: c.MSSWithoutOptions(),
@@ -6813,7 +6813,7 @@ func executeV6Handshake(t *testing.T, c *context.Context, srcPort uint16, synCoo
 	}
 
 	if synCookieInUse {
-		// When cookies are in use window scaling is disabled.
+		// Without timestamps, a SYN cookie cannot preserve the window shift.
 		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
 			WS:  -1,
 			MSS: c.MSSWithoutOptionsV6(),
@@ -9709,8 +9709,10 @@ func TestTimestampSynCookies(t *testing.T) {
 	}
 	defer ep.Close()
 
-	tcpOpts := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
-	header.EncodeTSOption(42, 0, tcpOpts[2:])
+	const peerShift = 3
+	synOpts := [16]byte{header.TCPOptionNOP, header.TCPOptionNOP}
+	header.EncodeTSOption(42, 0, synOpts[2:])
+	header.EncodeWSOption(peerShift, synOpts[12:])
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
@@ -9724,30 +9726,37 @@ func TestTimestampSynCookies(t *testing.T) {
 		Flags:   header.TCPFlagSyn,
 		RcvWnd:  seqnum.Size(512),
 		SeqNum:  iss,
-		TCPOpts: tcpOpts[:],
+		TCPOpts: synOpts[:],
 	})
-	// Get the TSVal of SYN-ACK.
 	b := c.GetPacket()
 	defer b.Release()
 	tcpHdr := header.TCP(header.IPv4(b.AsSlice()).Payload())
 	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
-	initialTSVal := tcpHdr.ParsedOptions().TSVal
+	offered := header.ParseSynOptions(tcpHdr.Options(), true /* isAck */)
+	if offered.WS < 0 {
+		t.Fatal("SYN-ACK omitted window scaling")
+	}
 
-	header.EncodeTSOption(420, initialTSVal, tcpOpts[2:])
+	// Shrinking the listener buffer must not change the units advertised
+	// to a peer whose handshake is in progress.
+	ep.SocketOptions().SetReceiveBufferSize(16<<10, true /* notify */)
+	const peerWindowField = 2
+	tcpOpts := synOpts[:12]
+	header.EncodeTSOption(420, offered.TSVal, tcpOpts[2:])
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagAck,
-		RcvWnd:  seqnum.Size(512),
+		RcvWnd:  peerWindowField,
 		SeqNum:  iss + 1,
 		AckNum:  c.IRS + 1,
-		TCPOpts: tcpOpts[:],
+		TCPOpts: tcpOpts,
 	})
-	c.EP, _, err = ep.Accept(nil)
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
 	wq.EventRegister(&we)
 	defer wq.EventUnregister(&we)
+	c.EP, _, err = ep.Accept(nil)
 	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
 		// Wait for connection to be established.
 		select {
@@ -9767,19 +9776,25 @@ func TestTimestampSynCookies(t *testing.T) {
 	// Advance the clock again so that we expect the next TSVal to change.
 	const elapsed = time.Second
 	clock.Advance(elapsed)
-	data := []byte{1, 2, 3}
-	var r bytes.Reader
-	r.Reset(data)
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+	// Queue one more byte than the peer advertised in its final ACK.
+	const peerWindow = peerWindowField << peerShift
+	if _, err := c.EP.Write(bytes.NewReader(make([]byte, peerWindow+1)), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
-	// The SYN-ACK may be one tick behind the endpoint clock to encode SACK.
 	p := c.GetPacket()
 	defer p.Release()
-	dataTSVal := header.TCP(header.IPv4(p.AsSlice()).Payload()).ParsedOptions().TSVal
-	if got, want := dataTSVal-initialTSVal, uint32(elapsed/time.Millisecond); got != want && got != want+1 {
-		t.Fatalf("timestamp advanced by %d ticks, want %d or %d", got, want, want+1)
+	dataHdr := header.TCP(header.IPv4(p.AsSlice()).Payload())
+	if got, want := len(dataHdr.Payload()), peerWindow; got != want {
+		t.Errorf("sent %d bytes within the peer's window, want %d", got, want)
+	}
+	if got, limit := int64(dataHdr.WindowSize())<<offered.WS, c.EP.SocketOptions().GetReceiveBufferSize(); got > limit {
+		t.Errorf("advertised a %d-byte window to the peer with a %d-byte receive buffer", got, limit)
+	}
+	// The SYN-ACK timestamp can be up to 31 ticks behind the endpoint
+	// clock because it carries five bits of negotiated options.
+	if got, want := dataHdr.ParsedOptions().TSVal-offered.TSVal, uint32(elapsed/time.Millisecond); got < want || got > want+31 {
+		t.Fatalf("timestamp advanced by %d ticks, want [%d, %d]", got, want, want+31)
 	}
 }
 
