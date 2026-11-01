@@ -591,11 +591,10 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe,
 			expOptVal: e.getExperimentOptionValue(route),
 		}
-		if err := e.sendSynTCP(route, fields, synOpts); err != nil {
-			return err
-		}
+		// Linux counts a SYN cookie when it is generated, even if output fails.
+		// https://github.com/torvalds/linux/blob/adc218676/include/net/tcp.h#L2308-L2316
 		e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
-		return nil
+		return e.sendSynTCP(route, fields, synOpts)
 
 	case s.flags.Contains(header.TCPFlagAck):
 		iss := s.ackNumber - 1
