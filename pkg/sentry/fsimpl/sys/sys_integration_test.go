@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -97,6 +98,73 @@ func TestReadCPUFile(t *testing.T) {
 		if diff := cmp.Diff(expected, content); diff != "" {
 			t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
 		}
+	}
+}
+
+func TestNUMATopology(t *testing.T) {
+	s := newTestSystem(t, "" /*pciTestDir*/)
+	defer s.Destroy()
+
+	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("/devices/system/node")), map[string]testutil.DirentType{
+		"has_cpu":           linux.DT_REG,
+		"has_memory":        linux.DT_REG,
+		"has_normal_memory": linux.DT_REG,
+		"online":            linux.DT_REG,
+		"possible":          linux.DT_REG,
+		"node0":             linux.DT_DIR,
+	})
+	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("/devices/system/node/node0")), map[string]testutil.DirentType{
+		"cpumap":   linux.DT_REG,
+		"cpulist":  linux.DT_REG,
+		"distance": linux.DT_REG,
+	})
+
+	for p, want := range map[string]string{
+		"/devices/system/node/online":            "0\n",
+		"/devices/system/node/possible":          "0\n",
+		"/devices/system/node/has_cpu":           "0\n",
+		"/devices/system/node/has_memory":        "0\n",
+		"/devices/system/node/has_normal_memory": "0\n",
+		"/devices/system/node/node0/distance":    "10\n",
+	} {
+		got, err := readTestFile(s, p)
+		if err != nil {
+			t.Fatalf("reading %q: %v", p, err)
+		}
+		if got != want {
+			t.Errorf("%q contains %q, want %q", p, got, want)
+		}
+	}
+}
+
+func TestNUMATopologyCPUFormats(t *testing.T) {
+	for _, tc := range []struct {
+		cores       int
+		wantCPUList string
+		wantCPUMap  string
+	}{
+		{cores: 1, wantCPUList: "0\n", wantCPUMap: "1\n"},
+		{cores: 64, wantCPUList: "0-63\n", wantCPUMap: "ffffffff,ffffffff\n"},
+	} {
+		t.Run(fmt.Sprintf("%d cores", tc.cores), func(t *testing.T) {
+			previous := runtime.GOMAXPROCS(tc.cores)
+			defer runtime.GOMAXPROCS(previous)
+
+			s := newTestSystem(t, "" /*pciTestDir*/)
+			defer s.Destroy()
+			for p, want := range map[string]string{
+				"/devices/system/node/node0/cpulist": tc.wantCPUList,
+				"/devices/system/node/node0/cpumap":  tc.wantCPUMap,
+			} {
+				got, err := readTestFile(s, p)
+				if err != nil {
+					t.Fatalf("reading %q: %v", p, err)
+				}
+				if got != want {
+					t.Errorf("%q contains %q, want %q", p, got, want)
+				}
+			}
+		})
 	}
 }
 
@@ -515,11 +583,6 @@ func newRDMATestSnapshot() *rdma.Snapshot {
 				ErrAttrs: map[string]int32{"speed": int32(unix.EINVAL)},
 			}},
 		}},
-		NUMA: &rdma.NUMA{
-			// Two-node host (aggregate ranges "0-1"): the sandbox must
-			// advertise a single node covering the sandbox's CPUs.
-			Aggregate: map[string]string{"online": "0-1\n", "possible": "0-1\n"},
-		},
 	}
 }
 
@@ -534,7 +597,9 @@ func readTestFile(s *testutil.System, p string) (string, error) {
 }
 
 func TestRDMASysfs(t *testing.T) {
-	s := newTestSystemWithInternalData(t, &sys.InternalData{RDMASysfs: newRDMATestSnapshot()})
+	s := newTestSystemWithInternalData(t, &sys.InternalData{
+		RDMASysfs: newRDMATestSnapshot(),
+	})
 	defer s.Destroy()
 
 	const nicLeaf = "/devices/pci0000:07/0000:07:01.0/0000:0c:00.0"
@@ -609,8 +674,15 @@ func TestRDMASysfs(t *testing.T) {
 		},
 		"/bus/pci/drivers":           {"mlx5_core": linux.DT_DIR},
 		"/bus/pci/drivers/mlx5_core": {"0000:0c:00.0": linux.DT_LNK},
-		// The two host nodes collapse into a single sandbox node.
-		"/devices/system/node": {"online": linux.DT_REG, "possible": linux.DT_REG, "node0": linux.DT_DIR},
+		// The virtual NUMA topology coexists with the RDMA sysfs tree.
+		"/devices/system/node": {
+			"online":            linux.DT_REG,
+			"possible":          linux.DT_REG,
+			"has_cpu":           linux.DT_REG,
+			"has_memory":        linux.DT_REG,
+			"has_normal_memory": linux.DT_REG,
+			"node0":             linux.DT_DIR,
+		},
 		"/devices/system/node/node0": {
 			"cpumap":   linux.DT_REG,
 			"cpulist":  linux.DT_REG,
