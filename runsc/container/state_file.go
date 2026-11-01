@@ -31,6 +31,16 @@ import (
 
 const stateFileExtension = "state"
 
+var (
+	// syncFile synchronizes a temporary file's in-core state to disk.
+	// Variable for testing.
+	syncFile = func(f *os.File) error { return f.Sync() }
+
+	// syncDir synchronizes a directory's in-core state to disk after rename.
+	// Variable for testing.
+	syncDir = func(f *os.File) error { return f.Sync() }
+)
+
 // LoadOpts provides options for Load()ing a container.
 type LoadOpts struct {
 	// Exact tells whether the search should be exact. See Load() for more.
@@ -341,6 +351,15 @@ func (s *StateFile) UnlockOrDie() {
 
 // SaveLocked saves 'v' to the state file.
 //
+// Durability protocol:
+// 1. Write the marshaled JSON payload to a temporary file.
+// 2. Sync the temporary file to storage so data blocks and inode metadata persist.
+// 3. Close the temporary write descriptor before renaming.
+// 4. Atomically rename the temporary file over the canonical state file path.
+// 5. Sync the parent directory to ensure the directory entry update is durable.
+// 6. Reopen the canonical state file read-only to preserve the inode-identity
+//    invariant in s.loaded (protects against inode reuse in unchangedLocked).
+//
 // Preconditions: lock(*) must been called before.
 func (s *StateFile) SaveLocked(v any) error {
 	if !s.flock.Locked() {
@@ -356,17 +375,50 @@ func (s *StateFile) SaveLocked(v any) error {
 	if err != nil {
 		return fmt.Errorf("writing json file: %v", err)
 	}
+
 	if _, err := f.Write(meta); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing json file: %v", err)
 	}
-	if err := os.Rename(tmpPath, s.statePath()); err != nil {
+
+	// 1. Flush temporary file data and metadata to disk.
+	if err := syncFile(f); err != nil {
 		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("syncing tmp state file: %w", err)
+	}
+
+	// 2. Close temporary write descriptor prior to replacement.
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("closing tmp state file: %w", err)
+	}
+
+	// 3. Atomically replace the state file.
+	if err := os.Rename(tmpPath, s.statePath()); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming json file: %v", err)
 	}
-	s.setLoaded(f)
+
+	// 4. Flush the containing directory to commit the rename to disk.
+	if dir, err := os.Open(s.RootDir); err == nil {
+		dirErr := syncDir(dir)
+		_ = dir.Close()
+		if dirErr != nil {
+			return fmt.Errorf("syncing state directory after rename: %w", dirErr)
+		}
+	}
+
+	// 5. Reopen the replaced state file in read-only mode and store it in
+	// s.loaded. Holding an open descriptor preserves the inode-identity invariant
+	// used by unchangedLocked() to detect replacement and prevent inode reuse.
+	reopened, err := os.Open(s.statePath())
+	if err != nil {
+		s.setLoaded(nil)
+		return fmt.Errorf("reopening state file: %w", err)
+	}
+	s.setLoaded(reopened)
 	return nil
 }
 

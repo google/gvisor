@@ -17,6 +17,7 @@ package container
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -222,5 +223,229 @@ func TestModifyGofer(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatalf("modify() failed: %v", err)
+	}
+}
+
+// countOpenFDs counts open file descriptors in the current process by reading /proc/self/fd.
+func countOpenFDs(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Skipf("cannot read /proc/self/fd: %v", err)
+	}
+	return len(entries)
+}
+
+// TestSaveLockedDurableSyncFailure verifies that when syncing the temporary file
+// fails before replacement, the original state file remains readable and
+// untouched, and the temporary file is removed.
+func TestSaveLockedDurableSyncFailure(t *testing.T) {
+	rootDir := t.TempDir()
+	id := FullID{SandboxID: "sb", ContainerID: "sb"}
+	c := &Container{
+		ID:         id.ContainerID,
+		Spec:       &specs.Spec{},
+		Status:     Running,
+		Sandbox:    &sandbox.Sandbox{ID: id.SandboxID},
+		Saver:      StateFile{RootDir: rootDir, ID: id},
+		allowWrite: true,
+	}
+
+	if err := c.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Saver.UnlockOrDie()
+
+	// Initial successful save.
+	if err := c.saveLocked(); err != nil {
+		t.Fatalf("initial saveLocked failed: %v", err)
+	}
+
+	statePath := c.Saver.statePath()
+	origContent, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("reading state file: %v", err)
+	}
+
+	// Inject failure into syncFile.
+	oldSyncFile := syncFile
+	defer func() { syncFile = oldSyncFile }()
+	syncFile = func(f *os.File) error {
+		return errors.New("injected sync failure")
+	}
+
+	// Attempt save with modified state.
+	c.Status = Paused
+	err = c.saveLocked()
+	if err == nil {
+		t.Fatal("saveLocked succeeded unexpectedly when syncFile failed")
+	}
+
+	// 1. Old state file remains untouched and readable.
+	newContent, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("reading original state file: %v", err)
+	}
+	if string(newContent) != string(origContent) {
+		t.Errorf("original state file was altered on sync failure")
+	}
+
+	// 2. Temporary file must be cleaned up.
+	tmpPath := c.Saver.tmpStatePath()
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Errorf("tmp file %q still exists after sync failure: %v", tmpPath, err)
+	}
+}
+
+// TestSaveLockedDurableDirSyncFailure verifies that when directory sync fails
+// after a successful rename, SaveLocked reports an error indicating durability
+// could not be guaranteed.
+func TestSaveLockedDurableDirSyncFailure(t *testing.T) {
+	rootDir := t.TempDir()
+	id := FullID{SandboxID: "sb", ContainerID: "sb"}
+	c := &Container{
+		ID:         id.ContainerID,
+		Spec:       &specs.Spec{},
+		Status:     Running,
+		Sandbox:    &sandbox.Sandbox{ID: id.SandboxID},
+		Saver:      StateFile{RootDir: rootDir, ID: id},
+		allowWrite: true,
+	}
+
+	if err := c.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Saver.UnlockOrDie()
+
+	// Initial successful save.
+	if err := c.saveLocked(); err != nil {
+		t.Fatalf("initial saveLocked failed: %v", err)
+	}
+
+	// Inject failure into syncDir.
+	oldSyncDir := syncDir
+	defer func() { syncDir = oldSyncDir }()
+	syncDir = func(f *os.File) error {
+		return errors.New("injected dir sync failure")
+	}
+
+	c.Status = Paused
+	err := c.saveLocked()
+	if err == nil {
+		t.Fatal("saveLocked succeeded unexpectedly when syncDir failed")
+	}
+	if !strings.Contains(err.Error(), "syncing state directory") {
+		t.Errorf("expected dir sync error, got: %v", err)
+	}
+
+	// Rename already took place on disk; verify state file exists.
+	if _, err := os.Stat(c.Saver.statePath()); err != nil {
+		t.Fatalf("state file not found after rename: %v", err)
+	}
+}
+
+// TestSaveLockedInodeIdentityInvariant verifies that unchangedLocked detects
+// replacement when another save occurs, and reports true when unchanged.
+func TestSaveLockedInodeIdentityInvariant(t *testing.T) {
+	rootDir := t.TempDir()
+	id := FullID{SandboxID: "sb", ContainerID: "sb"}
+	c1 := &Container{
+		ID:         id.ContainerID,
+		Spec:       &specs.Spec{},
+		Status:     Running,
+		Sandbox:    &sandbox.Sandbox{ID: id.SandboxID},
+		Saver:      StateFile{RootDir: rootDir, ID: id},
+		allowWrite: true,
+	}
+
+	if err := c1.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c1.saveLocked(); err != nil {
+		c1.Saver.UnlockOrDie()
+		t.Fatalf("c1 saveLocked failed: %v", err)
+	}
+
+	// Directly after save, c1's loaded fd should match disk.
+	if !c1.Saver.unchangedLocked() {
+		c1.Saver.UnlockOrDie()
+		t.Fatalf("unchangedLocked() = false for c1 immediately after save, want true")
+	}
+
+	// Second container handle simulates another process saving after c1 unlocked.
+	c1.Saver.UnlockOrDie()
+
+	c2 := &Container{
+		ID:         id.ContainerID,
+		Spec:       &specs.Spec{},
+		Status:     Paused,
+		Sandbox:    &sandbox.Sandbox{ID: id.SandboxID},
+		Saver:      StateFile{RootDir: rootDir, ID: id},
+		allowWrite: true,
+	}
+	if err := c2.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c2.saveLocked(); err != nil {
+		t.Fatalf("c2 saveLocked failed: %v", err)
+	}
+	c2.Saver.UnlockOrDie()
+
+	// Re-acquire lock on c1 to call unchangedLocked().
+	if err := c1.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer c1.Saver.UnlockOrDie()
+
+	// c1's loaded handle held open the old inode; now that c2 replaced it,
+	// c1 must detect that it is no longer unchanged.
+	if c1.Saver.unchangedLocked() {
+		t.Errorf("unchangedLocked() = true for c1 after c2 saved, want false")
+	}
+
+	// c2's loaded handle must match current state file.
+	if !c2.Saver.unchangedLocked() {
+		t.Errorf("unchangedLocked() = false for c2 after save, want true")
+	}
+}
+
+// TestSaveLockedNoFDLeak verifies that repeated saves do not leak file descriptors.
+func TestSaveLockedNoFDLeak(t *testing.T) {
+	rootDir := t.TempDir()
+	id := FullID{SandboxID: "sb", ContainerID: "sb"}
+	c := &Container{
+		ID:         id.ContainerID,
+		Spec:       &specs.Spec{},
+		Status:     Running,
+		Sandbox:    &sandbox.Sandbox{ID: id.SandboxID},
+		Saver:      StateFile{RootDir: rootDir, ID: id},
+		allowWrite: true,
+	}
+
+	if err := c.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Saver.UnlockOrDie()
+
+	// Initial warm-up save.
+	if err := c.saveLocked(); err != nil {
+		t.Fatalf("initial saveLocked failed: %v", err)
+	}
+
+	startFDs := countOpenFDs(t)
+
+	// Perform 50 sequential saves.
+	for i := 0; i < 50; i++ {
+		c.Status = Running
+		if err := c.saveLocked(); err != nil {
+			t.Fatalf("saveLocked iteration %d failed: %v", i, err)
+		}
+	}
+
+	endFDs := countOpenFDs(t)
+	if endFDs > startFDs {
+		t.Errorf("file descriptor leak detected: start FDs=%d, end FDs=%d (delta: +%d)",
+			startFDs, endFDs, endFDs-startFDs)
 	}
 }
