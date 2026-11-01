@@ -476,7 +476,7 @@ func TestGraphDeferredObjectDecode(t *testing.T) {
 		//     decodes outer at the end of Pass 0, revealing mapArr, ifaceVal,
 		//     and ifaceSlice.
 		//   - Deferred Pass 1 keeps nestedMap in remaining, then decodes
-		//     mapArr, revealing nestedMap's mapType.
+		//     mapArr, revealing the type of nestedMap.
 		//   - Deferred Pass 2 decodes nestedMap.
 		mapArr := &[2]map[string]defIface{
 			nestedMap,
