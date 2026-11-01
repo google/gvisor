@@ -25,6 +25,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
 #include <climits>
 #include <cstring>
@@ -1511,6 +1512,30 @@ TEST_P(TCPSocketPairTest, WaitTillTimeoutWithCorkOption) {
   char buf[512] = {};
   EXPECT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
+}
+
+// Test that a blocking recv returns 0, not EAGAIN, when another thread shuts
+// the socket down for reading while the recv starts.
+TEST_P(TCPSocketPairTest, ShutdownRdRacingWithBlockingRecv) {
+  const DisableSave disable_save;  // Timing-related.
+  constexpr int kIterations = 500;
+  for (int i = 0; i < kIterations; i++) {
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    std::atomic<bool> started(false);
+    ScopedThread t([&] {
+      started.store(true);
+      char buf[10];
+      EXPECT_THAT(RetryEINTR(recv)(sockets->first_fd(), buf, sizeof(buf), 0),
+                  SyscallSucceedsWithValue(0));
+    });
+    while (!started.load()) {
+    }
+    // Vary the delay, so that the shutdown lands at different points of the
+    // start of the recv.
+    absl::SleepFor(absl::Microseconds(i % 20));
+    ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RD), SyscallSucceeds());
+    t.Join();
+  }
 }
 
 }  // namespace testing

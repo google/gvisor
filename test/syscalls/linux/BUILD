@@ -2009,9 +2009,11 @@ cc_binary(
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -4077,6 +4079,7 @@ cc_binary(
         "//test/util:thread_util",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
     ],
 )
