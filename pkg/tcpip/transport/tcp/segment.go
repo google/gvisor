@@ -26,19 +26,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// queueFlags are used to indicate which queue of an endpoint a particular segment
-// belongs to. This is used to track memory accounting correctly.
-type queueFlags uint8
-
-const (
-	// SegOverheadSize is the size of an empty seg in memory including packet
-	// buffer overhead. It is advised to use SegOverheadSize instead of segSize
-	// in all cases where accounting for segment memory overhead is important.
-	SegOverheadSize = segSize + stack.PacketBufferStructSize + header.IPv4MaximumHeaderSize
-
-	recvQ queueFlags = 1 << iota
-	sendQ
-)
+// SegOverheadSize is the size of an empty seg in memory including packet
+// buffer overhead. It is advised to use SegOverheadSize instead of segSize
+// in all cases where accounting for segment memory overhead is important.
+const SegOverheadSize = segSize + stack.PacketBufferStructSize + header.IPv4MaximumHeaderSize
 
 var segmentPool = sync.Pool{
 	New: func() any {
@@ -55,9 +46,9 @@ type segment struct {
 	segmentEntry
 	segmentRefs
 
-	ep     *Endpoint
-	qFlags queueFlags
-	id     stack.TransportEndpointID `state:"manual"`
+	// ep owns the receive-memory charge for this segment, if any.
+	ep *Endpoint
+	id stack.TransportEndpointID `state:"manual"`
 
 	pkt *stack.PacketBuffer
 
@@ -161,8 +152,6 @@ func (s *segment) clone() *segment {
 	t.rcvdTime = s.rcvdTime
 	t.xmitTime = s.xmitTime
 	t.xmitCount = s.xmitCount
-	t.ep = s.ep
-	t.qFlags = s.qFlags
 	t.dataMemSize = s.dataMemSize
 	t.pkt = s.pkt.Clone()
 	return t
@@ -182,34 +171,24 @@ func (s *segment) merge(oth *segment) {
 	oth.dataMemSize = oth.pkt.MemSize()
 }
 
-// setOwner sets the owning endpoint for this segment. Its required
-// to be called to ensure memory accounting for receive/send buffer
-// queues is done properly.
-func (s *segment) setOwner(ep *Endpoint, qFlags queueFlags) {
-	switch qFlags {
-	case recvQ:
-		ep.updateReceiveMemUsed(s.segMemSize())
-	case sendQ:
-		// no memory account for sendQ yet.
-	default:
-		panic(fmt.Sprintf("unexpected queue flag %b", qFlags))
+// setReceiveOwner transfers the charge for this segment between receive queues.
+// A segment can be enqueued twice when its ACK completes a passive handshake.
+func (s *segment) setReceiveOwner(ep *Endpoint) {
+	if s.ep == ep {
+		return
+	}
+	if s.ep != nil {
+		s.ep.updateReceiveMemUsed(-s.segMemSize())
 	}
 	s.ep = ep
-	s.qFlags = qFlags
+	if ep != nil {
+		ep.updateReceiveMemUsed(s.segMemSize())
+	}
 }
 
 func (s *segment) DecRef() {
 	s.segmentRefs.DecRef(func() {
-		if s.ep != nil {
-			switch s.qFlags {
-			case recvQ:
-				s.ep.updateReceiveMemUsed(-s.segMemSize())
-			case sendQ:
-				// no memory accounting for sendQ yet.
-			default:
-				panic(fmt.Sprintf("unexpected queue flag %b set for segment", s.qFlags))
-			}
-		}
+		s.setReceiveOwner(nil)
 		s.pkt.DecRef()
 		s.pkt = nil
 		segmentPool.Put(s)
