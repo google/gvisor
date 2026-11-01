@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -897,6 +898,46 @@ TEST_P(TCPSocketPairTest, TCPLingerTimeoutDefault) {
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kDefaultTCPLingerTimeout);
+}
+
+TEST_P(TCPSocketPairTest, ReceiveAfterShutdownWrite) {
+  DisableSave setup;
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int fd = sockets->first_fd();
+  const int peer = sockets->second_fd();
+  const struct timeval timeout = {.tv_sec = 10};
+  for (int sock : {fd, peer}) {
+    ASSERT_THAT(
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)),
+        SyscallSucceeds());
+  }
+  const int linger2 = -1;
+  ASSERT_THAT(
+      setsockopt(fd, IPPROTO_TCP, TCP_LINGER2, &linger2, sizeof(linger2)),
+      SyscallSucceeds());
+  ASSERT_THAT(shutdown(fd, SHUT_WR), SyscallSucceeds());
+
+  // The peer has received our FIN. Its reply acknowledges the FIN, so we
+  // enter FIN-WAIT-2 with a descriptor that is still open for reading.
+  char byte;
+  ASSERT_THAT(RetryEINTR(recv)(peer, &byte, 1, 0), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(RetryEINTR(send)(peer, "a", 1, MSG_NOSIGNAL),
+              SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(recv)(fd, &byte, 1, 0), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(byte, 'a');
+  struct tcp_info info = {};
+  socklen_t len = sizeof(info);
+  ASSERT_THAT(getsockopt(fd, IPPROTO_TCP, TCP_INFO, &info, &len),
+              SyscallSucceeds());
+  ASSERT_EQ(info.tcpi_state, TCP_FIN_WAIT2);
+
+  setup.reset();
+  MaybeSave();
+  const DisableSave after;
+  ASSERT_THAT(RetryEINTR(send)(peer, "b", 1, MSG_NOSIGNAL),
+              SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(recv)(fd, &byte, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(byte, 'b');
 }
 
 TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutLessThanZero) {
