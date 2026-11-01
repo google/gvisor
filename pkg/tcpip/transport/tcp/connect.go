@@ -109,7 +109,7 @@ type handshake struct {
 	// original SYN-ACK when deferAccept is enabled.
 	acked bool
 
-	// sendSYNOpts is the cached values for the SYN options to be sent.
+	// sendSYNOpts holds the options selected at the start of the handshake.
 	sendSYNOpts header.TCPSynOptions
 
 	// sampleRTTWithTSOnly is true when the segment was retransmitted or we can't
@@ -421,6 +421,19 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		h.iss = iss
 	}
 
+	// A peer that repeats its original SYN may not have received our SYN-ACK.
+	// Linux retransmits it under the same rate limit as an out-of-window ACK.
+	// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_minisocks.c#L679-L719
+	if !h.active && s.sequenceNumber == h.ackNum-1 && s.flags&(header.TCPFlagSyn|header.TCPFlagAck|header.TCPFlagRst) == header.TCPFlagSyn {
+		recent := h.ep.recentTimestamp()
+		if !s.parsedOptions.TS || recent == 0 || seqnum.Value(recent).LessThanEq(seqnum.Value(s.parsedOptions.TSVal)) {
+			if h.ep.allowOutOfWindowAck() && h.retransmitSyn() == nil {
+				h.retransmitTimer.restartIfPending()
+			}
+			return nil
+		}
+	}
+
 	// RFC 793, Section 3.9, page 69, states that in the SYN-RCVD state, a
 	// sequence number outside of the window causes an ACK with the proper seq
 	// number and "After sending the acknowledgment, drop the unacceptable
@@ -574,10 +587,9 @@ func (h *handshake) start() {
 	h.startTime = h.ep.stack.Clock().NowMonotonic()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 
-	synOpts := header.TCPSynOptions{
+	h.sendSYNOpts = header.TCPSynOptions{
 		WS:            h.rcvWndScale,
 		TS:            true,
-		TSVal:         h.ep.tsValNow(),
 		TSEcr:         h.ep.recentTimestamp(),
 		SACKPermitted: h.ep.protocol.sackPermitted(),
 		MSS:           h.ep.amss,
@@ -586,17 +598,29 @@ func (h *handshake) start() {
 	// start() is also called in a listen context so we want to make sure we only
 	// send the TS/SACK option when we received the TS/SACK in the initial SYN.
 	if h.state == handshakeSynRcvd {
-		synOpts.TS = h.ep.SendTSOk
-		synOpts.SACKPermitted = synOpts.SACKPermitted && h.ep.SACKPermitted
+		h.sendSYNOpts.TS = h.ep.SendTSOk
+		h.sendSYNOpts.SACKPermitted = h.sendSYNOpts.SACKPermitted && h.ep.SACKPermitted
 		if h.sndWndScale < 0 {
 			// Disable window scaling if the peer did not send us
 			// the window scaling option.
-			synOpts.WS = -1
+			h.sendSYNOpts.WS = -1
 		}
 	}
 
-	h.sendSYNOpts = synOpts
-	h.ep.sendSynTCP(h.ep.route, tcpFields{
+	if h.active {
+		h.sendSYNOpts.TSVal = h.ep.tsValNow()
+	}
+	h.sendSyn()
+}
+
+// +checklocks:h.ep.mu
+func (h *handshake) sendSyn() tcpip.Error {
+	opts := h.sendSYNOpts
+	if !h.active && opts.TS {
+		// The final ACK can echo this SYN-ACK to measure the initial RTT.
+		opts.TSVal = h.ep.tsValNow()
+	}
+	return h.ep.sendSynTCP(h.ep.route, tcpFields{
 		id:        h.ep.TransportEndpointInfo.ID,
 		ttl:       calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
 		tos:       h.ep.sendTOS,
@@ -606,7 +630,7 @@ func (h *handshake) start() {
 		rcvWnd:    h.rcvWnd,
 		df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 		expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
-	}, synOpts)
+	}, opts)
 }
 
 // retransmitHandler handles retransmissions of un-acked SYNs.
@@ -634,31 +658,27 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 	// the connection with another ACK or data (as ACKs are never
 	// retransmitted on their own).
 	if h.active || !h.acked || h.deferAccept != 0 && e.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
-		err := e.sendSynTCP(e.route, tcpFields{
-			id:        e.TransportEndpointInfo.ID,
-			ttl:       calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
-			tos:       e.sendTOS,
-			flags:     h.flags,
-			seq:       h.iss,
-			ack:       h.ackNum,
-			rcvWnd:    h.rcvWnd,
-			df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
-			expOptVal: e.getExperimentOptionValue(e.route),
-		}, h.sendSYNOpts)
-		// Linux charges an active SYN when it attempts retransmission. A
-		// passive connection inherits only successfully retransmitted SYN-ACKs.
-		// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_output.c#L3393-L3399
-		// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/inet_connection_sock.c#L905-L912
-		// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_minisocks.c#L549-L556
-		if h.active || err == nil {
-			e.countRetransmits(1)
-		}
-		// If we have ever retransmitted the SYN-ACK or
-		// SYN segment, we should only measure RTT if
-		// TS option is present.
-		h.sampleRTTWithTSOnly = true
+		h.retransmitSyn()
 	}
 	return nil
+}
+
+// +checklocks:h.ep.mu
+func (h *handshake) retransmitSyn() tcpip.Error {
+	err := h.sendSyn()
+	// Linux charges an active SYN when it attempts retransmission. A
+	// passive connection inherits only successfully retransmitted SYN-ACKs.
+	// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_output.c#L3393-L3399
+	// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/inet_connection_sock.c#L905-L912
+	// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_minisocks.c#L549-L556
+	if h.active || err == nil {
+		h.ep.countRetransmits(1)
+	}
+	// If we have ever retransmitted the SYN-ACK or
+	// SYN segment, we should only measure RTT if
+	// TS option is present.
+	h.sampleRTTWithTSOnly = true
+	return err
 }
 
 // transitionToStateEstablishedLocked transitions the endpoint of the handshake
@@ -735,6 +755,14 @@ func (bt *backoffTimer) reset() tcpip.Error {
 	}
 	bt.t.Reset(bt.timeout)
 	return nil
+}
+
+// restartIfPending postpones a pending timeout without advancing the
+// backoff. A callback that has already started owns its next timeout.
+func (bt *backoffTimer) restartIfPending() {
+	if bt.t.Stop() {
+		bt.t.Reset(bt.timeout)
+	}
 }
 
 func (bt *backoffTimer) reinit(timeout time.Duration) {

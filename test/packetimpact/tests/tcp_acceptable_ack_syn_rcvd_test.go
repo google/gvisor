@@ -68,3 +68,34 @@ func TestAcceptableAckInSynRcvd(t *testing.T) {
 		})
 	}
 }
+
+func TestRepeatedSynInSynRcvd(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listener, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listener)
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+	defer conn.Close(t)
+
+	syn := conn.CreateFrame(t, testbench.Layers{&testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}})
+	// Both replies must precede the initial one-second retransmission timeout.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	conn.SendFrame(t, syn)
+	flags := testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)
+	first, err := conn.Expect(t, testbench.TCP{Flags: flags}, time.Until(deadline))
+	if err != nil {
+		t.Fatalf("initial SYN-ACK: %s", err)
+	}
+
+	conn.SendFrameStateless(t, syn)
+	if _, err := conn.Expect(t, testbench.TCP{Flags: flags, SeqNum: first.SeqNum, AckNum: first.AckNum}, time.Until(deadline)); err != nil {
+		t.Fatalf("SYN-ACK after repeated SYN: %s", err)
+	}
+	// An immediate third SYN should be rate limited.
+	conn.SendFrameStateless(t, syn)
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	child, _ := dut.Accept(t, listener)
+	defer dut.Close(t, child)
+	if got, want := dut.GetSockOptTCPInfo(t, child).TotalRetrans, uint32(1); got != want {
+		t.Errorf("accepted socket total retransmissions = %d, want %d", got, want)
+	}
+}
