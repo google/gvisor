@@ -120,6 +120,7 @@ else
 RUNTIME     ?= $(BRANCH_NAME)
 endif
 RUNTIME_DIR           ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
+RELEASE_TARGET        ?= //:release
 RUNSC_TARGET          ?= //runsc
 RUNTIME_BIN           ?= $(RUNTIME_DIR)/runsc
 EXTRA_SIDECAR_TARGETS ?= # Extra binaries to install under gvisor-bin/.
@@ -139,7 +140,7 @@ endif
 $(RUNTIME_BIN): # See below.
 	@mkdir -p -m 0755 "$(RUNTIME_DIR)" && chmod a+rx "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
-	@$(call copy,//:release,$(RUNTIME_DIR))
+	@$(call copy,$(RELEASE_TARGET),$(RUNTIME_DIR))
 	@$(if $(filter-out //runsc,$(RUNSC_TARGET)),$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN)))
 	@$(if $(EXTRA_SIDECAR_TARGETS),$(call copy,$(EXTRA_SIDECAR_TARGETS),$(RUNTIME_DIR)/gvisor-bin))
 else
@@ -252,9 +253,9 @@ smoke-tests: $(RUNTIME_BIN) ## Runs a simple smoke test after building runsc.
 	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-tests
 
-smoke-race-tests: RUNSC_TARGET = $(RACE_FLAGS) //runsc:runsc-race
+smoke-race-tests: RELEASE_TARGET = //:release-race
 smoke-race-tests: $(RUNTIME_BIN) ## Runs a smoke test after build building runsc in race configuration.
-	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
+	@GORACE=halt_on_error=1 $(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-race-tests
 
 nogo-tests:
