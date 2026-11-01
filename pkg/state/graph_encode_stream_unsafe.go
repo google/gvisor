@@ -37,7 +37,6 @@ func (es *graphEncodeState) process() {
 			// The object that absorbed this object encodes it.
 			continue
 		}
-		start, refStart := len(es.out.b), int32(len(es.refs))
 		if o.isArray {
 			esz := o.ti.size
 			lo, hi := o.addr+w.start*esz, o.addr+w.end*esz
@@ -47,7 +46,7 @@ func (es *graphEncodeState) process() {
 			es.encodeElems(elem, p, n)
 			es.finishSplices()
 			o = es.obj(w.obj)
-			es.addChunk(o, chunk{elemRange: w.elemRange, seg: es.newSegment(start, refStart)})
+			es.addChunk(o, chunk{elemRange: w.elemRange, seg: es.newSegment()})
 			continue
 		}
 		o.state = objEncoding
@@ -61,7 +60,7 @@ func (es *graphEncodeState) process() {
 			es.finishSplices()
 		}
 		o = es.obj(w.obj)
-		o.seg = es.newSegment(start, refStart)
+		o.seg = es.newSegment()
 		o.state = objDone
 	}
 }
@@ -83,32 +82,24 @@ func (es *graphEncodeState) arrayChunks(obj int32, shift uintptr, out []chunk) [
 	return out
 }
 
-// newSegment returns the segment of out from start to its end, whose
-// references start at refs[refStart].
-func (es *graphEncodeState) newSegment(start int, refStart int32) segment {
-	seg := segment{start, len(es.out.b) - start}
-	if seg.len > 0 {
-		es.segRefs = append(es.segRefs, segmentRefs{off: start, ref: refStart})
+// newSegment closes the current work item. All preceding work items have
+// already recorded their ends, so the last boundary is this item's start.
+func (es *graphEncodeState) newSegment() segment {
+	seg := segment(len(es.segments) - 1)
+	if es.segments[seg].off == len(es.out.b) {
+		return 0
 	}
+	es.segments = append(es.segments, segmentBoundary{off: len(es.out.b), ref: int32(len(es.refs))})
 	return seg
+}
+
+func (es *graphEncodeState) segmentData(seg segment) []byte {
+	return es.out.b[es.segments[seg].off:es.segments[seg+1].off]
 }
 
 // segmentRefs returns the targets referenced in seg.
 func (es *graphEncodeState) segmentRefs(seg segment) []int32 {
-	if seg.len == 0 {
-		return nil
-	}
-	i, found := slices.BinarySearchFunc(es.segRefs, seg.off, func(r segmentRefs, off int) int {
-		return cmp.Compare(r.off, off)
-	})
-	if !found {
-		Failf("internal error: no segment at %d", seg.off)
-	}
-	end := int32(len(es.refs))
-	if i+1 < len(es.segRefs) {
-		end = es.segRefs[i+1].ref
-	}
-	return es.refs[es.segRefs[i].ref:end]
+	return es.refs[es.segments[seg].ref:es.segments[seg+1].ref]
 }
 
 // markRefs marks the targets refs in refMarks, and unmarks all others.
@@ -308,7 +299,7 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 			if r, _ := es.root(i); !es.obj(r).dead {
 				for _, ch := range es.chunkList(o) {
 					// Each chunk writes start-delta and length uvarints plus its payload.
-					dataMaxBytes += 2*binary.MaxVarintLen64 + ch.seg.len
+					dataMaxBytes += 2*binary.MaxVarintLen64 + len(es.segmentData(ch.seg))
 				}
 			}
 		}
@@ -320,7 +311,7 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 			tables.byte(objKindMap)
 			tables.uvarint(uint64(o.n))
 			// Map payload is prefixed with its byte-length uvarint.
-			dataMaxBytes += binary.MaxVarintLen64 + o.seg.len
+			dataMaxBytes += binary.MaxVarintLen64 + len(es.segmentData(o.seg))
 		case o.isArray:
 			idx, flag := es.types.objectIndex(o.ti)
 			tables.byte(objKindArray | flag)
@@ -342,7 +333,7 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 			tables.byte(objKindValue | flag)
 			tables.uvarint(uint64(idx))
 			// Value payload has an optional byte-length uvarint when inexact.
-			dataMaxBytes += binary.MaxVarintLen64 + o.seg.len
+			dataMaxBytes += binary.MaxVarintLen64 + len(es.segmentData(o.seg))
 		}
 	}
 
@@ -386,14 +377,15 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 			continue
 		}
 		inexact := !o.isMap && i != 0 && es.types.isInexact(o.ti)
-		if o.isMap || (inexact && !o.isArray) {
-			// Maps are allocated, and inexact objects are decoded, once
-			// referred to, which may be after their data, so their data is
-			// skippable.
-			w.uvarint(uint64(o.seg.len))
-		}
 		if !o.isArray {
-			w.bytes(es.out.b[o.seg.off : o.seg.off+o.seg.len])
+			data := es.segmentData(o.seg)
+			if o.isMap || inexact {
+				// Maps are allocated, and inexact objects are decoded, once
+				// referred to, which may be after their data, so their data is
+				// skippable.
+				w.uvarint(uint64(len(data)))
+			}
+			w.bytes(data)
 			continue
 		}
 		chunks = es.arrayChunks(int32(i), 0, chunks[:0])
@@ -455,7 +447,7 @@ func (es *graphEncodeState) writeChunks(w *encBuf, o *encObject, chunks []chunk)
 		w.uvarint(uint64(ch.start - last))
 		w.uvarint(uint64(ch.end - ch.start))
 		last = ch.end
-		w.bytes(es.out.b[ch.seg.off : ch.seg.off+ch.seg.len])
+		w.bytes(es.segmentData(ch.seg))
 	}
 }
 
