@@ -66,6 +66,8 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 http_archive(
     name = "llvm-raw",
     build_file_content = "# empty",
+    patch_args = ["-p1"],
+    patches = ["//tools:llvm-bazel9.patch"],
     sha256 = "e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69",
     strip_prefix = "llvm-project-cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f",
     urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = "cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f")],

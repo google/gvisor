@@ -24,6 +24,11 @@ build --@rules_python//python/config_settings:bootstrap_impl=script
 build --cxxopt=-std=c++17 --cxxopt=-Wno-error=maybe-uninitialized
 build --host_cxxopt=-std=c++17 --host_cxxopt=-Wno-error=maybe-uninitialized
 
+# Libraries such as GoogleTest export third-party headers through cc_library's
+# includes attribute. Treat those directories as system headers so that a
+# warning in an included dependency does not fail a gVisor build under -Werror.
+build --features=system_include_paths --host_features=system_include_paths
+
 # Display the current git revision in the info block.
 build --stamp --workspace_status_command tools/workspace_status.sh
 

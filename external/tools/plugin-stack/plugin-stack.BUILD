@@ -1,3 +1,5 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 config_setting(
     name = "plugin_tldk_condition",
     values = {"define": "plugin_tldk=true"},
