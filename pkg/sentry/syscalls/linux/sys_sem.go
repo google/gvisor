@@ -116,9 +116,9 @@ func semTimedOp(t *kernel.Task, id ipc.ID, ops []linux.Sembuf, haveTimeout bool,
 		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
-	pid := t.Kernel().RootPIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	pid := t.IPCPID()
 	for {
-		ch, num, err := set.ExecuteOps(t, ops, creds, int32(pid))
+		ch, num, err := set.ExecuteOps(t, ops, creds, pid)
 		if ch == nil || err != nil {
 			return err
 		}
@@ -294,8 +294,8 @@ func setVal(t *kernel.Task, id ipc.ID, num int32, val int16) error {
 		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
-	pid := t.Kernel().RootPIDNamespace().IDOfThreadGroup(t.ThreadGroup())
-	return set.SetVal(t, num, val, creds, int32(pid))
+	pid := t.IPCPID()
+	return set.SetVal(t, num, val, creds, pid)
 }
 
 func setValAll(t *kernel.Task, id ipc.ID, array hostarch.Addr) error {
@@ -309,8 +309,8 @@ func setValAll(t *kernel.Task, id ipc.ID, array hostarch.Addr) error {
 		return err
 	}
 	creds := auth.CredentialsFromContext(t)
-	pid := t.Kernel().RootPIDNamespace().IDOfThreadGroup(t.ThreadGroup())
-	return set.SetValAll(t, vals, creds, int32(pid))
+	pid := t.IPCPID()
+	return set.SetValAll(t, vals, creds, pid)
 }
 
 func getVal(t *kernel.Task, id ipc.ID, num int32) (int16, error) {
@@ -345,16 +345,7 @@ func getPID(t *kernel.Task, id ipc.ID, num int32) (int32, error) {
 		return 0, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
-	gpid, err := set.GetPID(num, creds)
-	if err != nil {
-		return 0, err
-	}
-	// Convert pid from init namespace to the caller's namespace.
-	tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(gpid))
-	if tg == nil {
-		return 0, nil
-	}
-	return int32(tg.ID()), nil
+	return set.GetPID(num, creds, t.PIDNamespace().GetInode().Ino())
 }
 
 func getZCnt(t *kernel.Task, id ipc.ID, num int32) (uint16, error) {
