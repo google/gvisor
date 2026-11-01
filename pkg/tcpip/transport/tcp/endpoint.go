@@ -1005,8 +1005,10 @@ func (e *Endpoint) purgePendingRcvQueue() {
 	}
 }
 
+// purgeReadQueue reports whether it discarded unread payload.
+//
 // +checklocks:e.mu
-func (e *Endpoint) purgeReadQueue() {
+func (e *Endpoint) purgeReadQueue() bool {
 	if e.rcv != nil {
 		e.rcvQueueMu.Lock()
 		defer e.rcvQueueMu.Unlock()
@@ -1018,8 +1020,11 @@ func (e *Endpoint) purgeReadQueue() {
 			e.rcvQueue.Remove(s)
 			s.DecRef()
 		}
+		unread := e.RcvBufUsed > 0
 		e.RcvBufUsed = 0
+		return unread
 	}
+	return false
 }
 
 // +checklocks:e.mu
@@ -1046,12 +1051,12 @@ func (e *Endpoint) Abort() {
 	defer e.drainClosingSegmentQueue()
 	e.LockUser()
 	defer e.UnlockUser()
-	defer e.purgeReadQueue()
 	// Reset all connected endpoints.
 	switch state := e.EndpointState(); {
 	case state.connected():
 		e.resetConnectionLocked(&tcpip.ErrAborted{})
 		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+		e.purgeReadQueue()
 		return
 	}
 	e.closeLocked()
@@ -1070,14 +1075,8 @@ func (e *Endpoint) Close() {
 		return
 	}
 
-	// We always want to purge the read queue, but do so after the checks in
-	// shutdownLocked.
 	e.closeLocked()
-	e.purgeReadQueue()
 	if e.EndpointState() == StateClose || e.EndpointState() == StateError {
-		// It should be safe to purge the read queue now as the endpoint
-		// is now closed or in an error state and further reads are not
-		// permitted.
 		e.UnlockUser()
 		e.drainClosingSegmentQueue()
 		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
@@ -1088,6 +1087,7 @@ func (e *Endpoint) Close() {
 
 // +checklocks:e.mu
 func (e *Endpoint) closeLocked() {
+	discardedData := e.purgeReadQueue()
 	linger := e.SocketOptions().GetLinger()
 	if linger.Enabled && linger.Timeout == 0 {
 		s := e.EndpointState()
@@ -1100,9 +1100,15 @@ func (e *Endpoint) closeLocked() {
 		}
 	}
 
-	// Issue a shutdown so that the peer knows we won't send any more data
-	// if we're connected, or stop accepting if we're listening.
-	e.shutdownLocked(tcpip.ShutdownWrite | tcpip.ShutdownRead)
+	if discardedData && e.EndpointState().connected() {
+		// The application has given up its last chance to read these bytes.
+		// Reset the connection so the peer knows its data was discarded.
+		e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
+	} else {
+		// Issue a shutdown so that the peer knows we won't send any more data
+		// if we're connected, or stop accepting if we're listening.
+		e.shutdownLocked(tcpip.ShutdownWrite | tcpip.ShutdownRead)
+	}
 	e.closeNoShutdownLocked()
 }
 
@@ -2639,14 +2645,7 @@ func (e *Endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			// Mark read side as closed.
 			e.rcvQueueMu.Lock()
 			e.RcvClosed = true
-			rcvBufUsed := e.RcvBufUsed
 			e.rcvQueueMu.Unlock()
-			// If we're fully closed and we have unread data we need to abort
-			// the connection with a RST.
-			if e.shutdownFlags&tcpip.ShutdownWrite != 0 && rcvBufUsed > 0 {
-				e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
-				return nil
-			}
 			// Wake up any readers that maybe waiting for the stream to become
 			// readable.
 			events := waiter.ReadableEvents
