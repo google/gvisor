@@ -225,7 +225,9 @@ type AsyncWriter interface {
 
 	// Wait waits for at least minCompletions enqueued writes to complete,
 	// appends information for completed writes to cs, and returns the updated
-	// slice.
+	// slice. Once Wait has returned the completion for a write, the
+	// AsyncWriter must not read the write's source again, so callers may
+	// immediately modify or deallocate the source.
 	//
 	// Preconditions:
 	// - minCompletions <= the number of inflight writes.
