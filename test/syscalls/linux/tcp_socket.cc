@@ -1828,8 +1828,16 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMillis),
               SyscallSucceedsWithValue(1));
 
-  // The ECONNREFUSED should cause us to be woken up with POLLHUP.
   EXPECT_NE(poll_fd.revents & (POLLHUP | POLLERR), 0);
+
+  int err;
+  socklen_t len = sizeof(err);
+  ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_ERROR, &err, &len),
+              SyscallSucceeds());
+  ASSERT_EQ(err, ECONNREFUSED) << strerror(err);
+  poll_fd.events = POLLOUT;
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(poll_fd.revents & POLLERR, 0);
 
   // Avoiding triggering save in destructor of s.
   EXPECT_THAT(close(s.release()), SyscallSucceeds());
@@ -2742,35 +2750,15 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
 #if defined(__Fuchsia__)
                   POLLOUT
 #else
-                  []() {
-                    const int expected_revents = POLLIN | POLLOUT | POLLHUP |
-                                                 POLLRDNORM | POLLWRNORM |
-                                                 POLLRDHUP;
-                    // TODO(gvisor.dev/issue/6666): POLLERR is still present
-                    // after getsockopt(..., SO_ERROR, ...) call (unless
-                    // hostinet is used).
-                    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-                      return expected_revents | POLLPRI | POLLERR;
-                    }
-                    return expected_revents;
-                  }()
+                  POLLIN | POLLOUT | POLLHUP | POLLRDNORM | POLLWRNORM |
+                      POLLRDHUP
 #endif
         );
 
-        EXPECT_THAT(
-            // TODO(gvisor.dev/issue/6666): on Linux, POLLERR goes away
-            // after the getsockopt(..., SO_ERROR, ...) call, but not on
-            // gVisor (unless hostinet is used).
-            revents,
-            ::testing::AnyOf(
-                // If the error arrived after poll returned.
-                ::testing::Eq(POLLOUT | POLLWRNORM),
-                ::testing::Eq([expected_revents = poll_fd.revents]() -> int {
-                  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-                    return expected_revents;
-                  }
-                  return expected_revents | POLLERR;
-                }())));
+        // The error may have arrived after the first poll returned.
+        EXPECT_THAT(revents,
+                    ::testing::AnyOf(::testing::Eq(POLLOUT | POLLWRNORM),
+                                     ::testing::Eq(poll_fd.revents | POLLERR)));
       }
     });
   }
