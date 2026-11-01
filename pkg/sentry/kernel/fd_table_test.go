@@ -94,11 +94,14 @@ func TestFDTableMany(t *testing.T) {
 			t.Fatalf("fdTable.NewFDs(0, r) in full map: got nil, wanted error")
 		}
 
-		if df, err := fdTable.NewFDAt(ctx, 1, fd, FDFlags{}); err != nil {
+		df, err := fdTable.NewFDAt(ctx, 1, fd, FDFlags{})
+		if err != nil {
 			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}): got %v, wanted nil", err)
-		} else if df != nil {
-			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}) displaced FD")
 		}
+		if got, want := df, fd; got != want {
+			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}): got %v, want %v", got, want)
+		}
+		df.DecRef(ctx)
 
 		i := int32(2)
 		fdTable.Remove(ctx, i)
@@ -163,11 +166,14 @@ func TestFDTable(t *testing.T) {
 			t.Fatalf("Added an FD to a resized map: got %v, want {1}", fds)
 		}
 
-		if df, err := fdTable.NewFDAt(ctx, 1, fd, FDFlags{}); err != nil {
+		df, err := fdTable.NewFDAt(ctx, 1, fd, FDFlags{})
+		if err != nil {
 			t.Fatalf("Replacing FD 1 via fdTable.NewFDAt(1, r, FDFlags{}): got %v, wanted nil", err)
-		} else if df != nil {
-			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}) displaced FD")
 		}
+		if got, want := df, fd; got != want {
+			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}): got %v, want %v", got, want)
+		}
+		df.DecRef(ctx)
 
 		if _, err := fdTable.NewFDAt(ctx, maxFD+1, fd, FDFlags{}); err == nil {
 			t.Fatalf("Using an FD that was too large via fdTable.NewFDAt(%v, r, FDFlags{}): got nil, wanted an error", maxFD+1)

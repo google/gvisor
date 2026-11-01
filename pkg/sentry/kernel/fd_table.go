@@ -376,7 +376,7 @@ func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 	}
 
 	// Update the flags.
-	if df := f.set(fd, file, flags); df != nil {
+	if df := f.swap(fd, file, flags); df != file {
 		panic("file changed")
 	}
 	return nil
@@ -395,7 +395,7 @@ func (f *FDTable) SetFlagsForRange(ctx context.Context, startFd int32, endFd int
 	for fd, err := f.fdBitmap.FirstOne(uint32(startFd)); err == nil && fd <= uint32(endFd); fd, err = f.fdBitmap.FirstOne(fd + 1) {
 		fdI32 := int32(fd)
 		file, _, _ := f.get(fdI32)
-		if df := f.set(fdI32, file, flags); df != nil {
+		if df := f.swap(fdI32, file, flags); df != file {
 			panic("file changed")
 		}
 	}
