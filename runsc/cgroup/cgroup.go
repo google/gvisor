@@ -50,6 +50,13 @@ const (
 var (
 	cgroupRootInternal string
 	cgroupRootOnce     sync.Once
+
+	// uninstallTimeout bounds EBUSY retries when removing one
+	// controller directory. Variable for tests.
+	uninstallTimeout = 5 * time.Second
+
+	// rmdir removes one controller directory. Variable for tests.
+	rmdir = unix.Rmdir
 )
 
 // cgroupRoot returns the cgroupfs root this module uses.
@@ -700,29 +707,37 @@ func (c *cgroupV1) Uninstall() error {
 		}
 		path := c.MakePath(key)
 		log.Debugf("Removing cgroup controller for key=%q path=%q", key, path)
-
-		// If we try to remove the cgroup too soon after killing the sandbox we
-		// might get EBUSY, so we retry for a few seconds until it succeeds.
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-		fn := func() error {
-			err := unix.Rmdir(path)
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		// Run deletions in parallel to remove all directories even if there are
-		// failures/timeouts in other directories.
-		g.Go(func() error {
-			if err := backoff.Retry(fn, b); err != nil {
-				return fmt.Errorf("removing cgroup path %q: %w", path, err)
-			}
-			return nil
-		})
+		c.uninstallController(g, ctx, path)
 	}
 	return g.Wait()
+}
+
+// uninstallController removes one controller directory in a goroutine of g.
+// The removal timeout derives from parent, so every controller gets its own
+// full budget. Deriving it from a sibling iteration would shrink the budget
+// of later controllers. The cancel runs when the goroutine returns, so no
+// timer outlives its controller.
+func (c *cgroupV1) uninstallController(g *errgroup.Group, parent context.Context, path string) {
+	// If we try to remove the cgroup too soon after killing the sandbox we
+	// might get EBUSY, so we retry for a few seconds until it succeeds.
+	ctx, cancel := context.WithTimeout(parent, uninstallTimeout)
+	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
+	fn := func() error {
+		err := rmdir(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	// Run deletions in parallel to remove all directories even if there are
+	// failures/timeouts in other directories.
+	g.Go(func() error {
+		defer cancel()
+		if err := backoff.Retry(fn, b); err != nil {
+			return fmt.Errorf("removing cgroup path %q: %w", path, err)
+		}
+		return nil
+	})
 }
 
 // Join adds the current process to the all controllers. Returns function that

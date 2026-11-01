@@ -20,7 +20,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -76,6 +78,64 @@ func TestUninstallEnoent(t *testing.T) {
 	}
 	if err := c.Uninstall(); err != nil {
 		t.Errorf("Uninstall() failed: %v", err)
+	}
+}
+
+func TestUninstallRetriesBusyPerController(t *testing.T) {
+	// Keep the cgroup paths under a test directory, not the host mount.
+	oldRoot := cgroupRoot()
+	cgroupRootInternal = t.TempDir()
+	t.Cleanup(func() { cgroupRootInternal = oldRoot })
+
+	oldTimeout, oldRmdir := uninstallTimeout, rmdir
+	t.Cleanup(func() { uninstallTimeout, rmdir = oldTimeout, oldRmdir })
+	uninstallTimeout = 10 * time.Second
+
+	c := cgroupV1{
+		Name: "runsc-test-uninstall-busy",
+		Own:  make(map[string]bool),
+	}
+	var paths []string
+	for key := range controllers {
+		c.Own[key] = true
+		path := c.MakePath(key)
+		paths = append(paths, path)
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatalf("MkdirAll(%q) failed: %v", path, err)
+		}
+		if len(paths) == 3 {
+			break
+		}
+	}
+
+	// Fail the first two removals of every controller with EBUSY,
+	// then fall through to the real rmdir.
+	var mu sync.Mutex
+	attempts := make(map[string]int)
+	rmdir = func(path string) error {
+		mu.Lock()
+		attempts[path]++
+		n := attempts[path]
+		mu.Unlock()
+		if n <= 2 {
+			return unix.EBUSY
+		}
+		return unix.Rmdir(path)
+	}
+
+	if err := c.Uninstall(); err != nil {
+		t.Fatalf("Uninstall() failed: %v", err)
+	}
+	for _, path := range paths {
+		mu.Lock()
+		n := attempts[path]
+		mu.Unlock()
+		if n < 3 {
+			t.Errorf("path %q removed after %d attempts, want >= 3 (EBUSY retries)", path, n)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("path %q still exists after Uninstall(): %v", path, err)
+		}
 	}
 }
 
