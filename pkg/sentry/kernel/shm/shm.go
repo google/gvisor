@@ -61,9 +61,6 @@ type Registry struct {
 	// userNS owns the IPC namespace this registry belong to. Immutable.
 	userNS *auth.UserNamespace
 
-	// mu protects all fields below.
-	mu sync.Mutex `state:"nosave"`
-
 	// reg defines basic fields and operations needed for all SysV registries.
 	//
 	// Within reg, there are two maps, objects and keysToIDs.
@@ -79,14 +76,12 @@ type Registry struct {
 	//
 	// Shms in keysToIDs are guaranteed to be referenced, as they are
 	// removed by dissociateKey before the last DecRef.
-	//
-	// +checklocks:mu
 	reg *ipc.Registry
 
 	// Sum of the sizes of all existing segments rounded up to page size, in
 	// units of page size.
 	//
-	// +checklocks:mu
+	// +checklocks:reg.Mu
 	totalPages uint64
 }
 
@@ -102,10 +97,10 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 //
 // FindByID returns a reference on Shm.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindByID(id ipc.ID) *Shm {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 	mech := r.reg.FindByID(id)
 	if mech == nil {
 		return nil
@@ -125,11 +120,11 @@ func (r *Registry) FindByID(id ipc.ID) *Shm {
 // segment is about to be destroyed: it remains accessible by ID while
 // references remain.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 // +checklocksexclude:s.mu
 func (r *Registry) dissociateKey(s *Shm) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.obj.Key != linux.IPC_PRIVATE {
@@ -143,7 +138,7 @@ func (r *Registry) dissociateKey(s *Shm) {
 //
 // FindOrCreate returns a reference on Shm.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, size uint64, mode linux.FileMode, private, create, exclusive bool) (*Shm, error) {
 	if (create || private) && (size < linux.SHMMIN || size > linux.SHMMAX) {
 		// "A new segment was to be created and size is less than SHMMIN or
@@ -154,8 +149,8 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 		return nil, linuxerr.EINVAL
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	if r.reg.ObjectCount() >= linux.SHMMNI {
 		// "All possible shared memory IDs have been taken (SHMMNI) ..."
@@ -209,7 +204,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 
 // newShmLocked creates a new segment in the registry.
 //
-// +checklocks:r.mu
+// +checklocks:r.reg.Mu
 func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, creator *auth.Credentials, mode linux.FileMode, size uint64) (*Shm, error) {
 	mf := pgalloc.MemoryFileFromContext(ctx)
 	if mf == nil {
@@ -262,10 +257,10 @@ func (r *Registry) IPCInfo() *linux.ShmParams {
 // ShmInfo reports linux-specific global parameters for sysv shared memory
 // segments on this system. See shmctl(SHM_INFO).
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) ShmInfo() *linux.ShmInfo {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	return &linux.ShmInfo{
 		UsedIDs: int32(r.reg.LastIDUsed()),
@@ -280,11 +275,11 @@ func (r *Registry) ShmInfo() *linux.ShmInfo {
 //
 // Precondition: Must follow a call to r.dissociateKey(s).
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 // +checklocksexclude:s.mu
 func (r *Registry) remove(s *Shm) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -299,13 +294,13 @@ func (r *Registry) remove(s *Shm) {
 // Release drops the self-reference of each active shm segment in the registry.
 // It is called when the kernel.IPCNamespace containing r is being destroyed.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) Release(ctx context.Context) {
 	// Because Shm.DecRef() may acquire the same locks, collect the segments to
 	// release first. Note that this should not race with any updates to r, since
 	// the IPC namespace containing it has no more references.
 	toRelease := make([]*Shm, 0)
-	r.mu.Lock()
+	r.reg.Mu.Lock()
 	r.reg.ForAllObjects(
 		func(o ipc.Mechanism) {
 			s := o.(*Shm)
@@ -316,7 +311,7 @@ func (r *Registry) Release(ctx context.Context) {
 			s.mu.Unlock()
 		},
 	)
-	r.mu.Unlock()
+	r.reg.Mu.Unlock()
 
 	for _, s := range toRelease {
 		r.dissociateKey(s)
@@ -482,7 +477,7 @@ func (s *Shm) InodeID() uint64 {
 // and segment mutexes to remove the segment.
 //
 // +checklocksexclude:s.mu
-// +checklocksexclude:s.registry.mu
+// +checklocksexclude:s.registry.reg.Mu
 func (s *Shm) DecRef(ctx context.Context) {
 	s.ShmRefs.DecRef(func() {
 		s.mf.DecRef(s.fr)
@@ -706,7 +701,7 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 // shmctl(IPC_RMID).
 //
 // +checklocksexclude:s.mu
-// +checklocksexclude:s.registry.mu
+// +checklocksexclude:s.registry.reg.Mu
 func (s *Shm) MarkDestroyed(ctx context.Context) error {
 	creds := auth.CredentialsFromContext(ctx)
 

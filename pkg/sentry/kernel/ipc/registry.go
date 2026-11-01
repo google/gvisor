@@ -21,27 +21,34 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Registry contains fields common to all SysV IPC registries.
 //
-// The containing msgqueue.Registry.mu, semaphore.Registry.mu, or
-// shm.Registry.mu protects mutable fields after initialization. Registry has
-// no pointer to its containing registry, so checklocks cannot resolve that
-// mutex for accesses through an escaped *Registry.
-//
 // +stateify savable
 type Registry struct {
+	// Mu protects the ID and key maps and the allocation of new IDs.
+	// Callers hold it across lookup, limit checks and registration to keep
+	// mechanism-specific accounting consistent with these maps.
+	Mu sync.Mutex `state:"nosave"`
+
 	// UserNS owning the IPC namespace this registry belongs to. Immutable.
 	UserNS *auth.UserNamespace
 
 	// objects is a map of IDs to IPC mechanisms.
+	//
+	// +checklocks:Mu
 	objects map[ID]Mechanism
 
 	// keysToIDs maps a lookup key to an ID.
+	//
+	// +checklocks:Mu
 	keysToIDs map[Key]ID
 
 	// lastIDUsed is used to find the next available ID for object creation.
+	//
+	// +checklocks:Mu
 	lastIDUsed ID
 }
 
@@ -58,6 +65,8 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 // error if an object is found by shouldn't be, or if the user doesn't have
 // permission to use the object. If no object is found, Find checks create
 // flag, and returns an error only if it's false.
+//
+// +checklocks:r.Mu
 func (r *Registry) Find(ctx context.Context, key Key, mode linux.FileMode, create, exclusive bool) (Mechanism, error) {
 	if id, ok := r.keysToIDs[key]; ok {
 		mech := r.objects[id]
@@ -91,6 +100,8 @@ func (r *Registry) Find(ctx context.Context, key Key, mode linux.FileMode, creat
 
 // Register adds m to r.objects, assigns it a new ID, and associates its key
 // with that ID in r.keysToIDs. It returns an error if all IDs are exhausted.
+//
+// +checklocks:r.Mu
 func (r *Registry) Register(m Mechanism) error {
 	id, err := r.newID()
 	if err != nil {
@@ -108,6 +119,8 @@ func (r *Registry) Register(m Mechanism) error {
 
 // newID finds the first unused ID in the registry, and returns an error if
 // non is found.
+//
+// +checklocks:r.Mu
 func (r *Registry) newID() (ID, error) {
 	// Find the next available ID.
 	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {
@@ -134,6 +147,8 @@ func (r *Registry) newID() (ID, error) {
 
 // Remove removes the mechanism with the given id from the registry, and calls
 // mechanism.Destroy to perform mechanism-specific removal.
+//
+// +checklocks:r.Mu
 func (r *Registry) Remove(id ID, creds *auth.Credentials) error {
 	mech := r.objects[id]
 	if mech == nil {
@@ -159,13 +174,14 @@ func (r *Registry) Remove(id ID, creds *auth.Credentials) error {
 }
 
 // ForAllObjects calls f synchronously for each registered mechanism while the
-// caller holds the containing registry's mutex. No reference is transferred.
-// The registry mutex does not protect mutable mechanism state; f must acquire
-// the mechanism's mutex before accessing that state.
+// caller holds Mu. No reference is transferred.
+// The registry lock does not protect mutable mechanism state. The callback
+// must acquire the mechanism's mutex before accessing that state.
 //
-// f must preserve the registry lock and not reenter operations that acquire it.
-// checklocks cannot express this external-owner callback contract. Retaining a
-// mechanism requires a separate lifetime guarantee.
+// The callback must return with Mu held and must not reacquire it. Retaining
+// a mechanism requires a separate lifetime guarantee.
+//
+// +checklocks:r.Mu
 func (r *Registry) ForAllObjects(f func(o Mechanism)) {
 	for _, o := range r.objects {
 		f(o)
@@ -173,6 +189,8 @@ func (r *Registry) ForAllObjects(f func(o Mechanism)) {
 }
 
 // FindByID returns the mechanism with the given ID, nil if non exists.
+//
+// +checklocks:r.Mu
 func (r *Registry) FindByID(id ID) Mechanism {
 	return r.objects[id]
 }
@@ -180,6 +198,8 @@ func (r *Registry) FindByID(id ID) Mechanism {
 // DissociateKey removes the association between a mechanism and its key from
 // r.keysToIDs. Lookup by ID is unaffected, and the mechanism is not destroyed.
 // If the given key doesn't exist, nothing is changed.
+//
+// +checklocks:r.Mu
 func (r *Registry) DissociateKey(key Key) {
 	delete(r.keysToIDs, key)
 }
@@ -190,16 +210,22 @@ func (r *Registry) DissociateKey(key Key) {
 // Mechanism.
 //
 // Precondition: must be preceded by a call to r.DissociateKey.
+//
+// +checklocks:r.Mu
 func (r *Registry) DissociateID(id ID) {
 	delete(r.objects, id)
 }
 
 // ObjectCount returns the number of registered objects.
+//
+// +checklocks:r.Mu
 func (r *Registry) ObjectCount() int {
 	return len(r.objects)
 }
 
 // LastIDUsed returns the last used ID.
+//
+// +checklocks:r.Mu
 func (r *Registry) LastIDUsed() ID {
 	return r.lastIDUsed
 }
