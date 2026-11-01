@@ -429,6 +429,11 @@ func TestSACKRecovery(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		c.SendAckWithSACK(seq, rtxOffset, []header.SACKBlock{{start, end}})
 		end = end.Add(10)
+		if i < 2 {
+			// Each new SACK clocks out another packet before recovery.
+			c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
+			bytesRead += maxPayload
+		}
 	}
 
 	// Receive the retransmitted packet.
@@ -474,9 +479,8 @@ func TestSACKRecovery(t *testing.T) {
 	c.CheckNoPacketTimeout("More packets received than expected during recovery after dupacks for this cwnd.",
 		50*time.Millisecond)
 
-	// Acknowledge half of the pending data. This along with the 10 sacked
-	// segments above should reduce the outstanding below the current
-	// congestion window allowing the sender to transmit data.
+	// Leave half the original window outstanding. The flight now includes
+	// the two Limited Transmit packets, so this ACK advances by 22 of 42.
 	rtxOffset = bytesRead - expected*maxPayload/2
 
 	// Now send a partial ACK w/ a SACK block that indicates that the next 3
@@ -488,22 +492,9 @@ func TestSACKRecovery(t *testing.T) {
 	end = start.Add(60)
 	c.SendAckWithSACK(seq, rtxOffset, []header.SACKBlock{{start, end}})
 
-	// At this point, we acked expected/2 packets and we SACKED 6 packets and
-	// 3 segments were considered lost due to the SACK block we sent.
-	//
-	// So total packets outstanding can be calculated as follows after 7
-	// iterations of slow start -> 10/20/40/80/160/320/640. So expected
-	// should be 640 at start, then we went to recover at which point the
-	// cwnd should be set to 320 + 3 (for the 3 dupAcks which have left the
-	// network).
-	// Outstanding at this point after acking half the window
-	// (320 packets) will be:
-	//    outstanding = 640-320-6(due to SACK block)-3 = 311
-	//
-	// The last 3 is due to the fact that the first 3 packets after
-	// rtxOffset will be considered lost due to the SACK blocks sent.
-	// Receive the retransmit due to partial ack.
-
+	// Of the expected/2 packets above the cumulative ACK, six are SACKed
+	// and the three before them are lost. The recovery window is expected/2
+	// plus the three duplicate ACKs, leaving room for twelve sends.
 	c.ReceiveAndCheckPacketWithOptions(data, rtxOffset, maxPayload, tsOptionSize)
 	// Receive the 2 extra packets that should have been retransmitted as
 	// those should be considered lost and immediately retransmitted based
@@ -512,8 +503,7 @@ func TestSACKRecovery(t *testing.T) {
 		c.ReceiveAndCheckPacketWithOptions(data, rtxOffset+maxPayload*(i+1), maxPayload, tsOptionSize)
 	}
 
-	// Now we should get 9 more new unsent packets as the cwnd is 323 and
-	// outstanding is 311.
+	// After those three repairs, the remaining nine sends carry new data.
 	for i := 0; i < 9; i++ {
 		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
 		bytesRead += maxPayload

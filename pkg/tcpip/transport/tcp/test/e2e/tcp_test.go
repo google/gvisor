@@ -131,8 +131,13 @@ func testCubicWindowGrowthAfterPacketLoss(t *testing.T, recovery string, segment
 		clock.Advance(rtt)
 		// Retain later packets at the peer, but report the gap left by
 		// the first packet to trigger fast retransmission.
-		for range 3 {
+		for i := range 3 {
 			ackAndWait(firstLostByte)
+			if i < 2 {
+				// Limited Transmit sends new data before the head is repaired.
+				c.ReceiveAndCheckPacket(queuedData, receivedBytes, segmentBytes)
+				receivedBytes += segmentBytes
+			}
 		}
 	}
 	c.ReceiveAndCheckPacket(queuedData, firstLostByte, segmentBytes)
