@@ -236,43 +236,41 @@ type pid struct {
 	notifier waiter.Queue
 }
 
+// +checklocks:t.tg.pidns.owner.mu
 func (t *Task) pidStructFromTIDLocked(tid ThreadID, isThread bool) (*pid, error) {
-	t2 := t.tg.pidns.tasks[tid]
-	if t2 == nil {
+	target := t.tg.pidns.tasks[tid]
+	if target == nil {
 		return nil, linuxerr.ESRCH
 	}
-	isLeader := t2 == t2.tg.leader
+	isLeader := target == target.tg.leader
 	if !isThread && !isLeader {
 		return nil, linuxerr.ENOENT
 	}
-	return t2.pidStructLocked()
-}
-
-func (t *Task) pidStructLocked() (*pid, error) {
-	if t.ExitState() == TaskExitDead {
+	if target.ExitState() == TaskExitDead {
 		return nil, linuxerr.ESRCH
 	}
-	if t.pid != nil {
-		return t.pid, nil
+	if target.pid != nil {
+		return target.pid, nil
 	}
-	t.pid = &pid{}
-	t.pid.t.Store(t)
+	target.pid = &pid{}
+	target.pid.t.Store(target)
 
-	isLeader := t == t.tg.leader
-	isZombie := t.exitStateLocked() == TaskExitZombie
+	isZombie := target.exitStateLocked() == TaskExitZombie
 	if isLeader {
-		if isZombie && t.tg.tasksCount == 1 {
-			t.pid.ready.Store(true)
+		if isZombie && target.tg.tasksCount == 1 {
+			target.pid.ready.Store(true)
 		}
 	} else if isZombie {
-		t.pid.ready.Store(true)
+		target.pid.ready.Store(true)
 	}
 
-	return t.pid, nil
+	return target.pid, nil
 }
 
-// notifyPIDFDsOnDeathLocked() is invoked by Task.exitNotifyLocked() when a task is dying.
-// Preconditions: The TaskSet mutex must be held.
+// notifyPIDFDsOnDeathLocked invalidates PIDFD references to t when it is reaped
+// or gives up its old PID identity while becoming the thread group leader on exec.
+//
+// +checklocks:t.tg.pidns.owner.mu
 func (t *Task) notifyPIDFDsOnDeathLocked() {
 	if pid := t.pid; pid != nil {
 		// Stop referring to t from the pid struct, so that the presence of pidfds does not
@@ -285,10 +283,11 @@ func (t *Task) notifyPIDFDsOnDeathLocked() {
 	}
 }
 
-// notifyPIDFDsLocked() is invoked by runExitNotify.execute() in the following cases:
+// notifyPIDFDsLocked() is invoked by Task.exitNotifyLocked() in the following cases:
 // - If t is a non leader, as soon as it becomes a zombie.
 // - If t is a leader, when it becomes a zombie and it is the last task in the thread group.
-// Preconditions: The TaskSet mutex must be held.
+//
+// +checklocks:t.tg.pidns.owner.mu
 func (t *Task) notifyPIDFDsLocked() {
 	if pid := t.pid; pid != nil {
 		if pid.ready.Swap(true) {
