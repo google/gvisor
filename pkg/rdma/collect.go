@@ -70,11 +70,6 @@ var netAttrNames = []string{
 	"duplex", "operstate", "carrier", "ifindex",
 }
 
-// NUMA aggregate range files.
-var numaAggregateNames = []string{
-	"online", "possible", "has_cpu", "has_memory", "has_normal_memory",
-}
-
 // GPU/accelerator PCI classes included as leaves (beyond the NIC leaves
 // derived from the spec): 3D controller, VGA controller, NVSwitch bridge.
 var gpuClassPrefixes = []string{"0x0302", "0x0300", "0x0680"}
@@ -108,8 +103,7 @@ var rdmaDriverIDFromName = map[string]uint32{
 // Only devices derived from the container's OCI spec are captured: the
 // closure starts at the spec's /dev/infiniband/uverbs* entries and expands
 // to their ibdevs, associated netdevs, PCI ancestor chains, GPU PCI
-// functions, and the NUMA node topology. Nothing outside that closure is
-// exposed to the sandbox.
+// functions. Nothing outside that closure is exposed to the sandbox.
 //
 // It must run while the RDMA netdevs are still in the host netns.
 func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
@@ -229,11 +223,6 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 		s.Devices[i].DriverID = rdmaDriverIDFromName[driver_name]
 	}
 
-	numa, err := collectNUMA(sysRoot)
-	if err != nil {
-		return nil, err
-	}
-	s.NUMA = numa
 	return s, nil
 }
 
@@ -386,22 +375,6 @@ func gpuLeaves(sysRoot string) ([]string, error) {
 		leaves = append(leaves, leaf)
 	}
 	return leaves, nil
-}
-
-func collectNUMA(sysRoot string) (*NUMA, error) {
-	nodeDir := path.Join(sysRoot, "devices/system/node")
-	if _, err := os.Stat(nodeDir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Non-NUMA system (or tests): no node topology to expose.
-			return nil, nil
-		}
-		return nil, fmt.Errorf("statting %q: %w", nodeDir, err)
-	}
-	agg, err := readAttrs(nodeDir, numaAggregateNames)
-	if err != nil {
-		return nil, err
-	}
-	return &NUMA{Aggregate: agg}, nil
 }
 
 // pciDriverName returns the DRIVER= field of a PCI uevent, or errors if
