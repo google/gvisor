@@ -49,7 +49,7 @@ type decodeCallback struct {
 	valueLoader ValueLoader
 	value       any
 	slot        int
-	// waiter is an object that waits for the object, or -1.
+	// waiter is the object to unblock after this callback, or -1.
 	waiter int32
 	// next is the next callback of the same object, or -1.
 	next int32
@@ -415,7 +415,7 @@ func (cb *decodeCallback) user() bool {
 }
 
 func (ds *graphDecodeState) appendCallback(head, tail *int32, cb decodeCallback) {
-	if cb.waiter < 0 {
+	if cb.waiter < 0 || cb.user() {
 		ds.hooks++
 		ds.deferred++
 	}
@@ -467,8 +467,6 @@ func (ds *graphDecodeState) wait(waiter, obj int32, cb decodeCallback) {
 	}
 	ds.ods[waiter].blockedBy++
 	o := &ds.ods[obj]
-	if cb.user() {
-		ds.appendCallback(&o.waitHead, &o.waitTail, cb)
-	}
-	ds.appendCallback(&o.waitHead, &o.waitTail, decodeCallback{waiter: waiter})
+	cb.waiter = waiter
+	ds.appendCallback(&o.waitHead, &o.waitTail, cb)
 }
