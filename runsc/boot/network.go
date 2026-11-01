@@ -90,313 +90,94 @@ func (n *Network) InitPluginStack(args *sentryapi.InitPluginStackArgs, _ *struct
 	})
 }
 
-// CreateLinksAndRoutes creates links and routes in a network stack.  It should
+// CreateLinksAndRoutes creates links and routes in a network stack. It should
 // only be called once.
 func (n *Network) CreateLinksAndRoutes(args *sentryapi.CreateLinksAndRoutesArgs, _ *struct{}) error {
-	if len(args.FDBasedLinks) > 0 && len(args.XDPLinks) > 0 {
-		return fmt.Errorf("received both fdbased and XDP links, but only one can be used at a time")
+	files, err := splitNetworkFiles(args)
+	if err != nil {
+		return err
 	}
-	wantFDs := 0
-	for _, l := range args.FDBasedLinks {
-		wantFDs += l.NumChannels
+	setup := networkSetup{
+		network:     n,
+		nicIDs:      make(map[string]tcpip.NICID),
+		captureFile: files.pcap,
+		logPackets:  args.LogPackets,
+	}
+
+	// Loopback normally appears before other interfaces. Only external links
+	// write to the PCAP file.
+	for _, link := range args.LoopbackLinks {
+		var ep stack.LinkEndpoint = ethernet.New(loopback.New())
+		if args.LogPackets {
+			ep = sniffer.New(ep)
+		}
+		if _, err := setup.addNIC(ep, link.Name, link.Addresses, link.Routes, nil); err != nil {
+			return err
+		}
+	}
+
+	for _, link := range args.FDBasedLinks {
+		channels := files.links[:link.NumChannels]
+		files.links = files.links[link.NumChannels:]
+		ep, err := newFDBasedEndpoint(link, channels)
+		if err != nil {
+			return err
+		}
+		neighbors := link.Neighbors
+		if link.IsProxy {
+			// A proxy carries bare IP packets and has no neighbor table.
+			neighbors = nil
+		}
+		if err := setup.addExternalNIC(ep, externalNIC{
+			name:      link.Name,
+			addresses: link.Addresses,
+			routes:    link.Routes,
+			neighbors: neighbors,
+			qdisc:     link.QDisc,
+			rate:      link.TBFRate,
+			burst:     link.TBFBurst,
+		}); err != nil {
+			return err
+		}
 	}
 	for _, link := range args.XDPLinks {
-		// We have to keep several FDs alive when the sentry is
-		// responsible for binding, but when runsc binds we only expect
-		// the AF_XDP socket itself.
-		switch v := link.Bind; v {
-		case sentryapi.BindSentry:
-			wantFDs += 4
-		case sentryapi.BindRunsc:
-			wantFDs++
-		default:
-			return fmt.Errorf("unknown bind value: %d", v)
-		}
-	}
-	if args.PCAP {
-		wantFDs++
-	}
-	if args.NATBlob {
-		wantFDs++
-	}
-	if got := len(args.FilePayload.Files); got != wantFDs {
-		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks, XDPLinks, and PCAP", got, wantFDs)
-	}
-
-	nicids := make(map[string]tcpip.NICID)
-
-	// Collect routes from all links.
-	var routes []tcpip.Route
-
-	// Loopback normally appear before other interfaces.
-	for _, link := range args.LoopbackLinks {
-		nicID := n.Stack.NextNICID()
-		nicids[link.Name] = nicID
-
-		var linkEP stack.LinkEndpoint
-		linkEP = ethernet.New(loopback.New())
-		if args.LogPackets {
-			linkEP = sniffer.New(linkEP)
-		}
-
-		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
-		opts := stack.NICOptions{
-			Name:               link.Name,
-			DeliverLinkPackets: true,
-		}
-		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
-			return err
-		}
-
-		// Collect the routes from this link.
-		for _, r := range link.Routes {
-			route, err := toTcpipRoute(&r, nicID)
-			if err != nil {
-				return err
-			}
-			routes = append(routes, route)
-		}
-	}
-
-	// Setup fdbased or XDP links.
-	fdOffset := 0
-	if len(args.FDBasedLinks) > 0 {
-		// Choose a dispatch mode.
-		// Testing has shown that RecvMMsg is the fastest. Attempts to use
-		// the PacketMMap dispatcher have failed to result in higher throughput.
-		dispatchMode := fdbased.RecvMMsg
-
-		for _, link := range args.FDBasedLinks {
-			nicID := n.Stack.NextNICID()
-			nicids[link.Name] = nicID
-
-			FDs := make([]int, 0, link.NumChannels)
-			for j := 0; j < link.NumChannels; j++ {
-				// Copy the underlying FD.
-				oldFD := args.FilePayload.Files[fdOffset].Fd()
-				newFD, err := unix.Dup(int(oldFD))
-				if err != nil {
-					return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
-				}
-				FDs = append(FDs, newFD)
-				fdOffset++
-			}
-			mac := tcpip.LinkAddress(link.LinkAddress)
-			linkDispatchMode := dispatchMode
-			if link.IsProxy {
-				// Use Readv for a SOCK_SEQPACKET UDS proxy link so a peer EOF (0-byte
-				// read) stops the dispatcher cleanly instead of busy-spinning in
-				// RecvMMsg.
-				linkDispatchMode = fdbased.Readv
-			}
-
-			linkEP, err := fdbased.New(&fdbased.Options{
-				FDs:                  FDs,
-				MTU:                  uint32(link.MTU),
-				EthernetHeader:       mac != "" && !link.IsProxy,
-				Address:              mac,
-				PacketDispatchMode:   linkDispatchMode,
-				GSOMaxSize:           link.GSOMaxSize,
-				GVisorGSOEnabled:     link.GVisorGSOEnabled,
-				TXChecksumOffload:    link.TXChecksumOffload,
-				RXChecksumOffload:    link.RXChecksumOffload,
-				GRO:                  link.GVisorGRO,
-				ProcessorsPerChannel: link.ProcessorsPerChannel,
-				IsPacketSocket:       link.IsPacket,
-				PreConfigured:        link.PreConfigured,
-			})
-			if err != nil {
-				return err
-			}
-
-			// Setup packet logging if requested.
-			if args.PCAP {
-				newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
-				if err != nil {
-					return fmt.Errorf("failed to dup pcap FD: %v", err)
-				}
-				const packetTruncateSize = 4096
-				linkEP, err = sniffer.NewWithWriter(linkEP, os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
-				if err != nil {
-					return fmt.Errorf("failed to create PCAP logger: %v", err)
-				}
-				fdOffset++
-			} else if args.LogPackets {
-				linkEP = sniffer.New(linkEP)
-			}
-
-			var qDisc stack.QueueingDiscipline
-			switch link.QDisc {
-			case config.QDiscNone:
-			case config.QDiscFIFO:
-				log.Infof("Enabling FIFO QDisc on %q", link.Name)
-				qDisc = fifo.New(linkEP, gomaxprocs.Base(), 1000)
-			case config.QDiscTBF:
-				log.Infof("Enabling TBF QDisc on %q rate=%d burst=%d", link.Name, link.TBFRate, link.TBFBurst)
-				var err error
-				qDisc, err = tbf.New(linkEP, n.Stack.Clock(), link.TBFRate, link.TBFBurst, 1000)
-				if err != nil {
-					return fmt.Errorf("creating TBF qdisc for %q: %w", link.Name, err)
-				}
-			}
-
-			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
-			opts := stack.NICOptions{
-				Name:               link.Name,
-				QDisc:              qDisc,
-				DeliverLinkPackets: true,
-			}
-			if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
-				return err
-			}
-
-			// Collect the routes from this link.
-			for _, r := range link.Routes {
-				route, err := toTcpipRoute(&r, nicID)
-				if err != nil {
-					return err
-				}
-				routes = append(routes, route)
-			}
-
-			if !link.IsProxy {
-				for _, neigh := range link.Neighbors {
-					proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
-					n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
-				}
-			}
-		}
-	} else if len(args.XDPLinks) > 0 {
-		if nlinks := len(args.XDPLinks); nlinks > 1 {
-			return fmt.Errorf("XDP only supports one link device, but got %d", nlinks)
-		}
-		link := args.XDPLinks[0]
-		nicID := n.Stack.NextNICID()
-		nicids[link.Name] = nicID
-
-		// Get the AF_XDP socket.
-		oldFD := args.FilePayload.Files[fdOffset].Fd()
-		fd, err := unix.Dup(int(oldFD))
-		if err != nil {
-			return fmt.Errorf("failed to dup AF_XDP fd %v: %v", oldFD, err)
-		}
-		fdOffset++
-
-		// When the sentry is responsible for binding, the runsc
-		// process sends several other FDs in order to keep them open
-		// and alive. These are for BPF programs and maps that, if
-		// closed, will break the dispatcher.
-		if link.Bind == sentryapi.BindSentry {
-			for _, fdName := range []string{"program-fd", "sockmap-fd", "link-fd"} {
-				oldFD := args.FilePayload.Files[fdOffset].Fd()
-				if _, err := unix.Dup(int(oldFD)); err != nil {
-					return fmt.Errorf("failed to dup %s with FD %d: %v", fdName, oldFD, err)
-				}
-				fdOffset++
-			}
-		}
-
-		// Setup packet logging if requested.
-		mac := tcpip.LinkAddress(link.LinkAddress)
-		linkEP, err := xdp.New(&xdp.Options{
-			FD:                fd,
-			Address:           mac,
-			TXChecksumOffload: link.TXChecksumOffload,
-			RXChecksumOffload: link.RXChecksumOffload,
-			InterfaceIndex:    link.InterfaceIndex,
-			Bind:              link.Bind == sentryapi.BindSentry,
-			GRO:               link.GVisorGRO,
-		})
+		ep, err := newXDPEndpoint(link, files.links)
 		if err != nil {
 			return err
 		}
-
-		if args.PCAP {
-			newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
-			if err != nil {
-				return fmt.Errorf("failed to dup pcap FD: %v", err)
-			}
-			const packetTruncateSize = 4096
-			linkEP, err = sniffer.NewWithWriter(linkEP, os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
-			if err != nil {
-				return fmt.Errorf("failed to create PCAP logger: %v", err)
-			}
-			fdOffset++
-		} else if args.LogPackets {
-			linkEP = sniffer.New(linkEP)
-		}
-
-		var qDisc stack.QueueingDiscipline
-		switch link.QDisc {
-		case config.QDiscNone:
-		case config.QDiscFIFO:
-			log.Infof("Enabling FIFO QDisc on %q", link.Name)
-			qDisc = fifo.New(linkEP, gomaxprocs.Base(), 1000)
-		case config.QDiscTBF:
-			log.Infof("Enabling TBF QDisc on %q rate=%d burst=%d", link.Name, link.TBFRate, link.TBFBurst)
-			var err error
-			qDisc, err = tbf.New(linkEP, n.Stack.Clock(), link.TBFRate, link.TBFBurst, 1000)
-			if err != nil {
-				return fmt.Errorf("creating TBF qdisc for %q: %w", link.Name, err)
-			}
-		}
-
-		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
-		opts := stack.NICOptions{
-			Name:               link.Name,
-			QDisc:              qDisc,
-			DeliverLinkPackets: true,
-		}
-		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+		if err := setup.addExternalNIC(ep, externalNIC{
+			name:      link.Name,
+			addresses: link.Addresses,
+			routes:    link.Routes,
+			neighbors: link.Neighbors,
+			qdisc:     link.QDisc,
+			rate:      link.TBFRate,
+			burst:     link.TBFBurst,
+		}); err != nil {
 			return err
-		}
-
-		// Collect the routes from this link.
-		for _, r := range link.Routes {
-			route, err := toTcpipRoute(&r, nicID)
-			if err != nil {
-				return err
-			}
-			routes = append(routes, route)
-		}
-
-		for _, neigh := range link.Neighbors {
-			proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
-			n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
 		}
 	}
 
-	if !args.Defaultv4Gateway.Route.Empty() {
-		nicID, ok := nicids[args.Defaultv4Gateway.Name]
+	for _, gw := range []sentryapi.DefaultRoute{args.Defaultv4Gateway, args.Defaultv6Gateway} {
+		if gw.Route.Empty() {
+			continue
+		}
+		nicID, ok := setup.nicIDs[gw.Name]
 		if !ok {
-			return fmt.Errorf("invalid interface name %q for default route", args.Defaultv4Gateway.Name)
+			return fmt.Errorf("invalid interface name %q for default route", gw.Name)
 		}
-		route, err := toTcpipRoute(&args.Defaultv4Gateway.Route, nicID)
+		route, err := toTcpipRoute(&gw.Route, nicID)
 		if err != nil {
 			return err
 		}
-		routes = append(routes, route)
+		setup.routes = append(setup.routes, route)
 	}
+	log.Infof("Setting routes %+v", setup.routes)
+	n.Stack.SetRouteTable(setup.routes)
 
-	if !args.Defaultv6Gateway.Route.Empty() {
-		nicID, ok := nicids[args.Defaultv6Gateway.Name]
-		if !ok {
-			return fmt.Errorf("invalid interface name %q for default route", args.Defaultv6Gateway.Name)
-		}
-		route, err := toTcpipRoute(&args.Defaultv6Gateway.Route, nicID)
-		if err != nil {
-			return err
-		}
-		routes = append(routes, route)
-	}
-
-	log.Infof("Setting routes %+v", routes)
-	n.Stack.SetRouteTable(routes)
-
-	// Set NAT table rules if necessary.
-	if args.NATBlob {
+	if files.nat != nil {
 		log.Infof("Replacing NAT table")
-		iptReplaceBlob, err := io.ReadAll(args.FilePayload.Files[fdOffset])
+		iptReplaceBlob, err := io.ReadAll(files.nat)
 		if err != nil {
 			return fmt.Errorf("failed to read iptables blob: %v", err)
 		}
@@ -408,10 +189,237 @@ func (n *Network) CreateLinksAndRoutes(args *sentryapi.CreateLinksAndRoutesArgs,
 	if args.PauseExternalNetworking {
 		n.Stack.DisableAllNonLoopbackNICs()
 	}
-
 	n.Stack.SetAllowConnectedOnSave(args.AllowConnectedOnSave)
-
 	return nil
+}
+
+// networkFiles names the three parts of the CreateLinksAndRoutes file payload.
+type networkFiles struct {
+	links []*os.File
+	pcap  *os.File
+	nat   *os.File
+}
+
+func splitNetworkFiles(args *sentryapi.CreateLinksAndRoutesArgs) (networkFiles, error) {
+	if len(args.FDBasedLinks) > 0 && len(args.XDPLinks) > 0 {
+		return networkFiles{}, fmt.Errorf("received both fdbased and XDP links, but only one can be used at a time")
+	}
+	if n := len(args.XDPLinks); n > 1 {
+		return networkFiles{}, fmt.Errorf("XDP only supports one link device, but got %d", n)
+	}
+	var files networkFiles
+	// The sender appends the optional files after the link descriptors.
+	linkFiles := args.FilePayload.Files
+	if args.NATBlob {
+		if len(linkFiles) == 0 {
+			return networkFiles{}, fmt.Errorf("missing NAT file")
+		}
+		files.nat = linkFiles[len(linkFiles)-1]
+		linkFiles = linkFiles[:len(linkFiles)-1]
+	}
+	if args.PCAP {
+		if len(linkFiles) == 0 {
+			return networkFiles{}, fmt.Errorf("missing PCAP file")
+		}
+		files.pcap = linkFiles[len(linkFiles)-1]
+		linkFiles = linkFiles[:len(linkFiles)-1]
+	}
+	want := 0
+	for _, link := range args.FDBasedLinks {
+		if link.NumChannels < 0 || link.NumChannels > len(linkFiles)-want {
+			return networkFiles{}, fmt.Errorf("interface %q requires %d channel FDs, have %d", link.Name, link.NumChannels, len(linkFiles)-want)
+		}
+		want += link.NumChannels
+	}
+	for _, link := range args.XDPLinks {
+		switch link.Bind {
+		case sentryapi.BindSentry:
+			want = 4 // AF_XDP socket, program, socket map, and link.
+		case sentryapi.BindRunsc:
+			want = 1 // runsc keeps the BPF resources alive.
+		default:
+			return networkFiles{}, fmt.Errorf("unknown bind value: %d", link.Bind)
+		}
+	}
+	if got := len(linkFiles); got != want {
+		return networkFiles{}, fmt.Errorf("received %d link FDs, want %d", got, want)
+	}
+	files.links = linkFiles
+	return files, nil
+}
+
+func openPacketCapture(f *os.File) (*sniffer.PCAP, error) {
+	fd, err := unix.Dup(int(f.Fd()))
+	if err != nil {
+		return nil, fmt.Errorf("duplicating PCAP file: %w", err)
+	}
+	file := os.NewFile(uintptr(fd), "pcap-file")
+	const packetTruncateSize = 4096
+	capture, err := sniffer.NewPCAP(file, packetTruncateSize)
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("writing PCAP header: %w", err)
+	}
+	return capture, nil
+}
+
+// The RPC closes its files on return. Each endpoint needs its descriptors
+// for the lifetime of the sandbox.
+func dupLinkFDs(files []*os.File) ([]int, error) {
+	fds := make([]int, 0, len(files))
+	for _, file := range files {
+		fd, err := unix.Dup(int(file.Fd()))
+		if err != nil {
+			closeLinkFDs(fds)
+			return nil, fmt.Errorf("duplicating link FD %d: %w", file.Fd(), err)
+		}
+		fds = append(fds, fd)
+	}
+	return fds, nil
+}
+
+func closeLinkFDs(fds []int) {
+	for _, fd := range fds {
+		unix.Close(fd)
+	}
+}
+
+func newFDBasedEndpoint(link sentryapi.FDBasedLink, channels []*os.File) (stack.LinkEndpoint, error) {
+	fds, err := dupLinkFDs(channels)
+	if err != nil {
+		return nil, err
+	}
+	// Testing has shown that RecvMMsg is the fastest. Attempts to use
+	// the PacketMMap dispatcher have failed to result in higher throughput.
+	dispatchMode := fdbased.RecvMMsg
+	if link.IsProxy {
+		// Use Readv for a SOCK_SEQPACKET UDS proxy link so a peer EOF (0-byte
+		// read) stops the dispatcher cleanly instead of busy-spinning in
+		// RecvMMsg.
+		dispatchMode = fdbased.Readv
+	}
+	mac := tcpip.LinkAddress(link.LinkAddress)
+	log.Infof("Creating FD-based link %q (%v) with %d channels", link.Name, mac, link.NumChannels)
+	ep, err := fdbased.New(&fdbased.Options{
+		FDs:                  fds,
+		MTU:                  uint32(link.MTU),
+		EthernetHeader:       mac != "" && !link.IsProxy,
+		Address:              mac,
+		PacketDispatchMode:   dispatchMode,
+		GSOMaxSize:           link.GSOMaxSize,
+		GVisorGSOEnabled:     link.GVisorGSOEnabled,
+		TXChecksumOffload:    link.TXChecksumOffload,
+		RXChecksumOffload:    link.RXChecksumOffload,
+		GRO:                  link.GVisorGRO,
+		ProcessorsPerChannel: link.ProcessorsPerChannel,
+		IsPacketSocket:       link.IsPacket,
+		PreConfigured:        link.PreConfigured,
+	})
+	if err != nil {
+		closeLinkFDs(fds)
+	}
+	return ep, err
+}
+
+func newXDPEndpoint(link sentryapi.XDPLink, files []*os.File) (stack.LinkEndpoint, error) {
+	// When the sentry binds the socket, the remaining FDs keep its BPF
+	// program, socket map, and link alive for the lifetime of the dispatcher.
+	fds, err := dupLinkFDs(files)
+	if err != nil {
+		return nil, err
+	}
+	log.Infof("Creating XDP link %q (%v) with %d channels", link.Name, link.LinkAddress, link.NumChannels)
+	ep, err := xdp.New(&xdp.Options{
+		FD:                fds[0],
+		Address:           tcpip.LinkAddress(link.LinkAddress),
+		TXChecksumOffload: link.TXChecksumOffload,
+		RXChecksumOffload: link.RXChecksumOffload,
+		InterfaceIndex:    link.InterfaceIndex,
+		Bind:              link.Bind == sentryapi.BindSentry,
+		GRO:               link.GVisorGRO,
+	})
+	if err != nil {
+		closeLinkFDs(fds)
+	}
+	return ep, err
+}
+
+type networkSetup struct {
+	network     *Network
+	nicIDs      map[string]tcpip.NICID
+	routes      []tcpip.Route
+	captureFile *os.File
+	capture     *sniffer.PCAP
+	logPackets  bool
+}
+
+type externalNIC struct {
+	name      string
+	addresses []sentryapi.IPWithPrefix
+	routes    []sentryapi.Route
+	neighbors []sentryapi.Neighbor
+	qdisc     config.QueueingDiscipline
+	rate      uint64
+	burst     uint32
+}
+
+func (s *networkSetup) addExternalNIC(ep stack.LinkEndpoint, link externalNIC) error {
+	if s.captureFile != nil {
+		if s.capture == nil {
+			// The first external endpoint writes the file header. Later NICs
+			// append records to the same stream.
+			capture, err := openPacketCapture(s.captureFile)
+			if err != nil {
+				return err
+			}
+			s.capture = capture
+		}
+		ep = s.capture.Wrap(ep)
+	} else if s.logPackets {
+		ep = sniffer.New(ep)
+	}
+
+	var qDisc stack.QueueingDiscipline
+	switch link.qdisc {
+	case config.QDiscNone:
+	case config.QDiscFIFO:
+		log.Infof("Enabling FIFO QDisc on %q", link.name)
+		qDisc = fifo.New(ep, gomaxprocs.Base(), 1000)
+	case config.QDiscTBF:
+		log.Infof("Enabling TBF QDisc on %q rate=%d burst=%d", link.name, link.rate, link.burst)
+		var err error
+		qDisc, err = tbf.New(ep, s.network.Stack.Clock(), link.rate, link.burst, 1000)
+		if err != nil {
+			return fmt.Errorf("creating TBF qdisc for %q: %w", link.name, err)
+		}
+	}
+	nicID, err := s.addNIC(ep, link.name, link.addresses, link.routes, qDisc)
+	if err != nil {
+		return err
+	}
+	for _, neigh := range link.neighbors {
+		proto, addr := ipToAddressAndProto(neigh.IP)
+		s.network.Stack.AddStaticNeighbor(nicID, proto, addr, tcpip.LinkAddress(neigh.HardwareAddr))
+	}
+	return nil
+}
+
+func (s *networkSetup) addNIC(ep stack.LinkEndpoint, name string, addrs []sentryapi.IPWithPrefix, routes []sentryapi.Route, qDisc stack.QueueingDiscipline) (tcpip.NICID, error) {
+	nicID := s.network.Stack.NextNICID()
+	log.Infof("Enabling interface %q with id %d on addresses %+v", name, nicID, addrs)
+	opts := stack.NICOptions{Name: name, QDisc: qDisc, DeliverLinkPackets: true}
+	if err := s.network.createNICWithAddrs(nicID, ep, opts, addrs); err != nil {
+		return 0, err
+	}
+	s.nicIDs[name] = nicID
+	for _, r := range routes {
+		route, err := toTcpipRoute(&r, nicID)
+		if err != nil {
+			return 0, err
+		}
+		s.routes = append(s.routes, route)
+	}
+	return nicID, nil
 }
 
 // createNICWithAddrs creates a NIC in the network stack and adds the given
