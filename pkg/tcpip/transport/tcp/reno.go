@@ -72,7 +72,7 @@ func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
 //
 // +checklocks:r.s.ep.mu
 func (r *renoState) reduceSlowStartThreshold() {
-	r.s.Ssthresh = r.s.Outstanding / 2
+	r.s.Ssthresh = (r.s.Outstanding - int(r.s.limitedTransmits)) / 2
 	if r.s.Ssthresh < 2 {
 		r.s.Ssthresh = 2
 	}
