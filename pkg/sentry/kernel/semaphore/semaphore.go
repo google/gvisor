@@ -692,10 +692,15 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 
 	// All operations succeeded, apply them.
 	// TODO(gvisor.dev/issue/137): handle undo operations.
-	for i, v := range tmpVals {
-		s.sems[i].value = v
+	for _, op := range ops {
+		sem := &s.sems[op.SemNum]
+		sem.value = tmpVals[op.SemNum]
+		sem.pid = pid
+	}
+	// A multi-operation waiter may now hit an error before reaching the
+	// semaphore on which it blocked.
+	for i := range s.sems {
 		s.sems[i].wakeWaiters()
-		s.sems[i].pid = pid
 	}
 	s.opTime = ktime.NowFromContext(ctx)
 	return nil, 0, nil
