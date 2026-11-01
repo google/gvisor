@@ -1478,9 +1478,6 @@ func (e *Endpoint) finWait2TimerExpired() {
 
 // +checklocks:e.mu
 func (e *Endpoint) handshakeFailed(err tcpip.Error) {
-	e.lastErrorMu.Lock()
-	e.lastError = err
-	e.lastErrorMu.Unlock()
 	// handshakeFailed is also called from startHandshake when a listener
 	// transitions out of Listen state by the time the SYN is processed. In
 	// such cases the handshake is never initialized and the newly created
