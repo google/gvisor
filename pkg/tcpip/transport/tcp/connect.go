@@ -146,7 +146,7 @@ func timerHandler(e *Endpoint, f func() tcpip.Error) func() {
 			}
 			e.lastError = err
 			e.lastErrorMu.Unlock()
-			e.cleanupLocked()
+			e.cleanupFailedOpenLocked()
 			e.setEndpointState(StateError)
 			e.mu.Unlock()
 			e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
@@ -1493,7 +1493,7 @@ func (e *Endpoint) handshakeFailed(err tcpip.Error) {
 		e.h.retransmitTimer.stop()
 	}
 	e.hardError = err
-	e.cleanupLocked()
+	e.cleanupFailedOpenLocked()
 	e.setEndpointState(StateError)
 }
 
