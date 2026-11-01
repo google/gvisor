@@ -609,6 +609,41 @@ TEST_P(TcpSocketTest, ClosedReadBlockingSocket) {
   EXPECT_GT(ms_elapsed(begin, end), timeout * 1000 - 1);
 }
 
+// connect(AF_UNSPEC) clears a TCP socket's read shutdown, so a recv on the
+// reconnected socket waits for data instead of returning early.
+TEST_P(TcpSocketTest, RecvWaitsAfterDisconnectClearsShutdownRd) {
+  // Netstack does not support connect(AF_UNSPEC) on TCP sockets.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
+
+  sockaddr_storage addr = {};
+  socklen_t addrlen = sizeof(addr);
+  ASSERT_THAT(getsockname(listener_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  // This fails, but Linux still shuts the socket down for reading.
+  ASSERT_THAT(shutdown(s.get(), SHUT_RD), SyscallFailsWithErrno(ENOTCONN));
+  sockaddr unspec = {.sa_family = AF_UNSPEC};
+  ASSERT_THAT(connect(s.get(), &unspec, sizeof(unspec)), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+  FileDescriptor peer =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listener_.get(), nullptr, nullptr));
+
+  const DisableSave disable_save;  // Timing-related.
+  constexpr char kData = 'x';
+  ScopedThread send_thread([&peer, &kData]() {
+    // Give the recv below time to start waiting.
+    absl::SleepFor(absl::Milliseconds(100));
+    ASSERT_THAT(RetryEINTR(send)(peer.get(), &kData, sizeof(kData), 0),
+                SyscallSucceedsWithValue(sizeof(kData)));
+  });
+  char got = 0;
+  ASSERT_THAT(RetryEINTR(recv)(s.get(), &got, sizeof(got), 0),
+              SyscallSucceedsWithValue(sizeof(got)));
+  EXPECT_EQ(got, kData);
+}
+
 TEST_P(TcpSocketTest, MsgTrunc) {
   char sent_data[512];
   RandomizeBuffer(sent_data, sizeof(sent_data));
