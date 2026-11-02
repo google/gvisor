@@ -2359,32 +2359,32 @@ func (i *tasksInode) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(14, &i.fakeCgroupControllers)
 }
 
-func (s *staticFileSetStat) StateTypeName() string {
-	return "pkg/sentry/fsimpl/proc.staticFileSetStat"
+func (d *cpuInfoData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.cpuInfoData"
 }
 
-func (s *staticFileSetStat) StateFields() []string {
+func (d *cpuInfoData) StateFields() []string {
 	return []string{
 		"dynamicBytesFileSetAttr",
-		"StaticData",
+		"freqMHz",
 	}
 }
 
-func (s *staticFileSetStat) beforeSave() {}
+func (d *cpuInfoData) beforeSave() {}
 
 // +checklocksignore
-func (s *staticFileSetStat) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.dynamicBytesFileSetAttr)
-	stateSinkObject.Save(1, &s.StaticData)
+func (d *cpuInfoData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dynamicBytesFileSetAttr)
+	stateSinkObject.SaveFloat64(1, &d.freqMHz)
 }
 
-func (s *staticFileSetStat) afterLoad(context.Context) {}
+func (d *cpuInfoData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *staticFileSetStat) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.dynamicBytesFileSetAttr)
-	stateSourceObject.Load(1, &s.StaticData)
+func (d *cpuInfoData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dynamicBytesFileSetAttr)
+	stateSourceObject.LoadFloat64(1, &d.freqMHz)
 }
 
 func (s *selfSymlink) StateTypeName() string {
@@ -2841,6 +2841,46 @@ func (t *tcpMemDir) StateTypeName() string {
 
 func (t *tcpMemDir) StateFields() []string {
 	return nil
+}
+
+func (d *lazySysDir) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.lazySysDir"
+}
+
+func (d *lazySysDir) StateFields() []string {
+	return []string{
+		"StaticDirectory",
+		"fs",
+		"k",
+		"creds",
+		"path",
+		"populated",
+	}
+}
+
+func (d *lazySysDir) beforeSave() {}
+
+// +checklocksignore
+func (d *lazySysDir) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.StaticDirectory)
+	stateSinkObject.Save(1, &d.fs)
+	stateSinkObject.Save(2, &d.k)
+	stateSinkObject.Save(3, &d.creds)
+	stateSinkObject.SaveString(4, &d.path)
+	stateSinkObject.Save(5, &d.populated)
+}
+
+func (d *lazySysDir) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *lazySysDir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.StaticDirectory)
+	stateSourceObject.Load(1, &d.fs)
+	stateSourceObject.Load(2, &d.k)
+	stateSourceObject.Load(3, &d.creds)
+	stateSourceObject.LoadString(4, &d.path)
+	stateSourceObject.Load(5, &d.populated)
 }
 
 func (d *mmapMinAddrData) StateTypeName() string {
@@ -3305,7 +3345,7 @@ func init() {
 	state.RegisterNoHooks((*netRouteData)(nil))
 	state.RegisterNoHooks((*netStatData)(nil))
 	state.RegisterNoHooks((*tasksInode)(nil))
-	state.RegisterNoHooks((*staticFileSetStat)(nil))
+	state.RegisterNoHooks((*cpuInfoData)(nil))
 	state.RegisterNoHooks((*selfSymlink)(nil))
 	state.RegisterNoHooks((*threadSelfSymlink)(nil))
 	state.RegisterNoHooks((*dynamicBytesFileSetAttr)(nil))
@@ -3322,6 +3362,7 @@ func init() {
 	state.RegisterNoHooks((*sentryMeminfoData)(nil))
 	state.RegisterStruct((*tasksInodeRefs)(nil))
 	state.Register((*tcpMemDir)(nil))
+	state.RegisterNoHooks((*lazySysDir)(nil))
 	state.RegisterNoHooks((*mmapMinAddrData)(nil))
 	state.RegisterNoHooks((*hostnameData)(nil))
 	state.RegisterNoHooks((*domainnameData)(nil))

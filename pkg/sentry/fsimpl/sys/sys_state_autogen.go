@@ -270,6 +270,46 @@ func (d *dir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(10, &d.locks)
 }
 
+func (d *lazyDir) StateTypeName() string {
+	return "pkg/sentry/fsimpl/sys.lazyDir"
+}
+
+func (d *lazyDir) StateFields() []string {
+	return []string{
+		"dir",
+		"fs",
+		"creds",
+		"cores",
+		"cpu",
+		"populated",
+	}
+}
+
+func (d *lazyDir) beforeSave() {}
+
+// +checklocksignore
+func (d *lazyDir) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dir)
+	stateSinkObject.Save(1, &d.fs)
+	stateSinkObject.Save(2, &d.creds)
+	stateSinkObject.SaveUint(3, &d.cores)
+	stateSinkObject.SaveInt(4, &d.cpu)
+	stateSinkObject.Save(5, &d.populated)
+}
+
+func (d *lazyDir) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *lazyDir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dir)
+	stateSourceObject.Load(1, &d.fs)
+	stateSourceObject.Load(2, &d.creds)
+	stateSourceObject.LoadUint(3, &d.cores)
+	stateSourceObject.LoadInt(4, &d.cpu)
+	stateSourceObject.Load(5, &d.populated)
+}
+
 func (d *cgroupDir) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.cgroupDir"
 }
@@ -439,6 +479,7 @@ func init() {
 	state.RegisterNoHooks((*InternalData)(nil))
 	state.RegisterNoHooks((*filesystem)(nil))
 	state.RegisterNoHooks((*dir)(nil))
+	state.RegisterNoHooks((*lazyDir)(nil))
 	state.RegisterNoHooks((*cgroupDir)(nil))
 	state.RegisterNoHooks((*cpuFile)(nil))
 	state.RegisterNoHooks((*implStatFS)(nil))
