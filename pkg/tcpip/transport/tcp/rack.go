@@ -442,29 +442,27 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 	// retransmits and recovery on a path with little or no real loss
 	// (gvisor#9707/#9778). detectLoss arms the timer from rcvdTime-derived
 	// values, so evaluating it at the timer target keeps the two consistent.
-	numLost := rc.detectLoss(rc.snd.reorderTimer.target)
-	if numLost == 0 {
-		return nil
+	if rc.detectLoss(rc.snd.reorderTimer.target) > 0 {
+		rc.recover(false /* retransmitHead */)
 	}
-
-	fastRetransmit := false
-	if !rc.snd.FastRecovery.Active {
-		rc.snd.cc.HandleLossDetected()
-		rc.snd.enterRecovery()
-		fastRetransmit = true
-	}
-
-	rc.DoRecovery(nil, fastRetransmit)
 	return nil
 }
 
-// DoRecovery implements lossRecovery.DoRecovery.
+// recover runs when RACK has found a loss or the sender is already in recovery.
 //
 // +checklocks:rc.snd.ep.mu
 // +checklocksexclude:rc.snd.rtt.rttMutex
-func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
+func (rc *rackControl) recover(retransmitHead bool) {
 	snd := rc.snd
-	if fastRetransmit {
+	if !snd.FastRecovery.Active {
+		snd.cc.HandleLossDetected()
+		snd.enterRecovery()
+		// Unlike three duplicate ACKs, a RACK loss can be anywhere in the
+		// flight. For example, an RTO may already have repaired the head
+		// before a SACK reveals a later hole.
+		retransmitHead = snd.writeList.Front().lost
+	}
+	if retransmitHead {
 		snd.resendSegment()
 	}
 

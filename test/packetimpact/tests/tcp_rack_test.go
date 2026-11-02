@@ -162,6 +162,46 @@ func TestRACKTLPLost(t *testing.T) {
 	}
 }
 
+func TestRACKFreshTimeoutRetransmission(t *testing.T) {
+	dut, conn, fd, mss := createSACKConnection(t)
+	sendAndReceive(t, dut, conn, numPktsForRTT, fd, mss, true /* sendACK */)
+	first := *conn.RemoteSeqNum(t)
+	sendAndReceive(t, dut, conn, 3, fd, mss, false /* sendACK */)
+	time.Sleep(simulatedRTT / 2)
+	sendAndReceive(t, dut, conn, 4, fd, mss, false /* sendACK */)
+
+	// Withhold all ACKs until the retransmission timeout repairs the first
+	// segment. A tail loss probe may have retransmitted the last one.
+	head := &testbench.TCP{SeqNum: testbench.Uint32(uint32(first))}
+	payload := &testbench.Payload{Bytes: make([]byte, mss)}
+	if _, err := conn.ExpectData(t, head, payload, 3*time.Second); err != nil {
+		t.Fatalf("timeout retransmission: %v", err)
+	}
+	info := dut.GetSockOptTCPInfo(t, fd)
+	if info.CaState != linux.TCP_CA_Loss {
+		t.Fatalf("TCP state after head retransmission = %d, want Loss", info.CaState)
+	}
+
+	// Segments 4–6 were sent after segments 2 and 3, but before the repair
+	// of segment 1. They cannot establish that the repair was lost.
+	var opts [40]byte
+	n := header.EncodeSACKBlocks([]header.SACKBlock{{
+		Start: first.Add(seqnum.Size(3 * mss)),
+		End:   first.Add(seqnum.Size(6 * mss)),
+	}}, opts[:])
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(first)), Options: opts[:n]})
+	if _, err := conn.ExpectData(t, head, payload, time.Duration(info.RTO)*time.Microsecond/2); err == nil {
+		t.Fatal("SACK of later segments retransmitted the freshly repaired head")
+	}
+
+	// We have now received the entire flight. Confirm that the connection
+	// delivers new data after recovery.
+	end := first.Add(seqnum.Size(7 * mss))
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end))})
+	*conn.RemoteSeqNum(t) = end
+	sendAndReceive(t, dut, conn, 1, fd, mss, true /* sendACK */)
+}
+
 // TestRACKWithSACK tests that RACK marks the packets as lost after receiving
 // the ACK for retransmitted packets.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-8.1
