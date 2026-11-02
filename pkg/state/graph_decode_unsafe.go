@@ -87,6 +87,9 @@ type graphDecodeState struct {
 
 	// cur is the object being decoded.
 	cur int32
+	// afterHead..afterTail hold the active StateLoad's AfterLoad callbacks.
+	// decodeStruct appends them after that loader's field callbacks.
+	afterHead, afterTail int32
 	// lastRef is the object referred to by the last decoded pointer, slice,
 	// map or interface, or -1.
 	lastRef int32
