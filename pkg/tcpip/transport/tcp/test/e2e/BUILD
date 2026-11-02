@@ -88,6 +88,7 @@ go_test(
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
+        "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/tcp/testing/context",
     ],
