@@ -1220,8 +1220,7 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	}
 	loaded := pagesMetadataReader != nil
 	mfOpts := pgalloc.MemoryFileOpts{
-		// Private memory files are usually backed by files on disk. Ideally we
-		// would confirm with fstatfs(2) but that is prohibited by seccomp.
+		// Private memory files are usually backed by files on disk.
 		DiskBackedFile: true,
 		// Disk backed files need to be decommited on destroy to release disk space.
 		DecommitOnDestroy: true,
