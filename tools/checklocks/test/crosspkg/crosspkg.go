@@ -177,3 +177,13 @@ func RequirePrivateStruct() {}
 // ExcludePrivateStruct requires the private struct's mutex not to be held.
 // +checklocksexclude:privateFieldStruct.mu
 func ExcludePrivateStruct() {}
+
+// Any reports whether visit accepts an element.
+func Any[T any](visit func(T) bool, values []T) bool {
+	for _, v := range values {
+		if visit(v) {
+			return true
+		}
+	}
+	return false
+}

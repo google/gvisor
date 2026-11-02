@@ -68,7 +68,7 @@ func (f *fieldStruct) synthesize(s string, typ types.Type, _ *lockState) (string
 	field, ok := findField(typ, f.Field)
 	if !ok {
 		// Should not happen as long as fieldList construction is correct.
-		panic(fmt.Sprintf("unable to resolve field %d in %s", f.Field, typ.String()))
+		panic(fmt.Sprintf("unable to resolve field %d in %s", f.Field, typ))
 	}
 	return fieldKey(s, field), field
 }
@@ -83,7 +83,7 @@ func (f *fieldStructPtr) synthesize(s string, typ types.Type, ls *lockState) (st
 	field, ok := findField(typ, f.Field)
 	if !ok {
 		// See above, this should not happen.
-		panic(fmt.Sprintf("unable to resolve ptr field %d in %s", f.Field, typ.String()))
+		panic(fmt.Sprintf("unable to resolve ptr field %d in %s", f.Field, typ))
 	}
 	value, _ := ls.loadKeyAndObject(fieldKey(s, field), field)
 	return value, field
@@ -166,7 +166,7 @@ type functionGuardResolver interface {
 	// resolveCall is used to resolve a guard during a call. The ssa
 	// return value is available from the instruction context where the
 	// call occurs, but the target's ssa representation is not available.
-	resolveCall(pc *passContext, ls *lockState, args []ssa.Value, rv ssa.Value) resolvedValue
+	resolveCall(pc *passContext, ls *lockState, args []ssa.Value, rv *ssa.Call) resolvedValue
 }
 
 // lockGuardFacts contains guard information.
@@ -235,7 +235,7 @@ func (g *globalGuard) resolveStatic(pc *passContext, ls *lockState, _ *ssa.Funct
 }
 
 // resolveCall implements functionGuardResolver.resolveCall.
-func (g *globalGuard) resolveCall(pc *passContext, ls *lockState, _ []ssa.Value, v ssa.Value) resolvedValue {
+func (g *globalGuard) resolveCall(pc *passContext, ls *lockState, _ []ssa.Value, v *ssa.Call) resolvedValue {
 	return g.resolveCommon(pc, ls)
 }
 
@@ -271,7 +271,11 @@ func (p *parameterGuard) resolveStatic(_ *passContext, _ *lockState, fn *ssa.Fun
 }
 
 // resolveCall implements functionGuardResolver.resolveCall.
-func (p *parameterGuard) resolveCall(_ *passContext, _ *lockState, args []ssa.Value, _ ssa.Value) resolvedValue {
+func (p *parameterGuard) resolveCall(_ *passContext, _ *lockState, args []ssa.Value, _ *ssa.Call) resolvedValue {
+	if p.Index >= len(args) {
+		// The helper, not its caller, supplies a callback's argument.
+		return resolvedValue{}
+	}
 	return makeResolvedValue(args[p.Index], p.FieldList)
 }
 
@@ -330,7 +334,10 @@ func (r *returnGuard) resolveStatic(_ *passContext, _ *lockState, _ *ssa.Functio
 }
 
 // resolveCall implements functionGuardResolver.resolveCall.
-func (r *returnGuard) resolveCall(_ *passContext, _ *lockState, _ []ssa.Value, rv ssa.Value) resolvedValue {
+func (r *returnGuard) resolveCall(_ *passContext, _ *lockState, _ []ssa.Value, rv *ssa.Call) resolvedValue {
+	if rv == nil {
+		return resolvedValue{}
+	}
 	return r.resolveCommon(rv)
 }
 
