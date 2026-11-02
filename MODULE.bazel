@@ -362,6 +362,20 @@ img_pull(
     tag = "18.4",
 )
 
+# The profiling DaemonSet runs GNU rm --one-file-system on a host mount.
+img_pull(
+    name = "profile_helper_ubuntu",
+    digest = "sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/ubuntu",
+    tag = "22.04",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
