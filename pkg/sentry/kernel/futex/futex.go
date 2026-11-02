@@ -330,7 +330,7 @@ func (b *bucket) wakeWaiterLocked(w *Waiter) {
 //
 // +checklocks:b.mu
 // +checklocks:to.mu
-func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) error {
+func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) (int, error) {
 	done := 0
 	for w := b.waiters.Front(); done < n && w != nil; {
 		if !w.key.matches(key) {
@@ -339,19 +339,22 @@ func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) erro
 			continue
 		}
 		if w.isPI() {
-			return linuxerr.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		requeued := w
 		w = w.Next() // Next iteration.
-		b.waiters.Remove(requeued)
 		requeued.key.release(t)
 		requeued.key = nkey.clone()
-		to.waiters.PushBack(requeued)
-		requeued.bucket.Store(to)
+		// Moving a waiter to the tail of the same list can visit it again.
+		if b != to {
+			b.waiters.Remove(requeued)
+			to.waiters.PushBack(requeued)
+			requeued.bucket.Store(to)
+		}
 		done++
 	}
-	return nil
+	return done, nil
 }
 
 const (
@@ -571,8 +574,8 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 	}
 
 	// Requeue the number required.
-	err = b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
-	return done, err
+	requeued, err := b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
+	return done + requeued, err
 }
 
 // Requeue wakes up to nwake waiters on the given addr, and unconditionally
