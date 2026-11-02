@@ -55,6 +55,7 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_fsstress=//images/basic:fsstress_context \
   basic_tmpfile=//images/basic:tmpfile_context \
   benchmarks_bun-spawn=//images/benchmarks/bun-spawn:bun_spawn_context \
+  gpu_ollama_client=//images/gpu/ollama/client:client_context \
   compatibility_postgresql_postgresql=//images/compatibility:postgresql_context
 ifeq ($(ARCH),x86_64)
 BAZEL_IMAGE_CONTEXTS += benchmarks_syscallbench=//images/benchmarks/syscallbench:syscallbench_context
@@ -278,7 +279,7 @@ $(_image_context_targets):
 .PHONY: $(_image_context_targets)
 
 _cuda_context_options = $(_image_context_options) --@io_bazel_rules_go//go/config:race=false
-_cuda_context_targets := $(foreach op,$(_image_context_operations),$(addprefix $(op)-,gpu_cuda-tests gpu_cuda-tests-12-8 gpu_ollama_client))
+_cuda_context_targets := $(foreach op,$(_image_context_operations),$(addprefix $(op)-,gpu_cuda-tests gpu_cuda-tests-12-8))
 $(_cuda_context_targets):
 	@set -eu; image_context_dir=$$(mktemp -d); trap 'rm -rf "$$image_context_dir"' EXIT; \
 	$(MAKE) --no-print-directory -C "$(dir $(_image_root_makefile))" -f "$(_image_root_makefile)" copy \
