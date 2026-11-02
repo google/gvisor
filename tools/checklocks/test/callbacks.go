@@ -41,7 +41,7 @@ func (e *callbackEntries) containsAnyLocked(keys []string) bool {
 func (e *callbackEntries) indexAnyLocked(keys []string) int {
 	return slices.IndexFunc(keys, e.hasKeyLocked)
 }
- 
+
 func (e *callbackEntries) temporarilyReleaseInPredicate(keys []string) {
 	e.mu.Lock()
 	slices.ContainsFunc(keys, func(key string) bool {
