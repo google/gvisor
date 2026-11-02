@@ -1721,6 +1721,26 @@ func cgroupCPUNum(cg cgroup.Cgroup) int {
 	return cpuNum
 }
 
+// CalculateCPUNum calculates the number of CPUs to configure for a process in
+// a cgroup, bounded by cpuset. If limits is set, it holds the application CPU
+// limit.
+func CalculateCPUNum(cg cgroup.Cgroup, limits *CPULimits, cpuNumFromQuota bool) (int, error) {
+	cgCPUNum := runtime.NumCPU()
+	if cg != nil {
+		if n, err := cg.NumCPU(); err == nil {
+			cgCPUNum = n
+		}
+	}
+	if !cpuNumFromQuota {
+		return cgCPUNum, nil
+	}
+	cpuNum, _, _, err := calculateCPUNum(cg, cgCPUNum, limits, true)
+	if err != nil {
+		return cgCPUNum, err
+	}
+	return cpuNum, nil
+}
+
 // calculateCPUNum calculates the number of CPUs to configure for the sandbox,
 // out of the `cgCPUNum` CPUs that `cg` can run on, along with the cgroup CPU
 // quota and period.
@@ -1730,8 +1750,15 @@ func calculateCPUNum(cg cgroup.Cgroup, cgCPUNum int, limits *CPULimits, cpuNumFr
 	cpuNum := cgCPUNum
 	var cpuQuota, cpuPeriod int64
 	if limits != nil {
-		cpuQuota, cpuPeriod = *limits.App.Quota, int64(*limits.App.Period)
-	} else {
+		if limits.App.Quota != nil {
+			cpuQuota = *limits.App.Quota
+		}
+		if limits.App.Period != nil && *limits.App.Period <= math.MaxInt64 {
+			cpuPeriod = int64(*limits.App.Period)
+		} else if cpuQuota > 0 {
+			cpuPeriod = cgroup.DefaultCPUPeriod
+		}
+	} else if cg != nil {
 		var err error
 		if cpuQuota, err = cg.CPUQuota(); err != nil {
 			return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)

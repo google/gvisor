@@ -116,6 +116,24 @@ go_test(
 )
 
 go_test(
+    name = "gofer_env_test",
+    srcs = ["gofer_env_test.go"],
+    embed = [":container"],
+    deps = ["//runsc/config"],
+)
+
+go_test(
+    name = "gofer_maxprocs_test",
+    srcs = ["gofer_maxprocs_test.go"],
+    embed = [":container"],
+    deps = [
+        "//runsc/cgroup",
+        "//runsc/sandbox",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+go_test(
     name = "modify_test",
     srcs = ["modify_test.go"],
     embed = [":container"],
@@ -124,13 +142,6 @@ go_test(
         "//runsc/specutils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
-)
-
-go_test(
-    name = "gofer_env_test",
-    srcs = ["gofer_env_test.go"],
-    embed = [":container"],
-    deps = ["//runsc/config"],
 )
 
 go_test(

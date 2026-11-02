@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -324,6 +325,108 @@ func TestSandboxCreationCPULimit(t *testing.T) {
 			}
 			checkCPUMax("after updating the sandbox", "25000 100000")
 		})
+	}
+}
+
+// TestSubcontainerGoferGOMAXPROCSAfterUpdate checks that a subcontainer gofer
+// started after Container.Update changes the sandbox CPU quota uses the
+// updated quota rather than the one saved when the subcontainer was created.
+func TestSubcontainerGoferGOMAXPROCSAfterUpdate(t *testing.T) {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("cpu.max requires cgroup v2")
+	}
+	cpuRes := func(quota int64) *specs.LinuxResources {
+		return &specs.LinuxResources{CPU: &specs.LinuxCPU{Quota: new(quota), Period: new(uint64(100000))}}
+	}
+	for _, noRootContainer := range []bool{false, true} {
+		for _, tc := range []struct {
+			name         string
+			initialQuota int64
+			updatedQuota int64
+			wantCap      int
+		}{
+			{name: "lowered_quota", initialQuota: 800000, updatedQuota: 25000, wantCap: 2},
+			{name: "raised_quota", initialQuota: 25000, updatedQuota: 600000, wantCap: 6},
+			{name: "cleared_quota", initialQuota: 25000, updatedQuota: -1, wantCap: 8},
+		} {
+			t.Run(fmt.Sprintf("noRootContainer=%t/%s", noRootContainer, tc.name), func(t *testing.T) {
+				testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+				config.RegisterFlags(testFlags)
+				conf, err := config.NewFromFlags(testFlags)
+				if err != nil {
+					t.Fatal(err)
+				}
+				conf.Network = config.NetworkNone
+				conf.Overlay2.Set("none")
+				if err := conf.SandboxCreationCPUPolicy.Set("uncapped"); err != nil {
+					t.Fatal(err)
+				}
+				rootDir, cleanupRoot, err := testutil.SetupRootDir()
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(cleanupRoot)
+				conf.RootDir = rootDir
+
+				newContainer := func(spec *specs.Spec, args container.Args) *container.Container {
+					t.Helper()
+					spec.Mounts = nil
+					bundleDir, cleanupBundle, err := testutil.SetupBundleDir(spec)
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(cleanupBundle)
+					args.ID, args.Spec, args.BundleDir = testutil.RandomContainerID(), spec, bundleDir
+					c, err := container.New(conf, args)
+					if err != nil {
+						t.Fatalf("creating container: %v", err)
+					}
+					t.Cleanup(func() {
+						if err := c.Destroy(); err != nil {
+							t.Errorf("destroying container: %v", err)
+						}
+					})
+					return c
+				}
+
+				cgPath := "/" + testutil.RandomID("runsc-sub-maxprocs-")
+				sbSpec := testutil.NewSpecWithArgs("/bin/sleep", "1000")
+				if noRootContainer {
+					sbSpec = &specs.Spec{
+						Version:     specs.Version,
+						Annotations: map[string]string{specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox},
+					}
+				}
+				sbSpec.Linux = &specs.Linux{
+					CgroupsPath: cgPath,
+					Resources:   cpuRes(tc.initialQuota),
+				}
+				sb := newContainer(sbSpec, container.Args{NoRootContainer: noRootContainer})
+				if err := sb.Start(conf); err != nil {
+					t.Fatalf("starting sandbox: %v", err)
+				}
+
+				subSpec := testutil.NewSpecWithArgs("/bin/sleep", "1000")
+				subSpec.Annotations = map[string]string{
+					specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+					specutils.ContainerdSandboxIDAnnotation:     sb.ID,
+				}
+				sub := newContainer(subSpec, container.Args{})
+				if err := sb.Update(conf, cpuRes(tc.updatedQuota)); err != nil {
+					t.Fatalf("updating sandbox: %v", err)
+				}
+				if err := sub.Start(conf); err != nil {
+					t.Fatalf("starting subcontainer: %v", err)
+				}
+
+				cg, err := cgroup.NewFromPath(cgPath, false /* useSystemd */)
+				if err != nil {
+					t.Fatalf("cgroup.NewFromPath(%q): %v", cgPath, err)
+				}
+				cgCPUs, _ := sandbox.CalculateCPUNum(cg, nil, false /* cpuNumFromQuota */)
+				checkGoferMaxProcsEnv(t, sub.GoferPid.Load(), strconv.Itoa(max(1, min(cgCPUs, tc.wantCap))))
+			})
+		}
 	}
 }
 

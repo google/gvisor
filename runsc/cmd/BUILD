@@ -136,6 +136,7 @@ go_test(
         "//pkg/test/sandboxposture",
         "//pkg/test/testutil",
         "//runsc/boot/sentryapi",
+        "//runsc/cgroup",
         "//runsc/cmd/sandboxsetup",
         "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/util",

@@ -50,6 +50,7 @@ go_test(
         "//runsc/config",
         "//runsc/container",
         "//runsc/flag",
+        "//runsc/sandbox",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_docker_docker//api/types/container:go_default_library",
