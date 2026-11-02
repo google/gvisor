@@ -784,7 +784,8 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 		echo 'Must specify BENCHMARKS_PLATFORMS.' >&2; \
 		exit 1; \
 	else \
-		PGO_RUNTIME_KEY="$$( $(call run,tools/profiletool,runtime-info) )"; \
+		PGO_PROFILETOOL="$$( $(call build,tools/profiletool) )"; \
+		PGO_RUNTIME_KEY="$$( "$${PGO_PROFILETOOL}" runtime-info )"; \
 		export PGO_RUNTIME_KEY; \
 		PGO_LAST_PKG_COMMIT_HASH="$$(git log --max-count=1 --format='%H' -- pkg)"; \
 		export PGO_LAST_PKG_COMMIT_HASH; \
@@ -805,25 +806,28 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 				export PGO_PROFILE_OLD; \
 				PGO_PROFILE_NEW="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}.pgo.pprof.pb.gz"; \
 				export PGO_PROFILE_NEW; \
-				if [[ -f "$${PGO_PROFILE_OLD_COMMIT_HASH}" ]] && [[ "$$(cat "$${PGO_PROFILE_OLD_COMMIT_HASH}")" == "$${PGO_LAST_PKG_COMMIT_HASH}" ]]; then \
-					echo "Skipping refresh for $${PGO_PROFILE_OLD}: profile is already up-to-date." >&2; \
-					continue; \
-				fi; \
-				if [[ -f "$${PGO_PROFILE_OLD}" ]] && [[ "$$(stat -c %Y $${PGO_PROFILE_OLD})" -gt "$$(date +%s -d '$(BENCHMARKS_PGO_REFRESH_MIN_DAYS_SINCE_LAST_UPDATE) days ago')" ]]; then \
-					echo "Skipping refresh for $${PGO_PROFILE_OLD}: profile is less than $(BENCHMARKS_PGO_REFRESH_MIN_DAYS_SINCE_LAST_UPDATE) days old." >&2; \
-					continue; \
+				if [[ -f "$${PGO_PROFILE_OLD}" ]]; then \
+					if [[ -f "$${PGO_PROFILE_OLD_COMMIT_HASH}" ]] && [[ "$$(cat "$${PGO_PROFILE_OLD_COMMIT_HASH}")" == "$${PGO_LAST_PKG_COMMIT_HASH}" ]]; then \
+						echo "Skipping refresh for $${PGO_PROFILE_OLD}: profile is already up-to-date." >&2; \
+						continue; \
+					fi; \
+					PGO_PROFILE_TIME="$$( "$${PGO_PROFILETOOL}" timestamp "$${PGO_PROFILE_OLD}" )"; \
+					if [[ "$${PGO_PROFILE_TIME}" -gt "$$(date +%s -d '$(BENCHMARKS_PGO_REFRESH_MIN_DAYS_SINCE_LAST_UPDATE) days ago')" ]]; then \
+						echo "Skipping refresh for $${PGO_PROFILE_OLD}: profile is less than $(BENCHMARKS_PGO_REFRESH_MIN_DAYS_SINCE_LAST_UPDATE) days old." >&2; \
+						continue; \
+					fi; \
 				fi; \
 				mkdir -p "$$(dirname "$${PGO_PROFILE_OLD}")"; \
 				mkdir -p "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \
 				$(call install_runtime,$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME},--platform $${PLATFORM} --profile --profile-gc-interval=3s --profile-cpu="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}/$${PGO_BENCHMARK_BASENAME}.%YYYY%-%MM%-%DD%_%HH%-%II%-%SS%-%NN%.pgo.pprof.pb.gz"); \
 				$(call sudo,$${PGO_BENCHMARK_TARGET},-runtime=$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME} -pgo-benchmarks=true $(BENCHMARKS_ARGS_PGO)); \
-				$(call run,tools/profiletool,merge --out="$${PGO_PROFILE_NEW}" "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"); \
+				"$${PGO_PROFILETOOL}" merge --out="$${PGO_PROFILE_NEW}" "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \
 				rm -rf --one-file-system "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \
 				if [[ ! -f "$${PGO_PROFILE_OLD}" ]]; then \
 					cp "$${PGO_PROFILE_NEW}" "$${PGO_PROFILE_OLD}"; \
 					echo "$${PGO_LAST_PKG_COMMIT_HASH}" > "$${PGO_PROFILE_OLD_COMMIT_HASH}"; \
 					echo "--- PGO: Added new profile for $${PGO_BENCHMARK_BASENAME} on $${PGO_RUNTIME_KEY} $${PLATFORM}" >&2; \
-				elif $(call run,tools/profiletool,check-similar --threshold=$(BENCHMARKS_PGO_REFRESH_THRESHOLD) "$${PGO_PROFILE_OLD}" "$${PGO_PROFILE_NEW}"); then \
+				elif "$${PGO_PROFILETOOL}" check-similar --threshold=$(BENCHMARKS_PGO_REFRESH_THRESHOLD) "$${PGO_PROFILE_OLD}" "$${PGO_PROFILE_NEW}"; then \
 					echo "--- PGO: Profile for $${PGO_BENCHMARK_BASENAME} on $${PGO_RUNTIME_KEY} $${PLATFORM} is already up-to-date." >&2; \
 				else \
 					cp "$${PGO_PROFILE_NEW}" "$${PGO_PROFILE_OLD}"; \
