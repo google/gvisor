@@ -720,8 +720,22 @@ type cloneTreeNode struct {
 // `cloneFunc` is a callback that is executed for each cloned mount.
 // This method is analogous to fs/namespace.c:copy_tree() in Linux.
 //
+// If cloneType does not have copyMntNSFile, cloneMountTree returns EINVAL if
+// root is a mount namespace file, and does not copy descendants that are
+// mounts of mount namespace files. If cloneType has copyMntNSFile,
+// cloneMountTree returns EINVAL if a descendant is a mount of a mount
+// namespace file that ctx's mount namespace cannot contain.
+//
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, root *Dentry, cloneType int, cloneFunc func(ctx context.Context, oldmnt, newMnt *Mount)) (*Mount, error) {
+	var ctxNS *MountNamespace
+	if cloneType&copyMntNSFile == 0 {
+		if isMountNSFile(VirtualDentry{mount: mnt, dentry: root}) != nil {
+			return nil, linuxerr.EINVAL
+		}
+	} else if ctxNS = MountNamespaceFromContext(ctx); ctxNS != nil {
+		vfs.delayDecRef(ctxNS)
+	}
 	clone, err := vfs.cloneMount(mnt, root, nil, cloneType)
 	if err != nil {
 		return nil, err
@@ -739,6 +753,15 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 			}
 			if mp := c.getKey(); p.prevMount == mnt && !mp.mount.fs.Impl().IsDescendant(VirtualDentry{mnt, root}, mp) {
 				continue
+			}
+			if ns := isMountNSFile(VirtualDentry{mount: c, dentry: c.root}); ns != nil {
+				if cloneType&copyMntNSFile == 0 {
+					continue
+				}
+				if ctxNS != nil && !ctxNS.canMountNSFile(ns) {
+					vfs.abortUncommitedMount(ctx, clone)
+					return nil, linuxerr.EINVAL
+				}
 			}
 			m, err := vfs.cloneMount(c, c.root, nil, cloneType)
 			if err != nil {
@@ -781,6 +804,11 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	}
 	defer targetVd.DecRef(ctx)
 
+	// A mount namespace file can only be bound in an older mount namespace.
+	if mntNSLoop(ctx, sourceVd) {
+		return linuxerr.EINVAL
+	}
+
 	// Linux's graft_tree() (fs/namespace.c) returns ENOTDIR if the source and
 	// target have mismatched types (one is a directory, the other is not).
 	sourceStat, err := vfs.StatAt(ctx, creds, &PathOperation{
@@ -821,10 +849,11 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	if sourceVd.mount.umounted {
 		return linuxerr.EINVAL
 	}
-	// nsfs, cgroupfs, and cgroup2fs are exempt from the requirement that the source
-	// mount must be in a mount namespace, but *only* for non-recursive binds.
+	// The source mount must be in the caller's mount namespace, except for
+	// nsfs and, for non-recursive binds only, cgroupfs and cgroup2fs.
 	fsName := sourceVd.mount.Filesystem().FilesystemType().Name()
-	if !vfs.validInMountNS(ctx, sourceVd.mount) && (recursive || (fsName != nsfsName && fsName != cgroupFsName && fsName != cgroup2FsName)) {
+	sourceInMountNS := vfs.validInMountNS(ctx, sourceVd.mount)
+	if !sourceInMountNS && fsName != nsfsName && (recursive || (fsName != cgroupFsName && fsName != cgroup2FsName)) {
 		return linuxerr.EINVAL
 	}
 	if !vfs.validInMountNS(ctx, mp.mount) {
@@ -832,8 +861,8 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	}
 
 	var clone *Mount
-	if recursive {
-		clone, err = vfs.cloneMountTree(ctx, sourceVd.mount, sourceVd.dentry, 0, nil)
+	if recursive && sourceInMountNS {
+		clone, err = vfs.cloneMountTree(ctx, sourceVd.mount, sourceVd.dentry, copyMntNSFile, nil)
 	} else {
 		if vfs.mountHasLockedChildren(sourceVd.mount, sourceVd) {
 			return linuxerr.EINVAL
