@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -31,13 +32,35 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+func TestTarSubsecondMtimeRoundTrip(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mtime := time.Unix(1700000000, 123456789)
+	for _, nanos := range []bool{false, true} {
+		fs := mountFromTarTestOnly(t, ctx, tarWithFile(t, "./file", nil))
+		fs.tarNanosecondTimestamps = nanos
+		fs.root.inode.impl.(*directory).childMap["file"].inode.mtime.Store(mtime.UnixNano())
+		var out bytes.Buffer
+		if err := fs.tarWrite(ctx, &out, tarDefaultWriterCallbacks{}); err != nil {
+			t.Fatalf("tarWrite: %v", err)
+		}
+		want := mtime.Round(time.Second).UnixNano()
+		if nanos {
+			want = mtime.UnixNano()
+		}
+		restored := mountFromTarTestOnly(t, ctx, &out)
+		if got := restored.root.inode.impl.(*directory).childMap["file"].inode.mtime.Load(); got != want {
+			t.Errorf("tarNanosecondTimestamps=%t: mtime = %d, want %d", nanos, got, want)
+		}
+	}
+}
+
 func TestTarXattrRoundTrip(t *testing.T) {
 	want := map[string]string{
 		"user.empty":  "",
 		"user.binary": "\x00\xff\x80\n=",
 		"user.\xff":   "non-UTF8 name",
 	}
-	d := dentry{inode: &inode{impl: &directory{}}}
+	d := dentry{inode: &inode{fs: &filesystem{}, impl: &directory{}}}
 	d.inode.xattrs.SetRawXattrs(want)
 	hdr, err := d.createTarHeader("./", make(map[uint64]string), tarDefaultWriterCallbacks{})
 	if err != nil {

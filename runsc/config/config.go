@@ -105,6 +105,10 @@ type Config struct {
 	// DO NOT call it directly, use GetOverlay2() instead.
 	Overlay2 Overlay2 `flag:"overlay2"`
 
+	// TarTimestampResolution is the resolution of modification times in tar
+	// archives of overlay upper layers and filesystem checkpoints.
+	TarTimestampResolution TarTimestampResolution `flag:"tar-timestamp-resolution"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
@@ -1286,6 +1290,52 @@ func (n InodeNumbers) String() string {
 	default:
 		panic(fmt.Sprintf("Invalid inode numbers mode %d", n))
 	}
+}
+
+// TarTimestampResolution is the resolution of modification times in tar
+// archives of sandbox filesystems.
+type TarTimestampResolution int
+
+const (
+	// TarTimestampSeconds rounds modification times to whole seconds.
+	TarTimestampSeconds TarTimestampResolution = iota
+
+	// TarTimestampNanoseconds keeps nanosecond modification times. Each tar
+	// entry gets a PAX extended header, which adds about 1 KiB per entry.
+	TarTimestampNanoseconds
+)
+
+func tarTimestampResolutionPtr(v TarTimestampResolution) *TarTimestampResolution {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (r *TarTimestampResolution) Set(v string) error {
+	switch v {
+	case "seconds":
+		*r = TarTimestampSeconds
+	case "nanoseconds":
+		*r = TarTimestampNanoseconds
+	default:
+		return fmt.Errorf("invalid tar timestamp resolution %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (r *TarTimestampResolution) Get() any {
+	return *r
+}
+
+// String implements flag.Value.
+func (r TarTimestampResolution) String() string {
+	switch r {
+	case TarTimestampSeconds:
+		return "seconds"
+	case TarTimestampNanoseconds:
+		return "nanoseconds"
+	}
+	panic(fmt.Sprintf("Invalid tar timestamp resolution %d", r))
 }
 
 // OverlayMedium describes how overlay medium is configured.
