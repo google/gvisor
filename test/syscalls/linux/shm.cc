@@ -325,13 +325,17 @@ TEST(ShmTest, ShmCtlSet) {
 #endif
 
 TEST(ShmTest, RemovedSegmentsAreMarkedDeleted) {
+  const TempPath keyfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const key_t key = ftok(keyfile.path().c_str(), 1);
+  ASSERT_NE(key, IPC_PRIVATE);
   ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
-      Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0777));
+      Shmget(key, kAllocSize, IPC_CREAT | IPC_EXCL | 0600));
   const char* addr = ASSERT_NO_ERRNO_AND_VALUE(Shmat(shm.id(), nullptr, 0));
   const int id = ASSERT_NO_ERRNO_AND_VALUE(shm.Rmid());
   struct shmid_ds attr;
   ASSERT_NO_ERRNO(Shmctl(id, IPC_STAT, &attr));
   EXPECT_NE(attr.shm_perm.mode & SHM_DEST, 0);
+  EXPECT_EQ(attr.shm_perm.__key, IPC_PRIVATE);
   ASSERT_NO_ERRNO(Shmdt(addr));
 }
 
