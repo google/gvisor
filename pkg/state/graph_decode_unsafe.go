@@ -109,9 +109,6 @@ type graphDecodeState struct {
 	// refs counts object references resolved so far.
 	refs uint64
 
-	// leaves is the queue of objects whose callbacks can run.
-	leaves []int32
-
 	// strings is the current allocation for string data.
 	strings []byte
 
@@ -160,7 +157,6 @@ func (ds *graphDecodeState) release() {
 		cbs:        ds.cbs[:0],
 		targets:    ds.targets[:0],
 		targetObjs: ds.targetObjs[:0],
-		leaves:     ds.leaves[:0],
 		itabCache:  ds.itabCache,
 		shapeCache: ds.shapeCache,
 	}
