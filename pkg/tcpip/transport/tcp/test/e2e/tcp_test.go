@@ -5874,104 +5874,98 @@ func TestReusePort(t *testing.T) {
 	}
 }
 
+// timeWaitReuseContext leaves the sole ephemeral port in TIME_WAIT, past the
+// reuse delay. It returns an ACK from the peer on the old connection.
+func timeWaitReuseContext(t *testing.T, port uint16, timestamps bool) (*context.Context, context.Headers) {
+	t.Helper()
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{EnableV4: true, MTU: e2e.DefaultMTU, Clock: clock})
+	t.Cleanup(c.Cleanup)
+
+	twReuse := tcpip.TCPTimeWaitReuseOption(tcpip.TCPTimeWaitReuseGlobal)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &twReuse); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%v): %s", twReuse, err)
+	}
+	if err := c.Stack().SetPortRange(port, port); err != nil {
+		t.Fatalf("SetPortRange(%d, %d): %s", port, port, err)
+	}
+	// A zero TSVal is valid; reuse depends on whether the option was present.
+	peer := c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{TS: timestamps, WS: -1})
+	c.EP.Close()
+
+	fin := c.GetPacket()
+	defer fin.Release()
+	checker.IPv4(t, fin, checker.TCP(
+		checker.SrcPort(port),
+		checker.DstPort(context.TestPort),
+		checker.TCPSeqNum(uint32(peer.AckNum)),
+		checker.TCPAckNum(uint32(peer.NextSeqNum)),
+		checker.TCPFlags(header.TCPFlagFin|header.TCPFlagAck)))
+	h := context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: port,
+		Flags:   header.TCPFlagFin | header.TCPFlagAck,
+		SeqNum:  peer.NextSeqNum,
+		AckNum:  peer.AckNum + 1,
+	}
+	if timestamps {
+		opts := header.TCP(header.IPv4(fin.AsSlice()).Payload()).ParsedOptions()
+		ts := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
+		header.EncodeTSOption(0, opts.TSVal, ts[2:])
+		h.TCPOpts = ts[:]
+	}
+	c.SendPacket(nil, &h)
+	ack := c.GetPacket()
+	defer ack.Release()
+	checker.IPv4(t, ack, checker.TCP(checker.TCPFlags(header.TCPFlagAck), checker.TCPAckNum(uint32(h.SeqNum+1))))
+	// The receiver sends the final ACK before it enters TIME_WAIT.
+	c.Stack().Pause()
+	c.Stack().Resume()
+	if got := tcp.EndpointState(c.EP.State()); got != tcp.StateTimeWait {
+		t.Fatalf("state after FIN = %s, want TIME_WAIT", got)
+	}
+	clock.Advance(time.Second)
+	h.Flags = header.TCPFlagAck
+	return c, h
+}
+
+func TestTimeWaitReuseWithoutTimestamps(t *testing.T) {
+	c, _ := timeWaitReuseContext(t, 40000, false /* timestamps */)
+	c.Create(-1)
+	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+	if _, ok := err.(*tcpip.ErrNoPortAvailable); !ok {
+		t.Fatalf("Connect = %v, want ErrNoPortAvailable", err)
+	}
+}
+
 func TestTimeWaitAssassination(t *testing.T) {
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	// We need to run this test lots of times because it triggers a very rare race
-	// condition in segment processing.
-	initalTestPort := 1024
-	testRuns := 25
-	for port := initalTestPort; port < initalTestPort+testRuns; port++ {
-		wg.Add(1)
-		go func(port uint16) {
-			defer wg.Done()
-			c := context.New(t, e2e.DefaultMTU)
-			defer c.Cleanup()
+	// Repeat the race between Connect and late ACKs. Run the rounds in
+	// sequence because Context.Cleanup aborts dangling endpoints in all stacks.
+	for port := uint16(1024); port < 1024+25; port++ {
+		t.Run(fmt.Sprint(port), func(t *testing.T) {
+			c, ack := timeWaitReuseContext(t, port, true /* timestamps */)
+			old := c.EP
+			c.Create(-1)
 
-			twReuse := tcpip.TCPTimeWaitReuseOption(tcpip.TCPTimeWaitReuseGlobal)
-			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &twReuse); err != nil {
-				t.Errorf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &twReuse, err)
-			}
-
-			if err := c.Stack().SetPortRange(port, port); err != nil {
-				t.Errorf("got s.SetPortRange(%d, %d) = %s, want = nil", port, port, err)
-			}
-
-			iss := seqnum.Value(context.TestInitialSequenceNumber)
-			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1)
-			c.EP.Close()
-
-			v := c.GetPacket()
-			defer v.Release()
-			checker.IPv4(t, v, checker.TCP(
-				checker.SrcPort(port),
-				checker.DstPort(context.TestPort),
-				checker.TCPSeqNum(uint32(c.IRS+1)),
-				checker.TCPAckNum(uint32(iss)+1),
-				checker.TCPFlags(header.TCPFlagFin|header.TCPFlagAck)))
-
-			finHeaders := &context.Headers{
-				SrcPort: context.TestPort,
-				DstPort: port,
-				Flags:   header.TCPFlagAck | header.TCPFlagFin,
-				SeqNum:  iss + 1,
-				AckNum:  c.IRS + 2,
-			}
-
-			c.SendPacket(nil, finHeaders)
-
-			// c.EP is in TIME_WAIT. We must allow for a second to pass before the
-			// new endpoint is allowed to take over the old endpoint's binding.
-			time.Sleep(time.Second)
-
-			seq := iss + 1
-			ack := c.IRS + 2
-
+			// If the new endpoint does not properly transition to connecting
+			// before taking over the port, a late ACK can panic the processor.
 			var wg sync.WaitGroup
-			defer wg.Wait()
-
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				// The new endpoint will take over the binding.
-				c.Create(-1)
-				timeout := time.After(5 * time.Second)
-			connect:
-				for {
-					select {
-					case <-timeout:
-						break connect
-					default:
-						err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-						// It can take some extra time for the port to be available.
-						if _, ok := err.(*tcpip.ErrNoPortAvailable); ok {
-							continue connect
-						}
-						if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-							t.Errorf("Unexpected return value from Connect: %v", err)
-						}
-						break connect
-					}
-				}
-			}()
-
-			// If the new endpoint does not properly transition to connecting before
-			// taking over the port reservation, sending acks will cause the processor
-			// to panic 1-5% of the time.
 			for i := 0; i < 5; i++ {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					c.SendPacket(nil, &context.Headers{
-						SrcPort: context.TestPort,
-						DstPort: port,
-						Flags:   header.TCPFlagAck,
-						SeqNum:  seq,
-						AckNum:  ack,
-					})
+					c.SendPacket(nil, &ack)
 				}()
 			}
-		}(uint16(port))
+			defer wg.Wait()
+			err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+				t.Fatalf("Connect = %v, want ErrConnectStarted", err)
+			}
+			if got := tcp.EndpointState(old.State()); got != tcp.StateClose {
+				t.Errorf("old state after port takeover = %s, want CLOSED", got)
+			}
+		})
 	}
 }
 
