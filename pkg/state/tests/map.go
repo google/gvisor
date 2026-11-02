@@ -14,7 +14,12 @@
 
 package tests
 
-import "context"
+import (
+	"context"
+	"maps"
+
+	"gvisor.dev/gvisor/pkg/state"
+)
 
 // +stateify savable
 type mapContainer struct {
@@ -29,13 +34,48 @@ type mapPtrContainer struct {
 // +stateify savable
 type registeredMapStruct struct{}
 
-// +stateify savable
+// +stateify type
 type mapLoadHook struct {
 	value int
 }
 
 type mapLoadHookContextKey struct{}
 
-func (v *mapLoadHook) afterLoad(ctx context.Context) {
-	ctx.Value(mapLoadHookContextKey{}).(func(*mapLoadHook))(v)
+func (v *mapLoadHook) StateSave(sink state.Sink) {
+	sink.Save(0, &v.value)
+}
+
+func (v *mapLoadHook) StateLoad(ctx context.Context, src state.Source) {
+	var value int
+	src.Load(0, &value)
+	src.AfterLoad(func() {
+		v.value = value
+		ctx.Value(mapLoadHookContextKey{}).(func(*mapLoadHook))(v)
+	})
+}
+
+// +stateify type
+type mapLoadSnapshot struct {
+	entries map[mapLoadHook]int
+	inline  mapLoadHook
+}
+
+func (s *mapLoadSnapshot) StateSave(sink state.Sink) {
+	sink.Save(0, &s.entries)
+	sink.Save(1, &s.inline)
+}
+
+func (s *mapLoadSnapshot) StateLoad(_ context.Context, src state.Source) {
+	var snapshot map[mapLoadHook]int
+	var inline mapLoadHook
+	src.AfterLoad(func() {
+		s.entries = snapshot
+		s.inline = inline
+	})
+	src.LoadValue(0, new(map[mapLoadHook]int), func(v any) {
+		snapshot = maps.Clone(v.(map[mapLoadHook]int))
+	})
+	src.LoadValue(1, new(mapLoadHook), func(v any) {
+		inline = v.(mapLoadHook)
+	})
 }

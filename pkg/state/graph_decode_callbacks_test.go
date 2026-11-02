@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"runtime"
@@ -188,6 +189,15 @@ func (n *cbOrderNode) StateLoad(ctx context.Context, s Source) {
 			*logPtr = append(*logPtr, fmt.Sprintf("%s:%s", n.name, step))
 		}
 	}
+	// Register both hooks before the fields whose load they must follow.
+	s.graph.afterLoad(func() {
+		if !n.scalarDone || !n.valueRefDone || n.afterLoadDone {
+			Failf("%s: first afterLoad ran out of order (scalar=%v valueRef=%v after=%v)", n.name, n.scalarDone, n.valueRefDone, n.afterLoadDone)
+		}
+		n.afterStep1 = true
+		record("after1")
+	})
+	s.graph.afterLoadTo(n)
 	s.graph.load(0, &n.name)
 	s.graph.load(1, &n.early)
 	s.graph.loadWait(2, &n.waitFor)
@@ -200,14 +210,6 @@ func (n *cbOrderNode) StateLoad(ctx context.Context, s Source) {
 		record("scalar")
 	})
 	s.graph.loadValueTo(4, (**cbOrderNode)(nil), n)
-	s.graph.afterLoad(func() {
-		if !n.scalarDone || !n.valueRefDone || n.afterLoadDone {
-			Failf("%s: first afterLoad ran out of order (scalar=%v valueRef=%v after=%v)", n.name, n.scalarDone, n.valueRefDone, n.afterLoadDone)
-		}
-		n.afterStep1 = true
-		record("after1")
-	})
-	s.graph.afterLoadTo(n)
 }
 
 func (n *cbOrderNode) StateLoadValue(ctx context.Context, slot int, v any) {
@@ -281,6 +283,10 @@ func TestGraphCallbackOrder(t *testing.T) {
 
 	var events []string
 	ctx := context.WithValue(t.Context(), cbOrderLogKey{}, &events)
+	// Printing must suppress the load callbacks, including both early hooks.
+	if err := PrintGraph(io.Discard, buf.Bytes(), 0, false); err != nil {
+		t.Fatalf("PrintGraph: %v", err)
+	}
 	var loaded *cbOrderNode
 	if _, err := loadGraph(ctx, &buf, &loaded, hdr.Length, 0); err != nil {
 		t.Fatalf("loadGraph: %v", err)
