@@ -17,6 +17,7 @@ package root
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,9 +27,12 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
+	"gvisor.dev/gvisor/runsc/config"
+	runsccontainer "gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/sandbox"
 )
 
@@ -765,4 +769,159 @@ func checkGoferMaxProcsEnv(t *testing.T, pid int, wantProcs string) {
 	if len(godebugVals) != 1 || !strings.HasSuffix(godebugVals[0], "containermaxprocs=0,updatemaxprocs=0") {
 		t.Errorf("gofer %d GODEBUG = %v, want single entry ending with containermaxprocs=0,updatemaxprocs=0", pid, godebugVals)
 	}
+}
+
+const mib = 1 << 20
+
+func swapRes(v string) *specs.LinuxResources {
+	return &specs.LinuxResources{Unified: map[string]string{"memory.swap.max": v}}
+}
+
+// swapPod is a pod for the swap tests.
+type swapPod struct {
+	t          *testing.T
+	conf       *config.Config
+	containers []*runsccontainer.Container
+	swapFile   string
+}
+
+// startSwapPod creates a pod cgroup as the kubelet does, and starts a sandbox
+// for podSpecs[0] and containers for the other specs in it. noRootContainer
+// starts the sandbox without a root container. It skips the test if the host
+// cannot limit swap.
+func startSwapPod(t *testing.T, podSpecs []*specs.Spec, ids []string, noRootContainer bool) *swapPod {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("swap limits of pods are only applied on cgroup v2")
+	}
+
+	// The kubelet creates the pod cgroup, and the runtime creates the
+	// container cgroups in it.
+	podCgroup := "/" + testutil.RandomID("runsc-pod")
+	podCgroupPath := cgroupPath(podCgroup)
+	if err := os.Mkdir(podCgroupPath, 0o755); err != nil {
+		t.Fatalf("creating pod cgroup: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(podCgroupPath); err != nil {
+			t.Errorf("removing pod cgroup: %v", err)
+		}
+	})
+	if !noRootContainer {
+		podSpecs[0].Annotations["dev.gvisor.spec.cgroup-parent"] = podCgroup
+	}
+	for i, spec := range podSpecs {
+		if spec.Linux == nil {
+			spec.Linux = &specs.Linux{}
+		}
+		spec.Linux.CgroupsPath = filepath.Join(podCgroup, ids[i])
+	}
+
+	rootDir, clean, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	t.Cleanup(clean)
+	p := &swapPod{t: t, conf: testutil.TestConfig(t)}
+	p.conf.RootDir = rootDir
+
+	for i, spec := range podSpecs {
+		bundleDir, clean, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up bundle: %v", err)
+		}
+		t.Cleanup(clean)
+		c, err := runsccontainer.New(p.conf, runsccontainer.Args{ID: ids[i], Spec: spec, BundleDir: bundleDir, NoRootContainer: i == 0 && noRootContainer})
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		t.Cleanup(func() { c.Destroy() })
+		if err := c.Start(p.conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+		p.containers = append(p.containers, c)
+
+		if i == 0 {
+			sandboxCgroup := c.Sandbox.CgroupJSON.Cgroup.MakePath("")
+			if want := filepath.Join(podCgroup, ids[0]); !strings.HasSuffix(sandboxCgroup, want) {
+				t.Fatalf("sandbox cgroup is %q, want a path that ends with %q", sandboxCgroup, want)
+			}
+			p.swapFile = filepath.Join(sandboxCgroup, "memory.swap.max")
+			if _, err := os.Stat(p.swapFile); errors.Is(err, os.ErrNotExist) {
+				t.Skipf("%q does not exist: the host has no swap accounting", p.swapFile)
+			}
+		}
+	}
+	return p
+}
+
+// checkSwap checks memory.swap.max of the sandbox cgroup.
+func (p *swapPod) checkSwap(when, want string) {
+	p.t.Helper()
+	data, err := os.ReadFile(p.swapFile)
+	if err != nil {
+		p.t.Fatalf("reading %q: %v", p.swapFile, err)
+	}
+	if got := strings.TrimSpace(string(data)); got != want {
+		p.t.Errorf("memory.swap.max %s = %q, want %q", when, got, want)
+	}
+}
+
+func (p *swapPod) update(i int, res *specs.LinuxResources) {
+	p.t.Helper()
+	if err := p.containers[i].Update(p.conf, res); err != nil {
+		p.t.Fatalf("error updating container %d: %v", i, err)
+	}
+}
+
+func (p *swapPod) destroy(i int) {
+	p.t.Helper()
+	if err := p.containers[i].Destroy(); err != nil {
+		p.t.Fatalf("error destroying container %d: %v", i, err)
+	}
+}
+
+// TestPodMemorySwap checks that the cgroup that holds the processes of a CRI
+// pod gets the sum of the swap limits of the pod containers, in the cgroupfs
+// layout that containerd uses for Kubernetes pods.
+func TestPodMemorySwap(t *testing.T) {
+	podSpecs, ids := createSpecs([]string{"sleep", "1000"}, []string{"sleep", "1000"}, []string{"sleep", "1000"})
+	// NoSwap and a LimitedSwap budget.
+	podSpecs[1].Linux = &specs.Linux{Resources: swapRes("0")}
+	podSpecs[2].Linux = &specs.Linux{Resources: swapRes(fmt.Sprint(2 * mib))}
+	p := startSwapPod(t, podSpecs, ids, false /* noRootContainer */)
+
+	p.checkSwap("after all containers start", fmt.Sprint(2*mib))
+	p.update(1, swapRes(fmt.Sprint(1*mib)))
+	p.checkSwap("after the update", fmt.Sprint(3*mib))
+	p.destroy(2)
+	p.checkSwap("after a container is destroyed", fmt.Sprint(1*mib))
+	// A swap limit in the sandbox spec is an upper limit for the sum.
+	p.update(0, swapRes(fmt.Sprint(10*mib)))
+	p.checkSwap("after the sandbox limit goes above the sum", fmt.Sprint(1*mib))
+	p.update(1, &specs.LinuxResources{})
+	p.checkSwap("after a container drops its swap limit", fmt.Sprint(10*mib))
+}
+
+// TestNoRootPodMemorySwap checks the swap limit of a sandbox without a root
+// container. The sandbox spec has no CRI annotation, and its swap limit is the
+// upper limit for the sum of the swap limits of the containers.
+func TestNoRootPodMemorySwap(t *testing.T) {
+	podSpecs, ids := createSpecs(nil, []string{"sleep", "1000"}, []string{"sleep", "1000"})
+	podSpecs[0] = &specs.Spec{
+		Version: specs.Version,
+		Linux:   &specs.Linux{Resources: swapRes(fmt.Sprint(2 * mib))},
+	}
+	podSpecs[1].Linux = &specs.Linux{Resources: swapRes("0")}
+	podSpecs[2].Linux = &specs.Linux{Resources: swapRes(fmt.Sprint(1 * mib))}
+	p := startSwapPod(t, podSpecs, ids, true /* noRootContainer */)
+
+	p.checkSwap("after all containers start", fmt.Sprint(1*mib))
+	p.update(1, swapRes(fmt.Sprint(4*mib)))
+	p.checkSwap("after the sum goes above the sandbox limit", fmt.Sprint(2*mib))
+	p.update(1, &specs.LinuxResources{})
+	p.checkSwap("after a container drops its swap limit", fmt.Sprint(2*mib))
+	p.destroy(1)
+	p.checkSwap("after a container is destroyed", fmt.Sprint(1*mib))
+	p.update(0, swapRes(fmt.Sprint(8*mib)))
+	p.checkSwap("after the sandbox limit goes above the sum", fmt.Sprint(1*mib))
 }

@@ -569,6 +569,15 @@ func (c *Container) Restore(conf *config.Config, imagePath string, directIO sand
 }
 
 func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
+	// Limit the swap of the sandbox before the container uses memory. The
+	// sandbox has no other containers when the root container starts, so the
+	// limit stays as the sandbox spec sets it.
+	if c.Sandbox != nil && !specutils.IsRootContainer(c.Spec) {
+		if err := adjustSandboxMemorySwap(c.Sandbox, c.Saver.RootDir); err != nil {
+			return handleCgroupInstallErr(conf, "sandbox swap limit", err)
+		}
+	}
+
 	if err := c.modify(func() error {
 		return c.startLocked(conf, action, startRoot, startSub)
 	}); err != nil {
@@ -738,7 +747,7 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 // Update sets the resources of a running container as configured.
 func (c *Container) Update(conf *config.Config, res *specs.LinuxResources) error {
 	log.Debugf("Set resources for container, cid: %s", c.ID)
-	return c.modify(func() error {
+	if err := c.modify(func() error {
 		if err := c.requireStatus("set resources for", Created, Running); err != nil {
 			return err
 		}
@@ -768,7 +777,22 @@ func (c *Container) Update(conf *config.Config, res *specs.LinuxResources) error
 
 		c.Spec.Linux.Resources = res
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	// The swap limit of a pod depends on the resources of all its containers.
+	// For the root container of a pod, this also corrects the swap limit that
+	// the cgroup update above sets from the sandbox spec alone. The root
+	// container of a sandbox that is not a pod is the only container that
+	// sets its swap limit.
+	isRoot := c.Sandbox.IsRootContainer(c.ID)
+	if !isRoot || c.Sandbox.NoRootContainer || specutils.SpecContainerType(c.Spec) == specutils.ContainerTypeSandbox {
+		if err := adjustSandboxMemorySwap(c.Sandbox, c.Saver.RootDir); err != nil {
+			return handleCgroupInstallErr(conf, "sandbox swap limit", err)
+		}
+	}
+	return nil
 }
 
 // Execute runs the specified command in the container. It returns the PID of
@@ -1184,6 +1208,14 @@ func (c *Container) Destroy() error {
 	if sb != nil {
 		if err := adjustSandboxOOMScoreAdj(sb, c.Spec, c.Saver.RootDir, true); err != nil {
 			errs = append(errs, err.Error())
+		}
+		// The root container brings down the entire sandbox.
+		if !specutils.IsRootContainer(c.Spec) {
+			// The container is already gone, so do not fail its deletion.
+			// The next start or update sets the limit again.
+			if err := adjustSandboxMemorySwap(sb, c.Saver.RootDir); err != nil {
+				log.Warningf("Adjusting the swap limit of sandbox %q: %v", sb.ID, err)
+			}
 		}
 	}
 
@@ -2298,6 +2330,110 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir stri
 
 	// Set the lowest of all containers oom_score_adj to the sandbox.
 	return setOOMScoreAdj(s.Getpid(), lowScore)
+}
+
+// adjustSandboxMemorySwap sets memory.swap.max of the sandbox cgroup of a pod
+// to the sum of the swap limits of the pod containers, but not more than the
+// swap limit of the sandbox spec. If one container does not limit swap, only
+// the sandbox spec limits it. A pod is a CRI pod, or a sandbox without a root
+// container.
+//
+// All the processes of the pod run in the sandbox cgroup, but its resources
+// come from the sandbox spec: the spec of the infrastructure (pause)
+// container, or the spec of a sandbox without a root container. That spec
+// does not have the swap limits of the pod containers: Kubernetes sets them
+// on each container, e.g. memory.swap.max=0 for every container under the
+// NoSwap behavior.
+//
+// It does nothing on cgroup v1, if the sandbox is not a pod, or if the pod has
+// no containers other than the infrastructure container.
+//
+// TODO(gvisor.dev/issue/238): This call can race with other containers being
+// created or destroyed at the same time, like adjustSandboxOOMScoreAdj.
+func adjustSandboxMemorySwap(s *sandbox.Sandbox, rootDir string) error {
+	if s.CgroupJSON.Cgroup == nil || !cgroup.IsOnlyV2() {
+		return nil
+	}
+
+	containers, err := LoadSandbox(rootDir, s.ID, LoadOpts{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("loading sandbox containers: %v", err)
+	}
+	swap, ok, err := podMemorySwapMax(s.ID, s.NoRootContainer, containers)
+	if err != nil || !ok {
+		return err
+	}
+
+	log.Debugf("Setting memory.swap.max of sandbox %q to %d", s.ID, swap)
+	if err := s.CgroupJSON.Cgroup.SetMemorySwapMax(swap); err != nil {
+		// The host has no swap accounting, so there is no swap to limit.
+		if errors.Is(err, os.ErrNotExist) {
+			log.Debugf("Skipping memory.swap.max of sandbox %q: %v", s.ID, err)
+			return nil
+		}
+		return fmt.Errorf("setting memory.swap.max of sandbox %q: %w", s.ID, err)
+	}
+	return nil
+}
+
+// podMemorySwapMax returns the swap limit, in bytes, for the sandbox
+// `sandboxID` from the specs of `containers`. The limit is the sum of the swap
+// limits of the subcontainers, but not more than the swap limit of the
+// sandbox spec. The value -1 means no limit. `noRootContainer` is true if the
+// sandbox has no root container.
+//
+// The second result is false in these cases:
+//   - The root container is an application container (for example, with
+//     Docker). Its spec sets the swap limit. The root container of a CRI pod
+//     is the pause container, which is not an application container.
+//   - The sandbox has no subcontainers.
+func podMemorySwapMax(sandboxID string, noRootContainer bool, containers []*Container) (int64, bool, error) {
+	var (
+		total     int64
+		unlimited bool
+		found     bool
+		isPod     = noRootContainer
+		ceiling   = int64(-1)
+	)
+	for _, container := range containers {
+		swap, ok, err := containerMemorySwapMax(container)
+		if err != nil {
+			return 0, false, fmt.Errorf("container %q: %w", container.ID, err)
+		}
+		if container.ID == sandboxID {
+			isPod = isPod || specutils.SpecContainerType(container.Spec) == specutils.ContainerTypeSandbox
+			if ok {
+				ceiling = swap
+			}
+			continue
+		}
+		found = true
+		if !ok || swap < 0 || total > math.MaxInt64-swap {
+			unlimited = true
+			continue
+		}
+		total += swap
+	}
+	if !isPod || !found {
+		return 0, false, nil
+	}
+	if unlimited {
+		total = -1
+	}
+	if ceiling >= 0 && (total < 0 || total > ceiling) {
+		total = ceiling
+	}
+	return total, true, nil
+}
+
+// containerMemorySwapMax returns the memory.swap.max value that the spec of
+// `c` requests, and whether the spec sets swap at all. See
+// cgroup.MemorySwapMax.
+func containerMemorySwapMax(c *Container) (int64, bool, error) {
+	if c.Spec == nil || c.Spec.Linux == nil {
+		return 0, false, nil
+	}
+	return cgroup.MemorySwapMax(c.Spec.Linux.Resources)
 }
 
 // setOOMScoreAdj sets oom_score_adj to the given value for the given PID.

@@ -39,12 +39,13 @@ import (
 )
 
 const (
-	subtreeControl    = "cgroup.subtree_control"
-	controllersFile   = "cgroup.controllers"
-	cgroup2Key        = "cgroup2"
-	memoryLimitCgroup = "memory.max"
-	cpuLimitCgroup    = "cpu.max"
-	maxLimitStr       = "max"
+	subtreeControl      = "cgroup.subtree_control"
+	controllersFile     = "cgroup.controllers"
+	cgroup2Key          = "cgroup2"
+	memoryLimitCgroup   = "memory.max"
+	memorySwapMaxCgroup = "memory.swap.max"
+	cpuLimitCgroup      = "cpu.max"
+	maxLimitStr         = "max"
 )
 
 // DefaultCPUPeriod is the CFS period used when the OCI spec sets none, in
@@ -666,6 +667,50 @@ func setMemorySwap(spec *specs.LinuxResources, path string) error {
 		}
 	}
 	return nil
+}
+
+// MemorySwapMax returns the memory.swap.max value, in bytes, that res
+// requests, and whether res sets swap at all. The value is -1 if res allows
+// unlimited swap. A memory.swap.max entry in res.Unified has priority over
+// res.Memory.Swap, because Update applies res.Unified last.
+func MemorySwapMax(res *specs.LinuxResources) (int64, bool, error) {
+	if res == nil {
+		return 0, false, nil
+	}
+	if v, found := res.Unified[memorySwapMaxCgroup]; found {
+		v = strings.TrimSpace(v)
+		if v == maxLimitStr {
+			return -1, true, nil
+		}
+		swap, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || swap < 0 {
+			return 0, false, fmt.Errorf("invalid unified resource %s=%q", memorySwapMaxCgroup, v)
+		}
+		return swap, true, nil
+	}
+	// If Memory.Swap is 0, setMemorySwap does not change memory.swap.max.
+	// Thus, 0 does not set a swap limit.
+	if res.Memory == nil || res.Memory.Swap == nil || *res.Memory.Swap == 0 {
+		return 0, false, nil
+	}
+	limit := int64(-1)
+	if res.Memory.Limit != nil {
+		limit = *res.Memory.Limit
+	}
+	swap, err := convertMemorySwapToCgroupV2Value(*res.Memory.Swap, limit)
+	if err != nil {
+		return 0, false, err
+	}
+	return swap, true, nil
+}
+
+// SetMemorySwapMax implements Cgroup.SetMemorySwapMax.
+func (c *cgroupV2) SetMemorySwapMax(swap int64) error {
+	val := maxLimitStr
+	if swap >= 0 {
+		val = strconv.FormatInt(swap, 10)
+	}
+	return setValue(c.MakePath(""), memorySwapMaxCgroup, val)
 }
 
 type pid2 struct {

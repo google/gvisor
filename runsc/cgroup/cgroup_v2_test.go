@@ -448,6 +448,137 @@ func TestConvertMemorySwapToCgroupV2Value(t *testing.T) {
 	}
 }
 
+func TestMemorySwapMax(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		res     *specs.LinuxResources
+		want    int64
+		wantOK  bool
+		wantErr bool
+	}{
+		{
+			name: "nil",
+		},
+		{
+			name: "no-memory",
+			res:  &specs.LinuxResources{},
+		},
+		{
+			name: "limit-only",
+			res:  &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: int64Ptr(1024)}},
+		},
+		{
+			name: "swap-zero-is-unset",
+			res:  &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: int64Ptr(1024), Swap: int64Ptr(0)}},
+		},
+		{
+			name:   "swap-equal-to-limit",
+			res:    &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: int64Ptr(1024), Swap: int64Ptr(1024)}},
+			want:   0,
+			wantOK: true,
+		},
+		{
+			name:   "swap-above-limit",
+			res:    &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: int64Ptr(1024), Swap: int64Ptr(1280)}},
+			want:   256,
+			wantOK: true,
+		},
+		{
+			name:   "swap-unlimited",
+			res:    &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: int64Ptr(1024), Swap: int64Ptr(-1)}},
+			want:   -1,
+			wantOK: true,
+		},
+		{
+			name:    "swap-without-limit",
+			res:     &specs.LinuxResources{Memory: &specs.LinuxMemory{Swap: int64Ptr(1024)}},
+			wantErr: true,
+		},
+		{
+			name:   "unified-zero",
+			res:    &specs.LinuxResources{Unified: map[string]string{"memory.swap.max": "0"}},
+			want:   0,
+			wantOK: true,
+		},
+		{
+			name:   "unified-max",
+			res:    &specs.LinuxResources{Unified: map[string]string{"memory.swap.max": "max"}},
+			want:   -1,
+			wantOK: true,
+		},
+		{
+			name: "unified-over-memory-swap",
+			res: &specs.LinuxResources{
+				Memory:  &specs.LinuxMemory{Limit: int64Ptr(1024), Swap: int64Ptr(1024)},
+				Unified: map[string]string{"memory.swap.max": "4096"},
+			},
+			want:   4096,
+			wantOK: true,
+		},
+		{
+			name:    "unified-invalid",
+			res:     &specs.LinuxResources{Unified: map[string]string{"memory.swap.max": "lots"}},
+			wantErr: true,
+		},
+		{
+			name:    "unified-negative",
+			res:     &specs.LinuxResources{Unified: map[string]string{"memory.swap.max": "-1"}},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok, err := MemorySwapMax(tc.res)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("MemorySwapMax() error = %v, want error: %t", err, tc.wantErr)
+			}
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("MemorySwapMax() = (%d, %t), want (%d, %t)", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestSetMemorySwapMax(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
+	if err != nil {
+		t.Fatalf("error creating temporary directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	cg := &cgroupV2{Mountpoint: dir, Path: "sandbox"}
+	swapFile := filepath.Join(cg.MakePath(""), "memory.swap.max")
+	if err := os.MkdirAll(cg.MakePath(""), 0o777); err != nil {
+		t.Fatalf("os.MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(swapFile, []byte("max"), 0o666); err != nil {
+		t.Fatalf("os.WriteFile(): %v", err)
+	}
+
+	for _, tc := range []struct {
+		swap int64
+		want string
+	}{
+		{swap: 0, want: "0"},
+		{swap: 4096, want: "4096"},
+		{swap: -1, want: "max"},
+	} {
+		if err := cg.SetMemorySwapMax(tc.swap); err != nil {
+			t.Fatalf("SetMemorySwapMax(%d): %v", tc.swap, err)
+		}
+		got, err := os.ReadFile(swapFile)
+		if err != nil {
+			t.Fatalf("os.ReadFile(): %v", err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("SetMemorySwapMax(%d): memory.swap.max = %q, want %q", tc.swap, got, tc.want)
+		}
+	}
+
+	if err := (&cgroupV1{}).SetMemorySwapMax(0); err == nil {
+		t.Errorf("SetMemorySwapMax(cgroup v1) succeeded, want error")
+	}
+}
+
 func TestInstallPrecreatedCgroupV2SetsMemorySwap(t *testing.T) {
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 	if err != nil {
