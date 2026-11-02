@@ -788,16 +788,18 @@ func synchronousCallbackArgument(call *ssa.Call, callback ssa.Value) bool {
 }
 
 // checkSynchronousCallback analyzes a closure argument using the lock state at
-// the call site. Lock changes inside the callback are not propagated back to
-// the caller, since a callback may execute zero or multiple times.
-func (pc *passContext) checkSynchronousCallback(callback *ssa.MakeClosure, lff *lockFunctionFacts, ls *lockState) {
+// the call site. A callback may execute zero or multiple times, so each
+// invocation must preserve the caller's held locks.
+func (pc *passContext) checkSynchronousCallback(call *ssa.Call, callback *ssa.MakeClosure, lff *lockFunctionFacts, ls *lockState) {
 	clfn := callback.Fn.(*ssa.Function)
 	clls := ls.fork()
 	for i, fv := range clfn.FreeVars {
 		clls.bind(fv, callback.Bindings[i])
 	}
 	nlff := lockFunctionFacts{Ignore: lff.Ignore}
-	pc.checkFunction(nil, clfn, &nlff, clls, true /* force */)
+	if result := pc.checkFunction(nil, clfn, &nlff, clls, true /* force */); result != nil && !ls.isCompatible(result) && !lff.Ignore {
+		pc.maybeFail(call.Pos(), "callback changes held locks (before: %s, after: %s)", ls.String(), result.String())
+	}
 }
 
 // checkEscapedFunction checks a function without borrowing its caller's locks,
@@ -911,7 +913,7 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 	case *ssa.Call:
 		for _, arg := range x.Common().Args {
 			if callback, ok := arg.(*ssa.MakeClosure); ok && synchronousCallbackArgument(x, callback) {
-				pc.checkSynchronousCallback(callback, lff, ls)
+				pc.checkSynchronousCallback(x, callback, lff, ls)
 			}
 		}
 		pc.checkCall(x, lff, ls)
