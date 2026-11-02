@@ -396,7 +396,7 @@ type Endpoint struct {
 	// compute the window and the actual available buffer space. This is distinct
 	// from rcvBufUsed above which is the actual number of payload bytes held in
 	// the buffer not including any segment overheads.
-	rcvMemUsed atomicbitops.Int32
+	rcvMemUsed atomicbitops.Int64
 
 	// mu protects all endpoint fields unless documented otherwise. mu must
 	// be acquired before interacting with the endpoint fields.
@@ -3150,11 +3150,11 @@ func (e *Endpoint) receiveBufferAvailableLocked(rcvBufSize int) int {
 	// We may use more bytes than the buffer size when the receive buffer
 	// shrinks.
 	memUsed := e.receiveMemUsed()
-	if memUsed >= rcvBufSize {
+	if memUsed >= int64(rcvBufSize) {
 		return 0
 	}
 
-	return rcvBufSize - memUsed
+	return rcvBufSize - int(memUsed)
 }
 
 // receiveBufferAvailable calculates how many bytes are still available in the
@@ -3177,13 +3177,13 @@ func (e *Endpoint) receiveBufferUsed() int {
 
 // receiveMemUsed returns the total memory in use by segments held by this
 // endpoint.
-func (e *Endpoint) receiveMemUsed() int {
-	return int(e.rcvMemUsed.Load())
+func (e *Endpoint) receiveMemUsed() int64 {
+	return e.rcvMemUsed.Load()
 }
 
 // updateReceiveMemUsed adds the provided delta to e.rcvMemUsed.
 func (e *Endpoint) updateReceiveMemUsed(delta int) {
-	e.rcvMemUsed.Add(int32(delta))
+	e.rcvMemUsed.Add(int64(delta))
 }
 
 // maxReceiveBufferSize returns the stack wide maximum receive buffer size for
