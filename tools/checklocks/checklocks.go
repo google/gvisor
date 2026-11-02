@@ -44,6 +44,7 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},
 	FactTypes: []analysis.Fact{
 		(*atomicAlignment)(nil),
+		(*callbackSlot)(nil),
 		(*lockGuardFacts)(nil),
 		(*lockFunctionFacts)(nil),
 		(*lockTypeFacts)(nil),
@@ -78,6 +79,8 @@ type passContext struct {
 	forced           map[positionKey]struct{}
 	functions        map[*ssa.Function]struct{}
 	escapedFunctions map[*ssa.Function]struct{}
+	callbackSlots    map[*ssa.Function]int
+	shouldReport     func(callbackFailureKey) bool
 	observations     map[types.Object]*objectObservations
 }
 
@@ -196,6 +199,8 @@ func run(pass *analysis.Pass) (any, error) {
 		if obj == nil {
 			continue
 		}
+		// Export a callback fact even if this package has no callers.
+		pc.callbackSlot(fn)
 		var lff lockFunctionFacts
 		pc.importLockFunctionFacts(obj.(*types.Func), &lff)
 

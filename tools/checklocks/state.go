@@ -89,6 +89,8 @@ type lockState struct {
 
 // valueIDAllocator allocates deterministic unique numbers for SSA values.
 type valueIDAllocator struct {
+	// root's parameters already have unique names in the initial lock state.
+	root *ssa.Function
 	mu   sync.Mutex
 	ids  map[ssa.Value]uint64
 	next uint64
@@ -610,6 +612,11 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 	v = l.bound(v)
 	switch x := v.(type) {
 	case *ssa.Parameter:
+		// An unbound callback parameter is not a caller parameter with
+		// the same name. Explicit argument bindings were followed above.
+		if l.valueIDs != nil && x.Parent() != l.valueIDs.root {
+			return fmt.Sprintf("{param:%s#%d}", x.Name(), l.valueIDs.idFor(x)), x.Object()
+		}
 		return fmt.Sprintf("{param:%s}", x.Name()), x.Object()
 	case *ssa.Global:
 		return globalLockKey(x.Pkg.Pkg.Path(), x.Name()), x.Object()
