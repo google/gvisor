@@ -406,6 +406,7 @@ func (fs *filesystem) StateFields() []string {
 		"pagesUsed",
 		"inodesUsed",
 		"allowXattrPrefix",
+		"tarNanosecondTimestamps",
 		"ovlWhiteout",
 	}
 }
@@ -431,7 +432,8 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &fs.pagesUsed)
 	stateSinkObject.Save(13, &fs.inodesUsed)
 	stateSinkObject.Save(14, &fs.allowXattrPrefix)
-	stateSinkObject.Save(15, &fs.ovlWhiteout)
+	stateSinkObject.SaveBool(15, &fs.tarNanosecondTimestamps)
+	stateSinkObject.Save(16, &fs.ovlWhiteout)
 	stateSinkObject.SaveValue(1, mfValue)
 }
 
@@ -453,7 +455,8 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(12, &fs.pagesUsed)
 	stateSourceObject.Load(13, &fs.inodesUsed)
 	stateSourceObject.Load(14, &fs.allowXattrPrefix)
-	stateSourceObject.Load(15, &fs.ovlWhiteout)
+	stateSourceObject.LoadBool(15, &fs.tarNanosecondTimestamps)
+	stateSourceObject.Load(16, &fs.ovlWhiteout)
 	stateSourceObject.LoadValueTo(1, (*checkpoint.ResourceID)(nil), fs)
 }
 
@@ -479,6 +482,7 @@ func (f *FilesystemOpts) StateFields() []string {
 		"MemoryFile",
 		"DisableDefaultSizeLimit",
 		"AllowXattrPrefix",
+		"TarNanosecondTimestamps",
 		"SourceTar",
 		"SourceTarFSCheckpoint",
 	}
@@ -497,8 +501,9 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &f.MemoryFile)
 	stateSinkObject.SaveBool(6, &f.DisableDefaultSizeLimit)
 	stateSinkObject.Save(7, &f.AllowXattrPrefix)
-	stateSinkObject.Save(8, &f.SourceTar)
-	stateSinkObject.SaveBool(9, &f.SourceTarFSCheckpoint)
+	stateSinkObject.SaveBool(8, &f.TarNanosecondTimestamps)
+	stateSinkObject.Save(9, &f.SourceTar)
+	stateSinkObject.SaveBool(10, &f.SourceTarFSCheckpoint)
 }
 
 func (f *FilesystemOpts) afterLoad(context.Context) {}
@@ -513,8 +518,9 @@ func (f *FilesystemOpts) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(5, &f.MemoryFile)
 	stateSourceObject.LoadBool(6, &f.DisableDefaultSizeLimit)
 	stateSourceObject.Load(7, &f.AllowXattrPrefix)
-	stateSourceObject.Load(8, &f.SourceTar)
-	stateSourceObject.LoadBool(9, &f.SourceTarFSCheckpoint)
+	stateSourceObject.LoadBool(8, &f.TarNanosecondTimestamps)
+	stateSourceObject.Load(9, &f.SourceTar)
+	stateSourceObject.LoadBool(10, &f.SourceTarFSCheckpoint)
 }
 
 func (d *dentry) StateTypeName() string {
