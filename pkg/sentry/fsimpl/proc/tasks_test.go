@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -858,5 +859,34 @@ func TestSysNetIPv4FileModes(t *testing.T) {
 		if got := stat.Mode & 0777; got != tc.perm {
 			t.Errorf("%s mode = %#o, want %#o", tc.path, got, tc.perm)
 		}
+	}
+}
+
+// TestCPUInfo checks that /proc/cpuinfo is generated from the kernel state and
+// reports the CPU frequency recorded at mount.
+func TestCPUInfo(t *testing.T) {
+	k, err := testutil.Boot()
+	if err != nil {
+		t.Fatalf("Error creating kernel: %v", err)
+	}
+	ctx := k.SupervisorContext()
+
+	d := newCPUInfoData(k)
+	if got, want := d.freqMHz, k.FeatureSet().CPUFreqMHz(); got != want {
+		t.Errorf("freqMHz: got %v, want %v", got, want)
+	}
+
+	// Generate must report the recorded frequency, not the current host's.
+	d.freqMHz = 1234.5
+	var buf bytes.Buffer
+	if err := d.Generate(ctx, &buf); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	out := buf.String()
+	if got, want := uint(strings.Count(out, "processor\t: ")), k.ApplicationCores(); got != want {
+		t.Errorf("got %d processor entries, want %d", got, want)
+	}
+	if !strings.Contains(strings.ToLower(out), "bogomips\t: 1234.50\n") {
+		t.Errorf("/proc/cpuinfo does not report the recorded frequency:\n%s", out)
 	}
 }

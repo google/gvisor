@@ -305,7 +305,8 @@ func TestWriteCPUInfoFamilyEPYC(t *testing.T) {
 	s.Set(in, out)
 
 	var buf strings.Builder
-	s.ToFeatureSet().WriteCPUInfoTo(0, 1, &buf)
+	fs := s.ToFeatureSet()
+	fs.WriteCPUInfoTo(0, 1, fs.CPUFreqMHz(), &buf)
 	got := buf.String()
 	const want = "cpu family\t: 25\n"
 	if !strings.Contains(got, want) {
