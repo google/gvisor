@@ -2848,6 +2848,30 @@ TEST(Inotify, KernfsBasic) {
   ASSERT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd)}));
 }
 
+// Watches on dynamically created procfs files must survive save/restore.
+TEST(Inotify, KernfsDynamicFileAcrossSave) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const std::string procFile = "/proc/self/comm";
+
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), procFile, IN_ALL_EVENTS));
+  MaybeSave();
+
+  const FileDescriptor file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(procFile, O_RDONLY));
+  char buf;
+  EXPECT_THAT(read(file_fd.get(), &buf, 1), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd)}));
+
+  // Adding a watch on the same file again must return the same descriptor.
+  EXPECT_THAT(InotifyAddWatch(fd.get(), procFile, IN_ALL_EVENTS),
+              IsPosixErrorOkAndHolds(wd));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

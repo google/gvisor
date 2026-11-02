@@ -449,6 +449,10 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 func (fs *Filesystem) evictCachedDentryLocked(ctx context.Context) {
 	// Evict the least recently used dentry because cache size is greater than
 	// max cache size (configured on mount).
+	//
+	// TODO(b/579946399): Don't evict dentries with inotify watches. Watches
+	// don't hold a reference on their target, so this may destroy the watches
+	// of inodes that are created on lookup.
 	fs.cachedDentries.Back().evictLocked(ctx)
 }
 
