@@ -3209,20 +3209,38 @@ func TestSimpleSend(t *testing.T) {
 }
 
 func TestZeroWindowSend(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{EnableV4: true, MTU: e2e.DefaultMTU, Clock: clock})
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 0 /* rcvWnd */, -1 /* epRcvBuf */)
 
 	data := []byte{1, 2, 3}
-	var r bytes.Reader
-	r.Reset(data)
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %s", err)
+	write := func(p []byte) {
+		t.Helper()
+		if _, err := c.EP.Write(bytes.NewReader(p), tcpip.WriteOptions{}); err != nil {
+			t.Fatalf("Write failed: %s", err)
+		}
 	}
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("GetSockOpt(TCPInfoOption): %s", err)
+	}
+	write(data[:1])
+	clock.Advance(info.RTO / 2)
+	write(data[1:])
 
-	// Check if we got a zero-window probe.
-	b := c.GetPacket()
+	// The second write must not move the first probe's deadline.
+	clock.Advance(info.RTO - info.RTO/2 - time.Nanosecond)
+	if b := c.GetPacketNonBlocking(); b != nil {
+		b.Release()
+		t.Fatal("zero-window probe before the original deadline")
+	}
+	clock.Advance(time.Nanosecond)
+	b := c.GetPacketNonBlocking()
+	if b == nil {
+		t.Fatal("no zero-window probe at the original deadline")
+	}
 	defer b.Release()
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	checker.IPv4(t, b,
