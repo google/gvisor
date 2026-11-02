@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -28,26 +29,19 @@ import (
 // Currently the local address is sufficient because all supported protocols
 // (i.e., IPv4 and IPv6) have different sizes for their addresses.
 type NetworkEndpointID struct {
-	LocalAddress tcpip.Address
+	LocalAddress netip.Addr
 }
 
 // TransportEndpointID is the identifier of a transport layer protocol endpoint.
 //
 // +stateify savable
 type TransportEndpointID struct {
-	// LocalPort is the local port associated with the endpoint.
-	LocalPort uint16
+	// Local identifies the local endpoint. Its port is the echo identifier for ICMP.
+	// An invalid address with a nonzero port represents a wildcard binding.
+	Local netip.AddrPort
 
-	// LocalAddress is the local [network layer] address associated with
-	// the endpoint.
-	LocalAddress tcpip.Address
-
-	// RemotePort is the remote port associated with the endpoint.
-	RemotePort uint16
-
-	// RemoteAddress it the remote [network layer] address associated with
-	// the endpoint.
-	RemoteAddress tcpip.Address
+	// Remote identifies the remote endpoint.
+	Remote netip.AddrPort
 }
 
 // NetworkPacketInfo holds information about a network layer packet.
@@ -357,7 +351,7 @@ type TransportDispatcher interface {
 	// endpoint.
 	//
 	// DeliverTransportError may modify the packet buffer.
-	DeliverTransportError(local, remote tcpip.Address, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ *PacketBuffer)
+	DeliverTransportError(local, remote netip.Addr, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ *PacketBuffer)
 
 	// DeliverRawPacket delivers a packet to any subscribed raw sockets.
 	//
@@ -418,13 +412,13 @@ type NetworkHeaderParams struct {
 // endpoints may associate themselves with the same identifier (group address).
 type GroupAddressableEndpoint interface {
 	// JoinGroup joins the specified group.
-	JoinGroup(group tcpip.Address) tcpip.Error
+	JoinGroup(group netip.Addr) tcpip.Error
 
 	// LeaveGroup attempts to leave the specified group.
-	LeaveGroup(group tcpip.Address) tcpip.Error
+	LeaveGroup(group netip.Addr) tcpip.Error
 
 	// IsInGroup returns true if the endpoint is a member of the specified group.
-	IsInGroup(group tcpip.Address) bool
+	IsInGroup(group netip.Addr) bool
 }
 
 // PrimaryEndpointBehavior is an enumeration of an AddressEndpoint's primary
@@ -618,10 +612,10 @@ type AddressDispatcher interface {
 // assigned to a NetworkEndpoint.
 type AssignableAddressEndpoint interface {
 	// AddressWithPrefix returns the endpoint's address.
-	AddressWithPrefix() tcpip.AddressWithPrefix
+	AddressWithPrefix() netip.Prefix
 
 	// Subnet returns the subnet of the endpoint's address.
-	Subnet() tcpip.Subnet
+	Subnet() netip.Prefix
 
 	// IsAssigned returns whether or not the endpoint is considered bound
 	// to its NetworkEndpoint.
@@ -738,24 +732,24 @@ type AddressableEndpoint interface {
 	// Returns *tcpip.ErrDuplicateAddress if the address exists.
 	//
 	// Acquires and returns the AddressEndpoint for the added address.
-	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties AddressProperties) (AddressEndpoint, tcpip.Error)
+	AddAndAcquirePermanentAddress(addr netip.Prefix, properties AddressProperties) (AddressEndpoint, tcpip.Error)
 
 	// RemovePermanentAddress removes the passed address if it is a permanent
 	// address.
 	//
 	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
 	// permanent address.
-	RemovePermanentAddress(addr tcpip.Address) tcpip.Error
+	RemovePermanentAddress(addr netip.Addr) tcpip.Error
 
 	// SetLifetimes sets an address' lifetimes (strictly informational) and
 	// whether it should be deprecated or preferred.
 	//
 	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
 	// address.
-	SetLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error
+	SetLifetimes(addr netip.Addr, lifetimes AddressLifetimes) tcpip.Error
 
 	// MainAddress returns the endpoint's primary permanent address.
-	MainAddress() tcpip.AddressWithPrefix
+	MainAddress() netip.Prefix
 
 	// AcquireAssignedAddress returns an address endpoint for the passed address
 	// that is considered bound to the endpoint, optionally creating a temporary
@@ -765,7 +759,7 @@ type AddressableEndpoint interface {
 	// false.
 	//
 	// Returns nil if the specified address is not local to this endpoint.
-	AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior, readOnly bool) AddressEndpoint
+	AcquireAssignedAddress(localAddr netip.Addr, allowTemp bool, tempPEB PrimaryEndpointBehavior, readOnly bool) AddressEndpoint
 
 	// AcquireOutgoingPrimaryAddress returns a primary address that may be used as
 	// a source address when sending packets to the passed remote address.
@@ -775,13 +769,13 @@ type AddressableEndpoint interface {
 	// The returned endpoint's reference count is incremented.
 	//
 	// Returns nil if a primary address is not available.
-	AcquireOutgoingPrimaryAddress(remoteAddr, srcHint tcpip.Address, allowExpired bool) AddressEndpoint
+	AcquireOutgoingPrimaryAddress(remoteAddr, srcHint netip.Addr, allowExpired bool) AddressEndpoint
 
 	// PrimaryAddresses returns the primary addresses.
-	PrimaryAddresses() []tcpip.AddressWithPrefix
+	PrimaryAddresses() []netip.Prefix
 
 	// PermanentAddresses returns all the permanent addresses.
-	PermanentAddresses() []tcpip.AddressWithPrefix
+	PermanentAddresses() []netip.Prefix
 }
 
 // NDPEndpoint is a network endpoint that supports NDP.
@@ -790,7 +784,7 @@ type NDPEndpoint interface {
 
 	// InvalidateDefaultRouter invalidates a default router discovered through
 	// NDP.
-	InvalidateDefaultRouter(tcpip.Address)
+	InvalidateDefaultRouter(netip.Addr)
 }
 
 // NetworkInterface is a network interface.
@@ -828,10 +822,10 @@ type NetworkInterface interface {
 	// address exists. If no non-deprecated addresses exist, the first deprecated
 	// address will be returned. If no deprecated addresses exist, the zero value
 	// will be returned.
-	PrimaryAddress(tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error)
+	PrimaryAddress(tcpip.NetworkProtocolNumber) (netip.Prefix, tcpip.Error)
 
 	// CheckLocalAddress returns true if the address exists on the interface.
-	CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool
+	CheckLocalAddress(tcpip.NetworkProtocolNumber, netip.Addr) bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
 	WritePacketToRemote(tcpip.LinkAddress, *PacketBuffer) tcpip.Error
@@ -847,11 +841,11 @@ type NetworkInterface interface {
 	//
 	// HandleNeighborProbe assumes that the probe is valid for the network
 	// interface the probe was received on.
-	HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress) tcpip.Error
+	HandleNeighborProbe(tcpip.NetworkProtocolNumber, netip.Addr, tcpip.LinkAddress) tcpip.Error
 
 	// HandleNeighborConfirmation processes an incoming neighbor confirmation
 	// (e.g. ARP reply or NDP Neighbor Advertisement).
-	HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags) tcpip.Error
+	HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, netip.Addr, tcpip.LinkAddress, ReachabilityConfirmationFlags) tcpip.Error
 }
 
 // LinkResolvableNetworkEndpoint handles link resolution events.
@@ -989,7 +983,7 @@ type NetworkProtocol interface {
 
 	// ParseAddresses returns the source and destination addresses stored in a
 	// packet of this protocol.
-	ParseAddresses(b []byte) (src, dst tcpip.Address)
+	ParseAddresses(b []byte) (src, dst netip.Addr)
 
 	// NewEndpoint creates a new endpoint of this protocol.
 	NewEndpoint(nic NetworkInterface, dispatcher TransportDispatcher) NetworkEndpoint
@@ -1026,9 +1020,9 @@ type NetworkProtocol interface {
 // +stateify savable
 type UnicastSourceAndMulticastDestination struct {
 	// Source represents a unicast source address.
-	Source tcpip.Address
+	Source netip.Addr
 	// Destination represents a multicast destination address.
-	Destination tcpip.Address
+	Destination netip.Addr
 }
 
 // MulticastRouteOutgoingInterface represents an outgoing interface in a
@@ -1289,7 +1283,7 @@ type InjectableLinkEndpoint interface {
 	// link.
 	//
 	// dest is used by endpoints with multiple raw destinations.
-	InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip.Error
+	InjectOutbound(dest netip.Addr, packet *buffer.View) tcpip.Error
 }
 
 // DADResult is a marker interface for the result of a duplicate address
@@ -1402,7 +1396,7 @@ type DuplicateAddressDetector interface {
 	//
 	// If DAD is already being performed for the address, the handler will be
 	// called with the result of the original DAD request.
-	CheckDuplicateAddress(tcpip.Address, DADCompletionHandler) DADCheckAddressDisposition
+	CheckDuplicateAddress(netip.Addr, DADCompletionHandler) DADCheckAddressDisposition
 
 	// SetDADConfigurations sets the configurations for DAD.
 	SetDADConfigurations(c DADConfigurations)
@@ -1417,14 +1411,14 @@ type LinkAddressResolver interface {
 	// LinkAddressRequest sends a request for the link address of the target
 	// address. The request is broadcast on the local network if a remote link
 	// address is not provided.
-	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error
+	LinkAddressRequest(targetAddr, localAddr netip.Addr, remoteLinkAddr tcpip.LinkAddress) tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
 	// requests. It either resolves the name immediately or returns the
 	// empty LinkAddress.
 	//
 	// It can be used to resolve broadcast addresses for example.
-	ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool)
+	ResolveStaticAddress(addr netip.Addr) (tcpip.LinkAddress, bool)
 
 	// LinkAddressProtocol returns the network protocol of the
 	// addresses this resolver can resolve.

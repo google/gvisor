@@ -38,7 +38,6 @@ go_test(
     deps = [
         "//pkg/buffer",
         "//pkg/refs",
-        "//pkg/tcpip",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",

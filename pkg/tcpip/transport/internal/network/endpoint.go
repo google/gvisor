@@ -18,6 +18,7 @@ package network
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -65,7 +66,7 @@ type Endpoint struct {
 	multicastTTL uint8
 	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
 	// +checklocks:mu
-	multicastAddr tcpip.Address
+	multicastAddr netip.Addr
 	// +checklocks:mu
 	multicastNICID tcpip.NICID
 	// +checklocks:mu
@@ -115,7 +116,7 @@ type Endpoint struct {
 // +stateify savable
 type multicastMembership struct {
 	nicID         tcpip.NICID
-	multicastAddr tcpip.Address
+	multicastAddr netip.Addr
 }
 
 // Init initializes the endpoint.
@@ -252,7 +253,7 @@ func (c *WriteContext) Release() {
 // WritePacketInfo is the properties of a packet that may be written.
 type WritePacketInfo struct {
 	NetProto                    tcpip.NetworkProtocolNumber
-	LocalAddress, RemoteAddress tcpip.Address
+	LocalAddress, RemoteAddress netip.Addr
 	MaxHeaderLength             uint16
 	RequiresTXTransportChecksum bool
 }
@@ -469,7 +470,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 			// multicast interface was specified (see e.multicastNICID,
 			// e.connectRouteRLocked and e.ConnectAndThen).
 			NIC:  info.RegisterNICID,
-			Addr: info.ID.RemoteAddress,
+			Addr: info.ID.Remote.Addr(),
 		}
 		fallthrough
 	default:
@@ -480,7 +481,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 			nicID = tcpip.NICID(e.ops.GetBindToDevice())
 		}
 
-		var localAddr tcpip.Address
+		var localAddr netip.Addr
 		if ipv6PktInfoValid {
 			// Uphold strong-host semantics since (as of writing) the stack follows
 			// the strong host model.
@@ -498,7 +499,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 
 				// If a local address is not specified, then we need to make sure the
 				// bound address belongs to the specified local interface.
-				if pktInfoAddr.BitLen() == 0 {
+				if !pktInfoAddr.IsValid() {
 					// If the bound interface is different from the specified local
 					// interface, the bound address obviously does not belong to the
 					// specified local interface.
@@ -507,7 +508,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 					if info.BindNICID != 0 && info.BindNICID != pktInfoNICID {
 						return WriteContext{}, &tcpip.ErrHostUnreachable{}
 					}
-					if info.ID.LocalAddress.BitLen() != 0 && e.stack.CheckLocalAddress(pktInfoNICID, header.IPv6ProtocolNumber, info.ID.LocalAddress) == 0 {
+					if info.ID.Local.Addr().IsValid() && e.stack.CheckLocalAddress(pktInfoNICID, header.IPv6ProtocolNumber, info.ID.Local.Addr()) == 0 {
 						return WriteContext{}, &tcpip.ErrBadLocalAddress{}
 					}
 				}
@@ -515,7 +516,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 				nicID = pktInfoNICID
 			}
 
-			if pktInfoAddr.BitLen() != 0 {
+			if pktInfoAddr.IsValid() {
 				// The local address must belong to the stack. If an outgoing interface
 				// is specified as a result of binding the endpoint to a device, or
 				// specifying the outgoing interface in the destination address/pkt info
@@ -613,9 +614,7 @@ func (e *Endpoint) Disconnect() {
 	info := e.Info()
 	// Exclude ephemerally bound endpoints.
 	if e.wasBound {
-		info.ID = stack.TransportEndpointID{
-			LocalAddress: info.BindAddr,
-		}
+		info.ID = stack.TransportEndpointID{Local: netip.AddrPortFrom(info.BindAddr, 0)}
 		e.setEndpointState(transport.DatagramEndpointStateBound)
 	} else {
 		info.ID = stack.TransportEndpointID{}
@@ -632,19 +631,19 @@ func (e *Endpoint) Disconnect() {
 // specified address is a multicast address.
 //
 // +checklocksread:e.mu
-func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, localAddr tcpip.Address, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
-	if localAddr.BitLen() == 0 {
-		localAddr = e.Info().ID.LocalAddress
+func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, localAddr netip.Addr, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
+	if !localAddr.IsValid() {
+		localAddr = e.Info().ID.Local.Addr()
 		if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
 			// A packet can only originate from a unicast address (i.e., an interface).
-			localAddr = tcpip.Address{}
+			localAddr = netip.Addr{}
 		}
 
 		if header.IsV4MulticastAddress(addr.Addr) {
 			if nicID == 0 {
 				nicID = e.multicastNICID
 			}
-			if localAddr == (tcpip.Address{}) && nicID == 0 {
+			if localAddr == (netip.Addr{}) && nicID == 0 {
 				localAddr = e.multicastAddr
 			}
 		}
@@ -704,17 +703,14 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 		return err
 	}
 
-	r, nicID, err := e.connectRouteRLocked(nicID, tcpip.Address{}, addr, netProto)
+	r, nicID, err := e.connectRouteRLocked(nicID, netip.Addr{}, addr, netProto)
 	if err != nil {
 		return err
 	}
 
-	id := stack.TransportEndpointID{
-		LocalAddress:  info.ID.LocalAddress,
-		RemoteAddress: r.RemoteAddress(),
-	}
+	id := stack.TransportEndpointID{Local: netip.AddrPortFrom(info.ID.Local.Addr(), 0), Remote: netip.AddrPortFrom(r.RemoteAddress(), 0)}
 	if e.State() == transport.DatagramEndpointStateInitial {
-		id.LocalAddress = r.LocalAddress()
+		id.Local = netip.AddrPortFrom(r.LocalAddress(), id.Local.Port())
 	}
 
 	if err := f(r.NetProto(), info.ID, id); err != nil {
@@ -762,13 +758,13 @@ func (e *Endpoint) checkV4Mapped(addr tcpip.FullAddress, bind bool) (tcpip.FullA
 	return unwrapped, netProto, nil
 }
 
-func (e *Endpoint) isBroadcastOrMulticast(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+func (e *Endpoint) isBroadcastOrMulticast(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, addr netip.Addr) bool {
 	return addr == header.IPv4Broadcast || header.IsV4MulticastAddress(addr) || header.IsV6MulticastAddress(addr) || e.stack.IsSubnetBroadcast(nicID, netProto, addr)
 }
 
 // Bind binds the endpoint to the address.
 func (e *Endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
-	return e.BindAndThen(addr, func(tcpip.NetworkProtocolNumber, tcpip.Address) tcpip.Error {
+	return e.BindAndThen(addr, func(tcpip.NetworkProtocolNumber, netip.Addr) tcpip.Error {
 		return nil
 	})
 }
@@ -778,7 +774,7 @@ func (e *Endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 //
 // If the function returns an error, the endpoint's state does not change. The
 // function will be called with the bound network protocol and address.
-func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProtocolNumber, tcpip.Address) tcpip.Error) tcpip.Error {
+func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProtocolNumber, netip.Addr) tcpip.Error) tcpip.Error {
 	addr.Port = 0
 
 	e.mu.Lock()
@@ -796,7 +792,7 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 	}
 
 	nicID := addr.NIC
-	if addr.Addr.BitLen() != 0 && !e.isBroadcastOrMulticast(addr.NIC, netProto, addr.Addr) {
+	if addr.Addr.IsValid() && !e.isBroadcastOrMulticast(addr.NIC, netProto, addr.Addr) {
 		nicID = e.stack.CheckLocalAddress(nicID, netProto, addr.Addr)
 		if nicID == 0 {
 			return &tcpip.ErrBadLocalAddress{}
@@ -810,9 +806,7 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 	e.wasBound = true
 
 	info := e.Info()
-	info.ID = stack.TransportEndpointID{
-		LocalAddress: addr.Addr,
-	}
+	info.ID = stack.TransportEndpointID{Local: netip.AddrPortFrom(addr.Addr, 0)}
 	info.BindNICID = addr.NIC
 	info.RegisterNICID = nicID
 	info.BindAddr = addr.Addr
@@ -973,7 +967,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 
 // multicastNetProto returns the network protocol of a given multicast address.
 // Returns an error if the address is not a multicast address.
-func (e *Endpoint) multicastNetProto(addr tcpip.Address) (tcpip.NetworkProtocolNumber, tcpip.Error) {
+func (e *Endpoint) multicastNetProto(addr netip.Addr) (tcpip.NetworkProtocolNumber, tcpip.Error) {
 	switch {
 	case header.IsV4MulticastAddress(addr):
 		return header.IPv4ProtocolNumber, nil
@@ -999,8 +993,8 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		nic := v.NIC
 		addr := fa.Addr
 
-		if nic == 0 && addr == (tcpip.Address{}) {
-			e.multicastAddr = tcpip.Address{}
+		if nic == 0 && addr == (netip.Addr{}) {
+			e.multicastAddr = netip.Addr{}
 			e.multicastNICID = 0
 			break
 		}
@@ -1032,9 +1026,9 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		}
 
 		nicID := v.NIC
-		if v.InterfaceAddr.Unspecified() {
+		if !v.InterfaceAddr.IsValid() || v.InterfaceAddr.IsUnspecified() {
 			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, tcpip.Address{}, v.MulticastAddr, proto, false /* multicastLoop */); err == nil {
+				if r, err := e.stack.FindRoute(0, netip.Addr{}, v.MulticastAddr, proto, false /* multicastLoop */); err == nil {
 					nicID = r.NICID()
 					r.Release()
 				}
@@ -1068,9 +1062,9 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		}
 
 		nicID := v.NIC
-		if v.InterfaceAddr.Unspecified() {
+		if !v.InterfaceAddr.IsValid() || v.InterfaceAddr.IsUnspecified() {
 			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, tcpip.Address{}, v.MulticastAddr, proto, false /* multicastLoop */); err == nil {
+				if r, err := e.stack.FindRoute(0, netip.Addr{}, v.MulticastAddr, proto, false /* multicastLoop */); err == nil {
 					nicID = r.NICID()
 					r.Release()
 				}

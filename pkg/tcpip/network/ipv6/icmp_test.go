@@ -16,12 +16,12 @@ package ipv6
 
 import (
 	"bytes"
-	"net"
+	"net/netip"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -158,25 +158,25 @@ func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pk
 	return err
 }
 
-func (t *testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress) tcpip.Error {
+func (t *testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, netip.Addr, tcpip.LinkAddress) tcpip.Error {
 	t.probeCount++
 	return nil
 }
 
-func (t *testInterface) HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) tcpip.Error {
+func (t *testInterface) HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, netip.Addr, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) tcpip.Error {
 	t.confirmationCount++
 	return nil
 }
 
-func (*testInterface) PrimaryAddress(tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error) {
-	return tcpip.AddressWithPrefix{}, nil
+func (*testInterface) PrimaryAddress(tcpip.NetworkProtocolNumber) (netip.Prefix, tcpip.Error) {
+	return netip.Prefix{}, nil
 }
 
-func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool {
+func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, netip.Addr) bool {
 	return false
 }
 
-func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp header.ICMPv6, hopLimit uint8, includeRouterAlert bool) {
+func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst netip.Addr, icmp header.ICMPv6, hopLimit uint8, includeRouterAlert bool) {
 	var extensionHeaders header.IPv6ExtHdrSerializer
 	if includeRouterAlert {
 		extensionHeaders = header.IPv6ExtHdrSerializer{
@@ -232,18 +232,12 @@ func (c *testContext) cleanup() {
 func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 	var (
 		localAddr = tcpip.ProtocolAddress{
-			Protocol: ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
-				PrefixLen: 64,
-			},
+			Protocol:          ProtocolNumber,
+			AddressWithPrefix: netip.PrefixFrom(netip.MustParseAddr("a::1"), 64),
 		}
 		remoteAddr = tcpip.ProtocolAddress{
-			Protocol: ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
-				PrefixLen: 64,
-			},
+			Protocol:          ProtocolNumber,
+			AddressWithPrefix: netip.PrefixFrom(netip.MustParseAddr("a::2"), 64),
 		}
 	)
 
@@ -285,8 +279,8 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 			if test.installHandler {
 				s.SetTransportProtocolHandler(icmp.ProtocolNumber6, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 					handlerCalled = true
-					if got := id.LocalPort; got != ident {
-						t.Errorf("got id.LocalPort = %d, want = %d", got, ident)
+					if got := id.Local.Port(); got != ident {
+						t.Errorf("got id.Local.Port() = %d, want = %d", got, ident)
 					}
 					return test.handled
 				})
@@ -301,7 +295,7 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 				t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, localAddr, err)
 			}
 			s.SetRouteTable([]tcpip.Route{{
-				Destination: localAddr.AddressWithPrefix.Subnet(),
+				Destination: localAddr.AddressWithPrefix.Masked(),
 				NIC:         nicID,
 			}})
 
@@ -314,16 +308,16 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 			icmpH.SetChecksum(0)
 			icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 				Header: icmpH,
-				Src:    remoteAddr.AddressWithPrefix.Address,
-				Dst:    localAddr.AddressWithPrefix.Address,
+				Src:    remoteAddr.AddressWithPrefix.Addr(),
+				Dst:    localAddr.AddressWithPrefix.Addr(),
 			}))
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength:     header.ICMPv6MinimumSize,
 				TransportProtocol: icmp.ProtocolNumber6,
 				HopLimit:          DefaultTTL,
-				SrcAddr:           remoteAddr.AddressWithPrefix.Address,
-				DstAddr:           localAddr.AddressWithPrefix.Address,
+				SrcAddr:           remoteAddr.AddressWithPrefix.Addr(),
+				DstAddr:           localAddr.AddressWithPrefix.Addr(),
 			})
 			echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Payload: buffer.MakeWithData(hdr.View()),
@@ -351,8 +345,8 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 			payload := stack.PayloadSince(p.NetworkHeader())
 			defer payload.Release()
 			checker.IPv6(t, payload,
-				checker.SrcAddr(localAddr.AddressWithPrefix.Address),
-				checker.DstAddr(remoteAddr.AddressWithPrefix.Address),
+				checker.SrcAddr(localAddr.AddressWithPrefix.Addr()),
+				checker.DstAddr(remoteAddr.AddressWithPrefix.Addr()),
 				checker.ICMPv6(
 					checker.ICMPv6Type(header.ICMPv6EchoReply),
 					checker.ICMPv6Code(header.ICMPv6UnusedCode)))
@@ -362,18 +356,12 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 
 func TestICMPEchoRegisteredEndpointDoesNotSuppressReply(t *testing.T) {
 	localAddr := tcpip.ProtocolAddress{
-		Protocol: ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
-			PrefixLen: 64,
-		},
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(netip.MustParseAddr("a::1"), 64),
 	}
 	remoteAddr := tcpip.ProtocolAddress{
-		Protocol: ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
-			PrefixLen: 64,
-		},
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(netip.MustParseAddr("a::2"), 64),
 	}
 
 	c := newTestContext()
@@ -389,7 +377,7 @@ func TestICMPEchoRegisteredEndpointDoesNotSuppressReply(t *testing.T) {
 		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, localAddr, err)
 	}
 	s.SetRouteTable([]tcpip.Route{{
-		Destination: localAddr.AddressWithPrefix.Subnet(),
+		Destination: localAddr.AddressWithPrefix.Masked(),
 		NIC:         nicID,
 	}})
 
@@ -400,7 +388,7 @@ func TestICMPEchoRegisteredEndpointDoesNotSuppressReply(t *testing.T) {
 		t.Fatalf("s.NewEndpoint(%d, %d, _) = %s", icmp.ProtocolNumber6, ProtocolNumber, err)
 	}
 	defer ep.Close()
-	if err := ep.Bind(tcpip.FullAddress{Addr: localAddr.AddressWithPrefix.Address, Port: ident}); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Addr: localAddr.AddressWithPrefix.Addr(), Port: ident}); err != nil {
 		t.Fatalf("ep.Bind(...) = %s", err)
 	}
 
@@ -419,16 +407,16 @@ func TestICMPEchoRegisteredEndpointDoesNotSuppressReply(t *testing.T) {
 	icmpH.SetChecksum(0)
 	icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header: icmpH,
-		Src:    remoteAddr.AddressWithPrefix.Address,
-		Dst:    localAddr.AddressWithPrefix.Address,
+		Src:    remoteAddr.AddressWithPrefix.Addr(),
+		Dst:    localAddr.AddressWithPrefix.Addr(),
 	}))
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength:     header.ICMPv6MinimumSize,
 		TransportProtocol: icmp.ProtocolNumber6,
 		HopLimit:          DefaultTTL,
-		SrcAddr:           remoteAddr.AddressWithPrefix.Address,
-		DstAddr:           localAddr.AddressWithPrefix.Address,
+		SrcAddr:           remoteAddr.AddressWithPrefix.Addr(),
+		DstAddr:           localAddr.AddressWithPrefix.Addr(),
 	})
 	echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(hdr.View()),
@@ -449,8 +437,8 @@ func TestICMPEchoRegisteredEndpointDoesNotSuppressReply(t *testing.T) {
 	payload := stack.PayloadSince(p.NetworkHeader())
 	defer payload.Release()
 	checker.IPv6(t, payload,
-		checker.SrcAddr(localAddr.AddressWithPrefix.Address),
-		checker.DstAddr(remoteAddr.AddressWithPrefix.Address),
+		checker.SrcAddr(localAddr.AddressWithPrefix.Addr()),
+		checker.DstAddr(remoteAddr.AddressWithPrefix.Addr()),
 		checker.ICMPv6(
 			checker.ICMPv6Type(header.ICMPv6EchoReply),
 			checker.ICMPv6Code(header.ICMPv6UnusedCode)))
@@ -465,10 +453,7 @@ func TestICMPCounts(t *testing.T) {
 		t.Fatalf("CreateNIC(_, _) = %s", err)
 	}
 	{
-		subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
-		if err != nil {
-			t.Fatal(err)
-		}
+		subnet := tcpip.FullPrefix(lladdr1)
 		s.SetRouteTable(
 			[]tcpip.Route{{
 				Destination: subnet,
@@ -492,7 +477,7 @@ func TestICMPCounts(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
 	}
-	addr := lladdr0.WithPrefix()
+	addr := tcpip.FullPrefix(lladdr0)
 	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 	} else {
@@ -685,7 +670,7 @@ func newMultiStackTestContext(t *testing.T) multiStackTestContext {
 	}
 	llProtocolAddr0 := tcpip.ProtocolAddress{
 		Protocol:          ProtocolNumber,
-		AddressWithPrefix: lladdr0.WithPrefix(),
+		AddressWithPrefix: tcpip.FullPrefix(lladdr0),
 	}
 	if err := c.s0.AddProtocolAddress(nicID, llProtocolAddr0, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, llProtocolAddr0, err)
@@ -698,26 +683,20 @@ func newMultiStackTestContext(t *testing.T) multiStackTestContext {
 	}
 	llProtocolAddr1 := tcpip.ProtocolAddress{
 		Protocol:          ProtocolNumber,
-		AddressWithPrefix: lladdr1.WithPrefix(),
+		AddressWithPrefix: tcpip.FullPrefix(lladdr1),
 	}
 	if err := c.s1.AddProtocolAddress(nicID, llProtocolAddr1, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, llProtocolAddr1, err)
 	}
 
-	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
-	if err != nil {
-		t.Fatal(err)
-	}
+	subnet0 := tcpip.FullPrefix(lladdr1)
 	c.s0.SetRouteTable(
 		[]tcpip.Route{{
 			Destination: subnet0,
 			NIC:         nicID,
 		}},
 	)
-	subnet1, err := tcpip.NewSubnet(lladdr0, tcpip.MaskFrom(strings.Repeat("\xff", lladdr0.Len())))
-	if err != nil {
-		t.Fatal(err)
-	}
+	subnet1 := tcpip.FullPrefix(lladdr0)
 	c.s1.SetRouteTable(
 		[]tcpip.Route{{
 			Destination: subnet1,
@@ -839,7 +818,7 @@ func TestLinkResolution(t *testing.T) {
 		{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6NeighborAdvert},
 	} {
 		routeICMPv6Packet(t, c.clock, args, func(t *testing.T, icmpv6 header.ICMPv6) {
-			if got, want := tcpip.AddrFromSlice(icmpv6[8:][:16]), lladdr1; got != want {
+			if got, want := netip.AddrFrom16([16]byte(icmpv6[8:][:16])), lladdr1; got != want {
 				t.Errorf("%d: got target = %s, want = %s", icmpv6.Type(), got, want)
 			}
 		})
@@ -988,16 +967,13 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol:          ProtocolNumber,
-					AddressWithPrefix: lladdr0.WithPrefix(),
+					AddressWithPrefix: tcpip.FullPrefix(lladdr0),
 				}
 				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 				{
-					subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
-					if err != nil {
-						t.Fatal(err)
-					}
+					subnet := tcpip.FullPrefix(lladdr1)
 					s.SetRouteTable(
 						[]tcpip.Route{{
 							Destination: subnet,
@@ -1189,16 +1165,13 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 
 			protocolAddr := tcpip.ProtocolAddress{
 				Protocol:          ProtocolNumber,
-				AddressWithPrefix: lladdr0.WithPrefix(),
+				AddressWithPrefix: tcpip.FullPrefix(lladdr0),
 			}
 			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			{
-				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
-				if err != nil {
-					t.Fatal(err)
-				}
+				subnet := tcpip.FullPrefix(lladdr1)
 				s.SetRouteTable(
 					[]tcpip.Route{{
 						Destination: subnet,
@@ -1378,16 +1351,13 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 
 			protocolAddr := tcpip.ProtocolAddress{
 				Protocol:          ProtocolNumber,
-				AddressWithPrefix: lladdr0.WithPrefix(),
+				AddressWithPrefix: tcpip.FullPrefix(lladdr0),
 			}
 			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			{
-				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
-				if err != nil {
-					t.Fatal(err)
-				}
+				subnet := tcpip.FullPrefix(lladdr1)
 				s.SetRouteTable(
 					[]tcpip.Route{{
 						Destination: subnet,
@@ -1474,12 +1444,12 @@ func TestLinkAddressRequest(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		nicAddr        tcpip.Address
-		localAddr      tcpip.Address
+		nicAddr        netip.Addr
+		localAddr      netip.Addr
 		remoteLinkAddr tcpip.LinkAddress
 
 		expectedErr            tcpip.Error
-		expectedRemoteAddr     tcpip.Address
+		expectedRemoteAddr     netip.Addr
 		expectedRemoteLinkAddr tcpip.LinkAddress
 	}{
 		{
@@ -1556,10 +1526,10 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Fatalf("expected %T to implement stack.LinkAddressResolver", ep)
 			}
 
-			if test.nicAddr.Len() != 0 {
+			if test.nicAddr.IsValid() {
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol:          ProtocolNumber,
-					AddressWithPrefix: test.nicAddr.WithPrefix(),
+					AddressWithPrefix: tcpip.FullPrefix(test.nicAddr),
 				}
 				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -1587,7 +1557,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			want.NetProto = ProtocolNumber
 			want.LocalLinkAddress = linkAddr0
 			want.RemoteLinkAddress = test.expectedRemoteLinkAddr
-			if diff := cmp.Diff(want, pkt.EgressRoute, cmp.AllowUnexported(want)); diff != "" {
+			if diff := cmp.Diff(want, pkt.EgressRoute, cmp.AllowUnexported(want), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 				t.Errorf("route info mismatch (-want +got):\n%s", diff)
 			}
 			payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -1612,18 +1582,12 @@ func TestPacketQueing(t *testing.T) {
 		host2NICLinkAddr = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
 
 		host1IPv6Addr = tcpip.ProtocolAddress{
-			Protocol: ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
-				PrefixLen: 64,
-			},
+			Protocol:          ProtocolNumber,
+			AddressWithPrefix: netip.PrefixFrom(netip.MustParseAddr("a::1"), 64),
 		}
 		host2IPv6Addr = tcpip.ProtocolAddress{
-			Protocol: ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
-				PrefixLen: 64,
-			},
+			Protocol:          ProtocolNumber,
+			AddressWithPrefix: netip.PrefixFrom(netip.MustParseAddr("a::2"), 64),
 		}
 	)
 
@@ -1642,7 +1606,7 @@ func TestPacketQueing(t *testing.T) {
 					DstPort: 80,
 					Length:  header.UDPMinimumSize,
 				})
-				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
+				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Addr(), host1IPv6Addr.AddressWithPrefix.Addr(), header.UDPMinimumSize)
 				sum = checksum.Checksum(nil, sum)
 				u.SetChecksum(^u.CalculateChecksum(sum))
 				payloadLength := hdr.UsedLength()
@@ -1651,8 +1615,8 @@ func TestPacketQueing(t *testing.T) {
 					PayloadLength:     uint16(payloadLength),
 					TransportProtocol: udp.ProtocolNumber,
 					HopLimit:          DefaultTTL,
-					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
-					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Addr(),
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Addr(),
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buffer.MakeWithData(hdr.View()),
@@ -1675,8 +1639,8 @@ func TestPacketQueing(t *testing.T) {
 				payload := stack.PayloadSince(p.NetworkHeader())
 				defer payload.Release()
 				checker.IPv6(t, payload,
-					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
-					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Addr()),
+					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Addr()),
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
 						checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
@@ -1694,16 +1658,16 @@ func TestPacketQueing(t *testing.T) {
 				pkt.SetChecksum(0)
 				pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 					Header: pkt,
-					Src:    host2IPv6Addr.AddressWithPrefix.Address,
-					Dst:    host1IPv6Addr.AddressWithPrefix.Address,
+					Src:    host2IPv6Addr.AddressWithPrefix.Addr(),
+					Dst:    host1IPv6Addr.AddressWithPrefix.Addr(),
 				}))
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
 					PayloadLength:     header.ICMPv6MinimumSize,
 					TransportProtocol: icmp.ProtocolNumber6,
 					HopLimit:          DefaultTTL,
-					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
-					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Addr(),
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Addr(),
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buffer.MakeWithData(hdr.View()),
@@ -1726,8 +1690,8 @@ func TestPacketQueing(t *testing.T) {
 				payload := stack.PayloadSince(p.NetworkHeader())
 				defer payload.Release()
 				checker.IPv6(t, payload,
-					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
-					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Addr()),
+					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Addr()),
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6EchoReply),
 						checker.ICMPv6Code(header.ICMPv6UnusedCode)))
@@ -1755,7 +1719,7 @@ func TestPacketQueing(t *testing.T) {
 
 			s.SetRouteTable([]tcpip.Route{
 				{
-					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+					Destination: host1IPv6Addr.AddressWithPrefix.Masked(),
 					NIC:         nicID,
 				},
 			})
@@ -1774,18 +1738,18 @@ func TestPacketQueing(t *testing.T) {
 				if p.NetworkProtocolNumber != ProtocolNumber {
 					t.Errorf("got Proto = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
-				snmc := header.SolicitedNodeAddr(host2IPv6Addr.AddressWithPrefix.Address)
+				snmc := header.SolicitedNodeAddr(host2IPv6Addr.AddressWithPrefix.Addr())
 				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.EgressRoute.RemoteLinkAddress != want {
 					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, want)
 				}
 				payload := stack.PayloadSince(p.NetworkHeader())
 				defer payload.Release()
 				checker.IPv6(t, payload,
-					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Addr()),
 					checker.DstAddr(snmc),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
-						checker.NDPNSTargetAddress(host2IPv6Addr.AddressWithPrefix.Address),
+						checker.NDPNSTargetAddress(host2IPv6Addr.AddressWithPrefix.Addr()),
 						checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(host1NICLinkAddr)}),
 					))
 				p.DecRef()
@@ -1800,14 +1764,14 @@ func TestPacketQueing(t *testing.T) {
 				na := header.NDPNeighborAdvert(pkt.MessageBody())
 				na.SetSolicitedFlag(true)
 				na.SetOverrideFlag(true)
-				na.SetTargetAddress(host2IPv6Addr.AddressWithPrefix.Address)
+				na.SetTargetAddress(host2IPv6Addr.AddressWithPrefix.Addr())
 				na.Options().Serialize(header.NDPOptionsSerializer{
 					header.NDPTargetLinkLayerAddressOption(host2NICLinkAddr),
 				})
 				pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 					Header: pkt,
-					Src:    host2IPv6Addr.AddressWithPrefix.Address,
-					Dst:    host1IPv6Addr.AddressWithPrefix.Address,
+					Src:    host2IPv6Addr.AddressWithPrefix.Addr(),
+					Dst:    host1IPv6Addr.AddressWithPrefix.Addr(),
 				}))
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
@@ -1815,8 +1779,8 @@ func TestPacketQueing(t *testing.T) {
 					PayloadLength:     uint16(payloadLength),
 					TransportProtocol: icmp.ProtocolNumber6,
 					HopLimit:          header.NDPHopLimit,
-					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
-					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Addr(),
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Addr(),
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buffer.MakeWithData(hdr.View()),
@@ -1842,8 +1806,8 @@ func TestCallsToNeighborCache(t *testing.T) {
 		name                  string
 		createPacket          func() header.ICMPv6
 		multicast             bool
-		source                tcpip.Address
-		destination           tcpip.Address
+		source                netip.Addr
+		destination           netip.Addr
 		wantProbeCount        int
 		wantConfirmationCount int
 	}{
@@ -2010,17 +1974,14 @@ func TestCallsToNeighborCache(t *testing.T) {
 				}
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol:          ProtocolNumber,
-					AddressWithPrefix: lladdr0.WithPrefix(),
+					AddressWithPrefix: tcpip.FullPrefix(lladdr0),
 				}
 				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 			}
 			{
-				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
-				if err != nil {
-					t.Fatal(err)
-				}
+				subnet := tcpip.FullPrefix(lladdr1)
 				s.SetRouteTable(
 					[]tcpip.Route{{
 						Destination: subnet,
@@ -2046,7 +2007,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
 			}
-			addr := lladdr0.WithPrefix()
+			addr := tcpip.FullPrefix(lladdr0)
 			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
 				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 			} else {
