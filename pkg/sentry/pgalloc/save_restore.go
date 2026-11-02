@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -588,14 +589,31 @@ type hostFileDataSeeker struct {
 	cur  memmap.FileRange
 }
 
-// newHostFileDataSeeker returns nil for disk-backed files, since filesystems
-// such as FUSE may answer SEEK_DATA without accounting for dirty page cache
-// pages.
+// newHostFileDataSeeker returns nil if f's backing file may be on a filesystem
+// whose SEEK_DATA does not report dirty page cache pages.
 func (f *MemoryFile) newHostFileDataSeeker() *hostFileDataSeeker {
-	if f.opts.DiskBackedFile {
+	if f.opts.DiskBackedFile && !f.seekDataReportsDirtyPages() {
 		return nil
 	}
 	return &hostFileDataSeeker{fd: f.FD(), size: f.TotalSize()}
+}
+
+// seekDataReportsDirtyPages reports whether SEEK_DATA on f's backing file
+// reports dirty page cache pages. This is an allowlist: FUSE forwards SEEK_DATA
+// to its server, which has not seen pages that are not written back, and
+// fstatfs on overlayfs does not identify the filesystem that answers SEEK_DATA.
+func (f *MemoryFile) seekDataReportsDirtyPages() bool {
+	var statfs unix.Statfs_t
+	if err := unix.Fstatfs(f.FD(), &statfs); err != nil {
+		log.Warningf("MemoryFile(%p): fstatfs failed, scanning all possibly committed pages: %v", f, err)
+		return false
+	}
+	switch statfs.Type {
+	case linux.TMPFS_MAGIC, linux.EXT_SUPER_MAGIC, linux.XFS_SUPER_MAGIC, linux.BTRFS_SUPER_MAGIC:
+		return true
+	default:
+		return false
+	}
 }
 
 // dataAtOrAfter returns the first page-aligned data range at or after off, or
