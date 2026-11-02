@@ -22,6 +22,17 @@ import (
 	"io"
 )
 
+// UUID returns a random version 4 UUID.
+func UUID() string {
+	var uuid [16]byte
+	if _, err := Read(uuid[:]); err != nil {
+		panic(fmt.Sprintf("failed to read random bytes for UUID: %v", err))
+	}
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 variant
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4 (random)
+	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
+}
+
 // RNG exposes convenience functions based on a cryptographically secure
 // io.Reader.
 type RNG struct {

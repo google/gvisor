@@ -3213,9 +3213,14 @@ TEST(MountTest, UserNamespaceProcMount) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const std::function<void()> fn = [&dir] {
+  const std::string boot_id =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/random/boot_id"));
+  const std::function<void()> fn = [&] {
     TEST_CHECK_SUCCESS(mount("proc", dir.path().c_str(), "proc",
                              kUserNamespaceMountFlags, nullptr));
+    const std::string mounted_id = TEST_CHECK_NO_ERRNO_AND_VALUE(
+        GetContents(JoinPath(dir.path(), "sys/kernel/random/boot_id")));
+    TEST_CHECK(mounted_id == boot_id);
   };
   EXPECT_THAT(InUserNamespaceAfterSetup([] {}, CLONE_NEWPID, fn),
               IsPosixErrorOkAndHolds(0));
