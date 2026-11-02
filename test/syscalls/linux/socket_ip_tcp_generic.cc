@@ -55,6 +55,44 @@ constexpr int kPositiveTimeoutMs = 60 * 1000;
 // The amount of time to wait for something unexpected to not occur.
 constexpr int kNegativeTimeoutMs = 3 * 1000;
 
+TEST(TcpConnectTest, RefusalIsReportedOnce) {
+  // A bound port without a listener refuses every connection attempt.
+  auto server = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  sockaddr_in addr = {};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(bind(server.get(), AsSockAddr(&addr), sizeof(addr)),
+              SyscallSucceeds());
+  socklen_t len = sizeof(addr);
+  ASSERT_THAT(getsockname(server.get(), AsSockAddr(&addr), &len),
+              SyscallSucceeds());
+
+  for (const bool nonblocking : {false, true}) {
+    SCOPED_TRACE(nonblocking);
+    auto client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(AF_INET, SOCK_STREAM | (nonblocking ? SOCK_NONBLOCK : 0), 0));
+    ASSERT_THAT(
+        RetryEINTR(connect)(client.get(), AsSockAddr(&addr), len),
+        SyscallFailsWithErrno(nonblocking ? EINPROGRESS : ECONNREFUSED));
+    if (nonblocking) {
+      pollfd failed = {client.get(), POLLERR, 0};
+      ASSERT_THAT(RetryEINTR(poll)(&failed, 1, kPositiveTimeoutMs),
+                  SyscallSucceedsWithValue(1));
+      ASSERT_NE(failed.revents & POLLERR, 0);
+      int err;
+      socklen_t size = sizeof(err);
+      ASSERT_THAT(getsockopt(client.get(), SOL_SOCKET, SO_ERROR, &err, &size),
+                  SyscallSucceeds());
+      EXPECT_EQ(err, ECONNREFUSED) << strerror(err);
+    }
+    int err;
+    socklen_t size = sizeof(err);
+    ASSERT_THAT(getsockopt(client.get(), SOL_SOCKET, SO_ERROR, &err, &size),
+                SyscallSucceeds());
+    EXPECT_EQ(err, 0) << strerror(err);
+  }
+}
+
 TEST_P(TCPSocketPairTest, TcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
