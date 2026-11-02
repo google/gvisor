@@ -39,12 +39,13 @@ import (
 )
 
 const (
-	subtreeControl    = "cgroup.subtree_control"
-	controllersFile   = "cgroup.controllers"
-	cgroup2Key        = "cgroup2"
-	memoryLimitCgroup = "memory.max"
-	cpuLimitCgroup    = "cpu.max"
-	maxLimitStr       = "max"
+	subtreeControl      = "cgroup.subtree_control"
+	controllersFile     = "cgroup.controllers"
+	cgroup2Key          = "cgroup2"
+	memoryLimitCgroup   = "memory.max"
+	memorySwapMaxCgroup = "memory.swap.max"
+	cpuLimitCgroup      = "cpu.max"
+	maxLimitStr         = "max"
 )
 
 // DefaultCPUPeriod is the CFS period used when the OCI spec sets none, in
@@ -148,7 +149,7 @@ func (c *cgroupV2) Install(res *specs.LinuxResources) error {
 		// Kubernetes can pre-create the pod cgroup and pass the swap limit
 		// through the OCI spec. Preserve the existing resource ownership
 		// contract for pre-created cgroups, but still honor memory.swap.max.
-		if err := setMemorySwap(res, c.MakePath("")); err != nil {
+		if err := setMemorySwapFromSpec(res, c.MakePath("")); err != nil {
 			return err
 		}
 	}
@@ -616,7 +617,7 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 		return nil
 	}
 
-	if err := setMemorySwap(spec, path); err != nil {
+	if err := setMemorySwapFromSpec(spec, path); err != nil {
 		return err
 	}
 
@@ -639,7 +640,9 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 	return nil
 }
 
-func setMemorySwap(spec *specs.LinuxResources, path string) error {
+// setMemorySwapFromSpec sets memory.swap.max of the cgroup at path from the OCI
+// Memory.Swap value of spec, which is the sum of memory and swap.
+func setMemorySwapFromSpec(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.Memory == nil || spec.Memory.Swap == nil {
 		return nil
 	}
@@ -666,6 +669,50 @@ func setMemorySwap(spec *specs.LinuxResources, path string) error {
 		}
 	}
 	return nil
+}
+
+// MemorySwapMax returns the memory.swap.max value, in bytes, that res
+// requests, and whether res sets swap at all. The value is -1 if res allows
+// unlimited swap. A memory.swap.max entry in res.Unified has priority over
+// res.Memory.Swap, because Update applies res.Unified last.
+func MemorySwapMax(res *specs.LinuxResources) (int64, bool, error) {
+	if res == nil {
+		return 0, false, nil
+	}
+	if v, found := res.Unified[memorySwapMaxCgroup]; found {
+		v = strings.TrimSpace(v)
+		if v == maxLimitStr {
+			return -1, true, nil
+		}
+		swap, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || swap < 0 {
+			return 0, false, fmt.Errorf("invalid unified resource %s=%q", memorySwapMaxCgroup, v)
+		}
+		return swap, true, nil
+	}
+	// If Memory.Swap is 0, setMemorySwapFromSpec does not change
+	// memory.swap.max. Thus, 0 does not set a swap limit.
+	if res.Memory == nil || res.Memory.Swap == nil || *res.Memory.Swap == 0 {
+		return 0, false, nil
+	}
+	limit := int64(-1)
+	if res.Memory.Limit != nil {
+		limit = *res.Memory.Limit
+	}
+	swap, err := convertMemorySwapToCgroupV2Value(*res.Memory.Swap, limit)
+	if err != nil {
+		return 0, false, err
+	}
+	return swap, true, nil
+}
+
+// SetMemorySwapMax implements Cgroup.SetMemorySwapMax.
+func (c *cgroupV2) SetMemorySwapMax(swap int64) error {
+	val := maxLimitStr
+	if swap >= 0 {
+		val = strconv.FormatInt(swap, 10)
+	}
+	return setValue(c.MakePath(""), memorySwapMaxCgroup, val)
 }
 
 type pid2 struct {

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -210,6 +211,38 @@ func (c *cgroupSystemd) Update(res *specs.LinuxResources) error {
 		return fmt.Errorf("error setting systemd unit properties: %v", err)
 	}
 	return (&io2{}).set(res, c.MakePath(""))
+}
+
+// SetMemorySwapMax implements Cgroup.SetMemorySwapMax. It sets the
+// MemorySwapMax property of the unit. The property, unlike a direct write to
+// memory.swap.max, stays in effect when systemd applies the unit properties
+// again. The error wraps os.ErrNotExist if the unit is not loaded.
+func (c *cgroupSystemd) SetMemorySwapMax(swap int64) error {
+	prop := uint64(math.MaxUint64) // "infinity" in systemd.
+	if swap >= 0 {
+		prop = uint64(swap)
+	}
+	ctx := context.Background()
+	conn, err := systemdDbus.NewWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	// Our systemd units are transient, hence runtime=true.
+	if err := conn.SetUnitPropertiesContext(ctx, c.unitName(), true /* runtime */, newProp("MemorySwapMax", prop)); err != nil {
+		if unitNotLoaded(err) {
+			return fmt.Errorf("setting MemorySwapMax of systemd unit %q: %w: %w", c.unitName(), os.ErrNotExist, err)
+		}
+		return fmt.Errorf("setting MemorySwapMax of systemd unit %q: %w", c.unitName(), err)
+	}
+	return nil
+}
+
+// unitNotLoaded returns true if the error is that a systemd unit is not
+// loaded, e.g. because it stopped and systemd removed it.
+func unitNotLoaded(err error) bool {
+	var derr dbus.Error
+	return errors.As(err, &derr) && derr.Name == "org.freedesktop.systemd1.NoSuchUnit"
 }
 
 func (c *cgroupSystemd) unitName() string {
