@@ -17,6 +17,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

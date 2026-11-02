@@ -4844,6 +4844,7 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:save_util",
