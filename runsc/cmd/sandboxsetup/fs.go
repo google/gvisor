@@ -27,12 +27,34 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 )
 
-// PivotRoot changes the root filesystem to the given directory using
-// pivot_root(2). The old root is unmounted after the pivot.
+// moveMountBeneath is MOVE_MOUNT_BENEATH from <linux/mount.h>.
+const moveMountBeneath = 0x200
+
+// PivotRoot changes the root filesystem to the given directory and unmounts
+// the old root.
+//
+// Where the kernel allows it (Linux 7.1 and later), it mounts a copy of the
+// new root beneath the old one instead of calling pivot_root(2); see
+// switchRootBeneath. An unbindable new root can't be copied, the copy
+// leaves out unbindable mounts under the new root, and the copy of a
+// shared mount is a peer of the original, which is unmounted with the old
+// root. A caller with such mounts under the new root uses pivotRoot
+// instead.
 func PivotRoot(root string) error {
 	if err := os.Chdir(root); err != nil {
 		return fmt.Errorf("error changing working directory: %v", err)
 	}
+	switched, err := switchRootBeneath()
+	if switched {
+		return err
+	}
+	log.Debugf("Can't mount the new root beneath the old one, using pivot_root(2): %v", err)
+	return pivotRoot()
+}
+
+// pivotRoot makes the working directory the root filesystem with
+// pivot_root(2), and unmounts the old root.
+func pivotRoot() error {
 	// pivot_root(new_root, put_old) moves the root filesystem (old_root)
 	// of the calling process to the directory put_old and makes new_root
 	// the new root filesystem of the calling process.
@@ -50,6 +72,42 @@ func PivotRoot(root string) error {
 		return fmt.Errorf("error umounting the old root file system: %v", err)
 	}
 	return nil
+}
+
+// switchRootBeneath makes the working directory the root filesystem without
+// pivot_root(2), and returns whether it changed the root.
+//
+// pivot_root(2) also moves every other process whose root or working
+// directory is the old root, so the kernel walks every thread on the host
+// while it holds the global namespace_sem. On a host that runs 100,000
+// threads, each pivot takes about 10-30 ms, and the pivots of sandboxes that
+// start at the same time run one after another. Nothing else uses the old
+// root of the mount namespace that this process has just created, so the
+// walk isn't needed: since Linux 7.1, a copy of the new root can be mounted
+// beneath the old root, the process chroots into it, and the old root above
+// it is unmounted, which changes only this process.
+//
+// Kernels that can't mount beneath the root fail before anything changes.
+func switchRootBeneath() (bool, error) {
+	fd, err := unix.OpenTree(unix.AT_FDCWD, ".", unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC|unix.AT_RECURSIVE)
+	if err != nil {
+		return false, fmt.Errorf("open_tree: %w", err)
+	}
+	defer unix.Close(fd)
+	if err := unix.MoveMount(fd, "", unix.AT_FDCWD, "/", unix.MOVE_MOUNT_F_EMPTY_PATH|moveMountBeneath); err != nil {
+		return false, fmt.Errorf("move_mount beneath /: %w", err)
+	}
+	if err := unix.Fchdir(fd); err != nil {
+		return true, fmt.Errorf("error changing working directory to the new root: %v", err)
+	}
+	if err := unix.Chroot("."); err != nil {
+		return true, fmt.Errorf("error changing root to the new root: %v", err)
+	}
+	// The old root is mounted on top of the new root, so "." is the old root.
+	if err := unix.Unmount(".", unix.MNT_DETACH); err != nil {
+		return true, fmt.Errorf("error umounting the old root file system: %v", err)
+	}
+	return true, nil
 }
 
 // CopyFile copies a file from src to dst.
