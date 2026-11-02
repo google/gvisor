@@ -36,6 +36,7 @@ package overlay
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -51,6 +52,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -86,6 +88,16 @@ type FilesystemOptions struct {
 	// LowerRoots contains the roots of the immutable lower layers of the
 	// overlay. LowerRoots is immutable.
 	LowerRoots []vfs.VirtualDentry
+
+	// If Metacopy is true, copy-up for a metadata change leaves a regular
+	// file's data on the lower layer until the file is opened for writing,
+	// truncated, or hard linked, as with Linux overlayfs' metacopy=on.
+	// Metacopy requires exactly one lower layer.
+	Metacopy bool
+
+	// MetacopyMinSize is the smallest regular file that Metacopy applies to.
+	// Smaller files are copied up with their data.
+	MetacopyMinSize uint64
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -107,6 +119,11 @@ type filesystem struct {
 
 	// xattrOpaque is xattrPrefix + "opaque". xattrOpaque is immutable.
 	xattrOpaque string
+
+	// xattrMetacopy and xattrRedirect are xattrPrefix + "metacopy" and
+	// xattrPrefix + "redirect". They are immutable.
+	xattrMetacopy string
+	xattrRedirect string
 
 	// createCreds is a cache of credentials that is used for create operations.
 	createCredsMu createCredsMutex `state:"nosave"`
@@ -314,6 +331,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: at least two lower layers are required when no upper layer is present")
 		return nil, nil, linuxerr.EINVAL
 	}
+	if fsopts.Metacopy && len(fsopts.LowerRoots) != 1 {
+		ctx.Infof("overlay.FilesystemType.GetFilesystem: metacopy requires exactly one lower layer")
+		return nil, nil, linuxerr.EINVAL
+	}
 	const maxLowerLayers = 500 // Linux: fs/overlay/super.c:OVL_MAX_STACK
 	if len(fsopts.LowerRoots) > maxLowerLayers {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: %d lower layers specified, maximum %d", len(fsopts.LowerRoots), maxLowerLayers)
@@ -347,6 +368,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		creds:          creds.Fork(),
 		xattrPrefix:    xattrPrefix,
 		xattrOpaque:    xattrPrefix + "opaque",
+		xattrMetacopy:  xattrPrefix + "metacopy",
+		xattrRedirect:  xattrPrefix + "redirect",
 		dirDevMinor:    dirDevMinor,
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
@@ -553,14 +576,62 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	return minor, nil
 }
 
-// TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.
+// tarDataSerializer is implemented by upper layers that can write regular file
+// data from elsewhere to a tar archive.
+type tarDataSerializer interface {
+	TarUpperLayerWithData(ctx context.Context, outFD *os.File, writeData func(ctx context.Context, xattrs map[string]string, w io.Writer) (bool, error)) error
+}
+
+// TarUpperLayer implements vfs.TarSerializer.TarUpperLayer. Metacopy files are
+// written with their data from the lower layer.
 func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 	upperFS := fs.opts.UpperRoot.Mount().Filesystem()
+	if ts, ok := upperFS.Impl().(tarDataSerializer); ok && fs.opts.Metacopy {
+		buf := make([]byte, 1<<20)
+		return ts.TarUpperLayerWithData(ctx, outFD, func(ctx context.Context, xattrs map[string]string, w io.Writer) (bool, error) {
+			return fs.writeMetacopyData(ctx, xattrs, w, buf)
+		})
+	}
 	ts, ok := upperFS.Impl().(vfs.TarSerializer)
 	if !ok {
 		return fmt.Errorf("upper layer is of type %q, which does not implement vfs.TarSerializer", upperFS.FilesystemType().Name())
 	}
 	return ts.TarUpperLayer(ctx, outFD)
+}
+
+// writeMetacopyData writes the data of a metacopy file with the given upper
+// layer xattrs to w, reading it through buf, and returns false for other
+// files.
+func (fs *filesystem) writeMetacopyData(ctx context.Context, xattrs map[string]string, w io.Writer, buf []byte) (bool, error) {
+	_, isMetacopy := xattrs[fs.xattrMetacopy]
+	redirect, hasRedirect := xattrs[fs.xattrRedirect]
+	if !isMetacopy || !hasRedirect {
+		return false, nil
+	}
+	lowerRoot := fs.opts.LowerRoots[0]
+	fd, err := fs.vfsfs.VirtualFilesystem().OpenAt(ctx, fs.creds, &vfs.PathOperation{
+		Root:  lowerRoot,
+		Start: lowerRoot,
+		Path:  fspath.Parse(redirect),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
+	if err != nil {
+		return true, err
+	}
+	defer fd.DecRef(ctx)
+	for {
+		n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+		if _, werr := w.Write(buf[:n]); werr != nil {
+			return true, werr
+		}
+		if err == io.EOF {
+			return true, nil
+		}
+		if err != nil {
+			return true, err
+		}
+	}
 }
 
 // dentry implements vfs.DentryImpl.
@@ -589,6 +660,11 @@ type dentry struct {
 	// copiedUp is 1 if this dentry has been copied-up (i.e. upperVD.Ok()) and
 	// 0 otherwise.
 	copiedUp atomicbitops.Uint32
+
+	// metacopy is true if this dentry is a copied-up regular file whose data
+	// is still on lowerVDs[0]. metacopy is set before copiedUp, and is cleared
+	// with copyMu and mapsMu locked once the data is on the upper layer.
+	metacopy atomicbitops.Bool
 
 	// parent is the dentry corresponding to this dentry's parent directory.
 	// name is this dentry's name in parent. If this dentry is a filesystem
@@ -652,7 +728,7 @@ type dentry struct {
 	//
 	//	- wrappedMappable is protected by mapsMu and dataMu. In addition,
 	//	  it has to be immutable if copyMu is taken for write.
-	//        copyUpMaybeSyntheticMountpointLocked relies on this behavior.
+	//        doCopyUpLocked relies on this behavior.
 	mapsMu          mapsMutex `state:"nosave"`
 	lowerMappings   memmap.MappingSet
 	dataMu          dataRWMutex `state:"nosave"`

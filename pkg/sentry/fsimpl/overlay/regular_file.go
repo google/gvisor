@@ -50,7 +50,8 @@ type regularFileFD struct {
 
 	// If copiedUp is false, cachedFD represents
 	// fileDescription.dentry().lowerVDs[0]; otherwise, cachedFD represents
-	// fileDescription.dentry().upperVD. cachedFlags is the last known value of
+	// fileDescription.dentry().upperVD. copiedUp is false while the dentry is
+	// a metacopy file. cachedFlags is the last known value of
 	// cachedFD.StatusFlags(). copiedUp, cachedFD, and cachedFlags are
 	// protected by mu.
 	mu          regularFileFDMutex `state:"nosave"`
@@ -74,7 +75,7 @@ func (fd *regularFileFD) getCurrentFD(ctx context.Context) (*vfs.FileDescription
 func (fd *regularFileFD) currentFDLocked(ctx context.Context) (*vfs.FileDescription, error) {
 	d := fd.dentry()
 	statusFlags := fd.vfsfd.StatusFlags()
-	if !fd.copiedUp && d.isCopiedUp() {
+	if !fd.copiedUp && d.isDataCopiedUp() {
 		// Switch to the copied-up file.
 		upperVD := d.topLayer()
 		upperFD, err := fd.filesystem().vfsfs.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
@@ -137,15 +138,28 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 func (fd *regularFileFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	var stat linux.Statx
 	if layerMask := opts.Mask &^ statInternalMask; layerMask != 0 {
-		wrappedFD, err := fd.getCurrentFD(ctx)
-		if err != nil {
-			return linux.Statx{}, err
+		var err error
+		if d := fd.dentry(); d.isMetacopy() {
+			// A metacopy file's metadata is on the upper layer.
+			stat, err = d.fs.vfsfs.VirtualFilesystem().StatAt(ctx, d.fs.creds, &vfs.PathOperation{
+				Root:  d.upperVD,
+				Start: d.upperVD,
+			}, &vfs.StatOptions{
+				Mask: layerMask,
+				Sync: opts.Sync,
+			})
+		} else {
+			var wrappedFD *vfs.FileDescription
+			wrappedFD, err = fd.getCurrentFD(ctx)
+			if err != nil {
+				return linux.Statx{}, err
+			}
+			stat, err = wrappedFD.Stat(ctx, vfs.StatOptions{
+				Mask: layerMask,
+				Sync: opts.Sync,
+			})
+			wrappedFD.DecRef(ctx)
 		}
-		stat, err = wrappedFD.Stat(ctx, vfs.StatOptions{
-			Mask: layerMask,
-			Sync: opts.Sync,
-		})
-		wrappedFD.DecRef(ctx)
 		if err != nil {
 			return linux.Statx{}, err
 		}
@@ -182,33 +196,35 @@ func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) e
 	defer mnt.EndWrite()
 	// d.copiedUp is never cleared once set, so this check can be safely
 	// performed without holding locks.
-	if !d.isCopiedUp() {
-		if d.isNoopChown(&opts) {
-			return nil
-		}
+	if !d.isCopiedUp() && d.isNoopChown(&opts) {
+		return nil
+	}
+	if !d.isDataCopiedUp() {
 		d.fs.renameMu.RLock()
-		err := d.copyUpForWriteLocked(ctx)
+		err := d.copyUpForSetStatLocked(ctx, &opts)
 		d.fs.renameMu.RUnlock()
 		if err != nil {
 			return err
 		}
 	}
-	wrappedFD, err := fd.getCurrentFD(ctx)
-	if err != nil {
-		return err
-	}
-	defer wrappedFD.DecRef(ctx)
 	// Changes to d's attributes are serialized by d.copyMu.
 	d.copyMu.Lock()
 	defer d.copyMu.Unlock()
-	if err := wrappedFD.SetStat(ctx, opts); err != nil {
+	upperPop := &vfs.PathOperation{
+		Root:  d.upperVD,
+		Start: d.upperVD,
+	}
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	// The caller's credentials recheck permission against the upper file's
+	// current owner and mode.
+	if err := vfsObj.SetStatAt(ctx, auth.CredentialsFromContext(ctx), upperPop, &opts); err != nil {
 		return err
 	}
 
 	// Changing owners or truncating may clear one or both of the setuid and
 	// setgid bits, so we may have to update opts before setting d.mode.
 	if opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID|linux.STATX_SIZE) != 0 {
-		stat, err := wrappedFD.Stat(ctx, vfs.StatOptions{
+		stat, err := vfsObj.StatAt(ctx, d.fs.creds, upperPop, &vfs.StatOptions{
 			Mask: linux.STATX_MODE,
 		})
 		if err != nil {
@@ -365,7 +381,7 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *regularFileFD) Sync(ctx context.Context, opts vfs.SyncOptions) error {
 	fd.mu.Lock()
-	if !fd.dentry().isCopiedUp() {
+	if !fd.dentry().isDataCopiedUp() {
 		fd.mu.Unlock()
 		return nil
 	}
@@ -455,7 +471,7 @@ func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar host
 	if err := d.wrappedMappable.AddMapping(ctx, ms, ar, offset, writable); err != nil {
 		return err
 	}
-	if !d.isCopiedUp() {
+	if !d.isDataCopiedUp() {
 		d.lowerMappings.AddMapping(ms, ar, offset, writable)
 	}
 	return nil
@@ -466,7 +482,7 @@ func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar h
 	d.mapsMu.Lock()
 	defer d.mapsMu.Unlock()
 	d.wrappedMappable.RemoveMapping(ctx, ms, ar, offset, writable)
-	if !d.isCopiedUp() {
+	if !d.isDataCopiedUp() {
 		d.lowerMappings.RemoveMapping(ms, ar, offset, writable)
 	}
 }
@@ -478,7 +494,7 @@ func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR,
 	if err := d.wrappedMappable.CopyMapping(ctx, ms, srcAR, dstAR, offset, writable); err != nil {
 		return err
 	}
-	if !d.isCopiedUp() {
+	if !d.isDataCopiedUp() {
 		d.lowerMappings.AddMapping(ms, dstAR, offset, writable)
 	}
 	return nil

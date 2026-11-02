@@ -1140,6 +1140,49 @@ func TestParseSerializeOverlay2(t *testing.T) {
 			t.Fatalf("String mismatch, expecting ll:memory,size=1g, got %q", o.String())
 		}
 	})
+	t.Run("With metacopy", func(t *testing.T) {
+		for _, tc := range []struct {
+			in, out  string
+			metacopy bool
+			minSize  uint64
+			size     string
+		}{
+			{in: "root:self,metacopy=on", out: "root:self,metacopy=on", metacopy: true},
+			{in: "root:self,metacopy_min_size=1048576,metacopy=on", out: "root:self,metacopy=on,metacopy_min_size=1048576", metacopy: true, minSize: 1048576},
+			{in: "root:memory,metacopy=on,size=1g", out: "root:memory,size=1g,metacopy=on", metacopy: true, size: "1g"},
+			{in: "root:self,size=1g,metacopy=off", out: "root:self,size=1g", size: "1g"},
+			{in: "root:self,metacopy=on,metacopy=off", out: "root:self"},
+		} {
+			var o Overlay2
+			if err := o.Set(tc.in); err != nil {
+				t.Fatalf("Set(%q) failed: %v", tc.in, err)
+			}
+			if got := o.RootOverlayMetacopy(); got != tc.metacopy {
+				t.Errorf("Set(%q): RootOverlayMetacopy() = %t, want %t", tc.in, got, tc.metacopy)
+			}
+			if got := o.RootOverlayMetacopyMinSize(); got != tc.minSize {
+				t.Errorf("Set(%q): RootOverlayMetacopyMinSize() = %d, want %d", tc.in, got, tc.minSize)
+			}
+			if got := o.RootOverlaySize(); got != tc.size {
+				t.Errorf("Set(%q): RootOverlaySize() = %q, want %q", tc.in, got, tc.size)
+			}
+			if got := o.String(); got != tc.out {
+				t.Errorf("Set(%q): String() = %q, want %q", tc.in, got, tc.out)
+			}
+			var again Overlay2
+			if err := again.Set(o.String()); err != nil || again != o {
+				t.Errorf("Set(%q) did not round-trip: got %#v, %v, want %#v", o.String(), again, err, o)
+			}
+		}
+	})
+	t.Run("Invalid metacopy", func(t *testing.T) {
+		for _, in := range []string{"all:memory,metacopy=on", "root:self,metacopy=yes", "root:self,metacopy", "root:self,metacopy_min_size=1048576", "root:self,metacopy=on,metacopy_min_size=1M"} {
+			var o Overlay2
+			if err := o.Set(in); err == nil {
+				t.Errorf("Set(%q) succeeded, want error", in)
+			}
+		}
+	})
 	t.Run("Repeated Set", func(t *testing.T) {
 		var o Overlay2
 		if err := o.Set("all:memory,size=1g"); err != nil {
