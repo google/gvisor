@@ -455,6 +455,16 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 func (rc *rackControl) recover(retransmitHead bool) {
 	snd := rc.snd
 	if !snd.FastRecovery.Active {
+		// An RTO rewinds writeNext to replay outstanding data. RACK
+		// selects individual repairs from that flight. Leave sendData
+		// at the first unsent segment when RACK takes over.
+		next := snd.writeNext
+		for next != nil && next.xmitCount != 0 {
+			next = next.Next()
+		}
+		if next != snd.writeNext {
+			snd.updateWriteNext(next)
+		}
 		snd.cc.HandleLossDetected()
 		snd.enterRecovery()
 		// Unlike three duplicate ACKs, a RACK loss can be anywhere in the
