@@ -123,14 +123,14 @@ bazel test //runsc:version_test
 
 ### Mac OS
 
-Some packages support running tests directly on macOS. At the time of this
-writing, gVisor requires bazel 8, which you can install via homebrew:
+Some packages support running tests directly on macOS. Install Bazelisk with
+Homebrew to select the version pinned by the repository:
 
 ```sh
-brew install bazel@8
+brew install bazelisk
 
 # You can then run the tests, e.g.:
-$(brew --prefix bazel@8)/bin/bazel test --macos_sdk_version=$(xcrun --show-sdk-version) -- //tools/nogo/... //tools/check{aligned,const,escape,linkname,locks,unsafe}/...
+bazelisk test --macos_sdk_version=$(xcrun --show-sdk-version) -- //tools/nogo/... //tools/check{aligned,const,escape,linkname,locks,unsafe}/...
 ```
 
 ### Using `go get`

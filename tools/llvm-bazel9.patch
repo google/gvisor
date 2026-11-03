@@ -1,0 +1,46 @@
+Backport explicit Bazel rule and provider loads for the pinned LLVM overlay.
+https://github.com/llvm/llvm-project/commit/930066f6e
+https://github.com/llvm/llvm-project/commit/f645d209d
+https://github.com/llvm/llvm-project/commit/fb4450c45
+https://github.com/llvm/llvm-project/commit/9626c90c3
+
+diff --git a/utils/bazel/llvm-project-overlay/clang/BUILD.bazel b/utils/bazel/llvm-project-overlay/clang/BUILD.bazel
+--- a/utils/bazel/llvm-project-overlay/clang/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/clang/BUILD.bazel
+@@ -5,2 +5,4 @@
++load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
++load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+ load("@rules_python//python:defs.bzl", "py_binary")
+diff --git a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+--- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+@@ -5,6 +5,7 @@
+ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+ load("@rules_python//python:defs.bzl", "py_binary")
++load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+ load("//mlir:tblgen.bzl", "gentbl_cc_library", "gentbl_filegroup", "td_library")
+ load(":binary_alias.bzl", "binary_alias")
+diff --git a/utils/bazel/llvm-project-overlay/llvm/driver.bzl b/utils/bazel/llvm-project-overlay/llvm/driver.bzl
+--- a/utils/bazel/llvm-project-overlay/llvm/driver.bzl
++++ b/utils/bazel/llvm-project-overlay/llvm/driver.bzl
+@@ -7,3 +7,4 @@
+ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+ load("@rules_cc//cc:defs.bzl", "cc_binary")
++load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+diff --git a/utils/bazel/third_party_build/zlib-ng.BUILD b/utils/bazel/third_party_build/zlib-ng.BUILD
+--- a/utils/bazel/third_party_build/zlib-ng.BUILD
++++ b/utils/bazel/third_party_build/zlib-ng.BUILD
+@@ -4,2 +4,3 @@
+ load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
++load("@rules_cc//cc:defs.bzl", "cc_library")
+diff --git a/utils/bazel/llvm-project-overlay/mlir/build_defs.bzl b/utils/bazel/llvm-project-overlay/mlir/build_defs.bzl
+--- a/utils/bazel/llvm-project-overlay/mlir/build_defs.bzl
++++ b/utils/bazel/llvm-project-overlay/mlir/build_defs.bzl
+@@ -7 +7,2 @@
+ load("@rules_cc//cc:defs.bzl", "cc_library")
++load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
