@@ -35,6 +35,7 @@ SENTRY_SIDECARS = {
 OTHER_SIDECARS = {
     "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
     "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
+    "//runsc/cmd/netgofer:runsc-netgofer": "runsc-netgofer",
     "//runsc/fdparking:fdparking_binary": "runsc-fd-parking",
     "//runsc/prewarmer:prewarmer_binary": "gvisor-sentry-prewarmer",
     "//runsc/procumounter:procumounter_binary": "gvisor-proc-umounter",

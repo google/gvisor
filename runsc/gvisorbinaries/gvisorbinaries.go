@@ -66,6 +66,7 @@ import (
 const (
 	metricServerName            = "runsc-metric-server"
 	checkpointGoferName         = "checkpointgofer"
+	netgoferName                = "runsc-netgofer"
 	gvisorSentryName            = "gvisor_sentry"
 	gvisorSentryPluginStackName = "gvisor_sentry_plugin_stack"
 	prewarmerName               = "gvisor-sentry-prewarmer"
@@ -205,6 +206,8 @@ var (
 	MetricServer = Binary{Name: metricServerName}
 	// CheckpointGofer is the checkpoint gofer sidecar binary.
 	CheckpointGofer = Binary{Name: checkpointGoferName}
+	// Netgofer is the netgofer sidecar binary.
+	Netgofer = Binary{Name: netgoferName}
 	// GvisorSentry is the sentry (kernel) sidecar binary.
 	GvisorSentry = Binary{Name: gvisorSentryName}
 	// GvisorSentryPluginStack is the sentry sidecar binary with a plugin
@@ -222,7 +225,7 @@ var (
 )
 
 // All lists every sidecar present in a standard installation.
-var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry, &GvisorSentryPrewarmer, &FDParking, &ProcUmounter}
+var All = []*Binary{&MetricServer, &CheckpointGofer, &Netgofer, &GvisorSentry, &GvisorSentryPrewarmer, &FDParking, &ProcUmounter}
 
 // Options is the set of options used to execute a sidecar binary.
 type Options struct {
