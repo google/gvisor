@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -79,6 +80,22 @@ TEST(SocketTest, ProtocolInet) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
+}
+
+TEST(SocketTest, InetReceiveNoSignal) {
+  const FileDescriptor socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  char buf[1];
+  EXPECT_THAT(recvfrom(socket.get(), buf, sizeof(buf),
+                       MSG_NOSIGNAL | MSG_DONTWAIT, nullptr, nullptr),
+              SyscallFailsWithErrno(EAGAIN));
+
+  struct iovec iov = {.iov_base = buf, .iov_len = sizeof(buf)};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  EXPECT_THAT(recvmsg(socket.get(), &msg, MSG_NOSIGNAL | MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
 }
 
 TEST(SocketTest, UnixSocketStat) {
