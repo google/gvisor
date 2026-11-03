@@ -301,6 +301,10 @@ type connection struct {
 	// different inodes access this connection-wide capability concurrently.
 	noAccess atomicbitops.Bool
 
+	// noFlush records an ENOSYS reply to FUSE_FLUSH. FLUSH is not sent again
+	// on this connection.
+	noFlush atomicbitops.Bool
+
 	// noOpen if FUSE server doesn't support open operation.
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
