@@ -299,6 +299,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:futex_waitv_test",
+)
+
+syscall_test(
     add_fusefs = True,
     test = "//test/syscalls/linux:fuse_test",
 )

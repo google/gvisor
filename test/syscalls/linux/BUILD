@@ -1171,6 +1171,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "futex_waitv_test",
+    testonly = 1,
+    srcs = ["futex_waitv.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:logging",
+        "//test/util:memory_util",
+        "//test/util:posix_error",
+        "//test/util:signal_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
     name = "futex_test",
     testonly = 1,
     srcs = ["futex.cc"],

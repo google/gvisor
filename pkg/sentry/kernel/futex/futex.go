@@ -202,21 +202,25 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 
 // Waiter is the struct which gets enqueued into buckets for wake up routines
 // and requeue routines to scan and notify. Once a Waiter has been enqueued by
-// WaitPrepare() or LockPI(), callers may listen on C for wake up events.
+// WaitPrepare(), WaitMultiplePrepare() or LockPI(), callers may listen on C
+// for wake up events.
 type Waiter struct {
 	// Synchronization:
 	//
-	//	- A newly created Waiter, or one for which WaitComplete has returned,
-	//		is exclusively owned by its caller.
+	//	- A newly created Waiter, or one for which WaitComplete or
+	//		WaitMultipleComplete has returned, is exclusively owned by its
+	//		caller.
 	//
-	//	- A Waiter can be enqueued by calling WaitPrepare() or LockPI(). Then
+	//	- A Waiter can be enqueued by calling WaitPrepare(),
+	//		WaitMultiplePrepare() or LockPI(). Then
 	//		waiterEntry, bucket, and key are protected by the bucket.mu ("bucket
 	//		lock") of the containing bucket. bitmask and tid are immutable.
 	//		Since bucket is mutated using atomic memory operations, bucket.Load()
 	//		may be called without holding the bucket lock, although it may change
 	//		racily. See WaitComplete().
 	//
-	//	- Once enqueued, a Waiter may not be reused until WaitComplete returns.
+	//	- Once enqueued, a Waiter may not be reused until WaitComplete or
+	//		WaitMultipleComplete returns.
 	//
 	// Requeue changes which bucket mutex protects waiterEntry and key.
 	// checklocks cannot express a guard obtained from an atomic pointer that
@@ -250,8 +254,23 @@ func NewWaiter() *Waiter {
 	}
 }
 
+// NewWaiters returns n unqueued Waiters that share a single channel C. A
+// receive from C indicates that at least one of the Waiters may have been
+// woken.
+func NewWaiters(n int) []*Waiter {
+	c := make(chan struct{}, 1)
+	ws := make([]Waiter, n)
+	ptrs := make([]*Waiter, n)
+	for i := range ws {
+		ws[i].C = c
+		ptrs[i] = &ws[i]
+	}
+	return ptrs
+}
+
 // woken returns true if w has been woken since the last WaitPrepare or LockPI
-// call.
+// call. It applies only to a Waiter from NewWaiter, whose C no other Waiter
+// shares.
 func (w *Waiter) woken() bool {
 	return len(w.C) != 0
 }
@@ -296,7 +315,12 @@ func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
 // +checklocks:b.mu
 func (b *bucket) wakeWaiterLocked(w *Waiter) {
 	b.waiters.Remove(w)
-	w.C <- struct{}{}
+	// Waiters from NewWaiters share C, so it may already hold a wakeup from
+	// another Waiter in the same set.
+	select {
+	case w.C <- struct{}{}:
+	default:
+	}
 
 	// After notification, bucket is the only part of w this path still
 	// accesses. The atomic nil store lets WaitComplete skip the bucket lock.
@@ -654,7 +678,104 @@ func (m *Manager) WaitPrepare(w *Waiter, t Target, addr hostarch.Addr, private b
 // The caller must not hold the waiter's current bucket mutex. Requeue can
 // change that bucket, so checklocks cannot express this dynamic exclusion.
 func (m *Manager) WaitComplete(w *Waiter, t Target) {
-	// Remove w from the bucket it's in.
+	dequeue(w)
+
+	// Release references held by the waiter.
+	w.key.release(t)
+}
+
+// WaitvFutex is one futex waited on by WaitMultiplePrepare.
+type WaitvFutex struct {
+	// Addr is the address of the futex word.
+	Addr hostarch.Addr
+
+	// Val is the value that the futex word must contain for the wait to
+	// begin.
+	Val uint32
+
+	// Private is true if the futex is process-private.
+	Private bool
+}
+
+// WaitMultiplePrepare enqueues ws[i] to wait on fs[i] for each i, as
+// futex_waitv(2) does. ws must come from a single call to NewWaiters and have
+// the same length as fs. Each futex word is checked against its value
+// atomically with enqueueing its Waiter, one futex at a time.
+//
+// If every Waiter is enqueued, WaitMultiplePrepare returns -1 and a nil error,
+// and the caller must call WaitMultipleComplete after waiting on ws[0].C.
+//
+// If a futex word does not match its value, or cannot be read, the Waiters
+// enqueued so far are removed. If one of them was woken in the meantime, its
+// index is returned with a nil error. Otherwise WaitMultiplePrepare returns
+// EAGAIN for a mismatch, or the error from reading the word. If a futex address
+// is not aligned, WaitMultiplePrepare returns EINVAL before it enqueues any
+// Waiter. In all of these cases no Waiter remains enqueued and
+// WaitMultipleComplete must not be called.
+//
+// +checklocksexclude:m.sharedBucket.mu
+func (m *Manager) WaitMultiplePrepare(ws []*Waiter, t Target, fs []WaitvFutex) (int, error) {
+	for i := range fs {
+		k, err := getKey(t, fs[i].Addr, fs[i].Private)
+		if err != nil {
+			releaseKeys(ws[:i], t)
+			return -1, err
+		}
+		// Ownership of k is transferred to ws[i].
+		ws[i].key = k
+		ws[i].bitmask = ^uint32(0)
+	}
+
+	// All Waiters share C. Clear a wakeup left over from an earlier wait.
+	select {
+	case <-ws[0].C:
+	default:
+	}
+
+	for i := range fs {
+		w := ws[i]
+		b := m.lockBucket(&w.key)
+		if err := check(t, fs[i].Addr, fs[i].Val); err != nil {
+			b.mu.Unlock()
+			releaseKeys(ws[i:], t)
+			if woken := m.WaitMultipleComplete(ws[:i], t); woken >= 0 {
+				return woken, nil
+			}
+			return -1, err
+		}
+		b.waiters.PushBack(w)
+		w.bucket.Store(b)
+		b.mu.Unlock()
+	}
+	return -1, nil
+}
+
+// WaitMultipleComplete removes Waiters enqueued by WaitMultiplePrepare and
+// releases their references. It returns the highest index of a Waiter that was
+// woken, or -1 if none was, as Linux's futex_unqueue_multiple() does.
+func (m *Manager) WaitMultipleComplete(ws []*Waiter, t Target) int {
+	woken := -1
+	for i, w := range ws {
+		if dequeue(w) {
+			woken = i
+		}
+		w.key.release(t)
+	}
+	return woken
+}
+
+// releaseKeys releases the keys of Waiters that were never enqueued.
+func releaseKeys(ws []*Waiter, t Target) {
+	for _, w := range ws {
+		w.key.release(t)
+	}
+}
+
+// dequeue removes w from the bucket it's in. It returns true if w had already
+// been removed by a wakeup.
+//
+// The caller must not hold the waiter's current bucket mutex.
+func dequeue(w *Waiter) bool {
 	for {
 		b := w.bucket.Load()
 
@@ -662,7 +783,7 @@ func (m *Manager) WaitComplete(w *Waiter, t Target) {
 		// racy because the waiter can't be concurrently re-queued in another
 		// bucket.
 		if b == nil {
-			break
+			return true
 		}
 
 		// Take the bucket lock. Note that without holding the bucket lock, the
@@ -681,11 +802,8 @@ func (m *Manager) WaitComplete(w *Waiter, t Target) {
 		b.waiters.Remove(w)
 		w.bucket.Store(nil)
 		b.mu.Unlock()
-		break
+		return false
 	}
-
-	// Release references held by the waiter.
-	w.key.release(t)
 }
 
 // LockPI attempts to lock the futex following the Priority-inheritance futex
