@@ -45,6 +45,9 @@ PosixError DumpLinks(const FileDescriptor& fd, uint32_t seq,
 PosixErrorOr<std::vector<Link>> DumpLinks();
 PosixErrorOr<std::vector<Link>> DumpLinks(const FileDescriptor& fd);
 
+// Returns the named link on the system. ENOENT if not found.
+PosixErrorOr<Link> GetLinkByName(const std::string& name);
+
 // Returns the loopback link on the system. ENOENT if not found.
 PosixErrorOr<Link> LoopbackLink();
 
