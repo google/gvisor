@@ -1054,14 +1054,16 @@ func (s *sender) sendZeroWindowProbe() {
 
 // +checklocks:s.ep.mu
 func (s *sender) enableZeroWindowProbing() {
+	// The probe shares the retransmission timer. Preserve an existing
+	// probe's deadline across writes, but rearm the timer if an ACK
+	// stopped it after acknowledging all outstanding data.
+	if !s.zeroWindowProbing || !s.resendTimer.enabled() {
+		s.resendTimer.enable(s.RTO)
+	}
 	s.zeroWindowProbing = true
-	// We piggyback the probing on the retransmit timer with the
-	// current retranmission interval, as we may start probing while
-	// segment retransmissions.
 	if s.firstRetransmittedSegXmitTime == (tcpip.MonotonicTime{}) {
 		s.firstRetransmittedSegXmitTime = s.ep.stack.Clock().NowMonotonic()
 	}
-	s.resendTimer.enable(s.RTO)
 }
 
 func (s *sender) disableZeroWindowProbing() {
