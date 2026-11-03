@@ -32,6 +32,40 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// x86 trap numbers and page fault error code bits, from Linux's
+// arch/x86/include/asm/trapnr.h and arch/x86/include/asm/trap_pf.h.
+const (
+	trapGeneralProtection = 13
+	trapPageFault         = 14
+
+	pfWrite = 1 << 1
+	pfUser  = 1 << 2
+	pfInstr = 1 << 4
+)
+
+// RecordPageFault records a page fault for the frame of the SIGSEGV or SIGBUS
+// that it raises. The error code has the user, write and instruction fetch
+// bits. Linux also sets the protection bit if the page table entry was
+// present. That depends on the state of the host page tables, so it is left
+// clear.
+func (c *Context64) RecordPageFault(at hostarch.AccessType) {
+	err := uint64(pfUser)
+	if at.Write {
+		err |= pfWrite
+	}
+	if at.Execute {
+		err |= pfInstr
+	}
+	c.faultTrapno, c.faultErr = trapPageFault, err
+}
+
+// RecordGeneralProtectionFault records a general protection fault, such as a
+// privileged instruction or an access to a non-canonical address, for the
+// frame of the SIGSEGV that it raises.
+func (c *Context64) RecordGeneralProtectionFault() {
+	c.faultTrapno, c.faultErr = trapGeneralProtection, 0
+}
+
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
 // second argument to signal handlers set by signal(2).
 //
@@ -143,12 +177,13 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 		uc.Flags |= _UC_FP_XSTATE
 	}
 
-	// TODO(gvisor.dev/issue/159): Set SignalContext64.Err, Trapno, and Cr2
-	// based on the fault that caused the signal. For now, leave Err and
-	// Trapno unset and assume CR2 == info.Addr() for SIGSEGVs and
-	// SIGBUSes.
+	// A SIGSEGV or SIGBUS raised by a fault reports the trap number and
+	// error code of that fault, and CR2 is the faulting address.
 	if linux.Signal(info.Signo) == linux.SIGSEGV || linux.Signal(info.Signo) == linux.SIGBUS {
 		uc.MContext.Cr2 = info.Addr()
+		uc.MContext.Trapno = c.faultTrapno
+		uc.MContext.Err = c.faultErr
+		c.faultTrapno, c.faultErr = 0, 0
 	}
 
 	// "... the value (%rsp+8) is always a multiple of 16 (...) when
