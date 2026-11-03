@@ -20,7 +20,6 @@ go_binary(
         "timeout.go",
     ],
     # Static binary to allow running on any VM image
-    pure = True,
     static = True,
     visibility = ["//visibility:public"],
     deps = [
