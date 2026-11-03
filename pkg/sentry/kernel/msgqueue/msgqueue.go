@@ -45,12 +45,7 @@ const (
 //
 // +stateify savable
 type Registry struct {
-	// mu protects all the fields below.
-	mu sync.Mutex `state:"nosave"`
-
 	// reg defines basic fields and operations needed for all SysV registries.
-	//
-	// +checklocks:mu
 	reg *ipc.Registry
 }
 
@@ -172,10 +167,10 @@ func (m *Message) makeCopy() *Message {
 // FindOrCreate creates a new message queue or returns an existing one. See
 // msgget(2).
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, mode linux.FileMode, private, create, exclusive bool) (*Queue, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	if !private {
 		queue, err := r.reg.Find(ctx, key, mode, create, exclusive)
@@ -199,7 +194,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, mode linux.Fil
 // newQueueLocked creates a new queue using the given fields. An error is
 // returned if there're no more available identifiers.
 //
-// +checklocks:r.mu
+// +checklocks:r.reg.Mu
 func (r *Registry) newQueueLocked(ctx context.Context, key ipc.Key, creds *auth.Credentials, mode linux.FileMode) (*Queue, error) {
 	q := &Queue{
 		registry:    r,
@@ -221,10 +216,10 @@ func (r *Registry) newQueueLocked(ctx context.Context, key ipc.Key, creds *auth.
 // writers) and writers will be awakened and fail. Remove will return an error
 // if the ID is invalid, or the user doesn't have privileges.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	return r.reg.Remove(id, creds)
 }
@@ -232,10 +227,10 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 // FindByID returns the queue with the specified ID and an error if the ID
 // doesn't exist.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindByID(id ipc.ID) (*Queue, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	mech := r.reg.FindByID(id)
 	if mech == nil {
@@ -260,10 +255,10 @@ func (r *Registry) IPCInfo(ctx context.Context) *linux.MsgInfo {
 
 // MsgInfo reports global parameters for message queues. See msgctl(MSG_INFO).
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) MsgInfo(ctx context.Context) *linux.MsgInfo {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	var messages, bytes uint64
 	r.reg.ForAllObjects(

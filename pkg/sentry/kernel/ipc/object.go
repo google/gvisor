@@ -14,7 +14,7 @@
 
 // Package ipc defines functionality and utilities common to sysvipc mechanisms.
 //
-// Lock ordering: [shm/semaphore/msgqueue].Registry.mu -> Mechanism
+// Lock ordering: ipc.Registry.Mu -> Mechanism
 package ipc
 
 import (

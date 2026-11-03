@@ -46,18 +46,13 @@ const (
 //
 // +stateify savable
 type Registry struct {
-	// mu protects all fields below.
-	mu sync.Mutex `state:"nosave"`
-
 	// reg defines basic fields and operations needed for all SysV registries.
-	//
-	// +checklocks:mu
 	reg *ipc.Registry
 
 	// indexes maintains a mapping between a set's index in virtual array and
 	// its identifier.
 	//
-	// +checklocks:mu
+	// +checklocks:reg.Mu
 	indexes map[int32]ipc.ID
 }
 
@@ -136,14 +131,14 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 // be found. If exclusive is true, it fails if a set with the same key already
 // exists.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, nsems int32, mode linux.FileMode, private, create, exclusive bool) (*Set, error) {
 	if nsems < 0 || nsems > semsMax {
 		return nil, linuxerr.EINVAL
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	if !private {
 		set, err := r.reg.Find(ctx, key, mode, create, exclusive)
@@ -201,10 +196,10 @@ func (r *Registry) IPCInfo() *linux.SemInfo {
 // for IPC_INFO, except that SemUsz field returns the number of existing
 // semaphore sets, and SemAem field returns the number of existing semaphores.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) SemInfo() *linux.SemInfo {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	info := r.IPCInfo()
 	info.SemUsz = uint32(r.reg.ObjectCount())
@@ -216,10 +211,10 @@ func (r *Registry) SemInfo() *linux.SemInfo {
 // HighestIndex returns the index of the highest used entry in
 // the kernel's array.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) HighestIndex() int32 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	// By default, highest used index is 0 even though
 	// there is no semaphore set.
@@ -235,10 +230,10 @@ func (r *Registry) HighestIndex() int32 {
 // Remove removes set with give 'id' from the registry and marks the set as
 // dead. All waiters will be awakened and fail.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	index, found := r.findIndexByID(id)
 	if !found {
@@ -255,7 +250,7 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 // newSetLocked creates a new Set using given fields. An error is returned if there
 // are no more available identifiers.
 //
-// +checklocks:r.mu
+// +checklocks:r.reg.Mu
 func (r *Registry) newSetLocked(ctx context.Context, key ipc.Key, creator *auth.Credentials, mode linux.FileMode, nsems int32) (*Set, error) {
 	set := &Set{
 		registry:   r,
@@ -281,10 +276,10 @@ func (r *Registry) newSetLocked(ctx context.Context, key ipc.Key, creator *auth.
 
 // FindByID looks up a set given an ID.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindByID(id ipc.ID) *Set {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 	mech := r.reg.FindByID(id)
 	if mech == nil {
 		return nil
@@ -294,10 +289,10 @@ func (r *Registry) FindByID(id ipc.ID) *Set {
 
 // FindByIndex looks up a set given an index.
 //
-// +checklocksexclude:r.mu
+// +checklocksexclude:r.reg.Mu
 func (r *Registry) FindByIndex(index int32) *Set {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.reg.Mu.Lock()
+	defer r.reg.Mu.Unlock()
 
 	id, present := r.indexes[index]
 	if !present {
@@ -306,7 +301,7 @@ func (r *Registry) FindByIndex(index int32) *Set {
 	return r.reg.FindByID(id).(*Set)
 }
 
-// +checklocks:r.mu
+// +checklocks:r.reg.Mu
 func (r *Registry) findIndexByID(id ipc.ID) (int32, bool) {
 	for k, v := range r.indexes {
 		if v == id {
@@ -316,7 +311,7 @@ func (r *Registry) findIndexByID(id ipc.ID) (int32, bool) {
 	return 0, false
 }
 
-// +checklocks:r.mu
+// +checklocks:r.reg.Mu
 func (r *Registry) findFirstAvailableIndex() (int32, bool) {
 	for index := int32(0); index < setsMax; index++ {
 		if _, present := r.indexes[index]; !present {
@@ -326,7 +321,7 @@ func (r *Registry) findFirstAvailableIndex() (int32, bool) {
 	return 0, false
 }
 
-// +checklocks:r.mu
+// +checklocks:r.reg.Mu
 func (r *Registry) totalSems() int {
 	totalSems := 0
 	r.reg.ForAllObjects(
