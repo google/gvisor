@@ -17,6 +17,7 @@
 #include <linux/futex.h>
 #include <linux/limits.h>
 #include <linux/magic.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -38,6 +39,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -270,6 +272,445 @@ TEST(Pipe2Test, CloExec) {
 TEST(Pipe2Test, BadOptions) {
   int fds[2];
   EXPECT_THAT(pipe2(fds, 0xDEAD), SyscallFailsWithErrno(EINVAL));
+}
+
+// O_DIRECT selects packet mode for writes, so only the write end has it.
+TEST(Pipe2Test, Direct) {
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_DIRECT), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  EXPECT_THAT(fcntl(rfd.get(), F_GETFL), SyscallSucceedsWithValue(O_RDONLY));
+  EXPECT_THAT(fcntl(wfd.get(), F_GETFL),
+              SyscallSucceedsWithValue(O_WRONLY | O_DIRECT));
+}
+
+// PacketPipe is a pipe whose write end is in packet mode. See pipe(7).
+struct PacketPipe {
+  FileDescriptor rfd;
+  FileDescriptor wfd;
+};
+
+PosixErrorOr<PacketPipe> NewPacketPipe() {
+  int fds[2];
+  if (pipe2(fds, O_DIRECT | O_NONBLOCK) < 0) {
+    return PosixError(errno, "pipe2(O_DIRECT | O_NONBLOCK)");
+  }
+  return PacketPipe{FileDescriptor(fds[0]), FileDescriptor(fds[1])};
+}
+
+TEST(PacketPipeTest, ReadReturnsOnePacket) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(write(p.wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(p.wfd.get(), "defg", 4), SyscallSucceedsWithValue(4));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "abc");
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(4));
+  EXPECT_EQ(absl::string_view(buf, 4), "defg");
+  EXPECT_THAT(read(p.rfd.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// A read shorter than the packet discards the rest of the packet.
+TEST(PacketPipeTest, ShortReadDiscardsRestOfPacket) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(write(p.wfd.get(), "hello", 5), SyscallSucceedsWithValue(5));
+  ASSERT_THAT(write(p.wfd.get(), "xyz", 3), SyscallSucceedsWithValue(3));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(p.rfd.get(), buf, 2), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(absl::string_view(buf, 2), "he");
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "xyz");
+}
+
+// A write longer than a page is split into packets of a page.
+TEST(PacketPipeTest, LongWriteSplitsIntoPagePackets) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  const size_t size = kPageSize + 100;
+  std::vector<char> wbuf(size, 'x');
+  ASSERT_THAT(write(p.wfd.get(), wbuf.data(), size),
+              SyscallSucceedsWithValue(size));
+
+  std::vector<char> rbuf(size);
+  EXPECT_THAT(read(p.rfd.get(), rbuf.data(), size),
+              SyscallSucceedsWithValue(kPageSize));
+  EXPECT_THAT(read(p.rfd.get(), rbuf.data(), size),
+              SyscallSucceedsWithValue(100));
+}
+
+// Like any write, a packet mode write first appends len % PAGE_SIZE bytes to
+// the last buffer of the pipe if that buffer holds stream data and has room for
+// them. Those bytes are stream data.
+TEST(PacketPipeTest, ShortPacketAfterStreamDataIsStreamData) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  ASSERT_THAT(write(p.wfd.get(), "xy", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK | O_DIRECT),
+              SyscallSucceeds());
+  ASSERT_THAT(write(p.wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(p.wfd.get(), "de", 2), SyscallSucceedsWithValue(2));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(7));
+  EXPECT_EQ(absl::string_view(buf, 7), "xyabcde");
+}
+
+// A packet that does not fit in the last stream buffer starts a new buffer and
+// is a packet. A read returns the stream data before the packet with it.
+TEST(PacketPipeTest, PacketAfterFullStreamPageIsAPacket) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  std::vector<char> page(kPageSize, 'x');
+  ASSERT_THAT(write(p.wfd.get(), page.data(), page.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK | O_DIRECT),
+              SyscallSucceeds());
+  ASSERT_THAT(write(p.wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(p.wfd.get(), "de", 2), SyscallSucceedsWithValue(2));
+
+  std::vector<char> buf(2 * kPageSize);
+  ASSERT_THAT(read(p.rfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize + 3));
+  EXPECT_EQ(absl::string_view(buf.data() + kPageSize, 3), "abc");
+  ASSERT_THAT(read(p.rfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(2));
+}
+
+// Writes without O_DIRECT are a byte stream, also after a packet.
+TEST(PacketPipeTest, StreamWritesAfterPacketAreOneRead) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(write(p.wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  ASSERT_THAT(write(p.wfd.get(), "de", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(p.wfd.get(), "fg", 2), SyscallSucceedsWithValue(2));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "abc");
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(4));
+  EXPECT_EQ(absl::string_view(buf, 4), "defg");
+}
+
+// Each packet takes one of the pipe's page-sized buffers, so a pipe holds at
+// most as many packets as it has pages, however small they are.
+TEST(PacketPipeTest, PacketsFillTheBuffers) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  int const size = fcntl(p.wfd.get(), F_GETPIPE_SZ);
+  ASSERT_THAT(size, SyscallSucceeds());
+  int const buffers = size / kPageSize;
+  for (int i = 0; i < buffers; i++) {
+    ASSERT_THAT(write(p.wfd.get(), "x", 1), SyscallSucceedsWithValue(1)) << i;
+  }
+  EXPECT_THAT(write(p.wfd.get(), "x", 1), SyscallFailsWithErrno(EAGAIN));
+
+  struct pollfd pfd = {.fd = p.wfd.get(), .events = POLLOUT};
+  ASSERT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(0));
+
+  char buf[16];
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(write(p.wfd.get(), "x", 1), SyscallSucceedsWithValue(1));
+}
+
+// A packet is written whole or not at all, even when part of it would fit.
+TEST(PacketPipeTest, PacketIsWrittenWholeOrNotAtAll) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  int const size = fcntl(p.wfd.get(), F_GETPIPE_SZ);
+  ASSERT_THAT(size, SyscallSucceeds());
+  std::vector<char> data(size - 1, 'x');
+  ASSERT_THAT(write(p.wfd.get(), data.data(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+  ASSERT_THAT(fcntl(p.wfd.get(), F_SETFL, O_NONBLOCK | O_DIRECT),
+              SyscallSucceeds());
+  EXPECT_THAT(write(p.wfd.get(), "ab", 2), SyscallFailsWithErrno(EAGAIN));
+}
+
+// A FIFO cannot be opened with O_DIRECT, which only fcntl(F_SETFL) can set.
+TEST(PacketPipeTest, FifoOpenWithDirectFails) {
+  const std::string path = NewTempAbsPath();
+  ASSERT_THAT(mkfifo(path.c_str(), 0600), SyscallSucceeds());
+  auto const cleanup = Cleanup([&] { unlink(path.c_str()); });
+  EXPECT_THAT(open(path.c_str(), O_RDWR | O_DIRECT),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// tee copies packets with their boundaries, also into a pipe without
+// O_DIRECT.
+TEST(PacketPipeTest, TeeKeepsPacketBoundaries) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  ASSERT_THAT(write(p.wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(p.wfd.get(), "defg", 4), SyscallSucceedsWithValue(4));
+
+  ASSERT_THAT(tee(p.rfd.get(), wfd.get(), 7, SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(7));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "abc");
+  ASSERT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(4));
+  EXPECT_EQ(absl::string_view(buf, 4), "defg");
+
+  // The source is unchanged.
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(4));
+}
+
+// Packet writes after a tee do not merge into the copied stream data, since
+// Linux does not merge writes into a buffer that tee copies.
+TEST(PacketPipeTest, PacketWritesAfterTeeDoNotMerge) {
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  PacketPipe dst = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(write(wfd.get(), "xyz", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(tee(rfd.get(), dst.wfd.get(), 3, SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(dst.wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(dst.wfd.get(), "cd", 2), SyscallSucceedsWithValue(2));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(5));
+  EXPECT_EQ(absl::string_view(buf, 5), "xyzab");
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(2));
+  EXPECT_EQ(absl::string_view(buf, 2), "cd");
+}
+
+// Packets spliced after stream data are read like packets written after it.
+TEST(PacketPipeTest, SpliceAfterStreamData) {
+  PacketPipe src = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  ASSERT_THAT(write(wfd.get(), "s", 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(write(src.wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(src.wfd.get(), "cd", 2), SyscallSucceedsWithValue(2));
+
+  ASSERT_THAT(
+      splice(src.rfd.get(), nullptr, wfd.get(), nullptr, 4, SPLICE_F_NONBLOCK),
+      SyscallSucceedsWithValue(4));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "sab");
+  ASSERT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(absl::string_view(buf, 2), "cd");
+}
+
+// A splice moves no more packets than the destination has free buffers for.
+TEST(PacketPipeTest, SpliceStopsAtTheLastFreeBuffer) {
+  PacketPipe src = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  PacketPipe dst = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  int const size = fcntl(dst.wfd.get(), F_GETPIPE_SZ);
+  ASSERT_THAT(size, SyscallSucceeds());
+  int const buffers = size / kPageSize;
+  for (int i = 0; i < buffers - 1; i++) {
+    ASSERT_THAT(write(dst.wfd.get(), "x", 1), SyscallSucceedsWithValue(1));
+  }
+  ASSERT_THAT(write(src.wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(src.wfd.get(), "cd", 2), SyscallSucceedsWithValue(2));
+
+  EXPECT_THAT(splice(src.rfd.get(), nullptr, dst.wfd.get(), nullptr, 4,
+                     SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(2));
+}
+
+// A splice into a pipe that is full of packets and has no readers fails with
+// EPIPE.
+TEST(PacketPipeTest, SpliceIntoFullPipeWithoutReaders) {
+  PacketPipe src = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  PacketPipe dst = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  int const size = fcntl(dst.wfd.get(), F_GETPIPE_SZ);
+  ASSERT_THAT(size, SyscallSucceeds());
+  int const buffers = size / kPageSize;
+  for (int i = 0; i < buffers; i++) {
+    ASSERT_THAT(write(dst.wfd.get(), "x", 1), SyscallSucceedsWithValue(1));
+  }
+  ASSERT_THAT(write(src.wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+  dst.rfd.reset();
+
+  const auto cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
+  EXPECT_THAT(splice(src.rfd.get(), nullptr, dst.wfd.get(), nullptr, 2,
+                     SPLICE_F_NONBLOCK),
+              SyscallFailsWithErrno(EPIPE));
+}
+
+// A splice that ends partway through a packet moves the first part as a
+// packet and leaves the rest in the source as a packet. A short read of the
+// moved part discards the rest of it.
+TEST(PacketPipeTest, SplicePartOfAPacket) {
+  PacketPipe p = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  ASSERT_THAT(write(p.wfd.get(), "abcdef", 6), SyscallSucceedsWithValue(6));
+
+  ASSERT_THAT(
+      splice(p.rfd.get(), nullptr, wfd.get(), nullptr, 4, SPLICE_F_NONBLOCK),
+      SyscallSucceedsWithValue(4));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(rfd.get(), buf, 2), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(absl::string_view(buf, 2), "ab");
+  EXPECT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EAGAIN));
+  ASSERT_THAT(read(p.rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(absl::string_view(buf, 2), "ef");
+}
+
+// A splice into a pipe with O_DIRECT moves packets as packets and stream data
+// as stream data.
+TEST(PacketPipeTest, SpliceIntoPacketPipe) {
+  PacketPipe src = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  PacketPipe dst = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+  ASSERT_THAT(write(src.wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(src.wfd.get(), "defg", 4), SyscallSucceedsWithValue(4));
+
+  ASSERT_THAT(splice(src.rfd.get(), nullptr, dst.wfd.get(), nullptr, 7,
+                     SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(7));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "abc");
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(4));
+  EXPECT_EQ(absl::string_view(buf, 4), "defg");
+
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  ASSERT_THAT(write(wfd.get(), "xy", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(wfd.get(), "z", 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(
+      splice(rfd.get(), nullptr, dst.wfd.get(), nullptr, 3, SPLICE_F_NONBLOCK),
+      SyscallSucceedsWithValue(3));
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(3));
+  EXPECT_EQ(absl::string_view(buf, 3), "xyz");
+}
+
+// A splice that moves a whole buffer from the middle of the source keeps it a
+// buffer that later writes of less than a page append to.
+TEST(PacketPipeTest, SpliceOfWholeBufferKeepsItMergeable) {
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor src_rfd(fds[0]);
+  FileDescriptor src_wfd(fds[1]);
+  ASSERT_THAT(write(src_wfd.get(), "xyz", 3), SyscallSucceedsWithValue(3));
+  std::vector<char> page(kPageSize, 'p');
+  ASSERT_THAT(write(src_wfd.get(), page.data(), page.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  PacketPipe dst = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+
+  ASSERT_THAT(splice(src_rfd.get(), nullptr, dst.wfd.get(), nullptr, 3,
+                     SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(dst.wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(dst.wfd.get(), "cd", 2), SyscallSucceedsWithValue(2));
+
+  char buf[16] = {};
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(7));
+  EXPECT_EQ(absl::string_view(buf, 7), "xyzabcd");
+}
+
+// A splice that moves only part of a buffer leaves the moved part a buffer
+// that later writes don't append to, so writes to a packet pipe after it are
+// packets.
+TEST(PacketPipeTest, SpliceOfPartOfABufferIsNotMergeable) {
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor src_rfd(fds[0]);
+  FileDescriptor src_wfd(fds[1]);
+  ASSERT_THAT(write(src_wfd.get(), "xyz", 3), SyscallSucceedsWithValue(3));
+  std::vector<char> page(kPageSize, 'p');
+  ASSERT_THAT(write(src_wfd.get(), page.data(), page.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  PacketPipe dst = ASSERT_NO_ERRNO_AND_VALUE(NewPacketPipe());
+
+  ASSERT_THAT(splice(src_rfd.get(), nullptr, dst.wfd.get(), nullptr, 2,
+                     SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(dst.wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(dst.wfd.get(), "cd", 2), SyscallSucceedsWithValue(2));
+
+  // A read returns the stream bytes before the first packet and that packet.
+  char buf[16] = {};
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(4));
+  EXPECT_EQ(absl::string_view(buf, 4), "xyab");
+  ASSERT_THAT(read(dst.rfd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(2));
+  EXPECT_EQ(absl::string_view(buf, 2), "cd");
+}
+
+// A splice from a file puts the data in buffers that later writes don't
+// append to, so writes to a packet pipe after it are packets. That holds
+// whether the pipe was made with O_DIRECT or gets it after the splice.
+TEST(PacketPipeTest, SpliceFromFileIsNotMergeable) {
+  TempPath const file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "xyz", TempPath::kDefaultFileMode));
+  for (bool const direct_after_splice : {false, true}) {
+    SCOPED_TRACE(direct_after_splice ? "O_DIRECT after splice"
+                                     : "O_DIRECT at pipe2");
+    int fds[2];
+    ASSERT_THAT(pipe2(fds, O_NONBLOCK | (direct_after_splice ? 0 : O_DIRECT)),
+                SyscallSucceeds());
+    FileDescriptor rfd(fds[0]);
+    FileDescriptor wfd(fds[1]);
+    FileDescriptor const in =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+
+    ASSERT_THAT(
+        splice(in.get(), nullptr, wfd.get(), nullptr, 3, SPLICE_F_NONBLOCK),
+        SyscallSucceedsWithValue(3));
+    if (direct_after_splice) {
+      ASSERT_THAT(fcntl(wfd.get(), F_SETFL, O_NONBLOCK | O_DIRECT),
+                  SyscallSucceeds());
+    }
+    ASSERT_THAT(write(wfd.get(), "ab", 2), SyscallSucceedsWithValue(2));
+    ASSERT_THAT(write(wfd.get(), "cd", 2), SyscallSucceedsWithValue(2));
+
+    // A read returns the stream bytes before the first packet and that
+    // packet.
+    char buf[16] = {};
+    ASSERT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(5));
+    EXPECT_EQ(absl::string_view(buf, 5), "xyzab");
+    ASSERT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(2));
+    EXPECT_EQ(absl::string_view(buf, 2), "cd");
+  }
+}
+
+// fcntl(F_SETFL) can turn packet mode on for a pipe made without O_DIRECT.
+TEST(PacketPipeTest, SetFlDirect) {
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  ASSERT_THAT(fcntl(wfd.get(), F_SETFL, O_NONBLOCK | O_DIRECT),
+              SyscallSucceeds());
+  EXPECT_THAT(fcntl(wfd.get(), F_GETFL),
+              SyscallSucceedsWithValue(O_WRONLY | O_NONBLOCK | O_DIRECT));
+
+  ASSERT_THAT(write(wfd.get(), "abc", 3), SyscallSucceedsWithValue(3));
+  ASSERT_THAT(write(wfd.get(), "de", 2), SyscallSucceedsWithValue(2));
+  char buf[16] = {};
+  EXPECT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(3));
+  EXPECT_THAT(read(rfd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(2));
 }
 
 // Tests that opening named pipes with O_TRUNC shouldn't cause an error, but
