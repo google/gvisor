@@ -68,6 +68,8 @@ steps:
     <<: *source_test
     label: ":scroll: Governance file sync check"
     command: make governance-check
+    env:
+      DOCKER_BUILD: "false"
   - <<: *common
     <<: *source_test
     label: ":building_construction: Gazelle BUILD file check"
