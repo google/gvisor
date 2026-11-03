@@ -293,6 +293,7 @@ go_library(
         "signal.go",
         "signal_handlers.go",
         "signal_handlers_mutex.go",
+        "syscall_user_dispatch.go",
         "syscalls.go",
         "syscalls_state.go",
         "syslog.go",

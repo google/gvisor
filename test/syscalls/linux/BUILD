@@ -4748,6 +4748,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "syscall_user_dispatch_test",
+    testonly = 1,
+    srcs = select_arch(
+        amd64 = ["syscall_user_dispatch.cc"],
+        default = [],
+    ),
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:logging",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "sysinfo_test",
     testonly = 1,
     srcs = ["sysinfo.cc"],

@@ -170,6 +170,24 @@ const (
 	PR_GET_TAGGED_ADDR_CTRL = 56
 	PR_TAGGED_ADDR_ENABLE   = (1 << 0)
 
+	// PR_SET_SYSCALL_USER_DISPATCH dispatches the calling thread's syscalls
+	// to a userspace handler as SIGSYS.
+	PR_SET_SYSCALL_USER_DISPATCH = 59
+
+	// PR_SYS_DISPATCH_* are the modes of PR_SET_SYSCALL_USER_DISPATCH.
+	PR_SYS_DISPATCH_OFF = 0
+	// PR_SYS_DISPATCH_EXCLUSIVE_ON dispatches syscalls made from outside the
+	// given range.
+	PR_SYS_DISPATCH_EXCLUSIVE_ON = 1
+	// PR_SYS_DISPATCH_INCLUSIVE_ON dispatches syscalls made from inside the
+	// given range.
+	PR_SYS_DISPATCH_INCLUSIVE_ON = 2
+	PR_SYS_DISPATCH_ON           = PR_SYS_DISPATCH_EXCLUSIVE_ON
+
+	// SYSCALL_DISPATCH_FILTER_* are the values of the selector byte.
+	SYSCALL_DISPATCH_FILTER_ALLOW = 0
+	SYSCALL_DISPATCH_FILTER_BLOCK = 1
+
 	// PR_CAP_AMBIENT controls ambient capabilities.
 	PR_CAP_AMBIENT = 47
 

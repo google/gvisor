@@ -1230,6 +1230,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:syscall_user_dispatch_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:sysinfo_test",
 )
 

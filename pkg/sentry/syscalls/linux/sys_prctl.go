@@ -351,6 +351,9 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 		return linux.PR_TAGGED_ADDR_ENABLE, nil, nil
 
+	case linux.PR_SET_SYSCALL_USER_DISPATCH:
+		return 0, nil, t.SetSyscallUserDispatch(args[1].Uint64(), args[2].Uint64(), args[3].Uint64(), args[4].Pointer())
+
 	case linux.PR_GET_TIMING,
 		linux.PR_SET_TIMING,
 		linux.PR_GET_TSC,

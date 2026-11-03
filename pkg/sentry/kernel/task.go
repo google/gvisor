@@ -553,6 +553,11 @@ type Task struct {
 	// seccomp is owned by the task goroutine.
 	seccomp atomic.Pointer[taskSeccomp] `state:".(*taskSeccomp)"`
 
+	// sud is the task's syscall user dispatch configuration.
+	//
+	// sud is exclusive to the task goroutine.
+	sud syscallUserDispatch
+
 	// If cleartid is non-zero, treat it as a pointer to a ThreadID in the
 	// task's virtual address space; when the task exits, set the pointed-to
 	// ThreadID to 0, and wake any futex waiters.
