@@ -32,6 +32,9 @@
 // Locking dentry.dirMu in multiple dentries requires that parent dentries are
 // locked before child dentries, and that filesystem.renameMu is locked to
 // stabilize this relationship.
+//
+// Locks on an outer stacked overlay filesystem (higher stackDepth) precede
+// locks on an inner overlay filesystem (lower stackDepth).
 package overlay
 
 import (
@@ -147,6 +150,64 @@ type filesystem struct {
 
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
 	maxFilenameLen uint64
+
+	// stackDepth is the 1-based overlay stacking depth of this filesystem,
+	// analogous to Linux's super_block.s_stack_depth. stackDepth is immutable.
+	stackDepth int
+}
+
+func layerStackDepth(vd vfs.VirtualDentry) int {
+	if !vd.Ok() {
+		return 0
+	}
+	if ovlFS, ok := vd.Mount().Filesystem().Impl().(*filesystem); ok {
+		return ovlFS.stackDepth
+	}
+	return 0
+}
+
+func computeStackDepth(opts FilesystemOptions) int {
+	depth := layerStackDepth(opts.UpperRoot)
+	for _, lowerRoot := range opts.LowerRoots {
+		if d := layerStackDepth(lowerRoot); d > depth {
+			depth = d
+		}
+	}
+	return depth + 1
+}
+
+// maxLockdepStackDepth is the number of per-depth lockdep subclasses declared
+// for overlay locks, matching Linux's FILESYSTEM_MAX_STACK_DEPTH.
+const maxLockdepStackDepth = 2
+
+func (fs *filesystem) depthIndex() int {
+	// GetFilesystem does not restrict stackDepth; clamping keeps the slice
+	// index in bounds when stackDepth > maxLockdepStackDepth (with lockdep
+	// enabled, traversing from depth >= 3 into depth 2 will still trigger a
+	// nested-locking panic on subclass "d2"; without lockdep, this index is
+	// ignored).
+	if fs.stackDepth >= maxLockdepStackDepth {
+		return maxLockdepStackDepth - 1
+	}
+	return fs.stackDepth - 1
+}
+
+func (fs *filesystem) renameLockIndex() renamelockNameIndex {
+	return renamelockNameIndex(fs.depthIndex())
+}
+
+const dirLocksPerDepth = dirLockD2 - dirLockD1
+
+func (d *dentry) dirLockIndex(offset dirlockNameIndex) dirlockNameIndex {
+	return dirlockNameIndex(d.fs.depthIndex())*dirLocksPerDepth + offset
+}
+
+func (d *dentry) mapsLockIndex() mapslockNameIndex {
+	return mapslockNameIndex(d.fs.depthIndex())
+}
+
+func (d *dentry) dataLockIndex() datalockNameIndex {
+	return datalockNameIndex(d.fs.depthIndex())
 }
 
 // +stateify savable
@@ -351,6 +412,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
 		maxFilenameLen: linux.NAME_MAX,
+		stackDepth:     computeStackDepth(fsopts),
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
@@ -732,9 +794,10 @@ func (d *dentry) DecRef(ctx context.Context) {
 		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
-		d.fs.renameMu.Lock()
+		idx := d.fs.renameLockIndex()
+		d.fs.renameMu.NestedLock(idx)
 		d.checkDropLocked(ctx)
-		d.fs.renameMu.Unlock()
+		d.fs.renameMu.NestedUnlock(idx)
 	} else if r < 0 {
 		panic("overlay.dentry.DecRef() called without holding a reference")
 	}
@@ -803,11 +866,12 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.watches.HandleDeletion(ctx)
 
 	if parent := d.parent.Load(); parent != nil {
-		parent.dirMu.Lock()
+		dirIdx := parent.dirLockIndex(dirLockD1)
+		parent.dirMu.NestedLock(dirIdx)
 		if !d.vfsd.IsDead() {
 			delete(parent.children, d.name)
 		}
-		parent.dirMu.Unlock()
+		parent.dirMu.NestedUnlock(dirIdx)
 		// Drop the reference held by d on its parent without recursively
 		// locking d.fs.renameMu.
 		parent.decRefLocked(ctx)
@@ -884,9 +948,10 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 		*ds = appendDentry(*ds, d)
 		return
 	}
-	d.fs.renameMu.Lock()
+	idx := d.fs.renameLockIndex()
+	d.fs.renameMu.NestedLock(idx)
 	d.checkDropLocked(ctx)
-	d.fs.renameMu.Unlock()
+	d.fs.renameMu.NestedUnlock(idx)
 }
 
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If
@@ -1066,32 +1131,36 @@ func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOption
 // SetXattr implements vfs.FileDescriptionImpl.SetXattr.
 func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
 	fs := fd.filesystem()
-	fs.renameMu.RLock()
-	defer fs.renameMu.RUnlock()
+	idx := fs.renameLockIndex()
+	fs.renameMu.NestedRLock(idx)
+	defer fs.renameMu.NestedRUnlock(idx)
 	return fs.setXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), &opts)
 }
 
 // RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
 func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	fs := fd.filesystem()
-	fs.renameMu.RLock()
-	defer fs.renameMu.RUnlock()
+	idx := fs.renameLockIndex()
+	fs.renameMu.NestedRLock(idx)
+	defer fs.renameMu.NestedRUnlock(idx)
 	return fs.removeXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), name)
 }
 
 // GetPosixACL implements vfs.FileDescriptionImpl.GetPosixACL.
 func (fd *fileDescription) GetPosixACL(ctx context.Context, t vfs.ACLType) (*vfs.PosixACL, error) {
 	fs := fd.filesystem()
-	fs.renameMu.RLock()
-	defer fs.renameMu.RUnlock()
+	idx := fs.renameLockIndex()
+	fs.renameMu.NestedRLock(idx)
+	defer fs.renameMu.NestedRUnlock(idx)
 	return fs.getPosixACLLocked(ctx, fd.dentry(), t)
 }
 
 // SetPosixACL implements vfs.FileDescriptionImpl.SetPosixACL.
 func (fd *fileDescription) SetPosixACL(ctx context.Context, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
 	fs := fd.filesystem()
-	fs.renameMu.RLock()
-	defer fs.renameMu.RUnlock()
+	idx := fs.renameLockIndex()
+	fs.renameMu.NestedRLock(idx)
+	defer fs.renameMu.NestedRUnlock(idx)
 	return fs.setPosixACLLocked(ctx, fd.dentry(), auth.CredentialsFromContext(ctx), fd.vfsfd.Mount(), t, acl, clearSGID)
 }
 

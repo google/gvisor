@@ -701,7 +701,7 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 		case "Lock", "NestedLock":
 			isExclusive = true
 			fallthrough
-		case "RLock":
+		case "RLock", "NestedRLock":
 			if s, ok := ls.lockField(rv, isExclusive); !ok && !lff.Ignore {
 				if !forced {
 					// Double locking a mutex that is already locked.
@@ -711,7 +711,7 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 		case "Unlock", "NestedUnlock":
 			isExclusive = true
 			fallthrough
-		case "RUnlock":
+		case "RUnlock", "NestedRUnlock":
 			if s, ok := ls.unlockField(rv, isExclusive); !ok && !lff.Ignore {
 				if !forced {
 					// Unlocking something that is already unlocked.

@@ -1955,6 +1955,30 @@ cc_binary(
 )
 
 cc_binary(
+    name = "overlay_test",
+    testonly = 1,
+    srcs = ["overlay.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:memory_util",
+        "//test/util:mount_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
     name = "packet_socket_dgram_test",
     testonly = 1,
     srcs = ["packet_socket_dgram.cc"],

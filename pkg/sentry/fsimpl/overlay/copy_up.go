@@ -103,7 +103,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	defer func() {
 		d.copyMu.Unlock()
 		if renameMuUnlocked {
-			d.fs.renameMu.RLock()
+			d.fs.renameMu.NestedRLock(d.fs.renameLockIndex())
 		}
 	}()
 	if d.upperVD.Ok() {
@@ -174,7 +174,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		if !skipData {
 			// While copying data, free renameMu.
 			if mayUnlockRenameMu {
-				d.fs.renameMu.RUnlock()
+				d.fs.renameMu.NestedRUnlock(d.fs.renameLockIndex())
 				renameMuUnlocked = true
 			}
 			if _, err := vfs.CopyRegularFileData(ctx, newFD, oldFD); err != nil {
@@ -394,8 +394,9 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 
 	if mmapOpts != nil && mmapOpts.Mappable != nil {
-		d.mapsMu.Lock()
-		defer d.mapsMu.Unlock()
+		mapsIdx := d.mapsLockIndex()
+		d.mapsMu.NestedLock(mapsIdx)
+		defer d.mapsMu.NestedUnlock(mapsIdx)
 
 		// Propagate mappings of d to the new Mappable. Remember which mappings
 		// we added so we can remove them on failure.
@@ -434,10 +435,11 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		//	- Consequently, once we unlock d.dataMu, other threads may
 		//		immediately observe the new (copied-up) Mappable, which we want to
 		//		delay until copy-up is guaranteed to succeed.
-		d.dataMu.Lock()
+		dataIdx := d.dataLockIndex()
+		d.dataMu.NestedLock(dataIdx)
 		lowerMappable := d.wrappedMappable
 		d.wrappedMappable = upperMappable
-		d.dataMu.Unlock()
+		d.dataMu.NestedUnlock(dataIdx)
 		// Without data, the upper file is already empty, so the open's
 		// truncation won't invalidate private copies of lower pages.
 		d.lowerMappings.InvalidateAll(memmap.InvalidateOpts{InvalidatePrivate: skipData})
@@ -536,9 +538,10 @@ func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) er
 			return err
 		}
 		if child.isDir() {
-			child.dirMu.Lock()
+			childDirIdx := child.dirLockIndex(dirLockD1Child)
+			child.dirMu.NestedLock(childDirIdx)
 			err := child.copyUpDescendantsLocked(ctx, ds)
-			child.dirMu.Unlock()
+			child.dirMu.NestedUnlock(childDirIdx)
 			if err != nil {
 				return err
 			}
