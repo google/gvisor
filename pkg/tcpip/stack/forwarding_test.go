@@ -17,6 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"math"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -97,7 +98,7 @@ func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
 		return
 	}
 
-	r, err := f.proto.stack.FindRoute(0, tcpip.Address{}, dst, fwdTestNetNumber, false /* multicastLoop */)
+	r, err := f.proto.stack.FindRoute(0, netip.Addr{}, dst, fwdTestNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return
 	}
@@ -174,8 +175,8 @@ type fwdTestNetworkProtocol struct {
 
 	neigh                  *neighborCache
 	addrResolveDelay       time.Duration
-	onLinkAddressResolved  func(*neighborCache, tcpip.Address, tcpip.LinkAddress)
-	onResolveStaticAddress func(tcpip.Address) (tcpip.LinkAddress, bool)
+	onLinkAddressResolved  func(*neighborCache, netip.Addr, tcpip.LinkAddress)
+	onResolveStaticAddress func(netip.Addr) (tcpip.LinkAddress, bool)
 }
 
 func (*fwdTestNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -186,8 +187,8 @@ func (*fwdTestNetworkProtocol) MinimumPacketSize() int {
 	return fwdTestNetHeaderLen
 }
 
-func (*fwdTestNetworkProtocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
-	return tcpip.AddrFrom4Slice(v[srcAddrOffset : srcAddrOffset+4]), tcpip.AddrFrom4Slice(v[dstAddrOffset : dstAddrOffset+4])
+func (*fwdTestNetworkProtocol) ParseAddresses(v []byte) (src, dst netip.Addr) {
+	return netip.AddrFrom4([4]byte(v[srcAddrOffset : srcAddrOffset+4])), netip.AddrFrom4([4]byte(v[dstAddrOffset : dstAddrOffset+4]))
 }
 
 func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
@@ -220,7 +221,7 @@ func (*fwdTestNetworkProtocol) Close() {}
 
 func (*fwdTestNetworkProtocol) Wait() {}
 
-func (f *fwdTestNetworkEndpoint) LinkAddressRequest(addr, _ tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
+func (f *fwdTestNetworkEndpoint) LinkAddressRequest(addr, _ netip.Addr, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
 	if fn := f.proto.onLinkAddressResolved; fn != nil {
 		f.proto.stack.clock.AfterFunc(f.proto.addrResolveDelay, func() {
 			fn(f.proto.neigh, addr, remoteLinkAddr)
@@ -229,7 +230,7 @@ func (f *fwdTestNetworkEndpoint) LinkAddressRequest(addr, _ tcpip.Address, remot
 	return nil
 }
 
-func (f *fwdTestNetworkEndpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+func (f *fwdTestNetworkEndpoint) ResolveStaticAddress(addr netip.Addr) (tcpip.LinkAddress, bool) {
 	if fn := f.proto.onResolveStaticAddress; fn != nil {
 		return fn(addr)
 	}
@@ -381,11 +382,8 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 		t.Fatal("CreateNIC #1 failed:", err)
 	}
 	protocolAddr1 := tcpip.ProtocolAddress{
-		Protocol: fwdTestNetNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFrom4Slice([]byte("\x01\x00\x00\x00")),
-			PrefixLen: fwdTestNetDefaultPrefixLen,
-		},
+		Protocol:          fwdTestNetNumber,
+		AddressWithPrefix: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 0, 0, 0}), fwdTestNetDefaultPrefixLen),
 	}
 	if err := s.AddProtocolAddress(1, protocolAddr1, AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr1, err)
@@ -401,11 +399,8 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 		t.Fatal("CreateNIC #2 failed:", err)
 	}
 	protocolAddr2 := tcpip.ProtocolAddress{
-		Protocol: fwdTestNetNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFrom4Slice([]byte("\x02\x00\x00\x00")),
-			PrefixLen: fwdTestNetDefaultPrefixLen,
-		},
+		Protocol:          fwdTestNetNumber,
+		AddressWithPrefix: netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 0, 0, 0}), fwdTestNetDefaultPrefixLen),
 	}
 	if err := s.AddProtocolAddress(2, protocolAddr2, AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 2, protocolAddr2, err)
@@ -424,10 +419,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 
 	// Route all packets to NIC 2.
 	{
-		subnet, err := tcpip.NewSubnet(tcpip.AddrFrom4Slice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x00\x00\x00\x00"))
-		if err != nil {
-			t.Fatal(err)
-		}
+		subnet := header.IPv4EmptySubnet
 		s.SetRouteTable([]tcpip.Route{{Destination: subnet, NIC: 2}})
 	}
 
@@ -439,8 +431,8 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 	proto := &fwdTestNetworkProtocol{
 		onResolveStaticAddress:
 		// The network address 3 is resolved to the link address "c".
-		func(addr tcpip.Address) (tcpip.LinkAddress, bool) {
-			if addr == tcpip.AddrFrom4Slice([]byte("\x03\x00\x00\x00")) {
+		func(addr netip.Addr) (tcpip.LinkAddress, bool) {
+			if addr == netip.AddrFrom4([4]byte{3, 0, 0, 0}) {
 				return "c", true
 			}
 			return "", false
@@ -478,7 +470,7 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 func TestForwardingWithFakeResolver(t *testing.T) {
 	proto := fwdTestNetworkProtocol{
 		addrResolveDelay: 500 * time.Millisecond,
-		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+		onLinkAddressResolved: func(neigh *neighborCache, addr netip.Addr, linkAddr tcpip.LinkAddress) {
 			t.Helper()
 			if len(linkAddr) != 0 {
 				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
@@ -546,7 +538,7 @@ func TestForwardingWithNoResolver(t *testing.T) {
 func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
 	proto := &fwdTestNetworkProtocol{
 		addrResolveDelay: 50 * time.Millisecond,
-		onLinkAddressResolved: func(*neighborCache, tcpip.Address, tcpip.LinkAddress) {
+		onLinkAddressResolved: func(*neighborCache, netip.Addr, tcpip.LinkAddress) {
 			// Don't resolve the link address.
 		},
 	}
@@ -578,14 +570,14 @@ func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
 func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	proto := fwdTestNetworkProtocol{
 		addrResolveDelay: 500 * time.Millisecond,
-		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+		onLinkAddressResolved: func(neigh *neighborCache, addr netip.Addr, linkAddr tcpip.LinkAddress) {
 			t.Helper()
 			if len(linkAddr) != 0 {
 				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
 			}
 			// Only packets to address 3 will be resolved to the
 			// link address "c".
-			if addr == tcpip.AddrFrom4Slice([]byte("\x03\x00\x00\x00")) {
+			if addr == netip.AddrFrom4([4]byte{3, 0, 0, 0}) {
 				neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
 					Solicited: true,
 					Override:  false,
@@ -639,7 +631,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 	proto := fwdTestNetworkProtocol{
 		addrResolveDelay: 500 * time.Millisecond,
-		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+		onLinkAddressResolved: func(neigh *neighborCache, addr netip.Addr, linkAddr tcpip.LinkAddress) {
 			t.Helper()
 			if len(linkAddr) != 0 {
 				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
@@ -692,7 +684,7 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 	proto := fwdTestNetworkProtocol{
 		addrResolveDelay: 500 * time.Millisecond,
-		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+		onLinkAddressResolved: func(neigh *neighborCache, addr netip.Addr, linkAddr tcpip.LinkAddress) {
 			t.Helper()
 			if len(linkAddr) != 0 {
 				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
@@ -758,7 +750,7 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 	proto := fwdTestNetworkProtocol{
 		addrResolveDelay: 500 * time.Millisecond,
-		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+		onLinkAddressResolved: func(neigh *neighborCache, addr netip.Addr, linkAddr tcpip.LinkAddress) {
 			t.Helper()
 			if len(linkAddr) != 0 {
 				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)

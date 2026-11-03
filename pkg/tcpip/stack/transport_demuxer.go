@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
@@ -85,7 +86,7 @@ func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield
 	// Try to find a match with the id minus the local address.
 	nid := id
 
-	nid.LocalAddress = tcpip.Address{}
+	nid.Local = netip.AddrPortFrom(netip.Addr{}, nid.Local.Port())
 	if ep, ok := eps.endpoints[nid]; ok {
 		if !yield(ep) {
 			return
@@ -93,9 +94,8 @@ func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield
 	}
 
 	// Try to find a match with the id minus the remote part.
-	nid.LocalAddress = id.LocalAddress
-	nid.RemoteAddress = tcpip.Address{}
-	nid.RemotePort = 0
+	nid.Local = id.Local
+	nid.Remote = netip.AddrPort{}
 	if ep, ok := eps.endpoints[nid]; ok {
 		if !yield(ep) {
 			return
@@ -103,7 +103,7 @@ func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield
 	}
 
 	// Try to find a match with only the local port.
-	nid.LocalAddress = tcpip.Address{}
+	nid.Local = netip.AddrPortFrom(netip.Addr{}, nid.Local.Port())
 	if ep, ok := eps.endpoints[nid]; ok {
 		if !yield(ep) {
 			return
@@ -172,7 +172,7 @@ func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *Packet
 
 	// If this is a broadcast or multicast datagram, deliver the datagram to all
 	// endpoints bound to the right device.
-	if isInboundMulticastOrBroadcast(pkt, id.LocalAddress) {
+	if isInboundMulticastOrBroadcast(pkt, id.Local.Addr()) {
 		mpep.handlePacketAll(id, pkt)
 		epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 		return true
@@ -390,16 +390,16 @@ func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID, seed uint32)
 	}
 
 	payload := []byte{
-		byte(id.LocalPort),
-		byte(id.LocalPort >> 8),
-		byte(id.RemotePort),
-		byte(id.RemotePort >> 8),
+		byte(id.Local.Port()),
+		byte(id.Local.Port() >> 8),
+		byte(id.Remote.Port()),
+		byte(id.Remote.Port() >> 8),
 	}
 
 	h := jenkins.Sum32(seed)
 	h.Write(payload)
-	h.Write(id.LocalAddress.AsSlice())
-	h.Write(id.RemoteAddress.AsSlice())
+	h.Write(id.Local.Addr().AsSlice())
+	h.Write(id.Remote.Addr().AsSlice())
 	hash := h.Sum32()
 
 	idx := reciprocalScale(hash, uint32(len(ep.endpoints)))
@@ -483,7 +483,7 @@ func (ep *multiPortEndpoint) unregisterEndpoint(t TransportEndpoint, flags ports
 }
 
 func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
-	if id.RemotePort != 0 {
+	if id.Remote.Port() != 0 {
 		// SO_REUSEPORT only applies to bound/listening endpoints.
 		flags.LoadBalanced = false
 	}
@@ -513,7 +513,7 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 }
 
 func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
-	if id.RemotePort != 0 {
+	if id.Remote.Port() != 0 {
 		// SO_REUSEPORT only applies to bound/listening endpoints.
 		flags.LoadBalanced = false
 	}
@@ -537,7 +537,7 @@ func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNum
 // unregisterEndpoint unregisters the endpoint with the given id such that it
 // won't receive any more packets.
 func (d *transportDemuxer) unregisterEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, flags ports.Flags, bindToDevice tcpip.NICID) {
-	if id.RemotePort != 0 {
+	if id.Remote.Port() != 0 {
 		// SO_REUSEPORT only applies to bound/listening endpoints.
 		flags.LoadBalanced = false
 	}
@@ -560,7 +560,7 @@ func (d *transportDemuxer) deliverPacket(protocol tcpip.TransportProtocolNumber,
 
 	// If the packet is a UDP broadcast or multicast, then find all matching
 	// transport endpoints.
-	if protocol == header.UDPProtocolNumber && isInboundMulticastOrBroadcast(pkt, id.LocalAddress) {
+	if protocol == header.UDPProtocolNumber && isInboundMulticastOrBroadcast(pkt, id.Local.Addr()) {
 		eps.mu.RLock()
 		destEPs := eps.findAllEndpointsLocked(id)
 		eps.mu.RUnlock()
@@ -584,7 +584,7 @@ func (d *transportDemuxer) deliverPacket(protocol tcpip.TransportProtocolNumber,
 	// destination address, then do nothing further and instruct the caller to do
 	// the same. The network layer handles address validation for specified source
 	// addresses.
-	if protocol == header.TCPProtocolNumber && (!isSpecified(id.LocalAddress) || !isSpecified(id.RemoteAddress) || isInboundMulticastOrBroadcast(pkt, id.LocalAddress)) {
+	if protocol == header.TCPProtocolNumber && (!isSpecified(id.Local.Addr()) || !isSpecified(id.Remote.Addr()) || isInboundMulticastOrBroadcast(pkt, id.Local.Addr())) {
 		// TCP can only be used to communicate between a single source and a
 		// single destination; the addresses must be unicast.e
 		d.stack.stats.TCP.InvalidSegmentsReceived.Increment()
@@ -724,10 +724,10 @@ func (d *transportDemuxer) unregisterRawEndpoint(netProto tcpip.NetworkProtocolN
 	eps.mu.Unlock()
 }
 
-func isInboundMulticastOrBroadcast(pkt *PacketBuffer, localAddr tcpip.Address) bool {
+func isInboundMulticastOrBroadcast(pkt *PacketBuffer, localAddr netip.Addr) bool {
 	return pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(localAddr) || header.IsV6MulticastAddress(localAddr)
 }
 
-func isSpecified(addr tcpip.Address) bool {
-	return addr != header.IPv4Any && addr != header.IPv6Any
+func isSpecified(addr netip.Addr) bool {
+	return addr.IsValid() && !addr.IsUnspecified()
 }

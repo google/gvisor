@@ -17,9 +17,11 @@ package forward_test
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -38,15 +40,15 @@ import (
 
 const ttl = 64
 
-func rxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
+func rxICMPv4EchoRequest(e *channel.Endpoint, src, dst netip.Addr) {
 	utils.RxICMPv4EchoRequest(e, src, dst, ttl)
 }
 
-func rxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
+func rxICMPv6EchoRequest(e *channel.Endpoint, src, dst netip.Addr) {
 	utils.RxICMPv6EchoRequest(e, src, dst, ttl)
 }
 
-func forwardedICMPv4EchoRequestChecker(t *testing.T, v *buffer.View, src, dst tcpip.Address) {
+func forwardedICMPv4EchoRequestChecker(t *testing.T, v *buffer.View, src, dst netip.Addr) {
 	checker.IPv4(t, v,
 		checker.SrcAddr(src),
 		checker.DstAddr(dst),
@@ -55,7 +57,7 @@ func forwardedICMPv4EchoRequestChecker(t *testing.T, v *buffer.View, src, dst tc
 			checker.ICMPv4Type(header.ICMPv4Echo)))
 }
 
-func forwardedICMPv6EchoRequestChecker(t *testing.T, v *buffer.View, src, dst tcpip.Address) {
+func forwardedICMPv6EchoRequestChecker(t *testing.T, v *buffer.View, src, dst netip.Addr) {
 	checker.IPv6(t, v,
 		checker.SrcAddr(src),
 		checker.DstAddr(dst),
@@ -69,11 +71,11 @@ func TestForwarding(t *testing.T) {
 
 	type endpointAndAddresses struct {
 		serverEP         tcpip.Endpoint
-		serverAddr       tcpip.Address
+		serverAddr       netip.Addr
 		serverReadableCH chan struct{}
 
 		clientEP         tcpip.Endpoint
-		clientAddr       tcpip.Address
+		clientAddr       netip.Addr
 		clientReadableCH chan struct{}
 	}
 
@@ -105,11 +107,11 @@ func TestForwarding(t *testing.T) {
 				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv4.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
-					serverAddr:       utils.Host1IPv4Addr.AddressWithPrefix.Address,
+					serverAddr:       utils.Host1IPv4Addr.AddressWithPrefix.Addr(),
 					serverReadableCH: ep1WECH,
 
 					clientEP:         ep2,
-					clientAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Address,
+					clientAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Addr(),
 					clientReadableCH: ep2WECH,
 				}
 			},
@@ -121,11 +123,11 @@ func TestForwarding(t *testing.T) {
 				ep2, ep2WECH := newEP(t, host1Stack, proto, ipv6.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
-					serverAddr:       utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					serverAddr:       utils.Host2IPv6Addr.AddressWithPrefix.Addr(),
 					serverReadableCH: ep1WECH,
 
 					clientEP:         ep2,
-					clientAddr:       utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					clientAddr:       utils.Host1IPv6Addr.AddressWithPrefix.Addr(),
 					clientReadableCH: ep2WECH,
 				}
 			},
@@ -137,11 +139,11 @@ func TestForwarding(t *testing.T) {
 				ep2, ep2WECH := newEP(t, routerStack, proto, ipv4.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
-					serverAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Address,
+					serverAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Addr(),
 					serverReadableCH: ep1WECH,
 
 					clientEP:         ep2,
-					clientAddr:       utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+					clientAddr:       utils.RouterNIC1IPv4Addr.AddressWithPrefix.Addr(),
 					clientReadableCH: ep2WECH,
 				}
 			},
@@ -153,11 +155,11 @@ func TestForwarding(t *testing.T) {
 				ep2, ep2WECH := newEP(t, host1Stack, proto, ipv6.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
-					serverAddr:       utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+					serverAddr:       utils.RouterNIC2IPv6Addr.AddressWithPrefix.Addr(),
 					serverReadableCH: ep1WECH,
 
 					clientEP:         ep2,
-					clientAddr:       utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					clientAddr:       utils.Host1IPv6Addr.AddressWithPrefix.Addr(),
 					clientReadableCH: ep2WECH,
 				}
 			},
@@ -210,7 +212,7 @@ func TestForwarding(t *testing.T) {
 					if err != nil {
 						t.Fatalf("ep.Accept(_): %s", err)
 					}
-					if diff := cmp.Diff(clientAddr, addr, checker.IgnoreCmpPath(
+					if diff := cmp.Diff(clientAddr, addr, cmpopts.EquateComparable(netip.Addr{}), checker.IgnoreCmpPath(
 						"NIC",
 					)); diff != "" {
 						t.Errorf("accepted address mismatch (-want +got):\n%s", diff)
@@ -323,7 +325,7 @@ func TestForwarding(t *testing.T) {
 						if subTest.needRemoteAddr {
 							readResult.RemoteAddr = expectedFrom
 						}
-						if diff := cmp.Diff(readResult, res, checker.IgnoreCmpPath(
+						if diff := cmp.Diff(readResult, res, cmpopts.EquateComparable(netip.Addr{}), checker.IgnoreCmpPath(
 							"ControlMessages",
 							"RemoteAddr.NIC",
 						)); diff != "" {
@@ -376,8 +378,8 @@ func TestUnicastForwarding(t *testing.T) {
 	tests := []struct {
 		name             string
 		netProto         tcpip.NetworkProtocolNumber
-		srcAddr, dstAddr tcpip.Address
-		rx               func(*channel.Endpoint, tcpip.Address, tcpip.Address)
+		srcAddr, dstAddr netip.Addr
+		rx               func(*channel.Endpoint, netip.Addr, netip.Addr)
 		expectForward    bool
 		checker          func(*testing.T, *buffer.View)
 	}{
@@ -407,11 +409,11 @@ func TestUnicastForwarding(t *testing.T) {
 			name:          "IPv4 non-link-local unicast",
 			netProto:      ipv4.ProtocolNumber,
 			srcAddr:       utils.RemoteIPv4Addr,
-			dstAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
+			dstAddr:       utils.Ipv4Addr2.AddressWithPrefix.Addr(),
 			rx:            rxICMPv4EchoRequest,
 			expectForward: true,
 			checker: func(t *testing.T, v *buffer.View) {
-				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
+				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Addr())
 			},
 		},
 		{
@@ -434,11 +436,11 @@ func TestUnicastForwarding(t *testing.T) {
 			name:          "IPv6 non-link-local unicast",
 			netProto:      ipv6.ProtocolNumber,
 			srcAddr:       utils.RemoteIPv6Addr,
-			dstAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
+			dstAddr:       utils.Ipv6Addr2.AddressWithPrefix.Addr(),
 			rx:            rxICMPv6EchoRequest,
 			expectForward: true,
 			checker: func(t *testing.T, v *buffer.View) {
-				forwardedICMPv6EchoRequestChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
+				forwardedICMPv6EchoRequestChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Addr())
 			},
 		},
 	}
@@ -551,26 +553,26 @@ func TestPerInterfaceForwarding(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		srcAddr, dstAddr tcpip.Address
-		rx               func(*channel.Endpoint, tcpip.Address, tcpip.Address)
+		srcAddr, dstAddr netip.Addr
+		rx               func(*channel.Endpoint, netip.Addr, netip.Addr)
 		checker          func(*testing.T, *buffer.View)
 	}{
 		{
 			name:    "IPv4 unicast",
 			srcAddr: utils.RemoteIPv4Addr,
-			dstAddr: utils.Ipv4Addr2.AddressWithPrefix.Address,
+			dstAddr: utils.Ipv4Addr2.AddressWithPrefix.Addr(),
 			rx:      rxICMPv4EchoRequest,
 			checker: func(t *testing.T, v *buffer.View) {
-				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
+				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Addr())
 			},
 		},
 		{
 			name:    "IPv6 unicast",
 			srcAddr: utils.RemoteIPv6Addr,
-			dstAddr: utils.Ipv6Addr2.AddressWithPrefix.Address,
+			dstAddr: utils.Ipv6Addr2.AddressWithPrefix.Addr(),
 			rx:      rxICMPv6EchoRequest,
 			checker: func(t *testing.T, v *buffer.View) {
-				forwardedICMPv6EchoRequestChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
+				forwardedICMPv6EchoRequestChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Addr())
 			},
 		},
 	}
