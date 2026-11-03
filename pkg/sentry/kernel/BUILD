@@ -368,6 +368,7 @@ go_library(
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/metric",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/secio",

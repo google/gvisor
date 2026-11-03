@@ -17,7 +17,6 @@ package proc
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -227,7 +226,7 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 		}
 	case "kernel/random":
 		return map[string]kernfs.Inode{
-			"boot_id": fs.newInode(ctx, root, 0444, newStaticFile(randUUID())),
+			"boot_id": fs.newInode(ctx, root, 0444, newStaticFile(k.BootID()+"\n")),
 			"uuid":    fs.newInode(ctx, root, 0444, &uuidData{}),
 		}
 	case "kernel/yama":
@@ -414,7 +413,8 @@ var _ dynamicInode = (*uuidData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*uuidData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	buf.WriteString(randUUID())
+	buf.WriteString(rand.UUID())
+	buf.WriteByte('\n')
 	return nil
 }
 
@@ -848,18 +848,6 @@ var _ dynamicInode = (*fileNrData)(nil)
 func (f *fileNrData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	_, err := fmt.Fprintf(buf, "%d\t0\t%d\n", f.vfs.NumFiles(), int64(math.MaxInt64))
 	return err
-}
-
-// randUUID returns a string containing a randomly-generated UUID followed by a
-// newline.
-func randUUID() string {
-	var uuid [16]byte
-	if _, err := io.ReadFull(rand.Reader, uuid[:]); err != nil {
-		panic(fmt.Sprintf("failed to read random bytes for UUID: %v", err))
-	}
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 UUID
-	uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4 (random)
-	return fmt.Sprintf("%x-%x-%x-%x-%x\n", uuid[:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
 }
 
 // ParseInt32Vec interprets src as string encoding slice of int32, and
