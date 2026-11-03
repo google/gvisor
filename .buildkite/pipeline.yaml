@@ -368,6 +368,8 @@ steps:
     <<: *source_test
     label: ":scales: Dependency license check"
     command: make license-check
+    env:
+      DOCKER_BUILD: "false"
     agents:
       arch: "amd64"
 
