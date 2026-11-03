@@ -181,13 +181,30 @@ func (p *JobPool) setTrustedAuthors(trustedAuthors map[authorID]struct{}) {
 	p.trustedAuthors = trustedAuthors
 }
 
-// countLocked returns how many jobs from the given build on the given queue are in
+// countBuildLocked returns how many jobs from the given build on the given queue are in
 // the pool.
 //
 // p.mu must be held.
-func (p *JobPool) countLocked(queue string, uuid BuildUUID) uint {
+func (p *JobPool) countBuildLocked(queue string, uuid BuildUUID) uint {
 	q := p.queues[queue]
 	return uint(len(q.trustedBuilds[uuid].reservedJobs) + len(q.untrustedBuilds[uuid].reservedJobs))
+}
+
+// count returns how many jobs are reserved in the pool for each queue.
+func (p *JobPool) count() map[string]uint {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	counts := make(map[string]uint, len(p.queues))
+	for queue, q := range p.queues {
+		counts[queue] = 0
+		for _, builds := range []map[BuildUUID]Build{q.trustedBuilds, q.untrustedBuilds} {
+			for _, b := range builds {
+				counts[queue] += uint(len(b.reservedJobs))
+			}
+		}
+	}
+	return counts
 }
 
 // addLocked implements add.
@@ -520,7 +537,7 @@ func (s *BuildkiteStack) Replenish(ctx context.Context, pool *JobPool, listLimit
 			n, ok := needed[buildUUID]
 			if !ok {
 				// How many more jobs does this build need?
-				count := pool.countLocked(queue, buildUUID)
+				count := pool.countBuildLocked(queue, buildUUID)
 				if count < pool.jobsPerBuild {
 					n = pool.jobsPerBuild - count
 				}

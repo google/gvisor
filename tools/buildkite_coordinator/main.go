@@ -33,11 +33,13 @@ import (
 	"time"
 
 	compute "google.golang.org/api/compute/v1"
+	monitoring "google.golang.org/api/monitoring/v3"
 	yaml "gopkg.in/yaml.v3"
 	"gvisor.dev/gvisor/pkg/cleanup"
 )
 
 const (
+	publishMetricsInterval         = 10 * time.Second
 	clearCacheInterval             = 4 * time.Hour
 	buildkiteCleanupJobsInterval   = 3 * time.Second
 	buildkiteReplenishJobsInterval = 10 * time.Second
@@ -81,8 +83,9 @@ type server struct {
 	pool *JobPool
 
 	// The following fields are immutable.
-	cfg        config
-	computeSvc *compute.Service
+	cfg           config
+	computeSvc    *compute.Service
+	monitoringSvc *monitoring.Service
 }
 
 func newServer(ctx context.Context) *server {
@@ -110,6 +113,12 @@ func newServer(ctx context.Context) *server {
 	computeSvc, err := compute.NewService(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create compute client: %v", err)
+	}
+
+	// Cloud Monitoring client
+	monitoringSvc, err := monitoring.NewService(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create monitoring client: %v", err)
 	}
 
 	// GitHub client
@@ -157,6 +166,7 @@ func newServer(ctx context.Context) *server {
 	return &server{
 		cfg:                     cfg,
 		computeSvc:              computeSvc,
+		monitoringSvc:           monitoringSvc,
 		stack:                   stack,
 		tc:                      tc,
 		rc:                      rc,
@@ -342,6 +352,21 @@ func (s *server) runClearCacheTicker() {
 		s.stack.ClearCache()
 	}
 }
+
+func (s *server) runPublishMetricsTicker(ctx context.Context) {
+	ticker := time.Tick(publishMetricsInterval)
+	for {
+		<-ticker
+		counts := s.pool.count()
+		ctx, cancel := context.WithTimeout(ctx, publishMetricsInterval)
+		err := publishReservedJobs(ctx, s.monitoringSvc, s.cfg.project, counts)
+		cancel()
+		if err != nil {
+			log.Printf("Failed to publish metrics: %v", err)
+		}
+	}
+}
+
 func (s *server) runBuildkiteCleanupJobsTicker(ctx context.Context) {
 	ticker := time.Tick(buildkiteCleanupJobsInterval)
 	for {
@@ -428,6 +453,7 @@ func main() {
 		ReadTimeout:       30 * time.Second,
 	}
 
+	go s.runPublishMetricsTicker(ctx)
 	go s.runClearCacheTicker()
 	go s.runBuildkiteCleanupJobsTicker(ctx)
 	go s.runBuildkiteReplenishJobsTicker(ctx)
