@@ -1231,8 +1231,10 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 		}
 		log.Infof("Memory files load took [%s].", time.Since(mfStart))
 	} else {
-		if err := asyncMFLoader.WaitMainMFStart(); err != nil {
-			return fmt.Errorf("main MF start failed: %w", err)
+		// The upper layer may store its data in a private MemoryFile, which
+		// must be loaded before TarUpperLayer reads it.
+		if err := asyncMFLoader.WaitMetadata(); err != nil {
+			return fmt.Errorf("failed to load MemoryFile metadata: %w", err)
 		}
 	}
 
