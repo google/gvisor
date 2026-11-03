@@ -23,6 +23,7 @@
 #include <cstring>
 #include <iostream>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 #include "gmock/gmock.h"
@@ -217,6 +218,11 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestIPv6MulticastIf) {
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   // Bind sock to the ethernet interface.
+  char ifname[IF_NAMESIZE];
+  ASSERT_NE(if_indextoname(eth_if_idx(), ifname), nullptr);
+  ASSERT_THAT(setsockopt(sock->get(), SOL_SOCKET, SO_BINDTODEVICE, ifname,
+                         strlen(ifname) + 1),
+              SyscallSucceeds());
   struct sockaddr_in6 bind_addr = eth_if_addr();
   ASSERT_THAT(bind(sock->get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
               SyscallSucceeds());
@@ -228,21 +234,27 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestIPv6MulticastIf) {
               SyscallSucceeds());
   EXPECT_EQ(mcast_idx, 0);  // Default is 0.
 
-  // Setting its multicast interface to the loopback interface should fail.
-  mcast_idx = lo_if_idx();
-  EXPECT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                         &mcast_idx, slen),
-              SyscallFailsWithErrno(EINVAL));
-
-  // But setting it to the ethernet interface should succeed.
-  mcast_idx = eth_if_idx();
-  EXPECT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                         &mcast_idx, slen),
-              SyscallSucceeds());
-  ASSERT_THAT(getsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                         &mcast_idx, &slen),
-              SyscallSucceeds());
-  EXPECT_EQ(mcast_idx, eth_if_idx());
+  // A conflicting selection must preserve the current interface. Clearing
+  // the multicast selection must preserve the socket's device binding.
+  for (const auto& [selected, expected_errno, expected] :
+       {std::tuple{eth_if_idx(), 0, eth_if_idx()},
+        std::tuple{lo_if_idx(), EINVAL, eth_if_idx()}, std::tuple{0, 0, 0},
+        std::tuple{lo_if_idx(), EINVAL, 0}}) {
+    SCOPED_TRACE(selected);
+    if (expected_errno == 0) {
+      ASSERT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                             &selected, sizeof(selected)),
+                  SyscallSucceeds());
+    } else {
+      ASSERT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                             &selected, sizeof(selected)),
+                  SyscallFailsWithErrno(expected_errno));
+    }
+    ASSERT_THAT(getsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                           &mcast_idx, &slen),
+                SyscallSucceeds());
+    EXPECT_EQ(mcast_idx, expected);
+  }
 }
 
 TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest,

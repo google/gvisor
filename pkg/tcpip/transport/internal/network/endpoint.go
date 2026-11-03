@@ -912,8 +912,14 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		nic := tcpip.NICID(v)
-		if info := e.Info(); info.BindNICID != 0 && info.BindNICID != nic {
-			return &tcpip.ErrInvalidEndpointState{}
+		// Zero clears the multicast selection without changing device binding.
+		if nic != 0 {
+			if bound := tcpip.NICID(e.ops.GetBindToDevice()); bound != 0 && bound != nic {
+				return &tcpip.ErrInvalidEndpointState{}
+			}
+			if info := e.Info(); info.BindNICID != 0 && info.BindNICID != nic {
+				return &tcpip.ErrInvalidEndpointState{}
+			}
 		}
 		e.ipv6MulticastNICID = nic
 	}
