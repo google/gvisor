@@ -802,7 +802,6 @@ cc_binary(
         "//test/util:posix_error",
         "//test/util:save_util",
         "//test/util:signal_util",
-        "//test/util:socket_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
