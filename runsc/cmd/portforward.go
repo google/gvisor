@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
+	"gvisor.dev/gvisor/runsc/cli/maxprocs"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -115,6 +116,8 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 		}
 		return subcommands.ExitSuccess
 	}
+
+	maxprocs.ResetGCPercent()
 
 	// Allow forwarding to a local port.
 	ports := strings.Split(portStr, ":")

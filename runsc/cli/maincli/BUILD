@@ -16,6 +16,7 @@ go_library(
     ],
     deps = [
         "//runsc/cli",
+        "//runsc/cli/maxprocs",
         "//runsc/cmd",
         "//runsc/cmd/alias",
         "//runsc/cmd/profile",
@@ -27,9 +28,13 @@ go_library(
 
 go_test(
     name = "maincli_test",
-    srcs = ["maincli_test.go"],
+    srcs = [
+        "maincli_test.go",
+        "maxprocs_test.go",
+    ],
     embed = [":maincli"],
     deps = [
+        "//pkg/coverage",
         "//runsc/cmd",
         "//runsc/cmd/sentry/sentrycmd",
         "//runsc/flag",

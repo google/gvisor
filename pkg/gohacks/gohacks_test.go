@@ -153,3 +153,24 @@ func TestNoescape(t *testing.T) {
 		}
 	}
 }
+
+func TestSetGCPercent(t *testing.T) {
+	orig := debug.SetGCPercent(100)
+	defer debug.SetGCPercent(orig)
+
+	if prev := SetGCPercent(175); prev != 100 {
+		t.Fatalf("SetGCPercent(175) = %d, want 100", prev)
+	}
+	if got := debug.SetGCPercent(100); got != 175 {
+		t.Fatalf("debug.SetGCPercent(100) = %d, want 175", got)
+	}
+}
+
+func TestNumGC(t *testing.T) {
+	before := NumGC()
+	runtime.GC()
+	after := NumGC()
+	if after <= before {
+		t.Fatalf("NumGC() = %d after runtime.GC(), want > %d", after, before)
+	}
+}

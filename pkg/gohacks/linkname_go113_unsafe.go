@@ -22,6 +22,7 @@
 package gohacks
 
 import (
+	"runtime"
 	"unsafe"
 )
 
@@ -49,3 +50,26 @@ func Nanotime() int64 {
 //go:linkname nanotime runtime.nanotime
 //go:noescape
 func nanotime() int64
+
+// SetGCPercent is runtime/debug.setGCPercent.
+func SetGCPercent(in int32) int32 {
+	return setGCPercent(in)
+}
+
+//go:linkname setGCPercent runtime/debug.setGCPercent
+func setGCPercent(in int32) int32
+
+// NumGC returns the number of completed GC cycles without stopping the world.
+//
+// +checkescape
+func NumGC() uint32 {
+	const bufLen = 2*len(((*runtime.MemStats)(nil)).PauseNs) + 3
+	var buf [bufLen]uint64
+	p := buf[:0]
+	readGCStats(&p)
+	return uint32(p[len(p)-2])
+}
+
+//go:linkname readGCStats runtime/debug.readGCStats
+//go:noescape
+func readGCStats(pauses *[]uint64)

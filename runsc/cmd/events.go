@@ -24,6 +24,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cli/maxprocs"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -89,6 +90,11 @@ func (evs *Events) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 	c, err := evs.loadContainer(conf, f, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
+	}
+
+	// If we will enter a long running loop, reset the GC percent.
+	if !evs.stats {
+		maxprocs.ResetGCPercent()
 	}
 
 	// Repeatedly get stats from the container. Sleep a bit after every loop
