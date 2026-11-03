@@ -43,7 +43,7 @@ type fdInfo struct {
 // occur in the observed FDs.
 type notifier struct {
 	// epFD is the epoll file descriptor used to register for io
-	// notifications.
+	// notifications. The first AddFD sets it before starting waitAndNotify.
 	epFD int
 
 	// pauseMu synchronizes notifications with save/restore.
@@ -57,23 +57,6 @@ type notifier struct {
 	//
 	// +checklocks:mu
 	fdMap map[int32]*fdInfo
-}
-
-// newNotifier creates a new notifier object.
-func newNotifier() (*notifier, error) {
-	epfd, err := unix.EpollCreate1(0)
-	if err != nil {
-		return nil, err
-	}
-
-	w := &notifier{
-		epFD:  epfd,
-		fdMap: make(map[int32]*fdInfo),
-	}
-
-	go w.waitAndNotify() // S/R-SAFE: no waiter exists during save / load.
-
-	return w, nil
 }
 
 // waitFD waits on mask for fd.
@@ -114,6 +97,16 @@ func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 func (n *notifier) addFD(fd int32, queue *waiter.Queue) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
+	if n.fdMap == nil {
+		epfd, err := unix.EpollCreate1(0)
+		if err != nil {
+			return err
+		}
+		n.epFD = epfd
+		n.fdMap = make(map[int32]*fdInfo)
+		go n.waitAndNotify() // S/R-SAFE: pauseMu excludes callbacks during save/restore.
+	}
 
 	// Panic if we're already notifying on this FD.
 	if _, ok := n.fdMap[fd]; ok {
@@ -204,71 +197,44 @@ func (n *notifier) waitAndNotify() error {
 	}
 }
 
-// pause suspends notifications until resume is called.
-func (n *notifier) pause() {
-	n.pauseMu.Lock()
-}
-
-// resume ends the effect of a previous call to pause.
-func (n *notifier) resume() {
-	n.pauseMu.Unlock()
-}
-
-// once publishes notifier and initErr; checklocks does not model sync.Once
-// publication. Public FD helpers acquire notifier.mu themselves, but their
+// Public FD helpers acquire the shared notifier's mu themselves, but their
 // exclusions cannot be exported reliably through this private package global.
 // Pause/Resume have the same private-global limitation for their lock effects.
 //
 // Notifications call waiter callbacks with pauseMu and mu held. Callbacks must
 // not reenter the FD helpers or Pause/Resume on the same notifier.
-var shared struct {
-	notifier *notifier
-	once     sync.Once
-	initErr  error
-}
-
-func ensureSharedNotifier() {
-	shared.once.Do(func() {
-		shared.notifier, shared.initErr = newNotifier()
-	})
-}
+var shared notifier
 
 // AddFD adds an FD to the list of observed FDs.
 //
 // +checklocksexclude:queue.mu
 func AddFD(fd int32, queue *waiter.Queue) error {
-	ensureSharedNotifier()
-	if shared.initErr != nil {
-		return shared.initErr
-	}
-
-	return shared.notifier.addFD(fd, queue)
+	return shared.addFD(fd, queue)
 }
 
 // UpdateFD updates the set of events the fd needs to be notified on.
 func UpdateFD(fd int32) error {
-	return shared.notifier.updateFD(fd)
+	return shared.updateFD(fd)
 }
 
 // RemoveFD removes an FD from the list of observed FDs.
 func RemoveFD(fd int32) {
-	shared.notifier.removeFD(fd)
+	shared.removeFD(fd)
 }
 
 // HasFD returns true if the FD is in the list of observed FDs.
 //
 // This should only be used by tests to assert that FDs are correctly registered.
 func HasFD(fd int32) bool {
-	return shared.notifier.hasFD(fd)
+	return shared.hasFD(fd)
 }
 
 // Pause suspends notifications until Resume is called.
 func Pause() {
-	ensureSharedNotifier()
-	shared.notifier.pause()
+	shared.pauseMu.Lock()
 }
 
 // Resume ends the effect of a previous call to Pause.
 func Resume() {
-	shared.notifier.resume()
+	shared.pauseMu.Unlock()
 }
