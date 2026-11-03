@@ -20,6 +20,7 @@ package kvm
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -155,6 +156,57 @@ func TestApplicationPAC(t *testing.T) {
 			return true // Retry.
 		} else if err != nil {
 			t.Errorf("PAC instructions raised (%v, %+v), expected a clean syscall return", err, si)
+		}
+		return false
+	})
+}
+
+// TestHostPACDisabledVDSO verifies that disableHostPAC disables host pointer
+// authentication across all existing and newly created threads, and that VDSO
+// __kernel_getrandom calls that world-switch from Guest EL1 to Host EL0 do not
+// fault on epilogue pointer authentication.
+func TestHostPACDisabledVDSO(t *testing.T) {
+	kvmTest(t, nil, func(c *vCPU) bool {
+		keys, err := unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0)
+		if err == unix.EINVAL {
+			t.Skip("PR_PAC_GET_ENABLED_KEYS is not supported by the host")
+		}
+		if err != nil {
+			t.Fatalf("PR_PAC_GET_ENABLED_KEYS failed: %v", err)
+		}
+		if keys&addressPACKeys != 0 {
+			t.Fatalf("host address PAC keys still enabled on current thread: %#x", keys)
+		}
+
+		// Re-enable PAC on the calling thread, then verify disableHostPAC()
+		// disables it again across the process.
+		runtime.LockOSThread()
+		if err := unix.Prctl(unix.PR_PAC_SET_ENABLED_KEYS, addressPACKeys, addressPACKeys, 0, 0); err != nil {
+			runtime.UnlockOSThread()
+			t.Fatalf("PR_PAC_SET_ENABLED_KEYS failed: %v", err)
+		}
+		if err := disableHostPAC(); err != nil {
+			runtime.UnlockOSThread()
+			t.Fatalf("disableHostPAC failed: %v", err)
+		}
+		keys, err = unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0)
+		runtime.UnlockOSThread()
+		if err != nil {
+			t.Fatalf("PR_PAC_GET_ENABLED_KEYS failed: %v", err)
+		}
+		if keys&addressPACKeys != 0 {
+			t.Fatalf("host address PAC keys still enabled after disableHostPAC: %#x", keys)
+		}
+
+		var buf [16]byte
+		for i := 0; i < 64; i++ {
+			bluepill(c)
+			// Pass an unrecognized flag bit so VDSO __kernel_getrandom
+			// takes its fallback_syscall path (SVC #0) on every call,
+			// forcing a Guest EL1 -> Host EL0 switch before its epilogue
+			// autiasp executes at Host EL0.
+			_, _ = unix.Getrandom(buf[:], 0x1000)
+			redpill()
 		}
 		return false
 	})

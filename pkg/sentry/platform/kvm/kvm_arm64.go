@@ -68,6 +68,9 @@ type kvmVcpuEvents struct {
 
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
+	if err := disableHostPAC(); err != nil {
+		return err
+	}
 	err := updateSystemValues(int(fd))
 
 	maxIPA, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(fd), KVM_CHECK_EXTENSION, _KVM_CAP_ARM_VM_IPA_SIZE)
