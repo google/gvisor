@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -130,12 +131,31 @@ void RunFuseServer(
         {.fd = stop_fd, .events = POLLIN},
     };
     ASSERT_THAT(RetryEINTR(poll)(fds, 2, -1), SyscallSucceeds());
-    if (fds[1].revents & POLLIN) break;
+    if ((fds[1].revents & POLLIN) && !(fds[0].revents & POLLIN)) break;
     ssize_t res = RetryEINTR(read)(fd.get(), req_buf, sizeof(req_buf));
     if (res < 0 && errno == EAGAIN) continue;
     ASSERT_THAT(res, SyscallSucceedsWithValue(Ge(sizeof(fuse_in_header))));
     const auto& in = *reinterpret_cast<fuse_in_header*>(req_buf);
-    if (in.opcode == FUSE_FORGET) continue;
+    ASSERT_EQ(static_cast<size_t>(res), in.len);
+    if (in.opcode == FUSE_FORGET) {
+      EXPECT_NE(in.nodeid, 0U);
+      continue;
+    }
+    if (in.opcode == FUSE_BATCH_FORGET) {
+      ASSERT_GE(in.len, sizeof(fuse_in_header) + sizeof(fuse_batch_forget_in));
+      const auto& batch =
+          *reinterpret_cast<const fuse_batch_forget_in*>(&in + 1);
+      ASSERT_GE(
+          (in.len - sizeof(fuse_in_header) - sizeof(fuse_batch_forget_in)) /
+              sizeof(fuse_forget_one),
+          batch.count);
+      const auto* forgets =
+          reinterpret_cast<const fuse_forget_one*>(&batch + 1);
+      for (uint32_t i = 0; i < batch.count; ++i) {
+        EXPECT_NE(forgets[i].nodeid, 0U);
+      }
+      continue;
+    }
     SCOPED_TRACE(absl::StrFormat("FUSE opcode %u", in.opcode));
     if (!respond(fd.get(), in)) break;
   }
@@ -605,6 +625,512 @@ TEST(FuseTest, FlushUnsupported) {
   }
   EXPECT_EQ(release_requests.load(), 2);
   EXPECT_EQ(flush_requests.load(), 1);
+}
+
+// A LOOKUP reply with a zero node ID is a negative entry; a zero node ID on a
+// creation reply is an invalid node ID (EIO).
+TEST(FuseTest, NegativeLookup) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningWithSaveRestore());
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const uint32_t uid = getuid();
+  const uint32_t gid = getgid();
+  auto mount_opts = absl::StrFormat(
+      "fd=%d,user_id=%u,group_id=%u,rootmode=40000", fd.get(), uid, gid);
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount("fuse", mount_point.path(),
+                                               "fuse", MS_NODEV | MS_NOSUID,
+                                               mount_opts, /*umountflags=*/0));
+  ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
+  const FileDescriptor stop_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+
+  // Keep st_ino distinct from FUSE node IDs so stat(2) assertions verify
+  // attr.ino rather than nodeid.
+  constexpr uint64_t kBaseIno = 40;
+  std::atomic<uint64_t> next_node_id = 2;
+  std::atomic<uint64_t> file_node_id = 0;
+  std::atomic<uint64_t> attr_file_node_id = 0;
+  std::atomic<uint64_t> dir_node_id = 0;
+  std::atomic<uint64_t> cached_file_node_id = 0;
+  std::atomic<uint64_t> cached_excl1_node_id = 0;
+  std::atomic<uint64_t> cached_excl2_node_id = 0;
+  std::atomic<uint64_t> badcreate_node_id = 0;
+  std::atomic<bool> fail_badcreate = true;
+  std::atomic<int> lookup_requests = 0;
+  std::atomic<int> create_requests = 0;
+  std::atomic<int> mkdir_requests = 0;
+
+  auto request_name = [](const fuse_in_header& in,
+                         size_t prefix_len) -> absl::string_view {
+    const size_t header_len = sizeof(fuse_in_header) + prefix_len;
+    if (in.len <= header_len) {
+      ADD_FAILURE() << "truncated FUSE request: len=" << in.len;
+      return "";
+    }
+    const char* ptr = reinterpret_cast<const char*>(&in) + header_len;
+    const size_t name_len = in.len - header_len - 1;
+    EXPECT_EQ(ptr[name_len], '\0');
+    return absl::string_view(ptr, name_len);
+  };
+
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(server_fd, stop_fd.get(),
+                  [&](int fd, const fuse_in_header& in) {
+                    EXPECT_NE(in.nodeid, 0U);
+                    if (in.opcode == FUSE_LOOKUP) {
+                      ++lookup_requests;
+                      const absl::string_view name = request_name(in, 0);
+                      EXPECT_NE(name, "child");
+                      if (name == "badroot") {
+                        // Match the root directory's generation (0) and mode so
+                        // the error comes from rejecting FUSE_ROOT_ID rather
+                        // than a type mismatch.
+                        fuse_entry_out out = {
+                            .nodeid = FUSE_ROOT_ID,
+                            .generation = 0,
+                            .entry_valid = 0,
+                            .attr_valid = 0,
+                        };
+                        out.attr = {
+                            .ino = FUSE_ROOT_ID,
+                            .mode = S_IFDIR | 0755,
+                            .nlink = 2,
+                            .uid = uid,
+                            .gid = gid,
+                        };
+                        FuseRespond(fd, in.unique, &out, sizeof(out));
+                        return true;
+                      }
+                      if (name == "badmode") {
+                        // A non-zero node ID with mode 0 (no S_IFMT type) is
+                        // invalid and fails with EIO rather than ENOENT.
+                        fuse_entry_out out = {
+                            .nodeid = next_node_id.fetch_add(1),
+                            .generation = 1,
+                            .entry_valid = 0,
+                            .attr_valid = 0,
+                        };
+                        FuseRespond(fd, in.unique, &out, sizeof(out));
+                        return true;
+                      }
+
+                      uint64_t node_id = 0;
+                      uint64_t neg_entry_valid = 0;
+                      uint32_t mode = S_IFREG | 0644;
+                      if (name == "newfile") {
+                        node_id = file_node_id.load();
+                      } else if (name == "attrfile") {
+                        node_id = attr_file_node_id.load();
+                      } else if (name == "newdir") {
+                        node_id = dir_node_id.load();
+                        mode = S_IFDIR | 0755;
+                      } else if (name == "cachedfile") {
+                        node_id = cached_file_node_id.load();
+                        neg_entry_valid = 60;
+                      } else if (name == "cachedexcl1") {
+                        node_id = cached_excl1_node_id.load();
+                        neg_entry_valid = 60;
+                      } else if (name == "cachedexcl2") {
+                        node_id = cached_excl2_node_id.load();
+                        neg_entry_valid = 60;
+                      } else if (name == "badcreate") {
+                        node_id = badcreate_node_id.load();
+                      }
+
+                      if (node_id == 0) {
+                        fuse_entry_out out = {
+                            .nodeid = 0,
+                            .entry_valid = neg_entry_valid,
+                            .attr_valid = neg_entry_valid,
+                        };
+                        if (name == "attrfile") {
+                          out.generation = 1;
+                          out.attr = {
+                              .ino = kBaseIno,
+                              .mode = S_IFREG | 0644,
+                              .nlink = 1,
+                              .uid = uid,
+                              .gid = gid,
+                          };
+                        }
+                        FuseRespond(fd, in.unique, &out, sizeof(out));
+                        return true;
+                      }
+
+                      fuse_entry_out out = {
+                          .nodeid = node_id,
+                          .generation = 1,
+                          .entry_valid = 0,
+                          .attr_valid = 0,
+                      };
+                      out.attr = {
+                          .ino = kBaseIno + node_id,
+                          .mode = mode,
+                          .nlink = mode == (S_IFDIR | 0755) ? 2U : 1U,
+                          .uid = uid,
+                          .gid = gid,
+                      };
+                      FuseRespond(fd, in.unique, &out, sizeof(out));
+                      return true;
+                    }
+
+                    if (in.opcode == FUSE_CREATE) {
+                      ++create_requests;
+                      const absl::string_view name =
+                          request_name(in, sizeof(fuse_create_in));
+                      EXPECT_NE(name, "child");
+                      struct {
+                        fuse_entry_out entry;
+                        fuse_open_out open;
+                      } out = {};
+                      if (name == "badcreate" && fail_badcreate.load()) {
+                        out.entry = {
+                            .nodeid = 0,
+                            .generation = 1,
+                            .entry_valid = 0,
+                            .attr_valid = 0,
+                        };
+                        out.entry.attr = {
+                            .ino = kBaseIno,
+                            .mode = S_IFREG | 0644,
+                            .nlink = 1,
+                            .uid = uid,
+                            .gid = gid,
+                        };
+                        out.open = {.fh = 1};
+                        FuseRespond(fd, in.unique, &out, sizeof(out));
+                        return true;
+                      }
+
+                      const uint64_t node_id = next_node_id.fetch_add(1);
+                      if (name == "newfile") {
+                        file_node_id.store(node_id);
+                      } else if (name == "attrfile") {
+                        attr_file_node_id.store(node_id);
+                      } else if (name == "cachedfile") {
+                        cached_file_node_id.store(node_id);
+                      } else if (name == "cachedexcl2") {
+                        cached_excl2_node_id.store(node_id);
+                      } else if (name == "badcreate") {
+                        badcreate_node_id.store(node_id);
+                      } else {
+                        ADD_FAILURE() << "unexpected CREATE target: " << name;
+                      }
+                      out.entry = {
+                          .nodeid = node_id,
+                          .generation = 1,
+                          .entry_valid = 0,
+                          .attr_valid = 0,
+                      };
+                      out.entry.attr = {
+                          .ino = kBaseIno + node_id,
+                          .mode = S_IFREG | 0644,
+                          .nlink = 1,
+                          .uid = uid,
+                          .gid = gid,
+                      };
+                      out.open = {.fh = 1};
+                      FuseRespond(fd, in.unique, &out, sizeof(out));
+                      return true;
+                    }
+
+                    if (in.opcode == FUSE_MKDIR) {
+                      ++mkdir_requests;
+                      const absl::string_view name =
+                          request_name(in, sizeof(fuse_mkdir_in));
+                      EXPECT_EQ(name, "newdir");
+                      const uint64_t node_id = next_node_id.fetch_add(1);
+                      dir_node_id.store(node_id);
+                      fuse_entry_out out = {
+                          .nodeid = node_id,
+                          .generation = 1,
+                          .entry_valid = 0,
+                          .attr_valid = 0,
+                      };
+                      out.attr = {
+                          .ino = kBaseIno + node_id,
+                          .mode = S_IFDIR | 0755,
+                          .nlink = 2,
+                          .uid = uid,
+                          .gid = gid,
+                      };
+                      FuseRespond(fd, in.unique, &out, sizeof(out));
+                      return true;
+                    }
+
+                    if (in.opcode == FUSE_GETATTR) {
+                      fuse_attr_out out = {.attr_valid = 0};
+                      if (in.nodeid == FUSE_ROOT_ID) {
+                        out.attr = {
+                            .ino = FUSE_ROOT_ID,
+                            .mode = S_IFDIR | 0755U,
+                            .nlink = 2,
+                            .uid = uid,
+                            .gid = gid,
+                        };
+                      } else if (in.nodeid == dir_node_id.load()) {
+                        out.attr = {
+                            .ino = kBaseIno + in.nodeid,
+                            .mode = S_IFDIR | 0755U,
+                            .nlink = 2,
+                            .uid = uid,
+                            .gid = gid,
+                        };
+                      } else {
+                        out.attr = {
+                            .ino = kBaseIno + in.nodeid,
+                            .mode = S_IFREG | 0644U,
+                            .nlink = 1,
+                            .uid = uid,
+                            .gid = gid,
+                        };
+                      }
+                      FuseRespond(fd, in.unique, &out, sizeof(out));
+                      return true;
+                    }
+
+                    if (in.opcode == FUSE_FLUSH || in.opcode == FUSE_RELEASE) {
+                      FuseRespond(fd, in.unique);
+                      return true;
+                    }
+
+                    if (in.opcode == FUSE_OPEN || in.opcode == FUSE_UNLINK ||
+                        in.opcode == FUSE_RMDIR) {
+                      ADD_FAILURE() << "unexpected opcode in NegativeLookup: "
+                                    << in.opcode;
+                      FuseRespond(fd, in.unique, nullptr, 0, -ENOENT);
+                      return true;
+                    }
+
+                    FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+                    return true;
+                  });
+  });
+  Cleanup stop_server([&] {
+    const uint64_t stop = 1;
+    EXPECT_THAT(RetryEINTR(write)(stop_fd.get(), &stop, sizeof(stop)),
+                SyscallSucceedsWithValue(sizeof(stop)));
+  });
+
+  // Refresh the root directory's attributes so its owner matches uid/gid even
+  // in user namespaces where UID/GID 0 is unmapped.
+  struct stat st = {};
+  ASSERT_THAT(stat(mount_point.path().c_str(), &st), SyscallSucceeds());
+
+  const std::string file_path = JoinPath(mount_point.path(), "newfile");
+  int lookups = lookup_requests.load();
+  EXPECT_THAT(stat(file_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_GT(lookup_requests.load(), lookups);
+
+  // entry_valid is 0, so the negative entry is not cached and Open sends a new
+  // LOOKUP.
+  lookups = lookup_requests.load();
+  EXPECT_THAT(Open(file_path, O_RDONLY), PosixErrorIs(ENOENT));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(create_requests.load(), 0);
+
+  // A zero-node-ID LOOKUP reply with populated file attributes is still a
+  // negative entry rather than a positive inode with node ID 0, including on
+  // positive-to-negative revalidation where generation and mode match.
+  const std::string attr_path = JoinPath(mount_point.path(), "attrfile");
+  EXPECT_THAT(stat(attr_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(Open(attr_path, O_RDONLY), PosixErrorIs(ENOENT));
+  {
+    const FileDescriptor attr_fd = ASSERT_NO_ERRNO_AND_VALUE(
+        Open(attr_path, O_WRONLY | O_CREAT | O_EXCL, 0644));
+    ASSERT_THAT(fstat(attr_fd.get(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, kBaseIno + attr_file_node_id.load());
+  }
+  EXPECT_EQ(create_requests.load(), 1);
+  ASSERT_THAT(stat(attr_path.c_str(), &st), SyscallSucceeds());
+  attr_file_node_id.store(0);
+  EXPECT_THAT(stat(attr_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(Open(attr_path, O_RDONLY), PosixErrorIs(ENOENT));
+  attr_file_node_id.store(next_node_id.fetch_add(1));
+  ASSERT_THAT(stat(attr_path.c_str(), &st), SyscallSucceeds());
+  attr_file_node_id.store(0);
+  ASSERT_NO_ERRNO(Open(attr_path, O_WRONLY | O_CREAT | O_EXCL, 0644));
+  EXPECT_EQ(create_requests.load(), 2);
+
+  // Non-creating operations on a negative leaf fail with ENOENT without sending
+  // delete requests.
+  EXPECT_THAT(lstat(file_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(file_path.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(unlink(file_path.c_str()), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(rmdir(file_path.c_str()), SyscallFailsWithErrno(ENOENT));
+
+  // A negative intermediate path component stops resolution with ENOENT before
+  // looking up or creating the child.
+  const std::string nested_path = JoinPath(mount_point.path(), "negdir/child");
+  EXPECT_THAT(stat(nested_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(Open(nested_path, O_WRONLY | O_CREAT, 0644),
+              PosixErrorIs(ENOENT));
+  EXPECT_EQ(create_requests.load(), 2);
+
+  // A negative entry does not prevent creating the file with O_CREAT | O_EXCL,
+  // and keeping the FD open across positive-to-negative revalidation preserves
+  // the open file while invalidating path lookups.
+  lookups = lookup_requests.load();
+  FileDescriptor first_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(file_path, O_WRONLY | O_CREAT | O_EXCL, 0644));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(create_requests.load(), 3);
+  const uint64_t first_node_id = file_node_id.load();
+  ASSERT_NE(first_node_id, 0U);
+  ASSERT_THAT(fstat(first_fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, kBaseIno + first_node_id);
+
+  // entry_valid is 0, so stat(2) revalidates via LOOKUP and finds the file.
+  lookups = lookup_requests.load();
+  ASSERT_THAT(stat(file_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(st.st_ino, kBaseIno + first_node_id);
+  EXPECT_THAT(Open(file_path, O_WRONLY | O_CREAT | O_EXCL, 0644),
+              PosixErrorIs(EEXIST));
+  EXPECT_EQ(create_requests.load(), 3);
+
+  // When a cached positive entry with entry_valid == 0 later receives a
+  // zero-node-ID LOOKUP reply while first_fd is still open, path lookups fail
+  // with ENOENT while first_fd remains valid and O_CREAT creates a distinct
+  // inode.
+  file_node_id.store(0);
+  lookups = lookup_requests.load();
+  EXPECT_THAT(stat(file_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  ASSERT_THAT(fstat(first_fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, kBaseIno + first_node_id);
+  lookups = lookup_requests.load();
+  EXPECT_THAT(Open(file_path, O_RDONLY), PosixErrorIs(ENOENT));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  {
+    const FileDescriptor recreated_fd = ASSERT_NO_ERRNO_AND_VALUE(
+        Open(file_path, O_WRONLY | O_CREAT | O_EXCL, 0644));
+    const uint64_t recreated_id = file_node_id.load();
+    ASSERT_GT(recreated_id, first_node_id);
+    ASSERT_THAT(fstat(recreated_fd.get(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, kBaseIno + recreated_id);
+    ASSERT_THAT(fstat(first_fd.get(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, kBaseIno + first_node_id);
+  }
+  first_fd.reset();
+  EXPECT_EQ(create_requests.load(), 4);
+
+  const uint64_t unlink_probe_id = next_node_id.fetch_add(1);
+  file_node_id.store(unlink_probe_id);
+  ASSERT_THAT(stat(file_path.c_str(), &st), SyscallSucceeds());
+  file_node_id.store(0);
+  EXPECT_THAT(unlink(file_path.c_str()), SyscallFailsWithErrno(ENOENT));
+
+  // Populate a positive cached entry again, then mark it deleted on the server
+  // without an intervening stat(2): both O_CREAT | O_EXCL and plain O_CREAT
+  // revalidate via LOOKUP, invalidate the stale entry, and create a new file
+  // via FUSE_CREATE rather than failing with EEXIST or sending FUSE_OPEN.
+  const uint64_t transient_node_id = next_node_id.fetch_add(1);
+  file_node_id.store(transient_node_id);
+  ASSERT_THAT(stat(file_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, kBaseIno + transient_node_id);
+  file_node_id.store(0);
+  lookups = lookup_requests.load();
+  ASSERT_NO_ERRNO(Open(file_path, O_WRONLY | O_CREAT | O_EXCL, 0644));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(create_requests.load(), 5);
+  const uint64_t second_node_id = file_node_id.load();
+  ASSERT_GT(second_node_id, transient_node_id);
+  ASSERT_THAT(stat(file_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, kBaseIno + second_node_id);
+
+  file_node_id.store(0);
+  lookups = lookup_requests.load();
+  {
+    const FileDescriptor file_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(file_path, O_WRONLY | O_CREAT, 0644));
+    const uint64_t third_node_id = file_node_id.load();
+    ASSERT_GT(third_node_id, second_node_id);
+    ASSERT_THAT(fstat(file_fd.get(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, kBaseIno + third_node_id);
+  }
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(create_requests.load(), 6);
+
+  // Non-open creation (mkdir) succeeds after a negative LOOKUP, and when the
+  // directory later receives a zero-node-ID LOOKUP reply, rmdir fails with
+  // ENOENT without sending FUSE_RMDIR and mkdir can recreate it.
+  const std::string dir_path = JoinPath(mount_point.path(), "newdir");
+  EXPECT_THAT(stat(dir_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  ASSERT_THAT(mkdir(dir_path.c_str(), 0755), SyscallSucceeds());
+  EXPECT_EQ(mkdir_requests.load(), 1);
+  ASSERT_THAT(stat(dir_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_EQ(st.st_ino, kBaseIno + dir_node_id.load());
+  dir_node_id.store(0);
+  EXPECT_THAT(rmdir(dir_path.c_str()), SyscallFailsWithErrno(ENOENT));
+  ASSERT_THAT(mkdir(dir_path.c_str(), 0755), SyscallSucceeds());
+  EXPECT_EQ(mkdir_requests.load(), 2);
+
+  // A zero-node-ID LOOKUP reply with non-zero entry_valid caches a negative
+  // entry on Linux and still allows O_CREAT (without O_EXCL, instantiating the
+  // cached negative entry directly via CREATE).
+  const std::string cached_path = JoinPath(mount_point.path(), "cachedfile");
+  lookups = lookup_requests.load();
+  EXPECT_THAT(stat(cached_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  lookups = lookup_requests.load();
+  EXPECT_THAT(Open(cached_path, O_RDONLY), PosixErrorIs(ENOENT));
+  {
+    const FileDescriptor cached_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(cached_path, O_WRONLY | O_CREAT, 0644));
+    ASSERT_THAT(fstat(cached_fd.get(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, kBaseIno + cached_file_node_id.load());
+  }
+  if (!IsRunningOnGvisor()) {
+    EXPECT_EQ(lookup_requests.load(), lookups);
+  }
+  EXPECT_EQ(create_requests.load(), 7);
+  ASSERT_THAT(stat(cached_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, kBaseIno + cached_file_node_id.load());
+
+  // O_CREAT | O_EXCL revalidates even when a negative entry has entry_valid >
+  // 0, detecting an out-of-band server file (EEXIST) or creating when still
+  // absent.
+  const std::string cached_excl1 = JoinPath(mount_point.path(), "cachedexcl1");
+  EXPECT_THAT(stat(cached_excl1.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  cached_excl1_node_id.store(next_node_id.fetch_add(1));
+  lookups = lookup_requests.load();
+  EXPECT_THAT(Open(cached_excl1, O_WRONLY | O_CREAT | O_EXCL, 0644),
+              PosixErrorIs(EEXIST));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(create_requests.load(), 7);
+
+  const std::string cached_excl2 = JoinPath(mount_point.path(), "cachedexcl2");
+  EXPECT_THAT(stat(cached_excl2.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  lookups = lookup_requests.load();
+  ASSERT_NO_ERRNO(Open(cached_excl2, O_WRONLY | O_CREAT | O_EXCL, 0644));
+  EXPECT_GT(lookup_requests.load(), lookups);
+  EXPECT_EQ(create_requests.load(), 8);
+
+  // Zeroed attributes are valid only when node ID is 0; a CREATE reply with
+  // node ID 0 or a LOOKUP reply with FUSE_ROOT_ID fails with EIO without
+  // poisoning the mount or wedging subsequent creation of the same name.
+  EXPECT_THAT(stat(JoinPath(mount_point.path(), "badmode").c_str(), &st),
+              SyscallFailsWithErrno(EIO));
+
+  const std::string bad_create = JoinPath(mount_point.path(), "badcreate");
+  EXPECT_THAT(Open(bad_create, O_WRONLY | O_CREAT, 0644), PosixErrorIs(EIO));
+  EXPECT_EQ(create_requests.load(), 9);
+  EXPECT_THAT(stat(bad_create.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  fail_badcreate.store(false);
+  ASSERT_NO_ERRNO(Open(bad_create, O_WRONLY | O_CREAT, 0644));
+  EXPECT_EQ(create_requests.load(), 10);
+  ASSERT_THAT(stat(bad_create.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, kBaseIno + badcreate_node_id.load());
+
+  const std::string bad_root = JoinPath(mount_point.path(), "badroot");
+  EXPECT_THAT(stat(bad_root.c_str(), &st), SyscallFailsWithErrno(EIO));
+  EXPECT_THAT(Open(bad_root, O_WRONLY | O_CREAT, 0644), PosixErrorIs(EIO));
+  EXPECT_EQ(create_requests.load(), 10);
+  ASSERT_THAT(stat(cached_path.c_str(), &st), SyscallSucceeds());
 }
 
 // The parts of <linux/aio_abi.h> used below. The header isn't included since
