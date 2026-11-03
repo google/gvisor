@@ -2222,6 +2222,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 func (e *Endpoint) getTCPInfo() tcpip.TCPInfoOption {
 	info := tcpip.TCPInfoOption{}
 	e.LockUser()
+	info.TotalRetrans = uint32(e.stats.SendErrors.Retransmits.Value())
 	if state := e.EndpointState(); state.internal() {
 		info.State = tcpip.EndpointState(StateClose)
 	} else {
