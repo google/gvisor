@@ -44,7 +44,7 @@ const (
 
 // TestPingMulticastBroadcast tests that responding to an Echo Request destined
 // to a multicast or broadcast address uses a unicast source address for the
-// reply.
+// reply, except for IPv4 where multicast/broadcast echo requests are ignored.
 func TestPingMulticastBroadcast(t *testing.T) {
 	const (
 		nicID = 1
@@ -68,28 +68,25 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			expectedSrc: utils.Ipv4Addr.Address,
 		},
 		{
-			name:        "IPv4 directed broadcast",
-			protoNum:    header.IPv4ProtocolNumber,
-			rxICMP:      utils.RxICMPv4EchoRequest,
-			srcAddr:     utils.RemoteIPv4Addr,
-			dstAddr:     utils.Ipv4SubnetBcast,
-			expectedSrc: utils.Ipv4Addr.Address,
+			name:     "IPv4 directed broadcast",
+			protoNum: header.IPv4ProtocolNumber,
+			rxICMP:   utils.RxICMPv4EchoRequest,
+			srcAddr:  utils.RemoteIPv4Addr,
+			dstAddr:  utils.Ipv4SubnetBcast,
 		},
 		{
-			name:        "IPv4 broadcast",
-			protoNum:    header.IPv4ProtocolNumber,
-			rxICMP:      utils.RxICMPv4EchoRequest,
-			srcAddr:     utils.RemoteIPv4Addr,
-			dstAddr:     header.IPv4Broadcast,
-			expectedSrc: utils.Ipv4Addr.Address,
+			name:     "IPv4 broadcast",
+			protoNum: header.IPv4ProtocolNumber,
+			rxICMP:   utils.RxICMPv4EchoRequest,
+			srcAddr:  utils.RemoteIPv4Addr,
+			dstAddr:  header.IPv4Broadcast,
 		},
 		{
-			name:        "IPv4 all-systems multicast",
-			protoNum:    header.IPv4ProtocolNumber,
-			rxICMP:      utils.RxICMPv4EchoRequest,
-			srcAddr:     utils.RemoteIPv4Addr,
-			dstAddr:     header.IPv4AllSystems,
-			expectedSrc: utils.Ipv4Addr.Address,
+			name:     "IPv4 all-systems multicast",
+			protoNum: header.IPv4ProtocolNumber,
+			rxICMP:   utils.RxICMPv4EchoRequest,
+			srcAddr:  utils.RemoteIPv4Addr,
+			dstAddr:  header.IPv4AllSystems,
 		},
 		{
 			name:        "IPv6 unicast",
@@ -145,6 +142,13 @@ func TestPingMulticastBroadcast(t *testing.T) {
 
 			test.rxICMP(e, test.srcAddr, test.dstAddr, ttl)
 			pkt := e.Read()
+			if test.expectedSrc == (tcpip.Address{}) {
+				if pkt != nil {
+					defer pkt.DecRef()
+					t.Fatalf("unexpected ICMP response: %#v", pkt)
+				}
+				return
+			}
 			if pkt == nil {
 				t.Fatal("expected ICMP response")
 			}
