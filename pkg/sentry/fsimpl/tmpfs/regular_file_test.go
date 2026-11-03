@@ -18,12 +18,18 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -323,5 +329,135 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := statAfterTruncateUp.Ctime.ToNsec(); got <= statAfterTruncateDown.Ctime.ToNsec() {
 		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
+	}
+}
+
+// newDiskBackedFileFD creates a new file in a new tmpfs mount that stores file
+// data in a disk-backed MemoryFile. It returns the FD and the MemoryFile.
+func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescription, *pgalloc.MemoryFile) {
+	tb.Helper()
+	file, err := os.CreateTemp(tb.TempDir(), "tmpfs-disk-backed")
+	if err != nil {
+		tb.Fatalf("os.CreateTemp failed: %v", err)
+	}
+	mf, err := pgalloc.NewMemoryFile(file, pgalloc.MemoryFileOpts{
+		DelayedEviction:         pgalloc.DelayedEvictionDisabled,
+		DisableMemoryAccounting: true,
+		DiskBackedFile:          true,
+	})
+	if err != nil {
+		file.Close()
+		tb.Fatalf("pgalloc.NewMemoryFile failed: %v", err)
+	}
+	tb.Cleanup(mf.Destroy)
+
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		tb.Fatalf("VFS init: %v", err)
+	}
+	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: FilesystemOpts{MemoryFile: mf},
+		},
+	}, nil)
+	if err != nil {
+		tb.Fatalf("failed to create tmpfs root mount: %v", err)
+	}
+	tb.Cleanup(func() { mntns.DecRef(ctx) })
+	root := mntns.Root(ctx)
+	tb.Cleanup(func() { root.DecRef(ctx) })
+
+	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("file"),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
+		Mode:  linux.ModeRegular | 0644,
+	})
+	if err != nil {
+		tb.Fatalf("failed to create file: %v", err)
+	}
+	tb.Cleanup(func() { fd.DecRef(ctx) })
+	return fd, mf
+}
+
+// TestDiskBackedWriteHostFault tests a write to a file in a disk-backed
+// MemoryFile, when the host raises SIGBUS for some of the pages that the
+// write touches.
+func TestDiskBackedWriteHostFault(t *testing.T) {
+	// The write is smaller than hostWriteThreshold, so it is copied through
+	// the internal mappings of the MemoryFile.
+	const size = 2 * hostarch.PageSize
+	for _, okPages := range []int{0, 1} {
+		t.Run(fmt.Sprintf("SIGBUS after %d pages", okPages), func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			fd, mf := newDiskBackedFileFD(ctx, t)
+
+			// Allocate the file data.
+			if n, err := fd.PWrite(ctx, usermem.BytesIOSequence(make([]byte, size)), 0, vfs.WriteOptions{}); err != nil || n != size {
+				t.Fatalf("fd.PWrite: got (%d, %v), want (%d, nil)", n, err, size)
+			}
+			rf := fd.Impl().(*regularFileFD).inode().impl.(*regularFile)
+			rf.dataMu.RLock()
+			fr := rf.data.FirstSegment().FileRange()
+			rf.dataMu.RUnlock()
+			if fr.Length() != size {
+				t.Fatalf("got file data in MemoryFile range %v, want one range of %d bytes", fr, size)
+			}
+
+			// The host raises SIGBUS when a page of a file mapping after the
+			// end of the file is touched. Truncate the backing file so that
+			// only the first okPages pages of the file data are before its
+			// end.
+			if err := mf.File().Truncate(int64(fr.Start) + int64(okPages*hostarch.PageSize)); err != nil {
+				t.Fatalf("Truncate failed: %v", err)
+			}
+
+			// Overwrite the file data.
+			data := make([]byte, size)
+			for i := range data {
+				data[i] = byte(i%255 + 1)
+			}
+			if n, err := fd.PWrite(ctx, usermem.BytesIOSequence(data), 0, vfs.WriteOptions{}); err != nil || n != size {
+				t.Fatalf("fd.PWrite: got (%d, %v), want (%d, nil)", n, err, size)
+			}
+
+			// Read the file data.
+			got := make([]byte, size)
+			if n, err := fd.PRead(ctx, usermem.BytesIOSequence(got), 0, vfs.ReadOptions{}); err != nil || n != size {
+				t.Fatalf("fd.PRead: got (%d, %v), want (%d, nil)", n, err, size)
+			}
+			if !bytes.Equal(got, data) {
+				t.Errorf("fd.PRead got data different from the written data")
+			}
+		})
+	}
+}
+
+// BenchmarkDiskBackedWrite measures overwrites of populated pages of a file in
+// a disk-backed MemoryFile. The writes are smaller than hostWriteThreshold, so
+// they are copied through the internal mappings of the MemoryFile.
+func BenchmarkDiskBackedWrite(b *testing.B) {
+	for _, size := range []int{64, 4096, 32768} {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			ctx := contexttest.Context(b)
+			fd, _ := newDiskBackedFileFD(ctx, b)
+			src := usermem.BytesIOSequence(make([]byte, size))
+			if _, err := fd.PWrite(ctx, src, 0, vfs.WriteOptions{}); err != nil {
+				b.Fatalf("fd.PWrite failed: %v", err)
+			}
+			b.SetBytes(int64(size))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := fd.PWrite(ctx, src, 0, vfs.WriteOptions{}); err != nil {
+					b.Fatalf("fd.PWrite failed: %v", err)
+				}
+			}
+		})
 	}
 }

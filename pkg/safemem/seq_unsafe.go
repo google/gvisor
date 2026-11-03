@@ -287,6 +287,25 @@ func CopySeq(dsts, srcs BlockSeq) (uint64, error) {
 	return done, nil
 }
 
+// CopySeqToUnsafe is equivalent to CopySeq, except that it uses safecopy to
+// access all Blocks in dsts, as if they were created by BlockFromUnsafeSlice
+// or BlockFromUnsafePointer.
+func CopySeqToUnsafe(dsts, srcs BlockSeq) (uint64, error) {
+	var done uint64
+	for !dsts.IsEmpty() && !srcs.IsEmpty() {
+		dst := dsts.Head()
+		dst.needSafecopy = true
+		n, err := Copy(dst, srcs.Head())
+		done += uint64(n)
+		if err != nil {
+			return done, err
+		}
+		dsts = dsts.DropFirst(n)
+		srcs = srcs.DropFirst(n)
+	}
+	return done, nil
+}
+
 // ZeroSeq sets all bytes in dsts to 0 and returns the number of bytes zeroed.
 func ZeroSeq(dsts BlockSeq) (uint64, error) {
 	var done uint64

@@ -31,4 +31,8 @@ go_test(
         "seq_test.go",
     ],
     embed = [":safemem"],
+    deps = [
+        "//pkg/safecopy",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

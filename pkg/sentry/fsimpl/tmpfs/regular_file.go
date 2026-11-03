@@ -874,12 +874,20 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		mr := memmap.MappableRange{uint64(rw.off), uint64(end)}
 		switch {
 		case seg.Ok():
-			n, err := rw.writeToMF(seg.FileRangeOf(seg.Range().Intersect(mr)), srcs)
+			fr := seg.FileRangeOf(seg.Range().Intersect(mr))
+			n, err := rw.writeToMF(fr, srcs)
 			done += n
 			rw.off += uint64(n)
 			srcs = srcs.DropFirst64(n)
 			if err != nil {
 				retErr = err
+				goto exitLoop
+			}
+			if n < fr.Length() {
+				// A host write syscall can write less data than requested
+				// (for example, if the host filesystem becomes full). The
+				// remaining data is for the rest of seg, so do not continue
+				// to the next segment. Return the short write.
 				goto exitLoop
 			}
 
@@ -953,25 +961,49 @@ exitLoop:
 var hostWriteThreshold = 16 * uint64(hostarch.PageSize)
 
 func (rw *regularFileReadWriter) writeToMF(fr memmap.FileRange, srcs safemem.BlockSeq) (uint64, error) {
-	if rw.file.inode.fs.mf.IsDiskBacked() && fr.Length() >= hostWriteThreshold {
-		fd, err := rw.file.inode.fs.mf.DataFD(fr)
-		if err != nil {
-			return 0, err
-		}
-		return hostfd.Pwritev2(
-			int32(fd),                     // fd
-			srcs.TakeFirst64(fr.Length()), // srcs
-			int64(fr.Start),               // offset
-			0,                             // flags
-		)
+	mf := rw.file.inode.fs.mf
+	if mf.IsDiskBacked() && fr.Length() >= hostWriteThreshold {
+		return hostWriteToMF(mf, fr, srcs)
 	}
 	// Get internal mappings.
-	ims, err := rw.file.inode.fs.mf.MapInternal(fr, hostarch.Write)
+	ims, err := mf.MapInternal(fr, hostarch.Write)
 	if err != nil {
 		return 0, err
 	}
-	// Copy to internal mappings.
-	return safemem.CopySeq(ims, srcs)
+	if !mf.IsDiskBacked() {
+		// Copy to internal mappings.
+		return safemem.CopySeq(ims, srcs)
+	}
+	// When a page of a disk-backed MemoryFile is touched, the host may have
+	// to allocate disk space for it. If it cannot do this (for example,
+	// because the host filesystem is full), it raises SIGBUS. Thus, copy
+	// with safecopy. If the copy fails, write the remaining data with a host
+	// write syscall, which returns the host error (for example, ENOSPC).
+	n, err := safemem.CopySeqToUnsafe(ims, srcs)
+	if err == nil {
+		return n, nil
+	}
+	m, err := hostWriteToMF(mf, memmap.FileRange{Start: fr.Start + n, End: fr.End}, srcs.DropFirst64(n))
+	return n + m, err
+}
+
+// hostWriteToMF writes up to fr.Length() bytes from srcs to fr in mf with a
+// host write syscall.
+//
+// Preconditions:
+//   - fr.Length() != 0.
+//   - !srcs.IsEmpty().
+func hostWriteToMF(mf *pgalloc.MemoryFile, fr memmap.FileRange, srcs safemem.BlockSeq) (uint64, error) {
+	fd, err := mf.DataFD(fr)
+	if err != nil {
+		return 0, err
+	}
+	return hostfd.Pwritev2(
+		int32(fd),                     // fd
+		srcs.TakeFirst64(fr.Length()), // srcs
+		int64(fr.Start),               // offset
+		0,                             // flags
+	)
 }
 
 // GetSeals returns the current set of seals on a memfd inode.

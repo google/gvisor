@@ -16,8 +16,12 @@ package safemem
 
 import (
 	"bytes"
+	"errors"
 	"reflect"
 	"testing"
+
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/safecopy"
 )
 
 func TestBlockSeqOfEmptyBlock(t *testing.T) {
@@ -213,5 +217,61 @@ func TestBlockSeqDropBeyondLimit(t *testing.T) {
 	bs = bs.DropFirst(2)
 	if got, want := bs.NumBytes(), uint64(0); got != want {
 		t.Errorf("%v.NumBytes(): got %d, wanted %d", bs, got, want)
+	}
+}
+
+func TestCopySeqToUnsafe(t *testing.T) {
+	srcs := BlockSeqFromSlice([]Block{
+		BlockFromSafeSlice([]byte("foo")),
+		BlockFromSafeSlice([]byte("barbaz")),
+	})
+	dstBufs := [][]byte{make([]byte, 2), make([]byte, 4), make([]byte, 5)}
+	dstBlocks := make([]Block, 0, len(dstBufs))
+	for _, buf := range dstBufs {
+		dstBlocks = append(dstBlocks, BlockFromSafeSlice(buf))
+	}
+	n, err := CopySeqToUnsafe(BlockSeqFromSlice(dstBlocks), srcs)
+	if n != 9 || err != nil {
+		t.Fatalf("CopySeqToUnsafe: got (%d, %v), wanted (9, nil)", n, err)
+	}
+	if got, want := bytes.Join(dstBufs, nil), []byte("foobarbaz\x00\x00"); !bytes.Equal(got, want) {
+		t.Errorf("CopySeqToUnsafe copied %q, wanted %q", got, want)
+	}
+}
+
+func TestCopySeqToUnsafeFault(t *testing.T) {
+	pageSize := unix.Getpagesize()
+	fd, err := unix.MemfdCreate("safemem_test", 0)
+	if err != nil {
+		t.Fatalf("MemfdCreate failed: %v", err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, int64(2*pageSize)); err != nil {
+		t.Fatalf("Ftruncate failed: %v", err)
+	}
+	m, err := unix.Mmap(fd, 0, 2*pageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	if err != nil {
+		t.Fatalf("Mmap failed: %v", err)
+	}
+	defer unix.Munmap(m)
+	// Truncate the file so that the second page of the mapping is beyond
+	// its end. Touching that page raises SIGBUS.
+	if err := unix.Ftruncate(fd, int64(pageSize)); err != nil {
+		t.Fatalf("Ftruncate failed: %v", err)
+	}
+
+	src := bytes.Repeat([]byte{1}, 2*pageSize)
+	// The destination Block does not need safecopy, but CopySeqToUnsafe
+	// uses safecopy anyway.
+	n, err := CopySeqToUnsafe(BlockSeqOf(BlockFromSafeSlice(m)), BlockSeqOf(BlockFromSafeSlice(src)))
+	if n != uint64(pageSize) {
+		t.Errorf("CopySeqToUnsafe: got %d bytes copied, wanted %d", n, pageSize)
+	}
+	var busErr safecopy.BusError
+	if !errors.As(err, &busErr) {
+		t.Errorf("CopySeqToUnsafe: got error %v, wanted safecopy.BusError", err)
+	}
+	if !bytes.Equal(m[:pageSize], src[:pageSize]) {
+		t.Errorf("CopySeqToUnsafe did not copy the data before the fault")
 	}
 }
