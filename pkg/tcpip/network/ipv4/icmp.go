@@ -356,8 +356,19 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// DeliverTransportPacket so that is is only done when needed.
 		replyData := stack.PayloadSince(pkt.TransportHeader())
 		defer replyData.Release()
-		localAddressTemporary := pkt.NetworkPacketInfo.LocalAddressTemporary
+		ipHdr := iph
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
+		localAddressTemporary := pkt.NetworkPacketInfo.LocalAddressTemporary
+		replied := false
+		reply := func() bool {
+			if replied {
+				return true
+			}
+			replied = true
+			e.sendICMPEchoReply(replyData, ipHdr, newOptions, localAddressBroadcast, localAddressTemporary)
+			return true
+		}
+		pkt.SetICMPEchoReply(reply)
 
 		// It's possible that a raw socket or per-stack default handler expects
 		// to receive this packet.
@@ -367,17 +378,17 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		} else {
 			e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
 		}
+		pkt.ClearICMPEchoReply()
 		pkt = nil
 
 		// Skip the built-in ICMP echo reply if the request was consumed by a
 		// per-stack default handler. Also preserve the IPv4 behavior for
-		// temporary local addresses: the packet is delivered above, but the
-		// stack does not synthesize an echo reply for it.
+		// temporary local addresses unless the handler explicitly replied above.
 		if defaultHandlerHandled || localAddressTemporary {
 			return
 		}
 
-		e.sendICMPEchoReply(replyData, iph, newOptions, localAddressBroadcast)
+		reply()
 
 	case header.ICMPv4EchoReply:
 		received.echoReply.Increment()
@@ -421,6 +432,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		case header.ICMPv4DestinationHostUnknown:
 			e.handleControl(&icmpv4DestinationHostUnknownSockError{}, pkt)
 		}
+
 	case header.ICMPv4SrcQuench:
 		received.srcQuench.Increment()
 
@@ -450,7 +462,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	}
 }
 
-func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, newOptions header.IPv4Options, localAddressBroadcast bool) {
+func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, newOptions header.IPv4Options, localAddressBroadcast, localAddressTemporary bool) {
 	sent := e.stats.icmp.packetsSent
 	if !e.protocol.allowICMPReply(header.ICMPv4EchoReply, header.ICMPv4UnusedCode) {
 		sent.rateLimited.Increment()
@@ -461,7 +473,11 @@ func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, 
 	// source address MUST be one of its own IP addresses (but not a broadcast
 	// or multicast address).
 	localAddr := ipHdr.DestinationAddress()
+	replySourceAddr := localAddr
 	if localAddressBroadcast || header.IsV4MulticastAddress(localAddr) {
+		localAddr = tcpip.Address{}
+		replySourceAddr = tcpip.Address{}
+	} else if localAddressTemporary {
 		localAddr = tcpip.Address{}
 	}
 
@@ -507,7 +523,10 @@ func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, 
 	replyIPHdrView.Write(newOptions)
 	replyIPHdr := header.IPv4(replyIPHdrView.AsSlice())
 	replyIPHdr.SetHeaderLength(replyHeaderLength)
-	replyIPHdr.SetSourceAddress(r.LocalAddress())
+	if replySourceAddr.BitLen() == 0 {
+		replySourceAddr = r.LocalAddress()
+	}
+	replyIPHdr.SetSourceAddress(replySourceAddr)
 	replyIPHdr.SetDestinationAddress(r.RemoteAddress())
 	replyIPHdr.SetTTL(r.DefaultTTL())
 	replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData.AsSlice())))
