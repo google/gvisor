@@ -249,7 +249,6 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Flags)
 			return syserr.ErrInvalidArgument
 		}
-		// Netstack interfaces are always up.
 	}
 
 	dstNs, err := s.lockSrcAndDst(ctx, attrs)
@@ -257,7 +256,37 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
-	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	err = s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	if err == nil && dstNs == nil && ifinfomsg.Flags&ifinfomsg.Change&linux.IFF_UP != 0 {
+		return s.bringLoopbackUp(ctx, tcpip.NICID(ifinfomsg.Index))
+	}
+	return err
+}
+
+// precondition: s.linkMu is held.
+func (s *Stack) bringLoopbackUp(ctx context.Context, id tcpip.NICID) *syserr.Error {
+	info, ok := s.Stack.SingleNICInfo(id)
+	if !ok || !info.Flags.Loopback || info.Flags.Up {
+		return nil
+	}
+	if err := s.Stack.EnableNIC(id); err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+	s.sendChangeEvent(ctx, id)
+	// install loopback addresses after link comes up (match Linux behavior)
+	addrCtx := inet.WithNetlinkOrigin(ctx, inet.NetlinkOrigin{})
+	for _, addr := range []inet.InterfaceAddr{
+		{Family: linux.AF_INET, PrefixLen: 8, Addr: header.IPv4Loopback.AsSlice()},
+		{Family: linux.AF_INET6, PrefixLen: 128, Addr: header.IPv6Loopback.AsSlice()},
+	} {
+		if addr.Family == linux.AF_INET6 && !s.SupportsIPv6() {
+			continue
+		}
+		if err := s.AddInterfaceAddr(addrCtx, int32(id), addr); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
+			return syserr.FromError(err)
+		}
+	}
+	return nil
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and

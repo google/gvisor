@@ -2289,10 +2289,11 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	linkEP := ethernet.New(loopback.New())
 	opts := stack.NICOptions{
 		Name:               link.Name,
+		Disabled:           true,
 		DeliverLinkPackets: true,
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, nil); err != nil {
 		return nil, err
 	}
 

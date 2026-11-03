@@ -1118,6 +1118,8 @@ TEST(NetlinkRouteTest, AddAndRemoveAddr) {
               PosixErrorIs(EEXIST, _));
 }
 
+void DumpInetAddressSequence(std::vector<std::string>* sequence);
+
 TEST(NetlinkRouteTest, LinkedToNetns) {
   SKIP_IF(IsRunningWithHostinet());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
@@ -1138,6 +1140,20 @@ TEST(NetlinkRouteTest, LinkedToNetns) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  EXPECT_EQ(loopback_link.flags, IFF_LOOPBACK);
+  std::vector<std::string> addresses;
+  ASSERT_NO_FATAL_FAILURE(DumpInetAddressSequence(&addresses));
+  EXPECT_THAT(addresses, IsEmpty());
+  const in_addr loopback_addr = {htonl(INADDR_LOOPBACK)};
+  ASSERT_NO_ERRNO(LinkAddExclusiveLocalAddr(nlsk, loopback_link.index, AF_INET,
+                                            8, &loopback_addr,
+                                            sizeof(loopback_addr)));
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  ASSERT_NO_FATAL_FAILURE(DumpInetAddressSequence(&addresses));
+  EXPECT_THAT(addresses, ::testing::UnorderedElementsAre(
+                             absl::StrFormat("lo/%d/127.0.0.1", AF_INET),
+                             absl::StrFormat("lo/%d/::1", AF_INET6)));
 
   struct in_addr addr;
   ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
