@@ -831,6 +831,11 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, linuxerr.EEXIST
 		}
+		// The start is a file if the path ends at the root of a file bind
+		// mount or at a magic link to a file.
+		if rp.MustBeDir() && !start.isDir() {
+			return nil, linuxerr.ENOTDIR
+		}
 		// ensureOpenableLocked may release renameMu, so pin the dentry first.
 		start.IncRef()
 		err := start.ensureOpenableLocked(ctx, rp, &opts)
