@@ -1659,11 +1659,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				newParent.syntheticChildren++
 				oldParent.syntheticChildren-- // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
 			}
-			renamed.parent.Store(newParent)
-			replaced.parent.Store(oldParent)
 		}
-		renamed.name = newName
-		replaced.name = oldName
+		genericSetParentAndName(fs, renamed, newParent, newName)
+		genericSetParentAndName(fs, replaced, oldParent, oldName)
 		newParent.children[newName] = renamed
 		oldParent.children[oldName] = replaced // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
 		vfsObj.CommitRenameExchangeDentry(&handle, &renamed.vfsd, replacedVFSD)
