@@ -417,6 +417,19 @@ func TestRACKReorderingWindowSaturation(t *testing.T) {
 		if r := &ctx.snd.rc; int(r.ReoWndIncr) != mult || r.ReoWnd != window {
 			t.Fatalf("after %d DSACK rounds: multiplier=%d, window=%s; want %d, %s", round, r.ReoWndIncr, r.ReoWnd, mult, window)
 		}
+		if round == math.MaxUint8 {
+			// The next DSACK must refresh persistence even though its
+			// multiplier is already saturated.
+			ctx.snd.rc.DSACKSeen = false
+			ctx.snd.rc.exitRecovery()
+			ctx.snd.rc.updateRACKReorderWindow()
+		}
+	}
+	if got, want := ctx.snd.rc.RTTSeq, ctx.snd.SndNxt; got != want {
+		t.Errorf("DSACK round boundary = %d, want %d", got, want)
+	}
+	if got, want := ctx.snd.rc.ReoWndPersist, int8(tcpRACKRecoveryThreshold); got != want {
+		t.Errorf("reordering window persistence = %d, want %d", got, want)
 	}
 }
 
