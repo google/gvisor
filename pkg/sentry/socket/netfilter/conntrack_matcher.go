@@ -75,7 +75,7 @@ func (c conntrackMarshaler) marshal(mr matcher) []byte {
 // unmarshal implements matchMaker.unmarshal. The xt_conntrack_mtinfo struct
 // layout differs across revisions (rev1 has a u8 StateMask; rev2/3 widen it to
 // u16 and add fields), so parse with the matching ABI struct.
-func (c conntrackMarshaler) unmarshal(_ IDMapper, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
+func (c conntrackMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
 	m := &conntrackMatcher{rev: c.rev}
 	switch c.rev {
 	case 1:

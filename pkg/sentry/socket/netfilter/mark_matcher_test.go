@@ -63,7 +63,7 @@ func TestMarkMarshalerUnmarshal(t *testing.T) {
 	buf := marshal.Marshal(&info)
 
 	marshaler := markMarshaler{}
-	m, err := marshaler.unmarshal(nil, buf, stack.IPHeaderFilter{})
+	m, err := marshaler.unmarshal(nil, nil, buf, stack.IPHeaderFilter{})
 	if err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
