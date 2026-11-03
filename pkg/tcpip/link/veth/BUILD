@@ -46,6 +46,7 @@ go_test(
     deps = [
         "//pkg/buffer",
         "//pkg/refs",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
