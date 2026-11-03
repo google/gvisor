@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
@@ -100,6 +101,10 @@ type Stack struct {
 	loopbackNIC *nic `state:"nosave"`
 	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
+	// +checklocks:mu
+	defaultDisabledNetworkProtocols map[tcpip.NetworkProtocolNumber]struct{}
+	// +checklocks:mu
+	globalDisabledNetworkProtocols map[tcpip.NetworkProtocolNumber]struct{}
 
 	// nicIDGen is used to generate NIC IDs.
 	nicIDGen atomicbitops.Int32 `state:"nosave"`
@@ -443,25 +448,27 @@ func New(opts Options) *Stack {
 	}
 
 	s := &Stack{
-		transportProtocols:           make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
-		networkProtocols:             make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		nics:                         make(map[tcpip.NICID]*nic),
-		preservedNICs:                make(map[tcpip.NICID]*nic),
-		packetEndpointWriteSupported: opts.AllowPacketEndpointWrite,
-		defaultForwardingEnabled:     make(map[tcpip.NetworkProtocolNumber]struct{}),
-		cleanupEndpoints:             make(map[TransportEndpoint]struct{}),
-		PortManager:                  ports.NewPortManager(),
-		clock:                        clock,
-		clockResolution:              clockResolution,
-		stats:                        opts.Stats.FillIn(),
-		handleLocal:                  opts.HandleLocal,
-		tables:                       opts.IPTables,
-		icmpRateLimiter:              NewICMPRateLimiter(clock),
-		seed:                         secureRNG.Uint32(),
-		nudConfigs:                   opts.NUDConfigs,
-		nudDisp:                      opts.NUDDisp,
-		insecureRNG:                  insecureRNG,
-		secureRNG:                    secureRNG,
+		transportProtocols:              make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
+		networkProtocols:                make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
+		nics:                            make(map[tcpip.NICID]*nic),
+		preservedNICs:                   make(map[tcpip.NICID]*nic),
+		packetEndpointWriteSupported:    opts.AllowPacketEndpointWrite,
+		defaultForwardingEnabled:        make(map[tcpip.NetworkProtocolNumber]struct{}),
+		defaultDisabledNetworkProtocols: make(map[tcpip.NetworkProtocolNumber]struct{}),
+		globalDisabledNetworkProtocols:  make(map[tcpip.NetworkProtocolNumber]struct{}),
+		cleanupEndpoints:                make(map[TransportEndpoint]struct{}),
+		PortManager:                     ports.NewPortManager(),
+		clock:                           clock,
+		clockResolution:                 clockResolution,
+		stats:                           opts.Stats.FillIn(),
+		handleLocal:                     opts.HandleLocal,
+		tables:                          opts.IPTables,
+		icmpRateLimiter:                 NewICMPRateLimiter(clock),
+		seed:                            secureRNG.Uint32(),
+		nudConfigs:                      opts.NUDConfigs,
+		nudDisp:                         opts.NUDDisp,
+		insecureRNG:                     insecureRNG,
+		secureRNG:                       secureRNG,
 		sendBufferSize: tcpip.SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultBufferSize,
@@ -682,6 +689,93 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 	}
 
 	return nil
+}
+
+// SetNICNetworkProtocolEnabled enables/disables the network protocol on the
+// NIC.
+func (s *Stack) SetNICNetworkProtocolEnabled(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	nic, ok := s.nics[id]
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+	return nic.setNetworkProtocolEnabled(protocol, enable)
+}
+
+// NICNetworkProtocolEnabled returns if the network protocol is enabled on the
+// NIC.
+func (s *Stack) NICNetworkProtocolEnabled(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	nic, ok := s.nics[id]
+	if !ok {
+		return false, &tcpip.ErrUnknownNICID{}
+	}
+	return nic.networkProtocolEnabled(protocol)
+}
+
+// SetDefaultNetworkProtocolEnabled sets if the network protocol should be
+// enabled by default for new NICs.
+func (s *Stack) SetDefaultNetworkProtocolEnabled(protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+	if _, ok := s.networkProtocols[protocol]; !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if enable {
+		delete(s.defaultDisabledNetworkProtocols, protocol)
+	} else {
+		s.defaultDisabledNetworkProtocols[protocol] = struct{}{}
+	}
+	return nil
+}
+
+// DefaultNetworkProtocolEnabled returns if the network protocol is enabled by
+// default for new NICs.
+func (s *Stack) DefaultNetworkProtocolEnabled(protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
+	if _, ok := s.networkProtocols[protocol]; !ok {
+		return false, &tcpip.ErrUnknownProtocol{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, disabled := s.defaultDisabledNetworkProtocols[protocol]
+	return !disabled, nil
+}
+
+// SetGlobalNetworkProtocolEnabled enables/disables the network protocol on all
+// NICs and sets the default for new NICs.
+func (s *Stack) SetGlobalNetworkProtocolEnabled(protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+	if _, ok := s.networkProtocols[protocol]; !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if enable {
+		delete(s.globalDisabledNetworkProtocols, protocol)
+		delete(s.defaultDisabledNetworkProtocols, protocol)
+	} else {
+		s.globalDisabledNetworkProtocols[protocol] = struct{}{}
+		s.defaultDisabledNetworkProtocols[protocol] = struct{}{}
+	}
+	for _, nic := range s.nics {
+		if err := nic.setNetworkProtocolEnabled(protocol, enable); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GlobalNetworkProtocolEnabled returns the stack-wide network protocol
+// enabled state.
+func (s *Stack) GlobalNetworkProtocolEnabled(protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
+	if _, ok := s.networkProtocols[protocol]; !ok {
+		return false, &tcpip.ErrUnknownProtocol{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, disabled := s.globalDisabledNetworkProtocols[protocol]
+	return !disabled, nil
 }
 
 // AddMulticastRoute adds a multicast route to be used for the specified
@@ -1036,6 +1130,11 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	for proto := range s.defaultForwardingEnabled {
 		if _, err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))
+		}
+	}
+	for proto := range s.defaultDisabledNetworkProtocols {
+		if err := n.setNetworkProtocolEnabled(proto, false); err != nil {
+			return err
 		}
 	}
 	s.nics[id] = n
