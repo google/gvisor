@@ -31,6 +31,82 @@ func init() {
 	testbench.Initialize(flag.CommandLine)
 }
 
+// sendSACKSYN offers SACK, optionally with timestamps, and returns the options
+// the listener sent in its SYN-ACK. Keep the connection open until test cleanup.
+func sendSACKSYN(t *testing.T, dut *testbench.DUT, port uint16, timestamps bool) (*testbench.TCPIPv4, header.TCPSynOptions) {
+	t.Helper()
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+	t.Cleanup(func() { conn.Close(t) })
+	var options [header.TCPOptionsMaximumSize]byte
+	n := header.EncodeSACKPermittedOption(options[:])
+	if timestamps {
+		n += header.EncodeTSOption(1, 0, options[n:])
+	}
+	n += header.AddTCPOptionPadding(options[:], n)
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: options[:n]})
+	reply, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	if err != nil {
+		t.Fatalf("waiting for SYN-ACK: %v", err)
+	}
+	return &conn, header.ParseSynOptions(reply.Options, true /* isAck */)
+}
+
+// fillSYNQueue returns a connection whose SYN was saved and one that received
+// a SYN cookie. Linux and gVisor can save different numbers of half-open
+// connections for the same listen backlog. Both omit SACK from the cookie
+// SYN-ACK when the peer hasn't offered timestamps:
+// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_input.c#L7232-L7239
+func fillSYNQueue(t *testing.T, dut *testbench.DUT, port uint16) (*testbench.TCPIPv4, *testbench.TCPIPv4) {
+	t.Helper()
+	saved, opts := sendSACKSYN(t, dut, port, false)
+	if !opts.SACKPermitted {
+		t.Fatal("first SYN-ACK did not negotiate SACK on an empty queue")
+	}
+	for range 16 {
+		conn, opts := sendSACKSYN(t, dut, port, false)
+		if !opts.SACKPermitted {
+			return saved, conn
+		}
+	}
+	t.Fatal("listener never switched to SYN cookies")
+	return nil, nil
+}
+
+func TestSynCookieSACK(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listenFD, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1 /* backlog */)
+	t.Cleanup(func() { dut.Close(t, listenFD) })
+	fillSYNQueue(t, &dut, port)
+	conn, opts := sendSACKSYN(t, &dut, port, true)
+	if !opts.TS || opts.TSEcr != 1 || !opts.SACKPermitted {
+		t.Fatalf("cookie SYN-ACK options = %+v, want echoed TSVal 1 and SACK", opts)
+	}
+
+	var ts [12]byte
+	n := header.EncodeTSOption(2, opts.TSVal, ts[:])
+	header.AddTCPOptionPadding(ts[:], n)
+	ack := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: ts[:]}
+	conn.Send(t, ack)
+	dut.PollOne(t, listenFD, unix.POLLIN, time.Second)
+	fd, _ := dut.Accept(t, listenFD)
+	t.Cleanup(func() { dut.Close(t, fd) })
+
+	// A SACK block for the byte beyond the hole proves that the accepted
+	// socket recovered the option from the handshake.
+	hole := *conn.LocalSeqNum(t)
+	ack.SeqNum = testbench.Uint32(uint32(hole + 1))
+	conn.Send(t, ack, &testbench.Payload{Bytes: []byte{1}})
+	reply, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(hole))}, time.Second)
+	if err != nil {
+		t.Fatalf("waiting for ACK of out-of-order data: %v", err)
+	}
+	got := header.ParseTCPOptions(reply.Options).SACKBlocks
+	want := []header.SACKBlock{{Start: hole + 1, End: hole + 2}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("SACK blocks (-want +got):\n%s", diff)
+	}
+}
+
 // TestTCPSynCookie checks which final handshake flags a listener accepts
 // for a saved SYN and for a SYN cookie.
 func TestTCPSynCookie(t *testing.T) {
@@ -57,43 +133,8 @@ func TestTCPSynCookie(t *testing.T) {
 			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1 /* backlog */)
 			defer dut.Close(t, listenFD)
 
-			// Offer SACK without timestamps. Like gVisor, Linux omits SACK
-			// from a cookie SYN-ACK when the peer hasn't offered timestamps:
-			// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_input.c#L7232-L7239
-			var options [4]byte
-			n := header.EncodeSACKPermittedOption(options[:])
-			header.AddTCPOptionPadding(options[:], n)
+			withoutSynCookieConn, withSynCookieConn := fillSYNQueue(t, &dut, remotePort)
 			synACK := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}
-			sendSYN := func() (*testbench.TCPIPv4, bool) {
-				t.Helper()
-				conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-				t.Cleanup(func() { conn.Close(t) })
-				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: options[:]})
-				reply, err := conn.Expect(t, synACK, time.Second)
-				if err != nil {
-					t.Fatalf("waiting for SYN-ACK: %v", err)
-				}
-				return &conn, header.ParseSynOptions(reply.Options, true /* isAck */).SACKPermitted
-			}
-
-			withoutSynCookieConn, sack := sendSYN()
-			if !sack {
-				t.Fatal("first SYN-ACK did not negotiate SACK on an empty queue")
-			}
-			// Keep each SYN outstanding. Linux and gVisor can save different
-			// numbers of half-open connections for the same listen backlog.
-			var withSynCookieConn *testbench.TCPIPv4
-			for range 16 {
-				conn, sack := sendSYN()
-				if !sack {
-					withSynCookieConn = conn
-					break
-				}
-			}
-			if withSynCookieConn == nil {
-				t.Fatal("listener never switched to SYN cookies")
-			}
-
 			for _, c := range []struct {
 				desc             string
 				conn             *testbench.TCPIPv4
