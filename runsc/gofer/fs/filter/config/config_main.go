@@ -276,8 +276,22 @@ var lisafsFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_MKDIRAT:    seccomp.MatchAll{},
-	unix.SYS_MKNODAT:    seccomp.MatchAll{},
+	unix.SYS_MKDIRAT: seccomp.MatchAll{},
+	// Allow creating only regular files and (0, 0) character device whiteouts.
+	unix.SYS_MKNODAT: seccomp.Or{
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.MaskedEqual(unix.S_IFMT, unix.S_IFREG),
+			seccomp.EqualTo(0),
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.MaskedEqual(unix.S_IFMT, unix.S_IFCHR),
+			seccomp.EqualTo(0),
+		},
+	},
 	unix.SYS_READLINKAT: seccomp.MatchAll{},
 	unix.SYS_RENAMEAT2:  seccomp.MatchAll{},
 	unix.SYS_SYMLINKAT:  seccomp.MatchAll{},
