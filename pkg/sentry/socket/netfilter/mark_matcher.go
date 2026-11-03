@@ -59,7 +59,7 @@ func (markMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (markMarshaler) unmarshal(_ IDMapper, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
+func (markMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTMarkMtinfo1 {
 		return nil, fmt.Errorf("buf has insufficient size for mark match: %d", len(buf))
 	}

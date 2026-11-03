@@ -86,7 +86,7 @@ func (multiportMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal converts binary data into a multiportMatcher instance.
-func (multiportMarshaler) unmarshal(_ IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (multiportMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	var matchData linux.XTMultiport
 
 	nflog("%s: raw: XTMultiport: %+v", matcherPfxMultiport, buf)
