@@ -13,10 +13,12 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <linux/sched.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdint.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -28,7 +30,9 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/rlimit_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -132,6 +136,73 @@ TEST(SchedSetschedulerTest, BasicSetGet) {
   int policy = sched_getscheduler(0);
   EXPECT_THAT(policy, SyscallSucceeds());
   EXPECT_EQ(policy, SCHED_BATCH);
+}
+
+// Without CAP_SYS_NICE and with an RLIMIT_RTPRIO of 0, Linux refuses to set a
+// real-time policy with EPERM.
+TEST(SchedSetschedulerTest, RealtimeWithoutPrivilegeReturnsEPERM) {
+  AutoCapability cap(CAP_SYS_NICE, false);
+  auto rlimit =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_RTPRIO, 0));
+
+  struct sched_param param = {};
+  param.sched_priority = 1;
+  EXPECT_THAT(sched_setscheduler(0, SCHED_FIFO, &param),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(sched_setscheduler(0, SCHED_RR, &param),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(sched_setscheduler(0, SCHED_FIFO | SCHED_RESET_ON_FORK, &param),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(sched_getscheduler(0), SyscallSucceedsWithValue(SCHED_OTHER));
+}
+
+// Real-time policies take a priority from 1 to 99.
+TEST(SchedSetschedulerTest, RealtimeInvalidPriorityReturnsEINVAL) {
+  AutoCapability cap(CAP_SYS_NICE, false);
+  auto rlimit =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_RTPRIO, 0));
+
+  struct sched_param param = {};
+  param.sched_priority = 0;
+  EXPECT_THAT(sched_setscheduler(0, SCHED_FIFO, &param),
+              SyscallFailsWithErrno(EINVAL));
+  param.sched_priority = 100;
+  EXPECT_THAT(sched_setscheduler(0, SCHED_RR, &param),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// Real-time policies take priorities from 1 to 99, and the others only 0.
+TEST(SchedGetPriorityTest, RealtimeRange) {
+  EXPECT_THAT(sched_get_priority_min(SCHED_FIFO), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(sched_get_priority_max(SCHED_FIFO), SyscallSucceedsWithValue(99));
+  EXPECT_THAT(sched_get_priority_min(SCHED_RR), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(sched_get_priority_max(SCHED_RR), SyscallSucceedsWithValue(99));
+  EXPECT_THAT(sched_get_priority_min(SCHED_OTHER), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(sched_get_priority_max(SCHED_OTHER), SyscallSucceedsWithValue(0));
+}
+
+// sched_setattr(2) refuses real-time policies as sched_setscheduler(2) does,
+// with or without SCHED_FLAG_RESET_ON_FORK.
+TEST(SchedAttrTest, RealtimeWithoutPrivilegeReturnsEPERM) {
+  AutoCapability cap(CAP_SYS_NICE, false);
+  auto rlimit =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_RTPRIO, 0));
+
+  struct sched_attr attr = {};
+  attr.size = sizeof(attr);
+  attr.sched_policy = SCHED_FIFO;
+  attr.sched_priority = 1;
+  EXPECT_THAT(sched_setattr(0, &attr, 0), SyscallFailsWithErrno(EPERM));
+  attr.sched_policy = SCHED_RR;
+  EXPECT_THAT(sched_setattr(0, &attr, 0), SyscallFailsWithErrno(EPERM));
+  attr.sched_flags = SCHED_FLAG_RESET_ON_FORK;
+  EXPECT_THAT(sched_setattr(0, &attr, 0), SyscallFailsWithErrno(EPERM));
+  attr.sched_flags = 0;
+  attr.sched_priority = 0;
+  EXPECT_THAT(sched_setattr(0, &attr, 0), SyscallFailsWithErrno(EINVAL));
+  attr.sched_priority = 100;
+  EXPECT_THAT(sched_setattr(0, &attr, 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(sched_getscheduler(0), SyscallSucceedsWithValue(SCHED_OTHER));
 }
 
 TEST(SchedAttrTest, InvalidPIDReturnsEINVAL) {

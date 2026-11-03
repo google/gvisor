@@ -31,6 +31,10 @@ const (
 	SCHED_RESET_ON_FORK = 0x40000000
 )
 
+// MAX_RT_PRIO is one more than the highest priority of SCHED_FIFO and
+// SCHED_RR, from include/linux/sched/prio.h.
+const MAX_RT_PRIO = 100
+
 // Scheduling priority group selectors.
 const (
 	PRIO_PGRP    = 0x1

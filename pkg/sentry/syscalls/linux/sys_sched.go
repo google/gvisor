@@ -30,6 +30,24 @@ func isSchedulerSupported(policy uint) bool {
 	return policy == linux.SCHED_NORMAL || policy == linux.SCHED_BATCH || policy == linux.SCHED_IDLE
 }
 
+// isRealtimeScheduler returns true if policy is SCHED_FIFO or SCHED_RR.
+func isRealtimeScheduler(policy uint) bool {
+	return policy == linux.SCHED_FIFO || policy == linux.SCHED_RR
+}
+
+// setRealtimeScheduler returns the error for a request to set a real-time
+// policy with the given priority. gVisor does not implement real-time
+// policies, so it answers as Linux does to a caller without CAP_SYS_NICE and
+// with an RLIMIT_RTPRIO of 0: EINVAL for a priority outside [1, 99], and
+// otherwise EPERM. See kernel/sched/syscalls.c:__sched_setscheduler() and
+// user_check_sched_setscheduler().
+func setRealtimeScheduler(priority int64) error {
+	if priority < 1 || priority > linux.MAX_RT_PRIO-1 {
+		return linuxerr.EINVAL
+	}
+	return linuxerr.EPERM
+}
+
 // SchedParam replicates struct sched_param in sched.h.
 //
 // +marshal
@@ -91,7 +109,8 @@ func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments
 		return 0, nil, linuxerr.EINVAL
 	}
 	policy := uint(uPolicy)
-	if !isSchedulerSupported(policy) {
+	realtime := isRealtimeScheduler(policy &^ linux.SCHED_RESET_ON_FORK)
+	if !realtime && !isSchedulerSupported(policy) {
 		return 0, nil, linuxerr.EINVAL
 	}
 
@@ -114,6 +133,9 @@ func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments
 	if _, err := r.CopyIn(t, param); err != nil {
 		return 0, nil, linuxerr.EINVAL
 	}
+	if realtime {
+		return 0, nil, setRealtimeScheduler(int64(r.schedPriority))
+	}
 	if r.schedPriority != onlyPriority {
 		return 0, nil, linuxerr.EINVAL
 	}
@@ -125,10 +147,16 @@ func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments
 
 // SchedGetPriorityMax implements linux syscall sched_get_priority_max(2).
 func SchedGetPriorityMax(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	if isRealtimeScheduler(uint(args[0].Int())) {
+		return linux.MAX_RT_PRIO - 1, nil, nil
+	}
 	return onlyPriority, nil, nil
 }
 
 // SchedGetPriorityMin implements linux syscall sched_get_priority_min(2).
 func SchedGetPriorityMin(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	if isRealtimeScheduler(uint(args[0].Int())) {
+		return 1, nil, nil
+	}
 	return onlyPriority, nil, nil
 }
