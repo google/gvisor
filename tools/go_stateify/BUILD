@@ -7,7 +7,10 @@ package(
 
 go_binary(
     name = "stateify",
-    srcs = ["main.go"],
+    srcs = [
+        "imports.go",
+        "main.go",
+    ],
     visibility = ["//:sandbox"],
     deps = ["//tools/constraintutil"],
 )
