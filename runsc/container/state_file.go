@@ -23,10 +23,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/gofrs/flock"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const stateFileExtension = "state"
@@ -276,8 +274,8 @@ type StateFile struct {
 	// be preserved across commands.
 	//
 
-	once  sync.Once    `nojson:"true"`
-	flock *flock.Flock `nojson:"true"`
+	// lockFile is the lock file, open and locked while the lock is held.
+	lockFile *os.File `nojson:"true"`
 
 	// loaded is the state file as last loaded or saved.
 	// Stays open so that its inode number cannot be reused.
@@ -286,15 +284,72 @@ type StateFile struct {
 	loaded *os.File `nojson:"true"`
 }
 
-// lock globally locks all locking operations for the container.
+// lock globally locks all locking operations for the container, and makes
+// the lock file if it doesn't exist.
 func (s *StateFile) lock() error {
-	s.once.Do(func() {
-		s.flock = flock.New(s.lockPath())
-	})
-	if err := s.flock.Lock(); err != nil {
-		return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+	return s.lockFlags(os.O_CREATE)
+}
+
+// lockExisting is lock for a container that must still exist. LockForNew
+// makes the lock file and Destroy removes it, so once it's gone, so is the
+// container: lockExisting then returns an error for which os.IsNotExist is
+// true, rather than make the file again, which nothing would remove.
+func (s *StateFile) lockExisting() error {
+	return s.lockFlags(0)
+}
+
+// lockFlags opens the lock file, with flags added to O_RDWR, and locks it.
+//
+// Destroy removes the lock file while it holds the lock, so a command that
+// opened the file before then gets its lock once nobody else can open the
+// file, which excludes nobody. So the lock is only kept once it's on the
+// file at the lock path.
+func (s *StateFile) lockFlags(flags int) error {
+	if s.lockFile != nil {
+		return nil
 	}
-	return nil
+	path := s.lockPath()
+	for {
+		// Read-write: NFS implements flock(2) with fcntl(2) locks, and an
+		// exclusive one needs a file open for writing.
+		f, err := os.OpenFile(path, os.O_RDWR|flags, 0600)
+		if os.IsNotExist(err) {
+			return err
+		}
+		if err != nil {
+			return fmt.Errorf("acquiring lock on %q: %v", path, err)
+		}
+		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("acquiring lock on %q: %v", path, err)
+		}
+		current, err := isFileAt(f, path)
+		if err != nil {
+			_ = f.Close()
+			return fmt.Errorf("acquiring lock on %q: %v", path, err)
+		}
+		if current {
+			s.lockFile = f
+			return nil
+		}
+		_ = f.Close()
+	}
+}
+
+// isFileAt reports whether f is the file at path.
+func isFileAt(f *os.File, path string) (bool, error) {
+	held, err := f.Stat()
+	if err != nil {
+		return false, err
+	}
+	current, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return os.SameFile(held, current), nil
 }
 
 // LockForNew acquires the lock and checks if the state file doesn't exist. This
@@ -318,32 +373,41 @@ func (s *StateFile) LockForNew() error {
 
 // unlock globally unlocks all locking operations for the container.
 func (s *StateFile) unlock() error {
-	if !s.flock.Locked() {
+	if s.lockFile == nil {
 		panic("unlock called without lock held")
 	}
 
-	if err := s.flock.Unlock(); err != nil {
-		log.Warningf("Error to release lock on %q: %v", s.flock, err)
-		return fmt.Errorf("releasing lock on %q: %v", s.flock, err)
+	if err := s.releaseLock(); err != nil {
+		log.Warningf("Error to release lock on %q: %v", s.lockPath(), err)
+		return fmt.Errorf("releasing lock on %q: %v", s.lockPath(), err)
 	}
 	return nil
 }
 
 // UnlockOrDie is the same as unlock() but panics in case of failure.
 func (s *StateFile) UnlockOrDie() {
-	if !s.flock.Locked() {
+	if s.lockFile == nil {
 		panic("unlock called without lock held")
 	}
-	if err := s.flock.Unlock(); err != nil {
-		panic(fmt.Sprintf("Error releasing lock on %q: %v", s.flock, err))
+	if err := s.releaseLock(); err != nil {
+		panic(fmt.Sprintf("Error releasing lock on %q: %v", s.lockPath(), err))
 	}
+}
+
+func (s *StateFile) releaseLock() error {
+	if err := unix.Flock(int(s.lockFile.Fd()), unix.LOCK_UN); err != nil {
+		return err
+	}
+	_ = s.lockFile.Close()
+	s.lockFile = nil
+	return nil
 }
 
 // SaveLocked saves 'v' to the state file.
 //
 // Preconditions: lock(*) must been called before.
 func (s *StateFile) SaveLocked(v any) error {
-	if !s.flock.Locked() {
+	if s.lockFile == nil {
 		panic("saveLocked called without lock held")
 	}
 
@@ -380,7 +444,7 @@ func (s *StateFile) load(v any, opts LoadOpts) error {
 	if opts.ReadOnly {
 		return s.loadLocked(v)
 	}
-	if err := s.lock(); err != nil {
+	if err := s.lockExisting(); err != nil {
 		return err
 	}
 	defer s.UnlockOrDie()
@@ -444,13 +508,10 @@ func (s *StateFile) setLoaded(f *os.File) {
 
 func (s *StateFile) close() error {
 	s.setLoaded(nil)
-	if s.flock == nil {
-		return nil
-	}
-	if s.flock.Locked() {
+	if s.lockFile != nil {
 		panic("Closing locked file")
 	}
-	return s.flock.Close()
+	return nil
 }
 
 func buildPath(rootDir string, id FullID, extension string) string {
