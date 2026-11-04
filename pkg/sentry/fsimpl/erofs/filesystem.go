@@ -444,8 +444,8 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 	if err != nil {
 		return nil, err
 	}
-	d.DecRef(ctx)
-	return nil, linuxerr.ENOTSUP
+	defer d.DecRef(ctx)
+	return d.inode.listXattr(rp.Credentials())
 }
 
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
@@ -454,8 +454,8 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	if err != nil {
 		return "", err
 	}
-	d.DecRef(ctx)
-	return "", linuxerr.ENOTSUP
+	defer d.DecRef(ctx)
+	return d.inode.getXattr(rp.Credentials(), opts)
 }
 
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
