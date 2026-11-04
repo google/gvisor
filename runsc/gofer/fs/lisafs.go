@@ -1400,6 +1400,10 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 				}
 				dirent.DevMinor = primitive.Uint32(unix.Minor(stat.Dev))
 				dirent.DevMajor = primitive.Uint32(unix.Major(stat.Dev))
+			} else if ftype == linux.DT_CHR {
+				if _, err := fsutil.StatAt(fd.hostFD, name); err != nil {
+					return
+				}
 			}
 			recordDirent(dirent)
 			bytesRead += int(reclen)
