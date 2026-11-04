@@ -270,8 +270,7 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 	}
 
 	if err := cmd.Run(); err != nil {
-		ws := err.(*exec.ExitError).Sys().(syscall.WaitStatus)
-		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
+		t.Errorf("test %q failed: %v", tc.FullName(), err)
 	}
 }
 
