@@ -200,6 +200,21 @@ type sender struct {
 	// corkTimer is used to drain the segments which are held when TCP_CORK
 	// option is enabled.
 	corkTimer timer `state:"nosave"`
+
+	// delayedACKTimer sends a delayed acknowledgment, see maybeDelayAck.
+	delayedACKTimer timer `state:"nosave"`
+
+	// interactive indicates that data is sent shortly after data is
+	// received (e.g. request/response traffic), when acknowledgments are
+	// delayed, see maybeDelayAck.
+	interactive bool
+
+	// lastDataRcvd is the time in-order data was last received.
+	lastDataRcvd tcpip.MonotonicTime
+
+	// gapFilled indicates that received data filled a gap in the sequence
+	// space, which is acknowledged immediately, see maybeDelayAck.
+	gapFilled bool
 }
 
 // protectedWriteList wraps the write list, checking for invalid state when
@@ -315,6 +330,7 @@ func initSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uin
 	ep.snd.reorderTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.rc.reorderTimerExpired))
 	ep.snd.probeTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.probeTimerExpired))
 	ep.snd.corkTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.corkTimerExpired))
+	ep.snd.delayedACKTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.delayedACKTimerExpired))
 
 	ep.snd.updateMaxPayloadSize(int(ep.snd.ep.route.MTU()), 0)
 	// Initialize SACK Scoreboard after updating max payload size as we use
@@ -1863,6 +1879,10 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	}
 	seg.xmitTime = s.ep.stack.Clock().NowMonotonic()
 	seg.xmitCount++
+
+	if s.ep.delayedACK && seg.payloadSize() != 0 && seg.xmitTime.Sub(s.lastDataRcvd) < delayedACKTimeout {
+		s.interactive = true
+	}
 	seg.lost = false
 
 	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
@@ -1896,8 +1916,10 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 
 	rcvNxt, rcvWnd := s.ep.rcv.getSendParams()
 
-	// Remember the max sent ack.
+	// Remember the max sent ack, no acknowledgment is pending.
 	s.MaxSentAck = rcvNxt
+	s.delayedACKTimer.disable()
+	s.gapFilled = false
 
 	// We need to clone the packet because sendRaw takes ownership of pkt,
 	// and pkt could be reprocessed later on (i.e retrasmission).
@@ -1917,8 +1939,10 @@ func (s *sender) sendEmptyAck(seq seqnum.Value, sackBlocks []header.SACKBlock) t
 
 	rcvNxt, rcvWnd := s.ep.rcv.getSendParams()
 
-	// Remember the max sent ack.
+	// Remember the max sent ack, no acknowledgment is pending.
 	s.MaxSentAck = rcvNxt
+	s.delayedACKTimer.disable()
+	s.gapFilled = false
 
 	return s.ep.sendEmptyRaw(header.TCPFlagAck, seq, rcvNxt, rcvWnd, sackBlocks)
 }
@@ -1963,5 +1987,54 @@ func (s *sender) corkTimerExpired() tcpip.Error {
 	seg.flags = header.TCPFlagAck | header.TCPFlagPsh
 	// Drain all the segments.
 	s.sendData()
+	return nil
+}
+
+// delayedACKTimeout is the maximum delay of an acknowledgment, as Linux
+// TCP_DELACK_MIN.
+const delayedACKTimeout = 40 * time.Millisecond
+
+// maybeDelayAck acknowledges received data, delaying the acknowledgment if
+// enabled (see tcpip.TCPDelayedACKOption) so that it can be sent along with
+// data.
+//
+// As in Linux, acknowledgments are only delayed for interactive traffic, where
+// data is sent shortly after data is received, and until the delayed
+// acknowledgment had to be sent alone. Otherwise (e.g. bulk transfers, slow
+// start) delaying acknowledgments would stall a sender waiting for them.
+//
+// Acknowledgments are sent immediately for at least every second full-sized
+// segment, for out of order segments and for segments filling a gap (RFC 9293,
+// section 3.8.6.3; RFC 5681, section 4.2).
+// +checklocks:s.ep.mu
+func (s *sender) maybeDelayAck() {
+	if s.ep.delayedACK {
+		s.lastDataRcvd = s.ep.stack.Clock().NowMonotonic()
+	}
+
+	if !s.ep.delayedACK || !s.interactive || s.gapFilled || s.ep.rcv.pendingRcvdSegments.Len() > 0 ||
+		int(s.MaxSentAck.Size(s.ep.rcv.RcvNxt)) > s.MaxPayloadSize {
+		s.sendAck()
+		return
+	}
+
+	if !s.delayedACKTimer.enabled() {
+		s.delayedACKTimer.enable(delayedACKTimeout)
+	}
+}
+
+// delayedACKTimerExpired sends a pending delayed acknowledgment.
+// +checklocks:s.ep.mu
+func (s *sender) delayedACKTimerExpired() tcpip.Error {
+	if s.delayedACKTimer.isUninitialized() || !s.delayedACKTimer.checkExpiration() {
+		return nil
+	}
+
+	// no data was sent to carry the acknowledgment
+	if s.ep.rcv.RcvNxt != s.MaxSentAck {
+		s.interactive = false
+		s.sendAck()
+	}
+
 	return nil
 }

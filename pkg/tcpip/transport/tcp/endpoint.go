@@ -591,6 +591,10 @@ type Endpoint struct {
 	// closed.
 	tcpLingerTimeout time.Duration
 
+	// delayedACK indicates that received data is acknowledged with a delay,
+	// see tcpip.TCPDelayedACKOption.
+	delayedACK bool
+
 	// closed indicates that the user has called closed on the
 	// endpoint and at this point the endpoint is only around
 	// to complete the TCP shutdown.
@@ -929,6 +933,11 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		e.tcpLingerTimeout = time.Duration(tcpLT)
 	}
 
+	var da tcpip.TCPDelayedACKOption
+	if err := s.TransportProtocolOption(ProtocolNumber, &da); err == nil {
+		e.delayedACK = bool(da)
+	}
+
 	var synRetries tcpip.TCPSynRetriesOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &synRetries); err == nil {
 		e.maxSynRetries = uint8(synRetries)
@@ -1215,6 +1224,7 @@ func (e *Endpoint) cleanupLocked() {
 		e.snd.probeTimer.cleanup()
 		e.snd.reorderTimer.cleanup()
 		e.snd.corkTimer.cleanup()
+		e.snd.delayedACKTimer.cleanup()
 	}
 
 	if e.finWait2Timer != nil {

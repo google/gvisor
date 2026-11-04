@@ -1302,7 +1302,7 @@ func (e *Endpoint) handleSegmentsLocked() tcpip.Error {
 
 	// Send an ACK for all processed packets if needed.
 	if e.rcv.RcvNxt != e.snd.MaxSentAck {
-		e.snd.sendAck()
+		e.snd.maybeDelayAck()
 	}
 
 	e.resetKeepaliveTimer(true /* receivedData */)
