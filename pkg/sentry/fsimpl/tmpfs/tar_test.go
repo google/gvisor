@@ -223,6 +223,69 @@ func TestTarRegularFileRoundTrip(t *testing.T) {
 	}
 }
 
+// tarHeaderHookWriter passes writes through to w, and calls onHeader with the
+// entry name of each ustar header block written to it.
+type tarHeaderHookWriter struct {
+	w        io.Writer
+	onHeader func(name string)
+}
+
+// Write implements io.Writer.Write.
+func (hw *tarHeaderHookWriter) Write(p []byte) (int, error) {
+	// archive/tar.Writer writes each header block with a single Write call.
+	if len(p) == 512 && bytes.HasPrefix(p[257:], []byte("ustar")) {
+		name, _, _ := bytes.Cut(p[:100], []byte{0})
+		hw.onHeader(string(name))
+	}
+	return hw.w.Write(p)
+}
+
+// TestTarRegularFileSizeChange checks that the size of a regular file cannot
+// change between the write of its tar header and the copy of its contents.
+func TestTarRegularFileSizeChange(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		newSize uint64
+	}{
+		{name: "grow", newSize: 3 << 12},
+		{name: "shrink", newSize: 1 << 12},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			want := randomBytes(2 << 12)
+			fs := mountFromTarTestOnly(t, ctx, tarWithFile(t, "./file", want))
+			rf := fs.root.inode.impl.(*directory).childMap["file"].inode.impl.(*regularFile)
+
+			resized := false
+			var out bytes.Buffer
+			dst := &tarHeaderHookWriter{w: &out, onHeader: func(name string) {
+				if name != "./file" {
+					return
+				}
+				// Resize the file as a concurrent write or truncate would. This
+				// is only possible if tarWrite does not hold inode.mu.
+				if !rf.inode.mu.mu.TryLock() {
+					return
+				}
+				defer rf.inode.mu.mu.Unlock()
+				if err := rf.truncateNoTimeUpdateLocked(tc.newSize); err != nil {
+					t.Errorf("truncateNoTimeUpdateLocked(%d): %v", tc.newSize, err)
+				}
+				resized = true
+			}}
+			if err := fs.tarWrite(ctx, dst, tarDefaultWriterCallbacks{}); err != nil {
+				t.Fatalf("tarWrite: %v", err)
+			}
+			if resized {
+				t.Errorf("./file was resized after its tar header was written")
+			}
+			if got := readFileFromTar(t, &out, "./file"); !bytes.Equal(got, want) {
+				t.Errorf("./file content differs after round trip (got %d bytes, want %d)", len(got), len(want))
+			}
+		})
+	}
+}
+
 // TestTarRegularFileAllocation checks that restore and archive memory use does
 // not scale with file size.
 func TestTarRegularFileAllocation(t *testing.T) {
