@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"strings"
@@ -47,10 +48,10 @@ import (
 )
 
 var (
-	testServerAddr4 = tcpip.AddrFrom4([4]byte{198, 51, 100, 1})
-	testClientAddr4 = tcpip.AddrFrom4([4]byte{198, 51, 100, 2})
-	testServerAddr6 = tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
-	testClientAddr6 = tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	testServerAddr4 = netip.AddrFrom4([4]byte{198, 51, 100, 1})
+	testClientAddr4 = netip.AddrFrom4([4]byte{198, 51, 100, 2})
+	testServerAddr6 = netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	testClientAddr6 = netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
 )
 
 type halfClosePipeConn struct {
@@ -237,11 +238,11 @@ func newTestClientStack(t *testing.T, clientFD int) *stack.Stack {
 	for _, pa := range []tcpip.ProtocolAddress{
 		{
 			Protocol:          ipv4.ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{Address: testClientAddr4, PrefixLen: 24},
+			AddressWithPrefix: netip.PrefixFrom(testClientAddr4, 24),
 		},
 		{
 			Protocol:          ipv6.ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{Address: testClientAddr6, PrefixLen: 64},
+			AddressWithPrefix: netip.PrefixFrom(testClientAddr6, 64),
 		},
 	} {
 		if err := st.AddProtocolAddress(1, pa, stack.AddressProperties{}); err != nil {
@@ -564,7 +565,7 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 		}
 	}()
 
-	localInterfaceAddr := tcpip.AddrFrom4([4]byte{198, 51, 100, 99})
+	localInterfaceAddr := netip.AddrFrom4([4]byte{198, 51, 100, 99})
 	ef, err := egressfilter.New(egressfilter.Options{
 		LocalAddrs: []net.IP{net.IPv4(198, 51, 100, 99)},
 	})
@@ -589,17 +590,17 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		netProto tcpip.NetworkProtocolNumber
-		addr     tcpip.Address
+		addr     netip.Addr
 	}{
 		{
 			name:     "ipv4_current_network_subnet",
 			netProto: ipv4.ProtocolNumber,
-			addr:     tcpip.AddrFrom4([4]byte{0, 0, 0, 1}),
+			addr:     netip.AddrFrom4([4]byte{0, 0, 0, 1}),
 		},
 		{
 			name:     "ipv4_link_local_unicast",
 			netProto: ipv4.ProtocolNumber,
-			addr:     tcpip.AddrFrom4([4]byte{169, 254, 169, 254}),
+			addr:     netip.AddrFrom4([4]byte{169, 254, 169, 254}),
 		},
 		{
 			name:     "ipv4_local_interface_ip",
@@ -609,7 +610,7 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 		{
 			name:     "ipv6_link_local_unicast",
 			netProto: ipv6.ProtocolNumber,
-			addr:     tcpip.AddrFrom16([16]byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+			addr:     netip.AddrFrom16([16]byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
