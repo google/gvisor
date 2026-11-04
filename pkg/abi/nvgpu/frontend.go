@@ -53,6 +53,7 @@ const (
 	NV_ESC_RM_VID_HEAP_CONTROL           = 0x4a
 	NV_ESC_RM_MAP_MEMORY                 = 0x4e
 	NV_ESC_RM_UNMAP_MEMORY               = 0x4f
+	NV_ESC_RM_GET_EVENT_DATA             = 0x52
 	NV_ESC_RM_ALLOC_CONTEXT_DMA2         = 0x54
 	NV_ESC_RM_MAP_MEMORY_DMA             = 0x57
 	NV_ESC_RM_UNMAP_MEMORY_DMA           = 0x58
@@ -353,6 +354,10 @@ const (
 	NVOS02_FLAGS_ALLOC_MASK  = 0x3
 	NVOS02_FLAGS_ALLOC_NONE  = 0x00000001
 
+	NVOS02_FLAGS_ALLOC_USER_READ_ONLY_SHIFT = 21
+	NVOS02_FLAGS_ALLOC_USER_READ_ONLY_MASK  = 0x1
+	NVOS02_FLAGS_ALLOC_USER_READ_ONLY_YES   = 1
+
 	NVOS02_FLAGS_MAPPING_SHIFT  = 30
 	NVOS02_FLAGS_MAPPING_MASK   = 0x3
 	NVOS02_FLAGS_MAPPING_NO_MAP = 0x00000001
@@ -630,6 +635,9 @@ const (
 	NVOS32_ALLOC_FLAGS_VIRTUAL = 0x00080000
 )
 
+// NVOS32_ALLOC_FLAGS_USER_READ_ONLY is a flag in NVOS32AllocOsDesc.Flags.
+const NVOS32_ALLOC_FLAGS_USER_READ_ONLY = 0x04000000
+
 // Bitfields in NVOS32AllocSize.Attr:
 const (
 	NVOS32_ATTR_LOCATION_SHIFT  = 25
@@ -746,6 +754,38 @@ func (n *NVOS39_PARAMETERS) GetStatus() uint32 {
 
 // SetStatus implements HasStatus.SetStatus.
 func (n *NVOS39_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
+}
+
+// NvUnixEvent is the event data returned by NV_ESC_RM_GET_EVENT_DATA.
+//
+// +marshal
+type NvUnixEvent struct {
+	_           structs.HostLayout
+	HObject     Handle
+	NotifyIndex uint32
+	Info32      uint32
+	Info16      uint16
+	Pad0        [2]byte
+}
+
+// NVOS41_PARAMETERS is the parameter type for NV_ESC_RM_GET_EVENT_DATA.
+//
+// +marshal
+type NVOS41_PARAMETERS struct {
+	_          structs.HostLayout
+	PEvent     P64
+	MoreEvents uint32
+	Status     uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS41_PARAMETERS) GetStatus() uint32 {
+	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS41_PARAMETERS) SetStatus(status uint32) {
 	n.Status = status
 }
 
@@ -990,6 +1030,7 @@ var (
 	SizeofNVOS32Parameters            = uint32((*NVOS32_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS34Parameters            = uint32((*NVOS34_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS39Parameters            = uint32((*NVOS39_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS41Parameters            = uint32((*NVOS41_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS54Parameters            = uint32((*NVOS54_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS55Parameters            = uint32((*NVOS55_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS56Parameters            = uint32((*NVOS56_PARAMETERS)(nil).SizeBytes())
