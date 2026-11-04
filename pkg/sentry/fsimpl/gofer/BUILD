@@ -142,9 +142,14 @@ go_test(
     embed = [":gofer"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/lisafs",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/vfs",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
