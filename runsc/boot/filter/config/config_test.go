@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -210,6 +212,63 @@ func TestPrecompiledProgramsDeterministic(t *testing.T) {
 	for i := range serial {
 		if !reflect.DeepEqual(serial[i], concurrent[i]) {
 			t.Errorf("program %d (%q) differs between serial and concurrent compilation (concurrent name: %q)", i, serial[i].Name, concurrent[i].Name)
+		}
+	}
+}
+
+func TestMknodat(t *testing.T) {
+	atFDCWD32 := int32(linux.AT_FDCWD)
+	atFDCWD64 := int64(linux.AT_FDCWD)
+	for _, hostFS := range []bool{false, true} {
+		rules, denyRules := Rules(Options{
+			HostFilesystem: hostFS,
+			Platform:       (&systrap.Systrap{}).SeccompInfo(),
+		})
+		program := seccomp.Program{
+			RuleSets: []seccomp.RuleSet{
+				{Rules: denyRules},
+				{Rules: rules, Action: seccomp.Allow},
+			},
+			Options: seccomp.ProgramOptions{DefaultAction: seccomp.KillProcess},
+		}
+		insns, _, err := program.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		compiled, err := bpf.Compile(insns, true /* optimize */)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			name    string
+			args    [6]uint64
+			allowed bool
+		}{
+			{"regular file", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 0}, hostFS},
+			{"regular file setuid sticky", [6]uint64{0, 0x1000, unix.S_IFREG | 0o7777, 0}, hostFS},
+			{"whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR, 0}, hostFS},
+			{"whiteout char device with perms", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o644, 0}, hostFS},
+			{"non-whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o666, 0x0103}, false},
+			{"regular file nonzero dev", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 1}, false},
+			{"dev high bits set", [6]uint64{10, 0x1000, unix.S_IFCHR, 1 << 32}, false},
+			{"zero file type", [6]uint64{10, 0x1000, 0o644, 0}, false},
+			{"fifo", [6]uint64{10, 0x1000, unix.S_IFIFO | 0o644, 0}, false},
+			{"socket", [6]uint64{10, 0x1000, unix.S_IFSOCK | 0o644, 0}, false},
+			{"block device", [6]uint64{10, 0x1000, unix.S_IFBLK | 0o644, 0}, false},
+			{"directory", [6]uint64{10, 0x1000, unix.S_IFDIR | 0o755, 0}, false},
+			{"symlink", [6]uint64{10, 0x1000, unix.S_IFLNK | 0o777, 0}, false},
+			{"AT_FDCWD 32-bit", [6]uint64{uint64(uint32(atFDCWD32)), 0x1000, unix.S_IFREG | 0o644, 0}, false},
+			{"AT_FDCWD 64-bit", [6]uint64{uint64(atFDCWD64), 0x1000, unix.S_IFREG | 0o644, 0}, false},
+			{"negative FD", [6]uint64{^uint64(0), 0x1000, unix.S_IFREG | 0o644, 0}, false},
+		} {
+			data := linux.SeccompData{Nr: unix.SYS_MKNODAT, Arch: seccomp.LINUX_AUDIT_ARCH, Args: tc.args}
+			got, err := bpf.Exec[bpf.NativeEndian](compiled, seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes())))
+			if err != nil {
+				t.Fatalf("hostFS=%t %s: %v", hostFS, tc.name, err)
+			}
+			if allowed := got == uint32(linux.SECCOMP_RET_ALLOW); allowed != tc.allowed {
+				t.Errorf("hostFS=%t %s: action=%#x, want allowed=%t", hostFS, tc.name, got, tc.allowed)
+			}
 		}
 	}
 }
