@@ -15,9 +15,12 @@
 package eventfd
 
 import (
+	"math"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -95,5 +98,64 @@ func TestEventFDStat(t *testing.T) {
 	}
 	if statx.Size != 0 {
 		t.Errorf("eventfd size should be 0")
+	}
+}
+
+func TestHostFDPreservesCounter(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		count uint64
+	}{
+		{"max_uint32", math.MaxUint32},
+		{"above_uint32", 1<<32 + 1},
+		{"max_eventfd", math.MaxUint64 - 1},
+	} {
+		t.Run(tc.name+"/counter", func(t *testing.T) { testHostFDCounter(t, tc.count, false) })
+		t.Run(tc.name+"/semaphore", func(t *testing.T) { testHostFDCounter(t, tc.count, true) })
+	}
+}
+
+func testHostFDCounter(t *testing.T, count uint64, semaphore bool) {
+	ctx := contexttest.Context(t)
+	var vfsObj vfs.VirtualFilesystem
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer vfsObj.Release(ctx)
+	file, err := New(ctx, &vfsObj, 1, semaphore, linux.O_RDWR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.DecRef(ctx)
+	var buf [8]byte
+	hostarch.ByteOrder.PutUint64(buf[:], count-1)
+	if _, err := file.Write(ctx, usermem.BytesIOSequence(buf[:]), vfs.WriteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	fd, err := file.Impl().(*EventFileDescription).HostFD()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unix.Read(fd, buf[:]); err != nil {
+		t.Fatalf("read host eventfd: %v", err)
+	}
+	want := count
+	if semaphore {
+		want = 1
+	}
+	if got := hostarch.ByteOrder.Uint64(buf[:]); got != want {
+		t.Fatalf("read host eventfd: got %d, want %d", got, want)
+	}
+	if semaphore {
+		// A single read consumes one. Fill the remaining space
+		// to verify the exact count without draining it.
+		hostarch.ByteOrder.PutUint64(buf[:], math.MaxUint64-count)
+		if _, err := unix.Write(fd, buf[:]); err != nil {
+			t.Fatalf("fill host semaphore: %v", err)
+		}
+		hostarch.ByteOrder.PutUint64(buf[:], 1)
+		if _, err := unix.Write(fd, buf[:]); err != unix.EAGAIN {
+			t.Fatalf("write to full host semaphore: got %v, want EAGAIN", err)
+		}
 	}
 }
