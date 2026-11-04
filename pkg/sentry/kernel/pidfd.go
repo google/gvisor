@@ -151,7 +151,7 @@ func (t *Task) PIDFDGetFD(pidfd int32, targetfd int32, flags uint32) (uintptr, e
 		return 0, linuxerr.EPERM
 	}
 
-	targetFile := target.GetFile(targetfd)
+	targetFile, _ := target.GetFileAndFlags(targetfd)
 	if targetFile == nil {
 		return 0, linuxerr.EBADF
 	}
