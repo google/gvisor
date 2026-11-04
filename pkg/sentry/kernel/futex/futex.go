@@ -94,10 +94,11 @@ func (k *Key) matches(k2 *Key) bool {
 
 // Target abstracts memory accesses and keys.
 //
-// LoadUint32, SwapUint32, and CompareAndSwapUint32 may run synchronously with
-// bucket mutexes held. They must not reenter operations acquiring those mutexes.
-// checklocks cannot express the selected bucket owners through Target.
-// GetSharedKey is called before acquiring bucket mutexes.
+// LoadUint32, SwapUint32, CompareAndSwapUint32, and PIOwnerExists may run
+// synchronously with bucket mutexes held. They must not reenter operations
+// acquiring those mutexes. checklocks cannot express the selected bucket
+// owners through Target. GetSharedKey is called before acquiring bucket
+// mutexes.
 type Target interface {
 	context.Context
 
@@ -117,6 +118,11 @@ type Target interface {
 	// reference is held on the MappingIdentity, which must be dropped by the
 	// caller when the Key is no longer in use.
 	GetSharedKey(addr hostarch.Addr) (Key, error)
+
+	// PIOwnerExists reports whether tid identifies a live task in the
+	// caller's PID namespace. LockPI uses this to match Linux
+	// attach_to_pi_owner / handle_exit_race when the futex owner is gone.
+	PIOwnerExists(tid uint32) bool
 }
 
 // check performs a basic equality check on the given address.
@@ -693,9 +699,11 @@ func (m *Manager) WaitComplete(w *Waiter, t Target) {
 // calling task is set to 'addr' to indicate the futex is owned. It returns true
 // if the futex was successfully acquired.
 //
-// FUTEX_OWNER_DIED is only set by the Linux when robust lists are in use (see
-// exit_robust_list()). Given we don't support robust lists, although handled
-// below, it's never set.
+// If the futex word names a non-zero owner TID that does not exist,
+// LockPI returns ESRCH after setting FUTEX_WAITERS, matching Linux
+// attach_to_pi_owner / handle_exit_race. FUTEX_OWNER_DIED is preserved when
+// taking over a zero-TID word and is set by exitRobustList for robust PI
+// futexes.
 //
 // +checklocksexclude:m.sharedBucket.mu
 func (m *Manager) LockPI(w *Waiter, t Target, addr hostarch.Addr, tid uint32, private, try bool) (bool, error) {
@@ -762,14 +770,9 @@ func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint
 			return true, nil
 		}
 
-		// Futex is already owned, prepare to wait.
-
-		if try {
-			// Caller doesn't want to wait.
-			return false, nil
-		}
-
-		// Set waiters bit if not set yet.
+		// Futex is already owned. Set FUTEX_WAITERS before validating the
+		// owner, matching Linux futex_lock_pi_atomic, so an unlock races into
+		// the kernel path and a dead-owner ESRCH leaves WAITERS set.
 		if cur&linux.FUTEX_WAITERS == 0 {
 			prev, err := t.CompareAndSwapUint32(addr, cur, cur|linux.FUTEX_WAITERS)
 			if err != nil {
@@ -779,6 +782,25 @@ func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint
 				// CAS failed, retry...
 				continue
 			}
+			cur |= linux.FUTEX_WAITERS
+		}
+
+		owner := cur & linux.FUTEX_TID_MASK
+		if !t.PIOwnerExists(owner) {
+			// handle_exit_race: reread; retry if the word changed, else ESRCH.
+			cur2, err := t.LoadUint32(addr)
+			if err != nil {
+				return false, err
+			}
+			if cur2 != cur {
+				continue
+			}
+			return false, linuxerr.ESRCH
+		}
+
+		if try {
+			// Caller doesn't want to wait.
+			return false, nil
 		}
 
 		// Add the waiter to the bucket.
