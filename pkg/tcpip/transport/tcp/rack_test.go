@@ -353,6 +353,43 @@ func TestRACKInitialDSACKWindow(t *testing.T) {
 	}
 }
 
+func TestRACKRetransmissionTimestampWrap(t *testing.T) {
+	const wrap = 1 << 32 * time.Millisecond
+	const rtt = 5 * time.Millisecond
+	for _, test := range []struct {
+		name       string
+		retransmit time.Duration
+		echo       time.Duration
+		wantRTT    time.Duration
+	}{
+		// An echo from before the wrap belongs to the original transmission.
+		{"original", wrap + time.Millisecond, wrap - time.Millisecond, 0},
+		// A later echo can acknowledge a retransmission from before the wrap.
+		{"retransmission", wrap - time.Millisecond, wrap + time.Millisecond, rtt},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			ctx := newRACKTestContext(clock, 0)
+			defer ctx.cleanup()
+			ctx.snd.ep.mu.Lock()
+			defer ctx.snd.ep.mu.Unlock()
+
+			clock.Advance(test.retransmit)
+			seg := ctx.addSegment(1, clock.NowMonotonic())
+			seg.xmitCount = 2
+			clock.Advance(rtt)
+			ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
+			defer ack.DecRef()
+			ack.parsedOptions.TS = true
+			ack.parsedOptions.TSEcr = ctx.snd.ep.tsVal(tcpip.MonotonicTime{}.Add(test.echo))
+			ctx.snd.rc.update(seg, ack)
+			if got, want := ctx.snd.rc.RTT, test.wantRTT; got != want {
+				t.Errorf("RACK RTT = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
 func TestRACKEqualTransmitTimeOrdersByEndSequence(t *testing.T) {
 	clock := faketime.NewManualClock()
 	ctx := newRACKTestContext(clock, 0)
