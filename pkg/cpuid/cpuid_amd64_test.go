@@ -509,3 +509,22 @@ func TestFeatureSetSaveLoad(t *testing.T) {
 		t.Errorf("AMX feature was not normalized out on Load")
 	}
 }
+
+func TestCheckHostCompatibleIgnoreVirtualization(t *testing.T) {
+	hostFeatures := makeFeatureSet(X86FeatureFPU, X86FeaturePAE)
+
+	for _, virtFeature := range []Feature{X86FeatureVMX, X86FeatureSVM} {
+		savedWithVirt := makeFeatureSet(X86FeatureFPU, X86FeaturePAE, virtFeature)
+		if err := savedWithVirt.checkCompatible(hostFeatures); err != nil {
+			t.Errorf("checkCompatible failed when saved FeatureSet had %v and host did not: %v", virtFeature, err)
+		}
+		if err := hostFeatures.checkCompatible(savedWithVirt); err != nil {
+			t.Errorf("checkCompatible failed when host FeatureSet had %v and saved did not: %v", virtFeature, err)
+		}
+	}
+
+	savedMissingOther := makeFeatureSet(X86FeatureFPU, X86FeaturePAE, X86FeatureAVX)
+	if err := savedMissingOther.checkCompatible(hostFeatures); err == nil {
+		t.Errorf("checkCompatible succeeded when saved FeatureSet had non-ignored missing feature %v, want error", X86FeatureAVX)
+	}
+}
