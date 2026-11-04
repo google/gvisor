@@ -395,8 +395,5 @@ func trimmedClone(pkt *stack.PacketBuffer) *stack.PacketBuffer {
 	//
 	// We trim the link headers from the cloned buffer as the sniffer doesn't
 	// handle link headers.
-	buf := pkt.ToBuffer()
-	buf.TrimFront(int64(len(pkt.VirtioNetHeader().Slice())))
-	buf.TrimFront(int64(len(pkt.LinkHeader().Slice())))
-	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: stack.BufferSince(pkt.NetworkHeader())})
 }
