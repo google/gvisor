@@ -107,9 +107,12 @@ func (s Static) normalize() {
 	if fs.HasFeature(X86FeatureXSAVE) {
 		in := In{Eax: uint32(xSaveInfo)}
 		out := s[in]
+		tileData := s[In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}]
+		out.Ebx = excludeAMXTileData(out.Ebx, tileData.Ebx, tileData.Eax)
+		out.Ecx = excludeAMXTileData(out.Ecx, tileData.Ebx, tileData.Eax)
 		// Override local FPU sizes, which must be fixed.
-		out.Ecx = max(out.Ecx, maxXsaveSize)
-		out.Ebx = max(out.Ebx, xsaveSize)
+		out.Ecx = max(out.Ecx, excludeAMXTileData(maxXsaveSize, amxTileDataOffset, amxTileDataSize))
+		out.Ebx = max(out.Ebx, excludeAMXTileData(xsaveSize, amxTileDataOffset, amxTileDataSize))
 		out.Eax &^= uint32(XCR0AmxCfgMask | XCR0AmxDataMask)
 		s[in] = out
 		delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})

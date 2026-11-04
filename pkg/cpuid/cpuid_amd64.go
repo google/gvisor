@@ -437,10 +437,11 @@ const (
 // If xSaveInfo isn't supported, cpuid will not fault but will
 // return bogus values.
 var (
-	xsaveSize       = native(In{Eax: uint32(xSaveInfo)}).Ebx
-	maxXsaveSize    = native(In{Eax: uint32(xSaveInfo)}).Ecx
-	amxTileCfgSize  = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}).Eax
-	amxTileDataSize = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}).Eax
+	xsaveSize         = native(In{Eax: uint32(xSaveInfo)}).Ebx
+	maxXsaveSize      = native(In{Eax: uint32(xSaveInfo)}).Ecx
+	amxTileCfgSize    = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}).Eax
+	amxTileDataSize   = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}).Eax
+	amxTileDataOffset = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}).Ebx
 )
 
 const (
@@ -475,18 +476,32 @@ func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	return 512, 16
 }
 
+// excludeAMXTileData returns size without the AMX TILEDATA state component if
+// TILEDATA lies at the end of the XSAVE area.
+func excludeAMXTileData(size, tileDataOffset, tileDataSize uint32) uint32 {
+	if tileDataOffset != 0 && tileDataSize != 0 && tileDataOffset+tileDataSize == size {
+		return tileDataOffset
+	}
+	return size
+}
+
+func amxExtendedStateSize(xcr0 uint64, xsaveSize, tileDataOffset, tileDataSize uint32) uint {
+	// TILECFG is not part of AMX extended state, only TILEDATA. In some
+	// virtualized environments, XCR0[18] is cleared while CPUID(0xd, 0).EBX
+	// still includes the TILEDATA component.
+	if (xcr0&XCR0AmxDataMask) != 0 || excludeAMXTileData(xsaveSize, tileDataOffset, tileDataSize) != xsaveSize {
+		return uint(tileDataSize)
+	}
+	return 0
+}
+
 // AMXExtendedStateSize returns the number of bytes within the "extended state"
 // area that is used for AMX.
 func (fs FeatureSet) AMXExtendedStateSize() uint {
-	total := uint(0)
-	if fs.UseXsave() {
-		xcr0 := xgetbv(0)
-		// TILECFG is not part of AMX extended state, only TILEDATA.
-		if (xcr0 & XCR0AmxDataMask) != 0 {
-			total += uint(amxTileDataSize)
-		}
+	if !fs.UseXsave() {
+		return 0
 	}
-	return total
+	return amxExtendedStateSize(xgetbv(0), xsaveSize, amxTileDataOffset, amxTileDataSize)
 }
 
 // ValidXCR0Mask returns the valid bits in control register XCR0.

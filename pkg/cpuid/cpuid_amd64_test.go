@@ -336,7 +336,11 @@ func TestNormalizeHidesAMX(t *testing.T) {
 		s.Add(f)
 	}
 	xsave := In{Eax: uint32(xSaveInfo)}
-	s.Set(xsave, Out{Eax: uint32(XSAVEFeatureAVX | XCR0AmxCfgMask | XCR0AmxDataMask)})
+	s.Set(xsave, Out{
+		Eax: uint32(XSAVEFeatureAVX | XCR0AmxCfgMask | XCR0AmxDataMask),
+		Ebx: 2816 + 8192,
+		Ecx: 2816 + 8192,
+	})
 	avx := In{Eax: uint32(xSaveInfo), Ecx: 2}
 	s.Set(avx, Out{Eax: 256, Ebx: 576})
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}, Out{Eax: 64, Ebx: 2752})
@@ -348,8 +352,14 @@ func TestNormalizeHidesAMX(t *testing.T) {
 			t.Errorf("%v is advertised", f)
 		}
 	}
-	if got, want := fs.Query(xsave).Eax, uint32(XSAVEFeatureAVX); got != want {
-		t.Errorf("XCR0 bits: got %#x, want %#x", got, want)
+	hostXsave := HostFeatureSet().Query(xsave)
+	wantXsave := Out{
+		Eax: uint32(XSAVEFeatureAVX),
+		Ebx: max(2816, hostXsave.Ebx),
+		Ecx: max(2816, hostXsave.Ecx),
+	}
+	if got := fs.Query(xsave); got != wantXsave {
+		t.Errorf("CPUID(0xd, 0) = %+v, want %+v", got, wantXsave)
 	}
 	if got, want := fs.Query(avx), (Out{Eax: 256, Ebx: 576}); got != want {
 		t.Errorf("AVX subleaf: got %+v, want %+v", got, want)
@@ -358,6 +368,62 @@ func TestNormalizeHidesAMX(t *testing.T) {
 		if got := fs.Query(In{Eax: uint32(xSaveInfo), Ecx: i}); got != (Out{}) {
 			t.Errorf("AMX subleaf %d: got %+v, want zero", i, got)
 		}
+	}
+}
+
+func TestAMXExtendedStateSize(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		xcr0           uint64
+		xsaveSize      uint32
+		tileDataOffset uint32
+		tileDataSize   uint32
+		wantAMXSize    uint
+		wantTrimmed    uint32
+	}{
+		{
+			name:        "NoAMX",
+			xcr0:        0x2e7,
+			xsaveSize:   0xa80,
+			wantAMXSize: 0,
+			wantTrimmed: 0xa80,
+		},
+		{
+			name:           "BareMetalAMXEnabled",
+			xcr0:           0x2e7 | XCR0AmxCfgMask | XCR0AmxDataMask,
+			xsaveSize:      0x2b00,
+			tileDataOffset: 0xb00,
+			tileDataSize:   0x2000,
+			wantAMXSize:    0x2000,
+			wantTrimmed:    0xb00,
+		},
+		{
+			name:           "VirtualizedXCR0ClearedButXsaveIncludesTileData",
+			xcr0:           0xe7,
+			xsaveSize:      0x2b00,
+			tileDataOffset: 0xb00,
+			tileDataSize:   0x2000,
+			wantAMXSize:    0x2000,
+			wantTrimmed:    0xb00,
+		},
+		{
+			name:           "VirtualizedXCR0ClearedAndXsaveAlreadyTrimmed",
+			xcr0:           0xe7,
+			xsaveSize:      0xa80,
+			tileDataOffset: 0xb00,
+			tileDataSize:   0x2000,
+			wantAMXSize:    0,
+			wantTrimmed:    0xa80,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := amxExtendedStateSize(tc.xcr0, tc.xsaveSize, tc.tileDataOffset, tc.tileDataSize); got != tc.wantAMXSize {
+				t.Errorf("amxExtendedStateSize(%#x, %#x, %#x, %#x) = %#x, want %#x", tc.xcr0, tc.xsaveSize, tc.tileDataOffset, tc.tileDataSize, got, tc.wantAMXSize)
+			}
+			if got := excludeAMXTileData(tc.xsaveSize, tc.tileDataOffset, tc.tileDataSize); got != tc.wantTrimmed {
+				t.Errorf("excludeAMXTileData(%#x, %#x, %#x) = %#x, want %#x", tc.xsaveSize, tc.tileDataOffset, tc.tileDataSize, got, tc.wantTrimmed)
+			}
+		})
 	}
 }
 
