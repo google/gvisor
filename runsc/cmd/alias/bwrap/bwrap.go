@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -250,7 +251,7 @@ func (c *bwrapConfig) hasMountAtOrBelow(path string) bool {
 
 // userNamespace returns the namespace and the user options implied by
 // --unshare-user, --uid and --gid.
-func (c *bwrapConfig) userNamespace() []sandbox.Option {
+func (c *bwrapConfig) userNamespace(sudoUID, sudoGID uint32) []sandbox.Option {
 	hostUID := os.Getuid()
 	targetUID := hostUID
 	if c.UID != -1 {
@@ -262,16 +263,11 @@ func (c *bwrapConfig) userNamespace() []sandbox.Option {
 		targetGID = c.GID
 	}
 
-	// When running under sudo (e.g. in CI tests), SUDO_UID/SUDO_GID point to the true non-root workspace owner.
-	// When running without sudo, they gracefully fallback to the current host UID/GID.
-	sudoUID := getEnvInt("SUDO_UID", hostUID)
-	sudoGID := getEnvInt("SUDO_GID", hostGID)
-
 	uidMappings := []specs.LinuxIDMapping{
-		{ContainerID: uint32(targetUID), HostID: uint32(sudoUID), Size: 1},
+		{ContainerID: uint32(targetUID), HostID: sudoUID, Size: 1},
 	}
 	gidMappings := []specs.LinuxIDMapping{
-		{ContainerID: uint32(targetGID), HostID: uint32(sudoGID), Size: 1},
+		{ContainerID: uint32(targetGID), HostID: sudoGID, Size: 1},
 	}
 
 	// When runsc is executed by root (hostUID == 0), gVisor's Gofer initialization requires Container 0:0
@@ -292,9 +288,8 @@ func (c *bwrapConfig) userNamespace() []sandbox.Option {
 	}
 }
 
-// sandboxOptions translates the parsed bubblewrap configuration into options
-// for the sandbox bindings.
-func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
+// prepareSandbox validates the sandbox options before creating host directories.
+func (c *bwrapConfig) prepareSandbox() ([]sandbox.Option, error) {
 	if c.UID != -1 && !c.UnshareUser {
 		return nil, fmt.Errorf("bwrap: Specifying --uid requires --unshare-user")
 	}
@@ -344,9 +339,21 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 	opts = append(opts, sandbox.WithMount(mounts...))
 
 	var namespaces []specs.LinuxNamespace
+	// Leave ownership unchanged without a user namespace. Otherwise the mapped
+	// user must own new host directories so it can enter them even with mode 0700.
+	dirUID, dirGID := -1, -1
 	if c.UnshareUser {
+		sudoUID, err := getEnvID("SUDO_UID", uint32(os.Getuid()))
+		if err != nil {
+			return nil, err
+		}
+		sudoGID, err := getEnvID("SUDO_GID", uint32(os.Getgid()))
+		if err != nil {
+			return nil, err
+		}
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
-		opts = append(opts, c.userNamespace()...)
+		opts = append(opts, c.userNamespace(sudoUID, sudoGID)...)
+		dirUID, dirGID = int(sudoUID), int(sudoGID)
 	}
 	opts = append(opts, sandbox.WithNamespaces(namespaces...))
 
@@ -365,6 +372,9 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 	}
 	opts = append(opts, sandbox.WithCapabilities(caps))
 
+	if err := c.makeHostDirs(dirUID, dirGID); err != nil {
+		return nil, err
+	}
 	return opts, nil
 }
 
@@ -373,14 +383,7 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 // is, a missing one is created along with its parents, and a missing one
 // under a read-only bind fails with EROFS. The directories outlive the
 // sandbox, as they do with bubblewrap.
-func (c *bwrapConfig) makeHostDirs() error {
-	// Under --unshare-user the sandbox runs as SUDO_UID when runsc runs under
-	// sudo, so new directories go to that user, as writeBindData does for
-	// --bind-data files. -1 leaves the owner alone otherwise.
-	uid, gid := -1, -1
-	if c.UnshareUser {
-		uid, gid = getEnvInt("SUDO_UID", os.Getuid()), getEnvInt("SUDO_GID", os.Getgid())
-	}
+func (c *bwrapConfig) makeHostDirs(uid, gid int) error {
 	for _, d := range c.HostDirs {
 		if err := d.make(uid, gid); err != nil {
 			return fmt.Errorf("bwrap: Can't mkdir %s: %v", d.Dest, err)
@@ -455,11 +458,8 @@ func mkdir(path string, perms uint32, uid, gid int) error {
 
 // do runs the command in a gVisor sandbox and records its exit status.
 func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
-	opts, err := c.sandboxOptions()
+	opts, err := c.prepareSandbox()
 	if err != nil {
-		return util.Errorf("%v", err)
-	}
-	if err := c.makeHostDirs(); err != nil {
 		return util.Errorf("%v", err)
 	}
 	// Configure the sandbox to invoke the current runsc executable.
@@ -500,14 +500,22 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 	return subcommands.ExitSuccess
 }
 
-// getEnvInt parses an environment variable as an integer, returning fallback if empty or invalid.
-func getEnvInt(key string, fallback int) int {
-	if s := os.Getenv(key); s != "" {
-		if v, err := strconv.Atoi(s); err == nil {
-			return v
-		}
+// getEnvID returns fallback when the variable is unset. Invalid IDs
+// must not silently select a different host user or group.
+func getEnvID(key string, fallback uint32) (uint32, error) {
+	s, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback, nil
 	}
-	return fallback
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s=%q: %w", key, s, err)
+	}
+	// Linux reserves the all-ones ID; it cannot identify a host user or group.
+	if v < 0 || v >= math.MaxUint32 {
+		return 0, fmt.Errorf("%s=%q: %w", key, s, strconv.ErrRange)
+	}
+	return uint32(v), nil
 }
 
 func (c *bwrapConfig) resolveEnv() {

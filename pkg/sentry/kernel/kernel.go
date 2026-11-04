@@ -54,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -306,6 +307,12 @@ type Kernel struct {
 	//
 	// +checkatomic
 	uniqueID atomicbitops.Uint64
+
+	bootIDMu sync.Mutex `state:"nosave"`
+	// bootID is generated on first use and saved across checkpoints.
+	//
+	// +checklocks:bootIDMu
+	bootID string
 
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
@@ -1260,6 +1267,16 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	}
 
 	return nil
+}
+
+// BootID returns the UUID shared by this kernel's proc mounts.
+func (k *Kernel) BootID() string {
+	k.bootIDMu.Lock()
+	defer k.bootIDMu.Unlock()
+	if k.bootID == "" {
+		k.bootID = rand.UUID()
+	}
+	return k.bootID
 }
 
 // UniqueID returns a unique identifier.
