@@ -237,6 +237,11 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	if err != nil {
 		return nil, err
 	}
+	// As in Linux, a LOOKUP reply with a zero node ID means that the name does
+	// not exist.
+	if opcode == linux.FUSE_LOOKUP && out.NodeID == 0 {
+		return nil, linuxerr.ENOENT
+	}
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
 		return nil, linuxerr.EIO
 	}

@@ -38,6 +38,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -533,6 +534,81 @@ TEST(FuseTest, AccessUnsupported) {
   // The cached capability applies to another inode and a different mask.
   const std::string file_path = JoinPath(mount_point.path(), "testfile");
   EXPECT_THAT(access(file_path.c_str(), W_OK), SyscallSucceeds());
+}
+
+TEST(FuseTest, NegativeLookup) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningWithSaveRestore());
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount_opts =
+      absl::StrFormat("fd=%d,user_id=0,group_id=0,rootmode=40000", fd.get());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("fuse", mount_point.path(), "fuse", MS_NODEV | MS_NOSUID,
+            mount_opts, 0 /* umountflags */));
+  ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
+  const FileDescriptor stop_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+
+  constexpr uint64_t kIno = 2;
+  std::atomic<bool> created = false;
+  std::atomic<int> create_requests = 0;
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(
+        server_fd, stop_fd.get(), [&](int fd, const fuse_in_header& in) {
+          if (in.opcode == FUSE_LOOKUP) {
+            // A zero node ID is a negative entry: the name does not exist.
+            fuse_entry_out out = {.nodeid = created ? kIno : 0,
+                                  .generation = created ? 1U : 0U,
+                                  .entry_valid = 0,
+                                  .attr_valid = 0};
+            if (created) {
+              out.attr = {.ino = kIno, .mode = S_IFREG | 0644, .nlink = 1};
+            }
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_CREATE) {
+            ++create_requests;
+            created = true;
+            struct {
+              fuse_entry_out entry;
+              fuse_open_out open;
+            } out = {};
+            out.entry = {.nodeid = kIno, .generation = 1};
+            out.entry.attr = {.ino = kIno, .mode = S_IFREG | 0644, .nlink = 1};
+            out.open = {.fh = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_GETATTR) {
+            fuse_attr_out out = {.attr_valid = 0};
+            out.attr = {
+                .ino = in.nodeid,
+                .mode = in.nodeid == 1 ? S_IFDIR | 0755U : S_IFREG | 0644U,
+                .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_FLUSH || in.opcode == FUSE_RELEASE) {
+            FuseRespond(fd, in.unique);
+          } else {
+            FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+          }
+          return true;
+        });
+  });
+  Cleanup stop_server([&] {
+    const uint64_t stop = 1;
+    EXPECT_THAT(RetryEINTR(write)(stop_fd.get(), &stop, sizeof(stop)),
+                SyscallSucceedsWithValue(sizeof(stop)));
+  });
+
+  const std::string file_path = JoinPath(mount_point.path(), "newfile");
+  struct stat st;
+  EXPECT_THAT(stat(file_path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(file_path.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+
+  // A negative entry does not prevent creating the file.
+  const int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT, 0644);
+  ASSERT_THAT(file_fd, SyscallSucceeds());
+  EXPECT_THAT(close(file_fd), SyscallSucceeds());
+  EXPECT_EQ(create_requests.load(), 1);
 }
 
 // The parts of <linux/aio_abi.h> used below. The header isn't included since
