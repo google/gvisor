@@ -14,20 +14,24 @@
 
 """Generate the governance artifacts from their declared inputs."""
 
+load("@bazel_lib//lib:run_binary.bzl", "run_binary")
+
 def governance_files(name):
     """Generate CODEOWNERS and MAINTAINERS.md under name."""
     for format in ["CODEOWNERS", "MAINTAINERS.md"]:
-        native.genrule(
+        run_binary(
             name = name + "_" + format,
             srcs = [
                 "@governance_areas//:areas.yaml",
                 "maintainers.yaml",
             ],
             outs = [name + "/" + format],
-            cmd = "$(execpath //governance/tools/maintainers:maintainers_gen) " +
-                  "-input $(location maintainers.yaml) " +
-                  "-areas $(location @governance_areas//:areas.yaml) " +
-                  "-format " + format + " -output $@",
-            tools = ["//governance/tools/maintainers:maintainers_gen"],
+            args = [
+                "-input=$(execpath maintainers.yaml)",
+                "-areas=$(execpath @governance_areas//:areas.yaml)",
+                "-format=" + format,
+                "-output=$@",
+            ],
+            tool = "//governance/tools/maintainers:maintainers_gen",
             visibility = ["//:__pkg__"],
         )
