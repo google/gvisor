@@ -41,6 +41,7 @@ go_library(
         "socketops.go",
         "stdclock.go",
         "stdclock_state.go",
+        "stdclock_windows_unsafe.go",
         "tcpip.go",
         "timer.go",
     ],
@@ -125,10 +126,12 @@ go_test(
     size = "small",
     srcs = [
         "errors_test.go",
+        "stdclock_test.go",
         "tcpip_test.go",
     ],
     embed = [":tcpip"],
     deps = [
+        "//pkg/state",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
