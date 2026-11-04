@@ -393,3 +393,35 @@ func TestEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestBytecodeRoundTrip(t *testing.T) {
+	insns := []Instruction{
+		Stmt(Ld|Abs|W, 0),
+		Stmt(Ret|K, 0),
+	}
+	got, err := ParseBytecode(ToBytecode(insns))
+	if err != nil {
+		t.Fatalf("ParseBytecode(ToBytecode(%v)) failed: %v", insns, err)
+	}
+	if len(got) != len(insns) {
+		t.Fatalf("got %d instructions, want %d", len(got), len(insns))
+	}
+	for i := range insns {
+		if got[i] != insns[i] {
+			t.Errorf("instruction %d: got %v, want %v", i, got[i], insns[i])
+		}
+	}
+}
+
+func TestEmptyBytecode(t *testing.T) {
+	for _, bytecode := range [][]byte{nil, {}} {
+		if _, err := ParseBytecode(bytecode); err == nil {
+			t.Errorf("ParseBytecode(%#v) succeeded, want error", bytecode)
+		}
+	}
+	for _, insns := range [][]Instruction{nil, {}} {
+		if got := ToBytecode(insns); len(got) != 0 {
+			t.Errorf("ToBytecode(%#v) = %v, want empty", insns, got)
+		}
+	}
+}
