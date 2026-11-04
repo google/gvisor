@@ -69,6 +69,7 @@ bzl_library(
     visibility = [
         "//:sandbox",
     ],
+    deps = [":defs_bzl"],
 )
 
 exports_files([
