@@ -6,11 +6,14 @@ load("//tools/bazeldefs:defs.bzl", _COPY_FILE_TOOLCHAINS = "COPY_FILE_TOOLCHAINS
 select_arch = _select_arch
 transition_allowlist = _transition_allowlist
 
+_ARCH_CONFIGS = {
+    "arm64": _arm64_config,
+    "amd64": _amd64_config,
+}
+ARCHITECTURES = _ARCH_CONFIGS.keys()
+
 def arch_transition_impl(settings, attr):
-    return {
-        "arm64": _arm64_config(settings, attr),
-        "amd64": _amd64_config(settings, attr),
-    }
+    return {arch: configure(settings, attr) for arch, configure in _ARCH_CONFIGS.items()}
 
 arch_transition = transition(
     implementation = arch_transition_impl,
