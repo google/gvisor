@@ -876,23 +876,37 @@ website-deploy: website-push ## Deploy a new version of the website.
 ##
 ## Webhook helpers.
 ##
-##   The webhook is built locally.
-##     WEBHOOK_IMAGE - The name of the container image.
+##   WEBHOOK_IMAGE - Docker image reference, with an optional registry and tag.
 ##
 WEBHOOK_IMAGE := gcr.io/gvisor-presubmit/webhook
 
-webhook-build: ## Build the webhookimage locally.
-	@$(call run,//webhook:image,$(WEBHOOK_IMAGE))
+webhook-build: ## Build and load the webhook image into the local Docker daemon.
+	@$(call wrapper,$(BAZEL) run $(BASE_OPTIONS) $(BAZEL_OPTIONS) //webhook:load -- --tag "$(WEBHOOK_IMAGE)")
 .PHONY: webhook-build
 
-webhook-push: webhook-build ## Push a new image.
-	@docker push $(WEBHOOK_IMAGE)
-.PHONY: website-push
+webhook-push: webhook-build ## Push the local image with the host Docker client.
+	@docker push "$(WEBHOOK_IMAGE)"
+.PHONY: webhook-push
 
-webhook-update: test/kubernetes/gvisor-injection-admission-webhook.yaml.in
-	@WEBHOOK=$(WEBHOOK_IMAGE):$$($(call run,//webhook:image,$(WEBHOOK_IMAGE)) | cut -d':' -f2) && \
-	INIT=$(call remote_image,certs):$(call tag,certs) && \
-	cat $< | sed -e "s|%WEBHOOK%|$${WEBHOOK}|g" | sed -e "s|%INIT%|$${INIT}|g" > test/kubernetes/gvisor-injection-admission-webhook.yaml
+# Docker may change the manifest format on push while preserving the config.
+webhook_manifest_digest = \
+  if type == "array" then error("webhook-update requires a single-platform image, got a manifest list") \
+  elif (.OCIManifest // .SchemaV2Manifest).config.digest != $$config then \
+    error("published image differs from this build. Run make webhook-push") \
+  else .Descriptor.digest end
+
+webhook-update: test/kubernetes/gvisor-injection-admission-webhook.yaml.in ## Pin the published image matching this build.
+	@set -euo pipefail; \
+	config=$$( $(call build_paths,//webhook:manifest,jq -er .config.digest "$$0") ); \
+	test -n "$$config"; \
+	digest=$$(docker manifest inspect --verbose "$(WEBHOOK_IMAGE)" | \
+	    jq -er --arg config "$$config" '$(webhook_manifest_digest)'); \
+	test -n "$$digest"; \
+	output="$(patsubst %.in,%,$<)"; \
+	tmp=$$(mktemp "$$output.XXXXXX"); trap 'rm -f "$$tmp"' EXIT; \
+	sed -e "s|%WEBHOOK%|$(WEBHOOK_IMAGE)@$$digest|g" \
+	    -e "s|%INIT%|$(call remote_image,certs):$(call tag,certs)|g" "$<" > "$$tmp"; \
+	chmod +rw "$$tmp"; mv -f "$$tmp" "$$output"
 .PHONY: webhook-update
 
 ## Syzkaller smoke test.
