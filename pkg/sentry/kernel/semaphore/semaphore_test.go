@@ -139,6 +139,41 @@ func TestNoWait(t *testing.T) {
 	}
 }
 
+func TestWaitMinInt16(t *testing.T) {
+	ctx := contexttest.Context(t)
+	set := &Set{obj: &ipc.Object{ID: 123}, sems: make([]sem, 1)}
+	ops := []linux.Sembuf{
+		{SemOp: valueMax},
+	}
+	executeOps(ctx, t, set, ops, false)
+
+	ops[0].SemOp = -32768
+	ops[0].SemFlg = linux.IPC_NOWAIT
+	set.mu.Lock()
+	_, _, err := set.executeOps(ctx, ops, 123)
+	set.mu.Unlock()
+	if err != linuxerr.ErrWouldBlock {
+		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
+	}
+	if got := set.sems[0].value; got != valueMax {
+		t.Fatalf("semaphore value got: %d, expected: %d", got, valueMax)
+	}
+
+	ops[0].SemFlg = 0
+	executeOps(ctx, t, set, ops, true)
+}
+
+func TestWaitMinInt16NotWoken(t *testing.T) {
+	ctx := contexttest.Context(t)
+	set := &Set{obj: &ipc.Object{ID: 123}, sems: make([]sem, 1)}
+	ch := executeOps(ctx, t, set, []linux.Sembuf{{SemOp: -32768}}, true)
+
+	executeOps(ctx, t, set, []linux.Sembuf{{SemOp: 1}}, false)
+	if signalled(ch) {
+		t.Fatalf("ExecuteOps(ops) channel should not have been signalled")
+	}
+}
+
 func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r := NewRegistry(auth.NewRootUserNamespace())
