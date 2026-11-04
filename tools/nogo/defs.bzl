@@ -421,8 +421,6 @@ def _nogo_test_impl(ctx):
             executable = ctx.files._nogo[0],
             mnemonic = "GoStaticAnalysis",
             progress_message = "Generating %s" % ctx.label,
-            # See above.
-            execution_requirements = {"no-sandbox": "1"},
             arguments = ["filter"] +
                         ["-config=%s" % f.path for f in config_srcs] +
                         ["-output=%s" % findings.path] +
@@ -519,8 +517,6 @@ def _nogo_facts_render_impl(ctx):
         env = go_ctx.env,
         mnemonic = "GoStaticAnalysis",
         progress_message = "Generating %s" % ctx.label,
-        # See above.
-        execution_requirements = {"no-sandbox": "1"},
         arguments = args + [
             "render",
             "-template=%s" % ctx.files.template[0].path,
