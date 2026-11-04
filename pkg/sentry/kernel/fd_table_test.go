@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -193,6 +194,59 @@ func TestFDTable(t *testing.T) {
 	})
 }
 
+// TestReserveFD checks that other allocations and lookups skip a reserved FD
+// until a file is installed in it.
+func TestReserveFD(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		reserved, err := fdTable.ReserveFD(ctx, 0)
+		if err != nil || reserved != 0 {
+			t.Fatalf("fdTable.ReserveFD(0): got (%d, %v), want (0, nil)", reserved, err)
+		}
+		if file, _ := fdTable.Get(reserved); file != nil {
+			t.Errorf("fdTable.Get(%d) for a reserved FD: got %v, want nil", reserved, file)
+		}
+		if next, err := fdTable.NewFD(ctx, 0, fd, FDFlags{}); err != nil || next != 1 {
+			t.Errorf("fdTable.NewFD(0) with FD 0 reserved: got (%d, %v), want (1, nil)", next, err)
+		}
+		if _, err := fdTable.NewFDAt(ctx, reserved, fd, FDFlags{}); err != unix.EBUSY {
+			t.Errorf("fdTable.NewFDAt(%d) for a reserved FD: got %v, want EBUSY", reserved, err)
+		}
+
+		// A fork does not inherit the reservation.
+		clone := fdTable.Fork(ctx, MaxFdLimit)
+		if next, err := clone.NewFD(ctx, 0, fd, FDFlags{}); err != nil || next != 0 {
+			t.Errorf("clone.NewFD(0): got (%d, %v), want (0, nil)", next, err)
+		}
+		clone.DecRef(ctx)
+
+		// close_range skips the reserved FD.
+		if removed, file := fdTable.RemoveNextInRange(ctx, 0, MaxFdLimit); removed != 1 || file == nil {
+			t.Errorf("fdTable.RemoveNextInRange(0, MaxFdLimit): got (%d, %v), want (1, non-nil)", removed, file)
+		} else {
+			file.DecRef(ctx)
+		}
+
+		fdTable.InstallReservedFD(reserved, fd, FDFlags{})
+		if file, _ := fdTable.Get(reserved); file != fd {
+			t.Errorf("fdTable.Get(%d) after InstallReservedFD: got %v, want %v", reserved, file, fd)
+		}
+		if file := fdTable.Remove(ctx, reserved); file == nil {
+			t.Errorf("fdTable.Remove(%d) after InstallReservedFD: got nil, want %v", reserved, fd)
+		} else {
+			file.DecRef(ctx)
+		}
+
+		// An unreserved FD is available again.
+		if reserved, err = fdTable.ReserveFD(ctx, 0); err != nil || reserved != 0 {
+			t.Fatalf("fdTable.ReserveFD(0): got (%d, %v), want (0, nil)", reserved, err)
+		}
+		fdTable.UnreserveFD(reserved)
+		if next, err := fdTable.NewFD(ctx, 0, fd, FDFlags{}); err != nil || next != 0 {
+			t.Errorf("fdTable.NewFD(0) after UnreserveFD(0): got (%d, %v), want (0, nil)", next, err)
+		}
+	})
+}
+
 func TestFDTableRemoveDoesNotGrow(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -286,6 +340,35 @@ func BenchmarkNewFDAt(b *testing.B) {
 			if err != nil {
 				b.Fatalf("fdTable.NewFDAt: got %v, wanted nil", err)
 			}
+		}
+	})
+}
+
+// BenchmarkNewFDAndRemove measures allocating the lowest available FD for a
+// file in one step, then removing it.
+func BenchmarkNewFDAndRemove(b *testing.B) {
+	runTest(b, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		for i := 0; i < b.N; i++ {
+			newFD, err := fdTable.NewFD(ctx, 0, fd, FDFlags{})
+			if err != nil {
+				b.Fatalf("fdTable.NewFD: got %v, wanted nil", err)
+			}
+			fdTable.Remove(ctx, newFD).DecRef(ctx)
+		}
+	})
+}
+
+// BenchmarkReserveInstallAndRemove measures reserving the lowest available FD,
+// installing a file in it, then removing it.
+func BenchmarkReserveInstallAndRemove(b *testing.B) {
+	runTest(b, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		for i := 0; i < b.N; i++ {
+			newFD, err := fdTable.ReserveFD(ctx, 0)
+			if err != nil {
+				b.Fatalf("fdTable.ReserveFD: got %v, wanted nil", err)
+			}
+			fdTable.InstallReservedFD(newFD, fd, FDFlags{})
+			fdTable.Remove(ctx, newFD).DecRef(ctx)
 		}
 	})
 }
