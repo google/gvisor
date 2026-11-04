@@ -208,7 +208,19 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 	// Try to pick a job for the agent
 	jobAssignment, pinAgent := s.pool.assignJob(s.computeSvc, agent)
 	if jobAssignment == nil {
-		// No job currently available for this agent
+		// No job currently available for this agent.
+
+		// For pinned agents, set an idle timeout so it doesn't sit there doing nothing
+		// when the build finishes.
+		if _, ok := agent.(*untrustedAgent); ok {
+			err = s.tc.RegisterTimeout(r.Context(), id, idleTimeout, false /* extend */)
+			if err != nil {
+				log.Printf("Failed to register idle timeout for %v: %v", id, err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+		}
+
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -310,7 +322,7 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 
 	// Before assigning the job: register a job timeout to kill the agent if it's
 	// not done.
-	err = s.tc.RegisterTimeout(r.Context(), id, timeout)
+	err = s.tc.RegisterTimeout(r.Context(), id, timeout, true /* extend */)
 	if err != nil {
 		log.Printf("Failed to register timeout for %v: %v", id, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
