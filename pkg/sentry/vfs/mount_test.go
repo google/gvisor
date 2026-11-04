@@ -40,6 +40,19 @@ func TestMountTableLookupEmpty(t *testing.T) {
 	}
 }
 
+func TestEmptyMountTableRestoreInsert(t *testing.T) {
+	var before, after VirtualFilesystem
+	before.mounts.Init()
+	after.loadMounts(context.Background(), before.saveMounts())
+
+	mount := &Mount{}
+	mount.setKey(VirtualDentry{&Mount{}, &Dentry{}})
+	after.mounts.Insert(mount)
+	if got := after.mounts.Lookup(mount.parent(), mount.point()); got != mount {
+		t.Fatalf("restored mount lookup: got %p, want %p", got, mount)
+	}
+}
+
 func TestMountTableInsertLookup(t *testing.T) {
 	var mt mountTable
 	mt.Init()
@@ -735,5 +748,24 @@ func BenchmarkMountSyncMapRemove(b *testing.B) {
 	for i := range mounts {
 		mount := mounts[i]
 		ms.Delete(mount.saveKey())
+	}
+}
+
+func BenchmarkSaveMounts(b *testing.B) {
+	for _, count := range []int{0, 1, 16} {
+		b.Run(fmt.Sprintf("mounts=%d", count), func(b *testing.B) {
+			var vfs VirtualFilesystem
+			vfs.mounts.Init()
+			for i := 0; i < count; i++ {
+				mount := &Mount{}
+				mount.setKey(VirtualDentry{&Mount{}, &Dentry{}})
+				vfs.mounts.Insert(mount)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				runtime.KeepAlive(vfs.saveMounts())
+			}
+		})
 	}
 }
