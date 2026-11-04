@@ -424,11 +424,21 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
-		unix.SYS_MKNODAT: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
+		// Allow creating only regular files and (0, 0) character device
+		// whiteouts.
+		unix.SYS_MKNODAT: seccomp.Or{
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.AnyValue{},
+				seccomp.MaskedEqual(unix.S_IFMT, unix.S_IFREG),
+				seccomp.EqualTo(0),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.AnyValue{},
+				seccomp.MaskedEqual(unix.S_IFMT, unix.S_IFCHR),
+				seccomp.EqualTo(0),
+			},
 		},
 		unix.SYS_SYMLINKAT: seccomp.PerArg{
 			seccomp.AnyValue{},

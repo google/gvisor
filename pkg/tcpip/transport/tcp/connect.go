@@ -305,7 +305,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		//   If the segment acknowledgment is not acceptable, form a reset segment,
 		//        <SEQ=SEG.ACK><CTL=RST>
 		//   and send it.
-		h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
+		h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0, nil)
 		// Since this was a challenge ACK reschedule the retransmit timer to fire
 		// soon so that the SYN is retransmitted quickly.
 		h.retransmitTimer.reinit(tcpMinTimeout)
@@ -339,7 +339,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		h.state = handshakeCompleted
 		h.transitionToStateEstablishedLocked(s)
 
-		h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
+		h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale(), nil)
 		return nil
 	}
 
@@ -413,7 +413,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 			//   If the segment acknowledgment is not acceptable, form a reset segment,
 			//        <SEQ=SEG.ACK><CTL=RST>
 			//   and send it.
-			h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
+			h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0, nil)
 			return nil
 		}
 		// This is a cookie that snuck its way in after we stopped using them.
@@ -427,7 +427,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	// segment and return."
 	if !s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
 		if h.ep.allowOutOfWindowAck() {
-			h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd)
+			h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd, nil)
 		}
 		return nil
 	}
@@ -441,7 +441,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		if s.flags.Contains(header.TCPFlagAck) {
 			seq = s.ackNumber
 		}
-		h.ep.sendEmptyRaw(header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0)
+		h.ep.sendEmptyRaw(header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0, nil)
 
 		if !h.active {
 			return &tcpip.ErrInvalidEndpointState{}
@@ -1029,23 +1029,29 @@ func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 // sendEmptyRaw sends a TCP segment with no payload to the endpoint's peer.
 //
 // +checklocks:e.mu
-func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
+func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size, sackBlocks []header.SACKBlock) tcpip.Error {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Mark: e.ops.GetMark(),
 	})
 	defer pkt.DecRef()
-	return e.sendRaw(pkt, flags, seq, ack, rcvWnd)
+	return e.sendRaw(pkt, flags, seq, ack, rcvWnd, sackBlocks)
+}
+
+// currentSACKBlocks returns the SACK blocks to include in an outgoing segment
+// with the given flags.
+// +checklocks:e.mu
+func (e *Endpoint) currentSACKBlocks(flags header.TCPFlags) []header.SACKBlock {
+	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && flags.Contains(header.TCPFlagAck) {
+		return e.sack.Blocks[:e.sack.NumBlocks]
+	}
+	return nil
 }
 
 // sendRaw sends a TCP segment to the endpoint's peer. This method takes
 // ownership of pkt. pkt must not have any headers set.
 //
 // +checklocks:e.mu
-func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
-	var sackBlocks []header.SACKBlock
-	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
-		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
-	}
+func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size, sackBlocks []header.SACKBlock) tcpip.Error {
 	options := e.makeOptions(sackBlocks)
 	defer putOptions(options)
 	hdrSize := header.TCPMinimumSize + int(e.route.MaxHeaderLength()) + len(options)
@@ -1121,7 +1127,8 @@ func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 		if e.rcv != nil {
 			ackNum = e.rcv.RcvNxt
 		}
-		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, ackNum, 0)
+		const flags = header.TCPFlagAck | header.TCPFlagRst
+		e.sendEmptyRaw(flags, resetSeqNum, ackNum, 0, e.currentSACKBlocks(flags))
 	}
 	// Don't purge read queues here. If there's buffered data, it's still allowed
 	// to be read.
@@ -1423,7 +1430,7 @@ func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 	// seg.seq = snd.nxt-1.
 	e.keepalive.unacked++
 	e.keepalive.Unlock()
-	e.snd.sendEmptySegment(header.TCPFlagAck, e.snd.SndNxt-1)
+	e.snd.sendEmptyAck(e.snd.SndNxt-1, e.currentSACKBlocks(header.TCPFlagAck))
 	e.resetKeepaliveTimer(false)
 	return nil
 }

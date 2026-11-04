@@ -171,9 +171,10 @@ func (r *receiver) nonZeroWindow() {
 // wasn't ready to be consumed then.
 //
 // Returns true if the segment was consumed, false if it cannot be consumed
-// yet because of a missing segment.
+// yet because of a missing segment. If this segment closes the receive side,
+// include duplicate in the FIN ACK.
 // +checklocks:r.ep.mu
-func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum.Size) bool {
+func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum.Size, duplicate header.SACKBlock) bool {
 	if segLen > 0 {
 		// If the segment doesn't include the seqnum we're expecting to
 		// consume now, we're missing a segment. We cannot proceed until
@@ -224,8 +225,12 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	if s.flags.Contains(header.TCPFlagFin) {
 		r.RcvNxt++
 
-		// Send ACK immediately.
-		r.ep.snd.sendAck()
+		// Send the FIN ACK before changing the endpoint state.
+		if duplicate.Start != duplicate.End {
+			r.ep.snd.sendDSACK(duplicate)
+		} else {
+			r.ep.snd.sendAck()
+		}
 
 		// Tell any readers that no more data will come.
 		r.closed = true
@@ -434,6 +439,13 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	segLen := seqnum.Size(s.payloadSize())
 	segSeq := s.sequenceNumber
 
+	var duplicate header.SACKBlock
+	if r.ep.SACKPermitted && segSeq.LessThan(r.RcvNxt) {
+		// Report only the already-acknowledged prefix, including a FIN's
+		// sequence number (RFC 2883 section 4; Linux tcp_send_dupack()).
+		duplicate = header.SACKBlock{Start: segSeq, End: segSeq.Add(min(s.logicalLen(), segSeq.Size(r.RcvNxt)))}
+	}
+
 	// If the sequence number range is outside the acceptable range, just
 	// send an ACK and stop further processing of the segment.
 	// This is according to RFC 793, page 68.
@@ -444,7 +456,11 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		if segSeq == r.RcvNxt && r.ep.SendTSOk && s.parsedOptions.TS {
 			r.ep.updateRecentTimestamp(s.parsedOptions.TSVal, r.ep.snd.MaxSentAck, segSeq)
 		}
-		r.ep.snd.maybeSendOutOfWindowAck(s)
+		if duplicate.Start != duplicate.End {
+			r.ep.snd.sendDSACK(duplicate)
+		} else {
+			r.ep.snd.maybeSendOutOfWindowAck(s)
+		}
 		return true, nil
 	}
 
@@ -461,7 +477,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	r.lastRcvdAckTime = s.rcvdTime
 
 	// Defer segment processing if it can't be consumed now.
-	if !r.consumeSegment(s, segSeq, segLen) {
+	if !r.consumeSegment(s, segSeq, segLen, duplicate) {
 		if segLen > 0 || s.flags.Contains(header.TCPFlagFin) {
 			// We only store the segment if it's within our buffer
 			// size limit.
@@ -514,7 +530,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 
 		// Skip segment altogether if it has already been acknowledged.
 		if !segSeq.Add(segLen-1).LessThan(r.RcvNxt) &&
-			!r.consumeSegment(s, segSeq, segLen) {
+			!r.consumeSegment(s, segSeq, segLen, duplicate) {
 			break
 		}
 
@@ -523,6 +539,12 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		r.PendingBufUsed -= s.segMemSize()
 		r.ep.rcvQueueMu.Unlock()
 		s.DecRef()
+	}
+	if duplicate.Start != duplicate.End && !r.closed {
+		// Send after draining so the ACK covers any gap the new suffix
+		// filled (RFC 2883 section 4.2; Linux tcp_data_queue()). A FIN
+		// consumed above already sent the duplicate block with its ACK.
+		r.ep.snd.sendDSACK(duplicate)
 	}
 	return false, nil
 }
