@@ -3745,6 +3745,88 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
               IsPosixErrorOkAndHolds(0));
 }
 
+// Renaming over a whiteout in a sticky directory must not fail the sticky
+// check against the mounter-owned whiteout.
+TEST(MountTest, OverlayfsRenameOverWhiteoutInStickyDir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  constexpr uid_t kNobody = 65534;
+  SKIP_IF(
+      !ASSERT_NO_ERRNO_AND_VALUE(IsIDMapped("/proc/self/uid_map", kNobody)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "mode=0755", MNT_DETACH));
+
+  const std::string lower = JoinPath(base_dir.path(), "lower");
+  const std::string upper = JoinPath(base_dir.path(), "upper");
+  const std::string work = JoinPath(base_dir.path(), "work");
+  const std::string merged = JoinPath(base_dir.path(), "merged");
+  ASSERT_THAT(mkdir(lower.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(upper.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(work.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(merged.c_str(), 0755), SyscallSucceeds());
+
+  // A sticky directory with lower-only files.
+  const std::string lower_dir = JoinPath(lower, "dir");
+  ASSERT_THAT(mkdir(lower_dir.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(chmod(lower_dir.c_str(), 01777), SyscallSucceeds());
+  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(lower_dir, "victim"), "lower"));
+  ASSERT_NO_ERRNO(
+      CreateWithContents(JoinPath(lower_dir, "lower_other"), "lower"));
+
+  const std::string opts =
+      absl::StrCat("lowerdir=", lower, ",upperdir=", upper, ",workdir=", work);
+  auto overlay_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", merged, "overlay", 0, opts, MNT_DETACH));
+
+  // Unlinking it leaves a mounter-owned whiteout.
+  const std::string merged_dir = JoinPath(merged, "dir");
+  ASSERT_THAT(unlink(JoinPath(merged_dir, "victim").c_str()),
+              SyscallSucceeds());
+  struct stat st;
+  ASSERT_THAT(lstat(JoinPath(upper, "dir/victim").c_str(), &st),
+              SyscallSucceeds());
+  ASSERT_TRUE(S_ISCHR(st.st_mode));
+  ASSERT_EQ(st.st_rdev, makedev(0, 0));
+  ASSERT_EQ(st.st_uid, geteuid());
+  ASSERT_NE(st.st_uid, kNobody);
+  ASSERT_THAT(stat(JoinPath(merged_dir, "victim").c_str(), &st),
+              SyscallFailsWithErrno(ENOENT));
+  ASSERT_NO_ERRNO(
+      CreateWithContents(JoinPath(merged_dir, "upper_other"), "upper"));
+
+  // An unprivileged user may not rename over visible files it doesn't own,
+  // but may rename its own file over the whiteout.
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        TEST_PCHECK(chdir(merged_dir.c_str()) == 0);
+        TEST_PCHECK(syscall(SYS_setresuid, kNobody, kNobody, kNobody) == 0);
+        int fd = open("mine", O_WRONLY | O_CREAT | O_EXCL, 0644);
+        TEST_PCHECK(fd >= 0);
+        TEST_PCHECK(close(fd) == 0);
+        TEST_CHECK(rename("mine", "lower_other") == -1 && errno == EPERM);
+        TEST_CHECK(rename("mine", "upper_other") == -1 && errno == EPERM);
+        TEST_PCHECK(rename("mine", "victim") == 0);
+      }),
+      IsPosixErrorOkAndHolds(0));
+
+  ASSERT_THAT(stat(JoinPath(merged_dir, "victim").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+  EXPECT_EQ(st.st_uid, kNobody);
+  EXPECT_EQ(st.st_size, 0);
+  EXPECT_THAT(stat(JoinPath(merged_dir, "mine").c_str(), &st),
+              SyscallFailsWithErrno(ENOENT));
+  for (const char* name : {"lower_other", "upper_other"}) {
+    ASSERT_THAT(stat(JoinPath(merged_dir, name).c_str(), &st),
+                SyscallSucceeds());
+    EXPECT_NE(st.st_uid, kNobody);
+    EXPECT_GT(st.st_size, 0);
+  }
+}
+
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
