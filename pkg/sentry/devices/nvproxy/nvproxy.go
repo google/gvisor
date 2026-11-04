@@ -302,6 +302,11 @@ type hasPOsEventPtr[T any] interface {
 	nvgpu.HasPOsEvent
 }
 
+type hasMemoryAttr2Ptr[T any] interface {
+	marshalPtr[T]
+	GetAttr2() uint32
+}
+
 // NvidiaDeviceFD is an interface that should be implemented by all
 // vfs.FileDescriptionImpl of Nvidia devices.
 type NvidiaDeviceFD interface {
