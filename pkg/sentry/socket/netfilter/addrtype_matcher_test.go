@@ -15,6 +15,7 @@
 package netfilter
 
 import (
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -30,13 +31,13 @@ import (
 )
 
 var (
-	addrTypeLocalV4  = tcpip.AddrFrom4([4]byte{192, 0, 2, 1})
-	addrTypeRemoteV4 = tcpip.AddrFrom4([4]byte{198, 51, 100, 1})
-	addrTypeLocalV6  = tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 15: 1})
-	addrTypeRemoteV6 = tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 15: 2})
+	addrTypeLocalV4  = netip.AddrFrom4([4]byte{192, 0, 2, 1})
+	addrTypeRemoteV4 = netip.AddrFrom4([4]byte{198, 51, 100, 1})
+	addrTypeLocalV6  = netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 15: 1})
+	addrTypeRemoteV6 = netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 15: 2})
 )
 
-func ipv4Packet(src, dst tcpip.Address) *stack.PacketBuffer {
+func ipv4Packet(src, dst netip.Addr) *stack.PacketBuffer {
 	b := make([]byte, header.IPv4MinimumSize)
 	header.IPv4(b).Encode(&header.IPv4Fields{
 		TotalLength: uint16(header.IPv4MinimumSize),
@@ -48,7 +49,7 @@ func ipv4Packet(src, dst tcpip.Address) *stack.PacketBuffer {
 	return networkPacket(b, header.IPv4ProtocolNumber)
 }
 
-func ipv6Packet(src, dst tcpip.Address) *stack.PacketBuffer {
+func ipv6Packet(src, dst netip.Addr) *stack.PacketBuffer {
 	b := make([]byte, header.IPv6MinimumSize)
 	header.IPv6(b).Encode(&header.IPv6Fields{
 		TransportProtocol: header.UDPProtocolNumber,
@@ -83,9 +84,9 @@ func addrTypeStack(t *testing.T) *stack.Stack {
 		t.Fatalf("CreateNIC: %s", err)
 	}
 	for _, pa := range []tcpip.ProtocolAddress{
-		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: tcpip.AddrFrom4([4]byte{127, 0, 0, 1}), PrefixLen: 8}},
-		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: addrTypeLocalV4.WithPrefix()},
-		{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: addrTypeLocalV6.WithPrefix()},
+		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: netip.PrefixFrom(netip.AddrFrom4([4]byte{127, 0, 0, 1}), 8)},
+		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.FullPrefix(addrTypeLocalV4)},
+		{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: tcpip.FullPrefix(addrTypeLocalV6)},
 	} {
 		if err := s.AddProtocolAddress(1, pa, stack.AddressProperties{}); err != nil {
 			t.Fatalf("AddProtocolAddress(%s): %s", pa.AddressWithPrefix, err)
@@ -112,7 +113,7 @@ func TestAddrTypeIPv4(t *testing.T) {
 	s := addrTypeStack(t)
 	for _, test := range []struct {
 		name string
-		dst  tcpip.Address
+		dst  netip.Addr
 		mask uint16
 		want bool
 	}{
@@ -120,16 +121,16 @@ func TestAddrTypeIPv4(t *testing.T) {
 		{name: "assigned is not UNICAST", dst: addrTypeLocalV4, mask: linux.XT_ADDRTYPE_UNICAST, want: false},
 		{name: "remote is UNICAST", dst: addrTypeRemoteV4, mask: linux.XT_ADDRTYPE_UNICAST, want: true},
 		{name: "remote is not LOCAL", dst: addrTypeRemoteV4, mask: linux.XT_ADDRTYPE_LOCAL, want: false},
-		{name: "loopback is LOCAL", dst: tcpip.AddrFrom4([4]byte{127, 1, 2, 3}), mask: linux.XT_ADDRTYPE_LOCAL, want: true},
-		{name: "loopback subnet broadcast is BROADCAST", dst: tcpip.AddrFrom4([4]byte{127, 255, 255, 255}), mask: linux.XT_ADDRTYPE_BROADCAST, want: true},
-		{name: "loopback subnet broadcast is not LOCAL", dst: tcpip.AddrFrom4([4]byte{127, 255, 255, 255}), mask: linux.XT_ADDRTYPE_LOCAL, want: false},
-		{name: "127.0.0.5 is LOCAL", dst: tcpip.AddrFrom4([4]byte{127, 0, 0, 5}), mask: linux.XT_ADDRTYPE_LOCAL, want: true},
-		{name: "127.0.0.5 is not BROADCAST", dst: tcpip.AddrFrom4([4]byte{127, 0, 0, 5}), mask: linux.XT_ADDRTYPE_BROADCAST, want: false},
-		{name: "multicast is MULTICAST", dst: tcpip.AddrFrom4([4]byte{224, 0, 0, 1}), mask: linux.XT_ADDRTYPE_MULTICAST, want: true},
-		{name: "multicast is not LOCAL", dst: tcpip.AddrFrom4([4]byte{224, 0, 0, 1}), mask: linux.XT_ADDRTYPE_LOCAL, want: false},
+		{name: "loopback is LOCAL", dst: netip.AddrFrom4([4]byte{127, 1, 2, 3}), mask: linux.XT_ADDRTYPE_LOCAL, want: true},
+		{name: "loopback subnet broadcast is BROADCAST", dst: netip.AddrFrom4([4]byte{127, 255, 255, 255}), mask: linux.XT_ADDRTYPE_BROADCAST, want: true},
+		{name: "loopback subnet broadcast is not LOCAL", dst: netip.AddrFrom4([4]byte{127, 255, 255, 255}), mask: linux.XT_ADDRTYPE_LOCAL, want: false},
+		{name: "127.0.0.5 is LOCAL", dst: netip.AddrFrom4([4]byte{127, 0, 0, 5}), mask: linux.XT_ADDRTYPE_LOCAL, want: true},
+		{name: "127.0.0.5 is not BROADCAST", dst: netip.AddrFrom4([4]byte{127, 0, 0, 5}), mask: linux.XT_ADDRTYPE_BROADCAST, want: false},
+		{name: "multicast is MULTICAST", dst: netip.AddrFrom4([4]byte{224, 0, 0, 1}), mask: linux.XT_ADDRTYPE_MULTICAST, want: true},
+		{name: "multicast is not LOCAL", dst: netip.AddrFrom4([4]byte{224, 0, 0, 1}), mask: linux.XT_ADDRTYPE_LOCAL, want: false},
 		{name: "limited broadcast is BROADCAST", dst: header.IPv4Broadcast, mask: linux.XT_ADDRTYPE_BROADCAST, want: true},
 		{name: "0.0.0.0 is BROADCAST", dst: header.IPv4Any, mask: linux.XT_ADDRTYPE_BROADCAST, want: true},
-		{name: "0.1.2.3 is BROADCAST", dst: tcpip.AddrFrom4([4]byte{0, 1, 2, 3}), mask: linux.XT_ADDRTYPE_BROADCAST, want: true},
+		{name: "0.1.2.3 is BROADCAST", dst: netip.AddrFrom4([4]byte{0, 1, 2, 3}), mask: linux.XT_ADDRTYPE_BROADCAST, want: true},
 		{name: "0.0.0.0 is not UNICAST", dst: header.IPv4Any, mask: linux.XT_ADDRTYPE_UNICAST, want: false},
 		{name: "any of LOCAL or UNICAST", dst: addrTypeRemoteV4, mask: linux.XT_ADDRTYPE_LOCAL | linux.XT_ADDRTYPE_UNICAST, want: true},
 	} {
@@ -146,11 +147,11 @@ func TestAddrTypeIPv4(t *testing.T) {
 
 func TestAddrTypeIPv6(t *testing.T) {
 	s := addrTypeStack(t)
-	mcast := tcpip.AddrFrom16([16]byte{0xff, 0x02, 15: 1})
-	mapped := tcpip.AddrFrom16([16]byte{10: 0xff, 11: 0xff, 12: 192, 13: 0, 14: 2, 15: 1})
+	mcast := netip.AddrFrom16([16]byte{0xff, 0x02, 15: 1})
+	mapped := netip.AddrFrom16([16]byte{10: 0xff, 11: 0xff, 12: 192, 13: 0, 14: 2, 15: 1})
 	for _, test := range []struct {
 		name string
-		dst  tcpip.Address
+		dst  netip.Addr
 		mask uint16
 		want bool
 	}{

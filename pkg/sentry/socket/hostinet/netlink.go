@@ -17,6 +17,7 @@ package hostinet
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 func getInterfaces() (map[int32]inet.Interface, error) {
@@ -285,18 +285,24 @@ func doNetlinkInterfaceRequest(typ, flags uint16, idx uint32, addr inet.Interfac
 		Flags:     addr.Flags,
 	}
 	// Local address.
-	localAddr := tcpip.AddrFromSlice(addr.Addr)
+	localAddr, ok := netip.AddrFromSlice(addr.Addr)
+	if !ok {
+		return fmt.Errorf("invalid interface address length %d", len(addr.Addr))
+	}
 	if addr.Family == linux.AF_INET {
-		localAddr = localAddr.To4()
+		localAddr = localAddr.Unmap()
+		if !localAddr.Is4() {
+			return fmt.Errorf("invalid IPv4 interface address %s", localAddr)
+		}
 	}
 	rtLocal := linux.RtAttr{
-		Len:  linux.SizeOfRtAttr + uint16(localAddr.Len()),
+		Len:  linux.SizeOfRtAttr + uint16(localAddr.BitLen()/8),
 		Type: linux.IFA_LOCAL,
 	}
 	localAddrBs := primitive.ByteSlice(localAddr.AsSlice())
 	// Peer is always the local address for us.
 	rtPeer := linux.RtAttr{
-		Len:  linux.SizeOfRtAttr + uint16(localAddr.Len()),
+		Len:  linux.SizeOfRtAttr + uint16(localAddr.BitLen()/8),
 		Type: linux.IFA_ADDRESS,
 	}
 	peerAddrBs := primitive.ByteSlice(localAddr.AsSlice())

@@ -16,6 +16,7 @@ package stack
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -750,8 +751,8 @@ func TestCalculateTransportChecksumUnknownProtocol(t *testing.T) {
 
 func TestCalculateTransportChecksumIPv6Extensions(t *testing.T) {
 	const extensionSize = 8
-	src := tcpip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
-	dst := tcpip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	src := netip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	dst := netip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
 	for _, protocol := range []tcpip.TransportProtocolNumber{header.TCPProtocolNumber, header.UDPProtocolNumber} {
 		for _, extension := range []header.IPv6ExtensionHeaderIdentifier{header.IPv6HopByHopOptionsExtHdrIdentifier, header.IPv6DestinationOptionsExtHdrIdentifier} {
 			t.Run(fmt.Sprintf("protocol=%d/extension=%d", protocol, extension), func(t *testing.T) {
@@ -820,8 +821,8 @@ func TestCalculateTransportChecksumUDPZero(t *testing.T) {
 	netHdr := header.IPv4(pk.NetworkHeader().Slice())
 	netHdr.Encode(&header.IPv4Fields{
 		Protocol: uint8(header.UDPProtocolNumber),
-		SrcAddr:  tcpip.AddrFrom4Slice([]byte{0, 0, 0, 0}),
-		DstAddr:  tcpip.AddrFrom4Slice([]byte{0, 0, 0, 0}),
+		SrcAddr:  netip.IPv4Unspecified(),
+		DstAddr:  netip.IPv4Unspecified(),
 	})
 
 	// Encode Transport Header (UDP)

@@ -17,6 +17,7 @@ package netstack
 import (
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -646,10 +647,10 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 				continue
 			}
 
-			addrCopy := a.AddressWithPrefix.Address
+			addrCopy := a.AddressWithPrefix.Addr()
 			addrs = append(addrs, inet.InterfaceAddr{
 				Family:    family,
-				PrefixLen: uint8(a.AddressWithPrefix.PrefixLen),
+				PrefixLen: uint8(a.AddressWithPrefix.Bits()),
 				Addr:      addrCopy.AsSlice(),
 				// TODO(b/68878065): Other fields.
 			})
@@ -662,41 +663,27 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 // convertAddr converts an InterfaceAddr to a ProtocolAddress.
 func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 	var (
-		protocol        tcpip.NetworkProtocolNumber
-		address         tcpip.Address
-		protocolAddress tcpip.ProtocolAddress
+		protocol tcpip.NetworkProtocolNumber
+		bits     int
 	)
 	switch addr.Family {
 	case linux.AF_INET:
-		if len(addr.Addr) != header.IPv4AddressSize {
-			return protocolAddress, linuxerr.EINVAL
-		}
-		if addr.PrefixLen > header.IPv4AddressSize*8 {
-			return protocolAddress, linuxerr.EINVAL
-		}
 		protocol = ipv4.ProtocolNumber
-		address = tcpip.AddrFrom4Slice(addr.Addr)
+		bits = header.IPv4AddressSize * 8
 	case linux.AF_INET6:
-		if len(addr.Addr) != header.IPv6AddressSize {
-			return protocolAddress, linuxerr.EINVAL
-		}
-		if addr.PrefixLen > header.IPv6AddressSize*8 {
-			return protocolAddress, linuxerr.EINVAL
-		}
 		protocol = ipv6.ProtocolNumber
-		address = tcpip.AddrFrom16Slice(addr.Addr)
+		bits = header.IPv6AddressSize * 8
 	default:
-		return protocolAddress, linuxerr.ENOTSUP
+		return tcpip.ProtocolAddress{}, linuxerr.ENOTSUP
 	}
-
-	protocolAddress = tcpip.ProtocolAddress{
-		Protocol: protocol,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   address,
-			PrefixLen: int(addr.PrefixLen),
-		},
+	address, ok := netip.AddrFromSlice(addr.Addr)
+	if !ok || address.BitLen() != bits || int(addr.PrefixLen) > bits {
+		return tcpip.ProtocolAddress{}, linuxerr.EINVAL
 	}
-	return protocolAddress, nil
+	return tcpip.ProtocolAddress{
+		Protocol:          protocol,
+		AddressWithPrefix: netip.PrefixFrom(address, int(addr.PrefixLen)),
+	}, nil
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
@@ -715,8 +702,8 @@ func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.Inter
 
 	// Add route for local network if it doesn't exist already.
 	localRoute := tcpip.Route{
-		Destination: protocolAddress.AddressWithPrefix.Subnet(),
-		Gateway:     tcpip.Address{}, // No gateway for local network.
+		Destination: protocolAddress.AddressWithPrefix.Masked(),
+		Gateway:     netip.Addr{}, // No gateway for local network.
 		NIC:         nicID,
 	}
 
@@ -725,7 +712,7 @@ func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.Inter
 		if rt.Equal(localRoute) {
 			return nil
 		}
-		if rt.Destination.Equal(localRoute.Destination) {
+		if rt.Destination == localRoute.Destination {
 			sameDst = true
 		}
 	}
@@ -754,15 +741,15 @@ func (s *Stack) RemoveInterfaceAddr(ctx context.Context, idx int32, addr inet.In
 
 	// Remove addresses matching the address and prefix.
 	nicID := tcpip.NICID(idx)
-	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Address); err != nil {
+	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Addr()); err != nil {
 		return syserr.TranslateNetstackError(err).ToError()
 	}
 	s.sendAddressEvent(ctx, nicID, addr, false /* added */)
 
 	// Remove the corresponding local network route if it exists.
 	localRoute := tcpip.Route{
-		Destination: protocolAddress.AddressWithPrefix.Subnet(),
-		Gateway:     tcpip.Address{}, // No gateway for local network.
+		Destination: protocolAddress.AddressWithPrefix.Masked(),
+		Gateway:     netip.Addr{}, // No gateway for local network.
 		NIC:         nicID,
 	}
 	var removed []tcpip.Route
@@ -1001,7 +988,7 @@ func (s *Stack) RouteTable() []inet.Route {
 // makeInetRoute converts a netstack route to the form reported by RTM_GETROUTE.
 func makeInetRoute(rt tcpip.Route) (inet.Route, bool) {
 	var family uint8
-	switch rt.Destination.ID().BitLen() {
+	switch rt.Destination.Addr().BitLen() {
 	case header.IPv4AddressSizeBits:
 		family = linux.AF_INET
 	case header.IPv6AddressSizeBits:
@@ -1011,10 +998,10 @@ func makeInetRoute(rt tcpip.Route) (inet.Route, bool) {
 		return inet.Route{}, false
 	}
 
-	dstAddr := rt.Destination.ID()
+	dstAddr := rt.Destination.Addr()
 	return inet.Route{
 		Family: family,
-		DstLen: uint8(rt.Destination.Prefix()), // The CIDR prefix for the destination.
+		DstLen: uint8(rt.Destination.Bits()), // The CIDR prefix for the destination.
 
 		// Always return unspecified protocol since we have no notion of
 		// protocol for routes.
@@ -1090,12 +1077,13 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 			return tcpip.Route{}, syserr.ErrNotSupported
 		}
 	}
-	var zero []byte
+	// When no destination address is provided, the new route might be the default route.
+	var dest netip.Prefix
 	switch route.Family {
 	case linux.AF_INET:
-		zero = tcpip.IPv4Zero
+		dest = header.IPv4EmptySubnet
 	case linux.AF_INET6:
-		zero = tcpip.IPv6Zero
+		dest = header.IPv6EmptySubnet
 	default:
 		return tcpip.Route{}, syserr.ErrNotSupported
 	}
@@ -1117,40 +1105,37 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
 	}
+	addressSize := dest.Addr().BitLen() / 8
 	if route.GatewayAddr != nil {
-		if len(route.GatewayAddr) < len(zero) {
+		if len(route.GatewayAddr) < addressSize {
 			return tcpip.Route{}, syserr.ErrRange
 		}
-		route.GatewayAddr = route.GatewayAddr[:len(zero)]
+		route.GatewayAddr = route.GatewayAddr[:addressSize]
 	} else if route.DstAddr == nil && route.OutputInterface == 0 && msg.Header().Type == linux.RTM_NEWROUTE {
 		return tcpip.Route{}, syserr.ErrNoDevice
 	}
-	var dest tcpip.Subnet
-	// When no destination address is provided, the new route might be the default route.
-	if route.DstAddr == nil {
-		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(zero), tcpip.MaskFromBytes(zero))
-		if err != nil {
-			return tcpip.Route{}, syserr.ErrInvalidArgument
-		}
-		dest = subnet
-	} else {
-		dst := make([]byte, len(zero))
+	if route.DstAddr != nil {
+		dst := make([]byte, addressSize)
 		if copy(dst, route.DstAddr)*8 < int(route.DstLen) {
 			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
-		dest = tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFromSlice(dst),
-			PrefixLen: int(route.DstLen)}.Subnet()
+		addr, ok := netip.AddrFromSlice(dst)
+		if !ok {
+			return tcpip.Route{}, syserr.ErrInvalidArgument
+		}
+		dest = netip.PrefixFrom(addr, int(route.DstLen)).Masked()
 	}
 
 	localRoute := tcpip.Route{
 		Destination: dest,
-		Gateway:     tcpip.AddrFromSlice(route.GatewayAddr),
 		NIC:         tcpip.NICID(route.OutputInterface),
 	}
+	if addr, ok := netip.AddrFromSlice(route.GatewayAddr); ok {
+		localRoute.Gateway = addr
+	}
 
-	if len(route.SrcAddr) != 0 {
-		localRoute.SourceHint = tcpip.AddrFromSlice(route.SrcAddr)
+	if addr, ok := netip.AddrFromSlice(route.SrcAddr); ok {
+		localRoute.SourceHint = addr
 	}
 
 	return localRoute, nil
@@ -1171,13 +1156,13 @@ func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Err
 		}
 		// Both gateway and NIC are compared with existing routes
 		// only when they are present in the netlink message.
-		if localRoute.Gateway.Len() > 0 && !localRoute.Gateway.Equal(rt.Gateway) {
+		if localRoute.Gateway.IsValid() && localRoute.Gateway != rt.Gateway {
 			return false
 		}
 		if localRoute.NIC > 0 && localRoute.NIC != rt.NIC {
 			return false
 		}
-		found = rt.Destination.Equal(localRoute.Destination)
+		found = rt.Destination == localRoute.Destination
 		if found {
 			removedRoute = rt
 		}
@@ -1201,7 +1186,7 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 	found := false
 	sameDst := false
 	for _, rt := range s.Stack.GetRouteTable() {
-		if rt.Destination.Equal(localRoute.Destination) {
+		if rt.Destination == localRoute.Destination {
 			sameDst = true
 		}
 		if localRoute.Equal(rt) {
@@ -1242,7 +1227,7 @@ func newRouteFlags(rt tcpip.Route, sameDst bool, reqFlags uint16) uint16 {
 	if !sameDst {
 		flags |= linux.NLM_F_EXCL
 	}
-	v4 := rt.Destination.ID().Len() == header.IPv4AddressSize
+	v4 := rt.Destination.Addr().Is4()
 	if reqFlags&linux.NLM_F_APPEND != 0 && (sameDst || !v4) {
 		flags |= linux.NLM_F_APPEND
 	}
@@ -1255,11 +1240,11 @@ func (s *Stack) checkGateway(msg *nlmsg.Message, route *tcpip.Route) *syserr.Err
 		return syserr.ErrInvalidArgument
 	}
 	gw := route.Gateway
-	if gw.Unspecified() || header.IsV6LinkLocalUnicastAddress(gw) || rtMsg.Flags&linux.RTNH_F_ONLINK != 0 {
+	if !gw.IsValid() || gw.IsUnspecified() || header.IsV6LinkLocalUnicastAddress(gw) || rtMsg.Flags&linux.RTNH_F_ONLINK != 0 {
 		return nil
 	}
 	for _, rt := range s.Stack.GetRouteTable() {
-		if rt.Gateway.Unspecified() && (route.NIC == 0 || rt.NIC == route.NIC) && rt.Destination.Contains(gw) {
+		if (!rt.Gateway.IsValid() || rt.Gateway.IsUnspecified()) && (route.NIC == 0 || rt.NIC == route.NIC) && rt.Destination.Contains(gw) {
 			route.NIC = rt.NIC
 			return nil
 		}
@@ -1270,7 +1255,7 @@ func (s *Stack) checkGateway(msg *nlmsg.Message, route *tcpip.Route) *syserr.Err
 			continue
 		}
 		for _, a := range nics[id].ProtocolAddresses {
-			if subnet := a.AddressWithPrefix.Subnet(); subnet.Contains(gw) {
+			if subnet := a.AddressWithPrefix.Masked(); subnet.Contains(gw) {
 				route.NIC = id
 				return nil
 			}

@@ -17,6 +17,7 @@ package tcp
 import (
 	"context"
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
@@ -217,7 +218,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		if e.stack.AllowLiveTCPMigration() {
 			// Handle dual stack addresses.
 			netProto := e.NetProto
-			switch e.TransportEndpointInfo.ID.LocalAddress.BitLen() {
+			switch e.TransportEndpointInfo.ID.Local.Addr().BitLen() {
 			case header.IPv4AddressSizeBits:
 				netProto = header.IPv4ProtocolNumber
 			case header.IPv6AddressSizeBits:
@@ -226,7 +227,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			// Get the new local NIC for source IP and do a FindRoute here to
 			// identify if the network config is same. Then only attempt restore,
 			// else close the connection on our end.
-			r, err := e.stack.FindRoute(0, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress, netProto, false /* multicastLoop */)
+			r, err := e.stack.FindRoute(0, e.TransportEndpointInfo.ID.Local.Addr(), e.TransportEndpointInfo.ID.Remote.Addr(), netProto, false /* multicastLoop */)
 			if err != nil {
 				e.closeEndpointAtRestore()
 				log.Infof("Cannot find the route %+v", e.TransportEndpointInfo.ID)
@@ -236,17 +237,14 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			r.Release()
 		}
 		bind()
-		if e.connectingAddress.BitLen() == 0 {
-			e.connectingAddress = e.TransportEndpointInfo.ID.RemoteAddress
+		if !e.connectingAddress.IsValid() {
+			e.connectingAddress = e.TransportEndpointInfo.ID.Remote.Addr()
 			// This endpoint is accepted by netstack but not yet by
 			// the app. If the endpoint is IPv6 but the remote
 			// address is IPv4, we need to connect as IPv6 so that
 			// dual-stack mode can be properly activated.
-			if e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.RemoteAddress.BitLen() != header.IPv6AddressSizeBits {
-				e.connectingAddress = tcpip.AddrFrom16Slice(append(
-					[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff},
-					e.TransportEndpointInfo.ID.RemoteAddress.AsSlice()...,
-				))
+			if e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.Remote.Addr().BitLen() != header.IPv6AddressSizeBits {
+				e.connectingAddress = netip.AddrFrom16(e.TransportEndpointInfo.ID.Remote.Addr().As16())
 			}
 		}
 		// Reset the scoreboard to reinitialize the sack information as
@@ -255,7 +253,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		// Unregister the endpoint before registering again during Connect.
 		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice)
 		e.mu.Lock()
-		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false /* handshake */)
+		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.Remote.Port()}, false /* handshake */)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 			log.Warningf("TCP endpoint connect failed for connected endpoint with ID: %+v err: %v", id, err)
 			e.mu.Unlock()
@@ -305,7 +303,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			connectedLoading.Wait()
 			listenLoading.Wait()
 			bind()
-			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort})
+			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.Remote.Port()})
 			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 				log.Warningf("TCP endpoint connect failed for connecting endpoint with ID: %+v err: %v", id, err)
 				e.Close()
@@ -324,7 +322,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			bind()
 			e.mu.Lock()
 			e.setEndpointState(epState)
-			r, err := e.stack.FindRoute(e.boundNICID, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress, e.effectiveNetProtos[0], false /* multicastLoop */)
+			r, err := e.stack.FindRoute(e.boundNICID, e.TransportEndpointInfo.ID.Local.Addr(), e.TransportEndpointInfo.ID.Remote.Addr(), e.effectiveNetProtos[0], false /* multicastLoop */)
 			if err != nil {
 				e.mu.Unlock()
 				log.Warningf("FindRoute failed when restoring endpoint w/ ID: %+v err: %v", id, err)
