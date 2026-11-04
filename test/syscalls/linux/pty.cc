@@ -1170,6 +1170,44 @@ TEST_F(PtyTest, TCSETSF2FlushesReplicaInput) {
   ExpectFinished(replica_);
 }
 
+// In non-canonical mode with MIN=0 and TIME=0, a read returns at once with
+// whatever is available: 0 bytes from an empty queue, even on an O_NONBLOCK
+// file, where it is not EAGAIN.
+TEST_F(PtyTest, NonCanonicalMinZeroTimeZeroReadDoesNotBlock) {
+  struct kernel_termios t = {};
+  ASSERT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+  t.c_lflag &= ~(ICANON | ECHO);
+  t.c_cc[VMIN] = 0;
+  t.c_cc[VTIME] = 0;
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+
+  char c;
+  EXPECT_THAT(ReadFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(0));
+
+  FileDescriptor blocking =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master_, O_RDWR | O_NOCTTY));
+  EXPECT_THAT(ReadFd(blocking.get(), &c, 1), SyscallSucceedsWithValue(0));
+
+  // Input that is available is still returned.
+  ASSERT_THAT(WriteFd(master_.get(), "x", 1), SyscallSucceedsWithValue(1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), 1));
+  EXPECT_THAT(ReadFd(blocking.get(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'x');
+}
+
+// With MIN=1 an empty queue still has nothing to return: EAGAIN on an
+// O_NONBLOCK file.
+TEST_F(PtyTest, NonCanonicalMinOneReadWouldBlock) {
+  struct kernel_termios t = {};
+  ASSERT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+  t.c_lflag &= ~(ICANON | ECHO);
+  t.c_cc[VMIN] = 1;
+  t.c_cc[VTIME] = 0;
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+
+  ExpectFinished(replica_);
+}
+
 TEST_F(PtyTest, TermiosIGNCR) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= IGNCR;
