@@ -5150,6 +5150,166 @@ TEST_P(NetlinkRouteIpInvariantTest, RouteMulticastGroupReplace) {
   EXPECT_EQ(hdr->nlmsg_flags, NLM_F_REPLACE);
 }
 
+// Bringing a link down removes the routes through it and its IPv6 addresses,
+// like fib_disable_ip() and addrconf_ifdown(). Only the IPv6 removals are
+// announced. Bringing it up again adds the prefix routes of the remaining
+// addresses, but not the routes that a request added.
+TEST_P(NetlinkRouteIpInvariantTest, LinkDownUpRoutesAndAddresses) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // Routes are not savable.
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  const int family = GetParam();
+  const bool v4 = family == AF_INET;
+  const int prefixlen = v4 ? 24 : 64;
+  const size_t addrlen = v4 ? sizeof(in_addr) : sizeof(in6_addr);
+  std::string addr(addrlen, '\0');
+  std::string prefix(addrlen, '\0');
+  std::string other(addrlen, '\0');
+  ASSERT_EQ(inet_pton(family, v4 ? "10.0.1.1" : "2001:db8:1::1", addr.data()),
+            1);
+  ASSERT_EQ(inet_pton(family, v4 ? "10.0.1.0" : "2001:db8:1::", prefix.data()),
+            1);
+  ASSERT_EQ(inet_pton(family, v4 ? "10.0.3.0" : "2001:db8:3::", other.data()),
+            1);
+
+  FileDescriptor control_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(control_fd, kSeq, &veth_req,
+                                           veth_req.hdr.nlmsg_len));
+  const int index = if_nametoindex("veth1");
+  ASSERT_NE(index, 0);
+  ASSERT_NO_ERRNO(LinkChangeFlags(index, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(control_fd, index, family, prefixlen,
+                                   addr.data(), addr.size()));
+  ASSERT_NO_ERRNO(
+      AddUnicastRoute(index, family, prefixlen, other.data(), other.size()));
+
+  struct sockaddr_nl sa = {};
+  sa.nl_family = AF_NETLINK;
+  sa.nl_groups = RTMGRP_LINK;
+  FileDescriptor link_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &sa));
+  sa.nl_groups = v4 ? RTMGRP_IPV4_ROUTE : RTMGRP_IPV6_ROUTE;
+  FileDescriptor route_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &sa));
+  sa.nl_groups = v4 ? RTMGRP_IPV4_IFADDR : RTMGRP_IPV6_IFADDR;
+  FileDescriptor addr_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &sa));
+
+  // Returns the flags of the link, as reported by a link dump.
+  auto link_flags = [&]() -> PosixErrorOr<unsigned int> {
+    ASSIGN_OR_RETURN_ERRNO(std::vector<Link> links, DumpLinks());
+    for (const Link& link : links) {
+      if (link.index == index) {
+        return link.flags;
+      }
+    }
+    return PosixError(ENODEV, "veth1 not found");
+  };
+
+  // Returns whether the link has IFF_UP, as reported by the last link
+  // notification in msgs.
+  auto last_link_up = [&](const std::vector<std::vector<char>>& msgs,
+                          bool* up) -> bool {
+    bool found = false;
+    for (const auto& m : msgs) {
+      const struct nlmsghdr* hdr =
+          reinterpret_cast<const struct nlmsghdr*>(m.data());
+      if (hdr->nlmsg_type != RTM_NEWLINK ||
+          hdr->nlmsg_len < NLMSG_LENGTH(sizeof(struct ifinfomsg))) {
+        continue;
+      }
+      const struct ifinfomsg* ifi =
+          reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+      if (ifi->ifi_index != index) {
+        continue;
+      }
+      EXPECT_EQ(hdr->nlmsg_pid, 0u);
+      *up = (ifi->ifi_flags & IFF_UP) != 0;
+      found = true;
+    }
+    return found;
+  };
+
+  // Down.
+  ASSERT_NO_ERRNO(LinkChangeFlags(index, 0, IFF_UP));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(link_flags()) & IFF_UP, 0u);
+  {
+    bool up = true;
+    EXPECT_TRUE(last_link_up(DrainNetlinkMessages(link_fd), &up));
+    EXPECT_FALSE(up);
+  }
+  {
+    auto msgs = DrainNetlinkMessages(route_fd);
+    const struct nlmsghdr* prefix_hdr =
+        FindRouteMessage(msgs, RTM_DELROUTE, family, index, prefixlen, prefix);
+    const struct nlmsghdr* other_hdr =
+        FindRouteMessage(msgs, RTM_DELROUTE, family, index, prefixlen, other);
+    if (v4) {
+      EXPECT_EQ(prefix_hdr, nullptr);
+      EXPECT_EQ(other_hdr, nullptr);
+    } else {
+      ASSERT_NE(prefix_hdr, nullptr) << "no RTM_DELROUTE for the prefix route";
+      EXPECT_EQ(prefix_hdr->nlmsg_pid, 0u);
+      EXPECT_EQ(prefix_hdr->nlmsg_seq, 0u);
+      ASSERT_NE(other_hdr, nullptr) << "no RTM_DELROUTE for the added route";
+      EXPECT_EQ(other_hdr->nlmsg_pid, 0u);
+      EXPECT_EQ(other_hdr->nlmsg_seq, 0u);
+    }
+  }
+  {
+    auto msgs = DrainNetlinkMessages(addr_fd);
+    const struct nlmsghdr* hdr =
+        FindAddrMessage(msgs, RTM_DELADDR, family, index, prefixlen, addr);
+    if (v4) {
+      EXPECT_EQ(hdr, nullptr);
+    } else {
+      ASSERT_NE(hdr, nullptr) << "no RTM_DELADDR";
+      EXPECT_EQ(hdr->nlmsg_pid, 0u);
+    }
+  }
+  // Routes through a link that is down are rejected.
+  EXPECT_THAT(
+      AddUnicastRoute(index, family, prefixlen, other.data(), other.size()),
+      PosixErrorIs(ENETDOWN, _));
+
+  // Up. A zero ifi_change means that ifi_flags replaces all flags.
+  ASSERT_NO_ERRNO(LinkChangeFlags(index, IFF_UP, 0));
+  EXPECT_NE(ASSERT_NO_ERRNO_AND_VALUE(link_flags()) & IFF_UP, 0u);
+  {
+    bool up = false;
+    EXPECT_TRUE(last_link_up(DrainNetlinkMessages(link_fd), &up));
+    EXPECT_TRUE(up);
+  }
+  {
+    auto msgs = DrainNetlinkMessages(route_fd);
+    EXPECT_EQ(
+        FindRouteMessage(msgs, RTM_NEWROUTE, family, index, prefixlen, other),
+        nullptr);
+    const struct nlmsghdr* hdr =
+        FindRouteMessage(msgs, RTM_NEWROUTE, family, index, prefixlen, prefix);
+    if (v4) {
+      ASSERT_NE(hdr, nullptr) << "no RTM_NEWROUTE for the prefix route";
+      EXPECT_EQ(hdr->nlmsg_pid, 0u);
+      EXPECT_EQ(hdr->nlmsg_seq, 0u);
+    } else {
+      // The address was removed, so it has no prefix route.
+      EXPECT_EQ(hdr, nullptr);
+    }
+  }
+}
+
 // To verify the namespaced nature of the netlink multicast groups.
 TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));

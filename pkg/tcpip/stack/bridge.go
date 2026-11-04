@@ -52,6 +52,10 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	// Like Linux, a port that is down drops all frames.
+	if !p.nic.Enabled() {
+		return
+	}
 	bridge := p.bridge
 	eth := header.Ethernet(pkt.LinkHeader().Slice())
 	updateFDB := false
@@ -68,27 +72,30 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	}
 	destAddress := eth.DestinationAddress()
 	isMulticast := header.IsMulticastEthernetAddress(destAddress)
-	if entry, exist := bridge.fdbTable[BridgeFDBKey(destAddress)]; !exist {
-		// When no FDB entry is found, send the packet to all ports.
-		for _, port := range bridge.ports {
-			if p == port {
-				continue
+	// Like Linux, a bridge that is down forwards nothing.
+	if bridge.upLocked() {
+		if entry, exist := bridge.fdbTable[BridgeFDBKey(destAddress)]; !exist {
+			// When no FDB entry is found, send the packet to all ports.
+			for _, port := range bridge.ports {
+				if p == port || !port.nic.Enabled() {
+					continue
+				}
+				newPkt := NewPacketBuffer(PacketBufferOptions{
+					ReserveHeaderBytes: int(port.nic.MaxHeaderLength()),
+					Payload:            pkt.ToBuffer(),
+				})
+				port.nic.writeRawPacket(newPkt)
+				newPkt.DecRef()
 			}
+		} else if entry.port != p && entry.port.nic.Enabled() {
+			destPort := entry.port
 			newPkt := NewPacketBuffer(PacketBufferOptions{
-				ReserveHeaderBytes: int(port.nic.MaxHeaderLength()),
+				ReserveHeaderBytes: int(destPort.nic.MaxHeaderLength()),
 				Payload:            pkt.ToBuffer(),
 			})
-			port.nic.writeRawPacket(newPkt)
+			destPort.nic.writeRawPacket(newPkt)
 			newPkt.DecRef()
 		}
-	} else if entry.port != p {
-		destPort := entry.port
-		newPkt := NewPacketBuffer(PacketBufferOptions{
-			ReserveHeaderBytes: int(destPort.nic.MaxHeaderLength()),
-			Payload:            pkt.ToBuffer(),
-		})
-		destPort.nic.writeRawPacket(newPkt)
-		newPkt.DecRef()
 	}
 
 	d := bridge.dispatcher
@@ -152,6 +159,9 @@ func (b *BridgeEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) 
 	pktsSlice := pkts.AsSlice()
 	n := len(pktsSlice)
 	for _, p := range b.ports {
+		if !p.nic.Enabled() {
+			continue
+		}
 		for _, pkt := range pktsSlice {
 			// In order to properly loop back to the inbound side we must create a
 			// fresh packet that only contains the underlying payload with no headers
@@ -168,6 +178,14 @@ func (b *BridgeEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) 
 	}
 
 	return n, nil
+}
+
+// upLocked returns whether the bridge device is up.
+//
+// +checklocksread:b.mu
+func (b *BridgeEndpoint) upLocked() bool {
+	n, ok := b.dispatcher.(*nic)
+	return !ok || n.Enabled()
 }
 
 // AddNIC adds the specified NIC to the bridge.

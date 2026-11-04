@@ -1050,8 +1050,7 @@ type NICOptions struct {
 	// Name specifies the name of the NIC.
 	Name string
 
-	// Disabled specifies whether to avoid calling Attach on the passed
-	// LinkEndpoint.
+	// Disabled specifies whether the NIC starts disabled.
 	Disabled bool
 
 	// Context specifies user-defined data that will be returned in stack.NICInfo
@@ -1413,7 +1412,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 // precondition: s.mu is held.
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
-		Up:          true, // Netstack interfaces are always up.
+		Up:          nic.Enabled(),
 		Running:     nic.Enabled(),
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
@@ -1482,7 +1481,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 
 // NICStateFlags holds information about the state of an NIC.
 type NICStateFlags struct {
-	// Up indicates whether the interface is running.
+	// Up indicates whether the interface is administratively up.
 	Up bool
 
 	// Running indicates whether resources are allocated.
@@ -2825,10 +2824,11 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
 	opts := NICOptions{
-		Name:   nic.Name(),
-		Kind:   nic.kind,
-		MinMTU: nic.minMTU,
-		MaxMTU: nic.maxMTU,
+		Name:     nic.Name(),
+		Kind:     nic.kind,
+		MinMTU:   nic.minMTU,
+		MaxMTU:   nic.maxMTU,
+		Disabled: !nic.Enabled(),
 	}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)

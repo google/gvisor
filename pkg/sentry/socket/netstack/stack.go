@@ -240,6 +240,9 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	if flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
 		return syserr.ErrExists
 	}
+	// up is the requested administrative state, or nil if the request does
+	// not change it.
+	var up *bool
 	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
 		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
 			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
@@ -249,7 +252,12 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Flags)
 			return syserr.ErrInvalidArgument
 		}
-		// Netstack interfaces are always up.
+		// As in rtnl_dev_combine_flags(), a zero ifi_change means that
+		// ifi_flags replaces all flags.
+		if ifinfomsg.Change == 0 || ifinfomsg.Change&linux.IFF_UP != 0 {
+			v := ifinfomsg.Flags&linux.IFF_UP != 0
+			up = &v
+		}
 	}
 
 	dstNs, err := s.lockSrcAndDst(ctx, attrs)
@@ -257,7 +265,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
-	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs, up)
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and
@@ -337,9 +345,12 @@ func (s *Stack) unlockSrcAndDst(ctx context.Context, ns *inet.Namespace) {
 	ns.DecRef(ctx)
 }
 
+// setLinkLocked applies linkAttrs to the link id. If up is not nil, it also
+// brings the link up or down.
+//
 // precondition: s.linkLock is held. If dstNs is not nil, dstNs.Stack.linkMu is
 // also held.
-func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace) *syserr.Error {
+func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace, up *bool) *syserr.Error {
 	src := s
 	changed := false
 	nicInfo, ok := src.Stack.SingleNICInfo(id)
@@ -429,6 +440,90 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 
 	if changed {
 		src.sendChangeEvent(ctx, id)
+	}
+	if up != nil {
+		return src.setUpLocked(ctx, id, *up)
+	}
+	return nil
+}
+
+// setUpLocked brings the link id up or down, like dev_open() and dev_close()
+// on Linux.
+//
+// When the link goes down, all routes through it and all its IPv6 addresses
+// are removed. IPv4 addresses stay. When the link comes up, the prefix routes
+// of its addresses are added again. Routes that were added by a request are
+// not restored.
+//
+// precondition: s.linkMu is held.
+func (s *Stack) setUpLocked(ctx context.Context, id tcpip.NICID, up bool) *syserr.Error {
+	nicInfo, ok := s.Stack.SingleNICInfo(id)
+	if !ok {
+		return syserr.ErrUnknownNICID
+	}
+	if nicInfo.Flags.Up == up {
+		return nil
+	}
+	// Changes that follow from the new link state are made by the kernel,
+	// not by the request, so their notifications carry port ID 0 and
+	// sequence number 0.
+	kctx := inet.WithNetlinkOrigin(ctx, inet.NetlinkOrigin{})
+	if up {
+		if err := s.Stack.EnableNIC(id); err != nil {
+			return syserr.TranslateNetstackError(err)
+		}
+		s.sendChangeEvent(ctx, id)
+		// Like addrconf_notify() calls init_loopback(), add ::1 to the
+		// loopback device again.
+		if nicInfo.Flags.Loopback && s.SupportsIPv6() && s.Stack.CheckLocalAddress(id, ipv6.ProtocolNumber, header.IPv6Loopback) == 0 {
+			addr := tcpip.ProtocolAddress{
+				Protocol:          ipv6.ProtocolNumber,
+				AddressWithPrefix: header.IPv6Loopback.WithPrefix(),
+			}
+			if err := s.Stack.AddProtocolAddress(id, addr, stack.AddressProperties{}); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+			s.sendAddressEvent(kctx, id, makeInetAddr(addr), true /* added */)
+		}
+		for _, addr := range s.Stack.NICInfo()[id].ProtocolAddresses {
+			s.addPrefixRoute(kctx, id, addr)
+		}
+		return nil
+	}
+
+	// IPv6 addresses are hidden while the NIC is disabled, so list them
+	// first.
+	var v6Addrs []tcpip.ProtocolAddress
+	for _, addr := range nicInfo.ProtocolAddresses {
+		if addr.Protocol == ipv6.ProtocolNumber {
+			v6Addrs = append(v6Addrs, addr)
+		}
+	}
+	if err := s.Stack.DisableNIC(id); err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+	s.sendChangeEvent(ctx, id)
+
+	var removed []tcpip.Route
+	s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
+		if rt.NIC != id {
+			return false
+		}
+		removed = append(removed, rt)
+		return true
+	})
+	// Like fib_disable_ip(), IPv4 routes are removed without notification.
+	// Like addrconf_ifdown(), IPv6 routes are announced.
+	for _, rt := range removed {
+		if rt.Destination.ID().Len() == header.IPv6AddressSize {
+			s.sendRouteEvent(kctx, rt, false /* added */, 0)
+		}
+	}
+	for _, addr := range v6Addrs {
+		if err := s.Stack.RemoveAddress(id, addr.AddressWithPrefix.Address); err != nil {
+			return syserr.TranslateNetstackError(err)
+		}
+		s.sendAddressEvent(kctx, id, makeInetAddr(addr), false /* added */)
 	}
 	return nil
 }
@@ -526,7 +621,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs, nil /* up */); err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
 		peerEP.Close()
 		return err
@@ -553,7 +648,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs); err != nil {
+		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs, nil /* up */); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -587,7 +682,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs, nil /* up */); err != nil {
 		return err
 	}
 
@@ -635,28 +730,30 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 	for id, ni := range s.Stack.NICInfo() {
 		var addrs []inet.InterfaceAddr
 		for _, a := range ni.ProtocolAddresses {
-			var family uint8
-			switch a.Protocol {
-			case ipv4.ProtocolNumber:
-				family = linux.AF_INET
-			case ipv6.ProtocolNumber:
-				family = linux.AF_INET6
-			default:
+			if a.Protocol != ipv4.ProtocolNumber && a.Protocol != ipv6.ProtocolNumber {
 				log.Warningf("Unknown network protocol in %+v", a)
 				continue
 			}
-
-			addrCopy := a.AddressWithPrefix.Address
-			addrs = append(addrs, inet.InterfaceAddr{
-				Family:    family,
-				PrefixLen: uint8(a.AddressWithPrefix.PrefixLen),
-				Addr:      addrCopy.AsSlice(),
-				// TODO(b/68878065): Other fields.
-			})
+			addrs = append(addrs, makeInetAddr(a))
 		}
 		nicAddrs[int32(id)] = addrs
 	}
 	return nicAddrs
+}
+
+// makeInetAddr converts an IPv4 or IPv6 address to an InterfaceAddr.
+func makeInetAddr(a tcpip.ProtocolAddress) inet.InterfaceAddr {
+	family := uint8(linux.AF_INET)
+	if a.Protocol == ipv6.ProtocolNumber {
+		family = linux.AF_INET6
+	}
+	addrCopy := a.AddressWithPrefix.Address
+	return inet.InterfaceAddr{
+		Family:    family,
+		PrefixLen: uint8(a.AddressWithPrefix.PrefixLen),
+		Addr:      addrCopy.AsSlice(),
+		// TODO(b/68878065): Other fields.
+	}
 }
 
 // convertAddr converts an InterfaceAddr to a ProtocolAddress.
@@ -706,6 +803,9 @@ func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.Inter
 		return err
 	}
 
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
 	// Attach address to interface.
 	nicID := tcpip.NICID(idx)
 	if err := s.Stack.AddProtocolAddress(nicID, protocolAddress, stack.AddressProperties{}); err != nil {
@@ -713,36 +813,44 @@ func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.Inter
 	}
 	s.sendAddressEvent(ctx, nicID, addr, true /* added */)
 
-	// Add route for local network if it doesn't exist already.
+	// Like Linux, a link that is down gets the prefix route when it comes up.
+	if s.Stack.CheckNIC(nicID) {
+		// Like the prefix route that fib_magic() and addrconf_prefix_route()
+		// add on Linux, it is created by the kernel rather than by the
+		// request, so its notification carries port ID 0 and sequence number
+		// 0.
+		s.addPrefixRoute(inet.WithNetlinkOrigin(ctx, inet.NetlinkOrigin{}), nicID, protocolAddress)
+	}
+	return nil
+}
+
+// addPrefixRoute adds the route to the subnet of addr through the link id, if
+// it does not exist yet, and announces it.
+func (s *Stack) addPrefixRoute(ctx context.Context, id tcpip.NICID, addr tcpip.ProtocolAddress) {
 	localRoute := tcpip.Route{
-		Destination: protocolAddress.AddressWithPrefix.Subnet(),
+		Destination: addr.AddressWithPrefix.Subnet(),
 		Gateway:     tcpip.Address{}, // No gateway for local network.
-		NIC:         nicID,
+		NIC:         id,
 	}
 
 	sameDst := false
 	for _, rt := range s.Stack.GetRouteTable() {
 		if rt.Equal(localRoute) {
-			return nil
+			return
 		}
 		if rt.Destination.Equal(localRoute.Destination) {
 			sameDst = true
 		}
 	}
 
-	// Local route does not exist yet. Add it. Like the prefix route that
-	// fib_magic() and addrconf_prefix_route() add on Linux, it is created by the
-	// kernel rather than by the request, so its notification carries port ID 0
-	// and sequence number 0. fib_magic() adds the IPv4 route with NLM_F_APPEND;
+	// fib_magic() adds the IPv4 route with NLM_F_APPEND;
 	// addrconf_prefix_route() requests no flags.
 	s.Stack.AddRoute(localRoute)
 	var reqFlags uint16
-	if protocolAddress.Protocol == ipv4.ProtocolNumber {
+	if addr.Protocol == ipv4.ProtocolNumber {
 		reqFlags = linux.NLM_F_APPEND
 	}
-	s.sendRouteEvent(inet.WithNetlinkOrigin(ctx, inet.NetlinkOrigin{}), localRoute, true /* added */, newRouteFlags(localRoute, sameDst, reqFlags))
-
-	return nil
+	s.sendRouteEvent(ctx, localRoute, true /* added */, newRouteFlags(localRoute, sameDst, reqFlags))
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
@@ -751,6 +859,9 @@ func (s *Stack) RemoveInterfaceAddr(ctx context.Context, idx int32, addr inet.In
 	if err != nil {
 		return err
 	}
+
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
 
 	// Remove addresses matching the address and prefix.
 	nicID := tcpip.NICID(idx)
@@ -1191,9 +1302,15 @@ func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Err
 
 // NewRoute implements inet.Stack.NewRoute.
 func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
 	localRoute, err := s.localRoute(msg)
 	if err != nil {
 		return err
+	}
+	if localRoute.NIC != 0 && !s.Stack.CheckNIC(localRoute.NIC) {
+		return syserr.ErrNetworkDown
 	}
 	if err := s.checkGateway(msg, &localRoute); err != nil {
 		return err
@@ -1267,6 +1384,9 @@ func (s *Stack) checkGateway(msg *nlmsg.Message, route *tcpip.Route) *syserr.Err
 	nics := s.Stack.NICInfo()
 	for _, id := range slices.Sorted(maps.Keys(nics)) {
 		if route.NIC != 0 && id != route.NIC {
+			continue
+		}
+		if !nics[id].Flags.Up {
 			continue
 		}
 		for _, a := range nics[id].ProtocolAddresses {
