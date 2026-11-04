@@ -1294,6 +1294,12 @@ type TCPInfoOption struct {
 
 	// ReorderSeen indicates if reordering is seen in the endpoint.
 	ReorderSeen bool
+
+	// Timestamps is true if TCP timestamps were negotiated.
+	Timestamps bool
+
+	// SACKPermitted is true if selective acknowledgments were negotiated.
+	SACKPermitted bool
 }
 
 func (*TCPInfoOption) isGettableSocketOption() {}

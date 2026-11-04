@@ -61,6 +61,12 @@ const (
 	MAX_TCP_KEEPCNT   = 127
 )
 
+// tcp_info.tcpi_options bits from include/uapi/linux/tcp.h.
+const (
+	TCPI_OPT_TIMESTAMPS = 1
+	TCPI_OPT_SACK       = 2
+)
+
 // Congestion control states from include/uapi/linux/tcp.h.
 const (
 	TCP_CA_Open     = 0
