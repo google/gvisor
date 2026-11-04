@@ -99,7 +99,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, sem
 	return &efd.vfsfd, nil
 }
 
-// NewFromHost creates a new event fd from the given host fd.
+// NewFromHost creates a new event fd, taking ownership of hostfd on success.
 func NewFromHost(ctx context.Context, vfsObj *vfs.VirtualFilesystem, hostfd int, flags uint32) (*vfs.FileDescription, error) {
 	semMode := flags&linux.EFD_SEMAPHORE != 0
 	fd, err := New(ctx, vfsObj, 0, semMode, flags)
@@ -107,12 +107,13 @@ func NewFromHost(ctx context.Context, vfsObj *vfs.VirtualFilesystem, hostfd int,
 		return nil, err
 	}
 	efd := fd.Impl().(*EventFileDescription)
+	if err := fdnotifier.AddFD(int32(hostfd), &efd.queue); err != nil {
+		fd.DecRef(ctx)
+		return nil, err
+	}
 	// New returned an unshared file. checklocks cannot recover that private
 	// ownership through the returned FileDescription and its Impl accessor.
 	efd.hostfd = hostfd // +checklocksignore
-	if err := fdnotifier.AddFD(int32(hostfd), &efd.queue); err != nil {
-		return nil, err
-	}
 	return fd, nil
 }
 

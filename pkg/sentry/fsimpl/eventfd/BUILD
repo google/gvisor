@@ -38,5 +38,6 @@ go_test(
         "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
