@@ -277,7 +277,7 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 // update samples the backing clocks and writes the new parameters to the VDSO
 // parameter page.
 //
-// Preconditions: updateMu must be held
+// +checklocks:t.updateMu
 func (t *Timekeeper) update(parked bool) {
 	// Call Update within a Write block to prevent the VDSO from using the old
 	// params between Update and Write.
@@ -321,7 +321,7 @@ func (t *Timekeeper) vdsoParamsLocked(res sentrytime.UpdateResult) vdsoParams {
 
 // startUpdater starts an update goroutine that keeps the clocks updated.
 //
-// mu must be held.
+// +checklocks:t.mu
 func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 	if t.stop != nil {
 		// Timekeeper already started
@@ -430,7 +430,7 @@ func (t *Timekeeper) release() {
 
 // stopUpdater stops the update goroutine, blocking until it exits.
 //
-// mu must be held.
+// +checklocks:t.mu
 func (t *Timekeeper) stopUpdater() {
 	if t.stop == nil {
 		// Updater not running.
