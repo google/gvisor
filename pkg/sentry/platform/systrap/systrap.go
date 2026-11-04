@@ -112,10 +112,6 @@ var (
 	// stubInitialized controls one-time stub initialization.
 	stubInitialized sync.Once
 
-	// latencyMonitoring controls one-time initialization of the fastpath
-	// control goroutine.
-	latencyMonitoring sync.Once
-
 	// archState stores architecture-specific details used in the platform.
 	archState sysmsg.ArchState
 
@@ -313,6 +309,7 @@ func New(opts platform.Options) (*Systrap, error) {
 		// Don't use sentry and stub fast paths if here is just one cpu,
 		// or if the fast path has been explicitly disabled.
 		neverEnableFastPath = opts.DisableFastPath || min(runtime.NumCPU(), gomaxprocs.Base()) == 1
+		fastPathContextLimit = uint32(maxSysmsgThreads * 2)
 
 		// Convert the spin/deep-sleep timeouts into cputicks() units for
 		// the current architecture. Must happen before stubInit(), which
@@ -344,12 +341,6 @@ func New(opts platform.Options) (*Systrap, error) {
 	if stubErr != nil {
 		mf.Destroy()
 		return nil, stubErr
-	}
-
-	if !neverEnableFastPath {
-		latencyMonitoring.Do(func() {
-			go controlFastPath()
-		})
 	}
 
 	opts.StartupTimer.Reached("waiting for membarrier")

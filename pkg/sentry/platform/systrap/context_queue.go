@@ -145,11 +145,12 @@ func (q *contextQueue) queuedContexts() uint32 {
 // the subprocess after insertion to see if there are more active stub threads
 // or more waiting contexts.
 func (q *contextQueue) add(ctx *sharedContext) *platform.ContextError {
-	ctx.startWaitingTS = cputicks()
+	now := cputicks()
+	ctx.startWaitingTS = now
 
-	// Let the fast path monitor know the platform is doing work, waking it if
-	// it has parked itself while the sandbox was idle.
-	fastpath.recordActivity()
+	if !neverEnableFastPath {
+		ctx.fastPathUpdate = fastpath.claimUpdate(now)
+	}
 
 	q.setFastPathDisabled(!fastpath.stubFastPath())
 	contextID := ctx.contextID
@@ -177,7 +178,7 @@ func (q *contextQueue) add(ctx *sharedContext) *platform.ContextError {
 // setFastPathDisabled makes stub threads sleep (disabled=true) or spin
 // (disabled=false) when no context is queued. The word is read by every
 // spinning stub thread, so store only on a real change (same reasoning as
-// `fastPathState.park`).
+// `fastPathState.clearFastPathFlags`).
 // Can't use CAS as it acquires the cache line in exclusive state, even when
 // the "C" part of CAS fails.
 // A racing `add` storing the opposite value can make the flag contain the
