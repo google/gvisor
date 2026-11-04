@@ -133,7 +133,17 @@ build_wheel_sdist() {
       return 1
     fi
 
+    # make release collects every staged archive. Keep only this build's
+    # gvisor distributions, even if two builds finish together.
+    local dest_lock archive
+    exec {dest_lock}<"${abs_dest_dir}"
+    flock "${dest_lock}"
     cp ../dist/*.whl ../dist/*.tar.gz "${abs_dest_dir}/"
+    for archive in "${abs_dest_dir}/${PACKAGE_NAME}-"[0-9]*.{whl,tar.gz}; do
+      if [[ -f "${archive}" && ! -f "../dist/${archive##*/}" ]]; then
+        rm -f -- "${archive}"
+      fi
+    done
   )
 
   echo "Staged Python artifacts in ${abs_dest_dir}:"
