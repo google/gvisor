@@ -48,14 +48,6 @@ steps:
   - wait: ~
     if: build.branch != "master"
 
-  # Build runsc and pkg (presubmits only).
-  - <<: *common
-    <<: *source_test_presubmit
-    label: ":world_map: Build runsc and pkg (AMD64)"
-    commands:
-      - "make build TARGETS=//pkg/..."
-      - "make build OPTIONS='--build_tag_filters=-network_plugins' TARGETS='//runsc/...'"
-
   - <<: *common
     <<: *source_test
     label: ":broom: Lint"
