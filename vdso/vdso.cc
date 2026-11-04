@@ -98,7 +98,9 @@ extern "C" int clock_gettime(clockid_t clock, struct timespec* ts)
 extern "C" int __vdso_gettimeofday(struct timeval* tv, struct timezone* tz) {
   return __common_gettimeofday(tv, tz);
 }
-extern "C" int gettimeofday(struct timeval* tv, struct timezone* tz)
+// libc headers disagree on the timezone parameter type. Use the ELF name
+// without redeclaring libc's gettimeofday.
+extern "C" decltype(__vdso_gettimeofday) weak_gettimeofday asm("gettimeofday")
     __attribute__((weak, alias("__vdso_gettimeofday")));
 
 // __vdso_time() implements time()
