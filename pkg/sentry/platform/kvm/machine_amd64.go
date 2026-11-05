@@ -230,6 +230,94 @@ func scaledTSC(rawFreq uintptr) int64 {
 	return ratio.Int64()
 }
 
+// resetTSCOffset applies a guest TSC offset to a machine that was created
+// without one and that never ran guest code, so that a restore can reuse the
+// machine that the sandbox created at boot instead of creating another one.
+//
+// It does what newMachine does for a non-zero TSC offset, and applies the
+// offset to the vCPUs created so far. vCPUs created later (see
+// createVCPUsAsync) get it from m.tscOffset.
+//
+// It returns false if the machine can't be reused because it handed out
+// vCPUs, or because it already has a TSC offset. If it returns an error, the
+// machine must not be used anymore.
+func (m *machine) resetTSCOffset(offset uint64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.usedVCPUs != 0 || len(m.vCPUsByTID) != 0 || m.tscOffset != 0 {
+		return false, nil
+	}
+	if offset == 0 {
+		return true, nil
+	}
+
+	m.tscOffset = offset
+	if err := m.initShadowVDSO(); err != nil {
+		m.tscOffset = 0
+		return false, err
+	}
+	hostVA, guestVA, err := ktime.EnableGuestAliasedOffset()
+	if err != nil {
+		m.destroyShadowVDSO()
+		m.tscOffset = 0
+		return false, err
+	}
+	m.tscOffsetHostVA = hostVA
+	m.tscOffsetGuestVA = guestVA
+
+	// mapPhysical takes the slot spinlock: see newMachine.
+	disableAsyncPreemption()
+	m.mapShadowVDSO()
+	m.protectShadowVDSO()
+	m.mapTSCOffsetAlias()
+	enableAsyncPreemption()
+
+	for _, c := range m.vCPUsByID {
+		if c == nil {
+			continue
+		}
+		if err := c.setSystemTime(); err != nil {
+			return false, fmt.Errorf("error applying the TSC offset to vCPU(id=%d): %w", c.id, err)
+		}
+	}
+	return true, nil
+}
+
+// mapShadowVDSO maps the host [vdso] range to the shadow [vdso] in the kernel
+// page tables and in the upper shared page tables, as newMachine and
+// mapUpperHalf do for a machine created with a TSC offset.
+//
+// Preconditions: No vCPU has used the page tables of the machine.
+func (m *machine) mapShadowVDSO() {
+	if len(m.shadowVDSO) == 0 {
+		return
+	}
+	shadowVirt := m.shadowVDSOVirt()
+	length := uintptr(len(m.shadowVDSO))
+	for offset := uintptr(0); offset < length; {
+		physical, plength, ok := translateToPhysical(shadowVirt + offset)
+		if !ok || plength == 0 {
+			panic(fmt.Sprintf("impossible translation: shadowVirt %x", shadowVirt+offset))
+		}
+		if plength > length-offset {
+			plength = length - offset
+		}
+		virtual := m.vdsoVirt + offset
+		m.kernel.PageTables.Map(
+			hostarch.Addr(virtual),
+			plength,
+			pagetables.MapOpts{AccessType: hostarch.ReadExecute},
+			physical)
+		m.upperSharedPageTables.RemapReadOnlyShared(
+			hostarch.Addr(ring0.KernelStartAddress|virtual),
+			plength,
+			pagetables.MapOpts{AccessType: hostarch.Execute, Global: true},
+			physical)
+		m.mapPhysical(physical, plength)
+		offset += plength
+	}
+}
+
 // setSystemTime sets the vCPU to the system time.
 func (c *vCPU) setSystemTime() error {
 	// Attempt to set the offset directly. This is supported as of Linux 5.16,

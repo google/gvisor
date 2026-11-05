@@ -231,6 +231,11 @@ func (k *KVM) TSCOffset() uint64 {
 	return k.machine.tscOffset
 }
 
+// PrepareRestore implements platform.RestorablePlatform.PrepareRestore.
+func (k *KVM) PrepareRestore(tscOffset uint64) (bool, error) {
+	return k.machine.resetTSCOffset(tscOffset)
+}
+
 // TSCFrequency implements platform.TSCAdjustablePlatform.
 func (k *KVM) TSCFrequency() (uint64, bool) {
 	return k.machine.tscFrequency, k.machine.tscFrequency != 0
