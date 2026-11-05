@@ -147,8 +147,7 @@ func (i *Inotify) Release(ctx context.Context) {
 		if ws == nil {
 			panic("Cannot remove watch from an unwatchable dentry")
 		}
-		ws.Remove(i.id)
-		if ws.Size() == 0 {
+		if ws.remove(i) == 0 {
 			ds = append(ds, d)
 		}
 	}
@@ -309,6 +308,7 @@ func (i *Inotify) queueEvent(ev *Event) {
 // Precondition: ws must be the watch set for target d.
 //
 // +checklocks:i.mu
+// +checklocks:ws.mu
 func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
 	w := &Watch{
 		owner:  i,
@@ -320,7 +320,10 @@ func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
 	// Hold the watch in this inotify instance as well as the watch set on the
 	// target.
 	i.watches[w.wd] = w
-	ws.Add(w)
+	if ws.ws == nil {
+		ws.ws = make(map[uint64]*Watch)
+	}
+	ws.ws[i.id] = w
 	return w
 }
 
@@ -337,16 +340,14 @@ func (i *Inotify) nextWatchIDLocked() int32 {
 //
 // The caller must hold a reference on target.
 func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
-	// Note: Locking this inotify instance protects the result returned by
-	// Lookup() below. With the lock held, we know for sure the lookup result
-	// won't become stale because it's impossible for *this* instance to
-	// add/remove watches on target.
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
 	ws := target.Watches()
-	// Does the target already have a watch from this inotify instance?
-	if existing := ws.Lookup(i.id); existing != nil {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	// Check and update both watch indexes under the same locks.
+	if existing := ws.ws[i.id]; existing != nil {
 		newmask := mask
 		if mask&linux.IN_MASK_ADD != 0 {
 			// "Add (OR) events to watch mask for this pathname if it already
@@ -383,8 +384,7 @@ func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 	if ws == nil {
 		panic("Watched dentry cannot have nil watch set")
 	}
-	ws.Remove(w.OwnerID())
-	remaining := ws.Size()
+	remaining := ws.remove(i)
 	i.mu.Unlock()
 
 	if remaining == 0 {
@@ -417,59 +417,15 @@ func (w *Watches) Size() int {
 	return len(w.ws)
 }
 
-// Lookup returns the watch owned by an inotify instance with the given id.
-// Returns nil if no such watch exists.
+// remove detaches this instance's watch and returns the number left. The
+// target may already have detached all watches in HandleDeletion.
 //
-// Precondition: the inotify instance with the given id must be locked to
-// prevent the returned watch from being concurrently modified or replaced in
-// Inotify.watches.
-func (w *Watches) Lookup(id uint64) *Watch {
+// +checklocks:i.mu
+func (w *Watches) remove(i *Inotify) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.ws[id]
-}
-
-// Add adds watch into this set of watches.
-//
-// Precondition: the inotify instance with the given id must be locked.
-func (w *Watches) Add(watch *Watch) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	owner := watch.OwnerID()
-	// Sanity check, we should never have two watches for one owner on the
-	// same target.
-	if _, exists := w.ws[owner]; exists {
-		panic(fmt.Sprintf("Watch collision with ID %+v", owner))
-	}
-	if w.ws == nil {
-		w.ws = make(map[uint64]*Watch)
-	}
-	w.ws[owner] = watch
-}
-
-// Remove removes a watch with the given id from this set of watches and
-// releases it. The caller is responsible for generating any watch removal
-// event, as appropriate. The provided id must match an existing watch in this
-// collection.
-//
-// Precondition: the inotify instance with the given id must be locked.
-func (w *Watches) Remove(id uint64) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.ws == nil {
-		// This watch set is being destroyed. The thread executing the
-		// destructor is already in the process of deleting all our watches. We
-		// got here with no references on the target because we raced with the
-		// destructor notifying all the watch owners of destruction. See the
-		// comment in Watches.HandleDeletion for why this race exists.
-		return
-	}
-
-	// It is possible for w.Remove() to be called for the same watch multiple
-	// times. See the treatment of one-shot watches in Watches.Notify().
-	delete(w.ws, id)
+	delete(w.ws, i.id)
+	return len(w.ws)
 }
 
 // Notify queues a new event with watches in this set. Watches with

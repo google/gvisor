@@ -48,14 +48,21 @@ func (d *dentry) readlink(ctx context.Context) (string, error) {
 type regularFileFD struct {
 	fileDescription
 
+	mu regularFileFDMutex `state:"nosave"`
+
+	// +checklocks:mu
+	copiedUp bool
+
 	// If copiedUp is false, cachedFD represents
 	// fileDescription.dentry().lowerVDs[0]; otherwise, cachedFD represents
-	// fileDescription.dentry().upperVD. cachedFlags is the last known value of
-	// cachedFD.StatusFlags(). copiedUp, cachedFD, and cachedFlags are
-	// protected by mu.
-	mu          regularFileFDMutex `state:"nosave"`
-	copiedUp    bool
-	cachedFD    *vfs.FileDescription
+	// fileDescription.dentry().upperVD.
+	//
+	// +checklocks:mu
+	cachedFD *vfs.FileDescription
+
+	// cachedFlags is the last known value of cachedFD.StatusFlags().
+	//
+	// +checklocks:mu
 	cachedFlags uint32
 }
 
@@ -108,8 +115,9 @@ func (fd *regularFileFD) currentFDLocked(ctx context.Context) (*vfs.FileDescript
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *regularFileFD) Release(ctx context.Context) {
-	fd.cachedFD.DecRef(ctx)
-	fd.cachedFD = nil
+	// Release owns the cache after the last reference to fd is dropped.
+	fd.cachedFD.DecRef(ctx) // +checklocksignore
+	fd.cachedFD = nil       // +checklocksignore
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
