@@ -63,6 +63,10 @@ const (
 	// since AddressSpace copying in this case requires additional buffering;
 	// see CopyOutFrom for details.
 	rwMapMinBytes = 512
+
+	// rwPinMinBytes amortizes backing-reference acquisition for large reads
+	// so that source I/O can run without holding activeMu.
+	rwPinMinBytes = 1 << 20
 )
 
 // CheckIORange is similar to hostarch.Addr.ToRange, but applies bounds checks
@@ -307,11 +311,8 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 	if mm.asioEnabled(opts) && ars.NumBytes() < rwMapMinBytes {
 		// We have to introduce a buffered copy, instead of just passing a
 		// safemem.BlockSeq representing addresses in the AddressSpace to src.
-		// This is because usermem.IO.CopyOutFrom() guarantees that it calls
-		// src.ReadToBlocks() at most once, which is incompatible with handling
-		// faults between calls. In the future, this is probably best resolved
-		// by introducing a CopyOutFrom variant or option that allows it to
-		// call src.ReadToBlocks() any number of times.
+		// This is because CopyOutFrom() calls src.ReadToBlocks() at most once,
+		// which is incompatible with handling faults between calls.
 		//
 		// This issue applies to CopyInTo as well.
 		buf := make([]byte, int(ars.NumBytes()))
@@ -334,8 +335,193 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 		return done, bufErr
 	}
 
+	if ars.NumBytes() >= rwPinMinBytes {
+		return mm.copyOutFromPinned(ctx, ars, src, opts)
+	}
+
 	// Go through internal mappings.
 	return mm.withVecInternalMappings(ctx, ars, hostarch.Write, opts.IgnorePermissions, src.ReadToBlocks)
+}
+
+// copyOutFromPinned calls src once using private backing references rather
+// than holding activeMu during the read. ars must have passed checkIOVec.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) copyOutFromPinned(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
+	var storage [1]PinnedRange
+	prs, blocks, pinErr := mm.pinIOMappings(ctx, ars, opts, storage[:0])
+	if len(prs) == 0 && pinErr != nil {
+		return 0, translateIOError(ctx, pinErr)
+	}
+	if blocks.IsEmpty() {
+		Unpin(prs)
+		// Shared mappings require writeback and invalidation accounting.
+		return mm.withVecInternalMappings(ctx, ars, hostarch.Write, opts.IgnorePermissions, src.ReadToBlocks)
+	}
+	n, err := src.ReadToBlocks(blocks)
+	Unpin(prs)
+	if err == nil && n == blocks.NumBytes() {
+		err = translateIOError(ctx, pinErr)
+	}
+	return int64(n), err
+}
+
+// pinIOMappings returns private mappings whose backing references remain valid
+// until Unpin. Empty blocks require the ordinary copy path, including shared
+// mappings. prs must have length zero.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) pinIOMappings(ctx context.Context, ars hostarch.AddrRangeSeq, opts usermem.IOOpts, prs []PinnedRange) ([]PinnedRange, safemem.BlockSeq, error) {
+	mm.activeMu.RLock()
+	if !opts.IgnorePermissions && mm.hasPinned && mm.existingVecPMAsLocked(ars, hostarch.Write, false, true /* needInternalMappings */) {
+		prs, blocks := mm.pinExistingIOMappingsLocked(ctx, ars, prs)
+		mm.activeMu.RUnlock()
+		return prs, blocks, nil
+	}
+	mm.activeMu.RUnlock()
+
+	mm.mappingMu.RLock()
+	vars, verr := mm.getVecVMAsLocked(ctx, ars, hostarch.Write, opts.IgnorePermissions)
+	if vars.NumBytes() == 0 {
+		mm.mappingMu.RUnlock()
+		return nil, safemem.BlockSeq{}, verr
+	}
+	mm.activeMu.Lock()
+	pars, perr := mm.getVecPMAsLocked(ctx, vars, hostarch.Write, true /* callerIndirectCommit */)
+	mm.mappingMu.RUnlock()
+	defer mm.activeMu.Unlock()
+	if pars.NumBytes() == 0 {
+		return nil, safemem.BlockSeq{}, perr
+	}
+	mm.hasPinned = true
+	prs, private := mm.pinPMAsLocked(ctx, pars, prs)
+	var blocks safemem.BlockSeq
+	if private {
+		// Private backing belongs to mm.mf; pinned references preserve these
+		// mappings after activeMu is released.
+		mapped, tracker, err := mm.getVecIOMappingsLocked(pars, hostarch.Write)
+		// No source bytes have been written; discard any fallback buffers.
+		tracker.flush(0, nil)
+		if err == nil && tracker == nil {
+			blocks = mapped
+		}
+	}
+	if perr != nil {
+		return prs, blocks, perr
+	}
+	return prs, blocks, verr
+}
+
+// +checklocksread:mm.activeMu
+func (mm *MemoryManager) pinExistingIOMappingsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, prs []PinnedRange) ([]PinnedRange, safemem.BlockSeq) {
+	prs, private := mm.pinPMAsLocked(ctx, ars, prs)
+	var blocks safemem.BlockSeq
+	var err error
+	if private {
+		if ars.NumRanges() == 1 {
+			ar := ars.Head()
+			blocks, err = mm.internalMappingsLocked(mm.pmas.FindSegment(ar.Start), ar)
+		} else {
+			blocks, err = mm.vecInternalMappingsLocked(ars)
+		}
+	}
+	if err != nil {
+		return prs, safemem.BlockSeq{}
+	}
+	return prs, blocks
+}
+
+// CopyOutFromIter implements usermem.IO.CopyOutFromIter.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
+	var ok bool
+	ars, ok = mm.checkIOVec(ars)
+	if !ok {
+		return 0, linuxerr.EFAULT
+	}
+
+	const maxWindowBytes = 1 << 20
+	var done int64
+	var staged []byte
+	for !ars.IsEmpty() {
+		ar := ars.Head()
+		if ar.Length() == 0 {
+			ars = ars.Tail()
+			continue
+		}
+		if ar.Length() > maxWindowBytes {
+			ar.End = ar.Start + maxWindowBytes
+		}
+		n, err := mm.copyOutFromRange(ctx, ar, src, opts, &staged)
+		done += n
+		if err != nil || n < int64(ar.Length()) {
+			return done, err
+		}
+		ars = ars.DropFirst64(n)
+	}
+	return done, nil
+}
+
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) copyOutFromRange(ctx context.Context, ar hostarch.AddrRange, src safemem.Reader, opts usermem.IOOpts, staged *[]byte) (int64, error) {
+	end, ok := ar.End.RoundUp()
+	if !ok {
+		return 0, linuxerr.EFAULT
+	}
+	prs, private, pinErr := mm.pin(ctx, hostarch.AddrRange{Start: ar.Start.RoundDown(), End: end}, hostarch.Write, opts.IgnorePermissions)
+	if len(prs) == 0 {
+		return 0, translateIOError(ctx, pinErr)
+	}
+	if !private {
+		// Shared mappings need the normal copy path for writeback and
+		// invalidation accounting.
+		Unpin(prs)
+		return mm.copyOutFromStagedRange(ctx, ar, src, opts, staged)
+	}
+	readEnd := min(ar.End, prs[len(prs)-1].Source.End)
+	var blocks []safemem.Block
+	for _, pr := range prs {
+		part := pr.Source.Intersect(hostarch.AddrRange{Start: ar.Start, End: readEnd})
+		if part.Length() == 0 {
+			continue
+		}
+		start := pr.Offset + uint64(part.Start-pr.Source.Start)
+		mapped, err := pr.File.MapInternal(memmap.FileRange{Start: start, End: start + uint64(part.Length())}, hostarch.Write)
+		if err != nil {
+			Unpin(prs)
+			return mm.copyOutFromStagedRange(ctx, ar, src, opts, staged)
+		}
+		for !mapped.IsEmpty() {
+			blocks = append(blocks, mapped.Head())
+			mapped = mapped.Tail()
+		}
+	}
+	n, readErr := src.ReadToBlocks(safemem.BlockSeqFromSlice(blocks))
+	Unpin(prs)
+	if readErr != nil || n < uint64(readEnd-ar.Start) {
+		return int64(n), readErr
+	}
+	return int64(n), translateIOError(ctx, pinErr)
+}
+
+// copyOutFromStagedRange handles destinations that cannot be pinned for a
+// direct read, including shared mappings. The source runs outside MM locks.
+func (mm *MemoryManager) copyOutFromStagedRange(ctx context.Context, ar hostarch.AddrRange, src safemem.Reader, opts usermem.IOOpts, staged *[]byte) (int64, error) {
+	if len(*staged) < int(ar.Length()) {
+		*staged = make([]byte, int(ar.Length()))
+	}
+	buf := (*staged)[:ar.Length()]
+	n, readErr := src.ReadToBlocks(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)))
+	nw, copyErr := mm.CopyOut(ctx, ar.Start, buf[:n], opts)
+	if copyErr != nil {
+		return int64(nw), copyErr
+	}
+	return int64(nw), readErr
 }
 
 // CopyInTo implements usermem.IO.CopyInTo.

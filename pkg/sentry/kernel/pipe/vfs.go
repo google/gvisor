@@ -443,6 +443,25 @@ func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq,
 	return total, nil
 }
 
+// CopyOutFromIter implements usermem.IO.CopyOutFromIter. Note that it is the
+// caller's responsibility to call fd.pipe.queue.Notify(waiter.ReadableEvents)
+// after the write is completed.
+//
+// +checklocks:fd.pipe.mu
+func (fd *VFSPipeFD) CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
+	var total int64
+	for !ars.IsEmpty() {
+		ar := ars.Head()
+		n, err := fd.CopyOutFrom(ctx, hostarch.AddrRangeSeqOf(ar), src, opts)
+		total += n
+		if err != nil || n < int64(ar.Length()) {
+			return total, err
+		}
+		ars = ars.Tail()
+	}
+	return total, nil
+}
+
 // SwapUint32 implements usermem.IO.SwapUint32.
 func (fd *VFSPipeFD) SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
 	// How did a pipe get passed as the virtual address space to futex(2)?
