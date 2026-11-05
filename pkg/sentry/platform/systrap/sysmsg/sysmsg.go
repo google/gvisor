@@ -338,6 +338,10 @@ func (c *ThreadContext) Init(initialThreadID uint32) {
 	c.SignalInfo = linux.SignalInfo{}
 	c.State = ContextStateNone
 	c.ThreadID = initialThreadID
+	c.Interrupt = 0
+	c.SentryFastPath = 0
+	c.AckedTime = 0
+	c.StateChangedTime = 0
 }
 
 // ConvertSysmsgErr converts m.Err to platform.ContextError.
