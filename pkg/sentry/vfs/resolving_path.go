@@ -614,6 +614,20 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		return true
 
 	case resolveMountPointError:
+		// If the mount root is a symlink (e.g. a bind-mounted symlink), follow
+		// it relative to the mount point's parent, as Linux does.
+		if rp.ShouldFollowSymlink() {
+			mntRoot := VirtualDentry{mount: rp.nextMount, dentry: rp.nextMount.root}
+			if target, err := rp.vfs.ReadlinkAt(ctx, rp.creds, &PathOperation{Root: mntRoot, Start: mntRoot}); err == nil {
+				if followed, err := rp.HandleSymlink(target); followed {
+					rp.releaseErrorState(ctx)
+					if err != nil {
+						return rp.handleError(ctx, err)
+					}
+					return true
+				}
+			}
+		}
 		// Switch to the new Mount. We hold a reference on the Mount, but
 		// borrow the reference on the mount root from the Mount.
 		rp.decRefStartAndMount(ctx)
