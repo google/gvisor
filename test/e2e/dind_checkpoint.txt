@@ -1,0 +1,156 @@
+Docker-in-Docker checkpoint/restore integration profile
+
+The default profile uses legacy iptables and the inner Docker userland proxy.
+It checkpoints the outer sandbox while dockerd and two inner containers run.
+A separate profile with -dind-userland-proxy=false requires per-interface
+/proc/sys/net/ipv4/conf/<bridge>/route_localnet support. An all/default-only
+implementation does not satisfy that requirement.
+
+Versions and runtime
+
+Use an outer Docker version supported by dockerutil.IsRestoreSupported:
+Docker 27.5.1 is the tested outer daemon; the current helper rejects >=28.
+Enable its experimental checkpoint API. This is distinct from the inner
+Docker 29.8.1 daemon supplied by images/moby/Dockerfile.x86_64.
+
+Configure the runsc runtime with --net-raw and --allow-packet-socket-write.
+Do not enable --TESTONLY-nftables for this legacy-backend profile. When using
+an isolated development pod without cgroup delegation, --ignore-cgroups may
+also be needed; enforce resource limits on the containing pod in that case.
+
+The inner daemon uses vfs, disables the containerd snapshotter, and selects
+iptables-legacy/ip6tables-legacy explicitly. /var/lib/docker is an executable
+sandbox tmpfs, including images, inner root filesystems and TCP evidence.
+Docker's default tmpfs mount is noexec, which prevents inner container binaries
+from starting. No host Docker socket or writable external data directory is
+mounted into the sandbox.
+
+Build, install and reproduce
+
+Apply the TCP restored-route GSO/MSS prerequisite tracked in
+https://github.com/google/gvisor/pull/16666 to the runtime under test. Record
+its exact commit; this series does not duplicate that production patch.
+The validated prerequisite was 5edf5d13c7a6749df466add29d8811260edb4cda.
+
+Build both targets from the selected source revision:
+
+  make build TARGETS="//:release //test/e2e:integration_test"
+  make release-tarball DESTINATION=out/
+  make load-moby
+
+Use DOCKER_BUILD=false only when the documented native build prerequisites
+are installed. Install the complete //:release fileset, preserving the
+relative gvisor-bin directory. Copying only runsc is insufficient. Record
+the source SHA, prerequisite SHA, runtime arguments and installed fileset
+checksums. Rebuild before copying: an existing bazel-bin tree can belong to
+an earlier checkout even when git HEAD is correct.
+
+For example, extract out/gvisor.tar.bz2 as one fileset into a dedicated
+directory, then register its runsc executable using the install subcommand:
+
+  mkdir -p /opt/dind-runsc
+  tar -xf out/gvisor.tar.bz2 -C /opt/dind-runsc
+  /opt/dind-runsc/runsc install --config_file=/etc/docker/daemon.json \
+    --experimental=true --runtime=runsc-dind -- \
+    --net-raw --allow-packet-socket-write
+
+Reload the outer Docker daemon after changing its runtime configuration.
+Use -runtime=runsc-dind in the test command for this example registration.
+
+Record the outer Docker version, built moby image ID, and inner Docker version.
+The moby image bundles BusyBox 1.36 as busybox:latest in its offline archive.
+The fixture checks that alias after loading it, so a missing archive tag fails
+rather than silently pulling an unpinned latest image.
+
+For a lightweight development image, the fixture only needs the pinned dind
+base and the offline BusyBox archive, without the Moby network test binaries.
+In a dedicated development Docker daemon, prepare an empty build context:
+
+  mkdir -p dind-smoke
+  docker pull docker:29.8.1-dind
+  docker pull busybox:1.36
+  docker tag busybox:1.36 busybox:latest
+  docker save -o dind-smoke/busybox.tar busybox:latest
+
+Create dind-smoke/Dockerfile containing:
+
+  FROM docker:29.8.1-dind
+  COPY busybox.tar /docker-images/busybox.tar
+
+Then build with docker build -t gvisor.dev/images/moby dind-smoke. This image
+is sufficient for this fixture; it does not run the separate Moby test suite.
+Record which image recipe was used rather than combining the two results.
+
+After registering the runtime in the outer Docker daemon configuration:
+
+  bazel test -c opt //test/e2e:integration_test \
+    --test_arg=-test.run=TestDinDCheckpointRestore \
+    --test_arg=-dind-checkpoint --test_arg=-dind-userland-proxy=true \
+    --test_arg=-test-checkpoint=true --test_arg=-runtime=runsc-dind \
+    --test_arg=-config_path=/etc/docker/daemon.json \
+    --test_output=all --nocache_test_results --test_timeout=1500
+
+The built integration_test executable also accepts those test arguments
+without the --test_arg prefix. Both leave-running-false and leave-running-true
+must execute and pass; a skipped opt-in test is not a C/R result. When explicitly
+enabled, unsupported checkpoint settings fail the test. Startup failures report
+the outer container's exit status and daemon logs.
+
+Checks and limits
+
+The test establishes its TCP connection once and never reconnects. Each echoed
+payload advances a sequence counter and records both process IDs. After each
+restore, the original connection must advance from a fresh baseline. Both
+checkpoint modes run two rounds. A successful leave-running source must also
+advance before it is stopped to isolate its network identity from the restore.
+
+DNS and published-port access are checked before checkpoint and after restore.
+The fixture also compares container identity and legacy rule dumps, then creates,
+connects and removes networks and starts another inner container after restore.
+
+With the proxy enabled, published-port access may traverse a userspace proxy.
+This fixture does not establish continuity of existing SNAT/DNAT flows or
+filtering enforcement merely by comparing rule text. Those have separate
+minimal dataplane regressions in the functional PRs. The proxy-disabled profile
+must be qualified independently after its runtime prerequisites are available.
+
+Fault injection, large rulesets/flow tables, IPv6, external TCP continuity and
+storage layouts beyond this tmpfs/vfs profile require additional coverage.
+This fixture does not qualify nftables/iptables-nft, general storage migration,
+external filestores or asynchronous park. Each functional PR also needs its own
+minimal regressions on its declared prerequisites.
+
+Minimal functional regressions
+
+The functional commits also provide syscall tests that do not start dockerd:
+
+- NetlinkRouteTest.BridgeVethRetainedNamespaceAcrossSave checks a bridge/veth
+  path to a namespace retained by descriptors after its creating thread exits.
+  It uses the original UDP sockets across save, checks link identity, and creates
+  another interface after restore. It runs on the topology prefix alone.
+- IPTablesCheckpointTest.FilterDropAndRemovalAcrossSave checks actual DROP
+  enforcement and traffic after removing the rule.
+- IPTablesCheckpointTest.EstablishedDNATMappingAcrossSaveWithoutMatchingRule
+  checks a bidirectional IPv4 UDP address/port mapping after its matching DNAT
+  rule has been replaced. A new tuple must not inherit the old mapping. It does
+  not qualify established TCP NAT flows or every NAT target/revision.
+
+Run the corresponding test/syscalls targets with GTEST_FILTER selecting the
+case names above: native first, then runsc_systrap_save and
+runsc_systrap_save_resume. The netfilter cases run on the netfilter prefix,
+which includes the topology prerequisite. Native controls need CAP_NET_ADMIN,
+CAP_SYS_ADMIN and, for iptables, CAP_NET_RAW. A capability skip is not a result
+for this validation matrix.
+
+For example, on the topology prefix:
+
+  bazel test -c opt \
+    //test/syscalls:socket_netlink_route_test_native \
+    //test/syscalls:socket_netlink_route_test_runsc_systrap_save \
+    //test/syscalls:socket_netlink_route_test_runsc_systrap_save_resume \
+    --test_env=GTEST_FILTER=NetlinkRouteTest.BridgeVethRetainedNamespaceAcrossSave \
+    --test_output=all --nocache_test_results
+
+On the netfilter prefix, select the same three variants of iptables_test with
+--test_env=GTEST_FILTER=IPTablesCheckpointTest.* instead. These UDP cases do
+not require the separate TCP GSO prerequisite used by the DinD fixture.
