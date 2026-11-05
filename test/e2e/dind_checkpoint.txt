@@ -1,0 +1,42 @@
+Docker-in-Docker checkpoint/restore integration profile
+
+This opt-in test uses the existing moby image (Docker 29.8.1 in this source
+revision) and its bundled BusyBox image. It starts dockerd directly with
+legacy iptables, userland-proxy disabled, the vfs storage driver, and the
+containerd snapshotter disabled. /var/lib/docker is a sandbox tmpfs, including
+the images, inner container filesystems and TCP progress evidence. No host
+Docker socket or externally writable data directory is mounted into it.
+
+Build/load the image with make load-moby and configure the selected runsc
+runtime with --net-raw and --allow-packet-socket-write. Do not enable
+--TESTONLY-nftables for this legacy-backend profile. The image must provide
+iptables-legacy and ip6tables-legacy; the test verifies the selected backend.
+Keep the Docker image ID and reported version with each result.
+
+The runsc build also needs the restored-route GSO/MSS repair tracked in
+google/gvisor#16666. This series does not duplicate that patch; record the
+exact prerequisite commit in the validation results.
+
+The outer Docker daemon must have experimental checkpoint support enabled.
+After selecting the runtime using the normal dockerutil test configuration:
+
+  bazel test //test/e2e:integration_test \
+    --test_arg=-test.run=TestDinDCheckpointRestore \
+    --test_arg=-dind-checkpoint --test_timeout=1500
+
+The test uses two inner containers on a user-defined bridge. Its TCP client
+connects once to a server that accepts once, checks every echoed payload and
+records its process IDs and increasing sequence number on tmpfs. Progress
+after restore must advance from a new post-restore baseline, so a saved
+progress file alone cannot pass the test. It also checks container identity,
+legacy rules, a published port using DNAT, DNS, and new containers/networks.
+
+Both stopping and leave-running modes run two C/R rounds. In leave-running
+mode the source must make progress after checkpoint, then it is stopped before
+restore to isolate the shared network identity. Cleanup uses a fresh context.
+
+This initial fixture is a draft acceptance test. Fault injection, large
+rulesets/flow tables, IPv6, external TCP continuity and storage layouts other
+than the declared tmpfs/vfs profile require additional coverage. It does not
+qualify nftables/iptables-nft, general storage migration, external filestores,
+or asynchronous park. Functional PRs still need their own minimal regressions.
