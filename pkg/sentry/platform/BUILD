@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -21,14 +21,24 @@ go_library(
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/pinring",
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
+        "//pkg/sync",
         "//pkg/timing",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "platform_test",
+    size = "small",
+    srcs = ["mmap_min_addr_test.go"],
+    library = ":platform",
+    deps = ["//pkg/hostarch"],
 )
