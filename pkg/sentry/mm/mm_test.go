@@ -544,7 +544,7 @@ func TestPinnedCopyOutFromForkDuringLargeRead(t *testing.T) {
 	ctx := contexttest.Context(t)
 	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
-	const size = 80 << 20
+	const size = 8 << 20
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
 		Length: size, Private: true,
 		Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,

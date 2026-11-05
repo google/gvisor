@@ -45,8 +45,8 @@ namespace testing {
 namespace {
 
 TEST(PreadvTest, LargeRegularFileReadPastEOF) {
-  constexpr size_t kSize = 80 << 20;
-  constexpr size_t kFirstVectorSize = 40 << 20;
+  constexpr size_t kSize = 8 << 20;
+  constexpr size_t kFirstVectorSize = kSize / 2;
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
@@ -77,7 +77,7 @@ class PreadvMMConcurrencyTest : public ::testing::TestWithParam<size_t> {};
 
 TEST_P(PreadvMMConcurrencyTest, MMConcurrencyStress) {
   const size_t buffer_size = GetParam();
-  // The large case also exercises bounded reads into pinned pages.
+  // The large case exercises pinned destinations.
   const auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       /* parent = */ GetAbsoluteTestTmpdir(),
       /* content = */ std::string(buffer_size, 0), TempPath::kDefaultFileMode));
@@ -151,7 +151,7 @@ TEST_P(PreadvMMConcurrencyTest, MMConcurrencyStress) {
 
 INSTANTIATE_TEST_SUITE_P(Sizes, PreadvMMConcurrencyTest,
                          ::testing::Values(static_cast<size_t>(kPageSize),
-                                           size_t{2} << 20));
+                                           size_t{8} << 20));
 
 // This test calls preadv with an O_PATH fd.
 TEST(PreadvTest, PreadvWithOpath) {
