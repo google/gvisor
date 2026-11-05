@@ -69,6 +69,30 @@ image_outputs(
     image_name = "basic/fsstress",
 )
 
+image_manifest(
+    name = "nginx",
+    base = "@test_nginx",
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "nginx",
+    image = ":nginx",
+    image_name = "basic/nginx",
+)
+
+image_manifest(
+    name = "redis",
+    base = "@test_redis",
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "redis",
+    image = ":redis",
+    image_name = "basic/redis",
+)
+
 # The integration test checks that mounting /tmp preserves image contents.
 image_layer(
     name = "tmpfile_layer",
