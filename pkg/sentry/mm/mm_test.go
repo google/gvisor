@@ -730,6 +730,66 @@ func TestCopyOutFromIterSharedMappingShortRead(t *testing.T) {
 	}
 }
 
+func TestCopyOutFromIterSharedAndPrivateMappings(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(2*pageSize, pgalloc.AllocOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappable := NewSpecialMappable("test_mappable", mf, fr)
+	defer mappable.DecRef(ctx)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:          2 * pageSize,
+		MappingIdentity: mappable,
+		Mappable:        mappable,
+		Perms:           hostarch.ReadWrite,
+		MaxPerms:        hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mm.MMap(ctx, memmap.MMapOpts{
+		Addr: addr + pageSizeAddr, Length: pageSize, Fixed: true, Unmap: true, Private: true,
+		Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	initial := bytes.Repeat([]byte{'A'}, 2*pageSizeInt)
+	if _, err := mm.CopyOut(ctx, addr, initial, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	child, err := mm.Fork(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.DecUsers(ctx)
+
+	data := bytes.Repeat([]byte{'B'}, len(initial))
+	src := safemem.BlockSeqReader{Blocks: safemem.BlockSeqOf(safemem.BlockFromSafeSlice(data))}
+	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + 2*pageSizeAddr})
+	if n, err := mm.CopyOutFromIter(ctx, ars, &src, usermem.IOOpts{}); n != int64(len(data)) || err != nil {
+		t.Fatalf("CopyOutFromIter got n=%d err=%v, want n=%d err=nil", n, err, len(data))
+	}
+	got := make([]byte, len(data))
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Error("parent contains incorrect restored data")
+	}
+	if _, err := child.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	want := append(bytes.Repeat([]byte{'B'}, pageSizeInt), bytes.Repeat([]byte{'A'}, pageSizeInt)...)
+	if !bytes.Equal(got, want) {
+		t.Error("child did not preserve shared visibility and private copy-on-write isolation")
+	}
+}
+
 // TestIOAfterMProtect tests IO interaction with mprotect permissions.
 func TestIOAfterMProtect(t *testing.T) {
 	ctx := contexttest.Context(t)

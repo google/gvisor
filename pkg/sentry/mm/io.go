@@ -472,9 +472,37 @@ func (mm *MemoryManager) copyOutFromPinnedRange(ctx context.Context, ar hostarch
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
-	prs, private, pinErr := mm.pin(ctx, hostarch.AddrRange{Start: ar.Start.RoundDown(), End: end}, hostarch.Write, opts.IgnorePermissions)
-	if len(prs) == 0 {
-		return 0, translateIOError(ctx, pinErr)
+	pinAR := hostarch.AddrRange{Start: ar.Start.RoundDown(), End: end}
+	mm.mappingMu.RLock()
+	vseg, vend, pinErr := mm.getVMAsLocked(ctx, pinAR, hostarch.Write, opts.IgnorePermissions)
+	if vendaddr := vend.Start(); vendaddr < pinAR.End {
+		if vendaddr <= pinAR.Start {
+			mm.mappingMu.RUnlock()
+			return 0, translateIOError(ctx, pinErr)
+		}
+		pinAR.End = vendaddr
+	}
+	// Shared mappings require the ordinary copy path's writeback accounting.
+	if !vseg.ValuePtr().private {
+		mm.mappingMu.RUnlock()
+		return mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, src.ReadToBlocks)
+	}
+
+	mm.activeMu.Lock()
+	mm.hasPinned = true
+	_, pend, perr := mm.getPMAsLocked(ctx, vseg, pinAR, hostarch.Write, false /* callerIndirectCommit */, true /* forPin */)
+	mm.mappingMu.RUnlock()
+	if pendaddr := pend.Start(); pendaddr < pinAR.End {
+		if pendaddr <= pinAR.Start {
+			mm.activeMu.Unlock()
+			return 0, translateIOError(ctx, perr)
+		}
+		pinAR.End = pendaddr
+	}
+	prs, private := mm.pinPMAsLocked(ctx, hostarch.AddrRangeSeqOf(pinAR), nil)
+	mm.activeMu.Unlock()
+	if perr != nil {
+		pinErr = perr
 	}
 	if !private {
 		Unpin(prs)

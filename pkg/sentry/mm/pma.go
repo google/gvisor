@@ -754,15 +754,6 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool) ([]PinnedRange, error) {
-	prs, _, err := mm.pin(ctx, ar, at, ignorePermissions)
-	return prs, err
-}
-
-// pin also reports whether all returned ranges have private backing.
-//
-// +checklocksexclude:mm.mappingMu
-// +checklocksexclude:mm.activeMu
-func (mm *MemoryManager) pin(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool) ([]PinnedRange, bool, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -775,7 +766,7 @@ func (mm *MemoryManager) pin(ctx context.Context, ar hostarch.AddrRange, at host
 	if vendaddr := vend.Start(); vendaddr < ar.End {
 		if vendaddr <= ar.Start {
 			mm.mappingMu.RUnlock()
-			return nil, false, verr
+			return nil, verr
 		}
 		ar.End = vendaddr
 	}
@@ -788,17 +779,17 @@ func (mm *MemoryManager) pin(ctx context.Context, ar hostarch.AddrRange, at host
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
 			mm.activeMu.Unlock()
-			return nil, false, perr
+			return nil, perr
 		}
 		ar.End = pendaddr
 	}
 
-	prs, private := mm.pinPMAsLocked(ctx, hostarch.AddrRangeSeqOf(ar), nil)
+	prs, _ := mm.pinPMAsLocked(ctx, hostarch.AddrRangeSeqOf(ar), nil)
 	mm.activeMu.Unlock()
 	if perr != nil {
-		return prs, private, perr
+		return prs, perr
 	}
-	return prs, private, verr
+	return prs, verr
 }
 
 // pinPMAsLocked acquires references to the backing pages of ars. PMAs must
