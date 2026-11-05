@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include <deque>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <list>
 #include <string>
@@ -567,6 +568,43 @@ TEST_F(FcntlLockTest, SetReadLockMultiProc) {
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "Exited with code: " << status;
+}
+
+TEST_F(FcntlLockTest, DupOverSameFileReleasesProcessLock) {
+  for (bool use_dup3 : {false, true}) {
+    SCOPED_TRACE(use_dup3 ? "dup3" : "dup2");
+    auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+    FileDescriptor duplicate = ASSERT_NO_ERRNO_AND_VALUE(fd.Dup());
+    struct flock fl = {
+        .l_type = F_WRLCK,
+        .l_whence = SEEK_SET,
+        .l_start = 0,
+        .l_len = 0,
+        .l_pid = 0,
+    };
+    ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+
+    // dup2 on the same descriptor does not close it or release its locks.
+    ASSERT_THAT(dup2(fd.get(), fd.get()), SyscallSucceedsWithValue(fd.get()));
+    // An OFD query sees POSIX locks owned by this process, unlike F_GETLK.
+    ASSERT_THAT(fcntl(fd.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
+    ASSERT_EQ(fl.l_type, F_WRLCK);
+    ASSERT_EQ(fl.l_pid, getpid());
+
+    if (use_dup3) {
+      ASSERT_THAT(dup3(fd.get(), duplicate.get(), 0),
+                  SyscallSucceedsWithValue(duplicate.get()));
+    } else {
+      ASSERT_THAT(dup2(fd.get(), duplicate.get()),
+                  SyscallSucceedsWithValue(duplicate.get()));
+    }
+
+    fl.l_type = F_WRLCK;
+    fl.l_pid = 0;
+    ASSERT_THAT(fcntl(fd.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
+    EXPECT_EQ(fl.l_type, F_UNLCK);
+  }
 }
 
 TEST_F(FcntlLockTest, SetReadThenWriteLockMultiProc) {
