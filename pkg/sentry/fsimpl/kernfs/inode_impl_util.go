@@ -447,9 +447,12 @@ type OrderedChildren struct {
 	// methods that would modify the children return EPERM. Immutable.
 	writable bool
 
-	mu    sync.RWMutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:mu
 	order slotList
-	set   map[string]*slot
+	// +checklocks:mu
+	set map[string]*slot
 }
 
 // orderedChildren implements inodeWithOrderedChildren.orderedChildren.
@@ -611,7 +614,7 @@ func (o *OrderedChildren) insert(name string, child Inode, static bool) error {
 	return nil
 }
 
-// Precondition: caller must hold o.mu for writing.
+// +checklocks:o.mu
 func (o *OrderedChildren) removeLocked(name string) {
 	if s, ok := o.set[name]; ok {
 		if s.static {
@@ -640,7 +643,7 @@ func (o *OrderedChildren) RemoveStatic(ctx context.Context, name string) error {
 	return nil
 }
 
-// Precondition: caller must hold o.mu for reading or writing.
+// +checklocksread:o.mu
 func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 	s, ok := o.set[name]
 	if !ok {
@@ -702,11 +705,17 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 	// calls to Rename in accordance with the interface declaration.
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if dst != o {
-		dst.mu.Lock()
-		defer dst.mu.Unlock()
+	if dst == o {
+		return o.renameLocked(oldname, newname, child, o)
 	}
+	dst.mu.Lock()
+	defer dst.mu.Unlock()
+	return o.renameLocked(oldname, newname, child, dst)
+}
 
+// +checklocks:o.mu
+// +checklocks:dst.mu
+func (o *OrderedChildren) renameLocked(oldname, newname string, child Inode, dst *OrderedChildren) error {
 	// Ensure target inode exists in src.
 	if err := o.checkExistingLocked(oldname, child); err != nil {
 		return err
@@ -738,7 +747,7 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 // iterator is valid until the caller releases o.mu. Returns nil if the
 // requested index falls out of bounds.
 //
-// Preconditon: Caller must hold o.mu for reading.
+// +checklocksread:o.mu
 func (o *OrderedChildren) nthLocked(i int64) *slot {
 	for it := o.order.Front(); it != nil && i >= 0; it = it.Next() {
 		if i == 0 {
