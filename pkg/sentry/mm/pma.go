@@ -15,7 +15,9 @@
 package mm
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -800,6 +802,7 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 func (mm *MemoryManager) pinPMAsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, prs []PinnedRange) ([]PinnedRange, bool) {
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	allPrivate := true
+	ordered := true
 	for !ars.IsEmpty() {
 		ar := ars.Head()
 		ars = ars.Tail()
@@ -830,6 +833,9 @@ func (mm *MemoryManager) pinPMAsLocked(ctx context.Context, ars hostarch.AddrRan
 			allPrivate = allPrivate && pseg.ValuePtr().private
 			if len(prs) != 0 {
 				prev := &prs[len(prs)-1]
+				if prev.Source.Start > part.Start {
+					ordered = false
+				}
 				if prev.File == f && prev.Source.End == part.Start && prev.FileRange().End == fr.Start {
 					prev.Source.End = part.End
 					continue
@@ -838,10 +844,35 @@ func (mm *MemoryManager) pinPMAsLocked(ctx context.Context, ars hostarch.AddrRan
 			prs = append(prs, PinnedRange{Source: part, File: f, Offset: fr.Start})
 		}
 	}
+	if !ordered {
+		prs = coalescePinnedRanges(prs)
+	}
 	for _, pr := range prs {
 		pr.File.IncRef(pr.FileRange(), memCgID)
 	}
 	return prs, allPrivate
+}
+
+// coalescePinnedRanges merges ranges before their backing references are
+// acquired. Reference order is independent of I/O order.
+func coalescePinnedRanges(prs []PinnedRange) []PinnedRange {
+	slices.SortFunc(prs, func(a, b PinnedRange) int {
+		return cmp.Compare(a.Source.Start, b.Source.Start)
+	})
+	n := 0
+	for _, pr := range prs {
+		if n != 0 {
+			prev := &prs[n-1]
+			if prev.File == pr.File && prev.Source.End >= pr.Source.Start &&
+				prev.Offset+uint64(pr.Source.Start-prev.Source.Start) == pr.Offset {
+				prev.Source.End = max(prev.Source.End, pr.Source.End)
+				continue
+			}
+		}
+		prs[n] = pr
+		n++
+	}
+	return prs[:n]
 }
 
 // PinnedRanges are returned by MemoryManager.Pin.
