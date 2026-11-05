@@ -3383,6 +3383,12 @@ func (s *sock) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags 
 			return 0, err
 		}
 		if !s.checkFamily(family, false /* exact */) {
+			// Linux's udp_sendmsg and raw_sendmsg return EAFNOSUPPORT for an
+			// AF_INET socket when the destination family is neither AF_INET
+			// nor AF_UNSPEC.
+			if s.family == linux.AF_INET && (s.skType == linux.SOCK_DGRAM || s.skType == linux.SOCK_RAW) && family != linux.AF_UNSPEC {
+				return 0, syserr.ErrAddressFamilyNotSupported
+			}
 			return 0, syserr.ErrInvalidArgument
 		}
 		addrBuf = s.mapFamily(addrBuf, family)
