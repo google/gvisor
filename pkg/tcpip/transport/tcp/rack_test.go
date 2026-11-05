@@ -502,7 +502,7 @@ func TestRACKPTODuration(t *testing.T) {
 			}
 			clock.Advance(time.Millisecond)
 			now := clock.NowMonotonic()
-			ctx.snd.schedulePTO()
+			ctx.snd.schedulePTO(false /* advancingRTO */)
 			if !ctx.snd.probeTimer.enabled() {
 				t.Fatal("probe timer is not enabled")
 			}
