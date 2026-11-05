@@ -150,3 +150,45 @@ TEXT ·addrOfLoadUint32(SB), $0-8
 	MOVD	$·loadUint32(SB), R0
 	MOVD	R0, ret+0(FP)
 	RET
+
+// handleStoreUint64Fault returns the value stored in R1. Control is
+// transferred to it when storeUint64 below receives SIGSEGV or SIGBUS, with
+// the signal number stored in R1.
+//
+// It must have the same frame configuration as storeUint64 so that it can undo
+// any potential call frame set up by the assembler.
+TEXT handleStoreUint64Fault(SB), NOSPLIT, $0-20
+	MOVW R1, sig+16(FP)
+	RET
+
+// storeUint64 stores val into *ptr using a single non-writeback store
+// instruction. If a SIGSEGV or SIGBUS signal is received, sig is the number of
+// the signal that was received.
+//
+// The choice of instruction matters: this is used to write to KVM ioeventfd
+// MMIO addresses from guest mode, and Arm only reports a valid instruction
+// syndrome (ESR_ELx.ISV=1) for a load or store of a single general-purpose
+// register that does not use writeback and is not a load/store exclusive.
+// Without a valid syndrome the hypervisor cannot decode the access, so it
+// cannot service the ioeventfd. See the Arm ARM, ESR_EL2.ISS encoding for a
+// Data Abort.
+//
+// Preconditions: ptr must be aligned to an 8-byte boundary.
+//
+//func storeUint64(ptr unsafe.Pointer, val uint64) (sig int32)
+TEXT ·storeUint64(SB), NOSPLIT, $0-20
+	// Store 0 as the returned signal number. If we run to completion,
+	// this is the value the caller will see; if a signal is received,
+	// handleStoreUint64Fault will store a different value in this address.
+	MOVW $0, sig+16(FP)
+
+	MOVD ptr+0(FP), R0
+	MOVD val+8(FP), R1
+	MOVD R1, (R0)
+	RET
+
+// func addrOfStoreUint64() uintptr
+TEXT ·addrOfStoreUint64(SB), $0-8
+	MOVD	$·storeUint64(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET

@@ -158,3 +158,37 @@ TEXT ·addrOfLoadUint32(SB), NOSPLIT|NOFRAME, $0-8
   MOVQ $·loadUint32(SB), AX
   MOVQ AX, ret+0(FP)
   RET
+
+// handleStoreUint64Fault returns the value stored in DI. Control is
+// transferred to it when storeUint64 below receives SIGSEGV or SIGBUS, with
+// the signal number stored in DI.
+//
+// It must have the same frame configuration as storeUint64 so that it can undo
+// any potential call frame set up by the assembler.
+TEXT handleStoreUint64Fault(SB), NOSPLIT|NOFRAME, $0-20
+  MOVL DI, sig+16(FP)
+  RET
+
+// storeUint64 stores val into *ptr using a single store instruction. If a
+// SIGSEGV or SIGBUS signal is received, sig is the number of the signal that
+// was received.
+//
+// Preconditions: ptr must be aligned to an 8-byte boundary.
+//
+//func storeUint64(ptr unsafe.Pointer, val uint64) (sig int32)
+TEXT ·storeUint64(SB), NOSPLIT|NOFRAME, $0-20
+  // Store 0 as the returned signal number. If we run to completion,
+  // this is the value the caller will see; if a signal is received,
+  // handleStoreUint64Fault will store a different value in this address.
+  MOVL $0, sig+16(FP)
+
+  MOVQ ptr+0(FP), AX
+  MOVQ val+8(FP), BX
+  MOVQ BX, (AX)
+  RET
+
+// func addrOfStoreUint64() uintptr
+TEXT ·addrOfStoreUint64(SB), NOSPLIT|NOFRAME, $0-8
+  MOVQ $·storeUint64(SB), AX
+  MOVQ AX, ret+0(FP)
+  RET
