@@ -14,11 +14,14 @@
 
 #include <fcntl.h>
 #include <libgen.h>
+#include <linux/prctl.h>
 #include <sched.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <sys/prctl.h>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -43,6 +46,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
@@ -50,9 +54,11 @@
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/cleanup.h"
 #include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -2870,6 +2876,386 @@ TEST(Inotify, KernfsDynamicFileAcrossSave) {
   // Adding a watch on the same file again must return the same descriptor.
   EXPECT_THAT(InotifyAddWatch(fd.get(), procFile, IN_ALL_EVENTS),
               IsPosixErrorOkAndHolds(wd));
+}
+
+// Writes a namespace-local quota without changing the host's fs.inotify policy.
+void SetInotifyUserLimit(const char* path, const char* value) {
+  const int fd = open(path, O_WRONLY);
+  TEST_PCHECK(fd >= 0);
+  TEST_PCHECK(write(fd, value, strlen(value)) ==
+              static_cast<ssize_t>(strlen(value)));
+  TEST_PCHECK(close(fd) == 0);
+}
+
+constexpr char kUserWatchLimit[] = "/proc/sys/user/max_inotify_watches";
+constexpr char kUserInstanceLimit[] = "/proc/sys/user/max_inotify_instances";
+
+TEST(Inotify, WatchCapAcrossInstances) {
+  std::vector<TempPath> files;
+  for (int i = 0; i < 6; ++i) {
+    files.push_back(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile()));
+  }
+  ASSERT_THAT(InForkedUserMountNamespace(
+                  [] {},
+                  [&] {
+                    SetInotifyUserLimit(kUserWatchLimit, "4");
+                    const int a = inotify_init1(IN_NONBLOCK);
+                    const int b = inotify_init1(IN_NONBLOCK);
+                    TEST_PCHECK(a >= 0 && b >= 0);
+                    int watches[4];
+                    for (int i = 0; i < 4; ++i) {
+                      watches[i] = inotify_add_watch(
+                          i < 2 ? a : b, files[i].path().c_str(), IN_ATTRIB);
+                      TEST_PCHECK(watches[i] >= 0);
+                    }
+                    TEST_PCHECK(inotify_add_watch(a, files[4].path().c_str(),
+                                                  IN_ATTRIB) == -1 &&
+                                errno == ENOSPC);
+                    // Updating an existing watch does not consume another
+                    // charge.
+                    TEST_PCHECK(inotify_add_watch(a, files[0].path().c_str(),
+                                                  IN_ACCESS) == watches[0]);
+                    TEST_PCHECK(inotify_rm_watch(a, watches[0]) == 0);
+                    TEST_PCHECK(inotify_add_watch(a, files[4].path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    // Closing another instance releases all its watches for
+                    // this user.
+                    TEST_PCHECK(close(b) == 0);
+                    TEST_PCHECK(inotify_add_watch(a, files[2].path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    TEST_PCHECK(inotify_add_watch(a, files[3].path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    // One-shot expiry also returns the quota.
+                    TEST_PCHECK(inotify_add_watch(a, files[1].path().c_str(),
+                                                  IN_ATTRIB | IN_ONESHOT) ==
+                                watches[1]);
+                    TEST_PCHECK(chmod(files[1].path().c_str(), 0600) == 0);
+                    TEST_PCHECK(inotify_add_watch(a, files[5].path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    // Deletion must return the charge exactly once.
+                    TEST_PCHECK(unlink(files[5].path().c_str()) == 0);
+                    TEST_PCHECK(inotify_add_watch(a, files[0].path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    TEST_PCHECK(close(a) == 0);
+                  }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(Inotify, InstanceCapAndLastClose) {
+  ASSERT_THAT(
+      InForkedUserMountNamespace(
+          [] {},
+          [] {
+            SetInotifyUserLimit(kUserInstanceLimit, "2");
+            const int a = inotify_init1(IN_NONBLOCK);
+            const int b = inotify_init1(IN_NONBLOCK);
+            TEST_PCHECK(a >= 0 && b >= 0);
+            TEST_PCHECK(inotify_init1(0) == -1 && errno == EMFILE);
+            const int duplicate = dup(a);
+            TEST_PCHECK(duplicate >= 0);
+            TEST_PCHECK(close(a) == 0);
+            TEST_PCHECK(inotify_init1(0) == -1 && errno == EMFILE);
+            TEST_PCHECK(close(duplicate) == 0);
+            const int replacement = inotify_init1(0);
+            TEST_PCHECK(replacement >= 0);
+            TEST_PCHECK(close(replacement) == 0);
+            // Raising the limit affects existing users immediately.
+            SetInotifyUserLimit(kUserInstanceLimit, "3");
+            const int c = inotify_init1(0);
+            const int d = inotify_init1(0);
+            TEST_PCHECK(c >= 0 && d >= 0);
+            TEST_PCHECK(inotify_init1(0) == -1 && errno == EMFILE);
+            TEST_PCHECK(close(b) == 0 && close(c) == 0 && close(d) == 0);
+          }),
+      IsPosixErrorOkAndHolds(0));
+}
+
+TEST(Inotify, DescendantsCannotBypassUserCaps) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  ASSERT_THAT(InForkedUserMountNamespace(
+                  [] {},
+                  [&] {
+                    SetInotifyUserLimit(kUserInstanceLimit, "2");
+                    SetInotifyUserLimit(kUserWatchLimit, "1");
+                    const int parent = inotify_init1(IN_NONBLOCK);
+                    TEST_PCHECK(parent >= 0);
+                    const int wd = inotify_add_watch(
+                        parent, file.path().c_str(), IN_ATTRIB);
+                    TEST_PCHECK(wd >= 0);
+                    TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                    SetInotifyUserLimit("/proc/self/uid_map", "0 0 1");
+                    const int child = inotify_init1(IN_NONBLOCK);
+                    TEST_PCHECK(child >= 0);
+                    TEST_PCHECK(inotify_init1(0) == -1 && errno == EMFILE);
+                    TEST_PCHECK(inotify_add_watch(child, file.path().c_str(),
+                                                  IN_ATTRIB) == -1 &&
+                                errno == ENOSPC);
+                    TEST_PCHECK(inotify_rm_watch(parent, wd) == 0);
+                    // The failed charge in the child must have been rolled
+                    // back.
+                    SetInotifyUserLimit(kUserWatchLimit, "1");
+                    TEST_PCHECK(inotify_add_watch(child, file.path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    TEST_PCHECK(close(parent) == 0 && close(child) == 0);
+                  }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(Inotify, WatchLimitCanBeRaised) {
+  const TempPath a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const TempPath b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  ASSERT_THAT(InForkedUserMountNamespace(
+                  [] {},
+                  [&] {
+                    SetInotifyUserLimit(kUserWatchLimit, "1");
+                    const int fd = inotify_init1(IN_NONBLOCK);
+                    TEST_PCHECK(fd >= 0);
+                    TEST_PCHECK(inotify_add_watch(fd, a.path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    TEST_PCHECK(inotify_add_watch(fd, b.path().c_str(),
+                                                  IN_ATTRIB) == -1 &&
+                                errno == ENOSPC);
+                    SetInotifyUserLimit(kUserWatchLimit, "2");
+                    TEST_PCHECK(inotify_add_watch(fd, b.path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    TEST_PCHECK(close(fd) == 0);
+                  }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(Inotify, InheritedInstanceKeepsCreatorAccounting) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  ASSERT_THAT(InForkedUserMountNamespace(
+                  [] {},
+                  [&] {
+                    SetInotifyUserLimit(kUserWatchLimit, "2");
+                    const int parent = inotify_init1(IN_NONBLOCK);
+                    TEST_PCHECK(parent >= 0);
+                    TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                    SetInotifyUserLimit("/proc/self/uid_map", "0 0 1");
+                    SetInotifyUserLimit(kUserWatchLimit, "0");
+                    const int child = inotify_init1(IN_NONBLOCK);
+                    TEST_PCHECK(child >= 0);
+                    TEST_PCHECK(inotify_add_watch(child, file.path().c_str(),
+                                                  IN_ATTRIB) == -1 &&
+                                errno == ENOSPC);
+                    TEST_PCHECK(inotify_add_watch(parent, file.path().c_str(),
+                                                  IN_ATTRIB) >= 0);
+                    TEST_PCHECK(close(parent) == 0 && close(child) == 0);
+                  }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(Inotify, SysctlLimitsExist) {
+  for (const char* path : {"/proc/sys/fs/inotify/max_user_watches",
+                           "/proc/sys/fs/inotify/max_user_instances",
+                           "/proc/sys/fs/inotify/max_queued_events"}) {
+    const std::string contents = ASSERT_NO_ERRNO_AND_VALUE(GetContents(path));
+    int value;
+    ASSERT_TRUE(absl::SimpleAtoi(contents, &value)) << path;
+    EXPECT_GE(value, 0) << path;
+  }
+}
+
+TEST(Inotify, RemountedProcCannotGrantGlobalLimitAccess) {
+  const uid_t uid = geteuid() == 0 ? 65534 : geteuid();
+  const std::string uid_map = absl::StrFormat("0 %u 1", uid);
+  ASSERT_THAT(
+      InForkedProcess([&] {
+        if (geteuid() == 0) {
+          TEST_PCHECK(setgid(65534) == 0);
+          TEST_PCHECK(setuid(uid) == 0);
+        }
+        TEST_PCHECK(prctl(PR_SET_DUMPABLE, 1) == 0);
+        TEST_PCHECK(unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID) == 0);
+        SetInotifyUserLimit("/proc/self/uid_map", uid_map.c_str());
+        const pid_t child = fork();
+        TEST_PCHECK(child >= 0);
+        if (child == 0) {
+          TEST_PCHECK(
+              mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr) == 0);
+          TEST_PCHECK(mount("proc", "/proc", "proc",
+                            MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr) == 0);
+          for (const char* path : {"/proc/sys/fs/inotify/max_user_watches",
+                                   "/proc/sys/fs/inotify/max_user_instances",
+                                   "/proc/sys/fs/inotify/max_queued_events"}) {
+            const int readable = open(path, O_RDONLY);
+            TEST_PCHECK(readable >= 0);
+            TEST_PCHECK(close(readable) == 0);
+            TEST_PCHECK(open(path, O_WRONLY) == -1 && errno == EACCES);
+          }
+          _exit(0);
+        }
+        int status;
+        TEST_PCHECK(waitpid(child, &status, 0) == child);
+        TEST_PCHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
+TEST(Inotify, MoreThan8192WatchesWhenConfigured) {
+  const std::string contents = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents("/proc/sys/fs/inotify/max_user_watches"));
+  int limit;
+  ASSERT_TRUE(absl::SimpleAtoi(contents, &limit));
+  SKIP_IF(limit < 9000);
+  // Saving on each file creation would perform thousands of checkpoints.
+  DisableSave disable_save;
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::vector<TempPath> files;
+  files.reserve(9000);
+  for (int i = 0; i < 9000; ++i) {
+    files.push_back(
+        ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path())));
+    ASSERT_NO_ERRNO(InotifyAddWatch(fd.get(), files.back().path(), IN_ATTRIB));
+  }
+  disable_save.reset();
+  MaybeSave();
+}
+
+TEST(Inotify, QueueLimitIsCapturedAtInit) {
+  SKIP_IF(geteuid() != 0 ||
+          !ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  constexpr char kPath[] = "/proc/sys/fs/inotify/max_queued_events";
+  const std::string before = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kPath));
+  auto writable = Open(kPath, O_WRONLY);
+  SKIP_IF(!writable.ok() && (writable.error().errno_value() == EROFS ||
+                             writable.error().errno_value() == EACCES));
+  ASSERT_NO_ERRNO(writable);
+  const auto cleanup =
+      Cleanup([&] { EXPECT_NO_ERRNO(SetContents(kPath, before)); });
+  ASSERT_THAT(SetContents(kPath, "-1"), PosixErrorIs(EINVAL));
+  ASSERT_NO_ERRNO(SetContents(kPath, "1"));
+  const FileDescriptor one =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  ASSERT_NO_ERRNO(SetContents(kPath, "0"));
+  const FileDescriptor zero =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(one.get(), file.path(), IN_ATTRIB));
+  ASSERT_NO_ERRNO(InotifyAddWatch(zero.get(), file.path(), IN_ATTRIB));
+  ASSERT_THAT(chmod(file.path().c_str(), 0600), SyscallSucceeds());
+  ASSERT_THAT(chmod(file.path().c_str(), 0600), SyscallSucceeds());
+  EXPECT_THAT(DrainEvents(one.get()),
+              IsPosixErrorOkAndHolds(
+                  Are({Event(IN_ATTRIB, wd), Event(IN_Q_OVERFLOW, -1)})));
+  EXPECT_THAT(DrainEvents(zero.get()),
+              IsPosixErrorOkAndHolds(Are({Event(IN_Q_OVERFLOW, -1)})));
+}
+
+// Alternate IN_ATTRIB events on two watched files. Each event is exactly one
+// inotify_event header, so partial reads can leave the overflow marker queued.
+class InotifyQueue : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    const std::string contents = ASSERT_NO_ERRNO_AND_VALUE(
+        GetContents("/proc/sys/fs/inotify/max_queued_events"));
+    ASSERT_TRUE(absl::SimpleAtoi(contents, &limit_));
+    SKIP_IF(limit_ < 2 || limit_ > 1048576);
+    inotify_ = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+    for (int i = 0; i < 2; ++i) {
+      paths_[i] = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+      files_[i] = ASSERT_NO_ERRNO_AND_VALUE(Open(paths_[i].path(), O_RDONLY));
+      watches_[i] = ASSERT_NO_ERRNO_AND_VALUE(
+          InotifyAddWatch(inotify_.get(), paths_[i].path(), IN_ATTRIB));
+    }
+  }
+
+  void Generate(int count) {
+    // Checkpoint each batch, rather than each of thousands of syscalls.
+    DisableSave disable_save;
+    for (int i = 0; i < count; ++i) {
+      ASSERT_THAT(fchmod(files_[next_].get(), 0600), SyscallSucceeds());
+      next_ ^= 1;
+    }
+    disable_save.reset();
+    MaybeSave();
+  }
+
+  void CheckOverflow(const std::vector<Event>& events, size_t size) {
+    ASSERT_EQ(events.size(), size);
+    int markers = 0;
+    for (const auto& event : events) {
+      if (event.mask == IN_Q_OVERFLOW) {
+        ++markers;
+        EXPECT_EQ(event.wd, -1);
+        EXPECT_EQ(event.cookie, 0);
+        EXPECT_TRUE(event.name.empty());
+      }
+    }
+    EXPECT_EQ(markers, 1);
+  }
+
+  int limit_ = 0;
+  int next_ = 0;
+  TempPath paths_[2];
+  FileDescriptor files_[2];
+  FileDescriptor inotify_;
+  int watches_[2];
+};
+
+TEST_F(InotifyQueue, OverflowAndRecovery) {
+  Generate(limit_ + 16);
+  const auto events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_.get()));
+  CheckOverflow(events, limit_ + 1);
+  ASSERT_FALSE(events.empty());
+  EXPECT_EQ(events.back().mask, IN_Q_OVERFLOW);
+  const int next_watch = watches_[next_];
+  Generate(1);
+  EXPECT_THAT(DrainEvents(inotify_.get()),
+              IsPosixErrorOkAndHolds(Are({Event(IN_ATTRIB, next_watch)})));
+  // A consumed marker can be queued again on a later overflow.
+  Generate(limit_ + 1);
+  CheckOverflow(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_.get())),
+                limit_ + 1);
+}
+
+TEST_F(InotifyQueue, OnlyOneMarkerAfterPartialRead) {
+  Generate(limit_ + 1);
+  struct inotify_event first[2];
+  ASSERT_THAT(read(inotify_.get(), first, sizeof(first)),
+              SyscallSucceedsWithValue(sizeof(first)));
+  ASSERT_EQ(first[0].mask, IN_ATTRIB);
+  ASSERT_EQ(first[1].mask, IN_ATTRIB);
+  MaybeSave();
+  // The first new event goes behind the marker. The second overflows again.
+  Generate(2);
+  CheckOverflow(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_.get())), limit_);
+}
+
+TEST_F(InotifyQueue, OverflowMarkerRemovedOnCopyFault) {
+  Generate(limit_ + 1);
+  std::vector<struct inotify_event> ordinary(limit_);
+  const size_t size = ordinary.size() * sizeof(struct inotify_event);
+  ASSERT_THAT(read(inotify_.get(), ordinary.data(), size),
+              SyscallSucceedsWithValue(size));
+  // Too small a buffer leaves the marker queued; a copy fault consumes it.
+  struct inotify_event marker;
+  ASSERT_THAT(read(inotify_.get(), &marker, sizeof(marker) - 1),
+              SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(read(inotify_.get(), nullptr, sizeof(marker)),
+              SyscallFailsWithErrno(EFAULT));
+  MaybeSave();
+  Generate(limit_ + 1);
+  CheckOverflow(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_.get())),
+                limit_ + 1);
+}
+
+TEST_F(InotifyQueue, FullQueueDuplicateStillOverflows) {
+  Generate(limit_);
+  ASSERT_THAT(fchmod(files_[next_ ^ 1].get(), 0600), SyscallSucceeds());
+  CheckOverflow(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_.get())),
+                limit_ + 1);
+}
+
+TEST_F(InotifyQueue, DuplicateBelowLimitIsCoalesced) {
+  ASSERT_THAT(fchmod(files_[0].get(), 0600), SyscallSucceeds());
+  ASSERT_THAT(fchmod(files_[0].get(), 0600), SyscallSucceeds());
+  EXPECT_THAT(DrainEvents(inotify_.get()),
+              IsPosixErrorOkAndHolds(Are({Event(IN_ATTRIB, watches_[0])})));
 }
 
 }  // namespace

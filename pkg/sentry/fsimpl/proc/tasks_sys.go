@@ -153,6 +153,8 @@ func sysSubdirs(path string) []string {
 		return []string{"kernel", "fs", "vm", "user", "net"}
 	case "kernel":
 		return []string{"random", "yama", "keys"}
+	case "fs":
+		return []string{"inotify"}
 	case "net":
 		return []string{"ipv4", "core", "ipv6"}
 	case "net/ipv4", "net/ipv6":
@@ -253,7 +255,15 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 		}
 	case "user":
 		return map[string]kernfs.Inode{
-			"max_user_namespaces": fs.newInode(ctx, root, 0644, &maxUserNamespacesData{}),
+			"max_user_namespaces":   fs.newInode(ctx, root, 0644, &maxUserNamespacesData{}),
+			"max_inotify_instances": fs.newInode(ctx, root, 0644, &inotifyLimitData{resource: auth.InotifyInstances}),
+			"max_inotify_watches":   fs.newInode(ctx, root, 0644, &inotifyLimitData{resource: auth.InotifyWatches}),
+		}
+	case "fs/inotify":
+		return map[string]kernfs.Inode{
+			"max_user_instances": fs.newInode(ctx, root, 0644, &inotifyGlobalLimitData{atomicInt32File{val: &k.RootUserNamespace().InotifyMaxInstances, min: 0, max: math.MaxInt32}}),
+			"max_user_watches":   fs.newInode(ctx, root, 0644, &inotifyGlobalLimitData{atomicInt32File{val: &k.RootUserNamespace().InotifyMaxWatches, min: 0, max: math.MaxInt32}}),
+			"max_queued_events":  fs.newInode(ctx, root, 0644, &inotifyGlobalLimitData{atomicInt32File{val: &k.VFS().InotifyMaxQueuedEvents, min: 0, max: math.MaxInt32}}),
 		}
 	case "net/ipv4":
 		return map[string]kernfs.Inode{
@@ -467,6 +477,75 @@ func (*maxUserNamespacesData) Write(ctx context.Context, _ *vfs.FileDescription,
 		return 0, linuxerr.EINVAL
 	}
 	auth.CredentialsFromContext(ctx).UserNamespace.SetMaxUserNamespaces(buf[0])
+	return n, nil
+}
+
+// inotifyGlobalLimitData implements the non-namespaced fs/inotify sysctls.
+//
+// +stateify savable
+type inotifyGlobalLimitData struct {
+	atomicInt32File
+}
+
+// CheckPermissions implements kernfs.Inode.CheckPermissions. Linux's
+// sysctl_perm checks the effective UID in the root user namespace, regardless
+// of which PID namespace owns the procfs mount.
+func (*inotifyGlobalLimitData) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if (ats.MayWrite() && creds.EffectiveKUID != auth.RootKUID) || ats.MayExec() {
+		return linuxerr.EACCES
+	}
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *inotifyGlobalLimitData) Write(ctx context.Context, fd *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if err := d.CheckPermissions(ctx, auth.CredentialsFromContext(ctx), vfs.MayWrite); err != nil {
+		return 0, err
+	}
+	return d.atomicInt32File.Write(ctx, fd, src, offset)
+}
+
+// inotifyLimitData implements /proc/sys/user/max_inotify_{instances,watches}.
+// These files refer to the calling task's user namespace; fs/inotify refers
+// to the root user namespace.
+//
+// +stateify savable
+type inotifyLimitData struct {
+	kernfs.DynamicBytesFile
+	resource auth.InotifyResource
+}
+
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
+func (*inotifyLimitData) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if (ats.MayWrite() && !creds.HasSelfCapability(linux.CAP_SYS_RESOURCE)) || ats.MayExec() {
+		return linuxerr.EACCES
+	}
+	return nil
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *inotifyLimitData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	_, err := fmt.Fprintf(buf, "%d\n", auth.CredentialsFromContext(ctx).UserNamespace.InotifyLimit(d.resource))
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *inotifyLimitData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if err := d.CheckPermissions(ctx, auth.CredentialsFromContext(ctx), vfs.MayWrite); err != nil {
+		return 0, err
+	}
+	if offset != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	var values [1]int32
+	n, err := ParseInt32Vec(ctx, src, values[:])
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if values[0] < 0 {
+		return 0, linuxerr.EINVAL
+	}
+	auth.CredentialsFromContext(ctx).UserNamespace.SetInotifyLimit(d.resource, values[0])
 	return n, nil
 }
 

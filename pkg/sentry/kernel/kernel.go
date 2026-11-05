@@ -82,6 +82,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -671,6 +672,11 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if err := k.vfs.Init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize VFS: %v", err)
 	}
+	// Follow Linux's boot-time policy: approximately 1% of available memory,
+	// clamped to [8192, 1048576] watches per user. Use a 1 KiB estimate for
+	// the watch and pinned filesystem metadata; the sysctl remains tunable.
+	watchLimit := usage.TotalMemory(k.MemoryFile().TotalSize(), 0) / 100 / 1024
+	k.rootUserNamespace.InotifyMaxWatches.Store(int32(max(uint64(8192), min(watchLimit, uint64(1048576)))))
 
 	err := k.rootIPCNamespace.InitPosixQueues(ctx, &k.vfs, auth.CredentialsFromContext(ctx))
 	if err != nil {
