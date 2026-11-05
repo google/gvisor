@@ -492,6 +492,30 @@ func TestCloseWithoutConnect(t *testing.T) {
 	}
 }
 
+func BenchmarkWildcardBindClose(b *testing.B) {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+	})
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
+	var wq waiter.Queue
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := ep.Bind(tcpip.FullAddress{Port: 1234}); err != nil {
+			b.Fatal(err)
+		}
+		ep.Close()
+	}
+}
+
 func TestHandshakeTimeoutConnectedCount(t *testing.T) {
 	clock := faketime.NewManualClock()
 	c := context.NewWithOpts(t, context.Options{
