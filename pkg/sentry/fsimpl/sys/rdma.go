@@ -379,15 +379,6 @@ func (fs *filesystem) buildNUMA(ctx context.Context, creds *auth.Credentials, nu
 	return fs.newDir(ctx, creds, defaultSysDirMode, entries)
 }
 
-// cpuListString formats CPUs 0..cores-1 in the kernel's cpulist format
-// (lib/bitmap.c:bitmap_print_to_pagebuf(list=true)).
-func cpuListString(cores uint) string {
-	if cores == 1 {
-		return "0\n"
-	}
-	return fmt.Sprintf("0-%d\n", cores-1)
-}
-
 // buildRDMADir converts an rdmaDirTree into kernfs inodes.
 func (fs *filesystem) buildRDMADir(ctx context.Context, creds *auth.Credentials, t *rdmaDirTree) kernfs.Inode {
 	entries := map[string]kernfs.Inode{}
