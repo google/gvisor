@@ -326,13 +326,10 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						Huge:    huge,
 						Dir:     allocDir,
 					}
-					// If the allocation is hugepage-backed and
-					// callerIndirectCommit is true, the caller will commit every
-					// allocated huge page. If the allocation is not
-					// hugepage-backed, the caller won't commit every allocated
-					// page since hugeMaskAR is ar expanded to huge alignment,
-					// unless only one page in optAR falls into the huge page.
-					if callerIndirectCommit && (huge || allocAR.Length() == hostarch.Addr(hostarch.PageSize)) {
+					// A write commits each huge page it touches. For small
+					// pages, the caller covers every allocated page only when
+					// the allocation is contained in the requested range.
+					if callerIndirectCommit && (huge || ar.IsSupersetOf(allocAR)) {
 						allocOpts.Mode = pgalloc.AllocateCallerIndirectCommit
 					}
 					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), allocOpts)
@@ -743,10 +740,10 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 // non-nil error. Note that Pin may return both a non-empty slice of
 // PinnedRanges and a non-nil error.
 //
-// Pin does not prevent mapped ranges from changing, making it unsuitable for
-// most I/O. It should only be used in contexts that would use
-// pin_user_pages(FOLL_LONGTERM) in the Linux kernel. Like Linux, Pin breaks
-// copy-on-write on the pinned range (even if at.Write is false). This also
+// Pin keeps the returned pages alive but does not prevent their application
+// mappings from changing. Callers must tolerate changes to those mappings.
+// Like Linux pin_user_pages(), Pin breaks copy-on-write on the pinned range
+// (even if at.Write is false). This also
 // yields the invariant that pinned pages in private mappings live in non-CoW
 // pmas with >1 reference.
 //
@@ -777,7 +774,7 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
 	mm.hasPinned = true
-	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, false /* callerIndirectCommit */, true /* forPin */)
+	_, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, false /* callerIndirectCommit */, true /* forPin */)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
@@ -787,28 +784,48 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 		ar.End = pendaddr
 	}
 
-	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
-	// Gather pmas.
-	var prs []PinnedRange
-	for pseg.Ok() && pseg.Start() < ar.End {
-		psar := pseg.Range().Intersect(ar)
-		f := pseg.ValuePtr().file
-		fr := pseg.fileRangeOf(psar)
-		f.IncRef(fr, memCgID)
-		prs = append(prs, PinnedRange{
-			Source: psar,
-			File:   f,
-			Offset: fr.Start,
-		})
-		pseg = pseg.NextSegment()
-	}
+	prs, _ := mm.pinPMAsLocked(ctx, hostarch.AddrRangeSeqOf(ar), nil)
 	mm.activeMu.Unlock()
-
-	// Return the first error in order of progress through ar.
 	if perr != nil {
 		return prs, perr
 	}
 	return prs, verr
+}
+
+// pinPMAsLocked acquires references to the backing pages of ars. PMAs must
+// already exist, private PMAs must not require copy-on-write, and hasPinned
+// must be set before acquiring references. prs must have length zero.
+//
+// +checklocksread:mm.activeMu
+func (mm *MemoryManager) pinPMAsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, prs []PinnedRange) ([]PinnedRange, bool) {
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+	allPrivate := true
+	for ; !ars.IsEmpty(); ars = ars.Tail() {
+		ar := ars.Head()
+		if ar.Length() == 0 {
+			continue
+		}
+		end, _ := ar.End.RoundUp()
+		ar = hostarch.AddrRange{Start: ar.Start.RoundDown(), End: end}
+		for pseg := mm.pmas.FindSegment(ar.Start); pseg.Ok() && pseg.Start() < ar.End; pseg = pseg.NextSegment() {
+			part := pseg.Range().Intersect(ar)
+			f := pseg.ValuePtr().file
+			fr := pseg.fileRangeOf(part)
+			allPrivate = allPrivate && pseg.ValuePtr().private
+			if len(prs) != 0 {
+				prev := &prs[len(prs)-1]
+				if prev.File == f && prev.Source.End == part.Start && prev.FileRange().End == fr.Start {
+					prev.Source.End = part.End
+					continue
+				}
+			}
+			prs = append(prs, PinnedRange{Source: part, File: f, Offset: fr.Start})
+		}
+	}
+	for _, pr := range prs {
+		pr.File.IncRef(pr.FileRange(), memCgID)
+	}
+	return prs, allPrivate
 }
 
 // PinnedRanges are returned by MemoryManager.Pin.
