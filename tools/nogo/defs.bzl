@@ -476,11 +476,15 @@ _nogo_test = rule(
     test = True,
 )
 
+def nogo_test_args(args = []):
+    """Returns the analyzer arguments for checking the per-architecture reports."""
+    return ["filter", "-test", "-text"] + args + _TEST_FINDINGS.values()
+
 def nogo_test(name, args = [], **kwargs):
     """Checks the already-filtered reports for every architecture."""
     _nogo_test(
         name = name,
-        args = ["filter", "-test", "-text"] + args + _TEST_FINDINGS.values(),
+        args = nogo_test_args(args),
         **kwargs
     )
 

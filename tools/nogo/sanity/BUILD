@@ -1,6 +1,5 @@
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//tools:defs.bzl", "go_library")
-load("//tools/nogo:defs.bzl", "nogo_config", "nogo_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/nogo:defs.bzl", "nogo_config", "nogo_test", "nogo_test_args")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -32,9 +31,9 @@ nogo_test(
     deps = [":sanity"],
 )
 
-sh_test(
+go_test(
     name = "sanity_test",
-    srcs = ["sanity_test.sh"],
-    args = ["$(location :sanity_nogo)"],
+    srcs = ["sanity_test.go"],
+    args = ["$(rootpath :sanity_nogo)"] + nogo_test_args(),
     data = [":sanity_nogo"],
 )
