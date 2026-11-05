@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/google/pprof/profile"
 	"gvisor.dev/gvisor/pkg/log"
@@ -35,15 +36,17 @@ var (
 	mergeOut              = mergeCmd.String("out", "", "file to write the merged profile to (default: stdout)")
 	compactCmd            = flag.NewFlagSet("compact", flag.ContinueOnError)
 	compactOut            = compactCmd.String("out", "", "file to write the compacted profile to (default: stdout)")
+	timestampCmd          = flag.NewFlagSet("timestamp", flag.ContinueOnError)
 	runtimeInfoCmd        = flag.NewFlagSet("runtime-info", flag.ContinueOnError)
 	checkSimilarCmd       = flag.NewFlagSet("check-similar", flag.ContinueOnError)
 	checkSimilarQuiet     = checkSimilarCmd.Bool("quiet", false, "if set, do not print any output; comparison result is still provided as exit code")
 	checkSimilarThreshold = checkSimilarCmd.Float64("threshold", 0.7, "threshold (between 0.0 and 1.0) above which the profiles are considered similar")
 
-	allCommands = []*flag.FlagSet{mergeCmd, compactCmd, runtimeInfoCmd, checkSimilarCmd}
+	allCommands = []*flag.FlagSet{mergeCmd, compactCmd, timestampCmd, runtimeInfoCmd, checkSimilarCmd}
 	commandSet  = map[*flag.FlagSet]string{
 		mergeCmd:        "merge two or more profile files into one",
 		compactCmd:      "minimize the size of a profile",
+		timestampCmd:    "print the profile collection time in Unix seconds (zero if unspecified)",
 		runtimeInfoCmd:  "print a runtime information key that identifies dimensions impacting profiles (Go version, CPU architecture)",
 		checkSimilarCmd: "check if two profiles are similar",
 	}
@@ -187,6 +190,26 @@ func writeMaxCompressionProfile(p *profile.Profile, out *os.File) error {
 	if err := writer.Close(); err != nil {
 		return fmt.Errorf("cannot close zlib writer: %w", err)
 	}
+	return nil
+}
+
+func profileTimestamp() error {
+	if err := timestampCmd.Parse(os.Args[2:]); err != nil {
+		return err
+	}
+	if timestampCmd.NArg() != 1 {
+		return errors.New("timestamp requires one profile path")
+	}
+	path := timestampCmd.Arg(0)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	p, err := profile.ParseData(data)
+	if err != nil {
+		return fmt.Errorf("cannot parse %q: %w", path, err)
+	}
+	fmt.Println(time.Unix(0, p.TimeNanos).Unix())
 	return nil
 }
 
@@ -401,6 +424,10 @@ func main() {
 		os.Exit(1)
 	}
 	switch os.Args[1] {
+	case timestampCmd.Name():
+		if err := profileTimestamp(); err != nil {
+			fail(err.Error())
+		}
 	case runtimeInfoCmd.Name():
 		if err := runtimeInfo(); err != nil {
 			fail(err.Error())
