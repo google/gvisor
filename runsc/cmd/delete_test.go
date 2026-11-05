@@ -114,6 +114,44 @@ func TestDeleteRunningRequiresForce(t *testing.T) {
 	}
 }
 
+const sandboxProcessArg = "--test-sandbox-process"
+
+func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == sandboxProcessArg {
+		for {
+			if err := unix.Pause(); err != unix.EINTR {
+				fmt.Fprintf(os.Stderr, "unix.Pause() = %v, want EINTR\n", err)
+				os.Exit(1)
+			}
+		}
+	}
+	flag.Parse()
+	if err := specutils.MaybeRunAsRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
+		os.Exit(123)
+	}
+	ownNetNS = runInOwnNetNS()
+	os.Exit(m.Run())
+}
+
+// startSandboxProcess starts a child with no sandbox control server. The
+// caller can observe whether a runsc command killed it before test cleanup.
+func startSandboxProcess(t *testing.T) (int, <-chan struct{}) {
+	t.Helper()
+	proc := exec.CommandContext(t.Context(), "/proc/self/exe", sandboxProcessArg)
+	proc.Stderr = os.Stderr
+	if err := proc.Start(); err != nil {
+		t.Fatalf("error starting fake sandbox process: %v", err)
+	}
+	exited := make(chan struct{})
+	go func() {
+		proc.Wait()
+		close(exited)
+	}()
+	t.Cleanup(func() { <-exited })
+	return proc.Process.Pid, exited
+}
+
 // startUnresponsiveSandbox writes the state of a container with the given
 // status and for which the sandbox never responds on its control socket.
 // Returns the container ID, and a channel closed when the sandbox process
@@ -129,19 +167,10 @@ func startUnresponsiveSandbox(t *testing.T, rootDir string, status container.Sta
 	if err := unix.Listen(sockFD, 16); err != nil {
 		t.Fatalf("error listening on control socket: %v", err)
 	}
-	proc := exec.Command("/bin/sleep", "1000")
-	if err := proc.Start(); err != nil {
-		t.Fatalf("error starting fake sandbox process: %v", err)
-	}
-	t.Cleanup(func() { proc.Process.Kill() })
-	exited := make(chan struct{})
-	go func() {
-		proc.Wait()
-		close(exited)
-	}()
+	pid, exited := startSandboxProcess(t)
 	const id = "booting"
 	path := filepath.Join(rootDir, fmt.Sprintf("%s_sandbox:%s.state", id, id))
-	state := fmt.Sprintf(`{"id":%q,"status":%q,"spec":{},"saver":{"rootDir":%q,"id":{"sandboxId":%q,"containerId":%q}},"sandbox":{"id":%q,"pid":%d,"controlSocketPath":%q,"mountHints":{}}}`, id, status, rootDir, id, id, id, proc.Process.Pid, sockPath)
+	state := fmt.Sprintf(`{"id":%q,"status":%q,"spec":{},"saver":{"rootDir":%q,"id":{"sandboxId":%q,"containerId":%q}},"sandbox":{"id":%q,"pid":%d,"controlSocketPath":%q,"mountHints":{}}}`, id, status, rootDir, id, id, id, pid, sockPath)
 	if err := os.WriteFile(path, []byte(state), 0644); err != nil {
 		t.Fatalf("error writing state file %q: %v", path, err)
 	}
@@ -242,17 +271,8 @@ func TestListUnresponsiveSandbox(t *testing.T) {
 // same PID.
 func startFakeSandbox(t *testing.T, rootDir string, reusedPID bool) (string, <-chan struct{}) {
 	t.Helper()
-	proc := exec.Command("/bin/sleep", "1000")
-	if err := proc.Start(); err != nil {
-		t.Fatalf("error starting fake sandbox process: %v", err)
-	}
-	t.Cleanup(func() { proc.Process.Kill() })
-	exited := make(chan struct{})
-	go func() {
-		proc.Wait()
-		close(exited)
-	}()
-	identity, err := specutils.ProcessIdentity(proc.Process.Pid)
+	pid, exited := startSandboxProcess(t)
+	identity, err := specutils.ProcessIdentity(pid)
 	if err != nil {
 		t.Fatalf("error getting fake sandbox process identity: %v", err)
 	}
@@ -275,7 +295,7 @@ func startFakeSandbox(t *testing.T, rootDir string, reusedPID bool) (string, <-c
 			MountHints:        &sentryapi.PodMountHints{},
 		},
 	}
-	c.Sandbox.Pid.Store(proc.Process.Pid)
+	c.Sandbox.Pid.Store(pid)
 	state, err := json.Marshal(c)
 	if err != nil {
 		t.Fatalf("error marshalling container state: %v", err)
