@@ -67,7 +67,9 @@ func TestSignedZero(t *testing.T) {
 	runWithBothEngines(t, func(t *testing.T) {
 		neg := math.Copysign(0, -1)
 		runTestCases(t, false, "", []any{
+			float32(neg),
 			neg,
+			complex64(complex(neg, 0)),
 			complex(0, neg),
 			[]float64{neg, 1}[:1],
 			[]complex128{complex(neg, 0), 1}[:1],
