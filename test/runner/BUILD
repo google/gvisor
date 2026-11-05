@@ -77,5 +77,8 @@ bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:private"],
-    deps = ["//tools:defs_bzl"],
+    deps = [
+        "//tools:defs_bzl",
+        "@bazel_skylib//rules:native_binary",
+    ],
 )
