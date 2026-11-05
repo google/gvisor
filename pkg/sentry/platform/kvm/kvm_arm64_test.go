@@ -162,9 +162,9 @@ func TestApplicationPAC(t *testing.T) {
 }
 
 // TestHostPACDisabledVDSO verifies that disableHostPAC disables host pointer
-// authentication across all existing and newly created threads, and that VDSO
-// __kernel_getrandom calls that world-switch from Guest EL1 to Host EL0 do not
-// fault on epilogue pointer authentication.
+// authentication on the calling thread, and that VDSO __kernel_getrandom
+// calls that world-switch from Guest EL1 to Host EL0 do not fault on
+// epilogue pointer authentication.
 func TestHostPACDisabledVDSO(t *testing.T) {
 	kvmTest(t, nil, func(c *vCPU) bool {
 		keys, err := unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0)
@@ -179,16 +179,13 @@ func TestHostPACDisabledVDSO(t *testing.T) {
 		}
 
 		// Re-enable PAC on the calling thread, then verify disableHostPAC()
-		// disables it again across the process.
+		// disables it again.
 		runtime.LockOSThread()
 		if err := unix.Prctl(unix.PR_PAC_SET_ENABLED_KEYS, addressPACKeys, addressPACKeys, 0, 0); err != nil {
 			runtime.UnlockOSThread()
 			t.Fatalf("PR_PAC_SET_ENABLED_KEYS failed: %v", err)
 		}
-		if err := disableHostPAC(); err != nil {
-			runtime.UnlockOSThread()
-			t.Fatalf("disableHostPAC failed: %v", err)
-		}
+		disableHostPAC()
 		keys, err = unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0)
 		runtime.UnlockOSThread()
 		if err != nil {
@@ -210,6 +207,78 @@ func TestHostPACDisabledVDSO(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// TestDisableHostPACLeavesOtherThreads verifies that disableHostPAC changes
+// only the calling thread's keys. Changing another thread's keys while it is
+// between a paciasp and its autiasp (in the vDSO's clock_gettime, say) makes
+// it return through an address its keys no longer match.
+func TestDisableHostPACLeavesOtherThreads(t *testing.T) {
+	if _, err := unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0); err == unix.EINVAL {
+		t.Skip("PR_PAC_GET_ENABLED_KEYS is not supported by the host")
+	}
+	kvmTest(t, func(k *KVM) {
+		if !hostAddressAuth {
+			t.Skip("the host has no address authentication")
+		}
+	}, func(*vCPU) bool {
+		// A thread of its own, with the address keys enabled.
+		ready, check, result := make(chan error), make(chan struct{}), make(chan int)
+		go func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			ready <- unix.Prctl(unix.PR_PAC_SET_ENABLED_KEYS, addressPACKeys, addressPACKeys, 0, 0)
+			<-check
+			keys, _ := unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0)
+			result <- keys
+		}()
+		if err := <-ready; err != nil {
+			t.Fatalf("PR_PAC_SET_ENABLED_KEYS failed: %v", err)
+		}
+		runtime.LockOSThread()
+		disableHostPAC()
+		runtime.UnlockOSThread()
+		close(check)
+		if keys := <-result; keys&addressPACKeys != addressPACKeys {
+			t.Errorf("another thread's address keys changed to %#x", keys)
+		}
+		return false
+	})
+}
+
+// TestHostPACDisabledOnVCPUThreads verifies that every host thread that binds
+// a vCPU has host pointer authentication disabled. A check that a PACIASP
+// signature changed a pointer would miss about one thread in 128 here, since
+// a 7-bit PAC field leaves the pointer unchanged once in 128 signatures.
+func TestHostPACDisabledOnVCPUThreads(t *testing.T) {
+	if _, err := unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0); err == unix.EINVAL {
+		t.Skip("PR_PAC_GET_ENABLED_KEYS is not supported by the host")
+	}
+	kvmTest(t, func(k *KVM) {
+		if !hostAddressAuth {
+			t.Skip("the host has no address authentication")
+		}
+		const threads = 256
+		enabled := 0
+		for i := 0; i < threads; i++ {
+			done := make(chan bool)
+			go func() {
+				// The thread exits with this goroutine, still locked, so
+				// each iteration binds a vCPU on a new host thread.
+				runtime.LockOSThread()
+				c := k.machine.Get()
+				keys, err := unix.PrctlRetInt(unix.PR_PAC_GET_ENABLED_KEYS, 0, 0, 0, 0)
+				k.machine.Put(c)
+				done <- err != nil || keys&addressPACKeys != 0
+			}()
+			if <-done {
+				enabled++
+			}
+		}
+		if enabled != 0 {
+			t.Errorf("%d of %d vCPU threads have host address PAC keys enabled", enabled, threads)
+		}
+	}, func(*vCPU) bool { return false })
 }
 
 // disallowedVDSOExit returns a description of the last guest exit of c and

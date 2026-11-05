@@ -20,7 +20,6 @@ package kvm
 import (
 	"fmt"
 	"reflect"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -320,6 +319,10 @@ func (c *vCPU) setSystemTime() error {
 
 //go:nosplit
 func (c *vCPU) loadSegments(tid uint64) {
+	// Disable host pointer authentication on this thread before any
+	// bluepill entry. See disableHostPAC() for the rationale.
+	disableHostPAC()
+
 	// TODO(gvisor.dev/issue/1238):  TLS is not supported.
 	// Get TLS from tpidr_el0.
 	c.tid.Store(tid)
@@ -333,8 +336,12 @@ func (c *vCPU) loadSegments(tid uint64) {
 const addressPACKeys = unix.PR_PAC_APIAKEY | unix.PR_PAC_APIBKEY |
 	unix.PR_PAC_APDAKEY | unix.PR_PAC_APDBKEY
 
-// disableHostPAC disables host pointer authentication across all threads in
-// the process. This is necessary on ARM64 because the sentry's Go runtime runs
+// hostAddressAuth is whether the host supports address authentication
+// (HWCAP_PACA). It is set once by updateGlobalOnce, before any vCPU is bound.
+var hostAddressAuth bool
+
+// disableHostPAC disables host pointer authentication for the calling thread.
+// This is necessary on ARM64 because the sentry's Go runtime runs
 // inside the KVM guest at Guest EL1, where PAC instructions
 // (paciasp/autiasp) behave differently than at Host EL0. When the
 // sentry's Go runtime calls a VDSO function such as __kernel_getrandom,
@@ -353,25 +360,33 @@ const addressPACKeys = unix.PR_PAC_APIAKEY | unix.PR_PAC_APIBKEY |
 // turns paciasp/autiasp into NOPs at Host EL0, which removes the
 // mismatch without requiring any guest-side coordination.
 //
-// This is called once at startup from updateGlobalOnce via
-// syscall.AllThreadsSyscall6, which disables PAC on all existing OS threads
-// while holding the runtime's thread creation lock. Any OS threads cloned
-// afterwards inherit the disabled PAC state (thread.sctlr_user) from their
-// parent thread.
+// This is called from loadSegments, which runs every time a vCPU is
+// bound to a (potentially new) host thread, so every thread that ever
+// hosts a vCPU has PAC disabled before it can enter the guest. Each
+// thread disables its own keys: a thread whose keys change while it is
+// between a paciasp and its autiasp returns through an address that its
+// keys no longer match, and crashes. Disabling them on every thread at
+// once with syscall.AllThreadsSyscall6 does that to sysmon, which keeps
+// calling the vDSO's clock_gettime (signed with pac-ret) while the world
+// is stopped. The prctl is per-thread; calling it again on a thread that
+// already has PAC disabled is harmless and idempotent at the kernel level.
 //
-// EINVAL is ignored because it is returned on kernels older than 5.13 (which
-// lack PR_PAC_SET_ENABLED_KEYS) and on hardware without address
-// authentication, both of which imply the crash cannot occur.
-func disableHostPAC() error {
-	if _, _, errno := syscall.AllThreadsSyscall6(
+// Whether to call the prctl comes from HWCAP_PACA, which is exact; a
+// PACIASP signature can leave a pointer unchanged, so it can't tell
+// whether PAC is on. The prctl's error is ignored: it is EINVAL only on
+// kernels older than 5.13, which lack PR_PAC_SET_ENABLED_KEYS.
+//
+//go:nosplit
+func disableHostPAC() {
+	if !hostAddressAuth {
+		return
+	}
+	hostsyscall.RawSyscallErrno6(
 		unix.SYS_PRCTL,
 		unix.PR_PAC_SET_ENABLED_KEYS,
 		addressPACKeys, // keys to modify
 		0,              // 0 = disable, 1 = enable
-		0, 0, 0); errno != 0 && errno != unix.EINVAL {
-		return fmt.Errorf("disabling host PAC: %w", errno)
-	}
-	return nil
+		0, 0, 0)
 }
 
 //go:nosplit
