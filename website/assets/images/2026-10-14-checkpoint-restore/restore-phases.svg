@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" width="960" height="400" role="img" aria-label="Restore phases. 2018: one serial stream. 2024: kernel and memory load in parallel, app starts at the slower one. With --background the app starts when the kernel is ready and memory loads behind it." font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>Restore phases. 2018: one serial stream. 2024: kernel and memory load in parallel, app starts at the slower one. With --background the app starts when the kernel is ready and memory loads behind it.</title>
+<rect width="960" height="400" rx="12" fill="#fcfcfb"/>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<text x="30" y="92" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2018</text>
+<text x="30" y="112" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >one stream, decompress</text>
+<rect x="230.0" y="80" width="558.0" height="24" rx="4" fill="#6250d6" />
+<text x="238.0" y="97" font-size="12" fill="#fff" text-anchor="start" font-weight="bold" >decompress + decode kernel and memory, in order</text>
+<line x1="790.0" y1="64" x2="790.0" y2="136" stroke="#008300" stroke-width="3"/>
+<text x="798.0" y="126" font-size="12" fill="#008300" text-anchor="start" font-weight="bold" >app runs</text>
+<text x="30" y="197" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024</text>
+<text x="30" y="217" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >split files, in parallel</text>
+<rect x="230.0" y="175" width="198.0" height="24" rx="4" fill="#2a78d6" />
+<text x="238.0" y="192" font-size="12" fill="#fff" text-anchor="start" font-weight="bold" >kernel</text>
+<rect x="230.0" y="205" width="398.0" height="24" rx="4" fill="#6250d6" />
+<text x="238.0" y="222" font-size="12" fill="#fff" text-anchor="start" font-weight="bold" >memory</text>
+<line x1="630.0" y1="169" x2="630.0" y2="241" stroke="#008300" stroke-width="3"/>
+<text x="638.0" y="251" font-size="12" fill="#008300" text-anchor="start" font-weight="bold" >app runs</text>
+<text x="30" y="302" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024+</text>
+<text x="30" y="322" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">--background</text>
+<rect x="230.0" y="280" width="198.0" height="24" rx="4" fill="#2a78d6" />
+<text x="238.0" y="297" font-size="12" fill="#fff" text-anchor="start" font-weight="bold" >kernel</text>
+<rect x="230.0" y="310" width="398.0" height="24" rx="4" fill="#6250d6" opacity="0.55"/>
+<text x="238.0" y="327" font-size="12" fill="#fff" text-anchor="start" font-weight="bold" >memory, in background</text>
+<line x1="430.0" y1="274" x2="430.0" y2="346" stroke="#008300" stroke-width="3"/>
+<text x="438.0" y="356" font-size="12" fill="#008300" text-anchor="start" font-weight="bold" >app runs</text>
+<rect x="500.0" y="344" width="260" height="18" rx="9" fill="#e3f3e3" />
+<text x="630.0" y="357" font-size="11" fill="#008300" text-anchor="middle" font-weight="normal" >touched pages jump the queue</text>
+<text x="480" y="388" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >Not to scale. The green line is when the application starts to run again.</text>
+<line x1="230" y1="50" x2="230" y2="360" stroke="#e4e3df" stroke-width="1"/>
+<text x="230" y="44" font-size="11" fill="#8a8984" text-anchor="middle" font-weight="normal" >restore starts</text>
+</svg>

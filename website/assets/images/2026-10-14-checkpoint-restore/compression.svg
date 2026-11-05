@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" width="960" height="330" role="img" aria-label="Compression: snapshot size and sandbox memory, for high-entropy and text-like data, compressed and uncompressed." font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>Compression: snapshot size and sandbox memory, for high-entropy and text-like data, compressed and uncompressed.</title>
+<rect width="960" height="330" rx="12" fill="#fcfcfb"/>
+<text x="40" y="40" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Compression: smaller files, but more memory and CPU</text>
+<text x="40" y="62" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >2 GiB of app memory. Lower is better in both panels.</text>
+<text x="40" y="100" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Snapshot on disk (MiB)</text>
+<text x="40" y="134" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >High-entropy data</text>
+<text x="40" y="160" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >compressed</text>
+<rect x="140" y="142" width="269.1496621612429" height="26" rx="4" fill="#eb6834" />
+<text x="417.1496621612429" y="160" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2,049</text>
+<text x="40" y="190" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed</text>
+<rect x="140" y="172" width="269.49247319324" height="26" rx="4" fill="#2a78d6" />
+<text x="417.49247319324" y="190" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2,052</text>
+<text x="40" y="224" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >Text-like data</text>
+<text x="40" y="250" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >compressed</text>
+<rect x="140" y="232" width="135.72542510990021" height="26" rx="4" fill="#eb6834" />
+<text x="283.72542510990024" y="250" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >1,033</text>
+<text x="40" y="280" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed</text>
+<rect x="140" y="262" width="270.0" height="26" rx="4" fill="#2a78d6" />
+<text x="418.0" y="280" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2,056</text>
+<text x="500" y="100" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Sandbox's own memory after restore (MiB)</text>
+<text x="500" y="134" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >High-entropy data</text>
+<text x="500" y="160" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >compressed</text>
+<rect x="600" y="142" width="270.0" height="26" rx="4" fill="#eb6834" />
+<text x="878.0" y="160" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >318</text>
+<text x="500" y="190" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed</text>
+<rect x="600" y="172" width="9.339622641509434" height="26" rx="4" fill="#2a78d6" />
+<text x="617.3396226415094" y="190" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >11</text>
+<text x="500" y="224" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >Text-like data</text>
+<text x="500" y="250" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >compressed</text>
+<rect x="600" y="232" width="241.9811320754717" height="26" rx="4" fill="#eb6834" />
+<text x="849.9811320754717" y="250" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >285</text>
+<text x="500" y="280" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed</text>
+<rect x="600" y="262" width="9.339622641509434" height="26" rx="4" fill="#2a78d6" />
+<text x="617.3396226415094" y="280" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="bold" >11</text>
+<text x="40" y="310" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >"Own memory" is the sandbox's anonymous memory (RssAnon), 2 s after restore. It excludes the app's memory.</text>
+</svg>

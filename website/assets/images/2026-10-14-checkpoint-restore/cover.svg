@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" width="960" height="360" role="img" aria-label="A running gVisor sandbox is saved to a set of snapshot files with runsc checkpoint, and later restored with runsc restore." font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>A running gVisor sandbox is saved to a set of snapshot files with runsc checkpoint, and later restored with runsc restore.</title>
+<rect width="960" height="360" rx="12" fill="#fcfcfb"/>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="40" y="80" width="220" height="200" rx="14" fill="#eef4fc" stroke="#2a78d6" stroke-width="2"/>
+<text x="150" y="112" font-size="18" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Running sandbox</text>
+<text x="150" y="134" font-size="13" fill="#52514e" text-anchor="middle" font-weight="normal" >minutes of warm-up done</text>
+<rect x="62" y="158" width="52" height="52" rx="8" fill="#1baf7a" />
+<text x="88" y="189" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold" >python</text>
+<rect x="124" y="158" width="52" height="52" rx="8" fill="#6250d6" />
+<text x="150" y="189" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold" >model</text>
+<rect x="186" y="158" width="52" height="52" rx="8" fill="#eb6834" />
+<text x="212" y="189" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold" >shell</text>
+<rect x="62" y="222" width="176" height="38" rx="8" fill="#dbe7f8" />
+<text x="150" y="246" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="normal" >gVisor Sentry (kernel)</text>
+<rect x="700" y="80" width="220" height="200" rx="14" fill="#eef4fc" stroke="#2a78d6" stroke-width="2"/>
+<text x="810" y="112" font-size="18" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Same sandbox</text>
+<text x="810" y="134" font-size="13" fill="#52514e" text-anchor="middle" font-weight="normal" >anywhere, any time later</text>
+<rect x="722" y="158" width="52" height="52" rx="8" fill="#1baf7a" />
+<text x="748" y="189" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold" >python</text>
+<rect x="784" y="158" width="52" height="52" rx="8" fill="#6250d6" />
+<text x="810" y="189" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold" >model</text>
+<rect x="846" y="158" width="52" height="52" rx="8" fill="#eb6834" />
+<text x="872" y="189" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold" >shell</text>
+<rect x="722" y="222" width="176" height="38" rx="8" fill="#dbe7f8" />
+<text x="810" y="246" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="normal" >gVisor Sentry (kernel)</text>
+<text x="480" y="60" font-size="22" fill="#0b0b0b" text-anchor="middle" font-weight="bold" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" letter-spacing="3">SNAPSHOT</text>
+<rect x="380" y="92" width="200" height="38" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2"/>
+<rect x="380" y="92" width="8" height="38" rx="3" fill="#2a78d6" />
+<text x="398" y="109" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">checkpoint.img</text>
+<text x="398" y="124" font-size="11" fill="#52514e" text-anchor="start" font-weight="normal" >kernel state</text>
+<rect x="380" y="138" width="200" height="38" rx="6" fill="#ffffff" stroke="#1baf7a" stroke-width="2"/>
+<rect x="380" y="138" width="8" height="38" rx="3" fill="#1baf7a" />
+<text x="398" y="155" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">pages_meta.img</text>
+<text x="398" y="170" font-size="11" fill="#52514e" text-anchor="start" font-weight="normal" >memory map</text>
+<rect x="380" y="184" width="200" height="38" rx="6" fill="#ffffff" stroke="#6250d6" stroke-width="2"/>
+<rect x="380" y="184" width="8" height="38" rx="3" fill="#6250d6" />
+<text x="398" y="201" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">pages.img</text>
+<text x="398" y="216" font-size="11" fill="#52514e" text-anchor="start" font-weight="normal" >app memory</text>
+<rect x="380" y="230" width="200" height="38" rx="6" fill="#ffffff" stroke="#eda100" stroke-width="2"/>
+<rect x="380" y="230" width="8" height="38" rx="3" fill="#eda100" />
+<text x="398" y="247" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">fs/</text>
+<text x="398" y="262" font-size="11" fill="#52514e" text-anchor="start" font-weight="normal" >filesystem</text>
+<line x1="268" y1="180" x2="368" y2="180" stroke="#52514e" stroke-width="2.5" marker-end="url(#ah)"/>
+<text x="318" y="168" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">checkpoint</text>
+<line x1="592" y1="180" x2="690" y2="180" stroke="#52514e" stroke-width="2.5" marker-end="url(#ah)"/>
+<text x="641" y="168" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">restore</text>
+<text x="480" y="300" font-size="13" fill="#52514e" text-anchor="middle" font-weight="normal" >local disk, or straight from a GCS bucket</text>
+<text x="480" y="336" font-size="15" fill="#8a8984" text-anchor="middle" font-weight="normal" >gVisor checkpoint/restore</text>
+</svg>
