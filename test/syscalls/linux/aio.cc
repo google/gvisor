@@ -123,7 +123,8 @@ class AIOTest : public FileTest {
 
 TEST_F(AIOTest, ReadPartialFault) {
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
-  for (const size_t size : {size_t{kPageSize}, size_t{2} << 20}) {
+  for (const size_t size :
+       {size_t{kPageSize}, size_t{2} << 20, size_t{8} << 20}) {
     const int raw_fd = syscall(SYS_memfd_create, "aio-partial-read", 0);
     ASSERT_THAT(raw_fd, SyscallSucceeds());
     const FileDescriptor fd(raw_fd);

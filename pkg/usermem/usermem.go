@@ -80,10 +80,8 @@ type IO interface {
 	// CopyOutFromIter is like CopyOutFrom, but may call src.ReadToBlocks
 	// multiple times. It stops after a short read or an error.
 	//
-	// Preconditions:
-	//	* The caller must not hold mm.MemoryManager.mappingMu or any
-	//		following locks in the lock order.
-	//	* src must advance between calls to src.ReadToBlocks.
+	// Preconditions: Same as CopyOutFrom. src must advance between calls to
+	// src.ReadToBlocks.
 	CopyOutFromIter(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts) (int64, error)
 
 	// CopyInTo copies ars.NumBytes() bytes from the memory mapped at ars to

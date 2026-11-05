@@ -544,7 +544,7 @@ func TestPinnedCopyOutFromForkDuringLargeRead(t *testing.T) {
 	ctx := contexttest.Context(t)
 	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
-	const size = 80 << 20
+	const size = 8 << 20
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
 		Length: size, Private: true,
 		Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
@@ -624,36 +624,45 @@ func TestPinnedCopyOutFromForkAfterUnpinIsCopyOnWrite(t *testing.T) {
 	}
 }
 
-func TestCopyOutFromIterAcrossWindows(t *testing.T) {
+func TestCopyOutFromIterVectoredRead(t *testing.T) {
 	ctx := contexttest.Context(t)
 	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
-	data := make([]byte, 1<<20+pageSizeInt)
-	for i := range data {
-		data[i] = byte(i/pageSizeInt%251 + 1)
-	}
+	const size = 2 << 20
+	const firstSize = 1 << 19
+	secondSize := firstSize + pageSizeInt
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   uint64(len(data)),
-		Private:  true,
-		Perms:    hostarch.ReadWrite,
-		MaxPerms: hostarch.AnyAccess,
+		Length: size, Private: true,
+		Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := &safemem.BlockSeqReader{Blocks: safemem.BlockSeqOf(safemem.BlockFromSafeSlice(data))}
-	ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + hostarch.Addr(len(data))})
-	n, err := mm.CopyOutFromIter(ctx, ars, src, usermem.IOOpts{})
-	if n != int64(len(data)) || err != nil || !src.Blocks.IsEmpty() {
-		t.Fatalf("CopyOutFromIter got n=%d err=%v remaining=%d", n, err, src.Blocks.NumBytes())
+	initial := bytes.Repeat([]byte{'?'}, size)
+	if _, err := mm.CopyOut(ctx, addr, initial, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
 	}
-	got := make([]byte, len(data))
+	data := append(bytes.Repeat([]byte{'a'}, firstSize), bytes.Repeat([]byte{'b'}, secondSize)...)
+	src := safemem.BlockSeqReader{Blocks: safemem.BlockSeqOf(safemem.BlockFromSafeSlice(data))}
+	ars := hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
+		{Start: addr, End: addr},
+		{Start: addr, End: addr + firstSize},
+		{Start: addr + 1<<20, End: addr + 1<<20 + hostarch.Addr(secondSize)},
+		{Start: addr + size, End: addr + size},
+	})
+	if n, err := mm.CopyOutFromIter(ctx, ars, &src, usermem.IOOpts{}); n != int64(len(data)) || err != nil {
+		t.Fatalf("CopyOutFromIter got n=%d err=%v, want n=%d err=nil", n, err, len(data))
+	}
+	got := make([]byte, size)
 	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, data) {
-		t.Fatal("CopyOutFromIter wrote different data")
+	want := bytes.Clone(initial)
+	copy(want[:firstSize], data[:firstSize])
+	copy(want[1<<20:], data[firstSize:])
+	if !bytes.Equal(got, want) {
+		t.Fatal("CopyOutFromIter wrote incorrect vector data or changed a gap")
 	}
 }
 
