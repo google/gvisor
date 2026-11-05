@@ -79,6 +79,18 @@ type Inotify struct {
 	// +checklocks:evMu
 	events eventList
 
+	// numQueuedEvents includes the overflow marker, if present.
+	//
+	// +checklocks:evMu
+	numQueuedEvents int
+
+	// +checklocks:evMu
+	overflowQueued bool
+
+	// maxQueuedEvents is a snapshot of max_queued_events at instance creation,
+	// as in Linux's inotify_new_group. It is immutable.
+	maxQueuedEvents int
+
 	// A scratch buffer, used to serialize inotify events. Allocate this
 	// ahead of time for the sake of performance.
 	//
@@ -108,20 +120,28 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 	if flags&^linux.O_NONBLOCK != 0 {
 		return nil, linuxerr.EINVAL
 	}
+	creds := auth.CredentialsFromContext(ctx)
+	if !creds.UserNamespace.IncInotify(creds.EffectiveKUID, auth.InotifyInstances) {
+		return nil, linuxerr.EMFILE
+	}
+	creds.UserNamespace.IncRef()
 
 	id := uniqueid.GlobalFromContext(ctx)
 	vd := vfsObj.NewAnonVirtualDentry(fmt.Sprintf("[inotifyfd:%d]", id))
 	defer vd.DecRef(ctx)
 	fd := &Inotify{
-		id:      id,
-		scratch: make([]byte, inotifyEventBaseSize),
-		watches: make(map[int32]*Watch),
+		id:              id,
+		scratch:         make([]byte, inotifyEventBaseSize),
+		watches:         make(map[int32]*Watch),
+		maxQueuedEvents: int(vfsObj.InotifyMaxQueuedEvents.Load()),
 	}
-	if err := fd.vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &FileDescriptionOptions{
+	if err := fd.vfsfd.Init(fd, flags, creds, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,
 	}); err != nil {
+		creds.UserNamespace.DecInotify(creds.EffectiveKUID, auth.InotifyInstances, 1)
+		creds.UserNamespace.DecRef(ctx)
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -132,15 +152,11 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 func (i *Inotify) Release(ctx context.Context) {
 	var ds []*Dentry
 
-	// We need to hold i.mu to avoid a race with concurrent calls to
-	// Inotify.handleDeletion from Watches. There's no risk of Watches
-	// accessing this Inotify after the destructor ends, because we remove all
-	// references to it below.
+	// Serialize removal and accounting with Watches.HandleDeletion, which
+	// can retain detached watches while waiting for i.mu.
 	i.mu.Lock()
 	for _, w := range i.watches {
-		// Remove references to the watch from the watches set on the target. We
-		// don't need to worry about the references from i.watches, since this
-		// file description is about to be destroyed.
+		// Remove the watch from the target's watch set.
 		d := w.target
 		ws := d.Watches()
 		// Watchable dentries should never return a nil watch set.
@@ -151,11 +167,18 @@ func (i *Inotify) Release(ctx context.Context) {
 			ds = append(ds, d)
 		}
 	}
+	creds := i.vfsfd.Credentials()
+	creds.UserNamespace.DecInotify(creds.EffectiveKUID, auth.InotifyWatches, int32(len(i.watches)))
+	// HandleDeletion may still hold detached watches. It must not release
+	// their charges again after Release has removed them.
+	i.watches = nil
 	i.mu.Unlock()
 
 	for _, d := range ds {
 		d.OnZeroWatches(ctx)
 	}
+	creds.UserNamespace.DecInotify(creds.EffectiveKUID, auth.InotifyInstances, 1)
+	creds.UserNamespace.DecRef(ctx)
 }
 
 // Allocate implements FileDescription.Allocate.
@@ -246,6 +269,10 @@ func (i *Inotify) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOpt
 		// buffer space to copy it out, even if the copy below fails. Emulate
 		// this behaviour.
 		i.events.Remove(event)
+		i.numQueuedEvents--
+		if event.mask&linux.IN_Q_OVERFLOW != 0 {
+			i.overflowQueued = false
+		}
 
 		// Buffer has enough space, copy event to the read buffer.
 		n, err := event.CopyTo(ctx, i.scratch, dst)
@@ -281,6 +308,16 @@ func (i *Inotify) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 
 func (i *Inotify) queueEvent(ev *Event) {
 	i.evMu.Lock()
+	// Linux checks overflow before coalescing, including when ev is a
+	// duplicate of the last event. The marker may be anywhere in the queue.
+	if i.numQueuedEvents >= i.maxQueuedEvents {
+		if i.overflowQueued {
+			i.evMu.Unlock()
+			return
+		}
+		ev = newEvent(-1, "", linux.IN_Q_OVERFLOW, 0)
+		i.overflowQueued = true
+	}
 
 	// Check if we should coalesce the event we're about to queue with the last
 	// one currently in the queue. Events are coalesced if they are identical.
@@ -295,6 +332,7 @@ func (i *Inotify) queueEvent(ev *Event) {
 	}
 
 	i.events.PushBack(ev)
+	i.numQueuedEvents++
 
 	// Release mutex before notifying waiters because we don't control what they
 	// can do.
@@ -336,10 +374,11 @@ func (i *Inotify) nextWatchIDLocked() int32 {
 }
 
 // AddWatch constructs a new inotify watch and adds it to the target. It
-// returns the watch descriptor returned by inotify_add_watch(2).
+// returns the watch descriptor returned by inotify_add_watch(2), or ENOSPC if
+// the instance creator's per-user watch limit is reached.
 //
 // The caller must hold a reference on target.
-func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
+func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
@@ -355,12 +394,17 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
 			newmask |= existing.mask.Load()
 		}
 		existing.mask.Store(newmask)
-		return existing.wd
+		return existing.wd, nil
+	}
+
+	creds := i.vfsfd.Credentials()
+	if !creds.UserNamespace.IncInotify(creds.EffectiveKUID, auth.InotifyWatches) {
+		return 0, linuxerr.ENOSPC
 	}
 
 	// No existing watch, create a new watch.
 	w := i.newWatchLocked(target, ws, mask)
-	return w.wd
+	return w.wd, nil
 }
 
 // RmWatch looks up an inotify watch for the given 'wd' and configures the
@@ -377,6 +421,8 @@ func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 
 	// Remove the watch from this instance.
 	delete(i.watches, wd)
+	creds := i.vfsfd.Credentials()
+	creds.UserNamespace.DecInotify(creds.EffectiveKUID, auth.InotifyWatches, 1)
 
 	// Remove the watch from the watch target.
 	ws := w.target.Watches()
@@ -491,6 +537,10 @@ func (w *Watches) HandleDeletion(ctx context.Context) {
 		i.mu.Lock()
 		_, found := i.watches[watch.wd]
 		delete(i.watches, watch.wd)
+		if found {
+			creds := i.vfsfd.Credentials()
+			creds.UserNamespace.DecInotify(creds.EffectiveKUID, auth.InotifyWatches, 1)
+		}
 
 		// Release mutex before notifying waiters because we don't control what
 		// they can do.

@@ -74,6 +74,7 @@ go_library(
         "id_map_functions.go",
         "id_map_range.go",
         "id_map_set.go",
+        "inotify.go",
         "key.go",
         "keyset_mutex.go",
         "user_namespace.go",
