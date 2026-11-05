@@ -162,6 +162,28 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 	return l, cleanup, nil
 }
 
+func TestFailedRunClosesStdio(t *testing.T) {
+	spec := &specs.Spec{
+		Root:    &specs.Root{Path: t.TempDir(), Readonly: true},
+		Process: &specs.Process{Args: []string{"/missing"}},
+	}
+	l, cleanup, err := createLoader(testConfig(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Destroy()
+	defer cleanup()
+
+	if err := l.run(); err == nil || !strings.Contains(err.Error(), "failed to load /missing") {
+		t.Fatalf("run with missing executable: got %v, want an error loading /missing", err)
+	}
+	for fd := startingStdioFD; fd < startingStdioFD+3; fd++ {
+		if _, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err != unix.EBADF {
+			t.Errorf("F_GETFD on sandbox stdio FD %d after failed exec: got %v, want EBADF", fd, err)
+		}
+	}
+}
+
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
 func TestRun(t *testing.T) {
 	l, cleanup, err := createLoader(testConfig(), testSpec())
