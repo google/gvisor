@@ -89,12 +89,22 @@ func (f *FDTable) CurrentMaxFDs() int {
 // set sets the file description referred to by fd to file. If file is non-nil,
 // f takes a reference on it. If file is nil, the file entry at fd is cleared.
 // Clearing an entry does not allocate table storage.
-// If set replaces an existing file description that is different from `file`,
-// it returns it with the FDTable's reference transferred to the caller, which
-// must call f.drop on the returned file after unlocking f.mu.
+// The previous file is returned with the table's reference transferred to the
+// caller, which must release it after unlocking f.mu.
 //
-// Precondition: mu must be held.
+// Precondition: f.mu must be held.
 func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
+	if file != nil {
+		file.IncRef()
+	}
+	return f.swap(fd, file, flags)
+}
+
+// swap replaces the descriptor and returns its previous file without changing
+// reference counts. The table must retain a reference to the installed file.
+//
+// Precondition: f.mu must be held.
+func (f *FDTable) swap(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
 	slicePtr := f.slice.Load()
 
 	bucketN := fd >> fdsPerBucketShift
@@ -138,17 +148,8 @@ func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.F
 	// Update the single element.
 	orig := bucket[fd%fdsPerBucket].Swap(desc)
 
-	// Acquire a table reference.
-	if desc != nil && desc.file != nil {
-		if orig == nil || desc.file != orig.file {
-			desc.file.IncRef()
-		}
-	}
-
-	if orig != nil && orig.file != nil {
-		if desc == nil || desc.file != orig.file {
-			return orig.file
-		}
+	if orig != nil {
+		return orig.file
 	}
 	return nil
 }
