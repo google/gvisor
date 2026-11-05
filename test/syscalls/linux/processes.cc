@@ -23,7 +23,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -36,10 +35,8 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/util/capability_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
-#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/test_util.h"
@@ -299,6 +296,42 @@ TEST(Processes, ExitThatOrphansGroupSignalsStoppedMembers) {
   char c;
   EXPECT_THAT(ReadFd(p[0], &c, 1), SyscallSucceedsWithValue(0));
   close(p[0]);
+}
+
+// setpgid(2) refuses to move a session leader into another process group, and
+// still moves a child that leads no session.
+TEST(Processes, SetPGIDOfSessionLeader) {
+  pid_t leader = fork();
+  if (leader == 0) {
+    TEST_PCHECK(setsid() != -1);
+    int p[2];
+    TEST_PCHECK(pipe(p) == 0);
+    pid_t child = fork();
+    if (child == 0) {
+      TEST_PCHECK(close(p[1]) == 0);
+      char buf;
+      TEST_PCHECK(ReadFd(p[0], &buf, 1) == 0);
+      _exit(0);
+    }
+    TEST_PCHECK(child > 0);
+    TEST_PCHECK(setpgid(child, child) == 0);
+    TEST_CHECK_ERRNO(setpgid(0, child), EPERM);
+    TEST_PCHECK(getpgid(0) == getpid());
+    TEST_PCHECK(setpgid(child, getpid()) == 0);
+    TEST_PCHECK(getpgid(child) == getpid());
+    TEST_PCHECK(close(p[1]) == 0);
+    int status;
+    TEST_PCHECK(RetryEINTR(waitpid)(child, &status, 0) == child);
+    TEST_PCHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(leader, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(leader, &status, 0),
+              SyscallSucceedsWithValue(leader));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "session leader exited with status " << status;
 }
 
 void WritePIDToPipe(int* pipe_fds) {
