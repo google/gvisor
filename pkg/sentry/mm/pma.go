@@ -800,13 +800,29 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 func (mm *MemoryManager) pinPMAsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, prs []PinnedRange) ([]PinnedRange, bool) {
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	allPrivate := true
-	for ; !ars.IsEmpty(); ars = ars.Tail() {
+	for !ars.IsEmpty() {
 		ar := ars.Head()
+		ars = ars.Tail()
 		if ar.Length() == 0 {
 			continue
 		}
 		end, _ := ar.End.RoundUp()
 		ar = hostarch.AddrRange{Start: ar.Start.RoundDown(), End: end}
+		// References cover pages, so overlapping or adjacent page ranges
+		// can be pinned together even when the I/O ranges have gaps.
+		for !ars.IsEmpty() {
+			next := ars.Head()
+			if next.Length() == 0 {
+				ars = ars.Tail()
+				continue
+			}
+			if start := next.Start.RoundDown(); start < ar.Start || start > ar.End {
+				break
+			}
+			end, _ := next.End.RoundUp()
+			ar.End = max(ar.End, end)
+			ars = ars.Tail()
+		}
 		for pseg := mm.pmas.FindSegment(ar.Start); pseg.Ok() && pseg.Start() < ar.End; pseg = pseg.NextSegment() {
 			part := pseg.Range().Intersect(ar)
 			f := pseg.ValuePtr().file

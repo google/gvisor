@@ -297,16 +297,82 @@ func TestCopyOutFromBatchesVectors(t *testing.T) {
 	}
 }
 
+func TestPinnedCopyOutFromOverlappingVectorsDuringFork(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	const size = 2 << 20
+	const chunk = 1 << 20
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length: size, Private: true,
+		Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := bytes.Repeat([]byte{'A'}, size)
+	if _, err := mm.CopyOut(ctx, addr, initial, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	ranges := []hostarch.AddrRange{
+		{Start: addr + size, End: addr + size},
+		{Start: addr + chunk/2, End: addr + 3*chunk/2},
+		{Start: addr, End: addr + chunk},
+		{Start: addr + size, End: addr + size},
+		{Start: addr + chunk/2, End: addr + 3*chunk/2},
+	}
+	data := append(bytes.Repeat([]byte{'B'}, chunk), bytes.Repeat([]byte{'C'}, chunk)...)
+	data = append(data, bytes.Repeat([]byte{'D'}, chunk)...)
+	reader := safemem.BlockSeqReader{Blocks: safemem.BlockSeqOf(safemem.BlockFromSafeSlice(data))}
+	var child *MemoryManager
+	src := safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+		var err error
+		child, err = mm.Fork(ctx)
+		if err != nil {
+			return 0, err
+		}
+		return reader.ReadToBlocks(dsts)
+	})
+	n, err := mm.CopyOutFrom(ctx, hostarch.AddrRangeSeqFromSlice(ranges), src, usermem.IOOpts{})
+	if child != nil {
+		defer child.DecUsers(ctx)
+	}
+	if n != int64(len(data)) || err != nil {
+		t.Fatalf("CopyOutFrom got n=%d err=%v, want n=%d err=nil", n, err, len(data))
+	}
+	got := make([]byte, size)
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	want := bytes.Clone(initial)
+	copy(want[:chunk/2], bytes.Repeat([]byte{'C'}, chunk/2))
+	copy(want[chunk/2:3*chunk/2], bytes.Repeat([]byte{'D'}, chunk))
+	if !bytes.Equal(got, want) {
+		t.Error("overlapping vectors did not preserve I/O order")
+	}
+	if _, err := child.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, initial) {
+		t.Error("writes through pinned vectors changed the child's snapshot")
+	}
+}
+
 func BenchmarkCopyOutFrom(b *testing.B) {
 	for _, bc := range []struct {
 		name    string
 		size    int
 		vectors int
+		stride  int
+		reverse bool
 	}{
 		{name: "contiguous-4KiB", size: 4 << 10, vectors: 1},
 		{name: "contiguous-1MiB", size: 1 << 20, vectors: 1},
 		{name: "contiguous-80MiB", size: 80 << 20, vectors: 1},
 		{name: "fragmented-1MiB", size: 1 << 20, vectors: 1024},
+		{name: "packed-1MiB", size: 1 << 20, vectors: 1024, stride: 1 << 10},
+		{name: "sparse-1MiB", size: 1 << 20, vectors: 1024, stride: 16 << 10},
+		{name: "reversed-1MiB", size: 1 << 20, vectors: 1024, reverse: true},
 	} {
 		for _, pinned := range []bool{false, true} {
 			name := "locked"
@@ -322,6 +388,9 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 				if bc.vectors != 1 {
 					stride = pageSizeInt
 				}
+				if bc.stride != 0 {
+					stride = bc.stride
+				}
 				addr, err := mm.MMap(ctx, memmap.MMapOpts{
 					Length: uint64(stride * bc.vectors), Private: true,
 					Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
@@ -331,7 +400,11 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 				}
 				ranges := make([]hostarch.AddrRange, bc.vectors)
 				for i := range ranges {
-					start := addr + hostarch.Addr(i*stride)
+					index := i
+					if bc.reverse {
+						index = len(ranges) - 1 - i
+					}
+					start := addr + hostarch.Addr(index*stride)
 					ranges[i] = hostarch.AddrRange{Start: start, End: start + hostarch.Addr(bc.size/bc.vectors)}
 				}
 				ars := hostarch.AddrRangeSeqFromSlice(ranges)
