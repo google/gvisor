@@ -7,13 +7,17 @@ package(
 
 go_library(
     name = "licensecheck",
-    srcs = ["licensecheck.go"],
+    srcs = [
+        "classify.go",
+        "licensecheck.go",
+    ],
     importpath = "gvisor.dev/gvisor/tools/licensecheck",
     marshal = False,
     stateify = False,
     visibility = ["//tools/licensecheck:__subpackages__"],
     deps = [
         "//pkg/zip",
+        "@com_github_google_licensecheck//:go_default_library",
         "@in_gopkg_yaml_v3//:go_default_library",
         "@org_golang_x_mod//modfile:go_default_library",
         "@org_golang_x_mod//module:go_default_library",
@@ -31,6 +35,9 @@ go_test(
     ],
     embed = [":licensecheck"],
     embedsrcs = [
+        "testdata/bsd.txt",
+        "testdata/llvm.txt",
+        "testdata/openssl.txt",
         "testdata/overflow-readme.txt",
         "testdata/udiff-bsd.txt",
         "testdata/udiff-mit.txt",
