@@ -1149,3 +1149,108 @@ func TestValidateSpecForContainerOOMScoreAdj(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSpecForContainerMountAnnotationOptionsSize(t *testing.T) {
+	newSpec := func(annotations map[string]string) *specs.Spec {
+		return &specs.Spec{
+			Process: &specs.Process{
+				Args: []string{"/bin/true"},
+				Cwd:  "/",
+			},
+			Annotations: annotations,
+		}
+	}
+	mountAnnotations := func(mntType string, hasOptions bool, opts string) map[string]string {
+		m := map[string]string{
+			"dev.gvisor.spec.mount.dshm.source": "/var/lib/kubelet/pods/pod-a/volumes/kubernetes.io~empty-dir/dshm",
+			"dev.gvisor.spec.mount.dshm.type":   mntType,
+			"dev.gvisor.spec.mount.dshm.share":  "pod",
+		}
+		if hasOptions {
+			m["dev.gvisor.spec.mount.dshm.options"] = opts
+		}
+		return m
+	}
+
+	for _, tc := range []struct {
+		name     string
+		old, new *specs.Spec
+		wantErr  bool
+	}{
+		{
+			name: "same",
+			old:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967096832")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967096832")),
+		},
+		{
+			name: "size_changed",
+			old:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967096832")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967100928")),
+		},
+		{
+			name: "size_added",
+			old:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967100928")),
+		},
+		{
+			name: "size_removed",
+			old:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967096832")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "rw,rprivate")),
+		},
+		{
+			name: "size_only_changed",
+			old:  newSpec(mountAnnotations("tmpfs", true, "size=47967096832")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "size=47967100928")),
+		},
+		{
+			name: "size_only_added",
+			old:  newSpec(mountAnnotations("tmpfs", false, "")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "size=47967100928")),
+		},
+		{
+			name: "size_only_removed",
+			old:  newSpec(mountAnnotations("tmpfs", true, "size=47967096832")),
+			new:  newSpec(mountAnnotations("tmpfs", false, "")),
+		},
+		{
+			name: "size_in_middle",
+			old:  newSpec(mountAnnotations("tmpfs", true, "rw,size=1048576,rprivate")),
+			new:  newSpec(mountAnnotations("tmpfs", true, "rw,size=2097152,rprivate")),
+		},
+		{
+			name:    "non_size_mount_option_changed",
+			old:     newSpec(mountAnnotations("tmpfs", true, "ro,rprivate,size=47967096832")),
+			new:     newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967100928")),
+			wantErr: true,
+		},
+		{
+			name:    "mount_option_removed",
+			old:     newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967096832")),
+			new:     newSpec(mountAnnotations("tmpfs", true, "size=47967100928")),
+			wantErr: true,
+		},
+		{
+			name:    "mount_type_changed",
+			old:     newSpec(mountAnnotations("tmpfs", true, "rw,rprivate,size=47967096832")),
+			new:     newSpec(mountAnnotations("bind", true, "rw,rprivate,size=47967100928")),
+			wantErr: true,
+		},
+		{
+			name: "non_mount_annotation_size_changed",
+			old: newSpec(map[string]string{
+				"dev.gvisor.spec.rootfs.options": "size=1G",
+			}),
+			new: newSpec(map[string]string{
+				"dev.gvisor.spec.rootfs.options": "size=2G",
+			}),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSpecForContainer(tc.old, tc.new, "test")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("validateSpecForContainer(%v, %v) = %v, wantErr %t", tc.old.Annotations, tc.new.Annotations, err, tc.wantErr)
+			}
+		})
+	}
+}
