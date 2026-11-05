@@ -412,6 +412,16 @@ type NV_CTXSHARE_ALLOCATION_PARAMETERS struct {
 	SubctxID uint32
 }
 
+// NV_CTXSHARE_ALLOCATION_PARAMETERS_V620 is the updated version of
+// NV_CTXSHARE_ALLOCATION_PARAMETERS since 620.70.06.
+//
+// +marshal
+type NV_CTXSHARE_ALLOCATION_PARAMETERS_V620 struct {
+	_ structs.HostLayout
+	NV_CTXSHARE_ALLOCATION_PARAMETERS
+	Reserved Handle
+}
+
 // NV_VASPACE_ALLOCATION_PARAMETERS is the alloc params type for
 // FERMI_VASPACE_A, from src/common/sdk/nvidia/inc/nvos.h.
 //
@@ -461,6 +471,18 @@ type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615 struct {
 	_ structs.HostLayout
 	NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS
 	Reserved      uint32
+	InternalFlags uint32
+}
+
+// NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V620 is the updated version of
+// NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS since 620.70.06.
+//
+// +marshal
+type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V620 struct {
+	_ structs.HostLayout
+	NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS
+	Reserved      uint32
+	Reserved2     Handle
 	InternalFlags uint32
 }
 
