@@ -847,6 +847,26 @@ seccomp-sentry-filters:  # Dumps seccomp-bpf program for the Sentry binary.
 .PHONY: seccomp-sentry-filters
 
 ##
+## Compatibility testing.
+##
+FSCHECKPOINT_CORPUS_DIR ?= $(CURDIR)/.fscheckpoint_corpus/compatibility_testing
+
+fscheckpoint-corpus-generate: $(RUNTIME_BIN) ## Generate a fscheckpoint compatibility corpus snapshot.
+	@set -e; \
+	CORPUS_OUT="$${FSCHECKPOINT_GENERATE_CORPUS_DIR:-$(CURDIR)/compatibility_testing}"; \
+	HEAD_HASH="$$(git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)"; \
+	TIMESTAMP="$$(date +%Y%m%d-%H%M%S)"; \
+	OUT_DIR="$${CORPUS_OUT}/$${TIMESTAMP}_$${HEAD_HASH}"; \
+	mkdir -p "$${OUT_DIR}"; \
+	$(call sudo,//runsc/container:fscheckpoint_compat_test,-test.v -test.run=TestFSCheckpointCorpusGenerate -fscheckpoint-generate-dir="$${OUT_DIR}" $(if $(FSCHECKPOINT_RUNSC_BIN),-fscheckpoint-runsc-bin="$(FSCHECKPOINT_RUNSC_BIN)")); \
+	echo "Generated fscheckpoint corpus snapshot at $${OUT_DIR}"
+.PHONY: fscheckpoint-corpus-generate
+
+fscheckpoint-compat-tests: ## Run fscheckpoint backward compatibility tests against corpus.
+	@$(call test,--sandbox_add_mount_pair=$(FSCHECKPOINT_CORPUS_DIR) --test_env=FSCHECKPOINT_CORPUS_DIR=$(FSCHECKPOINT_CORPUS_DIR) //runsc/container:fscheckpoint_compat_test -- -test.v -test.run=TestFSCheckpointCompatibility)
+.PHONY: fscheckpoint-compat-tests
+
+##
 ## Website & documentation helpers.
 ##
 ##   The website is built from repository documentation and wrappers, using

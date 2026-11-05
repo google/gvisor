@@ -1,0 +1,30 @@
+agents:
+  queue: release
+_templates:
+  common: &common
+    timeout_in_minutes: 600
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+
+notify:
+  - email: "devnull@google.com"  # TODO(b/540883496): Make this not go to /dev/null
+    if: build.state == "failed"
+
+env:
+  # Force a clean checkout every time to avoid reuse of files between runs.
+  BUILDKITE_CLEAN_CHECKOUT: true
+
+steps:
+  - <<: *common
+    label: ":camera_with_flash: Generate fscheckpoint corpus snapshot"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      - ./.buildkite/scripts/fscheckpoint/maybe-skip.sh ./.buildkite/scripts/fscheckpoint/commit-update.sh
+    agents:
+      arch: "amd64"
+      kvm: "true"
+      queue: "release"
