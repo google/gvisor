@@ -34,13 +34,24 @@ import (
 
 // tarRead creates the corresponding dentry and its children from the given
 // snapshot tar file.
+//
+// On success, tarRead also reads the rest of src, so that a pipe writer
+// doesn't get EPIPE when src is closed.
 func (fs *filesystem) tarRead(ctx context.Context, src io.Reader, cb tarReaderCallbacks) error {
 	tr := tar.NewReader(src)
 
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	err := fs.readFromTar(ctx, tr, cb)
+	fs.mu.Unlock()
+	if err != nil {
+		return err
+	}
 
-	return fs.readFromTar(ctx, tr, cb)
+	// Discard record padding or other data after the end-of-archive marker.
+	if _, err := io.Copy(io.Discard, src); err != nil {
+		return fmt.Errorf("failed to read past the end of the tar archive: %w", err)
+	}
+	return nil
 }
 
 // readFromTar creates the corresponding dentry and its children from the given

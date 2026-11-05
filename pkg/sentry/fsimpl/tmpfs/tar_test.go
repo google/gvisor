@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -153,6 +154,26 @@ func mountFromTarTestOnly(t *testing.T, ctx context.Context, src io.Reader) *fil
 		t.Fatalf("root filesystem is %T, want *tmpfs.filesystem", root.Mount().Filesystem().Impl())
 	}
 	return fs
+}
+
+// newMountFromSourceTarTestOnly mounts a tmpfs with src as its SourceTar and
+// returns the mount namespace or the mount error. Unlike mountFromTarTestOnly,
+// src is passed as is, so GetFilesystem closes it.
+func newMountFromSourceTarTestOnly(ctx context.Context, src io.ReadCloser) (*vfs.MountNamespace, error) {
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		return nil, fmt.Errorf("VFS init: %w", err)
+	}
+	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	return vfsObj.NewMountNamespace(ctx, auth.CredentialsFromContext(ctx), "", "tmpfs", &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: FilesystemOpts{
+				SourceTar: src,
+			},
+		},
+	}, nil)
 }
 
 // readFileFromTar returns the content of the named regular file in src.
@@ -298,5 +319,90 @@ func TestFSCheckpointRestoreSizeLimit(t *testing.T) {
 		},
 	}, nil); err == nil {
 		t.Fatalf("NewMountNamespace succeeded, want error")
+	}
+}
+
+// TestSourceTarDiscardsTrailingData checks that a restore reads the data after
+// the end-of-archive marker, which tar writers use for record padding.
+func TestSourceTarDiscardsTrailingData(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tail []byte
+	}{
+		{name: "none"},
+		{name: "zero_padding", tail: make([]byte, 128<<10)},
+		{name: "non_zero_data", tail: bytes.Repeat([]byte{0xff}, 128<<10)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			want := []byte("restored")
+			archive := tarWithFile(t, "./f", want)
+			src := bytes.NewReader(append(archive.Bytes(), tc.tail...))
+			fs := mountFromTarTestOnly(t, ctx, src)
+			if n := src.Len(); n != 0 {
+				t.Errorf("SourceTar has %d unread bytes after restore, want 0", n)
+			}
+
+			var out bytes.Buffer
+			if err := fs.tarWrite(ctx, &out, tarDefaultWriterCallbacks{}); err != nil {
+				t.Fatalf("tarWrite: %v", err)
+			}
+			if got := readFileFromTar(t, &out, "./f"); !bytes.Equal(got, want) {
+				t.Errorf("./f content = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// TestSourceTarPipeWriterSucceeds checks that a writer streaming an archive
+// with trailing data through a pipe finishes without EPIPE. The tail is larger
+// than the pipe buffer, so the write is still in progress when the restore
+// reaches the end-of-archive marker.
+func TestSourceTarPipeWriterSucceeds(t *testing.T) {
+	ctx := contexttest.Context(t)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	data := append(tarWithFile(t, "./f", []byte("restored")).Bytes(), make([]byte, 256<<10)...)
+	writeErr := make(chan error, 1)
+	go func() {
+		_, err := w.Write(data)
+		if closeErr := w.Close(); err == nil {
+			err = closeErr
+		}
+		writeErr <- err
+	}()
+
+	mntns, err := newMountFromSourceTarTestOnly(ctx, r)
+	if err != nil {
+		t.Fatalf("NewMountNamespace: %v", err)
+	}
+	mntns.DecRef(ctx)
+	if err := <-writeErr; err != nil {
+		t.Errorf("writing the archive to the pipe: %v, want nil", err)
+	}
+}
+
+// TestSourceTarRestoreFailureSkipsTrailingData checks that a restore that fails
+// after reading the whole archive doesn't read the data after it, so a pipe
+// writer still sees the failure as EPIPE.
+func TestSourceTarRestoreFailureSkipsTrailingData(t *testing.T) {
+	ctx := contexttest.Context(t)
+	// The hard link target is missing, so readFromTar fails after it reads the
+	// end-of-archive marker.
+	archive := tarWithEntries(t, []*tar.Header{{
+		Name:     "./link",
+		Typeflag: tar.TypeLink,
+		Linkname: "./missing",
+		Mode:     0644,
+	}}, [][]byte{nil})
+	const tailLen = 128 << 10
+	src := bytes.NewReader(append(archive.Bytes(), make([]byte, tailLen)...))
+	if _, err := newMountFromSourceTarTestOnly(ctx, io.NopCloser(src)); err == nil {
+		t.Fatalf("NewMountNamespace succeeded, want error")
+	}
+	if n := src.Len(); n != tailLen {
+		t.Errorf("SourceTar has %d unread bytes after the failed restore, want %d", n, tailLen)
 	}
 }
