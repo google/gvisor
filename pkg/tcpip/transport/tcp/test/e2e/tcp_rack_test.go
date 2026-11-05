@@ -521,6 +521,213 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	}
 }
 
+// idleRACKConn is a connection with SACK and RACK on a manual clock that has
+// sent one segment and had it acknowledged after an RTT, leaving it idle with
+// no RTO timer armed.
+type idleRACKConn struct {
+	c       *context.Context
+	clock   *faketime.ManualClock
+	data    []byte
+	samples chan rackSample
+
+	// rto and srtt are the sender's once the first segment is acknowledged.
+	rto, srtt time.Duration
+}
+
+// rackSample is the sender state an idleRACKConn's probe records.
+type rackSample struct {
+	sndUna    seqnum.Value
+	rto, srtt time.Duration
+}
+
+func newIdleRACKConn(t *testing.T) *idleRACKConn {
+	clock := faketime.NewManualClock()
+	samples := make(chan rackSample, 256)
+	probe := func(state *tcp.TCPEndpointState) {
+		// Non-blocking: never stall the stack's processing goroutine.
+		select {
+		case samples <- rackSample{state.Sender.SndUna, state.Sender.RTO, state.Sender.RTTState.SRTT}:
+		default:
+		}
+	}
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      mtu,
+		Clock:    clock,
+		Probe:    probe,
+	})
+	t.Cleanup(c.Cleanup)
+
+	const minRTO = 50 * time.Millisecond
+	minRTOOpt := tcpip.TCPMinRTOOption(minRTO)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &minRTOOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, minRTOOpt, minRTOOpt, err)
+	}
+	e2e.SetStackSACKPermitted(t, c, true)
+	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 0 /* delay */)
+
+	ic := &idleRACKConn{c: c, clock: clock, data: make([]byte, 6*maxPayload), samples: samples}
+	for i := range ic.data {
+		ic.data[i] = byte(i)
+	}
+	ic.send(t, 0)
+	clock.Advance(10 * time.Millisecond)
+	// Waiting for the ACK to be processed matters: the next segment would
+	// otherwise be sent with the RTO timer still armed.
+	ic.rto, ic.srtt = ic.ack(t, maxPayload)
+	if ic.srtt <= 0 || ic.srtt >= ic.rto {
+		t.Fatalf("got SRTT %s with RTO %s, want 0 < SRTT < RTO", ic.srtt, ic.rto)
+	}
+	return ic
+}
+
+// send writes segment i of data and checks that it is sent.
+func (ic *idleRACKConn) send(t *testing.T, i int) {
+	var r bytes.Reader
+	r.Reset(ic.data[i*maxPayload : (i+1)*maxPayload])
+	if _, err := ic.c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+}
+
+// ack acknowledges the first n bytes of data and waits until the endpoint has
+// processed the ACK, which SendAck only queues. It returns the sender's RTO
+// and SRTT then.
+func (ic *idleRACKConn) ack(t *testing.T, n int) (rto, srtt time.Duration) {
+	ic.c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), n)
+	acked := ic.c.IRS.Add(1 + seqnum.Size(n))
+	for {
+		select {
+		case s := <-ic.samples:
+			if s.sndUna == acked {
+				return s.rto, s.srtt
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for the ACK to be processed")
+		}
+	}
+}
+
+// TestRACKTLPNotLaterThanRTO tests that the probe timeout is capped at the RTO
+// when no RTO timer is armed, as when a single segment is sent on an idle
+// connection (RFC 8985 section 7.2). Uncapped, the PTO for a lone segment is
+// 2*SRTT plus the worst-case delayed ACK timeout, later than the RTO.
+func TestRACKTLPNotLaterThanRTO(t *testing.T) {
+	ic := newIdleRACKConn(t)
+
+	// Send a second segment, which is lost.
+	ic.send(t, 1)
+
+	// The TLP must retransmit it no later than the RTO would.
+	ic.clock.Advance(ic.rto)
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, maxPayload, maxPayload, e2e.TSOptionSize)
+}
+
+// TestRACKTLPNotLaterThanOldestRTO tests that sending more data does not push
+// the probe timeout past one RTO from the transmission of the oldest
+// outstanding segment, when the RTO would fire.
+func TestRACKTLPNotLaterThanOldestRTO(t *testing.T) {
+	ic := newIdleRACKConn(t)
+
+	// Send a second segment, which is lost, then a third SRTT before the
+	// second's RTO would fire. The PTO the third segment re-arms, 2*SRTT,
+	// would end after that.
+	ic.send(t, 1)
+	ic.clock.Advance(ic.rto - ic.srtt)
+	ic.send(t, 2)
+
+	// The TLP must probe, retransmitting the last segment sent, when the
+	// second segment's RTO would fire.
+	ic.clock.Advance(ic.srtt)
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, 2*maxPayload, maxPayload, e2e.TSOptionSize)
+}
+
+// TestRACKTLPOneRTOAfterAck tests that after an ACK that advances SND.UNA,
+// with no RTO timer armed, the probe timeout is bounded by one RTO from the
+// ACK, which restarts the RTO, not from the transmission of the oldest
+// outstanding segment.
+func TestRACKTLPOneRTOAfterAck(t *testing.T) {
+	ic := newIdleRACKConn(t)
+
+	// Send a second segment and acknowledge half of it an SRTT later. The
+	// rest is outstanding, sent an SRTT before the ACK.
+	ic.send(t, 1)
+	ic.clock.Advance(ic.srtt)
+	const half = maxPayload / 2
+	rto, _ := ic.ack(t, maxPayload+half)
+
+	// With a single segment outstanding the PTO is later than the RTO, so the
+	// probe, retransmitting the rest, comes one RTO after the ACK.
+	ic.clock.Advance(rto - ic.srtt/2)
+	ic.c.CheckNoPacketTimeout("probe sent before one RTO from the ACK", 200*time.Millisecond)
+	ic.clock.Advance(ic.srtt / 2)
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, maxPayload+half, maxPayload-half, e2e.TSOptionSize)
+}
+
+// TestRACKTLPFlightAfterAck tests that the probe timeout an ACK schedules is
+// computed from the flight the ACK leaves outstanding. With two segments
+// outstanding the PTO is 2*SRTT, but once an ACK leaves only one, it is the
+// single-segment PTO, here capped at the RTO.
+func TestRACKTLPFlightAfterAck(t *testing.T) {
+	ic := newIdleRACKConn(t)
+
+	// Send two more segments and acknowledge the first of them an SRTT later.
+	ic.send(t, 1)
+	ic.send(t, 2)
+	ic.clock.Advance(ic.srtt)
+	rto, _ := ic.ack(t, 2*maxPayload)
+
+	// The probe, retransmitting the last segment, comes one RTO after the ACK,
+	// not 2*SRTT after it.
+	ic.clock.Advance(rto - time.Nanosecond)
+	ic.c.CheckNoPacketTimeout("probe sent before one RTO from the ACK", 200*time.Millisecond)
+	ic.clock.Advance(time.Nanosecond)
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, 2*maxPayload, maxPayload, e2e.TSOptionSize)
+}
+
+// TestRACKTLPAfterRecovery tests that the advancing ACK which ends SACK
+// recovery bounds the probe by a full RTO, rather than the recovery timer's
+// remaining time.
+func TestRACKTLPAfterRecovery(t *testing.T) {
+	ic := newIdleRACKConn(t)
+	seq := func(i int) seqnum.Value { return ic.c.IRS.Add(1 + seqnum.Size(i*maxPayload)) }
+
+	// Lose the first segment of a four-segment flight. The three SACKs
+	// report the later segments, causing the missing segment to be repaired.
+	for i := 1; i < 5; i++ {
+		ic.send(t, i)
+	}
+	ic.clock.Advance(ic.srtt / 2)
+	for i := 2; i < 5; i++ {
+		ic.c.SendAckWithSACK(seqnum.Value(context.TestInitialSequenceNumber).Add(1), maxPayload, []header.SACKBlock{{Start: seq(2), End: seq(i + 1)}})
+		ic.c.Stack().Pause()
+		ic.c.Stack().Resume()
+	}
+	ic.clock.Advance(ic.srtt)
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, maxPayload, maxPayload, e2e.TSOptionSize)
+
+	// Send a tail beyond the recovery point, then let some of the recovery
+	// RTO elapse before acknowledging the repaired flight. Only the newer
+	// tail remains outstanding after this ACK ends recovery.
+	ic.send(t, 5)
+	ic.clock.Advance(2 * ic.srtt)
+	rto, _ := ic.ack(t, 5*maxPayload)
+	if got := ic.c.Stack().Stats().TCP.SACKRecovery.Value(); got != 1 {
+		t.Fatalf("SACK recoveries = %d, want 1", got)
+	}
+
+	ic.clock.Advance(rto - time.Nanosecond)
+	ic.c.CheckNoPacketTimeout("probe sent before one RTO from the recovery ACK", 200*time.Millisecond)
+	ic.clock.Advance(time.Nanosecond)
+	ic.c.ReceiveAndCheckPacketWithOptions(ic.data, 5*maxPayload, maxPayload, e2e.TSOptionSize)
+	if got := ic.c.Stack().Stats().TCP.Timeouts.Value(); got != 0 {
+		t.Fatalf("RTOs = %d, want 0", got)
+	}
+	ic.ack(t, 6*maxPayload)
+}
+
 // TestRACKDetectDSACK tests that RACK detects DSACK with duplicate segments.
 // See: https://tools.ietf.org/html/rfc2883#section-4.1.1.
 func TestRACKDetectDSACK(t *testing.T) {
