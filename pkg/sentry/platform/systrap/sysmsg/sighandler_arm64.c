@@ -37,6 +37,11 @@ uint64_t __export_stub_start;
 // Note: This flag doesn't do anything for ARM. See AMD64 equivalent.
 uint64_t __export_disable_syscall_patching;
 
+// The per-thread memory layout depends on the host page size, which is only
+// known at runtime. See sysmsg.h:PER_THREAD_MEM_SIZE.
+uint64_t __export_per_thread_mem_size;
+uint64_t __export_page_size;
+
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   // ARM64 syscall interface passes the syscall number in x8 and the 6 arguments
   // in x0-x5. The return value is in x0.

@@ -332,7 +332,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	// faultAroundAlignment.
 	faultAroundAlignment := uint64(64 << 10) // 64 KB, matches Linux's default fault_around_pages
 	if mayHuge {
-		faultAroundAlignment = hostarch.HugePageSize
+		faultAroundAlignment = uint64(hostarch.HugePageSize)
 	}
 	faultAroundMask := faultAroundAlignment - 1
 	fillRange := memmap.MappableRange{
