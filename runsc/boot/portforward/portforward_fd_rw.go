@@ -77,22 +77,52 @@ func (r *fileDescriptionConn) Read(ctx context.Context, buf []byte, cancel <-cha
 func (r *fileDescriptionConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var notifyCh chan struct{}
 	var waitEntry waiter.Entry
-	n, err := r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
-	for linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+	total := 0
+	for total < len(buf) {
+		select {
+		case <-cancel:
+			return total, io.EOF
+		case <-ctx.Done():
+			return total, ctx.Err()
+		default:
+		}
+		n, err := r.file.Write(ctx, usermem.BytesIOSequence(buf[total:]), vfs.WriteOptions{})
+		total += int(n)
+		if !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+			if err != nil {
+				return total, err
+			}
+			if n == 0 {
+				return total, io.ErrNoProgress
+			}
+			continue
+		}
+		// Imported Unix sockets can return progress together with ErrWouldBlock.
+		// Retry only the unwritten suffix so accepted bytes are never duplicated.
+		if total == len(buf) {
+			return total, nil
+		}
 		if notifyCh == nil {
 			waitEntry, notifyCh = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
-			// Register for when the endpoint is writable or disconnected.
-			r.file.EventRegister(&waitEntry)
+			if err := r.file.EventRegister(&waitEntry); err != nil {
+				return total, err
+			}
 			defer r.file.EventUnregister(&waitEntry)
+			// Readiness can change before registration without another notification.
+			continue
+		}
+		if n > 0 {
+			continue
 		}
 		select {
 		case <-notifyCh:
 		case <-cancel:
-			return 0, io.EOF
+			return total, io.EOF
+		case <-ctx.Done():
+			return total, ctx.Err()
 		}
-		n, err = r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
 	}
-	return int(n), err
+	return total, nil
 }
 
 // Close implements proxyConn.Close.
