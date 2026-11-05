@@ -27,7 +27,7 @@ import (
 // offset startOff.
 func disasmARM64(t *testing.T, buf []byte, startOff, endOff int) []string {
 	t.Helper()
-	return disasmBytes(t, "aarch64", buf, startOff, endOff)
+	return disasmBytes(t, "elf64-littleaarch64", buf, startOff, endOff)
 }
 
 // TestMatchARM64CounterRead verifies against objdump disassembly that
@@ -41,10 +41,10 @@ func TestMatchARM64CounterRead(t *testing.T) {
 		wantRt     uint32
 		wantOK     bool
 	}{
-		{"CNTVCT_X2", func(w *arm64StubWriter) { w.mrsCNTVCT(2) }, "mrs x2, cntvct_el0", 2, true},
-		{"CNTVCTSS_X0", func(w *arm64StubWriter) { w.mrsCNTVCTSS(0) }, "mrs x0, cntvctss_el0", 0, true},
-		{"CNTVCT_XZR", func(w *arm64StubWriter) { w.mrsCNTVCT(arm64RegXZR) }, "mrs xzr, cntvct_el0", 0, false},
-		{"CNTVCTSS_XZR", func(w *arm64StubWriter) { w.mrsCNTVCTSS(arm64RegXZR) }, "mrs xzr, cntvctss_el0", 0, false},
+		{"CNTVCT_X2", func(w *arm64StubWriter) { w.mrsCNTVCT(2) }, "mrs x2, CNTVCT_EL0", 2, true},
+		{"CNTVCTSS_X0", func(w *arm64StubWriter) { w.mrsCNTVCTSS(0) }, "mrs x0, CNTVCTSS_EL0", 0, true},
+		{"CNTVCT_XZR", func(w *arm64StubWriter) { w.mrsCNTVCT(arm64RegXZR) }, "mrs xzr, CNTVCT_EL0", 0, false},
+		{"CNTVCTSS_XZR", func(w *arm64StubWriter) { w.mrsCNTVCTSS(arm64RegXZR) }, "mrs xzr, CNTVCTSS_EL0", 0, false},
 		{"ISB", func(w *arm64StubWriter) { w.isb() }, "isb", 0, false},
 		{"NOP", func(w *arm64StubWriter) { w.nop() }, "nop", 0, false},
 	} {
@@ -96,11 +96,11 @@ func TestARM64StubWriter(t *testing.T) {
 		t.Errorf("site 0 disassembly: got %q, want %q", got, want)
 	}
 	wantStub0 := []string{
-		"mrs x2, cntvct_el0",
-		"str x0, [sp, #-16]!",
+		"mrs x2, CNTVCT_EL0",
+		"str x0, [sp, #-0x10]!",
 		"ldr x0, 0xfc0",
 		"sub x2, x2, x0",
-		"ldr x0, [sp], #16",
+		"ldr x0, [sp], #0x10",
 		"b 0x88",
 	}
 	if got := disasmARM64(t, buf, stub0Off, w0.offset()); !slices.Equal(got, wantStub0) {
@@ -132,11 +132,11 @@ func TestARM64StubWriter(t *testing.T) {
 		t.Errorf("site 1 disassembly: got %q, want %q", got, want)
 	}
 	wantStub1 := []string{
-		"mrs x0, cntvctss_el0",
-		"str x1, [sp, #-16]!",
+		"mrs x0, CNTVCTSS_EL0",
+		"str x1, [sp, #-0x10]!",
 		"ldr x1, 0xfc0",
 		"sub x0, x0, x1",
-		"ldr x1, [sp], #16",
+		"ldr x1, [sp], #0x10",
 		"b 0x90",
 	}
 	if got := disasmARM64(t, buf, stub1Off, w1.offset()); !slices.Equal(got, wantStub1) {
