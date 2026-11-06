@@ -239,19 +239,62 @@ func (s *State) Save(o *controlapi.SaveOpts, _ *struct{}) (err error) {
 }
 
 // SaveWithOpts saves the running system with the given options. If
-// saveOpts.Resume is true, the caller must call PostResume afterwards.
+// saveOpts.Resume is true and the save succeeds, the caller must call
+// PostResume afterwards.
 func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) error {
 	if err := preSave(s.Kernel, saveOpts, execOpts); err != nil {
 		return err
 	}
-	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
+	err := saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
+	if err == nil || !saveOpts.Resume {
+		return err
+	}
+	// A failed leave-running save must undo the preparation that preSave
+	// completed, subject to PostResume's existing pause behavior: on a
+	// running kernel the undo completes before the failure is reported,
+	// while on a paused kernel the save/restore binary stays deferred until
+	// the explicit resume.
+	if resumeErr := PostResume(s.Kernel, nil); resumeErr != nil {
+		return killAfterFailedUndo(s.Kernel, err, resumeErr)
+	}
+	return err
+}
+
+// killAfterFailedUndo kills the kernel after a failure to undo completed
+// checkpoint preparation: the sandbox is then in an unknown state and cannot
+// safely continue running. The returned error records both the checkpoint
+// failure and the undo failure, but wraps neither: a failed undo is a
+// cleanup failure, not a checkpoint error that callers may classify as
+// recoverable.
+func killAfterFailedUndo(k *kernel.Kernel, checkpointErr, undoErr error) error {
+	log.Warningf("Killing the sandbox after failing to undo completed checkpoint preparation: %v (checkpoint failure: %v)", undoErr, checkpointErr)
+	k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+	return fmt.Errorf("failed to undo completed checkpoint preparation: %v (checkpoint failure: %v)", undoErr, checkpointErr)
 }
 
 // preSave is called before saving the kernel.
-func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) error {
+//
+// If a stage fails after earlier stages completed, the completed stages are
+// undone in reverse order: the save has not run at this point, so it has not
+// killed the kernel even when o.Resume is false, and the application must be
+// able to continue running. If undoing a completed stage fails, the kernel is
+// killed; see killAfterFailedUndo.
+func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) (err error) {
 	if err := preSaveTPU(k); err != nil {
 		return err
 	}
+	var undoErrs []error
+	cu := cleanup.Make(func() {
+		if undoErr := postResumeTPU(k); undoErr != nil {
+			undoErrs = append(undoErrs, fmt.Errorf("failed to undo TPU checkpoint preparation: %w", undoErr))
+		}
+	})
+	defer func() {
+		cu.Clean()
+		if len(undoErrs) != 0 {
+			err = killAfterFailedUndo(k, err, errors.Join(undoErrs...))
+		}
+	}()
 
 	if execOpts.Argv != "" {
 		argv := strings.Split(execOpts.Argv, " ")
@@ -261,8 +304,21 @@ func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *controlapi.SaveResto
 		if err := SaveRestoreExec(k, SaveRestoreExecSave); err != nil {
 			return fmt.Errorf("failed to exec save/restore binary: %w", err)
 		}
+		cu.Add(func() {
+			if undoErr := SaveRestoreExec(k, SaveRestoreExecResume); undoErr != nil {
+				undoErrs = append(undoErrs, fmt.Errorf("failed to exec save/restore binary in resume mode: %w", undoErr))
+			}
+		})
+	} else {
+		k.SaveRestoreExecConfig = nil
 	}
-	return preSaveCuda(k, o)
+
+	// preSaveCuda undoes its own partial work on failure.
+	if err := preSaveCuda(k, o); err != nil {
+		return err
+	}
+	cu.Release()
+	return nil
 }
 
 // PostResume is called after resuming the kernel.
