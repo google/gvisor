@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -261,5 +262,196 @@ func TestTCPLingerNonEstablished(t *testing.T) {
 	expectedMaximum := time.Second
 	if elapsed >= time.Second {
 		t.Errorf("expected close to take at most %s, but took %s", expectedMaximum, elapsed)
+	}
+}
+
+// stateLingerDuration is the SO_LINGER timeout in TestTCPLingerStates.
+const stateLingerDuration = 10 * time.Second
+
+// maxCloseDuration is how long close may take in TestTCPLingerStates after the
+// peer acknowledges the DUT's FIN, or after close starts if close does not
+// wait. It is much longer than such a close takes and much shorter than
+// stateLingerDuration, so that a close that waits for the linger timeout fails
+// clearly.
+const maxCloseDuration = stateLingerDuration / 2
+
+// blockCheckDelay is how long TestTCPLingerStates waits before it checks that
+// close is blocked. It also gives the close RPC time to reach the DUT before
+// the test acknowledges the DUT's FIN.
+const blockCheckDelay = 500 * time.Millisecond
+
+// expectFIN expects a FIN from the DUT.
+func expectFIN(t *testing.T, conn *testbench.TCPIPv4) {
+	t.Helper()
+
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+		t.Fatalf("expected FIN-ACK packet within a second but got none: %s", err)
+	}
+}
+
+// shutdownWrite shuts down the DUT's socket fd for writing and expects the FIN
+// that the DUT sends.
+func shutdownWrite(t *testing.T, dut testbench.DUT, fd int32, conn *testbench.TCPIPv4) {
+	t.Helper()
+
+	dut.Shutdown(t, fd, unix.SHUT_WR)
+	expectFIN(t, conn)
+}
+
+// sendFIN sends a FIN to the DUT and expects the DUT to acknowledge it. The FIN
+// acknowledges ackNum, or all that the DUT sent if ackNum is nil.
+func sendFIN(t *testing.T, conn *testbench.TCPIPv4, ackNum *uint32) {
+	t.Helper()
+
+	conn.Send(t, testbench.TCP{AckNum: ackNum, Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)})
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
+		t.Fatalf("expected ACK packet for our FIN within a second but got none: %s", err)
+	}
+}
+
+// waitForTCPState waits until the TCP state of the DUT's socket fd is want.
+func waitForTCPState(t *testing.T, dut testbench.DUT, fd int32, want uint32) {
+	t.Helper()
+
+	// The DUT can change its state after it sends the segment that the test
+	// expects, or without sending a segment, so poll.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := uint32(dut.GetSockOptTCPInfo(t, fd).State)
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got TCP state %d, want %d", got, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestTCPLingerStates tests close with a nonzero SO_LINGER timeout in each TCP
+// state from ESTABLISHED to TIME-WAIT. As in Linux's sk_stream_wait_close,
+// close waits only while the DUT's FIN is not acknowledged, that is in
+// FIN-WAIT-1, CLOSING and LAST-ACK. It returns as soon as the peer acknowledges
+// the FIN, even if the peer keeps its side of the connection open.
+func TestTCPLingerStates(t *testing.T) {
+	for _, tt := range []struct {
+		description string
+		// setUp, if not nil, moves the DUT's established socket fd to the
+		// state under test.
+		setUp func(t *testing.T, dut testbench.DUT, fd int32, conn *testbench.TCPIPv4)
+		// state, if not zero, is the TCP state of the socket when the test
+		// closes it.
+		state uint32
+		// sendsFIN is true if close sends the DUT's FIN.
+		sendsFIN bool
+		// waits is true if close waits until the peer acknowledges the FIN.
+		waits bool
+	}{
+		{
+			description: "ESTABLISHED",
+			state:       linux.TCP_ESTABLISHED,
+			sendsFIN:    true,
+			waits:       true,
+		},
+		{
+			description: "FIN_WAIT_1",
+			setUp:       shutdownWrite,
+			state:       linux.TCP_FIN_WAIT1,
+			waits:       true,
+		},
+		{
+			description: "FIN_WAIT_2",
+			setUp: func(t *testing.T, dut testbench.DUT, fd int32, conn *testbench.TCPIPv4) {
+				shutdownWrite(t, dut, fd, conn)
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+			},
+			state: linux.TCP_FIN_WAIT2,
+		},
+		{
+			description: "CLOSE_WAIT",
+			setUp: func(t *testing.T, _ testbench.DUT, _ int32, conn *testbench.TCPIPv4) {
+				sendFIN(t, conn, nil)
+			},
+			state:    linux.TCP_CLOSE_WAIT,
+			sendsFIN: true,
+			waits:    true,
+		},
+		{
+			description: "CLOSING",
+			setUp: func(t *testing.T, dut testbench.DUT, fd int32, conn *testbench.TCPIPv4) {
+				shutdownWrite(t, dut, fd, conn)
+				// Send a FIN that does not acknowledge the DUT's FIN,
+				// as in a simultaneous close.
+				finSeqNum := uint32(*conn.RemoteSeqNum(t)) - 1
+				sendFIN(t, conn, &finSeqNum)
+			},
+			state: linux.TCP_CLOSING,
+			waits: true,
+		},
+		{
+			description: "LAST_ACK",
+			setUp: func(t *testing.T, dut testbench.DUT, fd int32, conn *testbench.TCPIPv4) {
+				sendFIN(t, conn, nil)
+				shutdownWrite(t, dut, fd, conn)
+			},
+			state: linux.TCP_LAST_ACK,
+			waits: true,
+		},
+		{
+			description: "TIME_WAIT",
+			setUp: func(t *testing.T, dut testbench.DUT, fd int32, conn *testbench.TCPIPv4) {
+				shutdownWrite(t, dut, fd, conn)
+				sendFIN(t, conn, nil)
+			},
+			// The test does not check the state: on Linux, a TIME-WAIT
+			// socket takes over the connection, and the socket that the
+			// test closes reports CLOSE.
+		},
+	} {
+		t.Run(tt.description, func(t *testing.T) {
+			// Create a socket, listen, TCP connect, and accept.
+			dut := testbench.NewDUT(t)
+			acceptFD, listenFD, conn := createSocket(t, dut)
+			defer closeAll(t, dut, listenFD, conn)
+
+			dut.SetSockLingerOption(t, acceptFD, stateLingerDuration, true)
+			if tt.setUp != nil {
+				tt.setUp(t, dut, acceptFD, &conn)
+			}
+			if tt.state != 0 {
+				waitForTCPState(t, dut, acceptFD, tt.state)
+			}
+
+			start, since := time.Now(), "it started"
+			closed := make(chan struct{})
+			go func() {
+				defer close(closed)
+				if ret, err := dut.CloseWithErrno(context.Background(), t, acceptFD); ret != 0 {
+					t.Errorf("failed to close: %s", err)
+				}
+			}()
+			// Do not end the test before close returns.
+			defer func() { <-closed }()
+
+			if tt.sendsFIN {
+				expectFIN(t, &conn)
+			}
+			if tt.waits {
+				select {
+				case <-closed:
+					t.Fatalf("close returned after %s, before the FIN was acknowledged", time.Since(start))
+				case <-time.After(blockCheckDelay):
+				}
+				// Acknowledge the DUT's FIN. In ESTABLISHED and
+				// FIN-WAIT-1, the test does not send a FIN, so the
+				// peer keeps its side of the connection open.
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+				start, since = time.Now(), "the FIN was acknowledged"
+			}
+			<-closed
+			if elapsed := time.Since(start); elapsed > maxCloseDuration {
+				t.Errorf("close returned %s after %s, want at most %s", elapsed, since, maxCloseDuration)
+			}
+		})
 	}
 }

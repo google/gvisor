@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // receiver holds the state necessary to receive TCP segments and turn them
@@ -287,6 +288,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 				// FIN-WAIT-2 so start the FIN-WAIT-2 timer.
 				e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
 			}
+			// Wake up a lingering close, which waits until our FIN
+			// is acknowledged.
+			r.ep.waiterQueue.Notify(waiter.EventInternal)
 
 		case StateClosing:
 			r.ep.setEndpointState(StateTimeWait)

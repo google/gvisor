@@ -28,6 +28,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -53,6 +54,7 @@
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
@@ -607,6 +609,65 @@ TEST_P(TcpSocketTest, ClosedReadBlockingSocket) {
   // Check the lower bound on the timeout.  Checking for an upper bound is
   // fragile because Linux can overrun the timeout due to scheduling delays.
   EXPECT_GT(ms_elapsed(begin, end), timeout * 1000 - 1);
+}
+
+// Test that the exit of a process that holds the last reference to a socket
+// with SO_LINGER set does not linger.
+TEST_P(TcpSocketTest, NoLingerOnProcessExit) {
+  // hostinet closes the host socket from a sentry thread that is not exiting,
+  // so the host kernel lingers.
+  SKIP_IF(IsRunningWithHostinet());
+
+  constexpr int kLingerTimeout = 10;  // Seconds.
+  struct linger sl = {
+      .l_onoff = 1,
+      .l_linger = kLingerTimeout,
+  };
+  ASSERT_THAT(
+      setsockopt(connected_.get(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+      SyscallSucceeds());
+  // Fill the buffers, so that the peer cannot acknowledge the FIN.
+  FillSocketBuffers(connected_.get(), accepted_.get());
+
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  FileDescriptor read_fd(pipe_fds[0]);
+  FileDescriptor write_fd(pipe_fds[1]);
+
+  const DisableSave disable_save;  // Timing-related.
+  const pid_t child = fork();
+  if (child == 0) {
+    // Wait until the parent closes its copy of the socket, then exit with the
+    // last reference to it.
+    TEST_PCHECK(close(write_fd.get()) == 0);
+    char c;
+    TEST_PCHECK(RetryEINTR(read)(read_fd.get(), &c, sizeof(c)) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  read_fd.reset();
+  connected_.reset();
+
+  const absl::Time start = absl::Now();
+  write_fd.reset();
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  EXPECT_LT(absl::Now() - start, absl::Seconds(kLingerTimeout) / 2);
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+
+  // The close was still graceful: the peer reads all the data and then EOF,
+  // not a reset.
+  std::vector<char> buf(1 << 16);
+  int n = -1;
+  do {
+    struct pollfd poll_fd = {accepted_.get(), POLLIN, 0};
+    ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMillis),
+                SyscallSucceedsWithValue(1));
+    ASSERT_THAT(n = RetryEINTR(read)(accepted_.get(), buf.data(), buf.size()),
+                SyscallSucceeds());
+  } while (n > 0);
 }
 
 TEST_P(TcpSocketTest, MsgTrunc) {
