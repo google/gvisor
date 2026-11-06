@@ -41,6 +41,7 @@ go_test(
         "portforward_fd_rw_test.go",
         "portforward_hostinet_test.go",
         "portforward_netstack_test.go",
+        "portforward_test.go",
     ],
     embed = [":portforward"],
     tags = [
