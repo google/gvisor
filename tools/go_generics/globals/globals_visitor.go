@@ -97,16 +97,30 @@ func (v *globalsVisitor) visitType(ge ast.Expr) {
 	case *ast.ArrayType:
 		v.visitExpr(e.Len)
 		v.visitType(e.Elt)
+	case *ast.BinaryExpr:
+		v.visitType(e.X)
+		v.visitType(e.Y)
+	case *ast.UnaryExpr:
+		v.visitType(e.X)
 	case *ast.MapType:
 		v.visitType(e.Key)
 		v.visitType(e.Value)
 	case *ast.StructType:
 		v.visitFields(e.Fields, KindUnknown)
 	case *ast.FuncType:
+		v.visitFields(e.TypeParams, KindType)
 		v.visitFields(e.Params, KindUnknown)
 		v.visitFields(e.Results, KindUnknown)
 	case *ast.InterfaceType:
 		v.visitFields(e.Methods, KindUnknown)
+	case *ast.IndexExpr:
+		v.visitType(e.X)
+		v.visitType(e.Index)
+	case *ast.IndexListExpr:
+		v.visitType(e.X)
+		for _, index := range e.Indices {
+			v.visitType(index)
+		}
 	default:
 		v.unexpected(ge.Pos())
 	}
@@ -150,7 +164,10 @@ func (v *globalsVisitor) visitGenDecl(d *ast.GenDecl) {
 			if v.scope.isGlobal() {
 				v.f(s.Name, KindType)
 			}
+			v.pushScope()
+			v.visitFields(s.TypeParams, KindType)
 			v.visitType(s.Type)
+			v.popScope()
 		}
 	case token.CONST, token.VAR:
 		kind := KindConst
@@ -191,6 +208,12 @@ func (v *globalsVisitor) isViableType(expr ast.Expr) bool {
 		// known, we'll claim it's viable as a type.
 		s := v.scope.deepLookup(e.Name)
 		return s == nil || s.kind == KindType
+
+	case *ast.IndexExpr:
+		return v.isViableType(e.X)
+
+	case *ast.IndexListExpr:
+		return v.isViableType(e.X)
 
 	case *ast.ChanType, *ast.ArrayType, *ast.MapType, *ast.StructType, *ast.FuncType, *ast.InterfaceType, *ast.Ellipsis:
 		// This covers the following cases:
@@ -302,6 +325,11 @@ func (v *globalsVisitor) visitExpr(ge ast.Expr) {
 	case *ast.IndexExpr:
 		v.visitExpr(e.X)
 		v.visitExpr(e.Index)
+	case *ast.IndexListExpr:
+		v.visitExpr(e.X)
+		for _, index := range e.Indices {
+			v.visitExpr(index)
+		}
 
 	case *ast.KeyValueExpr:
 		v.visitExpr(e.Value)
@@ -497,6 +525,34 @@ func (v *globalsVisitor) visitBlockStmt(s *ast.BlockStmt) {
 	v.popScope()
 }
 
+func (v *globalsVisitor) addTypeParamsFromRecv(recv *ast.FieldList) {
+	if recv == nil {
+		return
+	}
+	for _, f := range recv.List {
+		v.addTypeParamsFromRecvExpr(f.Type)
+	}
+}
+
+func (v *globalsVisitor) addTypeParamsFromRecvExpr(expr ast.Expr) {
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		v.addTypeParamsFromRecvExpr(e.X)
+	case *ast.StarExpr:
+		v.addTypeParamsFromRecvExpr(e.X)
+	case *ast.IndexExpr:
+		if id := GetIdent(e.Index); id != nil {
+			v.scope.add(id.Name, KindType, id.Pos())
+		}
+	case *ast.IndexListExpr:
+		for _, index := range e.Indices {
+			if id := GetIdent(index); id != nil {
+				v.scope.add(id.Name, KindType, id.Pos())
+			}
+		}
+	}
+}
+
 // visitFuncDecl is called when a function or method declaration is encountered.
 // it creates a new scope for the function [optional] receiver, parameters and
 // results, and visits all children nodes.
@@ -507,7 +563,9 @@ func (v *globalsVisitor) visitFuncDecl(d *ast.FuncDecl) {
 	}
 
 	v.pushScope()
+	v.addTypeParamsFromRecv(d.Recv)
 	v.visitFields(d.Recv, KindReceiver)
+	v.visitFields(d.Type.TypeParams, KindType)
 	v.visitFields(d.Type.Params, KindParameter)
 	v.visitFields(d.Type.Results, KindResult)
 	if d.Body != nil {
