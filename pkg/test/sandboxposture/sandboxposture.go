@@ -22,10 +22,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 	"github.com/moby/sys/capability"
 	"golang.org/x/sys/unix"
 )
@@ -46,6 +49,16 @@ const (
 // NSJoined returns the namespace value meaning "this namespace is the one
 // registered under `name` in `Opts.NamespaceTargets`".
 func NSJoined(name string) string { return NSJoinedPrefix + name }
+
+// Normalized values for `Attrs.DeviceCgroup`.
+const (
+	// DeviceCgroupConfined means the process's cgroup denies access to devices
+	// outside a whitelist.
+	DeviceCgroupConfined = "confined"
+
+	// DeviceCgroupUnconfined means the process's cgroup allows every device.
+	DeviceCgroupUnconfined = "unconfined"
+)
 
 // Normalized values for `Credentials.Groups`.
 const (
@@ -348,6 +361,9 @@ type Attrs struct {
 	// We use this as a proxy for whether `/proc/<pid>/mem` is reachable by
 	// the process's own user.
 	ProcFileOwner string
+
+	// DeviceCgroup is `DeviceCgroupConfined` or `DeviceCgroupUnconfined`.
+	DeviceCgroup string
 
 	// Argv is the full command line. Informational only.
 	Argv []string `posture:"info"`
@@ -1249,6 +1265,9 @@ func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS stri
 	if a.ProcFileOwner, err = collectProcFileOwner(p, status); err != nil {
 		return a, err
 	}
+	if a.DeviceCgroup, err = deviceCgroupOf(p); err != nil {
+		return a, err
+	}
 	return a, nil
 }
 
@@ -1570,4 +1589,152 @@ func collectChildren(p *proc) (map[string]int, error) {
 		}
 	}
 	return out, nil
+}
+
+// DeviceCgroupOf classifies the device cgroup of the given process.
+// `procRoot` defaults to "/proc".
+func DeviceCgroupOf(pid int, procRoot string) (string, error) {
+	if procRoot == "" {
+		procRoot = "/proc"
+	}
+	return deviceCgroupOf(&proc{root: procRoot, pid: pid})
+}
+
+// deviceCgroupOf reports whether the process's cgroup confines device access:
+// on cgroup v2 a device filter is attached to it or an ancestor, on cgroup v1
+// its devices controller does not allow every device.
+func deviceCgroupOf(p *proc) (string, error) {
+	raw, err := p.read("cgroup")
+	if err != nil {
+		return "", fmt.Errorf("reading cgroup: %w", err)
+	}
+	// We open cgroupfs, so our mounts matter, not the target's.
+	var mounts []cgroupMount
+	if mountinfo, err := os.ReadFile(filepath.Join(p.root, "self", "mountinfo")); err == nil {
+		if mounts, err = cgroupMounts(string(mountinfo)); err != nil {
+			return "", err
+		}
+	}
+	if len(mounts) == 0 {
+		mounts = defaultCgroupMounts
+	}
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		fields := strings.SplitN(line, ":", 3)
+		if len(fields) != 3 {
+			return "", fmt.Errorf("malformed cgroup line %q", line)
+		}
+		switch controllers, path := fields[1], fields[2]; {
+		case fields[0] == "0" && controllers == "":
+			cgDir, err := cgroupDir(mounts, path, func(m cgroupMount) bool { return m.v2 })
+			if err != nil {
+				return "", err
+			}
+			dir, err := os.Open(cgDir)
+			if err != nil {
+				return "", err
+			}
+			defer dir.Close()
+			res, err := link.QueryPrograms(link.QueryOptions{
+				Target:     int(dir.Fd()),
+				Attach:     ebpf.AttachCGroupDevice,
+				QueryFlags: unix.BPF_F_QUERY_EFFECTIVE,
+			})
+			if err != nil {
+				return "", fmt.Errorf("querying device filters of %s: %w", path, err)
+			}
+			if len(res.Programs) > 0 {
+				return DeviceCgroupConfined, nil
+			}
+			return DeviceCgroupUnconfined, nil
+		case slices.Contains(strings.Split(controllers, ","), "devices"):
+			cgDir, err := cgroupDir(mounts, path, func(m cgroupMount) bool {
+				return slices.Contains(m.controllers, "devices")
+			})
+			if err != nil {
+				return "", err
+			}
+			list, err := os.ReadFile(filepath.Join(cgDir, "devices.list"))
+			if err != nil {
+				return "", err
+			}
+			for _, rule := range strings.Split(strings.TrimSpace(string(list)), "\n") {
+				if strings.HasPrefix(rule, "a ") {
+					return DeviceCgroupUnconfined, nil
+				}
+			}
+			return DeviceCgroupConfined, nil
+		}
+	}
+	return "", fmt.Errorf("process %d is in no cgroup with device control", p.pid)
+}
+
+// cgroupMount is a cgroupfs mount.
+type cgroupMount struct {
+	// root is the cgroup at mountpoint, as named in /proc/<pid>/cgroup.
+	root        string
+	mountpoint  string
+	v2          bool
+	controllers []string
+}
+
+// defaultCgroupMounts is the standard host layout, used when mountinfo can't
+// tell.
+var defaultCgroupMounts = []cgroupMount{
+	{root: "/", mountpoint: "/sys/fs/cgroup/devices", controllers: []string{"devices"}},
+	{root: "/", mountpoint: "/sys/fs/cgroup", v2: true},
+}
+
+// cgroupMounts lists the cgroupfs mounts in mountinfo.
+func cgroupMounts(mountinfo string) ([]cgroupMount, error) {
+	var out []cgroupMount
+	for _, line := range strings.Split(mountinfo, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		// Format: ID parent major:minor root mountpoint options [optional...]
+		// - fstype source superoptions
+		sep := -1
+		if len(fields) > 6 {
+			sep = slices.Index(fields[6:], "-") + 6
+		}
+		if sep < 6 || sep+3 >= len(fields) {
+			return nil, fmt.Errorf("malformed mountinfo line %q", line)
+		}
+		m := cgroupMount{root: unescapeMount(fields[3]), mountpoint: unescapeMount(fields[4])}
+		switch fields[sep+1] {
+		case "cgroup2":
+			m.v2 = true
+		case "cgroup":
+			m.controllers = strings.Split(fields[sep+3], ",")
+		default:
+			continue
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+// cgroupDir returns the directory of cgroup `path` under the first mount
+// accepted by `match` that contains it. A mount may expose only a subtree, so
+// `path` is taken relative to the mount's root.
+func cgroupDir(mounts []cgroupMount, path string, match func(cgroupMount) bool) (string, error) {
+	var tried []string
+	for _, m := range mounts {
+		if !match(m) {
+			continue
+		}
+		rel, err := filepath.Rel(m.root, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+			tried = append(tried, fmt.Sprintf("%s (root %s)", m.mountpoint, m.root))
+			continue
+		}
+		dir := filepath.Join(m.mountpoint, rel)
+		if _, err := os.Stat(dir); err != nil {
+			tried = append(tried, err.Error())
+			continue
+		}
+		return dir, nil
+	}
+	return "", fmt.Errorf("cgroup %s is not under any matching cgroupfs mount; tried %v", path, tried)
 }
