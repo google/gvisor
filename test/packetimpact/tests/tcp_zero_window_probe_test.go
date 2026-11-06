@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -87,6 +88,13 @@ func TestZeroWindowProbe(t *testing.T) {
 	// send command.
 	if startProbeDuration := time.Now().Sub(start); startProbeDuration <= sendTime {
 		t.Fatalf("expected the first probe to be sent out after retransmission interval, got %s want > %s", startProbeDuration, sendTime)
+	}
+
+	// The peer acknowledged all transmitted data before closing its window.
+	// Probing an unsent write does not indicate a congestion loss.
+	info := dut.GetSockOptTCPInfo(t, acceptFd)
+	if info.CaState != linux.TCP_CA_Open || info.SndCwnd <= 1 {
+		t.Errorf("after zero-window probe: congestion state = %d, congestion window = %d packets; want open with more than one packet", info.CaState, info.SndCwnd)
 	}
 
 	// Test 2: Check if the dut recovers on advertizing non-zero receive window.
