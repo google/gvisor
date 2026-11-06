@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "analysis.go",
         "annotations.go",
+        "callbacks.go",
         "checklocks.go",
         "facts.go",
         "importfacts.go",

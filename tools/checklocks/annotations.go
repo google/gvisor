@@ -81,6 +81,10 @@ func (pc *passContext) addForce(pos token.Pos) {
 
 // maybeFail checks a potential failure against a specific failure map.
 func (pc *passContext) maybeFail(pos token.Pos, fmtStr string, args ...any) {
+	if pc.callbackFailure != nil {
+		pc.callbackFailure(pos, fmt.Sprintf(fmtStr, args...))
+		return
+	}
 	if fd, ok := pc.failures[pc.positionKey(pos)]; ok {
 		msg := fmt.Sprintf(fmtStr, args...)
 		index := slices.IndexFunc(fd.wants, func(want string) bool {
