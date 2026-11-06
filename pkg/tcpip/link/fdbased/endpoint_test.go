@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -777,6 +778,257 @@ func TestCloseReleasesStopFDs(t *testing.T) {
 		}
 		if after := countEventFDs(t); after != before {
 			t.Errorf("mode %d: eventfds before=%d after=%d, want equal", mode, before, after)
+		}
+	}
+}
+
+func TestVirtioNetHdrMarshal(t *testing.T) {
+	h := virtioNetHdr{
+		flags:      0x01,
+		gsoType:    0x04,
+		hdrLen:     0x0203,
+		gsoSize:    0x0405,
+		csumStart:  0x0607,
+		csumOffset: 0x0809,
+	}
+	buf := bytes.Repeat([]byte{0xff}, virtioNetHdrSize+1)
+	h.marshal((*[virtioNetHdrSize]byte)(buf))
+	want := []byte{0x01, 0x04, 0x03, 0x02, 0x05, 0x04, 0x07, 0x06, 0x09, 0x08, 0xff}
+	if !bytes.Equal(buf, want) {
+		t.Errorf("marshal = %x, want %x", buf, want)
+	}
+}
+
+func newBatchTestEndpoint(tb testing.TB, vnet bool) (*endpoint, int) {
+	tb.Helper()
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() {
+		unix.Close(fds[0])
+		unix.Close(fds[1])
+	})
+	e := &endpoint{fds: []fdInfo{{fd: fds[0], isSocket: true}}, writevMaxIovs: rawfile.MaxIovs}
+	if vnet {
+		e.gsoKind = stack.HostGSOSupported
+	}
+	return e, fds[1]
+}
+
+func BenchmarkSendBatch(b *testing.B) {
+	for _, tc := range []struct {
+		name            string
+		packets         int
+		fragments       int
+		headerByteLimit uintptr
+	}{
+		{name: "single", packets: 1, fragments: 1},
+		{name: "batch", packets: BatchSize + 1, fragments: 1},
+		{name: "header payload", packets: BatchSize + 1, fragments: 2},
+		{name: "fragmented", packets: BatchSize + 1, fragments: 64},
+		{name: "header limited", packets: BatchSize + 1, fragments: 8, headerByteLimit: 4096},
+		{name: "fallback", packets: BatchSize + 1, fragments: rawfile.MaxIovs + 1, headerByteLimit: 4096},
+	} {
+		for _, vnet := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/vnet=%t", tc.name, vnet), func(b *testing.B) {
+				e, peer := newBatchTestEndpoint(b, vnet)
+				e.maxSyscallHeaderBytes = tc.headerByteLimit
+				if tc.headerByteLimit != 0 {
+					e.writevMaxIovs = min(rawfile.MaxIovs, int(tc.headerByteLimit/rawfile.SizeofIovec))
+				}
+				if err := unix.SetsockoptInt(e.fds[0].fd, unix.SOL_SOCKET, unix.SO_SNDBUF, 1<<20); err != nil {
+					b.Fatal(err)
+				}
+				fragmentSize := max(1, 512/tc.fragments)
+				var payload buffer.Buffer
+				for j := 0; j < tc.fragments; j++ {
+					fragment := buffer.MakeWithData(bytes.Repeat([]byte{byte(j)}, fragmentSize))
+					payload.Merge(&fragment)
+				}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: payload})
+				defer pkt.DecRef()
+				pkts := make([]*stack.PacketBuffer, tc.packets)
+				for i := range pkts {
+					pkts[i] = pkt
+				}
+				wantSize := pkt.Size()
+				if vnet {
+					wantSize += virtioNetHdrSize
+				}
+				data := make([]byte, len(pkts)*wantSize)
+				recvIovecs := make([]unix.Iovec, len(pkts))
+				recvMsgs := make([]rawfile.MMsgHdr, len(pkts))
+				for i := range recvMsgs {
+					recvIovecs[i].Base = &data[i*wantSize]
+					recvIovecs[i].SetLen(wantSize)
+					recvMsgs[i].Msg.Iov = &recvIovecs[i]
+					recvMsgs[i].Msg.SetIovlen(1)
+				}
+				b.ReportAllocs()
+				b.SetBytes(int64(len(pkts) * pkt.Size()))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if n, err := e.sendBatch(e.fds[0], pkts); n != len(pkts) || err != nil {
+						b.Fatalf("sendBatch = %d, %v, want %d, nil", n, err, len(pkts))
+					}
+					for received := 0; received < len(pkts); {
+						n, errno := rawfile.BlockingRecvMMsgUntilStopped(-1, peer, recvMsgs[received:])
+						if errno != 0 || n <= 0 {
+							b.Fatalf("recvmmsg = %d, %v", n, errno)
+						}
+						for _, msg := range recvMsgs[received : received+n] {
+							if int(msg.Len) != wantSize || msg.Msg.Flags&unix.MSG_TRUNC != 0 {
+								b.Fatalf("received %d bytes, flags %#x; want %d bytes", msg.Len, msg.Msg.Flags, wantSize)
+							}
+						}
+						received += n
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestSendBatchPackets(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		vnet      bool
+		limit     uintptr
+		fragments int
+	}{
+		{name: "native"},
+		{name: "virtio", vnet: true},
+		{name: "native_budget", limit: 2 * (rawfile.SizeofMMsgHdr + 4*rawfile.SizeofIovec)},
+		{name: "virtio_budget", vnet: true, limit: 2 * (rawfile.SizeofMMsgHdr + 4*rawfile.SizeofIovec)},
+		{name: "native_fallback", limit: 3 * rawfile.SizeofIovec},
+		{name: "virtio_fallback", vnet: true, limit: 3 * rawfile.SizeofIovec},
+		{name: "fragmented", fragments: 64},
+		{name: "virtio_fragmented", vnet: true, fragments: 64},
+		{name: "coalesced", fragments: rawfile.MaxIovs + 1},
+		{name: "virtio_coalesced", vnet: true, fragments: rawfile.MaxIovs + 1},
+		{name: "virtio_fragmented_fallback", vnet: true, limit: 3 * rawfile.SizeofIovec, fragments: rawfile.MaxIovs + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, peer := newBatchTestEndpoint(t, tc.vnet)
+			e.maxSyscallHeaderBytes = tc.limit
+			if tc.limit != 0 {
+				e.writevMaxIovs = min(rawfile.MaxIovs, int(tc.limit/rawfile.SizeofIovec))
+			}
+			fragments, fragmentSize, headerLen := 2, 256, 8
+			if tc.fragments != 0 {
+				fragments, fragmentSize, headerLen = tc.fragments, 4, 0
+				e.writevMaxIovs = min(e.writevMaxIovs, 3)
+			}
+			// A small send buffer forces partial writes before the peer drains it.
+			if err := unix.SetsockoptInt(e.fds[0].fd, unix.SOL_SOCKET, unix.SO_SNDBUF, 1024); err != nil {
+				t.Fatal(err)
+			}
+			pkts := make([]*stack.PacketBuffer, BatchSize+1)
+			for i := range pkts {
+				var payload buffer.Buffer
+				for j := range fragments {
+					fragment := buffer.MakeWithData(bytes.Repeat([]byte{byte(i + j)}, fragmentSize))
+					payload.Merge(&fragment)
+				}
+				// With no pushed header, the reserved view must be skipped.
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: 32, Payload: payload})
+				defer pkt.DecRef()
+				if headerLen != 0 {
+					copy(pkt.NetworkHeader().Push(headerLen), bytes.Repeat([]byte{byte(i)}, headerLen))
+				}
+				pkt.GSOOptions = stack.GSO{Type: stack.GSOTCPv4, NeedsCsum: true, L3HdrLen: 20, CsumOffset: uint16(i), MSS: uint16(100 + i)}
+				pkts[i] = pkt
+			}
+			data := make([]byte, headerLen+fragments*fragmentSize+virtioNetHdrSize)
+			total := 0
+			partial := false
+			for total < len(pkts) {
+				n, err := e.sendBatch(e.fds[0], pkts[total:])
+				if n <= 0 {
+					t.Fatalf("sendBatch made no progress: %d, %v", n, err)
+				}
+				if err != nil {
+					if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+						t.Fatalf("sendBatch error: %v", err)
+					}
+					partial = true
+					// No reader can free send-buffer space before this retry.
+					blockedN, blockedErr := e.sendBatch(e.fds[0], pkts)
+					if _, ok := blockedErr.(*tcpip.ErrWouldBlock); !ok || blockedN != 0 {
+						t.Fatalf("sendBatch with full buffer = %d, %v, want 0, ErrWouldBlock", blockedN, blockedErr)
+					}
+				}
+				for i := total; i < total+n; i++ {
+					got, err := unix.Read(peer, data)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var want []byte
+					if tc.vnet {
+						want = []byte{1, 1, byte(headerLen), 0, byte(100 + i), 0, 34, 0, byte(i), 0}
+					}
+					want = append(want, bytes.Repeat([]byte{byte(i)}, headerLen)...)
+					for j := range fragments {
+						want = append(want, bytes.Repeat([]byte{byte(i + j)}, fragmentSize)...)
+					}
+					if !bytes.Equal(data[:got], want) {
+						t.Fatalf("packet %d: got %x, want %x", i, data[:got], want)
+					}
+				}
+				total += n
+			}
+			if !partial {
+				t.Fatal("test did not exercise a partial send")
+			}
+		})
+	}
+}
+
+func TestSendBatchError(t *testing.T) {
+	for _, vnet := range []bool{false, true} {
+		for _, limit := range []uintptr{0, 3 * rawfile.SizeofIovec} {
+			t.Run(fmt.Sprintf("vnet=%t/limit=%d", vnet, limit), func(t *testing.T) {
+				e, peer := newBatchTestEndpoint(t, vnet)
+				e.maxSyscallHeaderBytes = limit
+				if limit != 0 {
+					e.writevMaxIovs = min(rawfile.MaxIovs, int(limit/rawfile.SizeofIovec))
+				}
+				if err := unix.SetsockoptInt(e.fds[0].fd, unix.SOL_SOCKET, unix.SO_SNDBUF, 4096); err != nil {
+					t.Fatal(err)
+				}
+				var pkts []*stack.PacketBuffer
+				for i, size := range []int{1, 1 << 20, 1} {
+					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+						Payload: buffer.MakeWithData(bytes.Repeat([]byte{byte(i)}, size)),
+					})
+					defer pkt.DecRef()
+					pkts = append(pkts, pkt)
+				}
+				n, err := e.sendBatch(e.fds[0], pkts)
+				if _, ok := err.(*tcpip.ErrMessageTooLong); !ok || n != 1 {
+					t.Fatalf("sendBatch = %d, %v, want 1, ErrMessageTooLong", n, err)
+				}
+				n, err = e.sendBatch(e.fds[0], pkts[1:])
+				if _, ok := err.(*tcpip.ErrMessageTooLong); !ok || n != 0 {
+					t.Fatalf("sendBatch = %d, %v, want 0, ErrMessageTooLong", n, err)
+				}
+				var data [32]byte
+				want := []byte{0}
+				if vnet {
+					want = make([]byte, virtioNetHdrSize+1)
+				}
+				n, readErr := unix.Read(peer, data[:])
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if !bytes.Equal(data[:n], want) {
+					t.Fatalf("Read = %x, want %x", data[:n], want)
+				}
+				if n, err := unix.Read(peer, data[:]); err != unix.EAGAIN {
+					t.Fatalf("Read after error = %d, %v, want EAGAIN", n, err)
+				}
+			})
 		}
 	}
 }

@@ -41,6 +41,7 @@
 package fdbased
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -579,33 +580,18 @@ type virtioNetHdr struct {
 	csumOffset uint16
 }
 
-// marshal serializes h to a newly-allocated byte slice, in little-endian byte
-// order.
+// marshal serializes h into buf in little-endian byte order.
 //
 // Note: Virtio v1.0 onwards specifies little-endian as the byte ordering used
 // for general serialization. This makes it difficult to use go-marshal for
 // virtio types, as go-marshal implicitly uses the native byte ordering.
-func (h *virtioNetHdr) marshal() []byte {
-	buf := [virtioNetHdrSize]byte{
-		0: byte(h.flags),
-		1: byte(h.gsoType),
-
-		// Manually lay out the fields in little-endian byte order. Little endian =>
-		// least significant bit goes to the lower address.
-
-		2: byte(h.hdrLen),
-		3: byte(h.hdrLen >> 8),
-
-		4: byte(h.gsoSize),
-		5: byte(h.gsoSize >> 8),
-
-		6: byte(h.csumStart),
-		7: byte(h.csumStart >> 8),
-
-		8: byte(h.csumOffset),
-		9: byte(h.csumOffset >> 8),
-	}
-	return buf[:]
+func (h *virtioNetHdr) marshal(buf *[virtioNetHdrSize]byte) {
+	buf[0] = h.flags
+	buf[1] = h.gsoType
+	binary.LittleEndian.PutUint16(buf[2:4], h.hdrLen)
+	binary.LittleEndian.PutUint16(buf[4:6], h.gsoSize)
+	binary.LittleEndian.PutUint16(buf[6:8], h.csumStart)
+	binary.LittleEndian.PutUint16(buf[8:10], h.csumOffset)
 }
 
 // These constants are declared in linux/virtio_net.h.
@@ -692,7 +678,9 @@ func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 				vnetHdr.gsoSize = pkt.GSOOptions.MSS
 			}
 		}
-		vnetHdrBuf = vnetHdr.marshal()
+		var vnetHdrStorage [virtioNetHdrSize]byte
+		vnetHdrBuf = vnetHdrStorage[:]
+		vnetHdr.marshal(&vnetHdrStorage)
 	}
 
 	views := pkt.AsSlices()
@@ -736,16 +724,22 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 
 	// Send a batch of packets through batchFD.
 	batchFD := batchFDInfo.fd
-	mmsgHdrsStorage := make([]rawfile.MMsgHdr, 0, len(pkts))
+	var mmsgHdrs []rawfile.MMsgHdr
+	var iovecsStorage []unix.Iovec
+	var vnetHdrs [][virtioNetHdrSize]byte
+	vnetIovecs := 0
+	if e.gsoKind == stack.HostGSOSupported {
+		vnetIovecs = 1
+	}
 	packets := 0
 	for packets < len(pkts) {
-		mmsgHdrs := mmsgHdrsStorage
+		mmsgHdrs = mmsgHdrs[:0]
+		iovecsStorage = iovecsStorage[:0]
 		batch := pkts[packets:]
 		syscallHeaderBytes := uintptr(0)
 		for _, pkt := range batch {
-			var vnetHdrBuf []byte
+			var vnetHdr virtioNetHdr
 			if e.gsoKind == stack.HostGSOSupported {
-				vnetHdr := virtioNetHdr{}
 				if pkt.GSOOptions.Type != stack.GSONone {
 					vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 					if pkt.GSOOptions.NeedsCsum {
@@ -765,7 +759,6 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 						vnetHdr.gsoSize = pkt.GSOOptions.MSS
 					}
 				}
-				vnetHdrBuf = vnetHdr.marshal()
 			}
 
 			views, offset := pkt.AsViewList()
@@ -777,10 +770,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 			}
 
 			// We've made it to the usable views.
-			numIovecs := views.Len() - skipped
-			if len(vnetHdrBuf) != 0 {
-				numIovecs++
-			}
+			numIovecs := views.Len() - skipped + vnetIovecs
 			if numIovecs > rawfile.MaxIovs {
 				numIovecs = rawfile.MaxIovs
 			}
@@ -795,9 +785,36 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 				}
 			}
 
-			// We can't easily allocate iovec arrays on the stack here since
-			// they will escape this loop iteration via mmsgHdrs.
-			iovecs := make([]unix.Iovec, 0, numIovecs)
+			if mmsgHdrs == nil {
+				mmsgHdrs = make([]rawfile.MMsgHdr, 0, len(pkts))
+				iovecCapacity := numIovecs
+				for _, remaining := range batch[1:] {
+					views, offset := remaining.AsViewList()
+					n := views.Len() + vnetIovecs
+					for v := views.Front(); v != nil && offset >= v.Size(); v = v.Next() {
+						offset -= v.Size()
+						n--
+					}
+					iovecCapacity += min(n, rawfile.MaxIovs)
+				}
+				if limit := e.maxSyscallHeaderBytes; limit != 0 {
+					iovecCapacity = min(iovecCapacity, int((limit-rawfile.SizeofMMsgHdr)/rawfile.SizeofIovec))
+				}
+				iovecsStorage = make([]unix.Iovec, 0, iovecCapacity)
+			}
+			var vnetHdrBuf []byte
+			if e.gsoKind == stack.HostGSOSupported {
+				if vnetHdrs == nil {
+					vnetHdrs = make([][virtioNetHdrSize]byte, len(pkts))
+				}
+				vnetHdrBuf = vnetHdrs[len(mmsgHdrs)][:]
+				vnetHdr.marshal(&vnetHdrs[len(mmsgHdrs)])
+			}
+
+			// Each message retains its own iovecs until sendmmsg completes.
+			start := len(iovecsStorage)
+			iovecs := iovecsStorage[start : start : start+numIovecs]
+			iovecsStorage = iovecsStorage[:start+numIovecs]
 			iovecs = rawfile.AppendIovecFromBytes(iovecs, vnetHdrBuf, numIovecs)
 			// At most one slice has a non-zero offset.
 			iovecs = rawfile.AppendIovecFromBytes(iovecs, view.AsSlice()[offset:], numIovecs)
@@ -823,13 +840,13 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 			}
 			packets++
 		} else {
-			for len(mmsgHdrs) > 0 {
-				sent, errno := rawfile.NonBlockingSendMMsg(batchFD, mmsgHdrs)
+			for pending := mmsgHdrs; len(pending) > 0; {
+				sent, errno := rawfile.NonBlockingSendMMsg(batchFD, pending)
 				if errno != 0 {
 					return packets, tcpip.TranslateErrno(errno)
 				}
 				packets += sent
-				mmsgHdrs = mmsgHdrs[sent:]
+				pending = pending[sent:]
 			}
 		}
 	}

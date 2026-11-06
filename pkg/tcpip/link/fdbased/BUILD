@@ -73,6 +73,7 @@ go_test(
     deps = [
         "//pkg/buffer",
         "//pkg/rand",
+        "//pkg/rawfile",
         "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
