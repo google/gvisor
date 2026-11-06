@@ -340,7 +340,7 @@ func (es *graphEncodeState) trySplice(addr uintptr, ti *typeInfo, max uintptr) u
 			continue
 		}
 		es.refs = append(es.refs, es.segmentRefs(s.seg)...)
-		es.out.bytes(es.out.b[s.seg.off : s.seg.off+s.seg.len])
+		es.out.bytes(es.segmentData(s.seg))
 		es.splices[i].used = true
 		end := addr + ti.size*s.count
 		for j := idx; j < len(es.splices) && es.splices[j].addr < end; j++ {
