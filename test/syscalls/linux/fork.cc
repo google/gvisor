@@ -724,6 +724,54 @@ TEST(CloneTest, Clone3ClearSighandIncompatible) {
   EXPECT_THAT(clone3(&ca, sizeof(ca)), SyscallFailsWithErrno(EINVAL));
 }
 
+// CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWNET, CLONE_NEWUTS and CLONE_NEWIPC
+// require CAP_SYS_ADMIN in the caller's user namespace.
+TEST(CloneTest, Clone3NewNamespaceWithoutCapSysAdmin) {
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+  for (uint64_t flag :
+       {CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWNET, CLONE_NEWUTS, CLONE_NEWIPC}) {
+    clone_args ca = {};
+    ca.flags = flag;
+    ca.exit_signal = SIGCHLD;
+    int ret = clone3(&ca, sizeof(ca));
+    if (ret == 0) {
+      _exit(0);
+    }
+    int err = errno;
+    if (ret > 0) {
+      waitpid(ret, nullptr, 0);
+    }
+    EXPECT_EQ(ret, -1) << "flag = " << std::hex << flag;
+    EXPECT_EQ(err, EPERM) << "flag = " << std::hex << flag;
+  }
+}
+
+// With CLONE_NEWUSER, the new user namespace is created first and the child
+// has CAP_SYS_ADMIN in it, so the caller does not need CAP_SYS_ADMIN for the
+// other CLONE_NEW* flags.
+TEST(CloneTest, Clone3NewUserAndNewNamespaceWithoutCapSysAdmin) {
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+  if (!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace())) {
+    GTEST_SKIP() << "Cannot create a user namespace without CAP_SYS_ADMIN";
+  }
+  for (uint64_t flag : {CLONE_NEWNS, CLONE_NEWPID}) {
+    clone_args ca = {};
+    ca.flags = CLONE_NEWUSER | flag;
+    ca.exit_signal = SIGCHLD;
+    int child_pid;
+    ASSERT_THAT(child_pid = clone3(&ca, sizeof(ca)), SyscallSucceeds())
+        << "flag = " << std::hex << flag;
+    if (child_pid == 0) {
+      _exit(0);
+    }
+    int status;
+    ASSERT_THAT(waitpid(child_pid, &status, 0),
+                SyscallSucceedsWithValue(child_pid));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        << "status = " << status;
+  }
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
