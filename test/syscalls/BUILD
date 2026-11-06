@@ -1335,6 +1335,22 @@ syscall_test(
     test = "//test/syscalls/linux:vdso_test",
 )
 
+# Run on a host with an assigned, viable VFIO group. For example, pass
+# --test_env=TEST_VFIO_GROUP=/dev/vfio/6 and --test_env=TEST_VFIO_DEVICE=0000:01:00.0.
+syscall_test(
+    # Exercise the device gofer's RPC lookup and open.
+    add_directfs = False,
+    args = ["--add-host-vfio"],
+    save = False,
+    # The native and gVisor variants open the same exclusive device group.
+    tags = [
+        "exclusive-if-local",
+        "local",
+        "manual",
+    ],
+    test = "//test/syscalls/linux:vfio_pci_device_test",
+)
+
 syscall_test(
     test = "//test/syscalls/linux:vsyscall_test",
 )
