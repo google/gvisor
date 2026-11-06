@@ -39,6 +39,8 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -46,6 +48,7 @@
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -120,6 +123,30 @@ class PacketSocketTest : public ::testing::TestWithParam<int> {
 
   FileDescriptor socket_;
 };
+
+// Linux doesn't support shutdown on packet sockets, so a blocking recv after
+// shutdown(SHUT_RD) or shutdown(SHUT_RDWR) still waits for data. socket_ has
+// protocol 0, so no packet reaches it and the recv times out.
+TEST_P(PacketSocketTest, RecvWaitsAfterRejectedShutdown) {
+  const DisableSave disable_save;  // Timing-related.
+  constexpr absl::Duration kTimeout = absl::Milliseconds(150);
+  const timeval timeout = absl::ToTimeval(kTimeout);
+  ASSERT_THAT(setsockopt(socket_.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                         sizeof(timeout)),
+              SyscallSucceeds());
+  for (int how : {SHUT_RD, SHUT_RDWR}) {
+    SCOPED_TRACE(how == SHUT_RD ? "SHUT_RD" : "SHUT_RDWR");
+    ASSERT_THAT(shutdown(socket_.get(), how),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+
+    char c;
+    const absl::Time start = absl::Now();
+    EXPECT_THAT(RetryEINTR(recv)(socket_.get(), &c, sizeof(c), 0),
+                SyscallFailsWithErrno(EAGAIN));
+    // Allow for a coarse timer.
+    EXPECT_GE(absl::Now() - start, kTimeout - absl::Milliseconds(10));
+  }
+}
 
 TEST_P(PacketSocketTest, GetSockName) {
   {
