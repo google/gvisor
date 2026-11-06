@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -67,9 +68,11 @@ type Stack struct {
 	// allowedSocketTypes is the list of allowed socket types
 	allowedSocketTypes []AllowedSocketType `state:"nosave"`
 
-	// The host enforces this for host sockets; it is read from the host so
-	// that /proc/sys/net reports what applies.
+	// The host enforces these for host sockets; they are read from the host
+	// so that /proc/sys/net reports what applies.
 	unprivilegedPortStart uint16
+	pingGroupLow          auth.KGID
+	pingGroupHigh         auth.KGID
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -89,6 +92,8 @@ func NewStack() *Stack {
 	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
 	return &Stack{
 		unprivilegedPortStart: 1024,
+		pingGroupLow:          1,
+		pingGroupHigh:         0,
 	}
 }
 
@@ -131,6 +136,15 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.unprivilegedPortStart = uint16(v[0])
 	} else {
 		log.Warningf("Failed to read ip_unprivileged_port_start, using default value")
+	}
+
+	// The range is kept as the GIDs the sandbox process reads from the host,
+	// without mapping them from the host's user namespace into the
+	// sandbox's.
+	if v, err := readUint32s("/proc/sys/net/ipv4/ping_group_range", 2); err == nil {
+		s.pingGroupLow, s.pingGroupHigh = auth.KGID(v[0]), auth.KGID(v[1])
+	} else {
+		log.Warningf("Failed to read ping_group_range, using default values")
 	}
 
 	if f, err := os.Open("/proc/net/dev"); err != nil {
@@ -570,6 +584,16 @@ func (s *Stack) UnprivilegedPortStart() uint16 {
 
 // SetUnprivilegedPortStart implements inet.Stack.SetUnprivilegedPortStart.
 func (*Stack) SetUnprivilegedPortStart(uint16) error {
+	return linuxerr.EACCES
+}
+
+// PingGroupRange implements inet.Stack.PingGroupRange.
+func (s *Stack) PingGroupRange() (auth.KGID, auth.KGID) {
+	return s.pingGroupLow, s.pingGroupHigh
+}
+
+// SetPingGroupRange implements inet.Stack.SetPingGroupRange.
+func (*Stack) SetPingGroupRange(auth.KGID, auth.KGID) error {
 	return linuxerr.EACCES
 }
 

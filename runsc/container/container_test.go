@@ -6541,10 +6541,11 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 
 // startNetSysctlContainer starts a sleeping container with the given network
 // and spec sysctls.
-func startNetSysctlContainer(t *testing.T, network config.NetworkType, sysctl map[string]string) (*Container, *config.Config, error) {
+func startNetSysctlContainer(t *testing.T, network config.NetworkType, enableRaw bool, sysctl map[string]string) (*Container, *config.Config, error) {
 	t.Helper()
 	conf := testutil.TestConfig(t)
 	conf.Network = network
+	conf.EnableRaw = enableRaw
 	spec := testutil.NewSpecWithArgs("sleep", "infinity")
 	spec.Linux = &specs.Linux{Sysctl: sysctl}
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -6567,35 +6568,54 @@ func startNetSysctlContainer(t *testing.T, network config.NetworkType, sysctl ma
 	return cont, conf, nil
 }
 
-const unprivilegedPortStartFile = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+const (
+	unprivilegedPortStartFile = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+	pingGroupRangeFile        = "/proc/sys/net/ipv4/ping_group_range"
+)
 
-// TestNetSysctls checks that the OCI net.ipv4.ip_unprivileged_port_start
-// sysctl is applied to the sandbox's network stack.
+// TestNetSysctls checks that the OCI net.ipv4.ip_unprivileged_port_start and
+// net.ipv4.ping_group_range sysctls are applied to the sandbox's network stack.
 func TestNetSysctls(t *testing.T) {
 	for _, network := range []config.NetworkType{config.NetworkSandbox, config.NetworkNone} {
 		for _, tc := range []struct {
-			name   string
-			sysctl map[string]string
-			want   string
+			name      string
+			enableRaw bool
+			sysctl    map[string]string
+			want      string
 		}{
 			{
+				// Without raw sockets, the root network namespace lets every
+				// group create ICMP datagram sockets.
 				name: "Defaults",
-				want: "1024\n",
+				want: "1024\n0\t2147483647\n",
+			},
+			{
+				name:      "DefaultsWithRaw",
+				enableRaw: true,
+				want:      "1024\n1\t0\n",
 			},
 			{
 				name: "FromSpec",
 				sysctl: map[string]string{
 					"net.ipv4.ip_unprivileged_port_start": "0",
+					"net.ipv4.ping_group_range":           "0 2147483647",
 				},
-				want: "0\n",
+				want: "0\n0\t2147483647\n",
+			},
+			{
+				name: "EmptyPingRange",
+				sysctl: map[string]string{
+					"net.ipv4.ping_group_range": "10 5",
+				},
+				want: "1024\n1\t0\n",
 			},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", network, tc.name), func(t *testing.T) {
-				cont, conf, err := startNetSysctlContainer(t, network, tc.sysctl)
+				cont, conf, err := startNetSysctlContainer(t, network, tc.enableRaw, tc.sysctl)
 				if err != nil {
 					t.Fatalf("error starting container: %v", err)
 				}
-				out, err := executeCombinedOutput(conf, cont, nil, "/bin/cat", unprivilegedPortStartFile)
+				out, err := executeCombinedOutput(conf, cont, nil, "/bin/cat", unprivilegedPortStartFile, pingGroupRangeFile)
 				if err != nil {
 					t.Fatalf("error reading sysctls: %v, output: %q", err, out)
 				}
@@ -6617,9 +6637,11 @@ func TestNetSysctlsInvalid(t *testing.T) {
 		{"net.ipv4.ip_unprivileged_port_start", "65536"},
 		// Above the low end of the default ip_local_port_range.
 		{"net.ipv4.ip_unprivileged_port_start", "40000"},
+		{"net.ipv4.ping_group_range", "0 4294967295"},
+		{"net.ipv4.ping_group_range", "-1 0"},
 	} {
 		t.Run(fmt.Sprintf("%s=%s", tc.key, tc.val), func(t *testing.T) {
-			if _, _, err := startNetSysctlContainer(t, config.NetworkSandbox, map[string]string{tc.key: tc.val}); err == nil {
+			if _, _, err := startNetSysctlContainer(t, config.NetworkSandbox, false /* enableRaw */, map[string]string{tc.key: tc.val}); err == nil {
 				t.Errorf("container started with %s=%q, want error", tc.key, tc.val)
 			}
 		})

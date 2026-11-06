@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -43,6 +44,8 @@ type TestStack struct {
 	IPForwarding                 bool
 	AllowExternalLoopbackTraffic bool
 	UnprivilegedPortStartValue   uint16
+	PingGroupLow                 auth.KGID
+	PingGroupHigh                auth.KGID
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -246,6 +249,17 @@ func (s *TestStack) UnprivilegedPortStart() uint16 {
 // SetUnprivilegedPortStart implements Stack.
 func (s *TestStack) SetUnprivilegedPortStart(start uint16) error {
 	s.UnprivilegedPortStartValue = start
+	return nil
+}
+
+// PingGroupRange implements Stack.
+func (s *TestStack) PingGroupRange() (auth.KGID, auth.KGID) {
+	return s.PingGroupLow, s.PingGroupHigh
+}
+
+// SetPingGroupRange implements Stack.
+func (s *TestStack) SetPingGroupRange(low, high auth.KGID) error {
+	s.PingGroupLow, s.PingGroupHigh = low, high
 	return nil
 }
 

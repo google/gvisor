@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -260,6 +261,7 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 			"ip_forward":                 fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv4.ProtocolNumber}),
 			"ip_local_port_range":        fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
 			"ip_unprivileged_port_start": fs.newInode(ctx, root, 0644, &netnsSysctlFile{sysctl: unprivilegedPortStartSysctl}),
+			"ping_group_range":           fs.newInode(ctx, root, 0644, &netnsSysctlFile{sysctl: pingGroupRangeSysctl}),
 			"tcp_recovery":               fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
 			"tcp_rmem":                   fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
 			"tcp_sack":                   fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
@@ -798,6 +800,7 @@ type netnsSysctl int
 
 const (
 	unprivilegedPortStartSysctl netnsSysctl = iota
+	pingGroupRangeSysctl
 )
 
 // netnsSysctlFile is a /proc/sys/net file that applies to the network
@@ -854,6 +857,8 @@ func (f *netnsSysctlFile) DataSource(ctx context.Context) (vfs.DynamicBytesSourc
 	switch f.sysctl {
 	case unprivilegedPortStartSysctl:
 		return &unprivilegedPortStart{netns: netns}, nil
+	case pingGroupRangeSysctl:
+		return &pingGroupRange{netns: netns}, nil
 	default:
 		panic(fmt.Sprintf("unknown sysctl: %d", f.sysctl))
 	}
@@ -910,18 +915,127 @@ func writeUnprivilegedPortStart(ctx context.Context, stack inet.Stack, src userm
 	return n, nil
 }
 
-// SetNetIPv4Sysctl writes val to /proc/sys/net/ipv4/<name> of stack. Only
-// ip_unprivileged_port_start is supported.
-func SetNetIPv4Sysctl(ctx context.Context, stack inet.Stack, name, val string) error {
+// pingGroupRange implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/ping_group_range. It holds the namespace for the same
+// reason as unprivilegedPortStart.
+//
+// +stateify savable
+type pingGroupRange struct {
+	netns *inet.Namespace
+}
+
+var _ vfs.WritableDynamicBytesSource = (*pingGroupRange)(nil)
+
+// gidTMax is Linux's GID_T_MAX, the largest valid gid_t.
+const gidTMax = math.MaxUint32 - 1
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (p *pingGroupRange) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	userns := auth.CredentialsFromContext(ctx).UserNamespace
+	low, high := p.netns.Stack().PingGroupRange()
+	_, err := fmt.Fprintf(buf, "%d\t%d\n", userns.MapFromKGID(low).OrOverflow(), userns.MapFromKGID(high).OrOverflow())
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (p *pingGroupRange) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	return writePingGroupRange(ctx, p.netns.Stack(), auth.CredentialsFromContext(ctx).UserNamespace, src)
+}
+
+// writePingGroupRange writes src to net.ipv4.ping_group_range of stack, with
+// GIDs in userns, as Linux's net/ipv4/sysctl_net_ipv4.c:ipv4_ping_group_range()
+// does.
+func writePingGroupRange(ctx context.Context, stack inet.Stack, userns *auth.UserNamespace, src usermem.IOSequence) (int64, error) {
+	low, high := stack.PingGroupRange()
+	// A write of one value leaves the high end unchanged.
+	urange := []uint64{
+		uint64(userns.MapFromKGID(low).OrOverflow()),
+		uint64(userns.MapFromKGID(high).OrOverflow()),
+	}
+	n, err := parseUint64Vec(ctx, src, urange)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if urange[0] > gidTMax || urange[1] > gidTMax {
+		return 0, linuxerr.EINVAL
+	}
+	low = userns.MapToKGID(auth.GID(urange[0]))
+	high = userns.MapToKGID(auth.GID(urange[1]))
+	if !low.Ok() || !high.Ok() {
+		return 0, linuxerr.EINVAL
+	}
+	if urange[1] < urange[0] || high < low {
+		// Linux stores an empty range as "1 0" in the root user namespace.
+		low, high = 1, 0
+	}
+	if err := stack.SetPingGroupRange(low, high); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// SetNetIPv4Sysctl writes val to /proc/sys/net/ipv4/<name> of stack, with
+// GIDs in userns. Only ip_unprivileged_port_start and ping_group_range are
+// supported.
+func SetNetIPv4Sysctl(ctx context.Context, stack inet.Stack, userns *auth.UserNamespace, name, val string) error {
 	src := usermem.BytesIOSequence([]byte(val))
 	var err error
 	switch name {
 	case "ip_unprivileged_port_start":
 		_, err = writeUnprivilegedPortStart(ctx, stack, src)
+	case "ping_group_range":
+		_, err = writePingGroupRange(ctx, stack, userns, src)
 	default:
 		return fmt.Errorf("unsupported sysctl net.ipv4.%s", name)
 	}
 	return err
+}
+
+// parseUint64Vec is ParseInt32Vec for unsigned values up to math.MaxUint64,
+// as Linux's kernel/sysctl.c:proc_doulongvec_minmax() parses them.
+func parseUint64Vec(ctx context.Context, src usermem.IOSequence, dsts []uint64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+	src = src.TakeFirst(int(hostarch.PageSize) - 1)
+	buf := make([]byte, src.NumBytes())
+	n, cperr := src.CopyIn(ctx, buf)
+	buf = buf[:n]
+
+	isSpace := func(b byte) bool { return b == ' ' || (b >= '\t' && b <= '\r') }
+	var i, j int
+	for ; j < len(dsts); j++ {
+		for i < len(buf) && isSpace(buf[i]) {
+			i++
+		}
+		if i == len(buf) {
+			break
+		}
+		end := i + 1
+		for end < len(buf) && !isSpace(buf[end]) {
+			end++
+		}
+		v, err := strconv.ParseUint(string(buf[i:end]), 10, 64)
+		if err != nil {
+			return int64(i), linuxerr.EINVAL
+		}
+		dsts[j] = v
+		i = end
+	}
+	for i < len(buf) && isSpace(buf[i]) {
+		i++
+	}
+	if cperr != nil {
+		return int64(i), cperr
+	}
+	if j == 0 {
+		return int64(i), linuxerr.EINVAL
+	}
+	return int64(i), nil
 }
 
 // atomicInt32File implements vfs.WritableDynamicBytesSource sysctls

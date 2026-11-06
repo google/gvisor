@@ -18,6 +18,7 @@ package inet
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -152,6 +153,13 @@ type Stack interface {
 	// fails with EINVAL if start is above the low end of the ephemeral port
 	// range.
 	SetUnprivilegedPortStart(start uint16) error
+
+	// PingGroupRange returns the inclusive range of groups allowed to create
+	// ICMP and ICMPv6 datagram sockets (net.ipv4.ping_group_range).
+	PingGroupRange() (low, high auth.KGID)
+
+	// SetPingGroupRange sets net.ipv4.ping_group_range.
+	SetPingGroupRange(low, high auth.KGID) error
 
 	// Stats returns the network stats.
 	Stats() tcpip.Stats

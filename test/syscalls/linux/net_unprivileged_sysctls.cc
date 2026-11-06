@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <linux/capability.h>
 #include <netinet/in.h>
 #include <sched.h>
@@ -41,6 +42,7 @@ namespace testing {
 namespace {
 
 constexpr char kPortStart[] = "/proc/sys/net/ipv4/ip_unprivileged_port_start";
+constexpr char kPingRange[] = "/proc/sys/net/ipv4/ping_group_range";
 constexpr char kLocalRange[] = "/proc/sys/net/ipv4/ip_local_port_range";
 
 // Returns 0, or the errno of writing val to path. Async-signal-safe.
@@ -99,6 +101,22 @@ int Bind(int family, int type, int protocol, uint16_t port) {
   return ret;
 }
 
+int IcmpProtocol(int family) {
+  return family == AF_INET ? static_cast<int>(IPPROTO_ICMP)
+                           : static_cast<int>(IPPROTO_ICMPV6);
+}
+
+// Returns 0, or the errno of creating an ICMP or ICMPv6 datagram socket.
+// Async-signal-safe.
+int PingSocket(int family) {
+  int fd = socket(family, SOCK_DGRAM, IcmpProtocol(family));
+  if (fd < 0) {
+    return errno;
+  }
+  close(fd);
+  return 0;
+}
+
 // The tests change per network namespace sysctls. Natively they run in a fresh
 // network namespace so the host's values are untouched. Tests that use Run run
 // under gVisor in the test's own network namespace, because
@@ -113,6 +131,7 @@ class UnprivilegedNetSysctlTest : public ::testing::Test {
     SKIP_IF(!IsRunningOnGvisor() &&
             !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_BIND_SERVICE)));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
 
     int fd = socket(AF_INET6, SOCK_DGRAM, 0);
     ipv6_ = fd >= 0;
@@ -123,6 +142,7 @@ class UnprivilegedNetSysctlTest : public ::testing::Test {
     if (IsRunningOnGvisor()) {
       port_start_ = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kPortStart));
       local_range_ = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kLocalRange));
+      ping_range_ = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kPingRange));
       restore_ = true;
     }
   }
@@ -135,6 +155,7 @@ class UnprivilegedNetSysctlTest : public ::testing::Test {
     EXPECT_NO_ERRNO(SetContents(kPortStart, "0"));
     EXPECT_NO_ERRNO(SetContents(kLocalRange, local_range_));
     EXPECT_NO_ERRNO(SetContents(kPortStart, port_start_));
+    EXPECT_NO_ERRNO(SetContents(kPingRange, ping_range_));
   }
 
   // Runs fn in a child process, in a fresh network namespace natively.
@@ -166,12 +187,16 @@ class UnprivilegedNetSysctlTest : public ::testing::Test {
   bool restore_ = false;
   std::string port_start_;
   std::string local_range_;
+  std::string ping_range_;
 };
 
 // A fresh network namespace starts with Linux's defaults.
 TEST_F(UnprivilegedNetSysctlTest, Defaults) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-  RunInNewNetns([] { TEST_CHECK(SysctlIs(kPortStart, "1024\n")); });
+  RunInNewNetns([] {
+    TEST_CHECK(SysctlIs(kPortStart, "1024\n"));
+    TEST_CHECK(SysctlIs(kPingRange, "1\t0\n"));
+  });
 }
 
 TEST_F(UnprivilegedNetSysctlTest, BindBelowStartNeedsCapability) {
@@ -179,6 +204,9 @@ TEST_F(UnprivilegedNetSysctlTest, BindBelowStartNeedsCapability) {
   Run([ipv6] {
     TEST_CHECK(WriteSysctl(kPortStart, "1024") == 0);
     TEST_CHECK(SysctlIs(kPortStart, "1024\n"));
+    // Ping sockets bind without the capability check, so allow them for
+    // root's group.
+    TEST_CHECK(WriteSysctl(kPingRange, "0 0") == 0);
 
     const int families[] = {AF_INET, AF_INET6};
     for (int family : families) {
@@ -202,6 +230,7 @@ TEST_F(UnprivilegedNetSysctlTest, BindBelowStartNeedsCapability) {
       // Port 0 picks an ephemeral port.
       TEST_CHECK(Bind(family, SOCK_STREAM, 0, 0) == 0);
       TEST_CHECK(Bind(family, SOCK_DGRAM, 0, 0) == 0);
+      TEST_CHECK(Bind(family, SOCK_DGRAM, IcmpProtocol(family), 80) == 0);
     }
 
     // Moving the start takes effect for later binds.
@@ -240,13 +269,71 @@ TEST_F(UnprivilegedNetSysctlTest, PortStartValidation) {
   });
 }
 
-// Each network namespace has its own value. A task sets and reads its own
+TEST_F(UnprivilegedNetSysctlTest, PingGroupRange) {
+  const bool ipv6 = ipv6_;
+  Run([ipv6] {
+    constexpr gid_t kSupplementary = 4242;
+    const gid_t groups[] = {kSupplementary};
+    TEST_CHECK_SUCCESS(setgroups(1, groups));
+    TEST_CHECK(getegid() == 0);
+
+    // An empty range refuses everyone, root included.
+    TEST_CHECK(WriteSysctl(kPingRange, "1 0") == 0);
+    TEST_CHECK(SysctlIs(kPingRange, "1\t0\n"));
+    TEST_CHECK(PingSocket(AF_INET) == EACCES);
+    if (ipv6) {
+      TEST_CHECK(PingSocket(AF_INET6) == EACCES);
+    }
+
+    // The effective GID is in range.
+    TEST_CHECK(WriteSysctl(kPingRange, "0 0") == 0);
+    TEST_CHECK(SysctlIs(kPingRange, "0\t0\n"));
+    TEST_CHECK(PingSocket(AF_INET) == 0);
+    if (ipv6) {
+      TEST_CHECK(PingSocket(AF_INET6) == 0);
+    }
+
+    // A supplementary GID is in range.
+    TEST_CHECK(WriteSysctl(kPingRange, "4000 4242") == 0);
+    TEST_CHECK(PingSocket(AF_INET) == 0);
+    if (ipv6) {
+      TEST_CHECK(PingSocket(AF_INET6) == 0);
+    }
+
+    // Neither is in range.
+    TEST_CHECK(WriteSysctl(kPingRange, "4243 5000") == 0);
+    TEST_CHECK(PingSocket(AF_INET) == EACCES);
+    if (ipv6) {
+      TEST_CHECK(PingSocket(AF_INET6) == EACCES);
+    }
+
+    // Writing one value changes only the low end.
+    TEST_CHECK(WriteSysctl(kPingRange, "4242") == 0);
+    TEST_CHECK(SysctlIs(kPingRange, "4242\t5000\n"));
+    TEST_CHECK(PingSocket(AF_INET) == 0);
+
+    // high < low is stored as the empty range "1 0".
+    TEST_CHECK(WriteSysctl(kPingRange, "5 3") == 0);
+    TEST_CHECK(SysctlIs(kPingRange, "1\t0\n"));
+
+    // Values must be valid GIDs.
+    TEST_CHECK(WriteSysctl(kPingRange, "0 4294967295") == EINVAL);
+    TEST_CHECK(WriteSysctl(kPingRange, "-1 0") == EINVAL);
+    TEST_CHECK(WriteSysctl(kPingRange, "0 x") == EINVAL);
+    TEST_CHECK(SysctlIs(kPingRange, "1\t0\n"));
+    TEST_CHECK(WriteSysctl(kPingRange, "0 4294967294") == 0);
+    TEST_CHECK(SysctlIs(kPingRange, "0\t4294967294\n"));
+  });
+}
+
+// Each network namespace has its own values. A task sets and reads its own
 // namespace's, a file keeps referring to the namespace it was opened in, and
-// bind(2) uses the value of the socket's namespace.
+// bind(2) and socket(2) use the values of the socket's namespace.
 TEST_F(UnprivilegedNetSysctlTest, PerNetworkNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   RunInNewNetns([] {
     TEST_CHECK(WriteSysctl(kPortStart, "81") == 0);
+    TEST_CHECK(WriteSysctl(kPingRange, "1 0") == 0);
     int parent_ns = open("/proc/self/ns/net", O_RDONLY);
     TEST_PCHECK(parent_ns >= 0);
     int parent_start = open(kPortStart, O_WRONLY);
@@ -254,8 +341,11 @@ TEST_F(UnprivilegedNetSysctlTest, PerNetworkNamespace) {
 
     TEST_CHECK_SUCCESS(unshare(CLONE_NEWNET));
     TEST_CHECK(SysctlIs(kPortStart, "1024\n"));
+    TEST_CHECK(SysctlIs(kPingRange, "1\t0\n"));
     TEST_CHECK(WriteSysctl(kPortStart, "0") == 0);
+    TEST_CHECK(WriteSysctl(kPingRange, "0 0") == 0);
     TEST_CHECK(SysctlIs(kPortStart, "0\n"));
+    TEST_CHECK(SysctlIs(kPingRange, "0\t0\n"));
 
     // The file opened before unshare(2) still writes the parent's value.
     TEST_PCHECK(write(parent_start, "82", 2) == 2);
@@ -264,12 +354,15 @@ TEST_F(UnprivilegedNetSysctlTest, PerNetworkNamespace) {
 
     TEST_CHECK_NO_ERRNO(SetCapability(CAP_NET_BIND_SERVICE, false));
     TEST_CHECK(Bind(AF_INET, SOCK_STREAM, 0, 80) == 0);
+    TEST_CHECK(PingSocket(AF_INET) == 0);
 
     TEST_CHECK_SUCCESS(setns(parent_ns, CLONE_NEWNET));
     close(parent_ns);
     TEST_CHECK(SysctlIs(kPortStart, "82\n"));
+    TEST_CHECK(SysctlIs(kPingRange, "1\t0\n"));
     TEST_CHECK(Bind(AF_INET, SOCK_STREAM, 0, 81) == EACCES);
     TEST_CHECK(Bind(AF_INET, SOCK_STREAM, 0, 82) == 0);
+    TEST_CHECK(PingSocket(AF_INET) == EACCES);
   });
 }
 
@@ -311,11 +404,13 @@ TEST_F(UnprivilegedNetSysctlTest, NetAdminInNetnsOwnerMayWrite) {
     // root.
     TEST_CHECK_SUCCESS(prctl(PR_SET_DUMPABLE, 1, 0, 0, 0));
     TEST_CHECK(WriteSysctl(kPortStart, "100") == EACCES);
+    TEST_CHECK(WriteSysctl(kPingRange, "0 0") == EACCES);
 
     // Capabilities in a new user namespace don't extend to a network
     // namespace that it doesn't own.
     TEST_CHECK_SUCCESS(unshare(CLONE_NEWUSER));
     TEST_CHECK(WriteSysctl(kPortStart, "100") == EACCES);
+    TEST_CHECK(WriteSysctl(kPingRange, "0 0") == EACCES);
     TEST_CHECK(WriteSysctl("/proc/self/setgroups", "deny") == 0);
     TEST_CHECK(WriteSysctl("/proc/self/uid_map", "0 65534 1") == 0);
     TEST_CHECK(WriteSysctl("/proc/self/gid_map", "0 65534 1") == 0);
@@ -323,6 +418,8 @@ TEST_F(UnprivilegedNetSysctlTest, NetAdminInNetnsOwnerMayWrite) {
     TEST_CHECK_SUCCESS(unshare(CLONE_NEWNET));
     TEST_CHECK(WriteSysctl(kPortStart, "100") == 0);
     TEST_CHECK(SysctlIs(kPortStart, "100\n"));
+    TEST_CHECK(WriteSysctl(kPingRange, "0 0") == 0);
+    TEST_CHECK(SysctlIs(kPingRange, "0\t0\n"));
   });
 }
 

@@ -65,11 +65,19 @@ type Stack struct {
 
 	// unprivilegedPortStart is net.ipv4.ip_unprivileged_port_start.
 	unprivilegedPortStart atomicbitops.Uint32
+
+	// pingGroupRange is net.ipv4.ping_group_range, with the low KGID in the
+	// upper 32 bits and the high KGID in the lower 32 bits.
+	pingGroupRange atomicbitops.Uint64
 }
 
-// defaultUnprivilegedPortStart is PROT_SOCK, Linux's default from
-// net/ipv4/af_inet.c:inet_init_net().
-const defaultUnprivilegedPortStart = 1024
+// Linux defaults from net/ipv4/af_inet.c:inet_init_net(): PROT_SOCK, and a
+// ping group range that contains no group.
+const (
+	defaultUnprivilegedPortStart = 1024
+	defaultPingGroupLow          = auth.KGID(1)
+	defaultPingGroupHigh         = auth.KGID(0)
+)
 
 // NewStack creates a new netstack.Stack which wraps the given tcpip.Stack.
 func NewStack(s *stack.Stack, id uint64) *Stack {
@@ -78,7 +86,12 @@ func NewStack(s *stack.Stack, id uint64) *Stack {
 		id:    id,
 	}
 	st.unprivilegedPortStart.Store(defaultUnprivilegedPortStart)
+	st.pingGroupRange.Store(packPingGroupRange(defaultPingGroupLow, defaultPingGroupHigh))
 	return st
+}
+
+func packPingGroupRange(low, high auth.KGID) uint64 {
+	return uint64(low)<<32 | uint64(high)
 }
 
 // AddInterfaceEventSubscriber implements inet.InterfaceEventPublisher.AddInterfaceEventSubscriber.
@@ -1441,6 +1454,18 @@ func (s *Stack) SetUnprivilegedPortStart(start uint16) error {
 		return linuxerr.EINVAL
 	}
 	s.unprivilegedPortStart.Store(uint32(start))
+	return nil
+}
+
+// PingGroupRange implements inet.Stack.PingGroupRange.
+func (s *Stack) PingGroupRange() (auth.KGID, auth.KGID) {
+	r := s.pingGroupRange.Load()
+	return auth.KGID(r >> 32), auth.KGID(uint32(r))
+}
+
+// SetPingGroupRange implements inet.Stack.SetPingGroupRange.
+func (s *Stack) SetPingGroupRange(low, high auth.KGID) error {
+	s.pingGroupRange.Store(packPingGroupRange(low, high))
 	return nil
 }
 
