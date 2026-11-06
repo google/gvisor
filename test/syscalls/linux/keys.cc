@@ -38,10 +38,13 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "test/util/cleanup.h"
+#include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -909,6 +912,135 @@ TEST(KeysTest, SearchableKeyringIsSharedAcrossThreads) {
         << "Bit " << bit << " in second child key";
   }
   EXPECT_EQ(first_child_final_key.perm, second_child_final_key.perm);
+}
+
+// JoinNamedKeyring joins (creating if necessary) the session keyring called
+// name.
+PosixErrorOr<int64_t> JoinNamedKeyring(const std::string& name) {
+  return keyctl(KEYCTL_JOIN_SESSION_KEYRING, (uint64_t)(name.c_str()));
+}
+
+// Returns true if the caller can write the key quota sysctls and act as the
+// real root user. On Linux, sysctl file permissions ignore capabilities and
+// only allow the global root user to write them (see test_perm() in
+// fs/proc/proc_sysctl.c).
+PosixErrorOr<bool> CanSetKeyQuotas() {
+  ASSIGN_OR_RETURN_ERRNO(bool have_setuid, HaveCapability(CAP_SETUID));
+  ASSIGN_OR_RETURN_ERRNO(bool in_init_userns, InInitialUserNamespace());
+  return have_setuid && in_init_userns && getuid() == 0 && geteuid() == 0;
+}
+
+// SetKeyQuota sets /proc/sys/kernel/keys/name to value until the returned
+// Cleanup runs.
+PosixErrorOr<Cleanup> SetKeyQuota(const std::string& name, int64_t value) {
+  const std::string path = absl::StrCat("/proc/sys/kernel/keys/", name);
+  ASSIGN_OR_RETURN_ERRNO(std::string before, GetContents(path));
+  RETURN_IF_ERRNO(SetContents(path, absl::StrCat(value)));
+  return Cleanup(
+      [path, before] { EXPECT_NO_ERRNO(SetContents(path, before)); });
+}
+
+// Returns a random uid that is very unlikely to own any keys. Each test uses
+// its own, since Linux releases keys some time after their last holder exits.
+uid_t UnusedUid() {
+  absl::BitGen gen;
+  return absl::Uniform<uid_t>(gen, 0x10000000, 0x7fffffff);
+}
+
+// The tests below need three keyrings that are alive at the same time, so
+// each is joined by a different thread. A thread starts with its parent's
+// session keyring and dropping it does not affect the others.
+
+// Root has its own limits, so lowering maxkeys does not affect it.
+TEST(KeysQuotaTest, RootIgnoresMaxKeys) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const Cleanup cleanup = ASSERT_NO_ERRNO_AND_VALUE(SetKeyQuota("maxkeys", 1));
+  ScopedThread([&] {
+    for (int i = 0; i < 3; ++i) {
+      ASSERT_NO_ERRNO(keyctl(KEYCTL_JOIN_SESSION_KEYRING)) << "join " << i;
+    }
+  }).Join();
+}
+
+// Each non-root user may hold at most maxkeys keys.
+TEST(KeysQuotaTest, NonRootMaxKeys) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const Cleanup cleanup = ASSERT_NO_ERRNO_AND_VALUE(SetKeyQuota("maxkeys", 2));
+  const uid_t uid = UnusedUid();
+  const std::string suffix = absl::StrCat("_", getpid());
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, uid, uid, uid), SyscallSucceeds());
+    ScopedThread([&] {
+      ASSERT_NO_ERRNO(JoinNamedKeyring("keys_quota_a" + suffix));
+      ScopedThread([&] {
+        ASSERT_NO_ERRNO(JoinNamedKeyring("keys_quota_b" + suffix));
+        // Checkpoint and restore with the keyrings held.
+        MaybeSave();
+        EXPECT_THAT(JoinNamedKeyring("keys_quota_c" + suffix),
+                    PosixErrorIs(EDQUOT));
+      }).Join();
+    }).Join();
+  }).Join();
+}
+
+// Each non-root user may be charged at most maxbytes.
+TEST(KeysQuotaTest, MaxBytes) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const std::string first = absl::StrCat("keys_quota_bytes_a_", getpid());
+  const std::string second = absl::StrCat("keys_quota_bytes_b_", getpid());
+  ASSERT_EQ(first.size(), second.size());
+  // A keyring is charged for its name and the terminating NUL.
+  const Cleanup cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(SetKeyQuota("maxbytes", first.size() + 1));
+  const uid_t uid = UnusedUid();
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, uid, uid, uid), SyscallSucceeds());
+    ScopedThread([&] {
+      ASSERT_NO_ERRNO(JoinNamedKeyring(first));
+      ScopedThread([&] {
+        // Checkpoint and restore with the keyrings held.
+        MaybeSave();
+        EXPECT_THAT(JoinNamedKeyring(second), PosixErrorIs(EDQUOT));
+      }).Join();
+    }).Join();
+  }).Join();
+}
+
+// Keyrings are owned by, and charged to, the real user of the creator, not
+// its effective user.
+TEST(KeysQuotaTest, ChargedToRealUid) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const Cleanup cleanup = ASSERT_NO_ERRNO_AND_VALUE(SetKeyQuota("maxkeys", 2));
+  const uid_t uid = UnusedUid();
+  const std::string suffix = absl::StrCat("_", getpid());
+  ScopedThread([&] {
+    // Real uid uid, effective uid root: the keyrings count against uid.
+    ASSERT_THAT(syscall(SYS_setresuid, uid, 0, 0), SyscallSucceeds());
+    ScopedThread([&] {
+      ASSERT_NO_ERRNO(JoinNamedKeyring("keys_quota_real_a" + suffix));
+      const DescribedKey described =
+          ASSERT_NO_ERRNO_AND_VALUE(DescribeKey(KEY_SPEC_SESSION_KEYRING));
+      EXPECT_EQ(described.uid, uid);
+      ScopedThread([&] {
+        ASSERT_NO_ERRNO(JoinNamedKeyring("keys_quota_real_b" + suffix));
+        // Checkpoint and restore with the keyrings held.
+        MaybeSave();
+        EXPECT_THAT(JoinNamedKeyring("keys_quota_real_c" + suffix),
+                    PosixErrorIs(EDQUOT));
+      }).Join();
+    }).Join();
+  }).Join();
+
+  ScopedThread([&] {
+    // Real uid root, effective uid uid: the keyrings count against root.
+    ASSERT_THAT(syscall(SYS_setresuid, 0, uid, 0), SyscallSucceeds());
+    for (int i = 0; i < 3; ++i) {
+      ASSERT_NO_ERRNO(keyctl(KEYCTL_JOIN_SESSION_KEYRING)) << "join " << i;
+    }
+    const DescribedKey described =
+        ASSERT_NO_ERRNO_AND_VALUE(DescribeKey(KEY_SPEC_SESSION_KEYRING));
+    EXPECT_EQ(described.uid, 0);
+  }).Join();
 }
 
 }  // namespace
