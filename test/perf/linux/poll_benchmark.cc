@@ -41,10 +41,10 @@ void Setup(int count, std::vector<FileDescriptor>& event_fds,
 }
 
 void BM_PollTimeout(benchmark::State& state) {
-  constexpr int kFDsPerPoll = 3;
+  const int fds_per_poll = state.range(1);
   std::vector<FileDescriptor> event_fds;
   std::vector<pollfd> poll_fds;
-  ASSERT_NO_FATAL_FAILURE(Setup(kFDsPerPoll, event_fds, poll_fds));
+  ASSERT_NO_FATAL_FAILURE(Setup(fds_per_poll, event_fds, poll_fds));
 
   const int timeout_ms = state.range(0);
   for (auto _ : state) {
@@ -52,7 +52,9 @@ void BM_PollTimeout(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_PollTimeout)->Range(/*start=*/0, /*limit=*/8);
+BENCHMARK(BM_PollTimeout)
+    ->ArgsProduct({{0, 1, 2, 4, 8}, {3, 256, 1000}})
+    ->UseRealTime();
 
 void BM_PollAllEvents(benchmark::State& state) {
   const int fds_per_poll = state.range(0);

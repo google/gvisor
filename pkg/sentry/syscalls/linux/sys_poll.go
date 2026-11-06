@@ -109,10 +109,20 @@ func releaseState(t *kernel.Task, state []pollState) {
 // pollBlock returns the remaining timeout, which is always 0 on a timeout; and 0 or
 // positive if interrupted by a signal.
 func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.Duration, uintptr, error) {
-	var ch chan struct{}
-	if timeout != 0 {
-		ch = make(chan struct{}, 1)
+	if timeout == 0 {
+		n := uintptr(0)
+		for i := range pfd {
+			if err := initReadiness(t, &pfd[i], nil, nil); err != nil {
+				return timeout, 0, err
+			}
+			if pfd[i].REvents != 0 {
+				n++
+			}
+		}
+		return timeout, n, nil
 	}
+
+	ch := make(chan struct{}, 1)
 
 	// Register for event notification in the files involved if we may
 	// block (timeout not zero). Once we find a file that has a non-zero
@@ -129,10 +139,6 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 			n++
 			ch = nil
 		}
-	}
-
-	if timeout == 0 {
-		return timeout, n, nil
 	}
 
 	haveTimeout := timeout >= 0
