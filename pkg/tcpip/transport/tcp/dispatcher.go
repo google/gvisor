@@ -302,7 +302,7 @@ func handleListen(ep *Endpoint) {
 			break
 		}
 
-		if err := ep.handleListenSegment(ep.listenCtx, s); err != nil {
+		if err := ep.handleListenSegment(s); err != nil {
 			if warnRateLimiter.Allow() {
 				log.Warningf("tcp.Endpoint.handleListenSegment() failed for packet [nic=%d, source=%s, dest=%s, protocol=%d]: %v", s.pkt.NICID, s.pkt.Network().SourceAddress(), s.pkt.Network().DestinationAddress(), s.pkt.NetworkProtocolNumber, err)
 			}
