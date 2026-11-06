@@ -122,6 +122,9 @@ type Stack interface {
 	// for restoring a stack after a save.
 	RestoreCleanupEndpoints([]stack.TransportEndpoint)
 
+	// Forwarding returns the default packet forwarding setting for the protocol.
+	Forwarding(tcpip.NetworkProtocolNumber) bool
+
 	// SetForwarding enables or disables packet forwarding between NICs.
 	SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error
 

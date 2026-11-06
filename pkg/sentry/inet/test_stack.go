@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -40,8 +41,10 @@ type TestStack struct {
 	TCPSendBufSize               TCPBufferSize
 	TCPSACKFlag                  bool
 	Recovery                     TCPLossRecovery
-	IPForwarding                 bool
 	AllowExternalLoopbackTraffic bool
+
+	// forwarding contains the protocols for which forwarding is enabled.
+	forwarding sync.Map
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -208,9 +211,19 @@ func (s *TestStack) CleanupEndpoints() []stack.TransportEndpoint {
 // RestoreCleanupEndpoints implements Stack.
 func (s *TestStack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
+// Forwarding implements Stack.
+func (s *TestStack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	_, enabled := s.forwarding.Load(protocol)
+	return enabled
+}
+
 // SetForwarding implements Stack.
 func (s *TestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
-	s.IPForwarding = enable
+	if enable {
+		s.forwarding.Store(protocol, struct{}{})
+	} else {
+		s.forwarding.Delete(protocol)
+	}
 	return nil
 }
 
