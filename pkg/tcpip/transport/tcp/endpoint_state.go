@@ -269,7 +269,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		// that the socket is closed correctly.
 		switch epState {
 		case StateFinWait2:
-			e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
+			e.maybeStartFinWait2TimerLocked()
 		case StateTimeWait:
 			e.timeWaitTimer = e.stack.Clock().AfterFunc(e.getTimeWaitDuration(), e.timeWaitTimerExpired)
 		}
