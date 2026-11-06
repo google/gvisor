@@ -1,0 +1,35 @@
+Clear repository subprocess environments with Bazel instead of a host env
+executable. gVisor requires Bazel 8, which supports removing inherited
+variables through repository_ctx.execute. Preserve Gazelle's Windows
+behavior and its TMP/TMPDIR inheritance.
+
+--- a/internal/common.bzl
++++ b/internal/common.bzl
+@@ -13,20 +13,16 @@
+ # limitations under the License.
+ 
+ def env_execute(ctx, arguments, environment = {}, **kwargs):
+-    """Executes a command in for a repository rule.
+-    It prepends "env -i" to "arguments" before calling "ctx.execute".
++    """Executes a command for a repository rule.
+     Variables that aren't explicitly mentioned in "environment"
+     are removed from the environment. This should be preferred to "ctx.execute"
+     in most situations.
+     """
+     if ctx.os.name.startswith("windows"):
+         return ctx.execute(arguments, environment = environment, **kwargs)
+-    env_args = ["env", "-i"]
+-    environment = dict(environment)
+-    for var in ["TMP", "TMPDIR"]:
+-        if var in ctx.os.environ and not var in environment:
+-            environment[var] = ctx.os.environ[var]
+-    for k, v in environment.items():
+-        env_args.append("%s=%s" % (k, v))
+-    arguments = env_args + arguments
+-    return ctx.execute(arguments, **kwargs)
++    overrides = {
++        name: value if name in ("TMP", "TMPDIR") else None
++        for name, value in ctx.os.environ.items()
++    }
++    overrides.update(environment)
++    return ctx.execute(arguments, environment = overrides, **kwargs)

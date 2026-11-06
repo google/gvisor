@@ -1,6 +1,7 @@
 module(
     name = "gvisor",
     version = "0.0.1",
+    bazel_compatibility = [">=8.0.0"],
 )
 
 bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
@@ -35,6 +36,12 @@ bazel_dep(name = "cel-spec", version = "0.25.1")
 
 governance = use_extension("//governance/tools/maintainers:repositories.bzl", "governance")
 use_repo(governance, "governance_areas")
+
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = ["//tools:gazelle-native-environment.patch"],
+)
 
 single_version_override(
     module_name = "rules_go",
