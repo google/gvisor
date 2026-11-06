@@ -443,6 +443,36 @@ TEST_F(TuntapTest, CreatePersistentInterface) {
   EXPECT_THAT(GetLinkByName(ifname), PosixErrorIs(ENOENT));
 }
 
+TEST_F(TuntapTest, SetPersistAfterLinkDeletion) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const FileDescriptor tun =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  struct ifreq ifr = {};
+  ifr.ifr_flags = IFF_TUN;
+  ASSERT_THAT(ioctl(tun.get(), TUNSETIFF, &ifr), SyscallSucceeds());
+  ASSERT_THAT(ioctl(tun.get(), TUNGETIFF, &ifr), SyscallSucceeds());
+  const auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(ifr.ifr_name));
+  const FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  struct {
+    struct nlmsghdr hdr;
+    struct ifinfomsg msg;
+  } req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_DELLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = 1;
+  req.msg.ifi_family = AF_UNSPEC;
+  req.msg.ifi_index = link.index;
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(nlsk, req.hdr.nlmsg_seq, &req, sizeof(req)));
+
+  EXPECT_THAT(ioctl(tun.get(), TUNSETPERSIST, 1),
+              SyscallFailsWithErrno(EBADFD));
+  EXPECT_THAT(ioctl(tun.get(), TUNSETPERSIST, 0),
+              SyscallFailsWithErrno(EBADFD));
+}
+
 TEST_F(TuntapTest, InvalidReadWrite) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
