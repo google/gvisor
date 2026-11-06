@@ -61,7 +61,8 @@
 #include "test/util/thread_util.h"
 
 // linux/udp.h cannot be included here: it redefines struct udphdr, which
-// netinet/udp.h (via socket_util.h) also defines. These values match linux/udp.h.
+// netinet/udp.h (via socket_util.h) also defines. These values match
+// linux/udp.h.
 #ifndef SOL_UDP
 #define SOL_UDP 17
 #endif
