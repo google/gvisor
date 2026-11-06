@@ -1056,6 +1056,169 @@ func TestRACKUpdateSackedOut(t *testing.T) {
 	<-probeDone
 }
 
+// TestSACKPacketCredit counts fully reported packets inside one transmit
+// queue entry, including when recovery splits it or an ACK trims its head.
+func TestSACKPacketCredit(t *testing.T) {
+	type step struct {
+		ack     int
+		sacks   [][2]int // Byte offsets from the start of the data.
+		want    int
+		timeout bool
+	}
+	for _, tc := range []struct {
+		name  string
+		steps []step
+	}{
+		{"trim_and_enter_recovery", []step{
+			{ack: 0, sacks: [][2]int{{2000, 3000}}, want: 1},
+			{ack: 100, sacks: [][2]int{{2000, 3000}}, want: 1},
+			{ack: 100, sacks: [][2]int{{5000, 8000}, {2000, 3000}}, want: 4},
+		}},
+		{"bridge_disjoint_reports", []step{
+			{ack: 0, sacks: [][2]int{{2100, 3000}, {5000, 6000}}, want: 1},
+			{ack: 0, sacks: [][2]int{{2000, 2100}, {6000, 7000}}, want: 3},
+			{ack: 0, sacks: [][2]int{{2000, 3000}, {5000, 7000}}, want: 3},
+		}},
+		{"ack_finishes_partial_packet", []step{
+			{ack: 0, sacks: [][2]int{{200, 1000}}, want: 0},
+			{ack: 200, want: 1},
+			{ack: 1000, want: 0},
+		}},
+		{"timeout_discards_sacks", []step{
+			{ack: 0, sacks: [][2]int{{2000, 3000}}, want: 1},
+			{ack: 0, timeout: true, want: 0},
+			{ack: 0, sacks: [][2]int{{2000, 3000}}, want: 1},
+		}},
+	} {
+		for _, mode := range []struct {
+			name string
+			algo int
+		}{
+			{"rack", int(tcpip.TCPRACKLossDetection)}, {"rfc6675", 0},
+		} {
+			t.Run(tc.name+"/"+mode.name, func(t *testing.T) {
+				clock := faketime.NewManualClock()
+				type sample struct {
+					count int
+					rto   time.Duration
+				}
+				state := make(chan sample, 8)
+				c := context.NewWithOpts(t, context.Options{MTU: 1500, EnableV4: true, Clock: clock, Probe: func(s *tcp.TCPEndpointState) { state <- sample{s.Sender.SackedOut, s.Sender.RTO} }})
+				defer c.Cleanup()
+				c.SetGSOEnabled(true)
+				e2e.SetStackSACKPermitted(t, c, true)
+				e2e.SetStackTCPRecovery(t, c, mode.algo)
+				// The sender reserves 36 bytes for TCP options; each wire
+				// packet carries 1,000 bytes of this 8,000-byte write.
+				const mss = 1036
+				opts := []byte{header.TCPOptionMSS, 4, mss >> 8, mss & 0xff, header.TCPOptionSACKPermitted, header.TCPOptionSackPermittedLength, header.TCPOptionNOP, header.TCPOptionNOP}
+				c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1, opts)
+				cc := tcpip.CongestionControlOption("reno")
+				if err := c.EP.SetSockOpt(&cc); err != nil {
+					t.Fatalf("set Reno: %v", err)
+				}
+				const flight = 8000
+				if n, err := c.EP.Write(bytes.NewReader(make([]byte, flight)), tcpip.WriteOptions{}); n != flight || err != nil {
+					t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, flight)
+				}
+				p := c.GetPacket()
+				h := header.TCP(header.IPv4(p.AsSlice()).Payload())
+				start := seqnum.Value(h.SequenceNumber())
+				n := len(h.Payload())
+				p.Release()
+				if n != flight {
+					t.Fatalf("initial GSO payload = %d bytes, want %d", n, flight)
+				}
+				var rto time.Duration
+				for _, st := range append(tc.steps, step{ack: flight, want: 0}) {
+					if st.timeout {
+						clock.Advance(rto)
+						if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+							t.Fatalf("timeouts = %d, want 1", got)
+						}
+					}
+					var blocks []header.SACKBlock
+					for _, b := range st.sacks {
+						blocks = append(blocks, header.SACKBlock{Start: start.Add(seqnum.Size(b[0])), End: start.Add(seqnum.Size(b[1]))})
+					}
+					c.SendAckWithSACK(seqnum.Value(context.TestInitialSequenceNumber).Add(1), st.ack, blocks)
+					got := <-state
+					if got.count != st.want {
+						t.Errorf("ACK %d SACK %v: SackedOut = %d, want %d", st.ack, st.sacks, got.count, st.want)
+					}
+					rto = got.rto
+				}
+			})
+		}
+	}
+}
+
+func TestSackedOutAfterPMTU(t *testing.T) {
+	const (
+		linkMTU = 1500
+		pathMTU = 1200
+		// The sender reserves space for the four SACK blocks negotiated at SYN.
+		advertisedMSS = linkMTU - header.IPv4MinimumSize - header.TCPMinimumSize
+		sackReserve   = 36
+		oldMSS        = advertisedMSS - sackReserve
+		newMSS        = pathMTU - header.IPv4MinimumSize - header.TCPMinimumSize - sackReserve
+	)
+	type sample struct{ mss, sacked int }
+	states := make(chan sample, 16)
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true, MTU: linkMTU, Clock: faketime.NewManualClock(),
+		Probe: func(s *tcp.TCPEndpointState) { states <- sample{s.Sender.MaxPayloadSize, s.Sender.SackedOut} },
+	})
+	defer c.Cleanup()
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.SetStackTCPRecovery(t, c, 0)
+	c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1, []byte{
+		header.TCPOptionMSS, 4, byte(advertisedMSS / 256), byte(advertisedMSS % 256),
+		header.TCPOptionSACKPermitted, header.TCPOptionSackPermittedLength, header.TCPOptionNOP, header.TCPOptionNOP,
+	})
+	const packets = 5
+	if _, err := c.EP.Write(bytes.NewReader(make([]byte, packets*oldMSS)), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write: %s", err)
+	}
+	var quoted *buffer.View
+	for i := 0; i < packets; i++ {
+		p := c.GetPacket()
+		seg := header.TCP(header.IPv4(p.AsSlice()).Payload())
+		if got := len(seg.Payload()); got != oldMSS {
+			t.Errorf("original payload = %d, want %d", got, oldMSS)
+		}
+		if i == 1 {
+			quoted = p
+			defer quoted.Release()
+		} else {
+			p.Release()
+		}
+	}
+	start := c.IRS.Add(1 + 2*oldMSS)
+	block := []header.SACKBlock{{Start: start, End: start.Add(oldMSS)}}
+
+	ack := func(bytes int, blocks []header.SACKBlock, want sample) {
+		t.Helper()
+		c.SendAckWithSACK(seqnum.Value(context.TestInitialSequenceNumber).Add(1), bytes, blocks)
+		if got := <-states; got != want {
+			t.Errorf("ACK %d SACK %v: got (MSS, SackedOut) %+v, want %+v", bytes, blocks, got, want)
+		}
+	}
+	ack(oldMSS, nil, sample{oldMSS, 0})
+	ack(oldMSS, block, sample{oldMSS, 1})
+	mtuField := buffer.NewViewWithData([]byte{0, 0, byte(pathMTU / 256), byte(pathMTU % 256)})
+	defer mtuField.Release()
+	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4FragmentationNeeded, mtuField, quoted, pathMTU)
+	p := c.GetPacket()
+	seg := header.TCP(header.IPv4(p.AsSlice()).Payload())
+	if got := len(seg.Payload()); got != newMSS {
+		t.Errorf("first retransmitted payload = %d, want %d", got, newMSS)
+	}
+	p.Release()
+	ack(oldMSS, block, sample{newMSS, 1})
+	ack(packets*oldMSS, nil, sample{newMSS, 0})
+}
+
 // TestRACKWithWindowFull tests that RACK honors the receive window size.
 func TestRACKWithWindowFull(t *testing.T) {
 	c := context.New(t, uint32(mtu))

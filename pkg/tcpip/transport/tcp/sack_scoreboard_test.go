@@ -168,3 +168,32 @@ func BenchmarkSetPipeWorkload(b *testing.B) {
 		}
 	}
 }
+
+// Neither a queue split nor an ACK inside an original packet aligns the
+// wire grid to the new queue head. The sequence numbers wrap in this case.
+func TestSACKedSplitUnitsAcrossSequenceWrap(t *testing.T) {
+	start := seqnum.Value(0xfffffff0)
+	block := func(a, b int) header.SACKBlock {
+		return header.SACKBlock{Start: start.Add(seqnum.Size(a)), End: start.Add(seqnum.Size(b))}
+	}
+	sb := NewSACKScoreboard(10, start)
+	sb.Insert(block(10, 20))
+	sb.Insert(block(25, 31))
+	for _, tc := range []struct {
+		name                         string
+		first, end, count, una, want int
+	}{
+		{"left_full_unit", 0, 10, 1, 0, 0},
+		{"right_owns_middle", 10, 30, 2, 0, 1},
+		{"no_short_tail_at_internal_cut", 10, 10, 0, 0, 0},
+		{"actual_short_tail", 30, 31, 1, 0, 1},
+		{"remaining_prefix_was_acknowledged", 20, 31, 2, 25, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := packetRun{block(tc.first, tc.end), 10, tc.count}
+			if got := sb.sackedPackets(p, start.Add(seqnum.Size(tc.una)), header.SACKBlock{}); got != tc.want {
+				t.Errorf("SACKed packets=%d, want %d", got, tc.want)
+			}
+		})
+	}
+}
