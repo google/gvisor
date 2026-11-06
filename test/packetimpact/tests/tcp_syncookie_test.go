@@ -15,6 +15,7 @@
 package tcp_syncookie_test
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"math"
@@ -143,6 +144,76 @@ func TestTCPSynCookie(t *testing.T) {
 						dut.Close(t, fd)
 					}
 				})
+			}
+		})
+	}
+}
+
+// TestListenerReusesReceiveBuffer sends data on the final ACK to a listener
+// with a small receive buffer. A completed connection must relinquish its
+// listener charge so that later connections can complete the same handshake.
+func TestListenerReusesReceiveBuffer(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	payload := testbench.GenerateRandomPayload(t, 512)
+	for _, cookie := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cookie=%t", cookie), func(t *testing.T) {
+			listener, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listener)
+			dut.SetSockOptInt(t, listener, unix.SOL_SOCKET, unix.SO_RCVBUF, 1)
+
+			// Without timestamps, both stacks omit SACK from a cookie SYN-ACK.
+			// Linux: https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_input.c#L7232-L7239
+			var opts [4]byte
+			n := header.EncodeSACKPermittedOption(opts[:])
+			header.AddTCPOptionPadding(opts[:], n)
+			sendSYN := func(t *testing.T) (*testbench.TCPIPv4, bool) {
+				t.Helper()
+				conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+				t.Cleanup(func() { conn.Close(t) })
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: opts[:]})
+				reply, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+				if err != nil {
+					t.Fatalf("missing SYN-ACK: %v", err)
+				}
+				if int(*reply.WindowSize) < len(payload) {
+					t.Fatalf("SYN-ACK window %d is too small for %d bytes", *reply.WindowSize, len(payload))
+				}
+				return &conn, !header.ParseSynOptions(reply.Options, true /* isAck */).SACKPermitted
+			}
+			if cookie {
+				// Keep half-open connections until the DUT actually uses cookies.
+				// Linux and gVisor need different numbers for a backlog of one.
+				filled := false
+				for range 16 {
+					if _, got := sendSYN(t); got {
+						filled = true
+						break
+					}
+				}
+				if !filled {
+					t.Fatal("listener did not enter SYN-cookie mode")
+				}
+			}
+			for i := range 8 {
+				if !t.Run(fmt.Sprintf("connection%d", i), func(t *testing.T) {
+					conn, got := sendSYN(t)
+					if got != cookie {
+						t.Fatalf("SYN-ACK cookie = %t, want %t", got, cookie)
+					}
+					conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, &testbench.Payload{Bytes: payload})
+					pfds := dut.Poll(t, []unix.PollFd{{Fd: listener, Events: unix.POLLIN}}, time.Second)
+					if len(pfds) != 1 || pfds[0].Revents&unix.POLLIN == 0 {
+						t.Fatalf("listener did not accept data-bearing ACK: poll returned %+v", pfds)
+					}
+					fd, _ := dut.Accept(t, listener)
+					defer dut.Close(t, fd)
+					dut.PollOne(t, fd, unix.POLLIN, time.Second)
+					if data := dut.Recv(t, fd, int32(len(payload)), unix.MSG_DONTWAIT); !bytes.Equal(data, payload) {
+						t.Fatalf("received %d bytes, want the %d-byte handshake payload", len(data), len(payload))
+					}
+				}) {
+					break
+				}
 			}
 		})
 	}
