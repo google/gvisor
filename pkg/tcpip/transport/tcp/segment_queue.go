@@ -42,6 +42,11 @@ func (q *segmentQueue) empty() bool {
 	return q.emptyLocked()
 }
 
+// zeroPayloadHeadroom is the memory that segments without payload may use
+// beyond the receive and send buffer sizes. Linux uses the same 64KB in
+// tcp_add_backlog().
+const zeroPayloadHeadroom = 64 << 10
+
 // enqueue adds the given segment to the queue.
 //
 // If enqueue succeeds, the queue acquires its own reference and returns true.
@@ -49,15 +54,19 @@ func (q *segmentQueue) empty() bool {
 //
 // +checklocksexclude:q.mu
 func (q *segmentQueue) enqueue(s *segment) bool {
-	bufSz := q.ep.ops.GetReceiveBufferSize()
+	limit := int(q.ep.ops.GetReceiveBufferSize())
+	if s.payloadSize() == 0 {
+		// Let segments without payload (ACK, FIN, RST, etc.) exceed the
+		// receive buffer size so the connection can make progress, but
+		// bound the memory they can use.
+		limit += int(q.ep.ops.GetSendBufferSize()) + zeroPayloadHeadroom
+	}
 	used := q.ep.receiveMemUsed()
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Allow zero sized segments (ACK/FIN/RSTs etc even if the segment queue
-	// is currently full).
-	allow := (used <= int(bufSz) || s.payloadSize() == 0) && !q.frozen
+	allow := used <= limit && !q.frozen
 
 	if allow {
 		s.IncRef()

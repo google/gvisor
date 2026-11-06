@@ -223,6 +223,7 @@ go_test(
         "rack_test.go",
         "reno_test.go",
         "sack_scoreboard_test.go",
+        "segment_queue_test.go",
         "segment_test.go",
         "timer_test.go",
     ],
