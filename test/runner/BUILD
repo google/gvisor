@@ -8,7 +8,10 @@ package(
 go_binary(
     name = "runner",
     testonly = 1,
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "xml.go",
+    ],
     data = [
         "//:release",
         "//test/runner/fuse",
@@ -38,6 +41,8 @@ go_test(
     srcs = [
         "main.go",
         "main_test.go",
+        "xml.go",
+        "xml_test.go",
     ],
     data = ["//:release"],
     deps = [
@@ -64,6 +69,8 @@ go_test(
 glaze_ignore = [
     "main.go",
     "main_test.go",
+    "xml.go",
+    "xml_test.go",
 ]
 
 bzl_library(
