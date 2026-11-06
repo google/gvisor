@@ -479,6 +479,291 @@ class FailedTest(unittest.TestCase):
         self.assertEqual(names(result), want)
     self.assertIn("Benchmarks", names(self.failed(soft_failed=True)))
 
+  def test_logs(self):
+    responses = _build_responses()
+    responses[_BUILD.job_log_url(_job_id(2))] = (
+        "$ make\n"
+        "FAIL: //runsc/container:container_test (see /x/test.log)\n"
+        "//runsc/container:container_test  FAILED in 3.0s\n"
+        "//runsc/container:boot_test  FLAKY, failed in 1 out of 2 in 1.0s\n"
+        "\U0001f6a8 Error: The command exited with status 2\n"
+    ).encode()
+    responses[_BUILD.job_log_url(_job_id(5))] = buildkite.Error("lost")
+    responses[_BUILD.job_log_url(_job_id(8))] = b"$ make\nok\n"
+    fetch = FakeFetch(responses)
+    with mock.patch.object(buildkite, "_fetch", fetch):
+      jobs = buildkite.failed(_BUILD, logs=True, excerpt_lines=1)["jobs"]
+    by_name = lambda name, attempt: next(
+        j for j in jobs if j["name"] == name and j["attempt"] == attempt
+    )
+    container = by_name("Container tests", 2)
+    self.assertEqual(
+        container["log"],
+        {
+            "error": "\U0001f6a8 Error: The command exited with status 2",
+            "failure_lines": [
+                "FAIL: //runsc/container:container_test",
+                "//runsc/container:container_test  FAILED in 3.0s",
+            ],
+            "excerpt": [
+                "//runsc/container:boot_test  FLAKY, failed in 1 out of 2 in"
+                " 1.0s"
+            ],
+        },
+    )
+    self.assertEqual(container["annotated_targets"][0]["status"], "FAILED")
+    self.assertEqual(by_name("Docker tests", 1)["log_error"], "lost")
+    self.assertEqual(by_name("Unit tests", 1)["log"], {"excerpt": ["ok"]})
+    # The logs of attempts whose retry finished are not downloaded, and
+    # neither are test.log files. A retry that is pending or canceled does not
+    # have a result, so the log of the attempt before it is downloaded.
+    self.assertEqual(
+        sorted(u for u in fetch.urls if "download.txt" in u or "test.log" in u),
+        sorted(_BUILD.job_log_url(_job_id(n)) for n in [2, 5, 8, 10]),
+    )
+
+  def test_logs_all_attempts(self):
+    fetch = FakeFetch(_build_responses())
+    with mock.patch.object(buildkite, "_fetch", fetch):
+      buildkite.failed(_BUILD, logs=True, all_attempts=True)
+    self.assertEqual(
+        sorted(u for u in fetch.urls if "download.txt" in u),
+        sorted(_BUILD.job_log_url(_job_id(n)) for n in [1, 2, 3, 5, 8, 10]),
+    )
+
+class JobUrlTest(unittest.TestCase):
+
+  def test_parse_job_url(self):
+    build = buildkite.Build("gvisor", "pipeline", 53678)
+    for url in [
+        f"https://buildkite.com/gvisor/pipeline/builds/53678#{_JOB}",
+        "https://buildkite.com/gvisor/pipeline/builds/53678/steps/canvas"
+        f"?sid=1&jid={_JOB}",
+        "https://buildkite.com/organizations/gvisor/pipelines/pipeline"
+        f"/builds/53678/jobs/{_JOB}/download.txt",
+    ]:
+      with self.subTest(url=url):
+        self.assertEqual(buildkite.parse_job_url(url), (build, _JOB))
+    for url in [
+        "https://buildkite.com/gvisor/pipeline/builds/53678",
+        f"https://buildkite.com/{_JOB}/pipeline/builds/53678",
+        "53678",
+    ]:
+      with self.subTest(url=url):
+        with self.assertRaises(buildkite.Error):
+          buildkite.parse_job_url(url)
+
+
+class LogTest(unittest.TestCase):
+
+  def test_clean_log(self):
+    raw = (
+        b"\x1b_bk;t=1793918160098\x07~~~ Running hook\r\n"
+        b"\x1b_bk;t=1793918160100\x07\x1b[90m$\x1b[0m make test\r\n"
+        b"10%\r50%\r100%\x1b[K\r\n"
+        b"done\n"
+    )
+    self.assertEqual(
+        buildkite.clean_log(raw),
+        ["~~~ Running hook", "$ make test", "100%", "done"],
+    )
+
+  def test_clean_log_control_codes(self):
+    for raw, want in [
+        (b"a\x1bPq#0;2\x1b\\b", "ab"),  # DCS
+        (b"a\x1b]0;title\x07b", "ab"),  # OSC
+        ("a\u009b31mb".encode(), "ab"),  # C1 CSI
+        (b"a\x1b[>4;2mb", "ab"),  # private CSI
+        (b"a\x1b(Bb", "ab"),  # character set
+        (b"a\x08\x07b\tc", "ab\tc"),  # other control characters
+        (b"done\r\x1b_bk;t=1\x07\r\n", "done"),
+        (b"\xff", "�"),
+    ]:
+      with self.subTest(raw=raw):
+        self.assertEqual(buildkite.clean_log(raw), [want])
+
+  def test_bazel(self):
+    lines = [
+        "~~~ Running commands",
+        "$ make container-tests",
+        "[4,936 / 4,941] 5 / 6 tests; Testing //runsc/container:container_test",
+        "FAIL: //runsc/container:container_test (shard 3 of 8) (Exit 1)"
+        " (see /home/agent/.cache/bazel/testlogs/test.log)",
+        "",
+        "//runsc/container:boot_test       (cached) PASSED in 1.1s",
+        "//runsc/container:container_test  FAILED in 1 out of 8 in 91.0s",
+        "make: *** [Makefile:274: container-tests] Error 3",
+        "^^^ +++",
+        "\U0001f6a8 Error: The command exited with status 2",
+        "~~~ Running repository post-command hook",
+        "ERROR: from a hook",
+    ]
+    self.assertEqual(
+        buildkite.analyze_log(lines, excerpt_lines=2),
+        {
+            "error": "\U0001f6a8 Error: The command exited with status 2",
+            "failure_lines": [
+                "FAIL: //runsc/container:container_test (shard 3 of 8)"
+                " (Exit 1)",
+                "//runsc/container:container_test  FAILED in 1 out of 8 in"
+                " 91.0s",
+                "make: *** [Makefile:274: container-tests] Error 3",
+            ],
+            "excerpt": [
+                "//runsc/container:container_test  FAILED in 1 out of 8 in"
+                " 91.0s",
+                "make: *** [Makefile:274: container-tests] Error 3",
+            ],
+        },
+    )
+
+  def test_without_error(self):
+    lines = ["$ make", "fatal: cannot clone", "# Received cancellation signal"]
+    self.assertEqual(
+        buildkite.analyze_log(lines, excerpt_lines=2),
+        {
+            "failure_lines": ["fatal: cannot clone"],
+            "excerpt": [
+                "fatal: cannot clone",
+                "# Received cancellation signal",
+            ],
+        },
+    )
+
+  def test_compiler_errors(self):
+    lines = [
+        "pkg/sentry/kernel/task.go:12:3: undefined: foo",
+        "test/syscalls/linux/mmap.cc:7:1: error: unknown type name 'x'",
+        "pkg/sentry/kernel/task.go:12: not a compiler error",
+    ]
+    self.assertEqual(
+        buildkite.analyze_log(lines, 0)["failure_lines"], lines[:2]
+    )
+
+  def test_go_tests(self):
+    lines = [
+        "--- FAIL: TestBoot (0.12s)",
+        "    --- FAIL: TestBoot/kvm (0.03s)",
+        "        boot_test.go:78: Error describing the process",
+        "            more detail",
+        "    --- FAIL: TestBoot/ptrace (0.02s)",
+        "        boot_test.go:78: Error describing the process",
+        "D1106 02:34:48.256760 container.go:1485] Save container",
+        "    other_test.go:5: not after a FAIL line",
+        "FAIL",
+    ]
+    self.assertEqual(
+        buildkite.analyze_log(lines, 0)["failure_lines"],
+        [
+            "--- FAIL: TestBoot (0.12s)",
+            "    --- FAIL: TestBoot/kvm (0.03s)",
+            "        boot_test.go:78: Error describing the process",
+            "    --- FAIL: TestBoot/ptrace (0.02s)",
+        ],
+    )
+
+  def test_go_tests_verbose(self):
+    lines = [
+        "=== RUN   TestPass",
+        "    client_test.go:17: expected connection reset",
+        "--- PASS: TestPass (0.01s)",
+        "=== RUN   TestGPU",
+        "=== RUN   TestGPU/cos",
+        "    gpu_test.go:102: Unsupported driver patch",
+        "    gpu.go:722: Failed to get test environment",
+        "D1106 02:34:48.256760 sandbox.go:1930] Destroying sandbox",
+        "=== RUN   TestGPU/ok",
+        "    gpu_test.go:105: Supported driver patch",
+        "=== NAME  TestGPU/cos",
+        "    gpu_test.go:110: after the other test",
+        "--- FAIL: TestGPU (0.04s)",
+        "    --- FAIL: TestGPU/cos (0.04s)",
+        "    --- PASS: TestGPU/ok (0.04s)",
+        "panic: runtime error: invalid memory address",
+        "FAIL",
+    ]
+    self.assertEqual(
+        buildkite.analyze_log(lines, 0)["failure_lines"],
+        [
+            "--- FAIL: TestGPU (0.04s)",
+            "    --- FAIL: TestGPU/cos (0.04s)",
+            "    gpu_test.go:102: Unsupported driver patch",
+            "    gpu.go:722: Failed to get test environment",
+            "    gpu_test.go:110: after the other test",
+            "panic: runtime error: invalid memory address",
+        ],
+    )
+
+  def test_target_statuses(self):
+    lines = [
+        "//a:a_test  (cached) PASSED in 1.1s",
+        "//b:b_test  FAILED in 1 out of 8 in 91.0s",
+        "//c:c_test  FLAKY, failed in 1 out of 2 in 3.4s",
+        "//d:d_test  TIMEOUT in 300.0s",
+        "//e:e_test  NO STATUS",
+        "FAIL: //f:f_test (Exit 1)",
+    ]
+    self.assertEqual(
+        buildkite.target_statuses(lines),
+        {
+            "//a:a_test": "PASSED",
+            "//b:b_test": "FAILED",
+            "//c:c_test": "FLAKY",
+            "//d:d_test": "TIMEOUT",
+            "//e:e_test": "NO STATUS",
+        },
+    )
+
+  def test_google_tests(self):
+    lines = [
+        "[ RUN      ] AllInetTests/TcpSocketTest.Foo/0",
+        "I1105 22:32:34.309079 setup",
+        "test/syscalls/linux/tcp_socket.cc:42: Failure",
+        "Value of: ret",
+        "Expected: 0",
+        "",
+        "  Actual: -1",
+        "errno: 22",
+        "more output",
+        "[  FAILED  ] AllInetTests/TcpSocketTest.Foo/0, where GetParam() = 2"
+        " (5 ms)",
+        "[ RUN      ] Plain.Bar",
+        "test/syscalls/linux/bar.cc:9: Failure",
+        "boom",
+        "[  FAILED  ] Plain.Bar (1 ms)",
+        "[  FAILED  ] 2 tests, listed below:",
+    ]
+    self.assertEqual(
+        buildkite.analyze_log(lines, 0)["failure_lines"],
+        [
+            "test/syscalls/linux/tcp_socket.cc:42: Failure",
+            "Value of: ret",
+            "Expected: 0",
+            "  Actual: -1",
+            "errno: 22",
+            "[  FAILED  ] AllInetTests/TcpSocketTest.Foo/0, where GetParam() ="
+            " 2 (5 ms)",
+            "test/syscalls/linux/bar.cc:9: Failure",
+            "boom",
+            "[  FAILED  ] Plain.Bar (1 ms)",
+        ],
+    )
+
+  def test_limits(self):
+    long = "ERROR: " + "x" * 600
+    lines = [long, long] + [f"ERROR: {i}" for i in range(100)]
+    result = buildkite.analyze_log(lines, 0)
+    failure_lines = result["failure_lines"]
+    half = buildkite._MAX_FAILURE_LINES // 2
+    self.assertEqual(len(failure_lines), buildkite._MAX_FAILURE_LINES)
+    self.assertEqual(failure_lines[0], long[: buildkite._MAX_LINE_LENGTH])
+    self.assertEqual(failure_lines[1], "ERROR: 0")
+    self.assertEqual(failure_lines[half], f"ERROR: {100 - half}")
+    self.assertEqual(failure_lines[-1], "ERROR: 99")
+    self.assertEqual(
+        result["omitted_failure_lines"], 101 - buildkite._MAX_FAILURE_LINES
+    )
+
 
 class MainTest(unittest.TestCase):
 
@@ -492,6 +777,19 @@ class MainTest(unittest.TestCase):
     self.assertEqual(len(json.loads(stdout.getvalue())["jobs"]), 1)
     self.assertIn("not found", stderr.getvalue())
 
+  def test_log_tail(self):
+    fetch = FakeFetch({_BUILD.job_log_url(_JOB): b"a\r\nb\r\nc\r\n"})
+    for tail, want in [(None, "a\nb\nc\n"), (2, "b\nc\n"), (0, "")]:
+      with self.subTest(tail=tail):
+        argv = ["log", f"{_BUILD_URL}#{_JOB}"]
+        if tail is not None:
+          argv += ["--tail", str(tail)]
+        stdout = io.StringIO()
+        with mock.patch.object(buildkite, "_fetch", fetch):
+          with contextlib.redirect_stdout(stdout):
+            self.assertEqual(buildkite.main(argv), 0)
+        self.assertEqual(stdout.getvalue(), want)
+
 
 class CommandTest(unittest.TestCase):
 
@@ -500,7 +798,7 @@ class CommandTest(unittest.TestCase):
     root = os.path.abspath(__file__)
     for _ in range(3):
       root = os.path.dirname(root)
-    for args in [["--help"], ["failed", "--help"]]:
+    for args in [["--help"], ["failed", "--help"], ["log", "--help"]]:
       with self.subTest(args=args):
         result = subprocess.run(
             ["tools/buildkite/buildkite.py", *args],

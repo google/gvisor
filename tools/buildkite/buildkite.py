@@ -14,7 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Prints the failed jobs of a gVisor Buildkite build as JSON.
+"""Prints the failed jobs and the job logs of gVisor Buildkite builds.
+
+The failed command prints JSON. The log command prints plain text.
 
 The main gVisor pipelines are public, so no Buildkite token is necessary.
 
@@ -27,6 +29,7 @@ BUILD is one of:
 """
 
 import argparse
+import concurrent.futures
 import dataclasses
 import html
 import http.client
@@ -59,8 +62,67 @@ _ARTIFACT_URL_RE = re.compile(
     rf"https://storage\.googleapis\.com/gvisor-buildkite/{_UUID}/({_UUID})/"
 )
 
+# Matches the job ID in the part of a job URL after /builds/N.
+_JOB_IN_URL_RE = re.compile(rf"(?:[?&]jid=|#|/jobs/)({_UUID})")
+
+# Matches terminal control strings (APC, which has the Buildkite timestamps,
+# DCS, SOS, PM and OSC), CSI sequences, and other escape sequences.
+_ESCAPE_RE = re.compile(
+    r"\x1b[_PX^\]][^\x07\x1b\r]*(?:\x07|\x1b\\)?"
+    r"|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]"
+    r"|\x1b[ -/]*[0-~]"
+)
+
+# Matches the control characters other than tab and newline.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+# Matches the lines in a job log that tell why a job failed. Bazel prints the
+# test.log of each failed test in the job log.
+_FAILURE_LINE_RE = re.compile(
+    # Bazel test results, errors and summary lines.
+    r"(?:FAIL|TIMEOUT|FLAKY|NO STATUS): //"
+    r"|ERROR: "
+    r"|//\S+\s.*\b(?:FAILED|TIMEOUT|NO STATUS|INCOMPLETE)\b"
+    # make, git, Go panics, and Go and C++ compiler errors.
+    r"|make: \*\*\*"
+    r"|fatal: "
+    r"|panic: "
+    r"|[\w./-]+\.go:\d+:\d+: "
+    r"|\S+:\d+:\d+: error: "
+    # Google Test: failed tests and failed assertions.
+    r"|\[  FAILED  \] [A-Za-z_]"
+    r"|\S+:\d+: Failure$"
+)
+
+# Match the Go test lines that tell which test prints the next lines, the
+# result of a test, and a message of a test.
+_GO_TEST_RE = re.compile(r"=== (?:RUN|CONT|NAME|PAUSE)\s+(\S+)")
+_GO_RESULT_RE = re.compile(r"( *)--- (FAIL|PASS|SKIP): (\S+)")
+_GO_MESSAGE_RE = re.compile(r"( +)[\w./-]+\.go:\d+: ")
+
+# Matches the Bazel summary line of a test target, e.g.
+# "//foo:bar_test  FLAKY, failed in 1 out of 2 in 3.4s".
+_TARGET_STATUS_RE = re.compile(
+    r"(//\S+)\s+(?:\(cached\) )?"
+    r"(PASSED|FAILED|FLAKY|TIMEOUT|NO STATUS|INCOMPLETE)\b"
+)
+
+# Matches Bazel progress lines, e.g. "[4,936 / 4,941] Testing //foo:bar".
+_PROGRESS_RE = re.compile(r"^\[[\d,]+ / [\d,]+\] ")
+
+# Matches the local test.log path in Bazel test results.
+_LOCAL_TEST_LOG_RE = re.compile(r" \(see /\S+\)$")
+
+# Buildkite prints this line when a job step fails.
+_ERROR_MARKER = "\U0001f6a8 Error"
+
 _FETCH_ATTEMPTS = 3
 _MAX_PAGES = 100
+_MAX_FAILURE_LINES = 60
+# The number of lines after a Google Test assertion failure, which has the
+# expected and actual values.
+_ASSERTION_LINES = 4
+_MAX_LINE_LENGTH = 500
 
 
 class Error(Exception):
@@ -81,6 +143,12 @@ class Build:
 
   def data_url(self, name: str) -> str:
     return f"{self.url}/data/{name}"
+
+  def job_log_url(self, job_id: str) -> str:
+    return (
+        f"{BASE_URL}/organizations/{self.org}/pipelines/{self.pipeline}"
+        f"/builds/{self.number}/jobs/{job_id}/download.txt"
+    )
 
 
 def _fetch(url: str) -> bytes:
@@ -192,6 +260,16 @@ def parse_ref(
   return Build(org, name, resolve_branch(org, name, ref))
 
 
+def parse_job_url(url: str):
+  """Returns the Build and the job ID of a job URL."""
+
+  m = _BUILD_URL_RE.search(url)
+  job = _JOB_IN_URL_RE.search(url, m.end()) if m else None
+  if not job:
+    raise Error(f"{url}: not a Buildkite job URL")
+  return Build(m.group(1), m.group(2), int(m.group(3))), job.group(1)
+
+
 def _compact(d: dict) -> dict:
   """Returns d without the keys whose values are None or empty."""
 
@@ -215,6 +293,107 @@ def outcome(job: dict) -> str:
   if job.get("passed"):
     return "passed"
   return "soft_failed" if job.get("soft_failed") else "failed"
+
+
+def clean_log(raw: bytes) -> list:
+  """Returns the lines of a raw job log, without terminal control codes."""
+
+  lines = raw.decode("utf-8", "replace").split("\n")
+  if lines[-1] == "":
+    lines.pop()
+  for i, line in enumerate(lines):
+    line = _ESCAPE_RE.sub("", line)
+    # Keep only the text after the last carriage return, as a terminal shows.
+    line = line.rstrip("\r").rsplit("\r", 1)[-1]
+    lines[i] = _CONTROL_CHAR_RE.sub("", line)
+  return lines
+
+
+def analyze_log(lines: list, excerpt_lines: int) -> dict:
+  """Returns the lines of a job log that tell why the job failed.
+
+  The command output ends at the first Buildkite error line. Hooks that run
+  after the command, such as the artifact upload, print the rest of the log.
+  Each failure line is kept once. If there are too many, the first and the
+  last lines are kept.
+
+  The messages of a Go test are kept only if the test fails. Without -v, Go
+  prints the messages of a failed test after its "--- FAIL" line, indented
+  more. With -v, Go prints the messages when the test prints them, after a
+  "=== RUN", "=== CONT" or "=== NAME" line with the name of the test.
+  """
+
+  end = next(
+      (i for i, l in enumerate(lines) if l.startswith(_ERROR_MARKER)),
+      len(lines),
+  )
+  failure_lines, seen = [], set()
+
+  def add(line: str, once=True) -> None:
+    if once:
+      if line in seen:
+        return
+      seen.add(line)
+    failure_lines.append(line)
+
+  # The number of lines after an assertion failure that are still to add.
+  context = 0
+  # The Go test that prints the next lines, the messages of the Go tests that
+  # did not end yet, and the indentation of the "--- FAIL" line that the next
+  # messages belong to.
+  go_test, go_messages, fail_indent = None, {}, None
+  for line in lines[:end]:
+    line = _LOCAL_TEST_LOG_RE.sub("", line[:_MAX_LINE_LENGTH])
+    indent = len(line) - len(line.lstrip())
+    if fail_indent is not None and line.strip() and indent <= fail_indent:
+      fail_indent = None
+    if m := _GO_TEST_RE.match(line):
+      go_test, context = m.group(1), 0
+    elif m := _GO_RESULT_RE.match(line):
+      messages, context = go_messages.pop(m.group(3), []), 0
+      if m.group(2) == "FAIL":
+        add(line)
+        for message in messages:
+          add(message)
+        fail_indent = len(m.group(1))
+    elif m := _GO_MESSAGE_RE.match(line):
+      context = 0
+      if fail_indent is not None:
+        add(line)
+      elif go_test:
+        go_messages.setdefault(go_test, []).append(line)
+    elif _FAILURE_LINE_RE.match(line):
+      context = _ASSERTION_LINES if line.endswith(": Failure") else 0
+      add(line)
+    elif context and line.strip():
+      context -= 1
+      add(line, once=False)
+  omitted = len(failure_lines) - _MAX_FAILURE_LINES
+  if omitted > 0:
+    half = _MAX_FAILURE_LINES // 2
+    failure_lines = failure_lines[:half] + failure_lines[-half:]
+  body = [
+      l
+      for l in lines[:end]
+      if l.strip() and l != "^^^ +++" and not _PROGRESS_RE.match(l)
+  ]
+  excerpt = body[-excerpt_lines:] if excerpt_lines > 0 else []
+  return _compact({
+      "error": lines[end] if end < len(lines) else None,
+      "failure_lines": failure_lines,
+      "omitted_failure_lines": max(omitted, 0) or None,
+      "excerpt": [l[:_MAX_LINE_LENGTH] for l in excerpt],
+  })
+
+
+def target_statuses(lines: list) -> dict:
+  """Returns the Bazel status of each test target in the summary of a log."""
+
+  return {
+      m.group(1): m.group(2)
+      for line in lines
+      if (m := _TARGET_STATUS_RE.match(line))
+  }
 
 
 def parse_failures_annotation(body: str):
@@ -300,15 +479,40 @@ def _matches(regex, info: dict) -> bool:
   return any(regex.search(f) for f in fields)
 
 
-def failed(build: Build, regex=None, soft_failed=False) -> dict:
-  """Returns the failed jobs of build, sorted by job and attempt."""
+def _add_log(build: Build, job: dict, info: dict, excerpt_lines: int) -> None:
+  try:
+    raw = _fetch(build.job_log_url(job["id"]))
+  except Error as e:
+    info["log_error"] = str(e)
+    return
+  lines = clean_log(raw)
+  info["log"] = analyze_log(lines, excerpt_lines)
+  statuses = target_statuses(lines)
+  for t in info.get("annotated_targets", []):
+    if t["target"] in statuses:
+      t["status"] = statuses[t["target"]]
+
+
+def failed(
+    build: Build,
+    regex=None,
+    soft_failed=False,
+    logs=False,
+    all_attempts=False,
+    excerpt_lines=20,
+) -> dict:
+  """Returns the failed jobs of build, sorted by job and attempt.
+
+  If logs is set, adds the analysis of the job log of each attempt whose
+  retry did not finish, or of all attempts if all_attempts is set.
+  """
 
   b = _fetch_json(f"{build.url}.json")
   # The jobs endpoint returns all jobs of the build, of all attempts.
   jobs = {j["id"]: j for j in _fetch_records(build.data_url("jobs"))}
   listed = ("failed", "soft_failed") if soft_failed else ("failed",)
   targets, unattributed = _annotated_targets(build)
-  infos = []
+  entries = []
   for j in jobs.values():
     if outcome(j) not in listed:
       continue
@@ -316,16 +520,25 @@ def failed(build: Build, regex=None, soft_failed=False) -> dict:
     if retry:
       # A retry that is not in the list yet did not start.
       retry = outcome(jobs[retry]) if retry in jobs else "pending"
-    infos.append(job_info(build, j, targets.get(j["id"], []), retry))
+    entries.append((j, job_info(build, j, targets.get(j["id"], []), retry)))
   if regex:
-    infos = [i for i in infos if _matches(regex, i)]
-  infos.sort(
-      key=lambda i: (
-          i.get("name") or "",
-          i.get("parallel_job", -1),
-          i["attempt"],
+    entries = [(j, i) for j, i in entries if _matches(regex, i)]
+  entries.sort(
+      key=lambda e: (
+          e[1].get("name") or "",
+          e[1].get("parallel_job", -1),
+          e[1]["attempt"],
       )
   )
+  if logs:
+    todo = [
+        e
+        for e in entries
+        if all_attempts or e[1].get("retry") not in ("passed", "failed")
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+      list(pool.map(lambda e: _add_log(build, *e, excerpt_lines), todo))
+  infos = [i for _, i in entries]
   result = {"build": _build_info(b), "jobs": infos}
   if unattributed:
     result["unattributed_targets"] = unattributed
@@ -379,14 +592,57 @@ def _parse_args(argv):
       action="store_true",
       help="also print soft-failed jobs, which do not fail the build",
   )
+  p.add_argument(
+      "--logs",
+      action="store_true",
+      help=(
+          "download the log of each failed attempt whose retry did not"
+          " finish, and add the failure lines, the end of the command output,"
+          " and the Bazel status of the annotated targets"
+      ),
+  )
+  p.add_argument(
+      "--all-attempts",
+      action="store_true",
+      help=(
+          "with --logs, also download the logs of attempts whose retry"
+          " finished"
+      ),
+  )
+  p.add_argument(
+      "--excerpt-lines",
+      type=int,
+      default=20,
+      help=(
+          "number of command output lines in the --logs excerpt (default:"
+          " %(default)s)"
+      ),
+  )
+
+  p = sub.add_parser("log", help="print the log of a job as plain text")
+  p.add_argument("job", help="job URL")
+  p.add_argument("--tail", type=int, help="print only the last TAIL lines")
   return parser.parse_args(argv)
 
 
 def main(argv) -> int:
   args = _parse_args(argv)
   try:
-    build = parse_ref(args.build, args.pipeline)
-    result = failed(build, args.regex, args.soft_failed)
+    if args.command == "log":
+      build, job_id = parse_job_url(args.job)
+      lines = clean_log(_fetch(build.job_log_url(job_id)))
+      if args.tail is not None:
+        lines = lines[-args.tail :] if args.tail > 0 else []
+      sys.stdout.write("".join(l + "\n" for l in lines))
+      return 0
+    result = failed(
+        parse_ref(args.build, args.pipeline),
+        regex=args.regex,
+        soft_failed=args.soft_failed,
+        logs=args.logs,
+        all_attempts=args.all_attempts,
+        excerpt_lines=args.excerpt_lines,
+    )
   except Error as e:
     print(f"{sys.argv[0]}: error: {e}", file=sys.stderr)
     return 1

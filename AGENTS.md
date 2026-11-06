@@ -230,6 +230,17 @@ build URLs. The default is the main pipeline.
 -   `REGEX` is case-insensitive and matches the job name or an annotated
     target. `--soft-failed` adds the soft-failed jobs, which do not fail the
     build.
+-   `--logs` downloads the log of each failed attempt whose retry did not
+    finish, and adds the lines that tell why the job failed: `log.error`,
+    `log.failure_lines` and `log.excerpt`, the end of the command output.
+    The failure lines include the Bazel results, the failed Go tests and
+    Google Test tests with their messages, and compiler errors. Each
+    annotated target gets its Bazel `status`, such as `FAILED`, `TIMEOUT` or
+    `FLAKY`. `--all-attempts` also downloads the logs of attempts whose
+    retry finished.
+
+`tools/buildkite/buildkite.py log JOB_URL [--tail N]` prints a job log as
+plain text, without terminal control codes. `JOB_URL` is the `url` of a job.
 
 Some failures come from the CI infrastructure, not from the change. For
 example, the job has exit status `-1` because Buildkite lost the agent. A job
