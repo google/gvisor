@@ -1066,12 +1066,12 @@ TEST_P(TcpSocketTest, SendProgressesAfterRcvBufShrinkWithUnreadData) {
 
   // Shrink the buffers of the accepted socket to their minimum values.
   int small = 1;
-  ASSERT_THAT(setsockopt(accepted_.get(), SOL_SOCKET, SO_RCVBUF, &small,
-                         sizeof(small)),
-              SyscallSucceeds());
-  ASSERT_THAT(setsockopt(accepted_.get(), SOL_SOCKET, SO_SNDBUF, &small,
-                         sizeof(small)),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_SOCKET, SO_RCVBUF, &small, sizeof(small)),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)),
+      SyscallSucceeds());
 
   // The accepted socket sends data to the connected socket, which reads it.
   // This requires the accepted socket to process the ACKs it receives.
