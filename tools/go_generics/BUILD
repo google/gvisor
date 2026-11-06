@@ -12,6 +12,7 @@ go_binary(
         "main.go",
         "remove.go",
     ],
+    pure = True,
     visibility = ["//:sandbox"],
     deps = ["//tools/go_generics/globals"],
 )

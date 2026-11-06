@@ -21,6 +21,7 @@ nogo_stdlib(
 go_binary(
     name = "nogo",
     srcs = ["main.go"],
+    pure = True,
     visibility = ["//visibility:public"],
     deps = ["//tools/nogo/cli"],
 )

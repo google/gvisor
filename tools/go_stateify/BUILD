@@ -8,6 +8,7 @@ package(
 go_binary(
     name = "stateify",
     srcs = ["main.go"],
+    pure = True,
     visibility = ["//:sandbox"],
     deps = ["//tools/constraintutil"],
 )
