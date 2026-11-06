@@ -58,12 +58,18 @@ func (r *renoState) updateSlowStart(packetsAcked int) int {
 //
 // +checklocks:r.s.ep.mu
 func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
-	// Consume the packets in congestion avoidance mode.
+	// Credit earned under a different window or controller may exceed this
+	// window. As in Linux tcp_cong_avoid_ai(), spend it on one increase
+	// before counting the newly acknowledged packets.
+	window := r.s.SndCwnd
+	if r.s.SndCAAckCount >= window {
+		r.s.SndCwnd++
+		r.s.SndCAAckCount = 0
+	}
 	r.s.SndCAAckCount += packetsAcked
-	if r.s.SndCAAckCount >= r.s.SndCwnd {
-		increase := r.s.SndCAAckCount / r.s.SndCwnd
-		r.s.SndCAAckCount %= r.s.SndCwnd
-		r.s.SndCwnd += increase
+	if r.s.SndCAAckCount >= window {
+		r.s.SndCwnd += r.s.SndCAAckCount / window
+		r.s.SndCAAckCount %= window
 	}
 }
 
@@ -85,6 +91,9 @@ func (r *renoState) reduceSlowStartThreshold() {
 //
 // +checklocks:r.s.ep.mu
 func (r *renoState) Update(packetsAcked int, _ time.Duration, _ tcpip.MonotonicTime) {
+	if packetsAcked == 0 {
+		return
+	}
 	if r.s.SndCwnd < r.s.Ssthresh {
 		packetsAcked = r.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {
