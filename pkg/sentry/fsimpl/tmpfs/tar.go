@@ -378,6 +378,16 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 	if d.name != "" {
 		path = path + "/" + d.name
 	}
+	// A regular file's header records its size before its contents are
+	// copied. Hold inode.mu across both so that concurrent writes and
+	// truncates cannot change the size in between. A hard link entry has no
+	// size and no contents, so it does not need inode.mu.
+	if rf, ok := d.inode.impl.(*regularFile); ok {
+		if _, isLink := inoToPath[d.inode.ino]; !isLink {
+			rf.inode.mu.Lock()
+			defer rf.inode.mu.Unlock()
+		}
+	}
 	header, err := d.createTarHeader(path, inoToPath, cb)
 	if err != nil {
 		return fmt.Errorf("failed to create tar header for %q: %w", path, err)
@@ -505,6 +515,8 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
 	return header, nil
 }
 
+// tarWriterCallbacks customizes how regular files are written to the tar
+// archive. Callers hold rf.inode.mu across both calls for a given file.
 type tarWriterCallbacks interface {
 	// regularFileSize returns the size of the given regular file as written to
 	// the tar archive.
@@ -518,15 +530,15 @@ type tarWriterCallbacks interface {
 // file contents to the tar archive.
 type tarDefaultWriterCallbacks struct{}
 
+// +checklocks:rf.inode.mu
 func (tarDefaultWriterCallbacks) regularFileSize(rf *regularFile) int64 {
 	return int64(rf.size.Load())
 }
 
+// +checklocks:rf.inode.mu
 func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regularFile, tw *tar.Writer) error {
-	// Note that regularFileReadWriter.ReadToBlocks() does not lock inode.mu. So
-	// it is safe to lock here to ensure no concurrent writes occur.
-	rf.inode.mu.Lock()
-	defer rf.inode.mu.Unlock()
+	// regularFileReadWriter.ReadToBlocks() does not lock inode.mu, so it can
+	// run while inode.mu is held.
 	rw := getRegularFileReadWriter(rf, 0, 0)
 	defer putRegularFileReadWriter(rw)
 	if _, err := io.Copy(tw, safemem.ToIOReader{Reader: rw}); err != nil {
