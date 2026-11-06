@@ -38,6 +38,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -533,6 +534,77 @@ TEST(FuseTest, AccessUnsupported) {
   // The cached capability applies to another inode and a different mask.
   const std::string file_path = JoinPath(mount_point.path(), "testfile");
   EXPECT_THAT(access(file_path.c_str(), W_OK), SyscallSucceeds());
+}
+
+TEST(FuseTest, FlushUnsupported) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningWithSaveRestore());
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount_opts =
+      absl::StrFormat("fd=%d,user_id=0,group_id=0,rootmode=40000", fd.get());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("fuse", mount_point.path(), "fuse", MS_NODEV | MS_NOSUID,
+            mount_opts, 0 /* umountflags */));
+  ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
+  const FileDescriptor stop_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+
+  std::atomic<int> flush_requests = 0;
+  std::atomic<int> release_requests = 0;
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(
+        server_fd, stop_fd.get(), [&](int fd, const fuse_in_header& in) {
+          if (in.opcode == FUSE_LOOKUP) {
+            fuse_entry_out out = {.nodeid = 2,
+                                  .generation = 1,
+                                  .entry_valid = 1,
+                                  .attr_valid = 1};
+            out.attr = {.ino = 2, .mode = S_IFREG | 0644, .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_OPEN) {
+            fuse_open_out out = {.fh = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_GETATTR) {
+            fuse_attr_out out = {.attr_valid = 1};
+            out.attr = {
+                .ino = in.nodeid,
+                .mode = in.nodeid == 1 ? S_IFDIR | 0755U : S_IFREG | 0644U,
+                .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_FLUSH) {
+            ++flush_requests;
+            FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+          } else if (in.opcode == FUSE_RELEASE) {
+            ++release_requests;
+            FuseRespond(fd, in.unique);
+          } else {
+            FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+          }
+          return true;
+        });
+  });
+  Cleanup stop_server([&] {
+    const uint64_t stop = 1;
+    EXPECT_THAT(RetryEINTR(write)(stop_fd.get(), &stop, sizeof(stop)),
+                SyscallSucceedsWithValue(sizeof(stop)));
+  });
+
+  // ENOSYS from FLUSH is not an error, and FLUSH is not sent again.
+  const std::string file_path = JoinPath(mount_point.path(), "testfile");
+  for (int i = 0; i < 2; i++) {
+    const int file_fd = open(file_path.c_str(), O_RDONLY);
+    ASSERT_THAT(file_fd, SyscallSucceeds());
+    EXPECT_THAT(close(file_fd), SyscallSucceeds());
+  }
+  // RELEASE is sent asynchronously after close; wait for both.
+  const absl::Time deadline = absl::Now() + absl::Seconds(30);
+  while (release_requests.load() < 2 && absl::Now() < deadline) {
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+  EXPECT_EQ(release_requests.load(), 2);
+  EXPECT_EQ(flush_requests.load(), 1);
 }
 
 // The parts of <linux/aio_abi.h> used below. The header isn't included since
