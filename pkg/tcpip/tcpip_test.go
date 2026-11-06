@@ -20,8 +20,11 @@ import (
 	"io"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func TestLimitedWriter_Write(t *testing.T) {
@@ -344,4 +347,32 @@ func padTo4(partial string) []byte {
 		partial += "\x00"
 	}
 	return []byte(partial)
+}
+
+func TestSaveStdClock(t *testing.T) {
+	start := time.Now()
+	clock := &stdClock{baseTime: start.Add(-time.Hour)}
+	before := clock.NowMonotonic()
+	var b bytes.Buffer
+	if _, err := state.Save(t.Context(), &b, clock); err != nil {
+		t.Fatal(err)
+	}
+	var restored stdClock
+	if _, err := state.Load(t.Context(), &b, &restored); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name  string
+		clock *stdClock
+	}{
+		{"live", clock},
+		{"restored", &restored},
+	} {
+		// Neither clock can have advanced by more than the time spent
+		// saving and restoring it.
+		got := tc.clock.NowMonotonic().Sub(before)
+		if maxElapsed := time.Since(start); got < 0 || got > maxElapsed {
+			t.Errorf("%s clock advanced %s, want [0, %s]", tc.name, got, maxElapsed)
+		}
+	}
 }
