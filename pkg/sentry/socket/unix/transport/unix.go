@@ -215,8 +215,9 @@ type Endpoint interface {
 	// This should be called on the client endpoint, and the (bound)
 	// endpoint passed in as a parameter.
 	//
-	// The error codes are the same as Connect.
-	Connect(ctx context.Context, server BoundEndpoint) *syserr.Error
+	// The error codes are the same as Connect. On success, creds become the
+	// credentials the peer sees.
+	Connect(ctx context.Context, server BoundEndpoint, creds CredentialsControlMessage) *syserr.Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
@@ -310,6 +311,10 @@ type BoundEndpoint interface {
 	// This method will return syserr.ErrConnectionRefused on endpoints with a
 	// type that isn't SockStream or SockSeqpacket.
 	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error
+
+	// ConnectWaiters returns a queue notified when a BidirectionalConnect that
+	// failed with ErrTryAgain may succeed on retry, or nil if it never does.
+	ConnectWaiters() *waiter.Queue
 
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.

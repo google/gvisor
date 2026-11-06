@@ -16,6 +16,7 @@ package linux
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -286,7 +287,26 @@ func Connect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	}
 
 	blocking := (file.StatusFlags() & linux.SOCK_NONBLOCK) == 0
-	return 0, nil, linuxerr.ConvertIntr(s.Connect(t, a, blocking).ToError(), linuxerr.ERESTARTSYS)
+	var haveDeadline bool
+	var deadline ktime.Time
+	// Like Linux, treat the largest SO_SNDTIMEO values as no timeout.
+	if dl := s.SendTimeout(); dl > 0 && dl != math.MaxInt64 {
+		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
+		haveDeadline = true
+	} else if dl < 0 {
+		blocking = false
+	}
+	err = s.Connect(t, a, blocking, haveDeadline, deadline).ToError()
+	if !haveDeadline || !linuxerr.Equals(linuxerr.ErrInterrupted, err) {
+		return 0, nil, linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
+	}
+	// Like Linux's sock_intr_errno, a signal or stop fails a timed connect.
+	// Other interruptions, such as a pause for a checkpoint, restart it with a
+	// fresh timeout, as for send and recv.
+	if t.SignalPending() {
+		return 0, nil, linuxerr.EINTR
+	}
+	return 0, nil, linuxerr.ERESTARTNOHAND
 }
 
 // accept is the implementation of the accept syscall. It is called by accept

@@ -815,7 +815,7 @@ func (s *sock) mapFamily(addr tcpip.FullAddress, family uint16) tcpip.FullAddres
 
 // Connect implements the linux syscall connect(2) for sockets backed by
 // tpcip.Endpoint.
-func (s *sock) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+func (s *sock) Connect(t *kernel.Task, sockaddr []byte, blocking, _ bool, _ ktime.Time) *syserr.Error {
 	addr, family, err := socket.AddressAndFamily(sockaddr)
 	if err != nil {
 		return err
