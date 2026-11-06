@@ -31,9 +31,11 @@ go_test(
     data = [
         "test_struct.cc",
         ":driver_ast_parser",
+        "//tools/nvidia_driver_differ/parser:builtin_headers",
     ],
     deps = [
         "//pkg/test/testutil",
+        "//pkg/zip",
         "//tools/nvidia_driver_differ/parser",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
