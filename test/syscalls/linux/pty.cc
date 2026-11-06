@@ -19,6 +19,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -39,6 +40,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -2173,6 +2175,94 @@ TEST_F(JobControlTest, GetForegroundProcessGroup) {
     TEST_PCHECK(!ioctl(replica_.get(), TIOCGPGRP, &foreground_pgid));
     TEST_PCHECK((pid = getpid()) >= 0);
     TEST_PCHECK(pid == foreground_pgid);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// Returns the tty_nr and tpgid fields of /proc/self/stat.
+PosixErrorOr<std::pair<int, int>> ProcSelfStatTTY() {
+  ASSIGN_OR_RETURN_ERRNO(std::string stat, GetContents("/proc/self/stat"));
+  // The command name may contain spaces, so skip past its closing paren.
+  size_t pos = stat.rfind(')');
+  if (pos == std::string::npos) {
+    return PosixError(EINVAL, absl::StrCat("malformed stat: ", stat));
+  }
+  int tty_nr, tpgid;
+  if (sscanf(stat.c_str() + pos + 1, " %*c %*d %*d %*d %d %d", &tty_nr,
+             &tpgid) != 2) {
+    return PosixError(EINVAL, absl::StrCat("malformed stat: ", stat));
+  }
+  return std::make_pair(tty_nr, tpgid);
+}
+
+// Returns dev as encoded by Linux's new_encode_dev().
+int NewEncodeDev(dev_t dev) {
+  unsigned int maj = major(dev);
+  unsigned int min = minor(dev);
+  return (min & 0xff) | (maj << 8) | ((min & ~0xffu) << 12);
+}
+
+TEST_F(JobControlTest, ProcStatControllingTTY) {
+  struct stat st;
+  ASSERT_THAT(fstat(replica_.get(), &st), SyscallSucceeds());
+  const int want_tty_nr = NewEncodeDev(st.st_rdev);
+
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    auto fields = ProcSelfStatTTY();
+    TEST_CHECK(fields.ok());
+    TEST_CHECK(fields.ValueOrDie().first == want_tty_nr);
+    TEST_CHECK(fields.ValueOrDie().second == getpgid(0));
+
+    // tpgid is the foreground process group of the terminal, which need not
+    // be the process group of the process.
+    pid_t child = fork();
+    if (!child) {
+      while (true) {
+        pause();
+      }
+    }
+    TEST_PCHECK(child > 0);
+    TEST_PCHECK(!setpgid(child, child));
+    TEST_PCHECK(!tcsetpgrp(replica_.get(), child));
+    fields = ProcSelfStatTTY();
+    TEST_CHECK(fields.ok());
+    TEST_CHECK(fields.ValueOrDie().first == want_tty_nr);
+    TEST_CHECK(fields.ValueOrDie().second == child);
+
+    TEST_PCHECK(!kill(child, SIGKILL));
+    TEST_PCHECK(waitpid(child, nullptr, 0) == child);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// Setting the master as the controlling terminal makes the replica the
+// controlling terminal.
+TEST_F(JobControlTest, ProcStatControllingTTYMaster) {
+  struct stat st;
+  ASSERT_THAT(fstat(replica_.get(), &st), SyscallSucceeds());
+  const int want_tty_nr = NewEncodeDev(st.st_rdev);
+
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(master_.get(), TIOCSCTTY, 0));
+    auto fields = ProcSelfStatTTY();
+    TEST_CHECK(fields.ok());
+    TEST_CHECK(fields.ValueOrDie().first == want_tty_nr);
+    TEST_CHECK(fields.ValueOrDie().second == getpgid(0));
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+TEST_F(JobControlTest, ProcStatNoControllingTTY) {
+  auto res = RunInChild([=]() {
+    // A new session has no controlling terminal.
+    TEST_PCHECK(setsid() >= 0);
+    auto fields = ProcSelfStatTTY();
+    TEST_CHECK(fields.ok());
+    TEST_CHECK(fields.ValueOrDie().first == 0);
+    TEST_CHECK(fields.ValueOrDie().second == -1);
   });
   ASSERT_NO_ERRNO(res);
 }

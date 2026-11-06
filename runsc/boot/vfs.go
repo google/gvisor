@@ -1059,9 +1059,12 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
 	case devpts.Name:
-		// /dev/ptmx is a symlink to pts/ptmx, so make ptmx usable by everyone, as
-		// container runtimes do. Linux and devpts default ptmxmode to 0000.
-		data = []string{"ptmxmode=0666"}
+		// Each container gets its own devpts instance, as with container
+		// runtimes, so that ptys and consoles of one container are not
+		// visible in other containers. /dev/ptmx is a symlink to pts/ptmx,
+		// so make ptmx usable by everyone, as container runtimes do. Linux
+		// and devpts default ptmxmode to 0000.
+		data = []string{"newinstance", "ptmxmode=0666"}
 
 	case dev.Name, devtmpfs.Name, cgroup2fs.Name:
 		// Nothing to do.
