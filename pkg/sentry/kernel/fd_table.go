@@ -17,7 +17,6 @@ package kernel
 import (
 	goContext "context"
 	"fmt"
-	"math"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -79,10 +78,12 @@ type FDTable struct {
 
 	k *Kernel
 
-	// mu protects below.
+	// mu serializes descriptorTable writers and protects fdBitmap.
 	mu fdTableMutex `state:"nosave"`
 
 	// fdBitmap shows which fds are already in use.
+	//
+	// +checklocks:mu
 	fdBitmap bitmap.Bitmap `state:"nosave"`
 
 	// descriptorTable holds descriptors.
@@ -103,19 +104,19 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	return m
 }
 
+// Restore initializes f before it is made available to tasks.
 func (f *FDTable) loadDescriptorTable(_ goContext.Context, m map[int32]descriptor) {
 	ctx := context.Background()
 	f.initNoLeakCheck() // Initialize table.
-	f.fdBitmap = bitmap.New(uint32(math.MaxUint16))
 	for fd, d := range m {
 		if fd < 0 {
 			panic(fmt.Sprintf("FD is not supposed to be negative. FD: %d", fd))
 		}
 
-		if df := f.set(fd, d.file, d.flags); df != nil {
+		if df := f.set(fd, d.file, d.flags); df != nil { // +checklocksignore: f is not yet published.
 			panic("file set")
 		}
-		f.fdBitmap.Add(uint32(fd))
+		f.fdBitmap.Add(uint32(fd)) // +checklocksignore: f is not yet published.
 		// Note that we do _not_ need to acquire a extra table reference here. The
 		// table reference will already be accounted for in the file, so we drop the
 		// reference taken by set above.
@@ -155,7 +156,7 @@ func (f *FDTable) DecRef(ctx context.Context) {
 
 // forEachUpTo iterates over all non-nil files upto maxFds (non-inclusive) in sorted order.
 //
-// It is the caller's responsibility to acquire an appropriate lock.
+// +checklocks:f.mu
 func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
 	// Iterate through the fdBitmap.
 	f.fdBitmap.ForEach(0, uint32(maxFd), func(ufd uint32) bool {
@@ -180,8 +181,6 @@ func (f *FDTable) ForEach(ctx context.Context, fn func(fd int32, file *vfs.FileD
 }
 
 // forEach iterates over all non-nil files upto maxFd in sorted order.
-//
-// It is the caller's responsibility to acquire an appropriate lock.
 //
 // +checklocks:f.mu
 func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
@@ -460,12 +459,12 @@ func (f *FDTable) Fork(ctx context.Context, maxFd int32) *FDTable {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forEachUpTo(ctx, maxFd, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
-		// The set function here will acquire an appropriate table
-		// reference for the clone. We don't need anything else.
-		if df := clone.set(fd, file, flags); df != nil {
+		// clone is private until Fork returns, so its writers need no lock.
+		// set acquires the clone's reference on file.
+		if df := clone.set(fd, file, flags); df != nil { // +checklocksignore
 			panic("file set")
 		}
-		clone.fdBitmap.Add(uint32(fd))
+		clone.fdBitmap.Add(uint32(fd)) // +checklocksignore: clone is still private.
 		return true
 	})
 	return clone
@@ -500,9 +499,10 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 	f.mu.Lock()
 	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if cond(file, flags) {
-			// Clear from table.
-			if df := f.set(fd, nil, FDFlags{}); df != nil {
-				f.fdBitmap.Remove(uint32(fd))
+			// forEach invokes this callback with f.mu held, but checklocks
+			// cannot propagate the lock through a callback argument.
+			if df := f.set(fd, nil, FDFlags{}); df != nil { // +checklocksignore
+				f.fdBitmap.Remove(uint32(fd)) // +checklocksignore
 				files = append(files, df)
 			}
 		}
