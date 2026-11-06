@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -132,5 +133,99 @@ func TestSeveredRecvSend(t *testing.T) {
 	}
 	if _, _, serr := ep.Send(nil, [][]byte{{1}}, ControlMessages{}, Address{}); serr != syserr.ErrClosedForSend {
 		t.Errorf("Send on severed endpoint returned %v, want %v", serr, syserr.ErrClosedForSend)
+	}
+}
+
+// TestHostSenderRecvPasscred verifies that Recv on a host socket with
+// SO_PASSCRED set delivers data and SCM_RIGHTS FDs. Linux attaches
+// SCM_CREDENTIALS to every message on such a socket, which used to make Recv
+// fail with EINVAL or truncate the rights (gVisor issue #14594).
+func TestHostSenderRecvPasscred(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		stype int
+	}{
+		{"stream", unix.SOCK_STREAM},
+		{"seqpacket", unix.SOCK_SEQPACKET},
+		{"dgram", unix.SOCK_DGRAM},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fds, err := unix.Socketpair(unix.AF_UNIX, tc.stype, 0)
+			if err != nil {
+				t.Fatalf("Socketpair failed: %v", err)
+			}
+			defer unix.Close(fds[1])
+			if err := unix.SetsockoptInt(fds[0], unix.SOL_SOCKET, unix.SO_PASSCRED, 1); err != nil {
+				unix.Close(fds[0])
+				t.Fatalf("Setsockopt(SO_PASSCRED) failed: %v", err)
+			}
+			ep, serr := NewSCMSender(fds[0], &waiter.Queue{}, "test-addr")
+			if serr != nil {
+				unix.Close(fds[0])
+				t.Fatalf("NewSCMSender failed: %v", serr)
+			}
+			// ep holds two references, and the last Release closes fds[0].
+			defer ep.Release(ctx)
+			defer ep.Release(ctx)
+			if err := ep.Init(); err != nil {
+				t.Fatalf("Init failed: %v", err)
+			}
+
+			recv := func(want byte, numRights int) RecvOutput {
+				t.Helper()
+				buf := make([]byte, 8)
+				out, _, serr := ep.Recv(ctx, [][]byte{buf}, RecvArgs{NumRights: numRights})
+				if serr != nil {
+					t.Fatalf("Recv(NumRights: %d) failed: %v", numRights, serr)
+				}
+				if out.RecvLen != 1 || buf[0] != want {
+					t.Fatalf("Recv(NumRights: %d) = %q, want %q", numRights, buf[:out.RecvLen], want)
+				}
+				return out
+			}
+
+			// Data and rights.
+			if err := unix.Sendmsg(fds[1], []byte{'a'}, unix.UnixRights(fds[1]), nil, 0); err != nil {
+				t.Fatalf("Sendmsg failed: %v", err)
+			}
+			out := recv('a', 1)
+			if out.ControlTrunc {
+				t.Errorf("Recv with rights set ControlTrunc")
+			}
+			rights, ok := out.Control.Rights.(*SCMRights)
+			if !ok || len(rights.FDs) != 1 {
+				t.Fatalf("Recv rights = %+v, want one FD", out.Control.Rights)
+			}
+			var sent, got unix.Stat_t
+			if err := unix.Fstat(fds[1], &sent); err != nil {
+				t.Fatalf("Fstat failed: %v", err)
+			}
+			if err := unix.Fstat(rights.FDs[0], &got); err != nil {
+				t.Fatalf("Fstat failed: %v", err)
+			}
+			if got.Ino != sent.Ino {
+				t.Errorf("received FD has inode %d, want %d", got.Ino, sent.Ino)
+			}
+			rights.Release(ctx)
+
+			// Data only, with room for rights.
+			if err := unix.Sendmsg(fds[1], []byte{'b'}, nil, nil, 0); err != nil {
+				t.Fatalf("Sendmsg failed: %v", err)
+			}
+			out = recv('b', 1)
+			if out.ControlTrunc {
+				t.Errorf("Recv without rights set ControlTrunc")
+			}
+			if out.Control.Rights != nil {
+				t.Errorf("Recv without rights returned rights %+v", out.Control.Rights)
+			}
+
+			// Data only, without room for rights.
+			if err := unix.Sendmsg(fds[1], []byte{'c'}, nil, nil, 0); err != nil {
+				t.Fatalf("Sendmsg failed: %v", err)
+			}
+			recv('c', 0)
+		})
 	}
 }

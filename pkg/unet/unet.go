@@ -19,6 +19,7 @@
 package unet
 
 import (
+	"encoding/binary"
 	"errors"
 
 	"golang.org/x/sys/unix"
@@ -254,6 +255,10 @@ func (c *ControlMessage) EnableFDs(count int) {
 
 // ExtractFDs returns the list of FDs in the control message.
 //
+// Control messages other than SCM_RIGHTS, such as the SCM_CREDENTIALS that
+// Linux attaches when SO_PASSCRED is set, are ignored. The FD that Linux
+// installs for SCM_PIDFD (SO_PASSPIDFD) is closed.
+//
 // Either this or CloseFDs should be used after EnableFDs.
 func (c *ControlMessage) ExtractFDs() ([]int, error) {
 	msgs, err := unix.ParseSocketControlMessage(*c)
@@ -262,14 +267,25 @@ func (c *ControlMessage) ExtractFDs() ([]int, error) {
 	}
 	var fds []int
 	for _, msg := range msgs {
-		thisFds, err := unix.ParseUnixRights(&msg)
-		if err != nil {
-			// Different control message.
-			return nil, err
+		if msg.Header.Level != unix.SOL_SOCKET {
+			continue
 		}
-		for _, fd := range thisFds {
-			if fd >= 0 {
-				fds = append(fds, fd)
+		switch msg.Header.Type {
+		case unix.SCM_RIGHTS:
+			thisFds, err := unix.ParseUnixRights(&msg)
+			if err != nil {
+				return nil, err
+			}
+			for _, fd := range thisFds {
+				if fd >= 0 {
+					fds = append(fds, fd)
+				}
+			}
+		case unix.SCM_PIDFD:
+			if len(msg.Data) >= 4 {
+				if fd := int32(binary.NativeEndian.Uint32(msg.Data)); fd >= 0 {
+					unix.Close(int(fd))
+				}
 			}
 		}
 	}
