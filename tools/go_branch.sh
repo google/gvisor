@@ -128,6 +128,7 @@ declare -ar binaries=(
   "shim"
   "webhook"
   "tools/checklocks/cmd/checklocks"
+  "tools/checkescape/cmd/checkescape"
 )
 for target in "${binaries[@]}"; do
   mkdir -p "${target}"
