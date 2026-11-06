@@ -15,6 +15,7 @@
 package transport
 
 import (
+	"bytes"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -132,5 +133,53 @@ func TestSeveredRecvSend(t *testing.T) {
 	}
 	if _, _, serr := ep.Send(nil, [][]byte{{1}}, ControlMessages{}, Address{}); serr != syserr.ErrClosedForSend {
 		t.Errorf("Send on severed endpoint returned %v, want %v", serr, syserr.ErrClosedForSend)
+	}
+}
+
+// TestHostSenderStreamRecvMoreThanSendBuffer verifies that a single Recv on a
+// host stream socket returns all queued data that fits in the buffer, even
+// when that is more than the send buffer size, as on Linux.
+func TestHostSenderStreamRecvMoreThanSendBuffer(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("Socketpair failed: %v", err)
+	}
+	defer unix.Close(fds[0])
+	defer unix.Close(fds[1])
+
+	// Shrink the send buffer of the end that we read from, so that the peer
+	// can easily queue more than that.
+	if err := unix.SetsockoptInt(fds[0], unix.SOL_SOCKET, unix.SO_SNDBUF, 4096); err != nil {
+		t.Fatalf("SetsockoptInt(SO_SNDBUF) failed: %v", err)
+	}
+	c, serr := NewHostSender(fds[0], "test-addr")
+	if serr != nil {
+		t.Fatalf("NewHostSender failed: %v", serr)
+	}
+	sndbuf := c.SendMaxQueueSize()
+
+	want := make([]byte, 4*sndbuf)
+	for i := range want {
+		want[i] = byte(i)
+	}
+	if n, err := unix.Write(fds[1], want); n != len(want) || err != nil {
+		t.Fatalf("Write = %d, %v, want %d, nil", n, err, len(want))
+	}
+
+	got := make([]byte, 2*len(want))
+	out, _, serr := c.Recv(nil, [][]byte{got}, RecvArgs{})
+	if serr != nil {
+		t.Fatalf("Recv failed: %v", serr)
+	}
+	if out.RecvLen != int64(len(want)) {
+		t.Fatalf("Recv returned %d bytes, want %d (send buffer size %d)", out.RecvLen, len(want), sndbuf)
+	}
+	if !bytes.Equal(got[:out.RecvLen], want) {
+		t.Errorf("Recv returned different data than was written")
+	}
+
+	// Everything was read, so the socket is drained.
+	if out, _, serr := c.Recv(nil, [][]byte{got}, RecvArgs{}); serr != syserr.ErrTryAgain {
+		t.Errorf("second Recv = %d bytes, %v, want %v", out.RecvLen, serr, syserr.ErrTryAgain)
 	}
 }

@@ -42,6 +42,18 @@ func copyFromMulti(dst []byte, src [][]byte) {
 	}
 }
 
+// needsIntermediate returns true if bufs needs more iovecs than the host
+// accepts, in which case buildIovec uses an intermediate buffer.
+func needsIntermediate(bufs [][]byte) bool {
+	var iovsRequired int
+	for _, b := range bufs {
+		if len(b) > 0 {
+			iovsRequired++
+		}
+	}
+	return iovsRequired > hostfd.MaxSendRecvMsgIov
+}
+
 // buildIovec builds an iovec slice from the given []byte slice.
 //
 // If truncate, truncate bufs > maxlen. Otherwise, immediately return an error.
