@@ -93,6 +93,57 @@ TEST(TcpConnectTest, RefusalIsReportedOnce) {
   }
 }
 
+TEST(TcpConnectTest, RefusalPreservesOnlyRequestedSourcePort) {
+  sockaddr_in server_addr = {};
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  auto server = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  socklen_t n = sizeof(server_addr);
+  ASSERT_THAT(bind(server.get(), AsSockAddr(&server_addr), n),
+              SyscallSucceeds());
+  ASSERT_THAT(getsockname(server.get(), AsSockAddr(&server_addr), &n),
+              SyscallSucceeds());
+  for (bool wildcard : {true, false}) {
+    for (bool fixed : {true, false}) {
+      SCOPED_TRACE(wildcard);
+      SCOPED_TRACE(fixed);
+      sockaddr_in local = {};
+      local.sin_family = AF_INET;
+      local.sin_addr.s_addr = htonl(wildcard ? INADDR_ANY : INADDR_LOOPBACK);
+      if (fixed) {
+        auto port = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+        ASSERT_THAT(bind(port.get(), AsSockAddr(&local), sizeof(local)),
+                    SyscallSucceeds());
+        ASSERT_THAT(getsockname(port.get(), AsSockAddr(&local), &n),
+                    SyscallSucceeds());
+      }
+      {
+        auto client =
+            ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+        ASSERT_THAT(bind(client.get(), AsSockAddr(&local), sizeof(local)),
+                    SyscallSucceeds());
+        ASSERT_THAT(getsockname(client.get(), AsSockAddr(&local), &n),
+                    SyscallSucceeds());
+        ASSERT_THAT(RetryEINTR(connect)(client.get(), AsSockAddr(&server_addr),
+                                        sizeof(server_addr)),
+                    SyscallFailsWithErrno(ECONNREFUSED));
+        auto contender =
+            ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+        if (fixed) {
+          EXPECT_THAT(bind(contender.get(), AsSockAddr(&local), sizeof(local)),
+                      SyscallFailsWithErrno(EADDRINUSE));
+        } else {
+          EXPECT_THAT(bind(contender.get(), AsSockAddr(&local), sizeof(local)),
+                      SyscallSucceeds());
+        }
+      }
+      auto after = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(after.get(), AsSockAddr(&local), sizeof(local)),
+                  SyscallSucceeds());
+    }
+  }
+}
+
 TEST_P(TCPSocketPairTest, TcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
