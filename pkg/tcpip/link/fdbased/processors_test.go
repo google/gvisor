@@ -195,16 +195,18 @@ func TestDispatchMalformedIPv4(t *testing.T) {
 			if len(test.ethHdr) > 0 {
 				addr = tcpip.LinkAddress(test.ethHdr[:header.EthernetAddressSize])
 			}
-			d, err := newReadVDispatcher(fds[0], &endpoint{
-				addr:       addr,
-				hdrSize:    len(test.ethHdr),
-				dispatcher: sink,
-			}, &Options{ProcessorsPerChannel: 1})
+			ep := &endpoint{
+				addr:    addr,
+				hdrSize: len(test.ethHdr),
+			}
+			d, err := newReadVDispatcher(fds[0], ep)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer d.release()
-			if ok, err := d.dispatch(); !ok || err != nil {
+			var m processorManager
+			m.start(1, false, sink)
+			if ok, err := d.dispatch(&m); !ok || err != nil {
 				t.Fatalf("d.dispatch() = %v, %v", ok, err)
 			}
 
