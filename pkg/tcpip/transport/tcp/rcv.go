@@ -23,6 +23,23 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
+// ackFlags are reasons to send the next ACK sooner, like Linux's ICSK_ACK_*
+// flags. They are cleared when an ACK is sent.
+type ackFlags uint8
+
+const (
+	// ackNow sends the next ACK without delay.
+	ackNow ackFlags = 1 << iota
+
+	// ackPushed is set when a segment smaller than rcvMSS or a pushed
+	// full-sized segment is received.
+	ackPushed
+
+	// ackPushed2 is set when more than one segment smaller than rcvMSS is
+	// received.
+	ackPushed2
+)
+
 // receiver holds the state necessary to receive TCP segments and turn them
 // into a stream of bytes.
 //
@@ -49,9 +66,30 @@ type receiver struct {
 
 	// Time when the last ack was received.
 	lastRcvdAckTime tcpip.MonotonicTime
+
+	// quickAcks is the number of remaining ACKs to send without delay.
+	quickAcks int
+
+	// rcvMSS estimates the payload size of full-sized segments from the peer.
+	rcvMSS int
+
+	// lastSegSize is the size of the last data segment if it was smaller
+	// than rcvMSS but may be full-sized, and 0 otherwise.
+	lastSegSize int
+
+	ackFlags ackFlags
+
+	// pingpong is set while the connection is interactive, so that responses
+	// are likely to carry ACKs, like Linux's pingpong mode.
+	pingpong bool
+
+	// Data sent before responseDeadline is a response to received data.
+	// Only received data extends the deadline.
+	responseDeadline tcpip.MonotonicTime
 }
 
 func newReceiver(ep *Endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8) *receiver {
+	now := ep.stack.Clock().NowMonotonic()
 	return &receiver{
 		ep: ep,
 		TCPReceiverState: TCPReceiverState{
@@ -59,10 +97,89 @@ func newReceiver(ep *Endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 			RcvAcc:      irs.Add(rcvWnd + 1),
 			RcvWndScale: rcvWndScale,
 		},
-		rcvWnd:          rcvWnd,
-		rcvWUP:          irs + 1,
-		lastRcvdAckTime: ep.stack.Clock().NowMonotonic(),
+		rcvWnd:           rcvWnd,
+		rcvWUP:           irs + 1,
+		lastRcvdAckTime:  now,
+		quickAcks:        maxQuickAcks,
+		rcvMSS:           min(int(ep.amss), header.TCPDefaultMSS),
+		pingpong:         !ep.ops.GetQuickAck(),
+		responseDeadline: now,
 	}
+}
+
+// shouldDelayAck returns whether the ACK for in-order data received since the
+// last ACK can be delayed so that a response may carry it, like Linux does.
+//
+// +checklocks:r.ep.mu
+func (r *receiver) shouldDelayAck() bool {
+	if r.quickAcks > 0 && !r.pingpong {
+		r.quickAcks--
+		return false
+	}
+	// Acknowledge more than one full-sized segment (RFC 5681 section 4.2)
+	// and out-of-order data immediately.
+	unacked := int(r.ep.snd.MaxSentAck.Size(r.RcvNxt))
+	return unacked <= r.rcvMSS && len(r.pendingRcvdSegments) == 0 && r.ackFlags&ackNow == 0
+}
+
+// ackAfterRead sends a delayed ACK after the application reads data, like
+// Linux's tcp_cleanup_rbuf(). The peer may wait for the ACK of a pushed or
+// small segment, for example because of Nagle's algorithm. Unless the
+// connection is interactive, no response is likely to carry the ACK.
+//
+// +checklocks:r.ep.mu
+func (r *receiver) ackAfterRead() {
+	if r.RcvNxt == r.ep.snd.MaxSentAck {
+		return
+	}
+	unacked := int(r.ep.snd.MaxSentAck.Size(r.RcvNxt))
+	pushed := r.ackFlags&ackPushed2 != 0 || (r.ackFlags&ackPushed != 0 && !r.pingpong)
+	if unacked > r.rcvMSS || (pushed && r.ep.receiveBufferUsed() == 0) {
+		r.ep.snd.sendAck()
+	}
+}
+
+// measureRcvMSS updates rcvMSS and ackFlags from the size of a received data
+// segment, like Linux's tcp_measure_rcv_mss().
+//
+// +checklocks:r.ep.mu
+func (r *receiver) measureRcvMSS(s *segment) {
+	lastSegSize := r.lastSegSize
+	r.lastSegSize = 0
+	size := s.payloadSize()
+	if s.pkt.GROSegmentSize != 0 {
+		size = int(s.pkt.GROSegmentSize)
+	}
+	if size >= r.rcvMSS {
+		r.rcvMSS = min(size, int(r.ep.amss))
+		// A full-sized segment that ends a write.
+		if s.flags.Contains(header.TCPFlagPsh) {
+			r.ackFlags |= ackPushed
+		}
+		return
+	}
+
+	// A smaller segment may be full-sized if it is large or does not end a
+	// write. Count its options other than timestamps, because SACK blocks
+	// reduce the payload of full-sized segments. Two such segments of the
+	// same size in sequence set a new rcvMSS.
+	size += len(s.options)
+	if size >= header.TCPDefaultMSS || (size >= header.TCPMinimumMSS &&
+		!s.flags.Intersects(header.TCPFlagFin|header.TCPFlagSyn|header.TCPFlagPsh|header.TCPFlagUrg)) {
+		if r.ep.SendTSOk {
+			// The timestamp option and two NOPs.
+			size -= header.TCPOptionTSLength + 2
+		}
+		r.lastSegSize = size
+		if size == lastSegSize {
+			r.rcvMSS = size
+			return
+		}
+	}
+	if r.ackFlags&ackPushed != 0 {
+		r.ackFlags |= ackPushed2
+	}
+	r.ackFlags |= ackPushed
 }
 
 // acceptable checks if the segment sequence number range is acceptable
@@ -476,6 +593,11 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// records when it actually arrived (consumed by the user-timeout check).
 	r.lastRcvdAckTime = s.rcvdTime
 
+	if segLen > 0 {
+		r.responseDeadline = s.rcvdTime.Add(delayedAckTimeout)
+		r.measureRcvMSS(s)
+	}
+
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen, duplicate) {
 		if segLen > 0 || s.flags.Contains(header.TCPFlagFin) {
@@ -523,6 +645,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// By consuming the current segment, we may have filled a gap in the
 	// sequence number domain that allows pending segments to be consumed
 	// now. So try to do it.
+	hadGap := r.pendingRcvdSegments.Len() > 0
 	for !r.closed && r.pendingRcvdSegments.Len() > 0 {
 		s := r.pendingRcvdSegments[0]
 		segLen := seqnum.Size(s.payloadSize())
@@ -539,6 +662,11 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		r.PendingBufUsed -= s.segMemSize()
 		r.ep.rcvQueueMu.Unlock()
 		s.DecRef()
+	}
+	if hadGap && r.pendingRcvdSegments.Len() == 0 && !r.closed {
+		// Acknowledge filling the last gap immediately (RFC 5681
+		// section 4.2; Linux tcp_data_queue()).
+		r.ackFlags |= ackNow
 	}
 	if duplicate.Start != duplicate.End && !r.closed {
 		// Send after draining so the ACK covers any gap the new suffix

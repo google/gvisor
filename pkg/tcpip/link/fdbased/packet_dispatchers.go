@@ -53,6 +53,10 @@ type iovecBuffer struct {
 	// skipsVnetHdr is true if virtioNetHdr is to skipped.
 	skipsVnetHdr bool
 
+	// vnetHdr holds the virtioNetHdr of the last packet read if skipsVnetHdr
+	// is true.
+	vnetHdr [virtioNetHdrSize]byte
+
 	// pulledIndex is the index of the last []byte buffer pulled from the
 	// underlying buffer storage during a call to pullBuffers. It is -1
 	// if no buffer is pulled.
@@ -76,11 +80,9 @@ func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
 func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 	vnetHdrOff := 0
 	if b.skipsVnetHdr {
-		var vnetHdr [virtioNetHdrSize]byte
-		// The kernel adds virtioNetHdr before each packet, but
-		// we don't use it, so we allocate a buffer for it,
-		// add it in iovecs but don't add it in a view.
-		b.iovecs[0] = unix.Iovec{Base: &vnetHdr[0]}
+		// The kernel adds virtioNetHdr before each packet. Read it
+		// into vnetHdr rather than a view.
+		b.iovecs[0] = unix.Iovec{Base: &b.vnetHdr[0]}
 		b.iovecs[0].SetLen(virtioNetHdrSize)
 		vnetHdrOff++
 	}
@@ -95,6 +97,27 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 		b.iovecs[i+vnetHdrOff].SetLen(v.Size())
 	}
 	return b.iovecs
+}
+
+// groSegmentSize returns the size of the TCP segments that the host coalesced
+// into the last packet read, or zero.
+func (b *iovecBuffer) groSegmentSize() uint16 {
+	if !b.skipsVnetHdr {
+		return 0
+	}
+	return groSegmentSize(b.vnetHdr[:])
+}
+
+// groSegmentSize returns the size of the TCP segments that the host coalesced
+// into a packet with the given virtioNetHdr, or zero.
+func groSegmentSize(vnetHdr []byte) uint16 {
+	switch vnetHdr[1] &^ _VIRTIO_NET_HDR_GSO_ECN {
+	case _VIRTIO_NET_HDR_GSO_TCPV4, _VIRTIO_NET_HDR_GSO_TCPV6:
+		// virtioNetHdr.gsoSize, in little-endian byte order.
+		return uint16(vnetHdr[4]) | uint16(vnetHdr[5])<<8
+	default:
+		return 0
+	}
 }
 
 // pullBuffer extracts the enough underlying storage from b.buffer to hold n
@@ -201,6 +224,7 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 		Payload: d.buf.pullBuffer(n),
 	})
 	defer pkt.DecRef()
+	pkt.GROSegmentSize = d.buf.groSegmentSize()
 
 	d.e.mu.RLock()
 	addr := d.e.addr
@@ -322,6 +346,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: d.bufs[k].pullBuffer(n),
 		})
+		pkt.GROSegmentSize = d.bufs[k].groSegmentSize()
 		d.pkts.PushBack(pkt)
 
 		// Mark that this iovec has been processed.

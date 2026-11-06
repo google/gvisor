@@ -58,6 +58,15 @@ const (
 	// Algorithms (such as HyStart) that use the round-trip time should ignore
 	// such Updates.
 	unknownRTT = time.Duration(-1)
+
+	// delayedAckTimeout is how long an ACK may be delayed waiting for an
+	// outgoing segment to carry it. Linux TCP_DELACK_MIN.
+	delayedAckTimeout = 40 * time.Millisecond
+
+	// maxQuickAcks is the number of ACKs sent without delay at the start of
+	// a connection, so that delayed ACKs do not slow the peer's slow start.
+	// Linux TCP_MAX_QUICKACKS.
+	maxQuickAcks = 16
 )
 
 // congestionControl is an interface that must be implemented by any supported
@@ -200,6 +209,10 @@ type sender struct {
 	// corkTimer is used to drain the segments which are held when TCP_CORK
 	// option is enabled.
 	corkTimer timer `state:"nosave"`
+
+	// ackTimer sends a delayed ACK if no outgoing segment has carried it
+	// before it expires.
+	ackTimer timer `state:"nosave"`
 }
 
 // protectedWriteList wraps the write list, checking for invalid state when
@@ -315,6 +328,7 @@ func initSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uin
 	ep.snd.reorderTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.rc.reorderTimerExpired))
 	ep.snd.probeTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.probeTimerExpired))
 	ep.snd.corkTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.corkTimerExpired))
+	ep.snd.ackTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.ackTimerExpired))
 
 	ep.snd.updateMaxPayloadSize(int(ep.snd.ep.route.MTU()), 0)
 	// Initialize SACK Scoreboard after updating max payload size as we use
@@ -1889,16 +1903,29 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 	}
 
 	rcvNxt, rcvWnd := s.ep.rcv.getSendParams()
-
-	// Remember the max sent ack.
-	s.MaxSentAck = rcvNxt
+	hasData := pkt.Data().Size() != 0
 
 	// We need to clone the packet because sendRaw takes ownership of pkt,
 	// and pkt could be reprocessed later on (i.e retrasmission).
 	pkt = pkt.Clone()
 	defer pkt.DecRef()
 
-	return s.ep.sendRaw(pkt, flags, seq, rcvNxt, rcvWnd, s.ep.currentSACKBlocks(flags))
+	if err := s.ep.sendRaw(pkt, flags, seq, rcvNxt, rcvWnd, s.ep.currentSACKBlocks(flags)); err != nil {
+		return err
+	}
+
+	// Remember the max sent ack. A delayed ACK stays pending until a
+	// segment carrying it is sent.
+	s.MaxSentAck = rcvNxt
+	s.ackTimer.disable()
+	s.ep.rcv.ackFlags = 0
+
+	// Like Linux's tcp_event_data_sent(), data sent soon after data was
+	// received is taken to be a response.
+	if hasData && s.LastSendTime.Before(s.ep.rcv.responseDeadline) {
+		s.ep.rcv.pingpong = true
+	}
+	return nil
 }
 
 // sendEmptyAck sends an ACK with the given sequence number and SACK blocks.
@@ -1911,10 +1938,15 @@ func (s *sender) sendEmptyAck(seq seqnum.Value, sackBlocks []header.SACKBlock) t
 
 	rcvNxt, rcvWnd := s.ep.rcv.getSendParams()
 
+	if err := s.ep.sendEmptyRaw(header.TCPFlagAck, seq, rcvNxt, rcvWnd, sackBlocks); err != nil {
+		return err
+	}
+
 	// Remember the max sent ack.
 	s.MaxSentAck = rcvNxt
-
-	return s.ep.sendEmptyRaw(header.TCPFlagAck, seq, rcvNxt, rcvWnd, sackBlocks)
+	s.ackTimer.disable()
+	s.ep.rcv.ackFlags = 0
+	return nil
 }
 
 // maybeSendOutOfWindowAck sends an ACK if we are not being rate limited
@@ -1936,6 +1968,23 @@ func (s *sender) updateWriteNext(seg *segment) {
 		seg.IncRef()
 	}
 	s.writeNext = seg
+}
+
+// ackTimerExpired sends an ACK for received data whose acknowledgement was
+// delayed and not carried by any outgoing segment since.
+// +checklocks:s.ep.mu
+// +checklocksexclude:s.rtt.rttMutex
+func (s *sender) ackTimerExpired() tcpip.Error {
+	if s.ackTimer.isUninitialized() || !s.ackTimer.checkExpiration() {
+		return nil
+	}
+	if s.ep.EndpointState().connected() && s.ep.rcv.RcvNxt != s.MaxSentAck {
+		// No response carried the ACK in time, so the connection is not
+		// interactive (Linux tcp_delack_timer_handler()).
+		s.ep.rcv.pingpong = false
+		s.sendAck()
+	}
+	return nil
 }
 
 // corkTimerExpired drains all the segments when TCP_CORK is enabled.
