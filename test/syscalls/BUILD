@@ -210,6 +210,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_host_random = True,
     test = "//test/syscalls/linux:epoll_test",
 )
 
