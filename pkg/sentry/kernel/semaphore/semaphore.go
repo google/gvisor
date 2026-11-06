@@ -96,7 +96,7 @@ type Set struct {
 type sem struct {
 	value   int16
 	waiters waiterList `state:"zerovalue"`
-	pid     int32
+	pid     *ipc.PID
 }
 
 // waiter represents a caller that is waiting for the semaphore value to
@@ -430,7 +430,7 @@ func (s *Set) semStat(creds *auth.Credentials, ats vfs.AccessTypes) (*linux.Semi
 // SetVal overrides a semaphore value, waking up waiters as needed.
 //
 // +checklocksexclude:s.mu
-func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials, pid int32) error {
+func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials, pid *ipc.PID) error {
 	if val < 0 || val > valueMax {
 		return linuxerr.ERANGE
 	}
@@ -462,7 +462,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 // 'len(vals)' must be equal to 's.Size()'.
 //
 // +checklocksexclude:s.mu
-func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credentials, pid int32) error {
+func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credentials, pid *ipc.PID) error {
 	if len(vals) != s.Size() {
 		panic(fmt.Sprintf("vals length (%d) different that Set.Size() (%d)", len(vals), s.Size()))
 	}
@@ -531,10 +531,10 @@ func (s *Set) GetValAll(creds *auth.Credentials) ([]uint16, error) {
 	return vals, nil
 }
 
-// GetPID returns the PID set when performing operations in the semaphore.
+// GetPID returns the last writer's PID as visible in namespaceIno.
 //
 // +checklocksexclude:s.mu
-func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
+func (s *Set) GetPID(num int32, creds *auth.Credentials, namespaceIno uint64) (int32, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -547,7 +547,7 @@ func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
 	if sem == nil {
 		return 0, linuxerr.ERANGE
 	}
-	return sem.pid, nil
+	return sem.pid.In(namespaceIno), nil
 }
 
 // countWaiters calls pred synchronously under s.mu. pred must not release or
@@ -601,7 +601,7 @@ func (s *Set) CountNegativeWaiters(num int32, creds *auth.Credentials) (uint16, 
 // a channel that can be waited on before attempting again.
 //
 // +checklocksexclude:s.mu
-func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Credentials, pid int32) (chan struct{}, int32, error) {
+func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Credentials, pid *ipc.PID) (chan struct{}, int32, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -637,7 +637,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 }
 
 // +checklocks:s.mu
-func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (chan struct{}, int32, error) {
+func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid *ipc.PID) (chan struct{}, int32, error) {
 	// Changes to semaphores go to this slice temporarily until they all succeed.
 	tmpVals := make([]int16, len(s.sems))
 	for i := range s.sems {

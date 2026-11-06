@@ -16,11 +16,14 @@ package kernel
 
 import (
 	"fmt"
+	"maps"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -389,12 +392,10 @@ func (ns *PIDNamespace) IDOfThreadGroup(tg *ThreadGroup) ThreadID {
 	return id
 }
 
-// pidNamespacedIDsLocked returns a PID-namespaced snapshot of thread IDs
-// for tg's PID namespace and every ancestor.
+// pidsLocked yields the thread group's ID in its PID namespace and each ancestor.
 //
 // Preconditions: tg.pidns.owner.mu must be locked (for reading or writing).
-func (tg *ThreadGroup) pidNamespacedIDsLocked() map[*PIDNamespace]ThreadID {
-	ids := make(map[*PIDNamespace]ThreadID)
+func (tg *ThreadGroup) pidsLocked(yield func(*PIDNamespace, ThreadID) bool) {
 	for ns := tg.pidns; ns != nil; ns = ns.parent {
 		id, ok := ns.tgids[tg]
 		if !ok {
@@ -402,9 +403,30 @@ func (tg *ThreadGroup) pidNamespacedIDsLocked() map[*PIDNamespace]ThreadID {
 			// as per the pid ns invariant.
 			panic("thread group not visible in its own or an ancestor PID namespace")
 		}
-		ids[ns] = id
+		if !yield(ns, id) {
+			return
+		}
 	}
-	return ids
+}
+
+// IPCPID returns the thread group's PID as visible to each namespace, even
+// after the process exits. The caller must be a live task.
+func (t *Task) IPCPID() *ipc.PID {
+	tg := t.ThreadGroup()
+	if pid := tg.ipcPID.Load(); pid != nil {
+		return pid
+	}
+	tg.pidns.owner.mu.Lock()
+	defer tg.pidns.owner.mu.Unlock()
+	if pid := tg.ipcPID.Load(); pid != nil {
+		return pid
+	}
+	var pid *ipc.PID
+	for ns, id := range tg.pidsLocked {
+		pid = pid.WithNumber(ns.GetInode().Ino(), int32(id))
+	}
+	tg.ipcPID.Store(pid)
+	return pid
 }
 
 // PIDNamespacedIDs returns a snapshot mapping each PID namespace in which t's
@@ -422,7 +444,7 @@ func (t *Task) PIDNamespacedIDs() map[*PIDNamespace]ThreadID {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
 
-	return tg.pidNamespacedIDsLocked()
+	return maps.Collect(tg.pidsLocked)
 }
 
 // PIDNamespacedIDs returns a snapshot mapping each PID namespace in which tid's
@@ -444,7 +466,7 @@ func (ns *PIDNamespace) PIDNamespacedIDs(tid ThreadID) map[*PIDNamespace]ThreadI
 		return nil
 	}
 
-	return tg.pidNamespacedIDsLocked()
+	return maps.Collect(tg.pidsLocked)
 }
 
 // Tasks returns a snapshot of the tasks in ns.
@@ -534,6 +556,10 @@ type threadGroupNode struct {
 	// Useful to avoid using locks when determining a thread group leader's own
 	// TID.
 	pidWithinNS atomicbitops.Int32
+
+	// ipcPID is populated on first use. IPC objects can retain their own
+	// copy after restore without requiring the cache to be checkpointed.
+	ipcPID atomic.Pointer[ipc.PID] `state:"nosave"`
 
 	// eventQueue is notified whenever a event of interest to Task.Wait occurs
 	// in a child of this thread group, or a ptrace tracee of a task in this
