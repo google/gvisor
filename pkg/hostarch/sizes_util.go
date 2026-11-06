@@ -7,9 +7,10 @@
 package hostarch
 
 // Masks often used when working with alignment in constant expressions.
+//
+// PageMask and HugePageMask are defined alongside PageSize and HugePageSize,
+// since they are not constants on all architectures.
 const (
-	PageMask      = PageSize - 1
-	HugePageMask  = HugePageSize - 1
 	CacheLineMask = CacheLineSize - 1
 	JumboPageMask = ^uintptr(JumboPageSize - 1)
 )
@@ -24,13 +25,13 @@ type hugebytecount interface {
 
 // PageRoundDown returns x rounded down to the nearest multiple of PageSize.
 func PageRoundDown[T bytecount](x T) T {
-	return x &^ PageMask
+	return x &^ T(PageMask)
 }
 
 // PageRoundUp returns x rounded up to the nearest multiple of PageSize. ok is
 // true iff rounding up does not overflow the range of T.
 func PageRoundUp[T bytecount](x T) (val T, ok bool) {
-	val = PageRoundDown(x + PageMask)
+	val = PageRoundDown(x + T(PageMask))
 	ok = val >= x
 	return
 }
@@ -47,7 +48,7 @@ func MustPageRoundUp[T bytecount](x T) T {
 
 // PageOffset returns the offset of x into its containing page.
 func PageOffset[T bytecount](x T) T {
-	return x & PageMask
+	return x & T(PageMask)
 }
 
 // IsPageAligned returns true if x is a multiple of PageSize.
@@ -59,23 +60,23 @@ func IsPageAligned[T bytecount](x T) bool {
 // true). If rounding x up to a multiple of PageSize overflows the range of T,
 // ToPagesRoundUp returns (unspecified, false).
 func ToPagesRoundUp[T bytecount](x T) (T, bool) {
-	y := x + PageMask
+	y := x + T(PageMask)
 	if y < x {
 		return x, false
 	}
-	return y / PageSize, true
+	return y >> PageShift, true
 }
 
 // HugePageRoundDown returns x rounded down to the nearest multiple of
 // HugePageSize.
 func HugePageRoundDown[T hugebytecount](x T) T {
-	return x &^ HugePageMask
+	return x &^ T(HugePageMask)
 }
 
 // HugePageRoundUp returns x rounded up to the nearest multiple of
 // HugePageSize. ok is true iff rounding up does not overflow the range of T.
 func HugePageRoundUp[T hugebytecount](x T) (val T, ok bool) {
-	val = HugePageRoundDown(x + HugePageMask)
+	val = HugePageRoundDown(x + T(HugePageMask))
 	ok = val >= x
 	return
 }
@@ -92,7 +93,7 @@ func MustHugePageRoundUp[T hugebytecount](x T) T {
 
 // HugePageOffset returns the offset of x into its containing page.
 func HugePageOffset[T hugebytecount](x T) T {
-	return x & HugePageMask
+	return x & T(HugePageMask)
 }
 
 // IsHugePageAligned returns true if x is a multiple of HugePageSize.
