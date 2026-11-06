@@ -32,8 +32,10 @@ import (
 // clock.
 type CalibratedClock struct {
 	// mu protects ref's mutable sampling state.
-	// TODO(mpratt): consider a sequence counter for read locking.
-	mu sync.RWMutex
+	mu sync.Mutex
+
+	// seq orders lockless reads of params with Update.
+	seq sync.SeqCount
 
 	// ref samples the reference clock that this clock is calibrated against.
 	// The pointer is immutable; its samples and overhead are protected by mu.
@@ -47,9 +49,11 @@ type CalibratedClock struct {
 	// +checklocks:mu
 	ready bool
 
-	// params are the current timekeeping parameters.
-	//
-	// +checklocks:mu
+	// params are the current timekeeping parameters, or zero while the clock
+	// is not ready. Writing params requires that mu is locked and that seq is
+	// in a writer critical section. Reading params requires either that mu is
+	// locked, or using seq and SeqAtomicLoadParameters. checklocks cannot
+	// express this.
 	params Parameters
 
 	// errorNS is the estimated clock error in nanoseconds.
@@ -99,15 +103,20 @@ func (c *CalibratedClock) Warningf(format string, v ...any) {
 func (c *CalibratedClock) reset(str string, v ...any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.seq.BeginWrite()
 	c.resetLocked(str, v...)
+	c.seq.EndWrite()
 }
 
-// resetLocked is equivalent to reset with c.mu already held for writing.
+// resetLocked is equivalent to reset with c.mu already held.
+//
+// Preconditions: c.seq is in a writer critical section.
 //
 // +checklocks:c.mu
 func (c *CalibratedClock) resetLocked(str string, v ...any) {
 	c.Warningf(str+" Resetting clock; time may jump.", v...)
 	c.ready = false
+	c.params = Parameters{}
 	c.ref.Reset()
 	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeTimeFallback)
 }
@@ -172,6 +181,11 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// A reader that uses the old parameters must also read the TSC before the
+	// new sample, so the writer critical section spans the whole update.
+	c.seq.BeginWrite()
+	defer c.seq.EndWrite()
+
 	if err := c.ref.Sample(); err != nil {
 		c.resetLocked("Unable to update calibrated clock: %v.", err)
 		return Parameters{}, false
@@ -215,43 +229,51 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 //
 // +checklocksexclude:c.mu
 func (c *CalibratedClock) GetTime() (int64, error) {
-	c.mu.RLock()
-
-	if !c.ready {
-		// Fallback to a syscall.
-		now, err := c.ref.Syscall()
-		c.mu.RUnlock()
-		return int64(now), err
-	}
-
-	now := c.ref.Cycles()
-	v, ok := c.params.ComputeTime(now)
-	if !ok {
-		// The calibrated computation overflowed. Fall back to the reference
-		// clock.
-		params := c.params
-		c.mu.RUnlock()
-		c.mu.Lock()
-		// Reset only if the overflowing calibration is still current.
-		if c.ready && c.params == params {
-			c.resetLocked("Time computation overflowed. params = %+v, now = %v.", params, now)
+	for {
+		// Read the TSC within the read critical section, so that it is not
+		// later than a concurrent Update's sample.
+		epoch := c.seq.BeginRead()
+		params, ok := SeqAtomicTryLoadParameters(&c.seq, epoch, &c.params)
+		if !ok {
+			continue
 		}
-		now, err := c.ref.Syscall()
-		c.mu.Unlock()
-		return int64(now), err
-	}
+		if params.Frequency == 0 {
+			// Not calibrated. Fallback to a syscall.
+			c.mu.Lock()
+			now, err := c.ref.Syscall()
+			c.mu.Unlock()
+			return int64(now), err
+		}
+		now := c.ref.Cycles()
+		if !c.seq.ReadOk(epoch) {
+			continue
+		}
 
-	c.mu.RUnlock()
-	return v, nil
+		v, ok := params.ComputeTime(now)
+		if !ok {
+			// The calibrated computation overflowed. Fall back to the
+			// reference clock.
+			c.mu.Lock()
+			// Reset only if the overflowing calibration is still current.
+			if c.ready && c.params == params {
+				c.seq.BeginWrite()
+				c.resetLocked("Time computation overflowed. params = %+v, now = %v.", params, now)
+				c.seq.EndWrite()
+			}
+			now, err := c.ref.Syscall()
+			c.mu.Unlock()
+			return int64(now), err
+		}
+		return v, nil
+	}
 }
 
 // Params returns the current timekeeping parameters, and whether the clock is
 // calibrated. The parameters are in whatever cycle domain c.ref samples, which
 // for the real TSC clock includes any guest TSC offset.
 func (c *CalibratedClock) Params() (Parameters, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.params, c.ready
+	p := SeqAtomicLoadParameters(&c.seq, &c.params)
+	return p, p.Frequency != 0
 }
 
 // CalibratedClocks contains calibrated monotonic and realtime clocks.
