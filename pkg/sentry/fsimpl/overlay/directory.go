@@ -141,18 +141,19 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 
 // Preconditions: d.isDir().
 func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
+	var ds *[]*dentry
 	d.fs.renameMu.RLock()
-	defer d.fs.renameMu.RUnlock()
+	defer d.fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	d.dirMu.Lock()
 	defer d.dirMu.Unlock()
-	return d.getDirentsLocked(ctx)
+	return d.getDirentsLocked(ctx, &ds)
 }
 
 // Preconditions:
 //   - filesystem.renameMu must be locked.
 //   - d.dirMu must be locked.
 //   - d.isDir().
-func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
+func (d *dentry) getDirentsLocked(ctx context.Context, ds **[]*dentry) ([]vfs.Dirent, error) {
 	if d.dirents != nil {
 		return d.dirents, nil
 	}
@@ -241,6 +242,27 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	if readdirErr != nil {
 		return nil, readdirErr
 	}
+
+	// Publish the overlay inode number, not the layer inode number. A name
+	// that already has a dentry keeps that dentry's number. Any other name
+	// is resolved once so lookup and readdir share one number. A name that
+	// cannot be resolved stays in the listing: readdir does not require the
+	// caller to be able to look the file up.
+	resolved := dirents[:2]
+	for _, dirent := range dirents[2:] {
+		child, _, err := d.fs.getChildLocked(ctx, d, dirent.Name, ds)
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
+			continue
+		}
+		if err != nil {
+			dirent.Ino = d.fs.allocIno()
+		} else {
+			dirent.Ino = child.ino.Load()
+		}
+		dirent.NextOff = int64(len(resolved) + 1)
+		resolved = append(resolved, dirent)
+	}
+	dirents = resolved
 
 	// Cache dirents for future directoryFDs.
 	d.dirents = dirents

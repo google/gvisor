@@ -22,7 +22,6 @@
 //		filesystem.renameMu
 //			dentry.dirMu
 //		    dentry.copyMu
-//		      filesystem.devMu
 //		      *** "memmap.Mappable/MappingIdentity locks" below this point
 //		      dentry.mapsMu
 //		        *** "memmap.Mappable locks taken by Translate" below this point
@@ -112,19 +111,9 @@ type filesystem struct {
 	createCredsMu createCredsMutex `state:"nosave"`
 	createCreds   map[createCredsKey]*auth.Credentials
 
-	// dirDevMinor is the device minor number used for directories. dirDevMinor
-	// is immutable.
+	// dirDevMinor is the device minor number of this mount. Every file reports
+	// it. dirDevMinor is immutable.
 	dirDevMinor uint32
-
-	// lowerDevMinors maps device numbers from lower layer filesystems to
-	// device minor numbers assigned to non-directory files originating from
-	// that filesystem. (This remapping is necessary for lower layers because a
-	// file on a lower layer, and that same file on an overlay, are
-	// distinguishable because they will diverge after copy-up; this isn't true
-	// for non-directory files already on the upper layer.) lowerDevMinors is
-	// protected by devMu.
-	devMu          devMutex `state:"nosave"`
-	lowerDevMinors map[layerDevNumber]uint32
 
 	// renameMu synchronizes renaming with non-renaming operations in order to
 	// ensure consistent lock ordering between dentry.dirMu in different
@@ -135,14 +124,17 @@ type filesystem struct {
 	// required by genericfstree.
 	ancestryMu ancestryRWMutex `state:"nosave"`
 
-	// dirInoCache caches overlay-private directory inode numbers by mapped
-	// bottommost device numbers and inode number. dirInoCache is protected by
-	// dirInoCacheMu.
-	dirInoCacheMu dirInoCacheMutex `state:"nosave"`
-	dirInoCache   map[layerDevNoAndIno]uint64
+	// dirInoCache maps a layer device and inode to the overlay inode number.
+	// Directories are keyed by the bottom layer. Other files are keyed by the
+	// top layer. Hard links that share that pair share one overlay inode
+	// number. The cache is not saved: after restore, a host inode number can
+	// name a different file. Restored dentries keep the inode number stored
+	// on the dentry. dirInoCache is protected by dirInoCacheMu.
+	dirInoCacheMu dirInoCacheMutex            `state:"nosave"`
+	dirInoCache   map[layerDevNoAndIno]uint64 `state:"nosave"`
 
-	// lastDirIno is the last inode number assigned to a directory. lastDirIno
-	// is protected by dirInoCacheMu.
+	// lastDirIno is the last overlay inode number assigned. lastDirIno is
+	// protected by dirInoCacheMu.
 	lastDirIno uint64
 
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
@@ -320,7 +312,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, linuxerr.EINVAL
 	}
 
-	// Allocate dirDevMinor. lowerDevMinors are allocated dynamically.
+	// Allocate the device minor number reported for every file in this mount.
 	dirDevMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
 		return nil, nil, err
@@ -348,7 +340,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		xattrPrefix:    xattrPrefix,
 		xattrOpaque:    xattrPrefix + "opaque",
 		dirDevMinor:    dirDevMinor,
-		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
 		maxFilenameLen: linux.NAME_MAX,
 	}
@@ -417,31 +408,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root.defaultACL.Store(rootDefaultACL)
 	root.uid = atomicbitops.FromUint32(rootStat.UID)
 	root.gid = atomicbitops.FromUint32(rootStat.GID)
-	if rootStat.Mode&linux.S_IFMT == linux.S_IFDIR {
-		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		root.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
-		// For root dir, it is okay to use top most level's stat to compute inode
-		// number because we don't allow copy ups on root dentries.
-		orig := layerDevNoAndIno{
-			layerDevNumber: layerDevNumber{rootStat.DevMajor, rootStat.DevMinor},
-			ino:            rootStat.Ino,
-		}
-		root.ino.Store(fs.newDirIno(orig))
-		root.dirInoHash = orig
-	} else if !root.upperVD.Ok() {
-		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		rootDevMinor, err := fs.getLowerDevMinor(rootStat.DevMajor, rootStat.DevMinor)
-		if err != nil {
-			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
-			return nil, nil, err
-		}
-		root.devMinor = atomicbitops.FromUint32(rootDevMinor)
-		root.ino.Store(rootStat.Ino)
-	} else {
-		root.devMajor = atomicbitops.FromUint32(rootStat.DevMajor)
-		root.devMinor = atomicbitops.FromUint32(rootStat.DevMinor)
-		root.ino.Store(rootStat.Ino)
-	}
+	// Root is not copied up, so the top layer identity stays valid.
+	fs.assignOverlayIdentity(root, layerDevNoAndIno{
+		layerDevNumber: layerDevNumber{rootStat.DevMajor, rootStat.DevMinor},
+		ino:            rootStat.Ino,
+	})
 
 	rootCleanup.Release()
 	return &fs.vfsfs, &root.vfsd, nil
@@ -474,9 +445,6 @@ func clonePrivateMount(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds
 func (fs *filesystem) Release(ctx context.Context) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 	vfsObj.PutAnonBlockDevMinor(fs.dirDevMinor)
-	for _, lowerDevMinor := range fs.lowerDevMinors {
-		vfsObj.PutAnonBlockDevMinor(lowerDevMinor)
-	}
 	if fs.opts.UpperRoot.Ok() {
 		fs.opts.UpperRoot.DecRef(ctx)
 	}
@@ -520,9 +488,21 @@ func (fs *filesystem) statFS(ctx context.Context) (linux.Statfs, error) {
 	return fsstat, nil
 }
 
+// allocIno returns an overlay inode number that is not stored in the layer
+// cache. A later lookup of a resolved file does not reuse this number.
+func (fs *filesystem) allocIno() uint64 {
+	fs.dirInoCacheMu.Lock()
+	defer fs.dirInoCacheMu.Unlock()
+	fs.lastDirIno++
+	return fs.lastDirIno
+}
+
 func (fs *filesystem) newDirIno(orig layerDevNoAndIno) uint64 {
 	fs.dirInoCacheMu.Lock()
 	defer fs.dirInoCacheMu.Unlock()
+	if fs.dirInoCache == nil {
+		fs.dirInoCache = make(map[layerDevNoAndIno]uint64)
+	}
 	if ino, ok := fs.dirInoCache[orig]; ok {
 		return ino
 	}
@@ -532,25 +512,38 @@ func (fs *filesystem) newDirIno(orig layerDevNoAndIno) uint64 {
 	return newIno
 }
 
+// aliasIno records that a layer device and inode, usually the upper file
+// created by copy-up, publishes the overlay inode number ino.
+func (fs *filesystem) aliasIno(orig layerDevNoAndIno, ino uint64) {
+	fs.dirInoCacheMu.Lock()
+	defer fs.dirInoCacheMu.Unlock()
+	if fs.dirInoCache == nil {
+		fs.dirInoCache = make(map[layerDevNoAndIno]uint64)
+	}
+	if _, ok := fs.dirInoCache[orig]; ok {
+		return
+	}
+	fs.dirInoCache[orig] = ino
+	if ino > fs.lastDirIno {
+		fs.lastDirIno = ino
+	}
+}
+
 func (fs *filesystem) releaseDirIno(orig layerDevNoAndIno) {
 	fs.dirInoCacheMu.Lock()
 	defer fs.dirInoCacheMu.Unlock()
 	delete(fs.dirInoCache, orig)
 }
 
-func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, error) {
-	fs.devMu.Lock()
-	defer fs.devMu.Unlock()
-	orig := layerDevNumber{layerMajor, layerMinor}
-	if minor, ok := fs.lowerDevMinors[orig]; ok {
-		return minor, nil
+// assignOverlayIdentity sets the device and inode numbers published for d.
+// orig is the layer device and inode that identify d.
+func (fs *filesystem) assignOverlayIdentity(d *dentry, orig layerDevNoAndIno) {
+	d.ino.Store(fs.newDirIno(orig))
+	if d.isDir() {
+		d.dirInoHash = orig
 	}
-	minor, err := fs.vfsfs.VirtualFilesystem().GetAnonBlockDevMinor()
-	if err != nil {
-		return 0, err
-	}
-	fs.lowerDevMinors[orig] = minor
-	return minor, nil
+	d.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+	d.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
 }
 
 // TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.

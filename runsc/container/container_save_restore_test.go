@@ -1258,6 +1258,132 @@ func TestCheckpointRestoreInodeNumbers(t *testing.T) {
 	}
 }
 
+// hostRecreateWithRecycledIno removes aPath and bPath, then creates bPath so
+// that it receives the device and inode in want. aPath is created afterwards.
+func hostRecreateWithRecycledIno(t *testing.T, aPath, bPath string, want unix.Stat_t) {
+	t.Helper()
+	const tries = 32
+	for i := 0; i < tries; i++ {
+		if err := os.Remove(aPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove %s: %v", aPath, err)
+		}
+		if err := os.Remove(bPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove %s: %v", bPath, err)
+		}
+		if err := os.WriteFile(bPath, []byte("b\n"), 0644); err != nil {
+			t.Fatalf("write %s: %v", bPath, err)
+		}
+		var st unix.Stat_t
+		if err := unix.Stat(bPath, &st); err != nil {
+			t.Fatal(err)
+		}
+		if st.Ino == want.Ino && st.Dev == want.Dev {
+			if err := os.WriteFile(aPath, []byte("a\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("host filesystem did not reuse inode %d on device %d for %s", want.Ino, want.Dev, bPath)
+}
+
+// TestCheckpointRestoreRecycledOverlayInode checks that two overlay files keep
+// distinct device and inode numbers when the host reuses an inode number
+// between checkpoint and restore.
+func TestCheckpointRestoreRecycledOverlayInode(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir() failed: %v", err)
+	}
+	base, err := os.MkdirTemp(home, "gvisor-overlay-ino")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(base)
+	if err := os.Chmod(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	aPath := filepath.Join(base, "a")
+	bPath := filepath.Join(base, "b")
+	if err := os.WriteFile(aPath, []byte("a\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bPath, []byte("b\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var want unix.Stat_t
+	if err := unix.Stat(aPath, &want); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, conf := sleepSpecConf(t)
+	if err := conf.Overlay2.Set("all:memory"); err != nil {
+		t.Fatal(err)
+	}
+	// Keep a open so its dentry is checkpointed. The files live on the root
+	// overlay, outside the writable tmp bind mount.
+	spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + aPath + "; exec sleep 1000"}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if err := waitForProcessCount(cont, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	imageDir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-overlay-ino")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(imageDir)
+	if err := cont.Checkpoint(conf, imageDir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+		t.Fatalf("error checkpointing container to file: %v", err)
+	}
+
+	// Close the held file so the host can reuse its inode, then give that
+	// inode to b before restore.
+	cont.Destroy()
+	cont = nil
+	hostRecreateWithRecycledIno(t, aPath, bPath, want)
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Restore(conf, imageDir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	statA, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", aPath)
+	if err != nil {
+		t.Fatalf("stat %s failed: %v\n%s", aPath, err, statA)
+	}
+	statB, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", bPath)
+	if err != nil {
+		t.Fatalf("stat %s failed: %v\n%s", bPath, err, statB)
+	}
+	if bytes.Equal(statA, statB) {
+		t.Errorf("overlay files share one device and inode after restore: %q", statA)
+	}
+}
+
 // TestCheckpointRestoreEROFS does the checkpoint/restore test on each platform using
 // an EROFS image as the rootfs.
 func TestCheckpointRestoreEROFS(t *testing.T) {

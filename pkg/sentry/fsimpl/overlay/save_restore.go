@@ -25,6 +25,17 @@ func (d *dentry) afterLoad(context.Context) {
 	if d.refs.Load() != -1 {
 		refs.Register(d)
 	}
+	// Directory listings were built from layer inode numbers, or from a
+	// cache that is not restored. The next readdir builds them again.
+	d.dirents = nil
+}
+
+func (fs *filesystem) afterLoad(context.Context) {
+	fs.dirInoCache = make(map[layerDevNoAndIno]uint64)
+}
+
+func (fd *directoryFD) afterLoad(context.Context) {
+	fd.dirents = nil
 }
 
 // saveParent is called by stateify.
