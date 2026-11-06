@@ -139,8 +139,19 @@ type Stack interface {
 	PortRange() (uint16, uint16)
 
 	// SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
-	// (inclusive).
+	// (inclusive). It fails with EINVAL if start is below
+	// UnprivilegedPortStart.
 	SetPortRange(start uint16, end uint16) error
+
+	// UnprivilegedPortStart returns the first port that TCP and UDP sockets
+	// may bind without CAP_NET_BIND_SERVICE
+	// (net.ipv4.ip_unprivileged_port_start).
+	UnprivilegedPortStart() uint16
+
+	// SetUnprivilegedPortStart sets net.ipv4.ip_unprivileged_port_start. It
+	// fails with EINVAL if start is above the low end of the ephemeral port
+	// range.
+	SetUnprivilegedPortStart(start uint16) error
 
 	// Stats returns the network stats.
 	Stats() tcpip.Stats
