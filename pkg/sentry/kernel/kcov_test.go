@@ -27,7 +27,7 @@ import (
 
 func TestKcovSaveRestore(t *testing.T) {
 	original := &Kcov{mf: new(pgalloc.MemoryFile)}
-	const size = uint64(hostarch.PageSize / 8)
+	size := uint64(hostarch.PageSize / 8)
 	if err := original.InitTrace(size); err != nil {
 		t.Fatal(err)
 	}
