@@ -25,6 +25,7 @@ import (
 
 // beforeSave is invoked by stateify.
 func (s *Stack) beforeSave() {
+	s.checkpointableNicIDGen = s.nicIDGen.Load()
 	// removeConf will be set only in case of save/restore.
 	s.mu.Lock()
 	s.routeMu.RLock()

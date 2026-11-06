@@ -15,7 +15,6 @@
 package stack
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -690,21 +689,69 @@ func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, a
 
 // beforeSave is invoked by stateify.
 func (it *IPTables) beforeSave() {
-	// Ensure the reaper exits cleanly.
-	it.reaper.Stop()
+	it.reaperMu.Lock()
+	defer it.reaperMu.Unlock()
+	it.reaperGeneration++
+	// Exclude an active callback and invalidate callbacks queued before Stop.
+	// The reaper only exists after the
+	// first table replacement (i.e. once user rules have been programmed
+	// and conntrack was initialized); an unmodified default table has none.
+	if it.reaper != nil {
+		it.reaper.Stop()
+	}
 	// Prevent others from modifying the connection table.
 	it.connections.mu.Lock()
+	it.saveLocked = true
 }
 
-// afterLoad is invoked by stateify.
-func (it *IPTables) afterLoad(context.Context) {
-	it.startReaper(reaperDelay)
+// resumeAfterSave resumes iptables background work and packet processing in
+// the source stack after a live checkpoint. beforeSave stops the reaper and
+// holds the conntrack lock while state is encoded; unlike a restored stack,
+// the source keeps using the same lock and must release it explicitly.
+func (it *IPTables) resumeAfterSave() {
+	if !it.saveLocked {
+		return
+	}
+	it.saveLocked = false
+	it.connections.mu.Unlock()
+
+	it.mu.RLock()
+	modified := it.modified
+	it.mu.RUnlock()
+	if modified {
+		it.startReaper(reaperDelay)
+	}
+}
+
+// restoreReaper restarts the connection reaper after a restore. It must
+// only be called once the stack's clock is working: the reaper schedules
+// itself with clock.AfterFunc, and during state decode the clock may not
+// be running yet (a Timekeeper-backed clock deadlocks), so this cannot
+// live in an afterLoad hook. Stack.Restore() calls it at the right time.
+func (it *IPTables) restoreReaper() {
+	// Mirror beforeSave(): only tables that were modified before the
+	// checkpoint have an initialized conntrack and a running reaper.
+	it.mu.RLock()
+	modified := it.modified
+	it.mu.RUnlock()
+	if modified {
+		it.startReaper(reaperDelay)
+	}
 }
 
 // startReaper periodically reaps timed out connections.
 func (it *IPTables) startReaper(interval time.Duration) {
+	it.reaperMu.Lock()
+	defer it.reaperMu.Unlock()
+	it.reaperGeneration++
+	generation := it.reaperGeneration
 	bucket := 0
 	it.reaper = it.connections.clock.AfterFunc(interval, func() {
+		it.reaperMu.Lock()
+		defer it.reaperMu.Unlock()
+		if generation != it.reaperGeneration {
+			return
+		}
 		bucket, interval = it.connections.reapUnused(bucket, interval)
 		it.reaper.Reset(interval)
 	})

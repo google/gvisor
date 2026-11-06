@@ -96,6 +96,8 @@ func (addrTypeMarshaler) unmarshal(_ IDMapper, stk *stack.Stack, buf []byte, fil
 
 // addrTypeMatcher matches on the address type of the packet's source and
 // destination addresses.
+//
+// +stateify savable
 type addrTypeMatcher struct {
 	info     linux.XTAddrtypeInfoV1
 	netProto tcpip.NetworkProtocolNumber
