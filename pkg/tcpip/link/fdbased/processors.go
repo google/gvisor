@@ -18,12 +18,10 @@
 package fdbased
 
 import (
-	"context"
 	"encoding/binary"
 
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -31,21 +29,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack/gro"
 )
 
-// +stateify savable
 type processor struct {
-	mu processorMutex `state:"nosave"`
+	mu processorMutex
 	// +checklocks:mu
 	pkts stack.PacketBufferList
 
-	e           *endpoint
+	// +checklocks:mu
+	queueClosed bool
+
 	gro         gro.GRO
 	sleeper     sleep.Sleeper
 	packetWaker sleep.Waker
 	closeWaker  sleep.Waker
 }
 
-func (p *processor) start(wg *sync.WaitGroup) {
-	defer wg.Done()
+func (p *processor) start() {
 	for {
 		switch w := p.sleeper.Fetch(true); {
 		case w == &p.packetWaker:
@@ -60,16 +58,6 @@ func (p *processor) start(wg *sync.WaitGroup) {
 }
 
 func (p *processor) deliverPackets() {
-	p.e.mu.RLock()
-	p.gro.Dispatcher = p.e.dispatcher
-	p.e.mu.RUnlock()
-	if p.gro.Dispatcher == nil {
-		p.mu.Lock()
-		p.pkts.Reset()
-		p.mu.Unlock()
-		return
-	}
-
 	p.mu.Lock()
 	for p.pkts.Len() > 0 {
 		pkt := p.pkts.PopFront()
@@ -82,55 +70,39 @@ func (p *processor) deliverPackets() {
 	p.gro.Flush()
 }
 
-// processorManager handles starting, closing, and queuing packets on processor
-// goroutines.
-//
-// +stateify savable
+// A processorManager belongs to one receive loop.
 type processorManager struct {
 	processors []processor
 	seed       uint32
-	wg         sync.WaitGroup `state:"nosave"`
-	e          *endpoint
 	ready      []bool
 }
 
-// newProcessorManager creates a new processor manager.
-func newProcessorManager(opts *Options, e *endpoint) *processorManager {
-	m := &processorManager{}
+// start creates the packet queues and starts their background workers.
+func (m *processorManager) start(count int, groEnabled bool, dispatcher stack.NetworkDispatcher) {
+	m.processors = make([]processor, count)
 	m.seed = rand.Uint32()
-	m.ready = make([]bool, opts.ProcessorsPerChannel)
-	m.processors = make([]processor, opts.ProcessorsPerChannel)
-	m.e = e
-	m.wg.Add(opts.ProcessorsPerChannel)
-
+	m.ready = make([]bool, count)
 	for i := range m.processors {
 		p := &m.processors[i]
+		p.gro.Init(groEnabled)
+		p.gro.Dispatcher = dispatcher
+	}
+	workers := m.backgroundProcessors()
+	for i := range workers {
+		p := &workers[i]
 		p.sleeper.AddWaker(&p.packetWaker)
 		p.sleeper.AddWaker(&p.closeWaker)
-		p.gro.Init(opts.GRO)
-		p.e = e
-	}
-
-	return m
-}
-
-// start starts the processor goroutines if the processor manager is configured
-// with more than one processor.
-func (m *processorManager) start() {
-	for i := range m.processors {
-		p := &m.processors[i]
-		// Only start processor in a separate goroutine if we have multiple of them.
-		if len(m.processors) > 1 {
-			go p.start(&m.wg)
-		}
+		go p.start()
 	}
 }
 
-// afterLoad is invoked by stateify.
-func (m *processorManager) afterLoad(ctx context.Context) {
-	// Close all the old/saved processors. There are new NICs and
-	// processors created during restore.
-	m.close()
+// backgroundProcessors returns the processors that run in their own goroutines.
+// With a single processor, the receive loop drains its queue in wakeReady.
+func (m *processorManager) backgroundProcessors() []processor {
+	if len(m.processors) == 1 {
+		return nil
+	}
+	return m.processors
 }
 
 func (m *processorManager) connectionHash(cid *connectionID) uint32 {
@@ -167,6 +139,9 @@ func (m *processorManager) queuePacket(pkt *stack.PacketBuffer, hasEthHeader boo
 	p := &m.processors[pIdx]
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.queueClosed {
+		return
+	}
 	p.pkts.PushBack(pkt.IncRef())
 	m.ready[pIdx] = true
 }
@@ -268,13 +243,23 @@ func tcpipConnectionID(pkt *stack.PacketBuffer) (connectionID, bool) {
 	return cid, false
 }
 
-func (m *processorManager) close() {
-	if len(m.processors) < 2 {
-		return
-	}
+// detach discards pending packets. A reader already returning from its
+// receive syscall must drop that batch too. Workers can still deliver packets they
+// have already taken off their queues, including packets held by GRO.
+func (m *processorManager) detach() {
 	for i := range m.processors {
 		p := &m.processors[i]
-		p.closeWaker.Assert()
+		p.mu.Lock()
+		p.queueClosed = true
+		p.pkts.Reset()
+		p.mu.Unlock()
+	}
+}
+
+func (m *processorManager) close() {
+	workers := m.backgroundProcessors()
+	for i := range workers {
+		workers[i].closeWaker.Assert()
 	}
 }
 
@@ -282,15 +267,15 @@ func (m *processorManager) close() {
 // one processor, the method delivers the packet inline without waking a
 // goroutine.
 func (m *processorManager) wakeReady() {
+	workers := m.backgroundProcessors()
 	for i, ready := range m.ready {
 		if !ready {
 			continue
 		}
-		p := &m.processors[i]
-		if len(m.processors) > 1 {
-			p.packetWaker.Assert()
+		if len(workers) != 0 {
+			workers[i].packetWaker.Assert()
 		} else {
-			p.deliverPackets()
+			m.processors[i].deliverPackets()
 		}
 		m.ready[i] = false
 	}
