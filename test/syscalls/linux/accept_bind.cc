@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <vector>
@@ -26,12 +30,16 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -104,6 +112,93 @@ TEST_P(AllSocketPairTest, ListenBacklogSizes) {
           Accept(sockets->first_fd(), nullptr, nullptr));
     }
   }
+}
+
+TEST_P(AllSocketPairTest, ConnectBlocksWhileBacklogFull) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int type;
+  socklen_t typelen = sizeof(type);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_TYPE, &type, &typelen),
+      SyscallSucceeds());
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 0), SyscallSucceeds());
+
+  // Fill the accept queue; each connect below must wait for an accept, and
+  // then fills the queue again.
+  const FileDescriptor pending =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, type, 0));
+  ASSERT_THAT(
+      connect(pending.get(), sockets->first_addr(), sockets->first_addr_size()),
+      SyscallSucceeds());
+
+  for (const time_t timeout_sec : {0, 10}) {
+    const FileDescriptor client =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, type, 0));
+    const struct timeval timeout = {.tv_sec = timeout_sec};
+    ASSERT_THAT(setsockopt(client.get(), SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                           sizeof(timeout)),
+                SyscallSucceeds());
+
+    // Checkpoint and restore during the wait, if save/restore is enabled.
+    ScopedThread accepter([&] {
+      absl::SleepFor(absl::Milliseconds(100));
+      MaybeSave();
+      EXPECT_NO_ERRNO(Accept(sockets->first_fd(), nullptr, nullptr));
+    });
+    EXPECT_THAT(connect(client.get(), sockets->first_addr(),
+                        sockets->first_addr_size()),
+                SyscallSucceeds());
+  }
+}
+
+void NoopSignalHandler(int) {}
+
+TEST_P(AllSocketPairTest, InterruptedTimedConnectReturnsEINTR) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int type;
+  socklen_t typelen = sizeof(type);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_TYPE, &type, &typelen),
+      SyscallSucceeds());
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 0), SyscallSucceeds());
+
+  const FileDescriptor pending =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, type, 0));
+  ASSERT_THAT(
+      connect(pending.get(), sockets->first_addr(), sockets->first_addr_size()),
+      SyscallSucceeds());
+  const FileDescriptor client =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, type, 0));
+  const struct timeval timeout = {.tv_sec = 10};
+  ASSERT_THAT(setsockopt(client.get(), SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                         sizeof(timeout)),
+              SyscallSucceeds());
+
+  // SA_RESTART must not restart a connect that has a timeout.
+  struct sigaction sa = {};
+  sa.sa_handler = NoopSignalHandler;
+  sa.sa_flags = SA_RESTART;
+  sigemptyset(&sa.sa_mask);
+  const auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGURG, sa));
+  // Keep signaling in case a signal lands before connect blocks.
+  const pthread_t target = pthread_self();
+  std::atomic<bool> done(false);
+  ScopedThread signaler([&] {
+    while (!done.load()) {
+      absl::SleepFor(absl::Milliseconds(100));
+      EXPECT_EQ(pthread_kill(target, SIGURG), 0);
+    }
+  });
+  EXPECT_THAT(
+      connect(client.get(), sockets->first_addr(), sockets->first_addr_size()),
+      SyscallFailsWithErrno(EINTR));
+  done.store(true);
 }
 
 TEST_P(AllSocketPairTest, ListenWithoutBind) {

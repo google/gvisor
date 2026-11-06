@@ -311,6 +311,10 @@ type BoundEndpoint interface {
 	// type that isn't SockStream or SockSeqpacket.
 	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error
 
+	// ConnectWaiters returns a queue notified when a BidirectionalConnect that
+	// failed with ErrTryAgain may succeed on retry, or nil if it never does.
+	ConnectWaiters() *waiter.Queue
+
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.
 	//
