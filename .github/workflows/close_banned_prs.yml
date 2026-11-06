@@ -12,7 +12,7 @@ name: Close Banned PRs
 
 jobs:
   close:
-    if: github.repository == 'google/gvisor'
+    if: (github.repository == 'google/gvisor' || github.repository == 'gvisor/gvisor')
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write # comment / close the PR
