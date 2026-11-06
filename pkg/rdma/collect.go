@@ -277,9 +277,13 @@ func (d *Device) collectPorts(ibDir string) error {
 			return fmt.Errorf("port %s: %w", num, err)
 		}
 		// gids is a mandatory part of every IB/RoCE port; its absence
-		// means a broken port tree, so any failure is fatal. counters and
-		// hw_counters vary by device, so a missing directory is tolerated.
+		// means a broken port tree, so any failure is fatal. pkeys, counters
+		// and hw_counters vary by device, so a missing directory is tolerated.
 		gids, err := listSafeNames(path.Join(pDir, "gids"))
+		if err != nil {
+			return fmt.Errorf("port %s: %w", num, err)
+		}
+		pkeys, err := listOptionalNames(path.Join(pDir, "pkeys"))
 		if err != nil {
 			return fmt.Errorf("port %s: %w", num, err)
 		}
@@ -295,6 +299,7 @@ func (d *Device) collectPorts(ibDir string) error {
 			StaticAttrs:    staticAttrs,
 			LiveAttrs:      append([]string{}, portLiveAttrNames...),
 			GIDNames:       gids,
+			PKeyNames:      pkeys,
 			CounterNames:   counters,
 			HWCounterNames: hwCounters,
 		}

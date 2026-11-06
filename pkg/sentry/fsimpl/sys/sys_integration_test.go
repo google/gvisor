@@ -603,6 +603,7 @@ func newRDMATestSnapshot() *rdma.Snapshot {
 					StaticAttrs:  map[string]string{"link_layer": "Ethernet\n"},
 					LiveAttrs:    []string{"state"},
 					GIDNames:     []string{"0", "1"},
+					PKeyNames:    []string{"0"},
 					CounterNames: []string{"port_rcv_data"},
 				},
 			},
@@ -669,11 +670,15 @@ func TestRDMASysfs(t *testing.T) {
 			"state":      linux.DT_REG,
 			"gids":       linux.DT_DIR,
 			"gid_attrs":  linux.DT_DIR,
+			"pkeys":      linux.DT_DIR,
 			"counters":   linux.DT_DIR,
 		},
 		nicLeaf + "/infiniband/mlx5_0/ports/1/gids": {
 			"0": linux.DT_REG,
 			"1": linux.DT_REG,
+		},
+		nicLeaf + "/infiniband/mlx5_0/ports/1/pkeys": {
+			"0": linux.DT_REG,
 		},
 		nicLeaf + "/infiniband_verbs/uverbs0": {
 			"ibdev":       linux.DT_REG,
