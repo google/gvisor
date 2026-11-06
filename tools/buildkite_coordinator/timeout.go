@@ -29,8 +29,6 @@ import (
 const (
 	// idleTimeout is the maximum time an agent can await a job before being
 	// killed.
-	//
-	// This is only enforced for pinned agents.
 	idleTimeout = 1 * time.Minute
 
 	// jobTimeout is the maximum time an instance is allowed to spend per job.
