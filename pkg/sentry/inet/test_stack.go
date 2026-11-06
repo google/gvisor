@@ -185,6 +185,15 @@ func (s *TestStack) Pause() {}
 // Restore implements Stack.
 func (s *TestStack) Restore() {}
 
+// PrepareRestore implements Stack.PrepareRestore.
+func (s *TestStack) PrepareRestore() {}
+
+// RestoreEndpoints implements Stack.RestoreEndpoints.
+func (s *TestStack) RestoreEndpoints() {}
+
+// CompleteRestore implements Stack.CompleteRestore.
+func (s *TestStack) CompleteRestore() {}
+
 // ResetConfig implements Stack.
 func (s *TestStack) ResetConfig() {
 	s.InterfacesMap = make(map[int32]Interface)
