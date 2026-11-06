@@ -123,9 +123,9 @@ type packetMMapDispatcher struct {
 	// e is the endpoint this dispatcher is attached to.
 	e *endpoint
 
-	// ringBuffer is only used when PacketMMap dispatcher is used and points
-	// to the start of the mmapped PACKET_RX_RING buffer.
-	ringBuffer []byte
+	// ringBuffer maps the host socket's PACKET_RX_RING. Restore creates a
+	// new socket and mapping when the new NIC is configured.
+	ringBuffer []byte `state:"nosave"`
 
 	// ringOffset is the current offset into the ring buffer where the next
 	// inbound packet will be placed by the kernel.
@@ -140,6 +140,9 @@ func (d *packetMMapDispatcher) release() {
 }
 
 func (d *packetMMapDispatcher) close() {
+	if d.ringBuffer != nil && unix.Munmap(d.ringBuffer) == nil {
+		d.ringBuffer = nil
+	}
 	d.StopFD.Close()
 }
 
