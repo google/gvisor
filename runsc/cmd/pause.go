@@ -20,15 +20,14 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/client"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
-	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Pause implements subcommands.Command for the "pause" command.
 type Pause struct {
-	containerLoader
 }
 
 // Name implements subcommands.Command.Name.
@@ -52,28 +51,27 @@ func (*Pause) SetFlags(*flag.FlagSet) {
 
 // FetchSpec implements util.SubCommand.FetchSpec.
 func (p *Pause) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
-	c, err := p.loadContainer(conf, f, container.LoadOpts{})
-	if err != nil {
-		return "", nil, fmt.Errorf("loading container: %w", err)
+	if f.NArg() < 1 {
+		f.Usage()
+		return "", nil, fmt.Errorf("a container-id is required")
 	}
-	return c.ID, c.Spec, nil
+	id := f.Arg(0)
+	spec, err := client.New(conf).Spec(context.Background(), id)
+	if err != nil {
+		return "", nil, err
+	}
+	return id, spec, nil
 }
 
 // Execute implements subcommands.Command.Execute.
-func (p *Pause) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (p *Pause) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
 	conf := args[0].(*config.Config)
-
-	cont, err := p.loadContainer(conf, f, container.LoadOpts{})
-	if err != nil {
-		util.Fatalf("loading container: %v", err)
-	}
-
-	if err := cont.Pause(); err != nil {
+	if err := client.New(conf).Pause(ctx, f.Arg(0)); err != nil {
 		util.Fatalf("pause failed: %v", err)
 	}
 
