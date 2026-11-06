@@ -1199,9 +1199,8 @@ TEST(MoveMountTest, BindMountedSymlinkIsFollowed) {
   auto const dir_mnt = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(dir.path(), "dir_mnt", 0644));
 
-  for (const auto& [link, mnt] :
-       {std::make_pair(file_link, file_mnt.path()),
-        std::make_pair(dir_link, dir_mnt.path())}) {
+  for (const auto& [link, mnt] : {std::make_pair(file_link, file_mnt.path()),
+                                  std::make_pair(dir_link, dir_mnt.path())}) {
     int treefd =
         open_tree(AT_FDCWD, link.c_str(),
                   OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_SYMLINK_NOFOLLOW);
