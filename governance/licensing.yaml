@@ -54,15 +54,26 @@ exceptions:
       implementation in lib/libtle_l4p/halfsiphash.h, and BSD-3-Clause code
       in its DPDK patch series. The optional GPL packetdrill integration
       is not built.
-  - dependency: llvm-raw
+  - dependency: llvm-project
     license:
       - Apache-2.0 WITH LLVM-exception
-      - MIT
+      - BSD-3-Clause
+      - CC0-1.0
+      - NCSA
+      - Spencer-94
     exception_rationale: >-
-      LLVM is part of the NVIDIA GPU test toolchain only and is not
-      distributed with gVisor. The LLVM exception only relaxes
-      Apache-2.0's requirements, and the MIT match comes from third-party
-      notices embedded in LICENSE.TXT.
+      The NVIDIA driver compatibility parser and its tests use Clang and
+      LLVM libraries. Their root notice gives the LLVM exception and
+      legacy NCSA terms and identifies separately licensed code:
+      https://github.com/llvm/llvm-project/blob/85ac56026/LICENSE.TXT#L225-L240.
+      LLVM Support's regex notice requires attribution and contains both
+      Spencer-94 and BSD-3-Clause:
+      https://github.com/llvm/llvm-project/blob/85ac56026/llvm/lib/Support/COPYRIGHT.regex.
+      BLAKE3 offers CC0-1.0 OR Apache-2.0; this entry records the CC0 option:
+      https://github.com/llvm/llvm-project/blob/85ac56026/llvm/lib/Support/BLAKE3/LICENSE#L1-L2.
+      These notices cover the listed components, not every file in the
+      source archive. The parser libraries are not linked into gVisor
+      release binaries.
   - dependency: ltp
     license: GPL-2.0-only
     exception_rationale: >-
