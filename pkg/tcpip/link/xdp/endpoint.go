@@ -54,7 +54,7 @@ type endpoint struct {
 	closed func(tcpip.Error) `state:"nosave"`
 
 	mu endpointRWMutex `state:"nosave"`
-	// +checkloks:mu
+	// +checklocks:mu
 	networkDispatcher stack.NetworkDispatcher
 
 	// wg keeps track of running goroutines.
@@ -180,16 +180,18 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 // Attach implements stack.LinkEndpoint.Attach.
 func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
 	ep.mu.Lock()
-	defer ep.mu.Unlock()
 	// nil means the NIC is being removed.
-	if networkDispatcher == nil && ep.IsAttached() {
+	if networkDispatcher == nil && ep.networkDispatcher != nil {
 		ep.stopFD.Stop()
-		ep.Wait()
 		ep.networkDispatcher = nil
+		ep.mu.Unlock()
+		ep.Wait()
 		return
 	}
+	defer ep.mu.Unlock()
 	if networkDispatcher != nil && ep.networkDispatcher == nil {
 		ep.networkDispatcher = networkDispatcher
+		ep.stopFD.Reset()
 		// Link endpoints are not savable. When transportation endpoints are
 		// saved, they stop sending outgoing packets and all incoming packets
 		// are rejected.
@@ -350,7 +352,7 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 			return !stopped, tcpip.TranslateErrno(errno)
 		}
 		if stopped {
-			return true, nil
+			return false, nil
 		}
 
 		// Avoid the cost of the poll syscall if possible by peeking

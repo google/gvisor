@@ -81,7 +81,6 @@ func newPacketMMapDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher
 		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %v", sz, err)
 	}
 	d.mgr = newProcessorManager(opts, e)
-	d.mgr.start()
 	d.ringBuffer = buf
 	return d, nil
 }
