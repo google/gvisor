@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
 
@@ -28,6 +29,7 @@
 #include <cstring>
 #include <iostream>
 #include <ostream>
+#include <vector>
 
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -91,6 +93,39 @@ PosixError EnableAtime() {
   return NoError();
 }
 
+// Bazel appends --test_arg values after the rule's args. The runner parses
+// flags up to its first positional argument, so pass the test binary last.
+PosixError RunSyscallTest(int argc, char** argv) {
+  if (argc < 2) {
+    return PosixError(EINVAL, "missing syscall test or runner");
+  }
+  char* runner = argv[0];
+  char* test = argv[1];
+  argv += 2;
+  argc -= 2;
+
+  // The sandbox may write outputs under a different UID.
+  if (const char* dir = getenv("TEST_UNDECLARED_OUTPUTS_DIR"); dir && *dir) {
+    RETURN_IF_ERRNO(RecursivelyCreateDir(dir));
+    ASSIGN_OR_RETURN_ERRNO(struct stat st, Stat(dir));
+    if (!S_ISDIR(st.st_mode)) {
+      return PosixError(ENOTDIR, dir);
+    }
+    RETURN_IF_ERRNO(Chmod(dir, st.st_mode | 0777));
+  }
+  if (argc > 0 && strcmp(argv[0], "--require-atime") == 0) {
+    RETURN_IF_ERRNO(EnableAtime());
+    --argc;
+    ++argv;
+  }
+  std::vector<char*> args = {runner};
+  args.insert(args.end(), argv, argv + argc);
+  args.push_back(test);
+  args.push_back(nullptr);
+  execv(runner, args.data());
+  return PosixError(errno, "executing syscall runner");
+}
+
 // SetupContainer sets up the networking settings in the current container.
 PosixError SetupContainer() {
   const PosixErrorOr<bool> have_net_admin = HaveCapability(CAP_NET_ADMIN);
@@ -131,6 +166,7 @@ PosixError SetupContainer() {
 }  // namespace gvisor
 
 using ::gvisor::testing::EnableAtime;
+using ::gvisor::testing::RunSyscallTest;
 using ::gvisor::testing::SetContents;
 using ::gvisor::testing::SetupContainer;
 
@@ -140,10 +176,15 @@ using ::gvisor::testing::SetupContainer;
 //   ./setup_container test_binary [arguments forwarded to test_binary...]
 //   ./setup_container --limit-ephemeral-ports test_binary [arguments...]
 //   ./setup_container --require-atime runner [arguments forwarded to runner...]
+//   ./setup_container --syscall-test runner test [--require-atime] [args...]
 int main(int argc, char* argv[], char* envp[]) {
   if (argc < 2) {
     std::cerr << "Must provide arguments to exec." << std::endl;
     return 2;
+  }
+  if (strcmp(argv[1], "--syscall-test") == 0) {
+    std::cerr << RunSyscallTest(argc - 2, argv + 2) << std::endl;
+    return 1;
   }
   int command = 1;
   if (strcmp(argv[1], "--require-atime") == 0) {
