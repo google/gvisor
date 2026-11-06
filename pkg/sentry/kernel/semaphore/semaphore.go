@@ -718,11 +718,12 @@ func (s *Set) Destroy() {
 	// Notify all waiters. They will fail on the next attempt to execute
 	// operations and return error.
 	s.dead = true
-	for _, s := range s.sems {
-		for w := s.waiters.Front(); w != nil; w = w.Next() {
+	for i := range s.sems {
+		waiters := &s.sems[i].waiters
+		for w := waiters.Front(); w != nil; w = w.Next() {
 			w.ch <- struct{}{}
 		}
-		s.waiters.Reset()
+		waiters.Reset()
 	}
 }
 
