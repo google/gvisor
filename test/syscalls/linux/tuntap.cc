@@ -30,6 +30,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -56,6 +57,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -526,6 +528,48 @@ PosixErrorOr<TunTapInterface> OpenAndAttachTunTap(const std::string& dev_name,
   }
 
   return TunTapInterface{.fd = std::move(fd), .link = std::move(link)};
+}
+
+TEST_F(TuntapTest, ReadPacketInfoHeader) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const auto tun = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTunName, kTapIPAddr, false /* tap */, false /* no_pi */));
+  ASSERT_THAT(fcntl(tun.fd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  const auto sender =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  const sockaddr_in remote = {.sin_family = AF_INET,
+                              .sin_port = htons(42),
+                              .sin_addr = {.s_addr = kTapPeerIPAddr}};
+  auto send_packet = [&] {
+    EXPECT_THAT(
+        sendto(sender.get(), "data", 4, 0, AsSockAddr(&remote), sizeof(remote)),
+        SyscallSucceedsWithValue(4));
+    pollfd ready = {tun.fd.get(), POLLIN, 0};
+    ASSERT_THAT(RetryEINTR(poll)(&ready, 1, 5000), SyscallSucceedsWithValue(1));
+    ASSERT_NE(ready.revents & POLLIN, 0);
+  };
+
+  tun_pi pi = {};
+  ASSERT_NO_FATAL_FAILURE(send_packet());
+  EXPECT_THAT(read(tun.fd.get(), &pi, sizeof(pi) - 1),
+              SyscallFailsWithErrno(EINVAL));
+
+  ASSERT_NO_FATAL_FAILURE(send_packet());
+  ASSERT_THAT(read(tun.fd.get(), &pi, sizeof(pi)),
+              SyscallSucceedsWithValue(sizeof(pi)));
+  EXPECT_EQ(pi.flags, TUN_PKT_STRIP);
+
+  auto inaccessible =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  iovec iov[] = {{.iov_base = &pi, .iov_len = 1},
+                 {.iov_base = inaccessible.ptr(), .iov_len = sizeof(pi) - 1}};
+  ASSERT_NO_FATAL_FAILURE(send_packet());
+  EXPECT_THAT(readv(tun.fd.get(), iov, 2), SyscallFailsWithErrno(EFAULT));
+
+  ASSERT_NO_FATAL_FAILURE(send_packet());
+  EXPECT_THAT(read(tun.fd.get(), &pi, 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(read(tun.fd.get(), &pi, sizeof(pi)),
+              SyscallSucceedsWithValue(sizeof(pi)));
 }
 
 // This test sets up a TAP device and pings kernel by sending ICMP echo request.
