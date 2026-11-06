@@ -167,8 +167,8 @@ type MemoryFile struct {
 	// ongoingCommitScan is true while UpdateUsage(nil) is in progress. Writing
 	// to it requires f.mu to be locked, but reading it does not.
 	//
-	// isSaving is true during f.SaveTo() to prevent concurrent calls to
-	// f.UpdateUsage() from marking pages as committed.
+	// inhibitUsageScans prevents scans from changing the commitment ranges
+	// SaveTo and LoadFrom use to locate page data in a checkpoint.
 	//
 	// All of these fields are protected by mu.
 	memAcct             memAcctSet
@@ -176,7 +176,7 @@ type MemoryFile struct {
 	commitSeq           uint64
 	nextCommitScan      time.Time
 	ongoingCommitScan   atomicbitops.Bool
-	isSaving            bool
+	inhibitUsageScans   bool
 
 	// evictable maps EvictableMemoryUsers to eviction state.
 	//
@@ -1638,12 +1638,7 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if currentUsage == f.knownCommittedBytes {
-		return nil
-	}
-
-	if f.isSaving {
-		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
+	if f.inhibitUsageScans || currentUsage == f.knownCommittedBytes {
 		return nil
 	}
 
@@ -1669,11 +1664,7 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 		f.nextCommitScan = startTime.Add(max(linux.ClockTick, scanTime*commitScanIntervalRatio))
 	}
 
-	if _, ok := err.(updateUsageDuringSaveErr); ok {
-		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
-		return nil
-	}
-	if log.IsLogging(log.Debug) {
+	if !f.inhibitUsageScans && log.IsLogging(log.Debug) {
 		log.Debugf("UpdateUsage: took %v, currentUsage=%d knownCommittedBytes=%d",
 			scanTime, currentUsage, f.knownCommittedBytes)
 	}
@@ -1686,11 +1677,11 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
 func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
-	// Track if anything changed to elide the merge. f.SaveTo() holds an
-	// iterator into f.memAcct across f.mu unlocks, so don't merge while saving.
+	// SaveTo and LoadFrom keep a memAcct iterator between segments. A scan
+	// that started before either operation must not invalidate its iterator.
 	changedAny := false
 	defer func() {
-		if changedAny && !f.isSaving {
+		if changedAny && !f.inhibitUsageScans {
 			f.memAcct.MergeAll()
 		}
 	}()
@@ -1757,13 +1748,9 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 				return false
 			}
 
-			// Reconcile internal state with buf. Since we temporarily dropped
-			// f.mu, f.isSaving and f.memAcct may have changed, and maseg/ma
-			// are no longer valid. If wasCommitted is false, then we are
-			// marking ranges that are now committed; otherwise, we are marking
-			// ranges that are now uncommitted.
-			if f.isSaving {
-				checkErr = updateUsageDuringSaveErr{}
+			// A checkpoint may have started while mincore ran. Otherwise
+			// resume with a fresh iterator: f.memAcct may have changed.
+			if f.inhibitUsageScans {
 				return false
 			}
 			maseg = f.memAcct.LowerBoundSegment(chunkFR.Start)
@@ -1816,19 +1803,12 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 			unscannedStart = chunkFR.End
 			return false
 		})
-		if checkErr != nil {
+		if checkErr != nil || f.inhibitUsageScans {
 			return checkErr
 		}
 	}
 
 	return nil
-}
-
-type updateUsageDuringSaveErr struct{}
-
-// Error implements error.Error.
-func (updateUsageDuringSaveErr) Error() string {
-	return "pgalloc.MemoryFile.UpdateUsage() called during MemoryFile save"
 }
 
 // TotalUsage returns an aggregate usage for all memory statistics except
