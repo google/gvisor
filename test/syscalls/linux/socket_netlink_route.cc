@@ -34,7 +34,6 @@
 #include <linux/if.h>
 #include <linux/if_addr.h>
 #include <linux/if_arp.h>
-#include <linux/if_ether.h>
 #include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -474,21 +473,27 @@ MtuRequest GetMtuRequest(const Link& link, uint16_t nlmsg_type, uint32_t mtu) {
 
 TEST_P(NetlinkSetLinkTest, ChangeMTU) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  SKIP_IF(!IsRunningOnGvisor());
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   // Change the MTU.
-  uint16_t nlmsg_type = GetParam();
-  MtuRequest req =
-      GetMtuRequest(loopback_link, nlmsg_type, loopback_link.mtu + 10);
-  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+  MtuRequest req = GetMtuRequest(loopback_link, GetParam(), 1234);
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
 
   // Update the local loopback_link's MTU to the requested value.
-  loopback_link.mtu = req.mtu - ETH_HLEN;
+  loopback_link.mtu = req.mtu;
   // Verify the new MTU.
   struct searchrequest {
     struct nlmsghdr hdr;

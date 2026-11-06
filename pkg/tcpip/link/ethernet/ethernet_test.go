@@ -16,6 +16,7 @@ package ethernet_test
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"testing"
 
@@ -130,6 +131,21 @@ type testLinkEndpoint struct {
 
 func (t *testLinkEndpoint) MTU() uint32 {
 	return t.mtu
+}
+
+func (t *testLinkEndpoint) SetMTU(mtu uint32) {
+	t.mtu = mtu
+}
+
+func TestNetworkMTU(t *testing.T) {
+	child := &testLinkEndpoint{}
+	e := ethernet.NewWithNetworkMTU(child)
+	for _, want := range []uint32{0, header.EthernetMinimumSize, 1500, math.MaxUint32} {
+		e.SetMTU(want)
+		if got := e.MTU(); got != want || child.mtu != want {
+			t.Errorf("SetMTU(%d): endpoint MTU = %d, child MTU = %d", want, got, child.mtu)
+		}
+	}
 }
 
 func TestMTU(t *testing.T) {
