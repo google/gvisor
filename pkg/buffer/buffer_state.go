@@ -18,12 +18,64 @@ import (
 	"context"
 )
 
-// saveData is invoked by stateify.
-func (b *Buffer) saveData() []byte {
-	return b.Flatten()
+// saveData omits external memory; its owner checkpoints the backing.
+func (c *chunk) saveData() []byte {
+	if c.external != nil {
+		return nil
+	}
+	return c.data
 }
 
 // loadData is invoked by stateify.
-func (b *Buffer) loadData(_ context.Context, data []byte) {
-	*b = MakeWithData(data)
+func (c *chunk) loadData(_ context.Context, data []byte) {
+	c.data = data
+}
+
+// afterLoad is invoked after the external owner's own state has loaded.
+func (c *chunk) afterLoad(ctx context.Context) {
+	if c.external != nil {
+		c.external.RestoreBytes(ctx, &c.data)
+	}
+}
+
+// savedView keeps heap data compact while preserving external chunk ownership
+// and sharing. It stores either live heap bytes in data or an externally backed
+// View in external, never both.
+//
+// +stateify savable
+type savedView struct {
+	data     []byte
+	external *View `state:"wait"`
+}
+
+// saveData is invoked by stateify.
+func (b *Buffer) saveData() []savedView {
+	var views []savedView
+	for v := b.data.Front(); v != nil; v = v.Next() {
+		if v.chunk.external != nil {
+			// Save the owned View itself, without adding a chunk reference.
+			// Its storage implementation owns saving the external bytes.
+			views = append(views, savedView{external: v})
+		} else {
+			// A subslice would retain unused capacity and heap chunk aliases.
+			// Save only the bytes visible through this View.
+			views = append(views, savedView{data: v.ToSlice()})
+		}
+	}
+	return views
+}
+
+// loadData is invoked by stateify.
+func (b *Buffer) loadData(_ context.Context, views []savedView) {
+	*b = Buffer{}
+	for _, saved := range views {
+		v := saved.external
+		if v == nil {
+			v = NewViewWithData(saved.data)
+		}
+		// Restore list ownership without acquiring another chunk reference or
+		// accessing external bytes that may not have been mapped yet. Append
+		// could copy data or release an empty View, so only rebuild the links.
+		b.appendOwned(v)
+	}
 }
