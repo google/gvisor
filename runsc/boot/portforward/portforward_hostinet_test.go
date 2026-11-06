@@ -15,7 +15,9 @@
 package portforward
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"slices"
 	"strings"
@@ -24,6 +26,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
@@ -110,6 +113,84 @@ func TestLocalHostSocket(t *testing.T) {
 
 	if err := g.Wait(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestLocalHostSocketPartialWrite checks that a write too large for the socket
+// buffers is completed without resending data that was already written.
+func TestLocalHostSocketPartialWrite(t *testing.T) {
+	ctx := context.Background()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen failed: %v", err)
+	}
+	defer l.Close()
+
+	sock, err := NewHostInetConn(uint16(l.Addr().(*net.TCPAddr).Port))
+	if err != nil {
+		t.Fatalf("could not create local host socket: %v", err)
+	}
+	defer sock.Close(ctx)
+
+	peer, err := l.Accept()
+	if err != nil {
+		t.Fatalf("could not accept connection: %v", err)
+	}
+	defer peer.Close()
+
+	// Use small buffers so that the write below can only make partial
+	// progress before the socket returns EAGAIN.
+	if err := unix.SetsockoptInt(sock.(*hostInetConn).fd.FD(), unix.SOL_SOCKET, unix.SO_SNDBUF, 4096); err != nil {
+		t.Fatalf("could not set SO_SNDBUF: %v", err)
+	}
+	if err := peer.(*net.TCPConn).SetReadBuffer(4096); err != nil {
+		t.Fatalf("could not set SO_RCVBUF: %v", err)
+	}
+
+	// Each byte depends on its offset, so resent data shows up as a mismatch.
+	want := make([]byte, 1<<20)
+	for i := range want {
+		want[i] = byte(i % 251)
+	}
+
+	type result struct {
+		n   int
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := sock.Write(ctx, want, nil)
+		done <- result{n, err}
+	}()
+
+	// Give the writer time to fill the buffers and block.
+	time.Sleep(100 * time.Millisecond)
+
+	got := make([]byte, len(want))
+	peer.SetReadDeadline(time.Now().Add(30 * time.Second))
+	if _, err := io.ReadFull(peer, got); err != nil {
+		t.Fatalf("could not read data: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		i := 0
+		for i < len(got) && got[i] == want[i] {
+			i++
+		}
+		t.Fatalf("data mismatch at offset %d: got %d, want %d", i, got[i], want[i])
+	}
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("Write failed: %v", res.err)
+	}
+	if res.n != len(want) {
+		t.Errorf("Write returned %d, want %d", res.n, len(want))
+	}
+
+	// Nothing should follow the payload.
+	peer.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	if n, _ := peer.Read(make([]byte, 1)); n != 0 {
+		t.Errorf("got %d unexpected trailing bytes", n)
 	}
 }
 
