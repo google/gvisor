@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"regexp"
@@ -48,10 +49,10 @@ import (
 )
 
 var (
-	port    = flag.Int("port", 0, "bind port (all addresses)")
+	portArg = flag.String("port", "0", "bind port (all addresses)")
 	forward = flag.String("forward", "", "forwarding target")
-	client  = flag.Bool("client", false, "use netstack for listen")
-	server  = flag.Bool("server", false, "use netstack for dial")
+	client  = flag.Bool("client", false, "use netstack for dial")
+	server  = flag.Bool("server", false, "use netstack for listen")
 
 	// Netstack-specific options.
 	mtu                = flag.Int("mtu", 1280, "mtu for network stack")
@@ -78,22 +79,17 @@ var (
 )
 
 type impl interface {
-	dial(address string) (net.Conn, error)
-	listen(port int) (net.Listener, error)
+	listen(port uint16) (net.Listener, error)
 	printStats()
 }
 
 type netImpl struct{}
 
-func (netImpl) dial(address string) (net.Conn, error) {
-	return net.Dial("tcp", address)
-}
-
-func (netImpl) listen(port int) (net.Listener, error) {
+func (*netImpl) listen(port uint16) (net.Listener, error) {
 	return net.Listen("tcp", fmt.Sprintf(":%d", port))
 }
 
-func (netImpl) printStats() {
+func (*netImpl) printStats() {
 }
 
 const (
@@ -159,7 +155,7 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 	return nil, fmt.Errorf("failed to find interface: %v", ifaceName)
 }
 
-func newNetstackImpl(mode, probeFileName string) (impl, func() error, error) {
+func newNetstackImpl(mode, probeFileName string) (*netstackImpl, func() error, error) {
 	// Parse details.
 	var parsedAddr tcpip.Address
 	if *useIpv6 {
@@ -327,30 +323,18 @@ func newNetstackImpl(mode, probeFileName string) (impl, func() error, error) {
 		}
 	}
 
-	return netstackImpl{
+	return &netstackImpl{
 		s:    s,
 		addr: parsedAddr,
 		mode: mode,
 	}, probeFile.Close, nil
 }
 
-func (n netstackImpl) dial(address string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return nil, err
-	}
-	if host == "" {
-		// A host must be provided for the dial.
-		return nil, fmt.Errorf("no host provided")
-	}
-	portNumber, err := strconv.Atoi(port)
-	if err != nil {
-		return nil, err
-	}
+func (n *netstackImpl) dial(remote netip.AddrPort) (net.Conn, error) {
 	addr := tcpip.FullAddress{
 		NIC:  nicID,
-		Addr: tcpip.AddrFromSlice(net.ParseIP(host)),
-		Port: uint16(portNumber),
+		Addr: tcpip.AddrFrom16(remote.Addr().As16()),
+		Port: remote.Port(),
 	}
 	proto := ipv4.ProtocolNumber
 	if *useIpv6 {
@@ -363,10 +347,10 @@ func (n netstackImpl) dial(address string) (net.Conn, error) {
 	return conn, nil
 }
 
-func (n netstackImpl) listen(port int) (net.Listener, error) {
+func (n *netstackImpl) listen(port uint16) (net.Listener, error) {
 	addr := tcpip.FullAddress{
 		NIC:  nicID,
-		Port: uint16(port),
+		Port: port,
 	}
 	proto := ipv4.ProtocolNumber
 	if *useIpv6 {
@@ -381,7 +365,7 @@ func (n netstackImpl) listen(port int) (net.Listener, error) {
 
 var zeroFieldsRegexp = regexp.MustCompile(`\s*[a-zA-Z0-9]*:0`)
 
-func (n netstackImpl) printStats() {
+func (n *netstackImpl) printStats() {
 	// Don't show zero fields.
 	stats := zeroFieldsRegexp.ReplaceAllString(fmt.Sprintf("%+v", n.s.Stats()), "")
 	log.Printf("netstack %s Stats: %+v\n", n.mode, stats)
@@ -389,11 +373,33 @@ func (n netstackImpl) printStats() {
 
 func main() {
 	flag.Parse()
-	if *port == 0 {
+	port, err := strconv.ParseUint(*portArg, 0, 16)
+	if err != nil {
+		log.Fatalf("invalid listen port: %v", err)
+	}
+	if port == 0 {
 		log.Fatalf("no port provided")
 	}
 	if *forward == "" {
 		log.Fatalf("no forward provided")
+	}
+	var target netip.AddrPort
+	if *client {
+		target, err = netip.ParseAddrPort(*forward)
+		if err != nil {
+			log.Fatalf("invalid forwarding target: %v", err)
+		}
+		if target.Addr().Zone() != "" {
+			log.Fatalf("netstack forwarding uses -iface; omit the zone in %q", *forward)
+		}
+	} else {
+		_, service, err := net.SplitHostPort(*forward)
+		if err != nil {
+			log.Fatalf("invalid forwarding target: %v", err)
+		}
+		if _, err := net.LookupPort("tcp", service); err != nil {
+			log.Fatalf("invalid forwarding port: %v", err)
+		}
 	}
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -440,36 +446,31 @@ func main() {
 		runtime.SetBlockProfileRate(1000)
 	}
 
-	var (
-		in      impl
-		out     impl
-		err     error
-		cleanup func() error
-	)
+	var in impl = &netImpl{}
 	if *server {
-		in, cleanup, err = newNetstackImpl("server", *serverTCPProbeFile)
+		n, cleanup, err := newNetstackImpl("server", *serverTCPProbeFile)
+		if err != nil {
+			log.Fatalf("netstack error: %v", err)
+		}
 		defer cleanup()
-
-	} else {
-		in = netImpl{}
+		in = n
 	}
-	if err != nil {
-		log.Fatalf("netstack error: %v", err)
-	}
+	var out impl = &netImpl{}
+	dial := func() (net.Conn, error) { return net.Dial("tcp", *forward) }
 	if *client {
-		out, cleanup, err = newNetstackImpl("client", *clientTCPProbeFile)
+		n, cleanup, err := newNetstackImpl("client", *clientTCPProbeFile)
+		if err != nil {
+			log.Fatalf("netstack error: %v", err)
+		}
 		defer cleanup()
-	} else {
-		out = netImpl{}
-	}
-	if err != nil {
-		log.Fatalf("netstack error: %v", err)
+		out = n
+		dial = func() (net.Conn, error) { return n.dial(target) }
 	}
 
 	// Dial forward before binding.
 	var next net.Conn
 	for {
-		next, err = out.dial(*forward)
+		next, err = dial()
 		if err == nil {
 			break
 		}
@@ -478,7 +479,7 @@ func main() {
 	}
 
 	// Bind once to the server socket.
-	listener, err := in.listen(*port)
+	listener, err := in.listen(uint16(port))
 	if err != nil {
 		// Should not happen, everything must be bound by this time
 		// this proxy is started.
@@ -523,7 +524,7 @@ func main() {
 
 			for {
 				// Dial again.
-				next, err = out.dial(*forward)
+				next, err = dial()
 				if err == nil {
 					break
 				}
