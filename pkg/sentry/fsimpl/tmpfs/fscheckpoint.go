@@ -93,11 +93,13 @@ func (cb *fsckptTarWriterCallbacks) checkpointRegularFile(rf *regularFile) *fsck
 	return crf
 }
 
+// +checklocks:rf.inode.mu
 func (cb *fsckptTarWriterCallbacks) regularFileSize(rf *regularFile) int64 {
 	crf := cb.checkpointRegularFile(rf)
 	return 8 /* size */ + int64(len(crf.data))*int64((*fsckptRegularFileSegment)(nil).SizeBytes())
 }
 
+// +checklocks:rf.inode.mu
 func (cb *fsckptTarWriterCallbacks) regularFileWrite(ctx context.Context, rf *regularFile, tw *tar.Writer) error {
 	crf := cb.checkpointRegularFile(rf)
 	var buf [8]byte
