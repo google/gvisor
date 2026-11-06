@@ -384,6 +384,7 @@ const (
 // Route flags, from include/uapi/linux/route.h.
 const (
 	RTF_GATEWAY = 0x2
+	RTF_HOST    = 0x4
 	RTF_UP      = 0x1
 )
 
