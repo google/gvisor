@@ -90,6 +90,15 @@ type segment struct {
 
 	// lost indicates if the segment is marked as lost by RACK.
 	lost bool
+
+	// payloadTrimmed records whether the payload has shrunk since its first
+	// transmission. Sent payloads never grow; this distinguishes a whole
+	// original runt from a suffix or prefix without storing its old length.
+	payloadTrimmed bool
+
+	// deliveryGeneration snapshots the sender's delivery count at the first
+	// transmission. It is preserved across retransmissions, clones and trims.
+	deliveryGeneration uint64
 }
 
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
@@ -161,6 +170,8 @@ func (s *segment) clone() *segment {
 	t.rcvdTime = s.rcvdTime
 	t.xmitTime = s.xmitTime
 	t.xmitCount = s.xmitCount
+	t.deliveryGeneration = s.deliveryGeneration
+	t.payloadTrimmed = s.payloadTrimmed
 	t.ep = s.ep
 	t.qFlags = s.qFlags
 	t.dataMemSize = s.dataMemSize
@@ -246,6 +257,9 @@ func (s *segment) sackBlock() header.SACKBlock {
 }
 
 func (s *segment) TrimFront(ackLeft seqnum.Size) {
+	if s.xmitCount != 0 && ackLeft != 0 {
+		s.payloadTrimmed = true
+	}
 	s.pkt.Data().TrimFront(int(ackLeft))
 }
 
