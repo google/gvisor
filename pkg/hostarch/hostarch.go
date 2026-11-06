@@ -10,6 +10,8 @@ package hostarch
 import (
 	"encoding/binary"
 	"fmt"
+
+	"golang.org/x/sys/unix"
 )
 
 // EndianString returns "little" if the invoking process is little-endian and
@@ -23,4 +25,18 @@ func EndianString() string {
 	default:
 		panic(fmt.Sprintf("unknown endianness: [01 02 03 04] => %#x", val))
 	}
+}
+
+// CheckHostPageSize returns an error if gVisor doesn't support the host page
+// size, or if the host page size differs from PageSize.
+func CheckHostPageSize() error {
+	return checkPageSize(unix.Getpagesize())
+}
+
+// checkPageSize implements CheckHostPageSize for the given host page size.
+func checkPageSize(hostPageSize int) error {
+	if !IsSupportedPageSize(hostPageSize) || uintptr(hostPageSize) != uintptr(PageSize) {
+		return fmt.Errorf("unsupported host page size %d (page size in use: %d)", hostPageSize, PageSize)
+	}
+	return nil
 }

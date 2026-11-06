@@ -36,3 +36,30 @@ func TestEndianString(t *testing.T) {
 		t.Logf("GOARCH %v is %s-endian", runtime.GOARCH, got)
 	}
 }
+
+func TestCheckHostPageSize(t *testing.T) {
+	if err := CheckHostPageSize(); err != nil {
+		t.Errorf("CheckHostPageSize() = %v, want nil", err)
+	}
+}
+
+func TestCheckPageSize(t *testing.T) {
+	pageSize := int(PageSize)
+	for _, test := range []struct {
+		hostPageSize int
+		wantErr      bool
+	}{
+		{hostPageSize: pageSize, wantErr: false},
+		// Supported page sizes that differ from PageSize.
+		{hostPageSize: pageSize * 16, wantErr: true},
+		{hostPageSize: pageSize / 16, wantErr: true},
+		// Unsupported page sizes.
+		{hostPageSize: 16 << 10, wantErr: true},
+		{hostPageSize: 0, wantErr: true},
+		{hostPageSize: pageSize + 1, wantErr: true},
+	} {
+		if err := checkPageSize(test.hostPageSize); (err != nil) != test.wantErr {
+			t.Errorf("checkPageSize(%d) with PageSize %d = %v, want error: %t", test.hostPageSize, pageSize, err, test.wantErr)
+		}
+	}
+}
