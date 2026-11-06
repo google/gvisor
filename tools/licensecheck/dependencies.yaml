@@ -90,6 +90,12 @@
   commit: 3de43ed45e1c7923d53c4db56ca3de3e46601580
   sha256: 37cdfbc6faefea94f7b37760a305c98c08981116c2bc9e821e3b423221fad8c8
   license: Apache-2.0
+- dependency: buildifier_prebuilt
+  version: https://github.com/keith/buildifier-prebuilt/releases/download/8.5.1.4/buildifier-prebuilt.8.5.1.4.tar.gz
+  retrieved: "2026-10-29"
+  commit: 2d23069a6f2111875011df0e776942b2ca3c1a8d
+  sha256: bc0a95ad65808ce60dda3bf9e30865568021842fbef95191599fb0325347f90b
+  license: MIT
 - dependency: buildkite_pipeline_schema
   version: https://raw.githubusercontent.com/buildkite/pipeline-schema/3413455899dadd5f721f481ca247bc55e78bf5b9/schema.json
   retrieved: "2026-10-26"

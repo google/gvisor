@@ -49,7 +49,7 @@ class LintTest(unittest.TestCase):
     )
     self.tool(self.bin / "git", "printf 'tracked source\\0'")
     self.tool(self.bin / "curl", "echo unexpected-download >&2; exit 42")
-    for name in ("goimports", "clang-format", "buildifier"):
+    for name in ("goimports", "clang-format"):
       self.tool(self.formatter(name), "exit 0")
 
   def tool(self, path: pathlib.Path, body: str) -> None:
@@ -57,7 +57,7 @@ class LintTest(unittest.TestCase):
     path.chmod(0o755)
 
   def formatter(self, name: str) -> pathlib.Path:
-    if name == "goimports":
+    if name in ("goimports", "buildifier"):
       return self.bin / "bazel"
     version = self.versions[name.upper().replace("-", "_")]
     return self.cache / f"{name}-{version}"
@@ -109,15 +109,15 @@ class LintTest(unittest.TestCase):
   def test_installer_failure(self) -> None:
     # Both failures occur in an installer command substitution. A stale cache
     # entry must not be made executable by commands following the failure.
-    self.formatter("buildifier").chmod(0o644)
-    result = self.lint("buildifier")
-    self.assert_failed(result, "buildifier")
+    self.formatter("clang-format").chmod(0o644)
+    result = self.lint("clang-format")
+    self.assert_failed(result, "clang-format")
     self.assertIn("unexpected-download", result.stderr)
-    self.assertEqual(self.formatter("buildifier").stat().st_mode & 0o111, 0)
+    self.assertEqual(self.formatter("clang-format").stat().st_mode & 0o111, 0)
     # mktemp adds another substitution, whose status local must not mask.
     self.tool(self.bin / "mktemp", "echo temporary-file-failed >&2; exit 7")
-    result = self.lint("buildifier", "goimports")
-    self.assert_failed(result, "buildifier")
+    result = self.lint("clang-format", "goimports")
+    self.assert_failed(result, "clang-format")
     self.assertIn("temporary-file-failed", result.stderr)
     self.assertNotIn("unexpected-download", result.stderr)
     self.assertIn("PASS  goimports", result.stderr)
