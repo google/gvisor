@@ -60,6 +60,15 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
+// linux/udp.h cannot be included here: it redefines struct udphdr, which
+// netinet/udp.h (via socket_util.h) also defines. These values match linux/udp.h.
+#ifndef SOL_UDP
+#define SOL_UDP 17
+#endif
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT 103
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -2086,6 +2095,107 @@ TEST_P(UdpSocketTest, SetPMTUD) {
   EXPECT_THAT(
       setsockopt(bind_.get(), SOL_IP, IP_MTU_DISCOVER, &invalid, length),
       SyscallFails());
+}
+
+// Unknown SOL_UDP options are rejected. A value shorter than an int is EINVAL.
+// Any other unimplemented option is ENOPROTOOPT.
+TEST_P(UdpSocketTest, UnknownSolUDPOption) {
+  constexpr int kUnknownOption = 999;
+  char short_val = 1;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, kUnknownOption, &short_val,
+                         sizeof(short_val)),
+              SyscallFailsWithErrno(EINVAL));
+
+  int val = 1;
+  ASSERT_THAT(
+      setsockopt(sock_.get(), SOL_UDP, kUnknownOption, &val, sizeof(val)),
+      SyscallFailsWithErrno(ENOPROTOOPT));
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(sock_.get(), SOL_UDP, kUnknownOption, &val, &val_len),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+// UDP_SEGMENT enables Linux UDP GSO. gVisor does not implement it: the option
+// probe fails, a UDP_SEGMENT control message is rejected, and a send without
+// that control message still succeeds.
+TEST_P(UdpSocketTest, UDPSegment) {
+  constexpr int kSegment = 1200;
+  constexpr int kSegments = 2;
+
+  if (IsRunningOnGvisor()) {
+    ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &kSegment,
+                           sizeof(kSegment)),
+                SyscallFailsWithErrno(ENOPROTOOPT));
+    int got = 0;
+    socklen_t got_len = sizeof(got);
+    ASSERT_THAT(getsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &got, &got_len),
+                SyscallFailsWithErrno(ENOPROTOOPT));
+  } else {
+    ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &kSegment,
+                           sizeof(kSegment)),
+                SyscallSucceeds());
+    int got = 0;
+    socklen_t got_len = sizeof(got);
+    ASSERT_THAT(getsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &got, &got_len),
+                SyscallSucceeds());
+    EXPECT_EQ(got_len, static_cast<socklen_t>(sizeof(got)));
+    EXPECT_EQ(got, kSegment);
+  }
+
+  ASSERT_NO_ERRNO(BindLoopback());
+
+  uint16_t segment = kSegment;
+  char control[CMSG_SPACE(sizeof(segment))] = {};
+  std::vector<char> payload(static_cast<size_t>(kSegment) * kSegments, 'x');
+  struct iovec iov = {};
+  iov.iov_base = payload.data();
+  iov.iov_len = payload.size();
+  struct msghdr msg = {};
+  msg.msg_name = bind_addr_;
+  msg.msg_namelen = addrlen_;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  cmsg->cmsg_level = SOL_UDP;
+  cmsg->cmsg_type = UDP_SEGMENT;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(segment));
+  memcpy(CMSG_DATA(cmsg), &segment, sizeof(segment));
+
+  if (IsRunningOnGvisor()) {
+    ASSERT_THAT(sendmsg(sock_.get(), &msg, 0), SyscallFailsWithErrno(EINVAL));
+
+    char plain[] = "plain";
+    struct iovec plain_iov = {};
+    plain_iov.iov_base = plain;
+    plain_iov.iov_len = sizeof(plain) - 1;
+    struct msghdr plain_msg = {};
+    plain_msg.msg_name = bind_addr_;
+    plain_msg.msg_namelen = addrlen_;
+    plain_msg.msg_iov = &plain_iov;
+    plain_msg.msg_iovlen = 1;
+    ASSERT_THAT(sendmsg(sock_.get(), &plain_msg, 0),
+                SyscallSucceedsWithValue(sizeof(plain) - 1));
+    char received[sizeof(plain)] = {};
+    EXPECT_THAT(
+        RecvTimeout(bind_.get(), received, sizeof(received), 1 /*timeout*/),
+        IsPosixErrorOkAndHolds(sizeof(plain) - 1));
+    EXPECT_EQ(memcmp(plain, received, sizeof(plain) - 1), 0);
+    return;
+  }
+
+  ASSERT_THAT(sendmsg(sock_.get(), &msg, 0),
+              SyscallSucceedsWithValue(kSegment * kSegments));
+  std::vector<char> received(kSegment, 0);
+  const std::vector<char> want(kSegment, 'x');
+  for (int i = 0; i < kSegments; i++) {
+    ASSERT_THAT(
+        RecvTimeout(bind_.get(), received.data(), kSegment, 1 /*timeout*/),
+        IsPosixErrorOkAndHolds(kSegment));
+    EXPECT_EQ(received, want);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
