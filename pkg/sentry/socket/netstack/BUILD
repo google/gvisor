@@ -87,6 +87,7 @@ go_test(
         ":netstack",
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/marshal/primitive",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",

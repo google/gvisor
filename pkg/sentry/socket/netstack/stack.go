@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -60,14 +61,27 @@ type Stack struct {
 
 	// ipv6KeepAddrOnDown backs /proc/sys/net/ipv6/conf/all/keep_addr_on_down.
 	ipv6KeepAddrOnDown atomicbitops.Bool
+
+	// portSysctlMu serializes writes of the ephemeral port range and
+	// unprivilegedPortStart, which are validated against each other.
+	portSysctlMu sync.Mutex `state:"nosave"`
+
+	// unprivilegedPortStart is net.ipv4.ip_unprivileged_port_start.
+	unprivilegedPortStart atomicbitops.Uint32
 }
+
+// defaultUnprivilegedPortStart is PROT_SOCK, Linux's default from
+// net/ipv4/af_inet.c:inet_init_net().
+const defaultUnprivilegedPortStart = 1024
 
 // NewStack creates a new netstack.Stack which wraps the given tcpip.Stack.
 func NewStack(s *stack.Stack, id uint64) *Stack {
-	return &Stack{
+	st := &Stack{
 		Stack: s,
 		id:    id,
 	}
+	st.unprivilegedPortStart.Store(defaultUnprivilegedPortStart)
+	return st
 }
 
 // AddInterfaceEventSubscriber implements inet.InterfaceEventPublisher.AddInterfaceEventSubscriber.
@@ -1665,7 +1679,30 @@ func (s *Stack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements inet.Stack.SetPortRange.
 func (s *Stack) SetPortRange(start uint16, end uint16) error {
+	s.portSysctlMu.Lock()
+	defer s.portSysctlMu.Unlock()
+	// Linux: net/ipv4/sysctl_net_ipv4.c:ipv4_local_port_range().
+	if uint32(start) < s.unprivilegedPortStart.Load() {
+		return linuxerr.EINVAL
+	}
 	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
+}
+
+// UnprivilegedPortStart implements inet.Stack.UnprivilegedPortStart.
+func (s *Stack) UnprivilegedPortStart() uint16 {
+	return uint16(s.unprivilegedPortStart.Load())
+}
+
+// SetUnprivilegedPortStart implements inet.Stack.SetUnprivilegedPortStart.
+func (s *Stack) SetUnprivilegedPortStart(start uint16) error {
+	s.portSysctlMu.Lock()
+	defer s.portSysctlMu.Unlock()
+	// Linux: net/ipv4/sysctl_net_ipv4.c:ipv4_privileged_ports().
+	if low, _ := s.Stack.PortRange(); low < start {
+		return linuxerr.EINVAL
+	}
+	s.unprivilegedPortStart.Store(uint32(start))
+	return nil
 }
 
 // SetRemoveConf implements inet.Stack.SetRemoveConf.
