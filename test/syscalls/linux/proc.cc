@@ -1571,10 +1571,9 @@ void StopFdinfoTarget(FdinfoTarget* target) {
 }
 
 PosixErrorOr<FdinfoTarget> StartFdinfoTarget() {
-  ASSIGN_OR_RETURN_ERRNO(
-      auto file,
-      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(),
-                               std::string(kFdinfoOffset, 'a'), 0644));
+  ASSIGN_OR_RETURN_ERRNO(auto file, TempPath::CreateFileWith(
+                                        GetAbsoluteTestTmpdir(),
+                                        std::string(kFdinfoOffset, 'a'), 0644));
   int ready[2];
   int stop[2];
   RETURN_ERROR_IF_SYSCALL_FAIL(pipe(ready));
