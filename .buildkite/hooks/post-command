@@ -134,3 +134,16 @@ fi
 if [[ -n "${BUILDKITE_STAGED_BINARIES_DIRECTORY:-}" ]]; then
   rm -rf "$BUILDKITE_STAGED_BINARIES_DIRECTORY" || true
 fi
+
+if [[ -n "${BUILDKITE_BAZEL_DIRECTORY:-}" ]]; then
+  # Docker cleanup also stops the builder after successful jobs.
+  shutdown_status=0
+  if [[ "$BUILDKITE_COMMAND_EXIT_STATUS" == 0 ]]; then
+    bazel shutdown || shutdown_status=$?
+  fi
+  rm -f -- "$BUILDKITE_BAZEL_DIRECTORY/bazel"
+  rmdir -- "$BUILDKITE_BAZEL_DIRECTORY"
+  if [[ "$shutdown_status" != 0 ]]; then
+    exit "$shutdown_status"
+  fi
+fi

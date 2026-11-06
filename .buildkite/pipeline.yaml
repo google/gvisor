@@ -354,6 +354,8 @@ steps:
     <<: *source_test
     label: ":scroll: Governance file sync check"
     command: make governance-check
+    env:
+      DOCKER_BUILD: "false"
     agents:
       arch: "amd64"
   - <<: *common
@@ -366,6 +368,8 @@ steps:
     <<: *source_test
     label: ":scales: Dependency license check"
     command: make license-check
+    env:
+      DOCKER_BUILD: "false"
     agents:
       arch: "amd64"
 

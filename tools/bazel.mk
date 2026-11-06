@@ -41,12 +41,12 @@
 ##                              (default: no device file is exposed).
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
-DOCKER_BUILD := true
 ifneq ($(MAKECMDGOALS),)
 ifeq ($(filter-out help testlogs,$(MAKECMDGOALS)),)
 DOCKER_BUILD := false
 endif
 endif
+DOCKER_BUILD ?= true
 ifeq ($(DOCKER_BUILD),true)
 -include bazel-server-inc
 endif
@@ -126,6 +126,7 @@ TEST_OPTIONS       += $(BASE_OPTIONS) \
   --test_output=$(BAZEL_TEST_OUTPUT) \
   --keep_going \
   --verbose_failures=true \
+  --nobuild_event_json_file_path_conversion \
   --build_event_json_file=.build_events.json
 
 # Basic options.
