@@ -1453,6 +1453,16 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetV6Only()))
 		return &v, nil
 
+	case linux.IPV6_MULTICAST_HOPS:
+		v, err := ep.GetSockOptInt(tcpip.IPv6MulticastHopLimitOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		return truncateInt32Result(primitive.Int32(v), outLen)
+
+	case linux.IPV6_MULTICAST_LOOP:
+		return truncateInt32Result(primitive.Int32(boolToInt32(ep.SocketOptions().GetIPv6MulticastLoop())), outLen)
+
 	case linux.IPV6_UNICAST_HOPS:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -1642,6 +1652,16 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 	return nil, syserr.ErrProtocolNotAvailable
 }
 
+// Linux returns a single unsigned char for a short, nonempty buffer when the
+// IPv4 option value fits in a byte, as both multicast controls do.
+func multicastIPv4Result(v primitive.Int32, outLen int) (marshal.Marshallable, *syserr.Error) {
+	if outLen > 0 && outLen < sizeOfInt32 {
+		b := primitive.Uint8(v)
+		return &b, nil
+	}
+	return truncateInt32Result(v, outLen)
+}
+
 // getSockOptIP implements linux getsockopt(2) when the level is SOL_IP.
 func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr hostarch.Addr, outLen int, _ int) (marshal.Marshallable, *syserr.Error) {
 	if _, ok := ep.(tcpip.Endpoint); !ok {
@@ -1685,17 +1705,11 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 		return &v, nil
 
 	case linux.IP_MULTICAST_TTL:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
-		v, err := ep.GetSockOptInt(tcpip.MulticastTTLOption)
+		v, err := ep.GetSockOptInt(tcpip.IPv4MulticastTTLOption)
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-
-		vP := primitive.Int32(v)
-		return &vP, nil
+		return multicastIPv4Result(primitive.Int32(v), outLen)
 
 	case linux.IP_MULTICAST_IF:
 		if outLen < len(linux.InetAddr{}) {
@@ -1712,12 +1726,7 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 		return &a.(*linux.SockAddrInet).Addr, nil
 
 	case linux.IP_MULTICAST_LOOP:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
-		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetMulticastLoop()))
-		return &v, nil
+		return multicastIPv4Result(primitive.Int32(boolToInt32(ep.SocketOptions().GetMulticastLoop())), outLen)
 
 	case linux.IP_TOS:
 		// Length handling for parity with Linux.
@@ -2489,6 +2498,33 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 			MulticastAddr: tcpip.AddrFrom16(req.MulticastAddr),
 		}))
 
+	case linux.IPV6_MULTICAST_HOPS:
+		if _, typ, _ := s.Type(); typ == linux.SOCK_STREAM {
+			return syserr.ErrProtocolNotAvailable
+		}
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := int32(hostarch.ByteOrder.Uint32(optVal))
+		if v == -1 {
+			v = 1
+		}
+		if v < 0 || v > 255 {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv6MulticastHopLimitOption, int(v)))
+
+	case linux.IPV6_MULTICAST_LOOP:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := hostarch.ByteOrder.Uint32(optVal)
+		if v > 1 {
+			return syserr.ErrInvalidArgument
+		}
+		ep.SocketOptions().SetIPv6MulticastLoop(v != 0)
+		return nil
+
 	case linux.IPV6_MULTICAST_IF:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument
@@ -2600,9 +2636,7 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 	case linux.IP6T_SO_SET_ADD_COUNTERS:
 		log.Infof("IP6T_SO_SET_ADD_COUNTERS is not supported")
 		return nil
-	case linux.IPV6_MULTICAST_LOOP,
-		linux.IPV6_MULTICAST_HOPS,
-		linux.IPV6_MTU,
+	case linux.IPV6_MTU,
 		linux.IPV6_MINHOPCOUNT,
 		linux.IPV6_RECVERR_RFC4884,
 		linux.IPV6_MULTICAST_ALL,
@@ -2739,7 +2773,7 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 		if v < 0 || v > 255 {
 			return syserr.ErrInvalidArgument
 		}
-		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.MulticastTTLOption, int(v)))
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv4MulticastTTLOption, int(v)))
 
 	case linux.IP_ADD_MEMBERSHIP:
 		req, err := copyInMulticastRequest(optVal, false /* allowAddr */)
@@ -2786,7 +2820,7 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 			return err
 		}
 
-		ep.SocketOptions().SetMulticastLoop(v != 0)
+		ep.SocketOptions().SetIPv4MulticastLoop(v != 0)
 		return nil
 
 	case linux.MCAST_JOIN_GROUP:

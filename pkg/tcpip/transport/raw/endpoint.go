@@ -766,6 +766,11 @@ func (*endpoint) LastError() tcpip.Error {
 	return nil
 }
 
+// OnMulticastLoopChanged updates the connected datagram route.
+func (e *endpoint) OnMulticastLoopChanged() {
+	e.net.OnMulticastLoopChanged()
+}
+
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops

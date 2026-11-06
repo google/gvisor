@@ -106,6 +106,32 @@ func (r *Route) Loop() PacketLooping {
 	return r.routeInfo.Loop
 }
 
+// WithMulticastLoop transfers the caller's reference to a route with the
+// requested multicast loopback policy. Other writers may still hold the old
+// route. Both routes use the same local address reference and next hop.
+func (r *Route) WithMulticastLoop(enabled bool) *Route {
+	addr := r.RemoteAddress()
+	if !(header.IsV4MulticastAddress(addr) || header.IsV6MulticastAddress(addr)) ||
+		r.local() || (r.Loop()&PacketLoop != 0) == enabled {
+		return r
+	}
+
+	info := r.routeInfo
+	info.Loop ^= PacketLoop
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return &Route{
+		routeInfo:            info,
+		localAddressNIC:      r.localAddressNIC,
+		localAddressEndpoint: r.localAddressEndpoint,
+		remoteLinkAddress:    r.remoteLinkAddress,
+		outgoingNIC:          r.outgoingNIC,
+		linkRes:              r.linkRes,
+		neighborEntry:        r.neighborEntry,
+		mtu:                  r.mtu,
+	}
+}
+
 // OutgoingNIC returns the route's outgoing NIC.
 func (r *Route) OutgoingNIC() tcpip.NICID {
 	return r.outgoingNIC.id
