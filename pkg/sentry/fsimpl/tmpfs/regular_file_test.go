@@ -21,6 +21,7 @@ import (
 	"os"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -332,9 +333,10 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
-// newDiskBackedFileFD creates a new file in a new tmpfs mount that stores file
-// data in a disk-backed MemoryFile. It returns the FD and the MemoryFile.
-func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescription, *pgalloc.MemoryFile) {
+// newDiskBackedRoot creates a new tmpfs mount, with the given mount options,
+// that stores file data in a disk-backed MemoryFile. It returns the VFS, the
+// mount's root, and the MemoryFile.
+func newDiskBackedRoot(ctx context.Context, tb testing.TB, data string) (*vfs.VirtualFilesystem, vfs.VirtualDentry, *pgalloc.MemoryFile) {
 	tb.Helper()
 	file, err := os.CreateTemp(tb.TempDir(), "tmpfs-disk-backed")
 	if err != nil {
@@ -361,7 +363,11 @@ func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescripti
 	})
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			InternalData: FilesystemOpts{MemoryFile: mf},
+			Data: data,
+			InternalData: FilesystemOpts{
+				MemoryFile:              mf,
+				DisableDefaultSizeLimit: true,
+			},
 		},
 	}, nil)
 	if err != nil {
@@ -370,8 +376,15 @@ func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescripti
 	tb.Cleanup(func() { mntns.DecRef(ctx) })
 	root := mntns.Root(ctx)
 	tb.Cleanup(func() { root.DecRef(ctx) })
+	return vfsObj, root, mf
+}
 
-	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+// newDiskBackedFileFD creates a new file in a new tmpfs mount that stores file
+// data in a disk-backed MemoryFile. It returns the FD and the MemoryFile.
+func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescription, *pgalloc.MemoryFile) {
+	tb.Helper()
+	vfsObj, root, mf := newDiskBackedRoot(ctx, tb, "")
+	fd, err := vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
 		Root:  root,
 		Start: root,
 		Path:  fspath.Parse("file"),
@@ -384,6 +397,43 @@ func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescripti
 	}
 	tb.Cleanup(func() { fd.DecRef(ctx) })
 	return fd, mf
+}
+
+// TestDiskBackedStatFS tests that statfs(2) on a disk-backed tmpfs mount
+// reports the capacity of the host filesystem that stores its data, unless the
+// mount has a size limit.
+func TestDiskBackedStatFS(t *testing.T) {
+	ctx := contexttest.Context(t)
+	for _, test := range []struct {
+		name string
+		data string
+		host bool
+	}{
+		{name: "unlimited", host: true},
+		{name: "size", data: "size=1m"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			vfsObj, root, mf := newDiskBackedRoot(ctx, t, test.data)
+			st, err := vfsObj.StatFSAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+			})
+			if err != nil {
+				t.Fatalf("StatFSAt failed: %v", err)
+			}
+			wantBlockSize, wantBlocks := int64(hostarch.PageSize), uint64(1<<20)/hostarch.PageSize
+			if test.host {
+				var hostSt unix.Statfs_t
+				if err := unix.Fstatfs(mf.FD(), &hostSt); err != nil {
+					t.Fatalf("Fstatfs failed: %v", err)
+				}
+				wantBlockSize, wantBlocks = hostSt.Bsize, hostSt.Blocks
+			}
+			if st.BlockSize != wantBlockSize || st.Blocks != wantBlocks {
+				t.Errorf("StatFSAt got block size %d, blocks %d; want %d, %d", st.BlockSize, st.Blocks, wantBlockSize, wantBlocks)
+			}
+		})
+	}
 }
 
 // TestDiskBackedWriteHostFault tests a write to a file in a disk-backed
