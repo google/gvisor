@@ -29,6 +29,57 @@ func init() {
 	testbench.Initialize(flag.CommandLine)
 }
 
+func TestTCPInfoOptions(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listenFD, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFD)
+
+	const mask = linux.TCPI_OPT_TIMESTAMPS | linux.TCPI_OPT_SACK
+	for _, tt := range []struct {
+		name string
+		want uint8
+	}{
+		{"Neither", 0},
+		{"Timestamps", linux.TCPI_OPT_TIMESTAMPS},
+		{"SACK", linux.TCPI_OPT_SACK},
+		{"Both", mask},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+			defer conn.Close(t)
+			var opts [header.TCPOptionsMaximumSize]byte
+			n := 0
+			ts, sack := tt.want&linux.TCPI_OPT_TIMESTAMPS != 0, tt.want&linux.TCPI_OPT_SACK != 0
+			if ts {
+				n += header.EncodeTSOption(1, 0, opts[n:])
+			}
+			if sack {
+				n += header.EncodeSACKPermittedOption(opts[n:])
+			}
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: opts[:n]})
+			synAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+			if err != nil {
+				t.Fatalf("expect SYN-ACK: %v", err)
+			}
+			negotiated := header.ParseSynOptions(synAck.Options, true /* isAck */)
+			if negotiated.TS != ts || negotiated.SACKPermitted != sack {
+				t.Fatalf("SYN-ACK timestamps=%t SACK=%t, want %t and %t", negotiated.TS, negotiated.SACKPermitted, ts, sack)
+			}
+			n = 0
+			if negotiated.TS {
+				n = header.EncodeTSOption(2, negotiated.TSVal, opts[:])
+			}
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: opts[:n]})
+			dut.PollOne(t, listenFD, unix.POLLIN, time.Second)
+			fd, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, fd)
+			if got := dut.GetSockOptTCPInfo(t, fd).Options & mask; got != tt.want {
+				t.Errorf("TCP_INFO timestamps/SACK bits = %#x, want %#x from SYN-ACK", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTCPInfo(t *testing.T) {
 	// Create a socket, listen, TCP connect, and accept.
 	dut := testbench.NewDUT(t)

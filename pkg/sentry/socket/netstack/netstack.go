@@ -1278,6 +1278,12 @@ func (s *sock) getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int
 			SndCwnd:     v.SndCwnd,
 			SndMss:      v.SndMss,
 		}
+		if v.Timestamps {
+			info.Options |= linux.TCPI_OPT_TIMESTAMPS
+		}
+		if v.SACKPermitted {
+			info.Options |= linux.TCPI_OPT_SACK
+		}
 		switch v.CcState {
 		case tcpip.RTORecovery:
 			info.CaState = linux.TCP_CA_Loss

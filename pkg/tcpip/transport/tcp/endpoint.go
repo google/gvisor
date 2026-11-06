@@ -2234,8 +2234,11 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 // +checklocksexclude:e.segmentQueue.mu
 // +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) getTCPInfo() tcpip.TCPInfoOption {
-	info := tcpip.TCPInfoOption{}
 	e.LockUser()
+	info := tcpip.TCPInfoOption{
+		Timestamps:    e.SendTSOk,
+		SACKPermitted: e.SACKPermitted,
+	}
 	if state := e.EndpointState(); state.internal() {
 		info.State = tcpip.EndpointState(StateClose)
 	} else {
