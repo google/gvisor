@@ -538,8 +538,16 @@ TEST(SemaphoreTest, SemCtlValAll) {
 }
 
 TEST(SemaphoreTest, SemCtlGetPid) {
-  AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
+  AutoSem sem(semget(IPC_PRIVATE, 2, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  // Waiting for zero records the caller on semaphore 1, even though its
+  // value does not change. Semaphore 0 has not had an operator yet.
+  struct sembuf wait_for_zero = {
+      .sem_num = 1, .sem_op = 0, .sem_flg = IPC_NOWAIT};
+  ASSERT_THAT(semop(sem.get(), &wait_for_zero, 1), SyscallSucceeds());
+  EXPECT_THAT(semctl(sem.get(), 1, GETPID), SyscallSucceedsWithValue(getpid()));
+  EXPECT_THAT(semctl(sem.get(), 0, GETPID), SyscallSucceedsWithValue(0));
 
   ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 1), SyscallSucceeds());
   EXPECT_THAT(semctl(sem.get(), 0, GETPID), SyscallSucceedsWithValue(getpid()));
