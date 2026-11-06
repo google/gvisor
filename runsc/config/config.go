@@ -311,6 +311,10 @@ type Config struct {
 	// duration of the container execution. Requires ProfileEnabled.
 	ProfileHeap string `flag:"profile-heap"`
 
+	// ProfileHeapRate sets the Sentry's heap sampling interval in bytes.
+	// Zero keeps the Go runtime default. Requires ProfileEnable when nonzero.
+	ProfileHeapRate int `flag:"profile-heap-rate"`
+
 	// ProfileMutex collects a mutex profile to the passed file for the
 	// duration of the container execution. Requires ProfileEnabled.
 	ProfileMutex string `flag:"profile-mutex"`
@@ -652,6 +656,12 @@ func (c *Config) Validate() error {
 	}
 	if c.ProfileCPU != "" && !c.ProfileEnable {
 		return fmt.Errorf("profile-cpu flag requires enabling profiling with profile flag")
+	}
+	if c.ProfileHeapRate < 0 {
+		return fmt.Errorf("profile-heap-rate must be >= 0")
+	}
+	if c.ProfileHeapRate != 0 && !c.ProfileEnable {
+		return fmt.Errorf("profile-heap-rate flag requires enabling profiling with profile flag")
 	}
 	if c.ProfileHeap != "" && !c.ProfileEnable {
 		return fmt.Errorf("profile-heap flag requires enabling profiling with profile flag")

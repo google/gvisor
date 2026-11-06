@@ -669,6 +669,11 @@ func TestSentryGODEBUG(t *testing.T) {
 			want: []string{"containermaxprocs=0"},
 		},
 		{
+			name: "all heap allocations",
+			conf: config.Config{Platform: "systrap", ProfileEnable: true, ProfileHeapRate: 1},
+			want: []string{"containermaxprocs=0", "memprofilerate=1"},
+		},
+		{
 			name: "kvm",
 			conf: config.Config{Platform: "kvm"},
 			want: []string{"containermaxprocs=0", "asyncpreemptoff=1", "memprofilerate=0"},
