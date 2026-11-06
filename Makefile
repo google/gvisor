@@ -92,9 +92,12 @@ include tools/images.mk
 #
 # This file should define the basic "build", "test", "run" and "sudo" rules, in
 # addition to the $(BRANCH_NAME) and $(BUILD_ROOTS) variables.
+image_list_goals := list-all-images list-all-test-images list-cpu-images list-gpu-images
+image_check_goals := test-all-test-images test-cpu-images test-gpu-images
 ifneq (,$(wildcard tools/google.mk))
 include tools/google.mk
-else
+# Images with Bazel-built contexts invoke this Makefile again with "copy".
+else ifneq (,$(filter-out $(image_list_goals) $(image_check_goals),$(or $(MAKECMDGOALS),default)))
 include tools/bazel.mk
 endif
 
