@@ -1009,8 +1009,8 @@ const (
 	// PacketMMapVersionOption is used to set the packet mmap version.
 	PacketMMapVersionOption
 
-	// PacketMMapReserveOption is used to set the packet mmap reserved space
-	// between the aligned header and the payload.
+	// PacketMMapReserveOption is the number of extra bytes reserved between
+	// the aligned packet mmap header and the payload.
 	PacketMMapReserveOption
 
 	// IPv6MulticastInterfaceOption is used to set/get the NIC used for
