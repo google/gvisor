@@ -16,9 +16,11 @@
 package uds
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -169,6 +171,38 @@ func createNonListeningSocket(path string, protocol int) (cleanup func(), err er
 	}
 
 	return cleanup, nil
+}
+
+// createGatedDatagram echoes the requested number of queued datagram bytes
+// over a control stream. Reading the reply confirms that the host has drained
+// those datagrams.
+func createGatedDatagram(path string, _ int) (func(), error) {
+	data, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: path, Net: "unixgram"})
+	if err != nil {
+		return nil, err
+	}
+	control, err := net.Listen("unix", path+"-drain")
+	if err != nil {
+		data.Close()
+		return nil, err
+	}
+	go func() {
+		for {
+			conn, err := control.Accept()
+			if err != nil {
+				return
+			}
+			var count uint32
+			if err := binary.Read(conn, binary.BigEndian, &count); err == nil {
+				io.CopyN(conn, data, int64(count))
+			}
+			conn.Close()
+		}
+	}()
+	return func() {
+		control.Close()
+		data.Close()
+	}, nil
 }
 
 // createNullSocket creates a socket that reads anything received.
@@ -359,6 +393,7 @@ func createSocketTree(baseDir string, specs []socketCreatorSpec) (string, func()
 //   - /stream/nonlistening
 //   - /seqpacket/echo
 //   - /seqpacket/nonlistening
+//   - /dgram/gated (drained by /dgram/gated-drain)
 //   - /dgram/null
 func CreateBoundUDSTree(baseDir string) (string, func(), error) {
 	return createSocketTree(baseDir, []socketCreatorSpec{
@@ -383,7 +418,8 @@ func CreateBoundUDSTree(baseDir string) (string, func(), error) {
 			protocol: unix.SOCK_DGRAM,
 			name:     "dgram",
 			sockets: map[string]socketCreator{
-				"null": createNullSocket,
+				"gated": createGatedDatagram,
+				"null":  createNullSocket,
 			},
 		},
 	})
