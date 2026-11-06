@@ -62,21 +62,18 @@ func (s *Stack) beforeSave() {
 	// Remove all the NICs and routes from the stack as they will be
 	// created again during restore based on the new network config,
 	// except for preserved virtual NICs created inside the sandbox.
-	deferActs := make([]func(), 0)
+	var removed []*nic
 	for id := range s.nics {
 		if _, ok := s.preservedNICs[id]; ok {
 			continue
 		}
-		act, _ := s.removeNICLocked(id, true /* closeLinkEndpoint */)
-		if act != nil {
-			deferActs = append(deferActs, act)
+		if n, err := s.removeNICLocked(id, true /* closeLinkEndpoint */); err == nil {
+			removed = append(removed, n)
 		}
 	}
 	s.mu.Unlock()
 
-	for _, act := range deferActs {
-		act()
-	}
+	s.closeRemovedNICs(removed, nil)
 }
 
 func (s *Stack) ensureRNG() {
