@@ -324,6 +324,16 @@ func TestValidationFail(t *testing.T) {
 		error string
 	}{
 		{
+			name:  "heap rate without profile",
+			flags: map[string]string{"profile-heap-rate": "1"},
+			error: "profile-heap-rate flag requires enabling profiling",
+		},
+		{
+			name:  "negative heap rate",
+			flags: map[string]string{"profile": "true", "profile-heap-rate": "-1"},
+			error: "profile-heap-rate must be >= 0",
+		},
+		{
 			name: "shared+overlay",
 			flags: map[string]string{
 				"file-access": "shared",
@@ -1324,5 +1334,20 @@ func TestIsFlagExplicitlySet(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHeapProfileRate(t *testing.T) {
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(flags)
+	if err := flags.Parse([]string{"--profile", "--profile-heap-rate=1"}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewFromFlags(flags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.ToFlags(); !slices.Contains(got, "--profile-heap-rate=1") {
+		t.Fatalf("ToFlags() = %v, want --profile-heap-rate=1", got)
 	}
 }

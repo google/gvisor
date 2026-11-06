@@ -116,6 +116,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("profile-cpu", "", "collects a CPU profile to this file path for the duration of the container execution. Requires -profile=true.")
 	flagSet.Duration("profile-gc-interval", 0, "forces a garbage collection cycle every this duration while another type of time-based profiling is enabled. Requires -profile=true.")
 	flagSet.String("profile-heap", "", "collects a heap profile to this file path for the duration of the container execution. Requires -profile=true.")
+	flagSet.Int("profile-heap-rate", 0, "sets the Sentry heap sampling interval in bytes; 0 keeps the Go runtime default, 1 records every allocation. Requires -profile=true.")
 	flagSet.String("profile-mutex", "", "collects a mutex profile to this file path for the duration of the container execution. Requires -profile=true.")
 	flagSet.String("trace", "", "collects a Go runtime execution trace to this file path for the duration of the container execution.")
 	flagSet.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
