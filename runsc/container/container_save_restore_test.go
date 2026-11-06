@@ -1260,7 +1260,8 @@ func TestCheckpointRestoreInodeNumbers(t *testing.T) {
 
 // hostRecreateWithRecycledIno removes aPath and bPath, then creates bPath so
 // that it receives the device and inode in want. aPath is created afterwards.
-func hostRecreateWithRecycledIno(t *testing.T, aPath, bPath string, want unix.Stat_t) {
+// It reports whether the host filesystem reused that inode.
+func hostRecreateWithRecycledIno(t *testing.T, aPath, bPath string, want unix.Stat_t) bool {
 	t.Helper()
 	const tries = 32
 	for i := 0; i < tries; i++ {
@@ -1281,10 +1282,10 @@ func hostRecreateWithRecycledIno(t *testing.T, aPath, bPath string, want unix.St
 			if err := os.WriteFile(aPath, []byte("a\n"), 0644); err != nil {
 				t.Fatal(err)
 			}
-			return
+			return true
 		}
 	}
-	t.Fatalf("host filesystem did not reuse inode %d on device %d for %s", want.Ino, want.Dev, bPath)
+	return false
 }
 
 // TestCheckpointRestoreRecycledOverlayInode checks that two overlay files keep
@@ -1320,8 +1321,10 @@ func TestCheckpointRestoreRecycledOverlayInode(t *testing.T) {
 	if err := conf.Overlay2.Set("all:memory"); err != nil {
 		t.Fatal(err)
 	}
-	// Keep a open so its dentry is checkpointed. The files live on the root
-	// overlay, outside the writable tmp bind mount.
+	// A read-only root is not wrapped in an overlay. The files live on the
+	// root overlay, outside the writable tmp bind mount.
+	spec.Root.Readonly = false
+	// Keep a open so its dentry is checkpointed.
 	spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + aPath + "; exec sleep 1000"}
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -1360,7 +1363,9 @@ func TestCheckpointRestoreRecycledOverlayInode(t *testing.T) {
 	// inode to b before restore.
 	cont.Destroy()
 	cont = nil
-	hostRecreateWithRecycledIno(t, aPath, bPath, want)
+	if !hostRecreateWithRecycledIno(t, aPath, bPath, want) {
+		t.Skip("host filesystem did not reuse the inode number")
+	}
 
 	cont2, err := New(conf, args)
 	if err != nil {
