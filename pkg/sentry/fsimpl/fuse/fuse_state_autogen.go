@@ -47,6 +47,7 @@ func (conn *connection) StateFields() []string {
 		"bigWrites",
 		"dontMask",
 		"noAccess",
+		"noFlush",
 		"noOpen",
 		"noCreate",
 	}
@@ -92,8 +93,9 @@ func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveBool(30, &conn.bigWrites)
 	stateSinkObject.SaveBool(31, &conn.dontMask)
 	stateSinkObject.Save(32, &conn.noAccess)
-	stateSinkObject.SaveBool(33, &conn.noOpen)
-	stateSinkObject.SaveBool(34, &conn.noCreate)
+	stateSinkObject.Save(33, &conn.noFlush)
+	stateSinkObject.SaveBool(34, &conn.noOpen)
+	stateSinkObject.SaveBool(35, &conn.noCreate)
 	stateSinkObject.SaveValue(3, initializedChanValue)
 	stateSinkObject.SaveValue(5, fullQueueChValue)
 }
@@ -131,8 +133,9 @@ func (conn *connection) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.LoadBool(30, &conn.bigWrites)
 	stateSourceObject.LoadBool(31, &conn.dontMask)
 	stateSourceObject.Load(32, &conn.noAccess)
-	stateSourceObject.LoadBool(33, &conn.noOpen)
-	stateSourceObject.LoadBool(34, &conn.noCreate)
+	stateSourceObject.Load(33, &conn.noFlush)
+	stateSourceObject.LoadBool(34, &conn.noOpen)
+	stateSourceObject.LoadBool(35, &conn.noCreate)
 	stateSourceObject.LoadValueTo(3, (*bool)(nil), conn)
 	stateSourceObject.LoadValueTo(5, (*int)(nil), conn)
 	stateSourceObject.AfterLoadTo(conn)

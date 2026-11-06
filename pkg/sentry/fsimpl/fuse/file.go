@@ -104,7 +104,7 @@ func (fd *fileDescription) OnClose(ctx context.Context) error {
 	if fs.conn.noOpen {
 		return nil
 	}
-	if fd.OpenFlag&linux.FOPEN_NOFLUSH != 0 {
+	if fd.OpenFlag&linux.FOPEN_NOFLUSH != 0 || fs.conn.noFlush.Load() {
 		return nil
 	}
 
@@ -126,7 +126,16 @@ func (fd *fileDescription) OnClose(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return res.Error()
+	if err := res.Error(); err != nil {
+		// As in Linux, a server that does not implement FLUSH is not an
+		// error.
+		if linuxerr.Equals(linuxerr.ENOSYS, err) {
+			fs.conn.noFlush.Store(true)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
