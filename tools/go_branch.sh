@@ -38,17 +38,10 @@ finish() {
 }
 trap finish EXIT
 
-# Discover the package name from the go.mod file.
-declare module origpwd othersrc
-module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
-origpwd=$(pwd)
-othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
-readonly module origpwd othersrc
-
-# Build a full gopath.
+# Build the exported sources independently of the branch's Git history.
 declare -r go_output="${tmp_dir}/output"
-make build BAZEL_OPTIONS="" TARGETS="//:gopath"
-unzip bazel-bin/gopath.zip -d "${go_output}"
+make build BAZEL_OPTIONS="" TARGETS="//:go_export"
+unzip bazel-bin/go_export.zip -d "${go_output}"
 
 # We expect to have an existing go branch that we will use as the basis for this
 # commit. That branch may be empty, but it must exist. We search for this branch
@@ -92,64 +85,12 @@ git merge --no-commit --strategy ours "${head}" || \
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
-# Sync the entire gopath. Note that we exclude auto-generated source files that
-# will change here. Otherwise, it adds a tremendous amount of noise to commits.
-# If this file disappears in the future, then presumably we will still delete
-# the underlying directory.
-declare -r gopath="${go_output}/src/${module}"
+# Sync the exported tree, preserving the existing branch's Git metadata.
 rsync --recursive --delete \
   --exclude .git \
-  "${gopath}/" .
+  "${go_output}/" .
 
-# Add additional files.
-for file in "${othersrc[@]}"; do
-  cp "${origpwd}"/"${file}" .
-done
-
-# Construct a new README.md.
-cat > README.md <<EOF
-# gVisor
-
-This branch is a synthetic branch, containing Go sources and the C sources of
-runsc's sidecars, that is compatible with standard Go tools. Build runsc and
-its Go sidecars with CGO_ENABLED=0, and build the C sidecars with the flags in
-their BUILD files on the master commit that each go branch commit merges. See
-the master branch for authoritative sources and tests.
-EOF
-
-# There are a few solitary files that can get left behind due to the way bazel
-# constructs the gopath target. Note that we don't find all Go files here
-# because they may correspond to unused templates, etc.
-declare -ar binaries=(
-  "runsc"
-  "runsc/checkpointgofer"
-  "runsc/cmd/metricserver"
-  "runsc/cmd/sentry"
-  "shim"
-  "webhook"
-  "tools/checklocks/cmd/checklocks"
-)
-for target in "${binaries[@]}"; do
-  mkdir -p "${target}"
-  cp "${repo_orig}/${target}"/*.go "${target}/"
-done
-
-# The sidecars written in C are built from these sources. Each must stay in a
-# directory without Go files, because the go tool refuses to build a package
-# that contains C files but doesn't use cgo.
-declare -ar csources=(
-  "runsc/fdparking/fdparking.c"
-  "runsc/prewarmer/prewarmer.c"
-  "runsc/procumounter/procumounter.c"
-)
-for file in "${csources[@]}"; do
-  mkdir -p "$(dirname "${file}")"
-  cp "${repo_orig}/${file}" "${file}"
-done
-
-# Normalize all permissions. The way bazel constructs the :gopath tree may leave
-# some strange permissions on files. We don't have anything in this tree that
-# should be execution, only source files, README.md, and ${othersrc}.
+# Normalize permissions on files retained by rsync as well as new files.
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 

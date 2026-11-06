@@ -6,6 +6,15 @@ package(
     licenses = ["notice"],
 )
 
+filegroup(
+    name = "go_export_sources",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    visibility = ["//:__pkg__"],
+)
+
 go_binary(
     name = "gvisor_sentry",
     srcs = ["sentry_main.go"],
