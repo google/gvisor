@@ -171,7 +171,10 @@ func TestEnqueueRightsOwnership(t *testing.T) {
 			}
 
 			if !test.wantQueued {
-				if q.dataList.Front() != nil {
+				q.mu.Lock()
+				empty := q.dataList.Front() == nil
+				q.mu.Unlock()
+				if !empty {
 					t.Errorf("queue holds a message, want none")
 				}
 				return
