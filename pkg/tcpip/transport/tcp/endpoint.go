@@ -413,6 +413,13 @@ type Endpoint struct {
 	// +checklocks:mu
 	rcvQueue segmentList `state:"wait"`
 
+	// pendingFIN records a FIN that arrived without queued data, until a
+	// reader consumes EOF. If data is queued, netstack treats FIN as part of
+	// the last queued segment.
+	//
+	// +checklocks:mu
+	pendingFIN bool
+
 	// state must be read/set using the EndpointState()/setEndpointState()
 	// methods.
 	state atomicbitops.Uint32 `state:".(EndpointState)"`
@@ -1019,6 +1026,7 @@ func (e *Endpoint) purgePendingRcvQueue() {
 
 // +checklocks:e.mu
 func (e *Endpoint) purgeReadQueue() {
+	e.pendingFIN = false
 	if e.rcv != nil {
 		e.rcvQueueMu.Lock()
 		defer e.rcvQueueMu.Unlock()
@@ -1458,6 +1466,9 @@ func (e *Endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	if err := e.checkReadLocked(); err != nil {
 		if _, ok := err.(*tcpip.ErrClosedForReceive); ok {
 			e.stats.ReadErrors.ReadClosed.Increment()
+			if !opts.Peek {
+				e.pendingFIN = false
+			}
 		}
 		return tcpip.ReadResult{}, err
 	}
