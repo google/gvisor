@@ -463,6 +463,9 @@ type Kernel struct {
 	// +checklocks:checkpointMu
 	saver Saver `state:"nosave"`
 
+	// TimerFDs tracks the timers to pause across a checkpoint.
+	TimerFDs timerfd.Registry `state:"nosave"`
+
 	// CheckpointWait is used to wait for a checkpoint to complete.
 	CheckpointWait CheckpointWaitable
 
@@ -759,7 +762,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 // +checklocksexclude:k.extMu
 // +checklocksexclude:k.runningTasksMu
 // +checklocksexclude:k.tasks.mu
-func (k *Kernel) quiescePausedAnd(ctx context.Context, f func() error) error {
+func (k *Kernel) quiescePausedAnd(f func() error) error {
 	// Do not allow other Kernel methods to affect it while it's being saved.
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -769,8 +772,8 @@ func (k *Kernel) quiescePausedAnd(ctx context.Context, f func() error) error {
 	defer fdnotifier.Resume()
 
 	// Stop time.
-	k.pauseTimeLocked(ctx)
-	defer k.resumeTimeLocked(ctx)
+	k.pauseTimeLocked()
+	defer k.resumeTimeLocked()
 
 	// Evict all evictable MemoryFile allocations.
 	k.mf.StartEvictions()
@@ -837,7 +840,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	}
 	defer fsCleanup.Clean()
 
-	return k.quiescePausedAnd(ctx, func() error {
+	return k.quiescePausedAnd(func() error {
 		if graphEngine != nil {
 			prevGraphEngine := state.GraphEngineEnabled()
 			state.EnableGraphEngine(*graphEngine)
@@ -1137,7 +1140,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 
 	// Load the kernel state.
 	kernelStart := time.Now()
-	stats, err := state.Load(ctx, r, k)
+	stats, err := state.Load(context.WithValue(ctx, timerfd.RestoreRegistryKey{}, &k.TimerFDs), r, k)
 	if err != nil {
 		return err
 	}
@@ -1224,7 +1227,7 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	defer fdnotifier.Resume()
 
 	kernelStart := time.Now()
-	stats, err := state.Load(ctx, r, k)
+	stats, err := state.Load(context.WithValue(ctx, timerfd.RestoreRegistryKey{}, &k.TimerFDs), r, k)
 	if err != nil {
 		return err
 	}
@@ -1679,7 +1682,7 @@ func (k *Kernel) Start() error {
 	// If k was created by LoadKernelFrom, timers were stopped during
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.
-	k.resumeTimeLocked(k.SupervisorContext())
+	k.resumeTimeLocked()
 	k.tasks.mu.RLock()
 	ts := make([]*Task, 0, len(k.tasks.Root.tids))
 	for t := range k.tasks.Root.tids {
@@ -1703,7 +1706,7 @@ func (k *Kernel) Start() error {
 // +checklocks:k.extMu
 // +checklocksexclude:k.runningTasksMu
 // +checklocksexclude:k.tasks.mu
-func (k *Kernel) pauseTimeLocked(ctx context.Context) {
+func (k *Kernel) pauseTimeLocked() {
 	// Since all task goroutines have been stopped by precondition, the CPU clock
 	// ticker should stop on its own; wait for it to do so, waking it up from
 	// sleeping between ticks if necessary.
@@ -1717,8 +1720,8 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	}
 	k.runningTasksMu.Unlock()
 
-	// By precondition, nothing else can be interacting with PIDNamespace.tids
-	// or FDTable.files, so we can iterate them without synchronization. (We
+	// By precondition, nothing else can be interacting with PIDNamespace.tids,
+	// so we can iterate it without synchronization. (We
 	// can't hold the TaskSet mutex when pausing thread group timers because
 	// thread group timers call ThreadGroup.SendSignal, which takes the TaskSet
 	// mutex, while holding the Timer mutex.)
@@ -1729,16 +1732,9 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 				it.PauseTimer()
 			}
 		}
-		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
-		// but ktime.Timer.Pause is idempotent so this is harmless.
-		if t.fdTable != nil {
-			t.fdTable.forEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool { // +checklocksignore
-				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
-					tfd.PauseTimer()
-				}
-				return true
-			})
-		}
+	}
+	for _, timer := range k.TimerFDs.Timers() {
+		timer.Pause()
 	}
 	k.timekeeper.Pause()
 }
@@ -1750,7 +1746,7 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 // Preconditions: Any task goroutines running in k must be stopped.
 //
 // +checklocks:k.extMu
-func (k *Kernel) resumeTimeLocked(ctx context.Context) {
+func (k *Kernel) resumeTimeLocked() {
 	// The CPU clock ticker will automatically resume as task goroutines resume
 	// execution.
 
@@ -1762,14 +1758,9 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 				it.ResumeTimer()
 			}
 		}
-		if t.fdTable != nil {
-			t.fdTable.forEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool { // +checklocksignore
-				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
-					tfd.ResumeTimer()
-				}
-				return true
-			})
-		}
+	}
+	for _, timer := range k.TimerFDs.Timers() {
+		timer.Resume()
 	}
 }
 

@@ -52,7 +52,7 @@ func TimerfdCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 		return 0, nil, linuxerr.EINVAL
 	}
 	vfsObj := t.Kernel().VFS()
-	file, err := timerfd.New(t, vfsObj, clock, fileFlags)
+	file, err := t.Kernel().TimerFDs.New(t, vfsObj, clock, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}

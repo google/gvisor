@@ -16,6 +16,10 @@
 package timerfd
 
 import (
+	stdcontext "context"
+	"maps"
+	"slices"
+
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -23,9 +27,30 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// RestoreRegistryKey identifies the receiving kernel's Registry during state
+// loading. Each live file rejoins it regardless of how the file was reached.
+type RestoreRegistryKey struct{}
+
+// Registry tracks a kernel's live timerfds, including those referenced only by
+// queued SCM_RIGHTS messages. Its zero value is ready for use.
+type Registry struct {
+	mu sync.Mutex
+	// +checklocks:mu
+	timers map[*ktime.SampledTimer]struct{}
+}
+
+// Timers returns the timers to pause or resume while tasks are stopped.
+// SampledTimer permits both operations after a concurrent final Release.
+func (r *Registry) Timers() []*ktime.SampledTimer {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Collect(maps.Keys(r.timers))
+}
 
 // TimerFileDescription implements vfs.FileDescriptionImpl for timer fds. It also
 // implements ktime.TimerListener.
@@ -39,6 +64,10 @@ type TimerFileDescription struct {
 
 	events waiter.Queue
 	timer  *ktime.SampledTimer
+
+	// registry is set before the file is published and remains valid until
+	// Release. afterLoad reconstructs this runtime index.
+	registry *Registry `state:"nosave"`
 
 	// clock is the clock that the timer fd was created with. timer runs on
 	// clock, except when it is armed with a relative CLOCK_REALTIME time (see
@@ -55,11 +84,10 @@ var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)
 var _ ktime.Listener = (*TimerFileDescription)(nil)
 
 // New returns a new timer fd.
-func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.SampledClock, flags uint32) (*vfs.FileDescription, error) {
+func (r *Registry) New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.SampledClock, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[timerfd]")
 	defer vd.DecRef(ctx)
 	tfd := &TimerFileDescription{clock: clock}
-	tfd.timer = ktime.NewSampledTimer(clock, tfd)
 	if err := tfd.vfsfd.Init(tfd, flags, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
@@ -67,6 +95,8 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Sampled
 	}); err != nil {
 		return nil, err
 	}
+	tfd.timer = ktime.NewSampledTimer(clock, tfd)
+	tfd.register(r)
 	return &tfd.vfsfd, nil
 }
 
@@ -132,19 +162,29 @@ func (tfd *TimerFileDescription) Epollable() bool {
 	return true
 }
 
-// PauseTimer pauses the associated Timer.
-func (tfd *TimerFileDescription) PauseTimer() {
-	tfd.timer.Pause()
+func (tfd *TimerFileDescription) register(r *Registry) {
+	tfd.registry = r
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.timers == nil {
+		r.timers = make(map[*ktime.SampledTimer]struct{})
+	}
+	r.timers[tfd.timer] = struct{}{}
 }
 
-// ResumeTimer resumes the associated Timer.
-func (tfd *TimerFileDescription) ResumeTimer() {
-	tfd.timer.Resume()
+func (tfd *TimerFileDescription) afterLoad(ctx stdcontext.Context) {
+	// Older checkpoints may have missed a timerfd when pausing timers.
+	tfd.timer.Pause()
+	tfd.register(ctx.Value(RestoreRegistryKey{}).(*Registry))
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (tfd *TimerFileDescription) Release(context.Context) {
 	tfd.timer.Destroy()
+	r := tfd.registry
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.timers, tfd.timer)
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
