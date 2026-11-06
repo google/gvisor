@@ -633,6 +633,14 @@ func (i *lisafsInode) statfs(ctx context.Context) (linux.Statfs, error) {
 }
 
 func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions, d *dentry) error {
+	if inode.Stat.Mask&linux.STATX_TYPE == 0 {
+		i.fs.client.CloseFD(ctx, inode.ControlFD, false /* flush */)
+		return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file type validation failed: file type not available", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID)}
+	}
+	if err := i.validateRestoredFileType(uint32(inode.Stat.Mode), inode.Stat.RdevMajor, inode.Stat.RdevMinor, d); err != nil {
+		i.fs.client.CloseFD(ctx, inode.ControlFD, false /* flush */)
+		return err
+	}
 	i.controlFD = i.fs.client.NewFD(inode.ControlFD)
 	if err := i.restoreInoKey(inoKeyFromStatx(&inode.Stat)); err != nil {
 		return err
