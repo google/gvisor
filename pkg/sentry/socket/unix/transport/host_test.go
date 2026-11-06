@@ -138,9 +138,7 @@ func TestSeveredRecvSend(t *testing.T) {
 
 // TestHostSenderStreamRecvMoreThanSendBuffer verifies that a single Recv on a
 // host stream socket returns all queued data that fits in the buffer, even
-// when that is more than the send buffer size, as on Linux. Readers that use
-// edge-triggered notifications take a short read to mean that the socket is
-// drained, and wait forever for data that was left behind.
+// when that is more than the send buffer size, as on Linux.
 func TestHostSenderStreamRecvMoreThanSendBuffer(t *testing.T) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {

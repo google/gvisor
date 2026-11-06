@@ -296,14 +296,9 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
 	//
-	// Datagram and seqpacket reads keep the send buffer limit. Stream
-	// sockets don't preserve message boundaries and the host may queue more
-	// than the send buffer size, so read as much as fits in data, as Linux
-	// does: readers using edge-triggered notifications take a short read to
-	// mean that the socket is drained. If data needs more iovecs than the
-	// host accepts, fdReadVec reads into an intermediate buffer, which stays
-	// bounded by the send buffer size, so such stream reads can still be
-	// short.
+	// Stream sockets read as much as fits in data, as Linux does. If data
+	// needs an intermediate buffer, that buffer is bounded by the send
+	// buffer size, so such reads can still be short.
 	maxlen := c.RecvMaxQueueSize()
 	if c.stype == linux.SOCK_STREAM && !needsIntermediate(data) {
 		maxlen = math.MaxInt64
