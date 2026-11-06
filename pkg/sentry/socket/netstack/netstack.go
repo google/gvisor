@@ -1921,6 +1921,12 @@ func (s *sock) getSockOptPacket(t *kernel.Task, ep commonEndpoint, name int, out
 		default:
 			return nil, syserr.ErrInvalidArgument
 		}
+	case linux.PACKET_RESERVE:
+		v, err := ep.GetSockOptInt(tcpip.PacketMMapReserveOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		return truncateInt32Result(primitive.Int32(v), outLen)
 	case linux.PACKET_STATISTICS:
 		var tps tcpip.TpacketStats
 		if err := ep.GetSockOpt(&tps); err != nil {
