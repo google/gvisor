@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -703,8 +704,15 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 			}
 			if alloc.recycled {
 				// The contents of recycled waste pages are initially unknown, so we
-				// need to zero them.
-				f.manuallyZero(fr)
+				// need to zero them. Zeroing also commits them unless it skips pages
+				// of a disk-backed file; commit those if the caller asked for
+				// AllocateAndCommit.
+				if !f.manuallyZero(fr) && opts.Mode == AllocateAndCommit {
+					if err := f.commitFile(fr); err != nil {
+						f.DecRef(fr)
+						return memmap.FileRange{}, err
+					}
+				}
 			} else if needHugeTouch {
 				// We only need to touch a single byte in each huge page.
 				f.forEachMappingSlice(fr, func(bs []byte) {
@@ -1141,10 +1149,50 @@ func (f *MemoryFile) decommitFile(fr memmap.FileRange) error {
 		int64(fr.Length()))
 }
 
-func (f *MemoryFile) manuallyZero(fr memmap.FileRange) {
-	f.forEachMappingSlice(fr, func(bs []byte) {
-		clear(bs)
+// manuallyZero zeroes the pages in fr through f's mappings. It returns false if
+// it skipped pages of a disk-backed file; see zeroDiskBacked.
+func (f *MemoryFile) manuallyZero(fr memmap.FileRange) bool {
+	wroteAll := true
+	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+		bs := chunk.sliceAt(chunkFR)
+		if f.opts.DiskBackedFile {
+			if !zeroDiskBacked(int(f.file.Fd()), chunkFR.Start, bs) {
+				wroteAll = false
+			}
+		} else {
+			clear(bs)
+		}
+		return true
 	})
+	return wroteAll
+}
+
+// zeroDiskBacked zeroes bs, which maps the pages of the disk-backed file fd
+// that start at offset off. Writing to a page raises SIGBUS if the host cannot
+// allocate disk space for it, for example because its filesystem is full.
+// Such pages are skipped if they already read as zero, as holes do. They are
+// read with pread(2) instead of through bs, since a read fault on a hole can
+// also allocate, for example on tmpfs. zeroDiskBacked returns false if it
+// skipped any pages, which then remain uncommitted.
+func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
+	wroteAll := true
+	for len(bs) != 0 {
+		n, err := safemem.ZeroSeq(safemem.BlockSeqOf(safemem.BlockFromUnsafeSlice(bs)))
+		if err == nil {
+			return wroteAll
+		}
+		wroteAll = false
+		start := hostarch.PageRoundDown(n)
+		end := start + hostarch.PageSize
+		buf := make([]byte, hostarch.PageSize)
+		rn, rerr := unix.Pread(fd, buf, int64(off+start))
+		if rerr != nil || rn != len(buf) || slices.ContainsFunc(buf, func(b byte) bool { return b != 0 }) {
+			panic(fmt.Sprintf("failed to zero page of disk-backed file: %v", err))
+		}
+		bs = bs[end:]
+		off += end
+	}
+	return wroteAll
 }
 
 func (f *MemoryFile) decommitOrManuallyZero(fr memmap.FileRange) {
