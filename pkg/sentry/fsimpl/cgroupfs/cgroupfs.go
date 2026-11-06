@@ -643,9 +643,11 @@ func (d *dir) HasChildren() bool {
 // RmDir implements kernfs.Inode.RmDir.
 func (d *dir) RmDir(ctx context.Context, name string, child kernfs.Inode) error {
 	// Unlike a normal directory, we need to recheck if d is empty again, since
-	// vfs/kernfs can't stop tasks from entering or leaving the cgroup.
-	d.fs.tasksMu.RLock()
-	defer d.fs.tasksMu.RUnlock()
+	// vfs/kernfs can't stop tasks from entering or leaving the cgroup. Lock for
+	// writing so that readers of hierarchical CPU usage can't observe the child
+	// after it is unlinked but before its usage is rolled up into d.
+	d.fs.tasksMu.Lock()
+	defer d.fs.tasksMu.Unlock()
 
 	cgi, ok := child.(*cgroupInode)
 	if !ok {
@@ -664,6 +666,7 @@ func (d *dir) RmDir(ctx context.Context, name string, child kernfs.Inode) error 
 	err := d.OrderedChildren.RmDir(ctx, name, child)
 	if err == nil {
 		d.InodeAttrs.DecLinks()
+		d.rollUpChildCPUUsageLocked(cgi)
 		// Drop the registry entry created by newCgroupInode so the inode is
 		// not pinned for the lifetime of the sentry. Lock order mirrors the
 		// mkdir path (kernfs.filesystem.mu -> CgroupRegistry.mu, see

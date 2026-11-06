@@ -312,6 +312,12 @@ func (c *cgroup) RmDir(ctx context.Context, name string, child kernfs.Inode) err
 	}
 	c.InodeAttrs.DecLinks()
 
+	// Reparent the child cgroup's accumulated cpu usage onto the parent so
+	// removing the child cgroup does not discard it.
+	if oldCPU, ok := childCgroup.ctrls[kernel.Cgroup2CPU].(*cpu); ok { // +checklocksforce: childCgroup shares c.fs locks
+		childCgroup.reparentCPUOnDisableLocked(oldCPU) // +checklocksforce: childCgroup shares c.fs locks
+	}
+
 	delete(c.children, childCgroup)
 	childCgroup.deleted.Store(true) // +checklocksforce: c.fs.treeMu is locked
 

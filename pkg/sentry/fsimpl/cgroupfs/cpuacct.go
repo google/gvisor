@@ -136,6 +136,35 @@ func (c *cpuacctController) CommitMigrate(t *kernel.Task, src controller) {
 // AbortMigrate implements controller.AbortMigrate.
 func (c *cpuacctController) AbortMigrate(t *kernel.Task, src controller) {}
 
+// rollUpChildCPUUsageLocked moves the CPU usage of child, a cgroup being
+// removed from d, into d's cpuacct controller, since d's hierarchical usage
+// only sums live child cgroups. Holding d.fs.tasksMu for writing keeps readers
+// of hierarchical usage from seeing the child's usage vanish before it reaches
+// d.
+//
+// +checklocks:d.fs.tasksMu
+func (d *dir) rollUpChildCPUUsageLocked(child *cgroupInode) {
+	childCtl, ok := child.controllers[kernel.CgroupControllerCPUAcct].(*cpuacctController)
+	if !ok {
+		return
+	}
+	parentCtl, ok := d.cgi.controllers[kernel.CgroupControllerCPUAcct].(*cpuacctController)
+	if !ok {
+		return
+	}
+
+	// Release childCtl.mu before acquiring parentCtl.mu, so that the two
+	// controller mutexes need no lock order.
+	childCtl.mu.Lock()
+	u := childCtl.usage
+	childCtl.usage = usage.CPUStats{}
+	childCtl.mu.Unlock()
+
+	parentCtl.mu.Lock()
+	parentCtl.usage.Accumulate(u)
+	parentCtl.mu.Unlock()
+}
+
 // +stateify savable
 type cpuacctCgroup struct {
 	*cgroupInode

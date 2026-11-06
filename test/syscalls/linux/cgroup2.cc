@@ -4075,6 +4075,50 @@ TEST_F(Cgroup2Test, CpuStatDisableReparentsUsage) {
   EXPECT_GE(usage_after, usage_before);
 }
 
+// Removing a cgroup must reparent its accumulated CPU usage to the parent, not
+// discard it.
+TEST_F(Cgroup2Test, CpuStatRmdirReparentsUsage) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  ASSERT_NO_ERRNO(a.WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("b"));
+
+  int start[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    BurnCpuMs(100);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+
+  ASSERT_NO_ERRNO(b.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+  close(start[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // a's recursive cpu.stat includes the usage b committed when its only task
+  // exited.
+  int64_t usage_before = PollCpuUsageUsecGreaterThan(a, 0);
+  ASSERT_GT(usage_before, 0);
+
+  // Removing b must keep that usage on a.
+  ASSERT_NO_ERRNO(b.Delete());
+  EXPECT_GE(ParseCpuUsageUsec(a), usage_before);
+}
+
 // With nsdelegate, cgroup namespace roots are delegation boundaries: only
 // delegatable files on the namespace root remain writable from inside the
 // namespace.
