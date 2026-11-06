@@ -117,6 +117,29 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 	})
 }
 
+// A PCAP associates link endpoints with a single packet capture stream.
+type PCAP struct {
+	writer  io.Writer
+	snapLen uint32
+}
+
+// NewPCAP writes the file header for a capture with up to snapLen bytes of
+// each packet. Endpoints attached to it write one record per packet.
+func NewPCAP(writer io.Writer, snapLen uint32) (*PCAP, error) {
+	if err := writePCAPHeader(writer, snapLen); err != nil {
+		return nil, err
+	}
+	return &PCAP{writer: writer, snapLen: snapLen}, nil
+}
+
+// Wrap attaches a link endpoint to the capture. Multiple endpoints may write
+// records concurrently; the writer must support concurrent Write calls.
+func (p *PCAP) Wrap(lower stack.LinkEndpoint) *Endpoint {
+	sniffer := &Endpoint{writer: p.writer, maxPCAPLen: p.snapLen}
+	sniffer.Endpoint.Init(lower, sniffer)
+	return sniffer
+}
+
 // NewWithWriter creates a new sniffer link-layer endpoint. It wraps around
 // another endpoint and logs packets as they traverse the endpoint.
 //
@@ -128,15 +151,11 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 // less than or equal to snapLen will be saved in their entirety. Longer
 // packets will be truncated to snapLen.
 func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (*Endpoint, error) {
-	if err := writePCAPHeader(writer, snapLen); err != nil {
+	pcap, err := NewPCAP(writer, snapLen)
+	if err != nil {
 		return nil, err
 	}
-	sniffer := &Endpoint{
-		writer:     writer,
-		maxPCAPLen: snapLen,
-	}
-	sniffer.Endpoint.Init(lower, sniffer)
-	return sniffer, nil
+	return pcap.Wrap(lower), nil
 }
 
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
