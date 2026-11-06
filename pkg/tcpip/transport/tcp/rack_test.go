@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -76,6 +77,54 @@ func (ctx *rackTestContext) cleanup() {
 	ctx.snd.reorderTimer.cleanup()
 	for _, seg := range ctx.segs {
 		seg.DecRef()
+	}
+}
+
+func TestEifelDSACKHistory(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		recovery tcpip.TCPRecovery
+	}{
+		{"SACK", 0},
+		{"RACK", tcpip.TCPRACKLossDetection},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			st := stack.New(stack.Options{Clock: clock})
+			defer st.Close()
+
+			// Each sender receives the same ACK covering all outstanding data
+			// and echoing the original transmission. Only the first peer has
+			// previously shown that it reports duplicate segments.
+			checkRecovery := func(peerSentDSACK bool) {
+				t.Helper()
+				ep := &Endpoint{stack: st, tcpRecovery: test.recovery}
+				ep.mu.Lock()
+				defer ep.mu.Unlock()
+				ep.SACKPermitted = true
+				ep.SendTSOk = true
+				ep.keepalive.timer.init(clock, func() {})
+				s := sender{ep: ep}
+				s.SndUna, s.SndNxt = 2, 2
+				s.MaxPayloadSize = 1
+				s.rc.init(&s, 0)
+				if peerSentDSACK {
+					ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
+					defer ack.DecRef()
+					ack.flags, ack.ackNumber = header.TCPFlagAck, s.SndUna
+					ack.parsedOptions = header.TCPOptions{TS: true, SACKBlocks: []header.SACKBlock{{Start: 1, End: 2}}}
+					s.handleRcvdSegment(ack)
+				}
+				s.state = tcpip.RTORecovery
+				s.retransmitTS = 20
+				s.detectSpuriousRecovery(false /* hasDSACK */, 10 /* tsEchoReply */)
+				if got, want := s.spuriousRecovery, peerSentDSACK; got != want {
+					t.Errorf("spurious recovery with prior DSACK on this connection = %t: got %t, want %t", peerSentDSACK, got, want)
+				}
+			}
+			checkRecovery(true)
+			checkRecovery(false)
+		})
 	}
 }
 
