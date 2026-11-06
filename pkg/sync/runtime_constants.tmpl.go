@@ -19,4 +19,5 @@ const (
 	WaitReasonSelect      uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonSelect" }} */
 	WaitReasonChanReceive uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonChanReceive" }} */
 	WaitReasonSemacquire  uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonSemacquire" }} */
+	WaitReasonSleep       uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonSleep" }} */
 )
