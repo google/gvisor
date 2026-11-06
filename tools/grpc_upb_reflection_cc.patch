@@ -1,0 +1,48 @@
+Declare gRPC's C++ reflection dependencies for Protobuf 37.
+
+gRPC 1.84 declares Protobuf 35.1, whose reflection target includes both C
+and C++ headers. Protobuf 37 moved def.hpp and message.hpp to reflection_cc:
+https://github.com/protocolbuffers/protobuf/commit/bbe3b9e4f
+
+Keep the C dependencies and add the C++ target to each library using it.
+TODO: Remove this patch when upgrading to a gRPC release that supports
+Protobuf 37 and declares these C++ dependencies.
+
+diff --git a/BUILD b/BUILD
+--- a/BUILD
++++ b/BUILD
+@@ -4793,6 +4793,7 @@
+         "@com_google_protobuf//upb/json",
+         "@com_google_protobuf//upb/mem",
+         "@com_google_protobuf//upb/reflection",
++        "@com_google_protobuf//upb/reflection:reflection_cc",
+         "@com_google_protobuf//upb/text",
+     ],
+ )
+diff --git a/src/core/BUILD b/src/core/BUILD
+--- a/src/core/BUILD
++++ b/src/core/BUILD
+@@ -1036,6 +1036,7 @@
+         "//src/core:function_signature",
+         "//src/core:json",
+         "@com_google_protobuf//upb/reflection",
++        "@com_google_protobuf//upb/reflection:reflection_cc",
+     ],
+ )
+ 
+@@ -12044,6 +12045,7 @@
+         "//:channelz_upbdefs",
+         "@com_google_protobuf//upb/mem",
+         "@com_google_protobuf//upb/reflection",
++        "@com_google_protobuf//upb/reflection:reflection_cc",
+         "@com_google_protobuf//upb/text",
+     ],
+ )
+@@ -12394,6 +12396,7 @@
+         "@com_google_protobuf//upb/json",
+         "@com_google_protobuf//upb/mem",
+         "@com_google_protobuf//upb/reflection",
++        "@com_google_protobuf//upb/reflection:reflection_cc",
+     ],
+ )
+ 
