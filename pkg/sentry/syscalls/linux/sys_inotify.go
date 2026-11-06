@@ -81,7 +81,7 @@ func InotifyAddWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) 
 
 	// "EINVAL: The given event mask contains no valid events."
 	//	-- inotify_add_watch(2)
-	if mask&linux.ALL_INOTIFY_BITS == 0 {
+	if mask == 0 || mask&^linux.ALL_INOTIFY_BITS != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
@@ -97,6 +97,9 @@ func InotifyAddWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) 
 		return 0, nil, err
 	}
 	defer f.DecRef(t)
+	if mask&linux.IN_MASK_ADD != 0 && mask&linux.IN_MASK_CREATE != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	path, err := copyInPath(t, addr)
 	if err != nil {
@@ -116,7 +119,8 @@ func InotifyAddWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) 
 	}
 	defer d.DecRef(t)
 
-	return uintptr(ino.AddWatch(d.Dentry(), mask)), nil, nil
+	wd, err := ino.AddWatch(d.Dentry(), mask)
+	return uintptr(wd), nil, err
 }
 
 // InotifyRmWatch implements the inotify_rm_watch() syscall.
