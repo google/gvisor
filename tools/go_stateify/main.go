@@ -39,40 +39,27 @@ var (
 	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
 )
 
-// resolveTypeName returns a qualified type name.
-func resolveTypeName(typ ast.Expr) (field string, qualified string) {
-	for done := false; !done; {
-		// Resolve star expressions.
-		switch rs := typ.(type) {
+// declaredTypeName returns the name used for a receiver or an embedded field.
+// An instantiation such as Pair[K, V] has the same name as its declaration.
+func declaredTypeName(typ ast.Expr) string {
+	for {
+		switch t := ast.Unparen(typ).(type) {
+		case *ast.Ident:
+			return t.Name
+		case *ast.SelectorExpr:
+			return t.Sel.Name
 		case *ast.StarExpr:
-			qualified += "*"
-			typ = rs.X
+			typ = t.X
+		case *ast.IndexExpr:
+			typ = t.X
+		case *ast.IndexListExpr:
+			typ = t.X
 		case *ast.ArrayType:
-			if rs.Len == nil {
-				// Slice type declaration.
-				qualified += "[]"
-			} else {
-				// Array type declaration.
-				qualified += "[" + rs.Len.(*ast.BasicLit).Value + "]"
-			}
-			typ = rs.Elt
+			typ = t.Elt
 		default:
-			// No more descent.
-			done = true
+			panic(fmt.Sprintf("unexpected receiver or embedded field type %T", t))
 		}
 	}
-
-	// Resolve a package selector.
-	sel, ok := typ.(*ast.SelectorExpr)
-	if ok {
-		qualified = qualified + sel.X.(*ast.Ident).Name + "."
-		typ = sel.Sel
-	}
-
-	// Figure out actual type name.
-	field = typ.(*ast.Ident).Name
-	qualified = qualified + field
-	return
 }
 
 // extractStateTag pulls the relevant state tag.
@@ -111,7 +98,7 @@ func scanFields(ss *ast.StructType, fn scanFunctions) {
 		if field.Names == nil {
 			// Anonymous types can't be embedded, so we don't need
 			// to worry about providing a useful name here.
-			name, _ := resolveTypeName(field.Type)
+			name := declaredTypeName(field.Type)
 			scanField(name, field, fn)
 			continue
 		}
@@ -385,7 +372,7 @@ func main() {
 			}
 
 			// Save the method and the receiver.
-			name, _ := resolveTypeName(d.Recv.List[0].Type)
+			name := declaredTypeName(d.Recv.List[0].Type)
 			simpleMethods[method{
 				typeName:   name,
 				methodName: d.Name.Name,
