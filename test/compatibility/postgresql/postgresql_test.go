@@ -14,8 +14,8 @@
 
 // Package postgresql is a gVisor compatibility test for PostgreSQL.
 //
-// The PostgreSQL version under test is pinned in
-// images/compatibility/postgresql/postgresql/Dockerfile.
+// The PostgreSQL image under test is pinned in MODULE.bazel and assembled by
+// //images/compatibility:postgresql_archive.
 package postgresql
 
 import (
