@@ -45,7 +45,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -408,7 +407,7 @@ func (r *restorer) restore(l *Loader) error {
 	// soon as it resumes, rather than up to ApproxUpdateInterval later.
 	//
 	// The platform is created first, as it can change the TSC domain.
-	clocks := time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(l.root.spec, l.root.conf))
+	clocks := newClocks(l.root.spec, l.root.conf)
 	clocks.Update(false)
 
 	// Start the old watchdog before replacing it with a new one below.
