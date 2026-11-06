@@ -168,6 +168,9 @@ func TestUnprivilegedSysctlDefaults(t *testing.T) {
 	if got, want := s.UnprivilegedPortStart(), uint16(1024); got != want {
 		t.Errorf("UnprivilegedPortStart() = %d, want %d", got, want)
 	}
+	if low, high := s.PingGroupRange(); low != 1 || high != 0 {
+		t.Errorf("PingGroupRange() = (%d, %d), want (1, 0)", low, high)
+	}
 }
 
 func TestUnprivilegedPortStartPortRangeCrossCheck(t *testing.T) {

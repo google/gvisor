@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -116,6 +117,14 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		return nil, err
 	}
 
+	if stype == linux.SOCK_DGRAM &&
+		((p.netProto == ipv4.ProtocolNumber && transProto == header.ICMPv4ProtocolNumber) ||
+			(p.netProto == ipv6.ProtocolNumber && transProto == header.ICMPv6ProtocolNumber)) {
+		if !inPingGroupRange(t.Credentials(), eps) {
+			return nil, syserr.ErrPermissionDenied
+		}
+	}
+
 	// Create the endpoint.
 	var ep tcpip.Endpoint
 	var e tcpip.Error
@@ -142,6 +151,23 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	}
 
 	return New(t, p.family, stype, int(transProto), wq, ep)
+}
+
+// inPingGroupRange returns whether creds may create ICMP datagram sockets in
+// s, as Linux's net/ipv4/ping.c:ping_init_sock() decides: the effective GID or
+// a supplementary GID must be in net.ipv4.ping_group_range. No capability
+// overrides this.
+func inPingGroupRange(creds *auth.Credentials, s *Stack) bool {
+	low, high := s.PingGroupRange()
+	if low <= creds.EffectiveKGID && creds.EffectiveKGID <= high {
+		return true
+	}
+	for _, gid := range creds.ExtraKGIDs {
+		if low <= gid && gid <= high {
+			return true
+		}
+	}
+	return false
 }
 
 func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
