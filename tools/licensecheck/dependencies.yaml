@@ -6,6 +6,8 @@
 # by --mode=fetch, so you can hand-edit the file for these.
 # license_source selects an immutable upstream notice for a pinned binary artifact;
 # changing its artifact URL/hash requires renewing that explicit source audit.
+# A local LicenseRef records terms reviewed from the artifact itself.
+# Re-audit these terms when the artifact URL or SHA256 changes.
 - dependency: abseil-cpp
   version: https://github.com/abseil/abseil-cpp/releases/download/20260817.0/abseil-cpp-20260817.0.tar.gz
   retrieved: "2026-10-06"
