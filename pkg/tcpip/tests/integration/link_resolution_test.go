@@ -1828,9 +1828,11 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 		t.Fatalf("got host1NIC.waitForLinkAddress(%s) = nil, want err", utils.LinkAddr2)
 	}
 
-	// Neighbor reachable again with new MAC address.
-	host2Stack.EnableNIC(host2NICID)
+	// Neighbor reachable again with new MAC address. Change the address
+	// before enabling the NIC: host1 keeps retransmitting ARP requests, and
+	// a reply sent between the two calls would carry the old address.
 	host2NICSettable.setLinkAddress(utils.LinkAddr3)
+	host2Stack.EnableNIC(host2NICID)
 
 	// Pending packet should eventually reach the new neighbor.
 	if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr3, 5*time.Second); err != nil {
