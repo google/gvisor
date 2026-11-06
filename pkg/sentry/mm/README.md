@@ -226,8 +226,11 @@ sentry must retain information about the host VMAs that it has created.
 
 ## Anonymous Mappings
 
-The sentry implements anonymous mappings consistently with Linux, except that
-there is no shared zero page.
+The sentry implements anonymous mappings consistently with Linux. On platforms
+that support `platform.AddressSpace.MapZero`, private anonymous memory that is
+read before it is written is mapped to shared zero memory and replaced by
+newly-allocated memory once it is written to, like Linux's shared zero page.
+Otherwise there is no shared zero page.
 
 # Implementation Constructs
 

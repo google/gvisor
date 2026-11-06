@@ -1299,7 +1299,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 				didUnmapAS = true
 			}
 			pma.file.DecRef(pseg.fileRange())
-			mm.removeRSSLocked(pseg.Range())
+			if !pma.zero {
+				mm.removeRSSLocked(pseg.Range())
+			}
 			pseg = mm.pmas.Remove(pseg).NextSegment()
 		}
 		if ar.End <= vseg.End() {
