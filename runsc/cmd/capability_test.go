@@ -15,9 +15,7 @@
 package cmd
 
 import (
-	"flag"
 	"fmt"
-	"os"
 	"slices"
 	"testing"
 
@@ -141,14 +139,4 @@ func testCapabilities(t *testing.T, directfs bool) {
 	if err := checkProcessCaps(c.GoferPid.Load(), goferCaps); err != nil {
 		t.Error(err)
 	}
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	if err := specutils.MaybeRunAsRoot(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
-		os.Exit(123)
-	}
-	ownNetNS = runInOwnNetNS()
-	os.Exit(m.Run())
 }
