@@ -83,6 +83,28 @@ func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *
 	return n, nil
 }
 
+func ctrlNvencSwSessionUpdateInfoInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NVA0BC_CTRL_NVENC_SW_SESSION_UPDATE_INFO_PARAMS, timestampBuffer []byte) (uintptr, error) {
+	defer runtime.KeepAlive(timestampBuffer)
+	origTimestampBuffer := ctrlParams.TimestampBuffer
+	if len(timestampBuffer) != 0 {
+		if _, err := fi.t.CopyInBytes(addrFromP64(origTimestampBuffer), timestampBuffer); err != nil {
+			return 0, err
+		}
+	}
+	ctrlParams.TimestampBuffer = p64FromPtr(unsafe.Pointer(unsafe.SliceData(timestampBuffer)))
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	ctrlParams.TimestampBuffer = origTimestampBuffer
+	if err != nil {
+		return n, err
+	}
+	if len(timestampBuffer) != 0 {
+		if _, err := fi.t.CopyOutBytes(addrFromP64(origTimestampBuffer), timestampBuffer); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
 func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
