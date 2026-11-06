@@ -4,7 +4,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_license//rules:license.bzl", "license")
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
 load("//tools:gazelle.bzl", "GAZELLE_PACKAGES")
-load("//tools:release.bzl", "RELEASE_RUNSC", "RELEASE_SIDECARS", "release_files")
+load("//tools:release.bzl", "RELEASE_RUNSC", "RELEASE_SIDECARS", "RUNSC", "release_files", "sidecars")
 load("//tools/nogo:defs.bzl", "nogo_config")
 load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
@@ -49,6 +49,17 @@ release_files(
     ],
     runsc = RELEASE_RUNSC,
     sidecars = RELEASE_SIDECARS,
+    visibility = ["//visibility:public"],
+)
+
+# Instrument the launcher and Sentry without applying --config=race to the
+# Go tools Bazel runs during the build.
+release_files(
+    name = "release-race",
+    bins = ["//shim:containerd-shim-runsc-v1"],
+    runsc = RUNSC["race"],
+    sidecars = sidecars("race"),
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
