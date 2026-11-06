@@ -1215,6 +1215,62 @@ func TestSignalUnkillablePolicy(t *testing.T) {
 	})
 }
 
+func TestRootfsJournalAnnotationPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		val     string
+		want    RootfsJournalAnnotationPolicy
+		wantErr bool
+	}{
+		{val: "deny", want: RootfsJournalAnnotationDeny},
+		{val: "allow", want: RootfsJournalAnnotationAllow},
+		{val: "true", wantErr: true},
+	} {
+		t.Run(tc.val, func(t *testing.T) {
+			var p RootfsJournalAnnotationPolicy
+			err := p.Set(tc.val)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("p.Set(%q) succeeded, want error", tc.val)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("p.Set(%q) failed: %v", tc.val, err)
+			}
+			if p != tc.want || p.String() != tc.val || p.Get() != tc.want || *p.Ptr() != tc.want {
+				t.Errorf("p.Set(%q): got %v (String %q, Get %v), want %v", tc.val, p, p.String(), p.Get(), tc.want)
+			}
+		})
+	}
+
+	// The policy reaches the sentry and the gofer through flags.
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	conf, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatalf("NewFromFlags: %v", err)
+	}
+	if conf.RootfsJournalAnnotation != RootfsJournalAnnotationDeny {
+		t.Errorf("default policy is %v, want deny", conf.RootfsJournalAnnotation)
+	}
+	if err := testFlags.Set("rootfs-journal-annotation", "allow"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	conf, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatalf("NewFromFlags: %v", err)
+	}
+	found := false
+	for _, f := range conf.ToFlags() {
+		if f == "--rootfs-journal-annotation=allow" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ToFlags() = %v, want --rootfs-journal-annotation=allow", conf.ToFlags())
+	}
+}
+
 func TestSandboxCPUPolicy(t *testing.T) {
 	if got := (SandboxCPUPolicy{}).String(); got != "1x" {
 		t.Errorf("zero value String() = %q, want %q", got, "1x")

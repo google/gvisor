@@ -870,6 +870,118 @@ func TestRootfsUpperTarPath(t *testing.T) {
 	}
 }
 
+func TestJournalingRootfsUpper(t *testing.T) {
+	sub := func(annotations map[string]string) specs.Spec {
+		a := map[string]string{
+			ContainerdContainerTypeAnnotation: ContainerdContainerTypeContainer,
+			ContainerdContainerNameAnnotation: "cont",
+		}
+		for k, v := range annotations {
+			a[k] = v
+		}
+		return specs.Spec{Annotations: a}
+	}
+	const disabled = "rootfs journal annotation is disabled"
+	for _, tc := range []struct {
+		name        string
+		spec        specs.Spec
+		flag        string
+		flagImageID string
+		allow       bool
+		wantPrefix  string
+		wantImageID string
+		wantErr     string
+	}{
+		{
+			name: "nothing set",
+		},
+		{
+			name:        "flag without the annotation needs no allow",
+			flag:        "/upper",
+			flagImageID: "image",
+			wantPrefix:  "/upper",
+			wantImageID: "image",
+		},
+		{
+			name:    "annotation without allow",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "/upper"}},
+			wantErr: disabled,
+		},
+		{
+			name:    "image ID annotation without allow",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournalImageID: "image"}},
+			flag:    "/upper",
+			wantErr: disabled,
+		},
+		{
+			name:    "subcontainer annotation without allow",
+			spec:    sub(map[string]string{AnnotationRootfsUpperJournal + ".cont": "/upper"}),
+			wantErr: disabled,
+		},
+		{
+			name:        "annotations with allow",
+			spec:        specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "/upper", AnnotationRootfsUpperJournalImageID: "image"}},
+			allow:       true,
+			wantPrefix:  "/upper",
+			wantImageID: "image",
+		},
+		{
+			name:        "subcontainer annotations with allow",
+			spec:        sub(map[string]string{AnnotationRootfsUpperJournal + ".cont": "/upper", AnnotationRootfsUpperJournalImageID + ".cont": "image"}),
+			allow:       true,
+			wantPrefix:  "/upper",
+			wantImageID: "image",
+		},
+		{
+			// The flag only applies to the root container.
+			name: "unselected annotation without allow",
+			spec: sub(map[string]string{AnnotationRootfsUpperJournal + ".other": "/upper"}),
+			flag: "/flag-upper",
+		},
+		{
+			name:    "flag and annotation differ",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "/upper"}},
+			flag:    "/other",
+			allow:   true,
+			wantErr: "differ",
+		},
+		{
+			name:    "relative annotation prefix",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "upper"}},
+			allow:   true,
+			wantErr: "absolute path",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{
+				JournalingRootfsUpper:        tc.flag,
+				JournalingRootfsUpperImageID: tc.flagImageID,
+			}
+			if tc.allow {
+				conf.RootfsJournalAnnotation = config.RootfsJournalAnnotationAllow
+			}
+			prefix, imageID, err := JournalingRootfsUpper(&tc.spec, conf)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("JournalingRootfsUpper: got error %v, want %q", err, tc.wantErr)
+				}
+				if tc.wantErr == disabled {
+					spec := tc.spec
+					spec.Process = &specs.Process{Args: []string{"/bin/true"}}
+					spec.Root = &specs.Root{Path: "/"}
+					if err := ValidateSpec(&spec, conf, false /* noRootContainer */); err == nil || !strings.Contains(err.Error(), disabled) {
+						t.Errorf("ValidateSpec: got error %v, want %q", err, disabled)
+					}
+				}
+				return
+			}
+			if err != nil || prefix != tc.wantPrefix || imageID != tc.wantImageID {
+				t.Errorf("JournalingRootfsUpper: got %q, %q, %v; want %q, %q, nil", prefix, imageID, err, tc.wantPrefix, tc.wantImageID)
+			}
+		})
+	}
+}
+
 func TestIsProcFDPath(t *testing.T) {
 	for _, tc := range []struct {
 		name string

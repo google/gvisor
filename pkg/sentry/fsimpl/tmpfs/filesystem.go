@@ -218,6 +218,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	parentDir.inode.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 	parentDir.inode.touchCMtime()
+	parentDir.inode.journalInode()
 	return nil
 }
 
@@ -290,6 +291,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		i.incLinksLocked()
 		i.watches.Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
 		parentDir.insertChildLocked(fs.newDentry(i), name)
+		fs.journalLinkLocked(parentDir, name, i)
 		return nil
 	})
 }
@@ -308,6 +310,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		parentDir.inode.incLinksLocked() // from child's ".."
 		parentDir.inode.incRef()         // child directory holds a reference to parent
 		parentDir.insertChildLocked(&childDir.dentry, name)
+		fs.journalCreateLocked(parentDir, name, &childDir.inode)
 		return nil
 	})
 }
@@ -335,6 +338,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		}
 		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
+		fs.journalCreateLocked(parentDir, name, childInode)
 		return nil
 	})
 }
@@ -435,6 +439,7 @@ afterTrailingSymlink:
 		}
 		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
+		fs.journalCreateLocked(parentDir, name, childInode)
 		child.IncRef()
 		defer child.DecRef(ctx)
 		unlock()
@@ -445,6 +450,7 @@ afterTrailingSymlink:
 		fd.SetCreated()
 		parentDir.inode.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 		parentDir.inode.touchCMtime()
+		parentDir.inode.journalInode()
 		return fd, nil
 	}
 	if err != nil {
@@ -728,6 +734,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 	vfsObj.RenameBegin(&handle)
+	// Nothing below can fail. Journal the rename before replaced can be
+	// released.
+	fs.journalRenameLocked(oldParentDir, oldName, newParentDir, newName, exchange)
 	if exchange {
 		oldParentDir.removeChildLocked(renamed)
 		newParentDir.removeChildLocked(replaced)
@@ -754,6 +763,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		oldParentDir.inode.touchCMtime()
 		renamed.inode.touchCtime()
 		replaced.inode.touchCtime()
+		fs.journalRenamedInodes(oldParentDir, newParentDir, renamed.inode, replaced.inode)
 		vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParentDir.inode.watches, &newParentDir.inode.watches, oldName, newName, renamed.inode.isDir())
 		vfs.InotifyRename(ctx, &replaced.inode.watches, &newParentDir.inode.watches, &oldParentDir.inode.watches, newName, oldName, replaced.inode.isDir())
 		return nil
@@ -783,6 +793,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		newParentDir.inode.touchCMtime()
 	}
 	renamed.inode.touchCtime()
+	fs.journalRenamedInodes(oldParentDir, newParentDir, renamed.inode, nil)
 
 	vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParentDir.inode.watches, &newParentDir.inode.watches, oldName, newName, renamed.inode.isDir())
 	return nil
@@ -839,6 +850,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
 		return err
 	}
+	fs.journalUnlinkLocked(parentDir, name)
 	parentDir.removeChildLocked(child)
 	// Linux sends the parent's IN_DELETE|IN_ISDIR at rmdir() time, but
 	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
@@ -850,6 +862,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parentDir.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	parentDir.inode.touchCMtime()
+	parentDir.inode.journalInode()
 	return nil
 }
 
@@ -921,6 +934,7 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		}
 		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
+		fs.journalCreateLocked(parentDir, name, childInode)
 		return nil
 	})
 }
@@ -976,10 +990,12 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	// count of the child is decremented, or else the watches may be dropped
 	// before these events are added.
 	vfs.InotifyRemoveChild(ctx, &child.inode.watches, &parentDir.inode.watches, name)
+	fs.journalUnlinkLocked(parentDir, name)
 	parentDir.removeChildLocked(child)
 	child.inode.decLinksLocked(ctx)
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	parentDir.inode.touchCMtime()
+	parentDir.inode.journalInode()
 	return nil
 }
 
@@ -1091,7 +1107,7 @@ func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		return nil, 0, err
 	}
 
-	return d.inode.setPosixACL(rp.Credentials(), t, acl, clearSGID)
+	return d.inode.setPosixACLAndJournal(rp.Credentials(), t, acl, clearSGID)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

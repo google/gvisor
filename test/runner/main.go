@@ -38,6 +38,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -62,6 +63,7 @@ var (
 	fusefs             = flag.Bool("fusefs", false, "mounts a fusefs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
+	journaledOverlay   = flag.Bool("journaled-overlay", false, "like --overlay, and also journal the rootfs overlay upper layer with --journaling-rootfs-upper")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root. Implicitly enabled if network=host, or if using network namespaces")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 	trace              = flag.Bool("trace", false, "enables all trace points")
@@ -346,6 +348,19 @@ func prepareSave(args []string, undeclaredOutputsDir string, index int) ([]strin
 	return args, dir, nil
 }
 
+// withJournalingRootfsUpper returns a copy of args that uses the journaling
+// rootfs upper with the given path prefix.
+func withJournalingRootfsUpper(args []string, prefix string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-journaling-rootfs-upper=") {
+			arg = "-journaling-rootfs-upper=" + prefix
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
 func deleteSandbox(args []string, id string) error {
 	deleteArgs := append(args, "delete", "-force=true", id)
 	log.Infof("Executing: %v", append([]string{specutils.ExePath}, deleteArgs...))
@@ -377,7 +392,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("TEST_HOST_PTY_FD=%d", hostPTYGuestFD))
 	}
 
-	if *overlay {
+	if *overlay || *journaledOverlay {
 		for _, kv := range spec.Process.Env {
 			xmlPath, ok := strings.CutPrefix(kv, "XML_OUTPUT_FILE=")
 			if !ok || xmlPath == "" {
@@ -442,10 +457,24 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	} else {
 		args = append(args, "-net-raw")
 	}
-	if *overlay {
+	if *overlay || *journaledOverlay {
+		// The journaling rootfs upper requires a root overlay, which
+		// dir=/tmp provides.
 		args = append(args, "-overlay2=all:dir=/tmp")
 	} else {
 		args = append(args, "-overlay2=none")
+	}
+	var upperDir string
+	if *journaledOverlay {
+		var err error
+		upperDir, err = os.MkdirTemp(testutil.TmpDir(), "journaling-upper.")
+		if err != nil {
+			return fmt.Errorf("creating journaling upper directory: %w", err)
+		}
+		defer os.RemoveAll(upperDir)
+		args = append(args,
+			"-journaling-rootfs-upper="+filepath.Join(upperDir, "upper"),
+			"-journaling-rootfs-upper-image-id=syscall-test")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
@@ -692,6 +721,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 			// Restore into new sandbox.
 			restoreArgs := saveArgs
+			if *journaledOverlay {
+				restoreArgs = withJournalingRootfsUpper(saveArgs, filepath.Join(upperDir, fmt.Sprintf("upper.%d", i)))
+			}
 			restoreArgs, currentSaveDir, err = prepareSave(restoreArgs, undeclaredOutputsDir, i)
 			if err != nil {
 				printCheckpointDir(currentRestoreDir)

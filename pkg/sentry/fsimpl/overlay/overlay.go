@@ -553,6 +553,16 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	return minor, nil
 }
 
+// UpperFilesystem returns the filesystem of the upper layer of vfsfs. It
+// returns nil if vfsfs is not an overlay filesystem with an upper layer.
+func UpperFilesystem(vfsfs *vfs.Filesystem) *vfs.Filesystem {
+	fs, ok := vfsfs.Impl().(*filesystem)
+	if !ok || !fs.opts.UpperRoot.Ok() {
+		return nil
+	}
+	return fs.opts.UpperRoot.Mount().Filesystem()
+}
+
 // TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.
 func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 	upperFS := fs.opts.UpperRoot.Mount().Filesystem()

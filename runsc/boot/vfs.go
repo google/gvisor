@@ -745,14 +745,38 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		DisableDefaultSizeLimit: true,
 		TarNanosecondTimestamps: conf.TarTimestampResolution == config.TarTimestampNanoseconds,
 	}
-	if filestoreFD != nil {
+	// The journaling rootfs upper is rebuilt from its journal, unless an
+	// image populates it.
+	journaling := filestoreFD != nil && dst == "/" && c.l.hasJournalingUpper(c.containerID)
+	journalingPopulate := journaling && (c.l.fsRestore != nil || rootfsUpperTarFD != nil)
+	var populateWait func() error
+	if journaling && !journalingPopulate {
+		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
+		ju, journalFile := c.l.takeJournalingUpperJournal(c.containerID)
+		if journalFile == nil {
+			filestoreFD.Close()
+			return nil, nil, fmt.Errorf("journaling rootfs upper journal is missing")
+		}
+		mf, j, st, err := c.l.openJournalingUpper(ju, filestoreFD.ReleaseToFile("journaling-rootfs-upper-filestore"), journalFile, resourceID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open journaling rootfs upper: %w", err)
+		}
+		tmpfsOpts.MemoryFile = mf
+		tmpfsOpts.Journal = j
+		tmpfsOpts.JournalState = st
+	} else if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
 		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
-		mf, _, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
+		mf, loaded, err := createPrivateMemoryFileOpts(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore, journaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
 		tmpfsOpts.MemoryFile = mf
+		if journaling && loaded {
+			// The journal starts after the population completes.
+			fsr, cid := c.l.fsRestore, c.containerID
+			populateWait = func() error { return fsr.wait(cid) }
+		}
 		sourceTar, err := c.l.fsRestore.tmpfsSourceTar(resourceID, c.containerID)
 		if err != nil {
 			mf.Destroy()
@@ -775,6 +799,16 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
 	}
 	cu.Add(func() { upper.DecRef(ctx) })
+	if journalingPopulate {
+		if populateWait != nil {
+			c.l.activateJournalingUpperAsync(ctx, c.containerID, upper.Filesystem(), populateWait)
+		} else {
+			// The upper is fully populated, and no task can use it yet.
+			if err := c.l.activateJournalingUpperAfterPopulate(c.containerID, upper.Filesystem(), false /* pause */); err != nil {
+				return nil, nil, fmt.Errorf("failed to activate the journaling rootfs upper journal: %w", err)
+			}
+		}
+	}
 
 	// If the overlay mount consists of a regular file, copy up its contents
 	// from the lower layer, since in the overlay the otherwise-empty upper
@@ -1213,6 +1247,13 @@ func parseKeyValue(s string) (string, string, bool) {
 //     (restored) from the checkpoint.
 //   - An error if creation or restoration failed.
 func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, bool, error) {
+	return createPrivateMemoryFileOpts(file, resourceID, cid, fsr, false /* journaling */)
+}
+
+// createPrivateMemoryFileOpts is createPrivateMemoryFile. If journaling is
+// true, the memory file backs the journaling rootfs upper, and its file is
+// never decommitted on destruction.
+func createPrivateMemoryFileOpts(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore, journaling bool) (*pgalloc.MemoryFile, bool, error) {
 	cleanFile := cleanup.Make(func() { file.Close() })
 	defer cleanFile.Clean()
 
@@ -1235,6 +1276,9 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 		DisableIMAWorkAround: true,
 		// Private memory files need to be restored correctly using this ID.
 		ResourceID: resourceID,
+	}
+	if journaling {
+		mfOpts = journalingMemoryFileOpts(resourceID, false /* keepContents */)
 	}
 	mf, err := pgalloc.NewMemoryFile(file, mfOpts)
 	if err != nil {
@@ -1774,7 +1818,10 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 	restoreMnts.fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
-		mf, loaded, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
+		// For the journaling rootfs upper, the checkpoint populates the
+		// filestore; see activateJournalingUpperAfterPopulate.
+		journaling := c.l.hasJournalingUpper(c.containerID)
+		mf, loaded, err := createPrivateMemoryFileOpts(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore, journaling)
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}

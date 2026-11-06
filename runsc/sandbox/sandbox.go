@@ -311,6 +311,11 @@ type Args struct {
 	// tmpfs mount if a gofer mount is to be overlaid.
 	GoferFilestoreFiles []*os.File
 
+	// RootfsUpperJournalFile, if not nil, is the locked journal of the
+	// journaling rootfs upper of the root container. See
+	// config.Config.JournalingRootfsUpper.
+	RootfsUpperJournalFile *os.File
+
 	// GoferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
@@ -498,7 +503,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
-func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error {
+func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile, upperJournal *os.File, goferConfs []specutils.GoferMountConf) error {
 	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -523,6 +528,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	// * The subcontainer's gofer filestore files (optional)
 	// * The subcontainer's dev gofer file (optional)
 	// * The TAR file that contains the upper layer changes of the overlay rootfs.
+	// * The journal of the journaling rootfs upper (optional).
 	// * Gofer files.
 	payload := urpc.FilePayload{}
 	payload.Files = append(payload.Files, stdios...)
@@ -532,6 +538,9 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	}
 	if rootfsUpperTarFile != nil {
 		payload.Files = append(payload.Files, rootfsUpperTarFile)
+	}
+	if upperJournal != nil {
+		payload.Files = append(payload.Files, upperJournal)
 	}
 	payload.Files = append(payload.Files, goferFiles...)
 
@@ -544,6 +553,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		IsDevIoFilePresent:          devIOFile != nil,
 		GoferMountConfs:             goferConfs,
 		IsRootfsUpperTarFilePresent: rootfsUpperTarFile != nil,
+		IsUpperJournalFilePresent:   upperJournal != nil,
 		FilePayload:                 payload,
 	}
 	if err := s.call(sentryapi.ContMgrStartSubcontainer, &args, nil); err != nil {
@@ -809,7 +819,7 @@ func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, ima
 }
 
 // RestoreSubcontainer sends the restore call for a sub-container in the sandbox.
-func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []specutils.GoferMountConf) error {
+func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile, upperJournal *os.File, goferMountConf []specutils.GoferMountConf) error {
 	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -821,6 +831,7 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 	// * stdin/stdout/stderr (optional: only present when not using TTY)
 	// * The subcontainer's overlay filestore files (optional: only present when
 	//   host file backed overlay is configured)
+	// * The journal of the journaling rootfs upper (optional).
 	// * Gofer files.
 	payload := urpc.FilePayload{}
 	payload.Files = append(payload.Files, stdios...)
@@ -828,17 +839,21 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 	if devIOFile != nil {
 		payload.Files = append(payload.Files, devIOFile)
 	}
+	if upperJournal != nil {
+		payload.Files = append(payload.Files, upperJournal)
+	}
 	payload.Files = append(payload.Files, goferFiles...)
 
 	// Start running the container.
 	args := sentryapi.StartArgs{
-		Spec:                 spec,
-		Conf:                 conf,
-		CID:                  cid,
-		NumGoferFilestoreFDs: len(goferFilestoreFiles),
-		IsDevIoFilePresent:   devIOFile != nil,
-		GoferMountConfs:      goferMountConf,
-		FilePayload:          payload,
+		Spec:                      spec,
+		Conf:                      conf,
+		CID:                       cid,
+		NumGoferFilestoreFDs:      len(goferFilestoreFiles),
+		IsDevIoFilePresent:        devIOFile != nil,
+		GoferMountConfs:           goferMountConf,
+		IsUpperJournalFilePresent: upperJournal != nil,
+		FilePayload:               payload,
 	}
 	var reply sentryapi.RestoreReply
 	if err := s.call(sentryapi.ContMgrRestoreSubcontainer, &args, &reply); err != nil {
@@ -1239,6 +1254,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	donations.DonateAndClose("io-fds", args.IOFiles...)
 	donations.DonateAndClose("dev-io-fd", args.DevIOFile)
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
+	donations.DonateAndClose("rootfs-upper-journal-fd", args.RootfsUpperJournalFile)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
 	var pinRing *os.File
 	if _, err := gvisorbinaries.FDParking.Path(); err != nil {

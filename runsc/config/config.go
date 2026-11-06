@@ -109,6 +109,39 @@ type Config struct {
 	// archives of overlay upper layers and filesystem checkpoints.
 	TarTimestampResolution TarTimestampResolution `flag:"tar-timestamp-resolution"`
 
+	// JournalingRootfsUpper, if not empty, is the path prefix of the files that
+	// store the root container's rootfs overlay upper layer:
+	// JournalingRootfsUpper + ".filestore" and JournalingRootfsUpper +
+	// ".journal". The upper layer then survives sandbox crashes and restarts.
+	// runsc never deletes these files. Each container, including the root
+	// container, can instead select its own prefix with the
+	// specutils.AnnotationRootfsUpperJournal annotation, which requires
+	// --rootfs-journal-annotation=allow; for the root container, the flag and
+	// the annotation must then be equal. It requires a rootfs overlay, whose
+	// medium is ignored: the upper's data always lives in the filestore. A
+	// plain start replays an existing journaling rootfs upper. A
+	// restore, a filesystem restore or a rootfs upper tar takes precedence: it
+	// replaces an existing journaling rootfs upper with the image's contents. In
+	// a sandbox created with --fs-restore-image-path, every journaled container
+	// counts as restored, so its existing journal is replaced. If the filesystem
+	// checkpoint has no entry for that container's rootfs upper, the container
+	// starts with an empty upper, as it would without journaling, and the old
+	// journal's contents are discarded. runsc writes the new journal to a
+	// temporary file JournalingRootfsUpper + ".journal.tmp.*" first; the owner
+	// of the files may delete stray temporary files that a crash left. Images
+	// saved from a sandbox with a journaling rootfs upper restore with it, or
+	// without it with a root overlay medium of "dir=", since their rootfs upper
+	// is file-backed. Experimental.
+	JournalingRootfsUpper string `flag:"journaling-rootfs-upper"`
+
+	// JournalingRootfsUpperImageID identifies the lower layer of the root
+	// container's rootfs overlay. It is recorded when the journaling upper
+	// layer is created. A container with a different image ID refuses to use
+	// the upper layer. The specutils.AnnotationRootfsUpperJournalImageID
+	// annotation sets it for each container, if
+	// --rootfs-journal-annotation=allow.
+	JournalingRootfsUpperImageID string `flag:"journaling-rootfs-upper-image-id"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
@@ -441,6 +474,17 @@ type Config struct {
 	// called. This is useful for tests exercising gVisor panic-reporting.
 	TestOnlyAFSSyscallPanic bool `flag:"TESTONLY-afs-syscall-panic"`
 
+	// TestOnlyJournalingRootfsUpperFault should only be used in tests. It
+	// injects a fault in the journaling rootfs upper. The only value is
+	// "activation", which makes the activation of the journal fail after an
+	// image populates the upper.
+	TestOnlyJournalingRootfsUpperFault string `flag:"TESTONLY-journaling-rootfs-upper-fault"`
+
+	// TestOnlyJournalingRootfsUpperRegionSize should only be used in tests.
+	// If not 0, it is the minimum size of the regions of a new journaling
+	// rootfs upper journal.
+	TestOnlyJournalingRootfsUpperRegionSize uint64 `flag:"TESTONLY-journaling-rootfs-upper-region-size"`
+
 	// explicitlySet contains whether a flag was explicitly set on the command-line from which this
 	// Config was constructed. Nil when the Config was not initialized from a FlagSet.
 	explicitlySet map[string]struct{}
@@ -510,6 +554,13 @@ type Config struct {
 	// AllowRootfsTarAnnotation indicates whether the rootfs tar annotation
 	// should be allowed.
 	AllowRootfsTarAnnotation bool `flag:"allow-rootfs-tar-annotation"`
+
+	// RootfsJournalAnnotation controls whether the
+	// specutils.AnnotationRootfsUpperJournal and
+	// specutils.AnnotationRootfsUpperJournalImageID annotations can be set.
+	// The annotations make runsc create, lock, truncate and replace files at
+	// a host path, so they are denied by default.
+	RootfsJournalAnnotation RootfsJournalAnnotationPolicy `flag:"rootfs-journal-annotation"`
 
 	// ControlRPCStopTimeout is the grace period given to in-flight RPCs on
 	// the sandbox control (urpc) socket when the sandbox is shutting down.
@@ -599,6 +650,13 @@ func (c *Config) Validate() error {
 	}
 	if overlay2 := c.GetOverlay2(); c.FileAccess == FileAccessShared && overlay2.Enabled() {
 		return fmt.Errorf("overlay flag is incompatible with shared file access for rootfs")
+	}
+	if c.JournalingRootfsUpper != "" {
+		if !filepath.IsAbs(c.JournalingRootfsUpper) {
+			return fmt.Errorf("journaling-rootfs-upper must be an absolute path, got %q", c.JournalingRootfsUpper)
+		}
+	} else if c.JournalingRootfsUpperImageID != "" {
+		return fmt.Errorf("journaling-rootfs-upper-image-id requires journaling-rootfs-upper")
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
@@ -1336,6 +1394,54 @@ func (r TarTimestampResolution) String() string {
 		return "nanoseconds"
 	}
 	panic(fmt.Sprintf("Invalid tar timestamp resolution %d", r))
+}
+
+// RootfsJournalAnnotationPolicy controls whether the rootfs journal
+// annotations can be set.
+type RootfsJournalAnnotationPolicy int
+
+const (
+	// RootfsJournalAnnotationDeny refuses containers that set the rootfs
+	// journal annotations.
+	RootfsJournalAnnotationDeny RootfsJournalAnnotationPolicy = iota
+
+	// RootfsJournalAnnotationAllow lets containers set the rootfs journal
+	// annotations.
+	RootfsJournalAnnotationAllow
+)
+
+// Ptr returns a pointer to p.
+func (p RootfsJournalAnnotationPolicy) Ptr() *RootfsJournalAnnotationPolicy {
+	return &p
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *RootfsJournalAnnotationPolicy) Set(v string) error {
+	switch v {
+	case "deny":
+		*p = RootfsJournalAnnotationDeny
+	case "allow":
+		*p = RootfsJournalAnnotationAllow
+	default:
+		return fmt.Errorf("invalid rootfs journal annotation policy %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (p *RootfsJournalAnnotationPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p RootfsJournalAnnotationPolicy) String() string {
+	switch p {
+	case RootfsJournalAnnotationDeny:
+		return "deny"
+	case RootfsJournalAnnotationAllow:
+		return "allow"
+	}
+	panic(fmt.Sprintf("Invalid rootfs journal annotation policy %d", p))
 }
 
 // OverlayMedium describes how overlay medium is configured.
