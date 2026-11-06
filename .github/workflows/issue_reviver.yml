@@ -12,9 +12,9 @@ jobs:
       issues: write
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      if: github.repository == 'google/gvisor'
+      if: (github.repository == 'google/gvisor' || github.repository == 'gvisor/gvisor')
     - run: make run TARGETS="//tools/github" ARGS="-path=. revive"
-      if: github.repository == 'google/gvisor'
+      if: (github.repository == 'google/gvisor' || github.repository == 'gvisor/gvisor')
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_REPOSITORY: ${{ github.repository }}

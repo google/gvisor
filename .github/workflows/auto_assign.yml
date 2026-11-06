@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   assign:
-    if: github.event.pull_request.draft == false && github.repository == 'google/gvisor'
+    if: github.event.pull_request.draft == false && (github.repository == 'google/gvisor' || github.repository == 'gvisor/gvisor')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
