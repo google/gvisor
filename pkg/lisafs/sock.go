@@ -17,6 +17,7 @@ package lisafs
 import (
 	"fmt"
 	"io"
+	"math"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
@@ -89,7 +90,8 @@ func (s *sockCommunicator) SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8
 		return 0, 0, unix.EIO
 	}
 
-	respM, respPayloadLen, err := s.rcvMsg(wantFDs)
+	// The server is a trusted component, so its responses are not size-limited.
+	respM, respPayloadLen, err := s.rcvMsg(wantFDs, math.MaxUint32)
 	if err != nil {
 		log.Warningf("socketCommunicator.SndRcvMessage: rcvMsg failed: %v", err)
 		return 0, 0, unix.EIO
@@ -152,8 +154,9 @@ func writeTo(sock *unet.Socket, iovec [][]byte, dataLen int, fds []int) error {
 }
 
 // rcvMsg reads the message header and payload from the UDS. It also populates
-// fds with any donated FDs.
-func (s *sockCommunicator) rcvMsg(wantFDs uint8) (MID, uint32, error) {
+// fds with any donated FDs. Payloads larger than maxPayloadLen are rejected
+// before any buffer is allocated for them.
+func (s *sockCommunicator) rcvMsg(wantFDs uint8, maxPayloadLen uint32) (MID, uint32, error) {
 	fds, err := readFrom(s.sock, s.buf[:sockHeaderLen], wantFDs)
 	if err != nil {
 		return 0, 0, err
@@ -168,6 +171,10 @@ func (s *sockCommunicator) rcvMsg(wantFDs uint8) (MID, uint32, error) {
 	// No payload? We are done.
 	if header.payloadLen == 0 {
 		return header.message, 0, nil
+	}
+
+	if header.payloadLen > maxPayloadLen {
+		return 0, 0, fmt.Errorf("payload too large: %d bytes, max %d", header.payloadLen, maxPayloadLen)
 	}
 
 	if _, err := readFrom(s.sock, s.PayloadBuf(header.payloadLen), 0); err != nil {

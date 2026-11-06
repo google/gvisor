@@ -156,7 +156,7 @@ func (c *Connection) Run() {
 
 	// Start handling requests on this connection.
 	for {
-		m, payloadLen, err := c.sockComm.rcvMsg(0 /* wantFDs */)
+		m, payloadLen, err := c.sockComm.rcvMsg(0 /* wantFDs */, c.maxMessageSize)
 		if err != nil {
 			log.Debugf("sock read failed, closing connection: %v", err)
 			return
