@@ -18,6 +18,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 
 #include <cerrno>
@@ -926,6 +927,72 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Verify that the received source IP:port matches the sender one.
   EXPECT_EQ(sender_addr_in->sin_port, src_addr_in->sin_port);
   EXPECT_EQ(sender_addr_in->sin_addr.s_addr, src_addr_in->sin_addr.s_addr);
+}
+
+// A dual-stack UDP socket uses the IPv4 TTL for an IPv4-mapped destination,
+// but multicast loopback is a property of the sending socket's family.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, ConnectedMappedMulticast) {
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  sockaddr_in local = {.sin_family = AF_INET};
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&local), sizeof(local)),
+      SyscallSucceeds());
+  socklen_t len = sizeof(local);
+  ASSERT_THAT(
+      getsockname(receiver->get(), reinterpret_cast<sockaddr*>(&local), &len),
+      SyscallSucceeds());
+  const ip_mreqn group = {
+      .imr_multiaddr = {.s_addr = inet_addr(kMulticastAddress)},
+      .imr_ifindex = eth_if_idx(),
+  };
+  ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_RECVTTL, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+  const int ttl = 11;
+  const int hops = 19;
+  ASSERT_THAT(setsockopt(sender.get(), IPPROTO_IP, IP_MULTICAST_IF,
+                         &eth_if_addr().sin_addr, sizeof(in_addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(
+      setsockopt(sender.get(), IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)),
+      SyscallSucceeds());
+  ASSERT_THAT(setsockopt(sender.get(), IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &hops,
+                         sizeof(hops)),
+              SyscallSucceeds());
+  sockaddr_in6 dst = {.sin6_family = AF_INET6, .sin6_port = local.sin_port};
+  dst.sin6_addr.s6_addr[10] = dst.sin6_addr.s6_addr[11] = 0xff;
+  memcpy(&dst.sin6_addr.s6_addr[12], &group.imr_multiaddr, sizeof(in_addr));
+  ASSERT_THAT(
+      connect(sender.get(), reinterpret_cast<sockaddr*>(&dst), sizeof(dst)),
+      SyscallSucceeds());
+
+  // Send the first packet with only IPv4 loopback enabled. Reversing the two
+  // settings after connect must deliver only the second packet to this socket.
+  ASSERT_THAT(setsockopt(sender.get(), IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+  ASSERT_THAT(send(sender.get(), "a", 1, 0), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(setsockopt(sender.get(), IPPROTO_IP, IP_MULTICAST_LOOP,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(sender.get(), IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(send(sender.get(), "b", 1, 0), SyscallSucceedsWithValue(1));
+  pollfd ready = {.fd = receiver->get(), .events = POLLIN};
+  ASSERT_THAT(RetryEINTR(poll)(&ready, 1, 5000), SyscallSucceedsWithValue(1));
+  char byte = 0;
+  size_t size = sizeof(byte);
+  int received_ttl = 0;
+  ASSERT_NO_FATAL_FAILURE(
+      RecvTTL(receiver->get(), &byte, &size, &received_ttl));
+  EXPECT_EQ(size, 1);
+  EXPECT_EQ(byte, 'b');
+  EXPECT_EQ(received_ttl, ttl);
 }
 
 // Check that when setting the IP_MULTICAST_IF option to both an index pointing

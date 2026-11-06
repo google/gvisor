@@ -2201,7 +2201,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		e.UnlockUser()
 		return v, nil
 
-	case tcpip.MulticastTTLOption:
+	case tcpip.MulticastTTLOption, tcpip.IPv4MulticastTTLOption, tcpip.IPv6MulticastHopLimitOption:
 		return 1, nil
 
 	default:

@@ -1016,6 +1016,11 @@ const (
 	// IPv6MulticastInterfaceOption is used to set/get the NIC used for
 	// IPv6 multicast Tx.
 	IPv6MulticastInterfaceOption
+
+	// IPv4MulticastTTLOption and IPv6MulticastHopLimitOption control the
+	// outgoing multicast hop count independently on a dual-stack socket.
+	IPv4MulticastTTLOption
+	IPv6MulticastHopLimitOption
 )
 
 const (
