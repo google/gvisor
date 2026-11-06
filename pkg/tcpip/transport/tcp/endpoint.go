@@ -2832,7 +2832,7 @@ func (e *Endpoint) listen(backlog int) tcpip.Error {
 
 	// Initialize the listening context.
 	rcvWnd := seqnum.Size(e.receiveBufferAvailable())
-	e.listenCtx = newListenContext(e.stack, e.protocol, e, rcvWnd, e.ops.GetV6Only(), e.NetProto)
+	e.listenCtx = newListenContext(e.stack, e.protocol, rcvWnd, e.ops.GetV6Only(), e.NetProto)
 
 	return nil
 }

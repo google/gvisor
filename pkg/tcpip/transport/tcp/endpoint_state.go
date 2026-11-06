@@ -292,7 +292,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			e.setEndpointState(StateListen)
 			// Initialize the listening context.
 			rcvWnd := seqnum.Size(e.receiveBufferAvailable())
-			e.listenCtx = newListenContext(e.stack, e.protocol, e, rcvWnd, e.ops.GetV6Only(), e.NetProto)
+			e.listenCtx = newListenContext(e.stack, e.protocol, rcvWnd, e.ops.GetV6Only(), e.NetProto)
 			e.UnlockUser()
 			e.requeueOnRestore()
 			listenLoading.Done()
