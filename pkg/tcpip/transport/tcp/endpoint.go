@@ -317,14 +317,14 @@ func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 // in e.Readiness where acquiring it will result in a deadlock in epoll
 // implementation.
 //
-// The following three mutexes can be acquired independent of e.mu but if
+// The following mutexes can be acquired independent of e.mu but if
 // acquired with e.mu then e.mu must be acquired first.
 //
 // e.acceptMu -> Protects e.acceptQueue.
 // e.rcvQueueMu -> Protects e.rcvQueue's associated fields but not e.rcvQueue
 // itself.
 // e.sndQueueMu -> Protects the e.sndQueue and associated fields.
-// e.lastErrorMu -> Protects the lastError field.
+// e.lastErrorMu -> Protects hardError and lastError.
 //
 // LOCKING/UNLOCKING of the endpoint.  The locking of an endpoint is different
 // based on the context in which the lock is acquired. In the syscall context
@@ -376,15 +376,17 @@ type Endpoint struct {
 	protocol    *protocol
 	waiterQueue *waiter.Queue `state:"wait"`
 
-	// hardError is meaningful only when state is stateError. It stores the
-	// error to be returned when read/write syscalls are called and the
-	// endpoint is in this state.
-	// +checklocks:mu
+	// hardError is reported by poll and consumed by socket I/O or SO_ERROR
+	// after a connection fails.
+	//
+	// +checklocks:lastErrorMu
 	hardError tcpip.Error
 
 	lastErrorMu lastErrorMutex `state:"nosave"`
 
-	// lastError is the last error reported by the endpoint.
+	// lastError records the last socket error. A connection timeout can
+	// promote an advisory error to hardError.
+	//
 	// +checklocks:lastErrorMu
 	lastError tcpip.Error
 
@@ -959,8 +961,17 @@ func (e *Endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 		// Ready for nothing.
 
 	case StateClose, StateError, StateTimeWait:
-		// Ready for anything.
-		result = mask
+		result = mask & (waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventRdHUp)
+		if mask&waiter.EventErr != 0 {
+			// SO_ERROR consumes the pending hard error. A queued extended
+			// error remains pollable until recvmsg(MSG_ERRQUEUE) consumes it.
+			e.lastErrorMu.Lock()
+			hasError := e.hardError != nil
+			e.lastErrorMu.Unlock()
+			if hasError || e.SocketOptions().PeekErr() != nil {
+				result |= waiter.EventErr
+			}
+		}
 
 	case StateListen:
 		// Check if there's anything in the accepted queue.
@@ -1400,7 +1411,16 @@ func (e *Endpoint) SetOwner(owner tcpip.PacketOwner) {
 }
 
 // +checklocks:e.mu
+func (e *Endpoint) setHardErrorLocked(err tcpip.Error) {
+	e.lastErrorMu.Lock()
+	e.hardError = err
+	e.lastErrorMu.Unlock()
+}
+
+// +checklocks:e.mu
 func (e *Endpoint) hardErrorLocked() tcpip.Error {
+	e.lastErrorMu.Lock()
+	defer e.lastErrorMu.Unlock()
 	err := e.hardError
 	e.hardError = nil
 	return err
@@ -3076,7 +3096,7 @@ func (e *Endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 		}
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		e.cleanupLocked()
-		e.hardError = err
+		e.setHardErrorLocked(err)
 		e.setEndpointState(StateError)
 		e.mu.Unlock()
 		e.drainClosingSegmentQueue()
