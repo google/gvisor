@@ -235,55 +235,24 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 		return nil, unix.EINVAL
 	}
 
-	// Default limit.
-	end := f.k.MaxFDLimit.Load()
-
-	// Ensure we don't get past the provided limit.
-	if limitSet := limits.FromContext(ctx); limitSet != nil {
-		lim := limitSet.Get(limits.NumberOfFiles)
-		// Only set if the limit is smaller than the max to avoid overflow.
-		if lim.Cur != limits.Infinity && lim.Cur < uint64(end) {
-			end = int32(lim.Cur)
-		}
-	}
+	end := f.fdLimit(ctx)
 	if minFD+int32(len(files)) > end {
 		return nil, unix.EMFILE
 	}
 
 	f.mu.Lock()
 
-	// max is used as the largest number in fdBitmap + 1.
-	max := int32(0)
-	if !f.fdBitmap.IsEmpty() {
-		max = int32(f.fdBitmap.Maximum())
-		max++
-	}
-
-	// Adjust max in case it is less than minFD.
-	if max < minFD {
-		max = minFD
-	}
 	// Install all entries.
 	for len(fds) < len(files) {
-		// Try to use free bit in fdBitmap.
-		// If all bits in fdBitmap are used, expand fd to the max.
-		fd, err := f.fdBitmap.FirstZero(uint32(minFD))
-		if err != nil {
-			fd = uint32(max)
-			max++
-		}
-		if fd >= uint32(end) {
+		fd, ok := f.allocateFDLocked(minFD, end)
+		if !ok {
 			break
 		}
-		f.fdBitmap.Add(fd)
-		if fd == uint32(max) {
-			max = int32(fd + 1)
-		}
-		if df := f.set(int32(fd), files[len(fds)], flags); df != nil {
+		if df := f.set(fd, files[len(fds)], flags); df != nil {
 			panic("file set")
 		}
-		fds = append(fds, int32(fd))
-		minFD = int32(fd)
+		fds = append(fds, fd)
+		minFD = fd
 	}
 
 	// Failure? Unwind existing FDs.
@@ -319,6 +288,94 @@ func (f *FDTable) NewFD(ctx context.Context, minFD int32, file *vfs.FileDescript
 	return fileSlice[0], nil
 }
 
+// ReserveFD reserves the lowest available FD that is greater than or equal to
+// minFD, without installing a file in it. Other allocations do not use a
+// reserved FD, and lookups do not find it. The caller must either install a
+// file in it with InstallReservedFD or release it with UnreserveFD.
+func (f *FDTable) ReserveFD(ctx context.Context, minFD int32) (int32, error) {
+	if minFD < 0 {
+		// Don't accept negative FDs.
+		return -1, unix.EINVAL
+	}
+
+	end := f.fdLimit(ctx)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fd, ok := f.allocateFDLocked(minFD, end)
+	if !ok {
+		return -1, unix.EMFILE
+	}
+	return fd, nil
+}
+
+// InstallReservedFD installs file in fd, which ReserveFD reserved. It takes a
+// reference on file.
+func (f *FDTable) InstallReservedFD(fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if df := f.set(fd, file, flags); df != nil {
+		panic("reserved FD in use")
+	}
+}
+
+// UnreserveFD releases fd, which ReserveFD reserved and in which no file is
+// installed.
+func (f *FDTable) UnreserveFD(fd int32) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fdBitmap.Remove(uint32(fd))
+}
+
+// fdLimit returns the end (exclusive) of the range of FDs that new FDs can use.
+func (f *FDTable) fdLimit(ctx context.Context) int32 {
+	// Default limit.
+	end := f.k.MaxFDLimit.Load()
+
+	// Ensure we don't get past the provided limit.
+	if limitSet := limits.FromContext(ctx); limitSet != nil {
+		lim := limitSet.Get(limits.NumberOfFiles)
+		// Only set if the limit is smaller than the max to avoid overflow.
+		if lim.Cur != limits.Infinity && lim.Cur < uint64(end) {
+			end = int32(lim.Cur)
+		}
+	}
+	return end
+}
+
+// allocateFDLocked marks the lowest unused FD in [minFD, end) as used in
+// fdBitmap, and returns it. It returns false if all of these FDs are used.
+//
+// +checklocks:f.mu
+func (f *FDTable) allocateFDLocked(minFD, end int32) (int32, bool) {
+	// Try to use a free bit in fdBitmap. If all bits in fdBitmap from minFD
+	// on are used, use the FD after the largest one.
+	fd, err := f.fdBitmap.FirstZero(uint32(minFD))
+	if err != nil {
+		fd = uint32(minFD)
+		if !f.fdBitmap.IsEmpty() && f.fdBitmap.Maximum() >= fd {
+			fd = f.fdBitmap.Maximum() + 1
+		}
+	}
+	if fd >= uint32(end) {
+		return 0, false
+	}
+	f.fdBitmap.Add(fd)
+	return int32(fd), true
+}
+
+// isReservedLocked returns true if ReserveFD reserved fd and no file is
+// installed in it yet.
+//
+// +checklocks:f.mu
+func (f *FDTable) isReservedLocked(fd int32) bool {
+	if file, _, _ := f.get(fd); file != nil {
+		return false
+	}
+	bit, err := f.fdBitmap.FirstOne(uint32(fd))
+	return err == nil && bit == uint32(fd)
+}
+
 // NewFDAt sets the file reference for the given FD. If there is an existing
 // file description for that FD, it is returned.
 //
@@ -343,6 +400,10 @@ func (f *FDTable) NewFDAt(ctx context.Context, fd int32, file *vfs.FileDescripti
 
 	// Install the entry.
 	f.mu.Lock()
+	if f.isReservedLocked(fd) {
+		f.mu.Unlock()
+		return nil, unix.EBUSY
+	}
 	df := f.set(fd, file, flags)
 	// Add fd to fdBitmap.
 	if df == nil {
@@ -526,15 +587,24 @@ func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd in
 	}
 
 	f.mu.Lock()
-	fdUint, err := f.fdBitmap.FirstOne(uint32(startFd))
-	fd := int32(fdUint)
-	if err != nil || fd > endFd {
-		f.mu.Unlock()
-		return MaxFdLimit, nil
-	}
-	df := f.set(fd, nil, FDFlags{}) // Zap entry.
-	if df != nil {
-		f.fdBitmap.Remove(uint32(fd))
+	var (
+		fd int32
+		df *vfs.FileDescription
+	)
+	for {
+		fdUint, err := f.fdBitmap.FirstOne(uint32(startFd))
+		fd = int32(fdUint)
+		if err != nil || fd > endFd {
+			f.mu.Unlock()
+			return MaxFdLimit, nil
+		}
+		df = f.set(fd, nil, FDFlags{}) // Zap entry.
+		if df != nil {
+			f.fdBitmap.Remove(uint32(fd))
+			break
+		}
+		// Skip an FD that is reserved but has no file yet.
+		startFd = fd + 1
 	}
 	f.mu.Unlock()
 
