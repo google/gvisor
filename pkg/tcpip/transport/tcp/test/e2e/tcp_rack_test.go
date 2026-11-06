@@ -122,7 +122,7 @@ func TestRACKDetectReorder(t *testing.T) {
 
 	e2e.SetStackSACKPermitted(t, c, true)
 	e2e.CreateConnectedWithSACKAndTS(c)
-	data := make([]byte, 3*maxPayload)
+	data := make([]byte, 4*maxPayload)
 	for i := range data {
 		data[i] = byte(i)
 	}
@@ -147,24 +147,34 @@ func TestRACKDetectReorder(t *testing.T) {
 		t.Fatalf("RACK RTT = %s, want %s", got, want)
 	}
 
-	// Send two packets, then selectively acknowledge only the second.
-	r.Reset(data[maxPayload:])
+	// The peer's next ACK reports the first and third packets together.
+	// Send the first 10 ms earlier to distinguish the two RTT samples.
+	r.Reset(data[maxPayload : 2*maxPayload])
 	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
-	for offset := maxPayload; offset < len(data); offset += maxPayload {
+	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+	clock.Advance(10 * time.Millisecond)
+	r.Reset(data[2*maxPayload:])
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	for offset := 2 * maxPayload; offset < len(data); offset += maxPayload {
 		c.ReceiveAndCheckPacketWithOptions(data, offset, maxPayload, e2e.TSOptionSize)
 	}
 	clock.Advance(rtt)
-	start := c.IRS.Add(2*maxPayload + 1)
+	start := c.IRS.Add(3*maxPayload + 1)
 	end := start.Add(maxPayload)
-	c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{start, end}})
+	c.SendAckWithSACK(seq, 2*maxPayload, []header.SACKBlock{{start, end}})
 	state = nextState()
 	if got, want := state.RACKState.FACK, end; got != want {
 		t.Fatalf("FACK after SACK = %v, want %v", got, want)
 	}
+	if got, want := state.RACKState.RTT, rtt; got != want {
+		t.Errorf("RACK RTT after combined ACK = %s, want %s for the later transmission", got, want)
+	}
 	if state.RACKState.Reord {
-		t.Fatal("RACK detected reordering before the missing packet was acknowledged")
+		t.Error("RACK detected reordering before the missing packet was acknowledged")
 	}
 	if got := state.RACKState.ReoWnd; got <= 0 {
 		t.Fatalf("reordering window = %s, want a positive window", got)

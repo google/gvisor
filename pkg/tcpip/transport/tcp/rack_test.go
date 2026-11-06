@@ -101,7 +101,8 @@ func TestRACKQuantizedClockPreventsPrematureLossAndSchedulesRecheck(t *testing.T
 	ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
 	defer ack.DecRef()
 
-	ctx.snd.rc.update(newer, ack)
+	delivery := ctx.snd.rc.beginAck()
+	ctx.snd.rc.update(newer, ack, &delivery)
 	if got := ctx.snd.rc.RTT; got != 0 {
 		t.Fatalf("RACK RTT = %v, want 0", got)
 	}
@@ -293,7 +294,8 @@ func TestRACKInitialDeliverySequence(t *testing.T) {
 			// It must advance the marker, including when its end wraps to zero.
 			ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
 			defer ack.DecRef()
-			ctx.snd.rc.update(later, ack)
+			delivery := ctx.snd.rc.beginAck()
+			ctx.snd.rc.update(later, ack, &delivery)
 			if got, want := ctx.snd.rc.EndSequence, test.iss.Add(3); got != want {
 				t.Errorf("first delivery end = %d, want %d", got, want)
 			}
