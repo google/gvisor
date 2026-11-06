@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -42,6 +43,14 @@ func newTestSegment(payload int) *segment {
 		buf = buffer.MakeWithView(buffer.NewViewSize(payload))
 	}
 	return newOutgoingSegment(stack.TransportEndpointID{}, &clock, buf, 0)
+}
+
+// testSegMemSize returns the segMemSize of a test segment with the given
+// payload size.
+func testSegMemSize(payload int) int {
+	s := newTestSegment(payload)
+	defer s.DecRef()
+	return s.segMemSize()
 }
 
 // fillQueue enqueues segments with the given payload size until one is
@@ -76,11 +85,115 @@ func TestSegmentQueueBoundsZeroPayloadSegments(t *testing.T) {
 	}
 
 	limit := testRcvBufSize + testSndBufSize + zeroPayloadHeadroom
-	segMem := newTestSegment(0)
-	segMemSize := segMem.segMemSize()
-	segMem.DecRef()
+	segMemSize := testSegMemSize(0)
 	if used := ep.receiveMemUsed(); used <= limit || used > limit+segMemSize {
 		t.Errorf("receiveMemUsed() = %d after refusal, want in (%d, %d]", used, limit, limit+segMemSize)
+	}
+}
+
+func TestSegmentQueueDequeueFreesZeroPayloadRoom(t *testing.T) {
+	ep := newTestQueueEndpoint()
+	defer drainQueue(ep)
+
+	if n := fillQueue(ep, 0, 1<<20); n == 1<<20 {
+		t.Fatalf("queued %d zero-payload segments without refusing any", n)
+	}
+	ep.segmentQueue.dequeue().DecRef()
+
+	s := newTestSegment(0)
+	defer s.DecRef()
+	if !ep.segmentQueue.enqueue(s) {
+		t.Errorf("zero-payload segment refused after a dequeue, want it queued")
+	}
+}
+
+func TestSegmentQueueZeroPayloadIgnoresUnreadData(t *testing.T) {
+	ep := newTestQueueEndpoint()
+	defer drainQueue(ep)
+
+	// Charge more receive memory than the zero-payload limit, as unread
+	// data that the processor already moved out of the queue does.
+	const unread = 1 << 20
+	ep.updateReceiveMemUsed(unread)
+	defer ep.updateReceiveMemUsed(-unread)
+
+	s := newTestSegment(0)
+	defer s.DecRef()
+	if !ep.segmentQueue.enqueue(s) {
+		t.Errorf("zero-payload segment refused with unread data and an empty queue, want it queued")
+	}
+
+	d := newTestSegment(1024)
+	defer d.DecRef()
+	if ep.segmentQueue.enqueue(d) {
+		t.Errorf("data segment queued with a full receive buffer, want it refused")
+	}
+}
+
+func TestSegmentQueueReenqueueReleasesPreviousOwner(t *testing.T) {
+	listenEP := newTestQueueEndpoint()
+	childEP := newTestQueueEndpoint()
+	defer drainQueue(childEP)
+
+	s := newTestSegment(0)
+	if !listenEP.segmentQueue.enqueue(s) {
+		t.Fatalf("listenEP.segmentQueue.enqueue() = false, want true")
+	}
+	s.DecRef()
+
+	// Move the segment to another endpoint, as a listening endpoint does
+	// with segments for an established child endpoint.
+	s = listenEP.segmentQueue.dequeue()
+	ok := childEP.segmentQueue.enqueue(s)
+	s.DecRef()
+	if !ok {
+		t.Fatalf("childEP.segmentQueue.enqueue() = false, want true")
+	}
+
+	if got := listenEP.receiveMemUsed(); got != 0 {
+		t.Errorf("listenEP.receiveMemUsed() = %d after the segment moved, want 0", got)
+	}
+	if got, want := childEP.receiveMemUsed(), testSegMemSize(0); got != want {
+		t.Errorf("childEP.receiveMemUsed() = %d, want %d", got, want)
+	}
+	drainQueue(childEP)
+	if got := childEP.receiveMemUsed(); got != 0 {
+		t.Errorf("childEP.receiveMemUsed() = %d after drain, want 0", got)
+	}
+}
+
+func TestSegmentQueueConcurrentEnqueueAtLimit(t *testing.T) {
+	ep := newTestQueueEndpoint()
+	defer drainQueue(ep)
+
+	// Use exactly the receive buffer size, so that one more data segment is
+	// allowed and the segment after it is refused.
+	ep.updateReceiveMemUsed(testRcvBufSize)
+	defer ep.updateReceiveMemUsed(-testRcvBufSize)
+
+	const callers = 8
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		accepted int
+	)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s := newTestSegment(1024)
+			defer s.DecRef()
+			if ep.segmentQueue.enqueue(s) {
+				mu.Lock()
+				accepted++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	if accepted != 1 {
+		t.Errorf("%d concurrent data segments queued at the receive buffer size, want 1", accepted)
 	}
 }
 

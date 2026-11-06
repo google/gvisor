@@ -24,6 +24,11 @@ type segmentQueue struct {
 	ep   *Endpoint
 	// +checklocks:mu
 	frozen bool
+	// memUsed is the total memory, as given by segMemSize, of the segments
+	// in list.
+	//
+	// +checklocks:mu
+	memUsed int
 }
 
 // emptyLocked is equivalent to empty with q.mu already held.
@@ -42,9 +47,9 @@ func (q *segmentQueue) empty() bool {
 	return q.emptyLocked()
 }
 
-// zeroPayloadHeadroom is the memory that segments without payload may use
-// beyond the receive and send buffer sizes. Linux uses the same 64KB in
-// tcp_add_backlog().
+// zeroPayloadHeadroom is the memory that queued segments may use beyond the
+// receive and send buffer sizes before segments without payload are refused.
+// Linux uses the same 64KB headroom in tcp_add_backlog().
 const zeroPayloadHeadroom = 64 << 10
 
 // enqueue adds the given segment to the queue.
@@ -54,28 +59,31 @@ const zeroPayloadHeadroom = 64 << 10
 //
 // +checklocksexclude:q.mu
 func (q *segmentQueue) enqueue(s *segment) bool {
-	limit := int(q.ep.ops.GetReceiveBufferSize())
-	if s.payloadSize() == 0 {
-		// Let segments without payload (ACK, FIN, RST, etc.) exceed the
-		// receive buffer size so the connection can make progress, but
-		// bound the memory they can use.
-		limit += int(q.ep.ops.GetSendBufferSize()) + zeroPayloadHeadroom
-	}
-	used := q.ep.receiveMemUsed()
-
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	allow := used <= limit && !q.frozen
-
-	if allow {
-		s.IncRef()
-		q.list.PushBack(s)
-		// Set the owner now that the endpoint owns the segment.
-		s.setOwner(q.ep, recvQ)
+	if q.frozen {
+		return false
+	}
+	rcvBufSize := int(q.ep.ops.GetReceiveBufferSize())
+	if s.payloadSize() == 0 {
+		// Accept segments without payload (ACK, FIN, RST, etc.) even if
+		// the receive buffer is full, so the connection can make progress.
+		// Bound only the memory of the segments in this queue: unread data
+		// must not cause these segments to be refused.
+		if q.memUsed > rcvBufSize+int(q.ep.ops.GetSendBufferSize())+zeroPayloadHeadroom {
+			return false
+		}
+	} else if q.ep.receiveMemUsed() > rcvBufSize {
+		return false
 	}
 
-	return allow
+	s.IncRef()
+	q.list.PushBack(s)
+	q.memUsed += s.segMemSize()
+	// Set the owner now that the endpoint owns the segment.
+	s.setOwner(q.ep, recvQ)
+	return true
 }
 
 // dequeue removes and returns the next segment from queue, if one exists.
@@ -90,6 +98,7 @@ func (q *segmentQueue) dequeue() *segment {
 	s := q.list.Front()
 	if s != nil {
 		q.list.Remove(s)
+		q.memUsed -= s.segMemSize()
 	}
 
 	return s
