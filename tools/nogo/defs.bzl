@@ -1,6 +1,6 @@
 """Nogo rules."""
 
-load("//tools:arch.bzl", "arch_transition")
+load("//tools:arch.bzl", "ARCHITECTURES", "arch_transition")
 load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
@@ -395,14 +395,12 @@ nogo_aspect = go_rule(
     },
 )
 
+_TEST_FINDINGS = {arch: "nogo.%s.findings" % arch for arch in ARCHITECTURES}
+
 def _nogo_test_impl(ctx):
     """Check nogo findings."""
 
-    # Build a runner that checks the filtered facts.
-    runner = ctx.actions.declare_file(ctx.label.name)
-    runner_content = ["#!/bin/bash"]
-    runner_footer = list()
-    all_findings = list()
+    reports = {}
 
     # Collect all architecture-targets.
     for (arch, deps) in ctx.split_attr.deps.items():
@@ -430,33 +428,22 @@ def _nogo_test_impl(ctx):
             toolchain = None,
         )
 
-        # Note that this calls the filter binary without any configuration, so
-        # all findings will be included. But this is expected, since we've
-        # already filtered out everything that should not be included. The
-        # runner will always run all tests, and then exit if any have failed.
-        runner_content.append("echo -n %s..." % arch)
-        runner_content.append("%s filter -test -text %s" % (ctx.files._nogo_target[0].short_path, findings.short_path))
-        runner_content.append("rc_%s=$?" % arch)
-        runner_footer.append("if [[ $rc_%s -ne 0 ]]; then exit $rc_%s; fi" % (arch, arch))
-        all_findings.append(findings)
-    runner_content.extend(runner_footer)
-    runner_content.append("")  # Ensure empty line.
-    ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
+        reports[_TEST_FINDINGS[arch]] = findings
+
+    runner = ctx.actions.declare_file(ctx.label.name)
+    ctx.actions.symlink(output = runner, target_file = ctx.executable._nogo_target, is_executable = True)
     return [DefaultInfo(
-        # The runner just executes the filter again, on the
-        # newly generated filtered findings. We still need
-        # the filter tool as part of our runfiles, however.
-        runfiles = ctx.runfiles(files = ctx.files._nogo_target + all_findings),
+        runfiles = ctx.runfiles(
+            files = [ctx.executable._nogo_target],
+            symlinks = reports,
+        ).merge(ctx.attr._nogo_target[DefaultInfo].default_runfiles),
         executable = runner,
     ), OutputGroupInfo(
-        # Propagate the filtered filters, for consumption by
-        # build tooling. Note that the build tooling typically
-        # pays attention to the mnemoic above, so this must be
-        # what is expected by the tooling.
-        nogo_findings = depset(all_findings),
+        # Tricorder consumes the per-architecture outputs of GoStaticAnalysis.
+        nogo_findings = depset(reports.values()),
     )]
 
-nogo_test = rule(
+_nogo_test = rule(
     implementation = _nogo_test_impl,
     attrs = {
         "config": attr.label(
@@ -479,6 +466,7 @@ nogo_test = rule(
         "_nogo_target": attr.label(
             default = "//tools/nogo:nogo",
             cfg = "target",
+            executable = True,
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
@@ -488,8 +476,16 @@ nogo_test = rule(
     test = True,
 )
 
-def _nogo_aspect_tricorder_impl(target, ctx):
-    if ctx.rule.kind != "nogo_test" or OutputGroupInfo not in target:
+def nogo_test(name, args = [], **kwargs):
+    """Checks the already-filtered reports for every architecture."""
+    _nogo_test(
+        name = name,
+        args = ["filter", "-test", "-text"] + args + _TEST_FINDINGS.values(),
+        **kwargs
+    )
+
+def _nogo_aspect_tricorder_impl(target, _ctx):
+    if OutputGroupInfo not in target:
         return []
     if not hasattr(target[OutputGroupInfo], "nogo_findings"):
         return []
