@@ -15,6 +15,8 @@
 package netstack
 
 import (
+	"bytes"
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -995,6 +997,11 @@ func (s *Stack) RouteTable() []inet.Route {
 		}
 	}
 
+	// netstack keeps routes in longest-prefix-first lookup order, but
+	// userspace (e.g. `ip route | awk`) relies on the order in which Linux
+	// dumps its FIB. The sort is stable to preserve the relative order of
+	// routes to the same destination.
+	slices.SortStableFunc(routeTable, compareRouteDumpOrder)
 	return routeTable
 }
 
@@ -1029,6 +1036,39 @@ func makeInetRoute(rt tcpip.Route) (inet.Route, bool) {
 		OutputInterface: int32(rt.NIC),
 		GatewayAddr:     rt.Gateway.AsSlice(),
 	}, true
+}
+
+// compareRouteDumpOrder orders routes as Linux dumps them:
+//   - IPv4 before IPv6 (net/core/rtnetlink.c:rtnl_dump_all).
+//   - IPv4 routes by ascending destination, longer prefixes first for equal
+//     destinations (net/ipv4/fib_trie.c:fib_table_dump).
+//   - IPv6 routes in fib6 tree post-order, so a route precedes any route
+//     whose prefix contains it (net/ipv6/ip6_fib.c:fib6_walk_continue).
+func compareRouteDumpOrder(a, b inet.Route) int {
+	if a.Family != b.Family {
+		return cmp.Compare(a.Family, b.Family)
+	}
+	bits := header.IPv4AddressSizeBits
+	if a.Family == linux.AF_INET6 {
+		bits = int(min(a.DstLen, b.DstLen))
+	}
+	if c := comparePrefix(a.DstAddr, b.DstAddr, bits); c != 0 {
+		return c
+	}
+	return cmp.Compare(b.DstLen, a.DstLen)
+}
+
+// comparePrefix compares the leading bits of a and b.
+func comparePrefix(a, b []byte, bits int) int {
+	n := bits / 8
+	if c := bytes.Compare(a[:n], b[:n]); c != 0 {
+		return c
+	}
+	if rem := bits % 8; rem != 0 {
+		mask := byte(0xff) << (8 - rem)
+		return cmp.Compare(a[n]&mask, b[n]&mask)
+	}
+	return 0
 }
 
 // localRoute constructs a local route from the netlink message.
