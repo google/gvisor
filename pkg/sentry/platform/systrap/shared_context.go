@@ -271,7 +271,7 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
 		log.TracebackAll(fmt.Sprintf("Systrap context is stuck; killing its subprocess. ThreadContext: %v", sc))
 		sc.killSubprocess()
 		return errDeadSubprocess
-	case errStubThreadGone, errNoStubThread:
+	case errStubThreadGone:
 		log.Warningf("Stub thread no longer exists; killing subprocess. ThreadContext: %v", sc)
 		sc.killSubprocess()
 		return errDeadSubprocess
@@ -325,7 +325,7 @@ func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuc
 		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
 			continue
 		}
-		if _, err := sc.interruptStub(); err != nil {
+		if _, err := sc.interruptStub(); err != nil && err != errNoStubThread {
 			if sc.state() != state {
 				return nil
 			}
