@@ -100,10 +100,15 @@ crosstool = use_extension("//tools/bazeldefs:extensions/crosstool.bzl", "crossto
 use_repo(crosstool, "crosstool")
 
 ### Linux headers
-# Select current UAPI declarations independently of libc and test platforms.
+# BPF programs use these Linux UAPI headers even when another project builds
+# gVisor as a dependency.
 kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers")
-kernel_headers.configure(default_version = "6.18")
 use_repo(kernel_headers, "kernel_headers")
+
+# In gVisor builds, targets without a kernel-version constraint use Linux 6.18
+# headers. A downstream root chooses its own default.
+root_kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers", dev_dependency = True)
+root_kernel_headers.configure(default_version = "6.18")
 
 ### zlib-ng
 # TODO: try using "zlib-ng" from BCR
