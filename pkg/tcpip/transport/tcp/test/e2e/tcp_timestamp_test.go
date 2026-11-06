@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
@@ -69,19 +70,32 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 	rep.SendPacketWithTS(data, tsVal)
 	rep.VerifyACKWithTS(tsVal)
 
-	// Next we send an out of order packet.
+	// An old duplicate must neither enter the receive queue nor advance the
+	// acknowledgment, even when its sequence number is in the window.
+	nextSeqNum := rep.NextSeqNum
+	rep.SendPacketWithTS([]byte{9, 9, 9}, tsVal-1)
+	rep.NextSeqNum = nextSeqNum
+	rep.VerifyACKWithTS(tsVal)
+
+	// A newer out-of-order packet must not advance TS.Recent before the
+	// sequence hole is filled.
 	rep.NextSeqNum += 3
 	tsVal += 200
 	rep.SendPacketWithTS(data, tsVal)
-
-	// The ACK should contain the original sequenceNumber and an older TS.
 	rep.NextSeqNum -= 6
 	rep.VerifyACKWithTS(tsVal - 200)
-
-	// Next we fill the hole and the returned ACK should contain the
-	// cumulative sequence number acking all data sent till now and have the
-	// latest timestamp sent below in its TSEcr field.
 	tsVal -= 100
+	rep.SendPacketWithTS(data, tsVal)
+	rep.NextSeqNum += 3
+	rep.VerifyACKWithTS(tsVal)
+
+	// An already queued packet with an older timestamp must also remain
+	// valid when a newer timestamp fills the hole: PAWS applies at arrival.
+	rep.NextSeqNum += 3
+	rep.SendPacketWithTS(data, tsVal)
+	rep.NextSeqNum -= 6
+	rep.VerifyACKWithTS(tsVal)
+	tsVal += 100
 	rep.SendPacketWithTS(data, tsVal)
 	rep.NextSeqNum += 3
 	rep.VerifyACKWithTS(tsVal)
@@ -105,9 +119,9 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 		t.Fatalf("Timed out waiting for data to arrive")
 	}
 
-	// There should be 5 views to read and each of them should
+	// There should be 7 views to read and each of them should
 	// contain the same data.
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 7; i++ {
 		buf := make([]byte, len(data))
 		w := tcpip.SliceWriter(buf)
 		result, err := c.EP.Read(&w, tcpip.ReadOptions{})
@@ -124,6 +138,52 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 			t.Fatalf("Data is different: got: %v, want: %v", got, want)
 		}
 	}
+}
+
+func TestTimeStampPAWSExpiry(t *testing.T) {
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{
+		MTU:      e2e.DefaultMTU,
+		EnableV4: true,
+		Clock:    clock,
+	})
+	defer c.Cleanup()
+	rep := createConnectedWithTimestampOption(c)
+	data := []byte{1, 2, 3}
+	const tsVal = 100
+	rep.SendPacketWithTS(data, tsVal)
+	rep.VerifyACKWithTS(tsVal)
+
+	// An equal, accepted timestamp refreshes the age of TS.Recent. Its
+	// original 24-day deadline must no longer allow stale data through.
+	clock.Advance(23 * 24 * time.Hour)
+	rep.SendPacketWithTS(data, tsVal)
+	rep.VerifyACKWithTS(tsVal)
+	clock.Advance(24 * time.Hour)
+	nextSeqNum := rep.NextSeqNum
+	rep.SendPacketWithTS(data, tsVal-1)
+	rep.NextSeqNum = nextSeqNum
+	rep.VerifyACKWithTS(tsVal)
+
+	// TS.Recent still protects this connection just before the 24-day
+	// expiry required by RFC 7323 section 5.5.
+	clock.Advance(23*24*time.Hour - time.Nanosecond)
+	nextSeqNum = rep.NextSeqNum
+	rep.SendPacketWithTS(data, tsVal-1)
+	rep.NextSeqNum = nextSeqNum
+	rep.VerifyACKWithTS(tsVal)
+
+	// Once the old timestamp expires, the same packet is acceptable and
+	// becomes the new TS.Recent; the connection must not remain frozen.
+	clock.Advance(time.Nanosecond)
+	rep.SendPacketWithTS(data, tsVal-1)
+	rep.VerifyACKWithTS(tsVal - 1)
+
+	// The newly accepted timestamp immediately protects against older data.
+	nextSeqNum = rep.NextSeqNum
+	rep.SendPacketWithTS(data, tsVal-2)
+	rep.NextSeqNum = nextSeqNum
+	rep.VerifyACKWithTS(tsVal - 1)
 }
 
 // TestTimeStampZeroWindowProbe tests that the ACK of a zero-window probe at

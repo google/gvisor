@@ -36,8 +36,9 @@ func TestPAWSMechanism(t *testing.T) {
 	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
+	const sentTSVal uint32 = 1000
 	options := make([]byte, header.TCPOptionTSLength)
-	header.EncodeTSOption(currentTS(), 0, options)
+	header.EncodeTSOption(sentTSVal, 0, options)
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: options})
 	synAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
 	if err != nil {
@@ -48,18 +49,23 @@ func TestPAWSMechanism(t *testing.T) {
 		t.Fatalf("expected TSOpt from DUT, options we got:\n%s", hex.Dump(synAck.Options))
 	}
 	tsecr := parsedSynOpts.TSVal
-	header.EncodeTSOption(currentTS(), tsecr, options)
+	// A stale final ACK must not complete the handshake. The challenge ACK
+	// proves it was processed before checking the listener's readiness.
+	header.EncodeTSOption(sentTSVal-1, tsecr, options)
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options})
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
+		t.Fatalf("expected an ACK rejecting the stale handshake timestamp: %s", err)
+	}
+	if got := dut.Poll(t, []unix.PollFd{{Fd: listenFD, Events: unix.POLLIN}}, 0); len(got) != 0 {
+		t.Fatalf("listener became readable after stale handshake ACK: %v", got)
+	}
+	header.EncodeTSOption(sentTSVal, tsecr, options)
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options})
 	acceptFD, _ := dut.Accept(t, listenFD)
 	defer dut.Close(t, acceptFD)
 
 	sampleData := []byte("Sample Data")
-	sentTSVal := currentTS()
 	header.EncodeTSOption(sentTSVal, tsecr, options)
-	// 3ms here is chosen arbitrarily to make sure we have increasing timestamps
-	// every time we send one, it should not cause any flakiness because timestamps
-	// only need to be non-decreasing.
-	time.Sleep(3 * time.Millisecond)
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
 
 	gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
@@ -82,9 +88,6 @@ func TestPAWSMechanism(t *testing.T) {
 
 	badTSVal := sentTSVal - 100
 	header.EncodeTSOption(badTSVal, tsecr, options)
-	// 3ms here is chosen arbitrarily and this time.Sleep() should not cause flakiness
-	// due to the exact same reasoning discussed above.
-	time.Sleep(3 * time.Millisecond)
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
 
 	gotTCP, err = conn.Expect(t, testbench.TCP{AckNum: lastAckNum, Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
@@ -101,8 +104,12 @@ func TestPAWSMechanism(t *testing.T) {
 	if parsedOpts.TSEcr != sentTSVal {
 		t.Fatalf("TSEcr should match our sent TSVal, %d != %d", parsedOpts.TSEcr, sentTSVal)
 	}
-}
 
-func currentTS() uint32 {
-	return uint32(time.Now().UnixNano() / 1e6)
+	// Unlike stale data, a reset with an acceptable sequence number must
+	// close the connection even if its timestamp is old (RFC 7323, 5.2).
+	conn.Send(t, testbench.TCP{SeqNum: lastAckNum, Flags: testbench.TCPFlags(header.TCPFlagRst), Options: options})
+	dut.PollOne(t, acceptFD, unix.POLLERR, time.Second)
+	if got, want := dut.GetSockOptInt(t, acceptFD, unix.SOL_SOCKET, unix.SO_ERROR), int32(unix.ECONNRESET); got != want {
+		t.Fatalf("SO_ERROR = %d, want %d", got, want)
+	}
 }

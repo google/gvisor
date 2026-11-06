@@ -230,8 +230,6 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_paws_mechanism",
-        # TODO(b/156682000): Fix netstack then remove the line below.
-        expect_netstack_failure = True,
     ),
     PacketimpactTestInfo(
         name = "tcp_user_timeout",
