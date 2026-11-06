@@ -92,8 +92,6 @@ const LockEOF = math.MaxInt64
 type OwnerInfo struct {
 	// PID is the process ID of the lock owner.
 	PID int32
-	// OFD is whether this is an open file descriptor lock.
-	OFD bool
 }
 
 // Lock is a regional file lock.  It consists of either a single writer
@@ -140,7 +138,7 @@ type Locks struct {
 // LockRegion attempts to acquire a typed lock for the uid on a region of a
 // file. Returns nil if successful in locking the region, otherwise an
 // appropriate error is returned.
-func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, ofd bool, block bool) error {
+func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, block bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Like Linux's fs/locks.c:locks_get_lock_context, allocate only for a lock request.
@@ -152,7 +150,7 @@ func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t 
 		// Blocking locks must run in a loop because we'll be woken up whenever an unlock event
 		// happens for this lock. We will then attempt to take the lock again and if it fails
 		// continue blocking.
-		err := l.locks.lock(uid, ownerPID, t, r, ofd)
+		err := l.locks.lock(uid, ownerPID, t, r)
 		if err == linuxerr.ErrWouldBlock && block {
 			// Note: we release the lock in EventRegister below, in
 			// order to avoid a possible race.
@@ -202,14 +200,14 @@ func (l *Locks) UnlockRegion(uid UniqueID, r LockRange) {
 
 // makeLock returns a new typed Lock that has either uid as its only reader
 // or uid as its only writer.
-func makeLock(uid UniqueID, ownerPID int32, t LockType, ofd bool) Lock {
+func makeLock(uid UniqueID, ownerPID int32, t LockType) Lock {
 	value := Lock{Readers: make(map[UniqueID]OwnerInfo)}
 	switch t {
 	case ReadLock:
-		value.Readers[uid] = OwnerInfo{PID: ownerPID, OFD: ofd}
+		value.Readers[uid] = OwnerInfo{PID: ownerPID}
 	case WriteLock:
 		value.Writer = uid
-		value.WriterInfo = OwnerInfo{PID: ownerPID, OFD: ofd}
+		value.WriterInfo = OwnerInfo{PID: ownerPID}
 	default:
 		panic(fmt.Sprintf("makeLock: invalid lock type %d", t))
 	}
@@ -227,7 +225,7 @@ func (l Lock) isHeld(uid UniqueID) bool {
 // lock sets uid as a holder of a typed lock on Lock.
 //
 // Preconditions: canLock is true for the range containing this Lock.
-func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType, ofd bool) {
+func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType) {
 	switch t {
 	case ReadLock:
 		// If we are already a reader, then this is a no-op.
@@ -245,7 +243,7 @@ func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType, ofd bool) {
 			// Ensure that there is no longer a writer.
 			l.Writer = nil
 		}
-		l.Readers[uid] = OwnerInfo{PID: ownerPID, OFD: ofd}
+		l.Readers[uid] = OwnerInfo{PID: ownerPID}
 		return
 	case WriteLock:
 		// If we are already the writer, then this is a no-op.
@@ -266,7 +264,7 @@ func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType, ofd bool) {
 		// Ensure that there is only a writer.
 		clear(l.Readers)
 		l.Writer = uid
-		l.WriterInfo = OwnerInfo{PID: ownerPID, OFD: ofd}
+		l.WriterInfo = OwnerInfo{PID: ownerPID}
 	default:
 		panic(fmt.Sprintf("lock: invalid lock type %d", t))
 	}
@@ -336,7 +334,7 @@ func (l *Lock) isOnlyReader(uid UniqueID) bool {
 // LockRange. Otherwise, linuxerr.ErrWouldBlock is returned.
 //
 // Preconditions: r.Start <= r.End (will panic otherwise).
-func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange, ofd bool) error {
+func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) error {
 	if r.Start > r.End {
 		panic(fmt.Sprintf("lock: r.Start %d > r.End %d", r.Start, r.End))
 	}
@@ -358,7 +356,7 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange, of
 	seg, gap := l.Find(r.Start)
 	if gap.Ok() {
 		// Fill in the gap and get the next segment to modify.
-		seg = l.Insert(gap, gap.Range().Intersect(r), makeLock(uid, ownerPID, t, ofd)).NextSegment()
+		seg = l.Insert(gap, gap.Range().Intersect(r), makeLock(uid, ownerPID, t)).NextSegment()
 	} else if seg.Start() < r.Start {
 		// Get our first segment to modify.
 		_, seg = l.Split(seg, r.Start)
@@ -372,12 +370,12 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange, of
 		// Set the lock on the segment. This is guaranteed to
 		// always be safe, given canLock above.
 		value := seg.ValuePtr()
-		value.lock(uid, ownerPID, t, ofd)
+		value.lock(uid, ownerPID, t)
 
 		// Fill subsequent gaps.
 		gap = seg.NextGap()
 		if gr := gap.Range().Intersect(r); gr.Length() > 0 {
-			seg = l.Insert(gap, gr, makeLock(uid, ownerPID, t, ofd)).NextSegment()
+			seg = l.Insert(gap, gr, makeLock(uid, ownerPID, t)).NextSegment()
 		} else {
 			seg = gap.NextSegment()
 		}
@@ -508,10 +506,8 @@ func ComputeRange(start, length, offset int64) (LockRange, error) {
 // of type t on range r. It returns a Flock struct representing this
 // information as the F_GETLK fcntl does.
 //
-// Note that the PID returned in the flock structure is relative to the root PID
-// namespace. It needs to be converted to the caller's PID namespace before
-// returning to userspace.
-func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange, ofd bool) linux.Flock {
+// A positive PID is relative to the root PID namespace. OFD locks report -1.
+func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange) linux.Flock {
 	f := linux.Flock{Type: linux.F_UNLCK}
 	switch t {
 	case ReadLock:
@@ -528,11 +524,11 @@ func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r Lock
 	case WriteLock:
 		l.testRegion(r, func(lock Lock, start, length uint64) bool {
 			if lock.Writer == nil {
-				for k, v := range lock.Readers {
-					if k != uid && v.OFD == ofd {
+				for reader, owner := range lock.Readers {
+					if reader != uid {
 						// Stop at the first conflict detected.
 						f.Type = linux.F_RDLCK
-						f.PID = v.PID
+						f.PID = owner.PID
 						f.Start = int64(start)
 						f.Len = int64(length)
 						return false
