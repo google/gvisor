@@ -360,17 +360,19 @@ func TestPinnedCopyOutFromOverlappingVectorsDuringFork(t *testing.T) {
 
 func BenchmarkCopyOutFrom(b *testing.B) {
 	for _, bc := range []struct {
-		name    string
-		size    int
-		vectors int
-		stride  int
-		reverse bool
+		name     string
+		size     int
+		vectors  int
+		stride   int
+		reverse  bool
+		clusters int
 	}{
 		{name: "contiguous-4KiB", size: 4 << 10, vectors: 1},
 		{name: "contiguous-1MiB", size: 1 << 20, vectors: 1},
 		{name: "contiguous-80MiB", size: 80 << 20, vectors: 1},
 		{name: "fragmented-1MiB", size: 1 << 20, vectors: 1024},
 		{name: "packed-1MiB", size: 1 << 20, vectors: 1024, stride: 1 << 10},
+		{name: "clustered-1MiB", size: 1 << 20, vectors: 1024, stride: 1 << 10, clusters: 3},
 		{name: "sparse-1MiB", size: 1 << 20, vectors: 1024, stride: 16 << 10},
 		{name: "reversed-1MiB", size: 1 << 20, vectors: 1024, reverse: true},
 	} {
@@ -391,8 +393,12 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 				if bc.stride != 0 {
 					stride = bc.stride
 				}
+				length := stride * bc.vectors
+				if bc.clusters > 1 {
+					length += (bc.clusters - 1) * 2 * pageSizeInt
+				}
 				addr, err := mm.MMap(ctx, memmap.MMapOpts{
-					Length: uint64(stride * bc.vectors), Private: true,
+					Length: uint64(length), Private: true,
 					Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
 				})
 				if err != nil {
@@ -405,6 +411,9 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 						index = len(ranges) - 1 - i
 					}
 					start := addr + hostarch.Addr(index*stride)
+					if bc.clusters > 1 {
+						start += hostarch.Addr(index*bc.clusters/bc.vectors) * 2 * pageSizeAddr
+					}
 					ranges[i] = hostarch.AddrRange{Start: start, End: start + hostarch.Addr(bc.size/bc.vectors)}
 				}
 				ars := hostarch.AddrRangeSeqFromSlice(ranges)
@@ -429,6 +438,44 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+func BenchmarkCopyOutFromIter(b *testing.B) {
+	for _, bc := range []struct {
+		name string
+		size int
+	}{
+		{name: "1MiB", size: 1 << 20},
+		{name: "80MiB", size: 80 << 20},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			ctx := contexttest.Context(b)
+			defer pgalloc.MemoryFileFromContext(ctx).Destroy()
+			mm := testMemoryManager(ctx, b)
+			defer mm.DecUsers(ctx)
+			addr, err := mm.MMap(ctx, memmap.MMapOpts{
+				Length: uint64(bc.size), Private: true,
+				Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+			ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: addr, End: addr + hostarch.Addr(bc.size)})
+			data := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bytes.Repeat([]byte{'x'}, bc.size)))
+			src := safemem.BlockSeqReader{Blocks: data}
+			if _, err := mm.CopyOutFromIter(ctx, ars, &src, usermem.IOOpts{}); err != nil {
+				b.Fatal(err)
+			}
+			b.SetBytes(int64(bc.size))
+			b.ReportAllocs()
+			for b.Loop() {
+				src.Blocks = data
+				if n, err := mm.CopyOutFromIter(ctx, ars, &src, usermem.IOOpts{}); n != int64(bc.size) || err != nil {
+					b.Fatalf("copy got n=%d err=%v", n, err)
+				}
+			}
+		})
 	}
 }
 
@@ -702,9 +749,11 @@ func TestCopyOutFromIterVectoredRead(t *testing.T) {
 	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
-	const size = 2 << 20
+	const size = 3 << 20
 	const firstSize = 1 << 19
-	secondSize := firstSize + pageSizeInt
+	const firstOffset = 1
+	const secondOffset = 1<<20 + 17
+	secondSize := 1<<20 + pageSizeInt
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
 		Length: size, Private: true,
 		Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
@@ -717,11 +766,12 @@ func TestCopyOutFromIterVectoredRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := append(bytes.Repeat([]byte{'a'}, firstSize), bytes.Repeat([]byte{'b'}, secondSize)...)
+	data[firstSize+(1<<20)] = 'c'
 	src := safemem.BlockSeqReader{Blocks: safemem.BlockSeqOf(safemem.BlockFromSafeSlice(data))}
 	ars := hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
 		{Start: addr, End: addr},
-		{Start: addr, End: addr + firstSize},
-		{Start: addr + 1<<20, End: addr + 1<<20 + hostarch.Addr(secondSize)},
+		{Start: addr + firstOffset, End: addr + firstOffset + firstSize},
+		{Start: addr + secondOffset, End: addr + secondOffset + hostarch.Addr(secondSize)},
 		{Start: addr + size, End: addr + size},
 	})
 	if n, err := mm.CopyOutFromIter(ctx, ars, &src, usermem.IOOpts{}); n != int64(len(data)) || err != nil {
@@ -732,8 +782,8 @@ func TestCopyOutFromIterVectoredRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := bytes.Clone(initial)
-	copy(want[:firstSize], data[:firstSize])
-	copy(want[1<<20:], data[firstSize:])
+	copy(want[firstOffset:firstOffset+firstSize], data[:firstSize])
+	copy(want[secondOffset:], data[firstSize:])
 	if !bytes.Equal(got, want) {
 		t.Fatal("CopyOutFromIter wrote incorrect vector data or changed a gap")
 	}

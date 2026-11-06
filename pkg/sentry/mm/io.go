@@ -499,7 +499,8 @@ func (mm *MemoryManager) copyOutFromPinnedRange(ctx context.Context, ar hostarch
 		}
 		pinAR.End = pendaddr
 	}
-	prs, private := mm.pinPMAsLocked(ctx, hostarch.AddrRangeSeqOf(pinAR), nil)
+	var storage [1]PinnedRange
+	prs, private := mm.pinPMAsLocked(ctx, hostarch.AddrRangeSeqOf(pinAR), storage[:0])
 	mm.activeMu.Unlock()
 	if perr != nil {
 		pinErr = perr
@@ -1025,7 +1026,7 @@ func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at ho
 		return mm.getIOMappingsLocked(mm.pmas.FindSegment(ar.Start), ar, at)
 	}
 
-	var ims []safemem.Block
+	ims := make([]safemem.Block, 0, ars.NumRanges())
 	var t *ioBufTracker
 	unbufBytes := uint64(0)
 	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
