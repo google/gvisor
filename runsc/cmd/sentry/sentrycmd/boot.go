@@ -368,8 +368,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	timer.ReachedAt("Go code running", starttime.GoStartTime())
 	timer.Reached("boot subcommand dispatched")
 
-	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
-		util.Fatalf("host page size (%d) does not match compiled page size (%d)", hostPageSize, hostarch.PageSize)
+	if err := hostarch.CheckHostPageSize(); err != nil {
+		util.Fatalf("%v", err)
 	}
 
 	// Set traceback level

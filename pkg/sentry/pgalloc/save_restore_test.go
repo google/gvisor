@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !pagesize_64k
-
 package pgalloc
 
 import (
@@ -349,7 +347,7 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 				}
 				page := 0
 				f.forEachMappingSlice(fr, func(bs []byte) {
-					for off := 0; off < len(bs); off += hostarch.PageSize {
+					for off := 0; off < len(bs); off += int(hostarch.PageSize) {
 						if page%16 == 0 {
 							bs[off] = 1
 						} else {
@@ -374,7 +372,7 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 // MemoryFile with 1% or all of its pages written through its mapping.
 func BenchmarkSaveToDiskBacked(b *testing.B) {
 	const size = 256 << 20
-	pages := size / hostarch.PageSize
+	pages := size / int(hostarch.PageSize)
 	dir := b.TempDir()
 	for _, bc := range []struct {
 		file    string
