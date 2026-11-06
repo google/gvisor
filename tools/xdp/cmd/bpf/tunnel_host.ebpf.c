@@ -72,7 +72,12 @@ section("xdp") int xdp_prog(struct xdp_md* ctx) {
   if ((void*)(ip + 1) > data_end) {
     return XDP_PASS;
   }
-  cursor += sizeof(*ip);
+  // ihl is the header length in 32-bit words, including any IP options.
+  // Values below 5 are invalid; leave those packets to the host stack.
+  if (ip->ihl < 5) {
+    return XDP_PASS;
+  }
+  cursor += ip->ihl * 4;
 
   if (ip->protocol != IPPROTO_TCP) {
     return bpf_redirect_map(&dev_map, ctx->rx_queue_index, XDP_PASS);
