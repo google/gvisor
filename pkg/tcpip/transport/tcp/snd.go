@@ -122,6 +122,12 @@ type sender struct {
 	// variant of Nagle holds another small segment until this one is ACKed.
 	smallSegmentEnd seqnum.Value
 
+	// The first two duplicate ACKs for SndUna may send new data beyond cwnd.
+	// Count the ACKs even if no data was queued. Reno discounts only the
+	// extra packets added to Outstanding when calculating its loss threshold.
+	limitedTransmitACKs uint8
+	limitedTransmits    uint8
+
 	// lr is the loss recovery algorithm used by the sender.
 	lr lossRecovery
 
@@ -654,6 +660,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	s.recordRetransmitTS()
 
 	s.state = tcpip.RTORecovery
+	s.limitedTransmits = 0
 	s.cc.HandleRTOExpired()
 
 	// Mark the next segment to be sent as the first unacknowledged one and
@@ -1123,6 +1130,12 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
 func (s *sender) sendData() {
+	s.sendDataWithLimitedTransmit(false)
+}
+
+// +checklocks:s.ep.mu
+// +checklocksexclude:s.rtt.rttMutex
+func (s *sender) sendDataWithLimitedTransmit(limitedTransmit bool) {
 	limit := s.MaxPayloadSize
 	if s.gso {
 		limit = int(s.ep.gso.MaxSize - header.TCPTotalHeaderMaximumSize - 1)
@@ -1140,10 +1153,20 @@ func (s *sender) sendData() {
 		}
 	}
 
+	// RFC 5681 §3.2: a duplicate ACK can clock out one new packet, up to
+	// two beyond cwnd. Leave cwnd itself unchanged so a later application
+	// write cannot spend this ACK again.
+	maxFlight := s.SndCwnd
+	if limitedTransmit && !s.inRecovery() && s.Outstanding >= maxFlight && s.Outstanding-maxFlight < 2 {
+		if next := s.writeNext; next != nil && !s.isAssignedSequenceNumber(next) && next.payloadSize() != 0 {
+			maxFlight = s.Outstanding + 1
+		}
+	}
+
 	var dataSent bool
-	for seg := s.writeNext; seg != nil && s.Outstanding < s.SndCwnd; seg = seg.Next() {
+	for seg := s.writeNext; seg != nil && s.Outstanding < maxFlight; seg = seg.Next() {
 		// NOTE(gvisor.dev/issue/11632): Use uint64 to avoid overflow.
-		cwndLimit := uint64(s.SndCwnd-s.Outstanding) * uint64(s.MaxPayloadSize)
+		cwndLimit := uint64(maxFlight-s.Outstanding) * uint64(s.MaxPayloadSize)
 		if cwndLimit < uint64(limit) {
 			limit = int(cwndLimit)
 		}
@@ -1158,6 +1181,9 @@ func (s *sender) sendData() {
 		}
 		dataSent = true
 		s.Outstanding += s.pCount(seg, s.MaxPayloadSize)
+		if maxFlight > s.SndCwnd {
+			s.limitedTransmits++
+		}
 		s.updateWriteNext(seg.Next())
 	}
 
@@ -1180,6 +1206,7 @@ func (s *sender) enterRecovery() {
 	// We inflate the cwnd by 3 to account for the 3 packets which triggered
 	// the 3 duplicate ACKs and are now not in flight.
 	s.SndCwnd = s.Ssthresh + 3
+	s.limitedTransmits = 0
 	s.SackedOut = 0
 	s.DupAckCount = 0
 	s.FastRecovery.First = s.SndUna
@@ -1298,7 +1325,7 @@ func (s *sender) shouldEnterRecovery() bool {
 // a retransmit is needed according to the rules in RFC 6582 (NewReno).
 //
 // +checklocks:s.ep.mu
-func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
+func (s *sender) detectLoss(seg *segment, dupAck bool) (fastRetransmit bool) {
 	// We're not in fast recovery yet.
 
 	// If RACK is enabled and there is no reordering we should honor the
@@ -1310,7 +1337,7 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 		}
 	}
 
-	if !s.isDupAck(seg) {
+	if !dupAck {
 		s.DupAckCount = 0
 		return false
 	}
@@ -1627,7 +1654,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	}
 
 	ack := rcvdSeg.ackNumber
-	fastRetransmit := false
+	var fastRetransmit, limitedTransmit bool
 	// Do not leave fast recovery, if the ACK is out of range.
 	if s.FastRecovery.Active {
 		// Leave fast recovery if it acknowledges all the data covered by
@@ -1637,7 +1664,12 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		}
 	} else {
 		// Detect loss by counting the duplicates and enter recovery.
-		fastRetransmit = s.detectLoss(rcvdSeg)
+		dupAck := s.isDupAck(rcvdSeg)
+		if dupAck && !s.inRecovery() && s.limitedTransmitACKs < 2 {
+			s.limitedTransmitACKs++
+			limitedTransmit = true
+		}
+		fastRetransmit = s.detectLoss(rcvdSeg, dupAck)
 	}
 
 	// See if TLP based recovery was successful.
@@ -1668,6 +1700,8 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Ignore ack if it doesn't acknowledge any new data.
 	if (ack - 1).InRange(s.SndUna, s.SndNxt) {
 		s.DupAckCount = 0
+		s.limitedTransmitACKs = 0
+		s.limitedTransmits = 0
 
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
 		// Specifically we should only update the RTO using TSEcr if the
@@ -1838,7 +1872,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
-	s.sendData()
+	s.sendDataWithLimitedTransmit(limitedTransmit)
 }
 
 // sendSegment sends the specified segment.
