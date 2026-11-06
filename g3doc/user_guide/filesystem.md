@@ -251,8 +251,10 @@ following annotations in the container spec:
 The `source` and `type` annotations are required. Other fields:
 
 -   The `overlay` annotation is optional. By default, no overlay will be applied
-    and you will have a read-only rootfs. It accepts one of the
-    [backing mediums](#backing-mediums).
+    and you will have a read-only rootfs whose mount points must already exist
+    in the image. It accepts one of the [backing mediums](#backing-mediums).
+    When the OCI root is read-only, a requested overlay uses memory so that
+    runsc can create missing mount points during startup.
 -   The `options` annotation is optional. It is a comma separated list of
     options. Currently only `size` option is supported. It can be used to define
     the size limit of tmpfs upper layer.
