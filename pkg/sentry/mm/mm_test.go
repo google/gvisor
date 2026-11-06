@@ -360,17 +360,19 @@ func TestPinnedCopyOutFromOverlappingVectorsDuringFork(t *testing.T) {
 
 func BenchmarkCopyOutFrom(b *testing.B) {
 	for _, bc := range []struct {
-		name    string
-		size    int
-		vectors int
-		stride  int
-		reverse bool
+		name     string
+		size     int
+		vectors  int
+		stride   int
+		reverse  bool
+		clusters int
 	}{
 		{name: "contiguous-4KiB", size: 4 << 10, vectors: 1},
 		{name: "contiguous-1MiB", size: 1 << 20, vectors: 1},
 		{name: "contiguous-80MiB", size: 80 << 20, vectors: 1},
 		{name: "fragmented-1MiB", size: 1 << 20, vectors: 1024},
 		{name: "packed-1MiB", size: 1 << 20, vectors: 1024, stride: 1 << 10},
+		{name: "clustered-1MiB", size: 1 << 20, vectors: 1024, stride: 1 << 10, clusters: 3},
 		{name: "sparse-1MiB", size: 1 << 20, vectors: 1024, stride: 16 << 10},
 		{name: "reversed-1MiB", size: 1 << 20, vectors: 1024, reverse: true},
 	} {
@@ -391,8 +393,12 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 				if bc.stride != 0 {
 					stride = bc.stride
 				}
+				length := stride * bc.vectors
+				if bc.clusters > 1 {
+					length += (bc.clusters - 1) * 2 * pageSizeInt
+				}
 				addr, err := mm.MMap(ctx, memmap.MMapOpts{
-					Length: uint64(stride * bc.vectors), Private: true,
+					Length: uint64(length), Private: true,
 					Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
 				})
 				if err != nil {
@@ -405,6 +411,9 @@ func BenchmarkCopyOutFrom(b *testing.B) {
 						index = len(ranges) - 1 - i
 					}
 					start := addr + hostarch.Addr(index*stride)
+					if bc.clusters > 1 {
+						start += hostarch.Addr(index*bc.clusters/bc.vectors) * 2 * pageSizeAddr
+					}
 					ranges[i] = hostarch.AddrRange{Start: start, End: start + hostarch.Addr(bc.size/bc.vectors)}
 				}
 				ars := hostarch.AddrRangeSeqFromSlice(ranges)

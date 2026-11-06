@@ -841,6 +841,9 @@ func (mm *MemoryManager) pinPMAsLocked(ctx context.Context, ars hostarch.AddrRan
 					continue
 				}
 			}
+			if len(prs) == cap(prs) {
+				prs = slices.Grow(prs, ars.NumRanges()+1)
+			}
 			prs = append(prs, PinnedRange{Source: part, File: f, Offset: fr.Start})
 		}
 	}
@@ -1005,7 +1008,7 @@ func (mm *MemoryManager) internalMappingsLocked(pseg pmaIterator, ar hostarch.Ad
 //
 // +checklocksread:mm.activeMu
 func (mm *MemoryManager) vecInternalMappingsLocked(ars hostarch.AddrRangeSeq) (safemem.BlockSeq, error) {
-	var ims []safemem.Block
+	ims := make([]safemem.Block, 0, ars.NumRanges())
 	for ; !ars.IsEmpty(); ars = ars.Tail() {
 		ar := ars.Head()
 		if ar.Length() == 0 {

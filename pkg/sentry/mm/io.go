@@ -928,7 +928,7 @@ func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at ho
 		return mm.getIOMappingsLocked(mm.pmas.FindSegment(ar.Start), ar, at)
 	}
 
-	var ims []safemem.Block
+	ims := make([]safemem.Block, 0, ars.NumRanges())
 	var t *ioBufTracker
 	unbufBytes := uint64(0)
 	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
