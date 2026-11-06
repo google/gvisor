@@ -41,7 +41,10 @@ type tester struct {
 
 // NewConnImpl implements testsuite.Tester.NewServer.
 func (tr tester) NewConnImpl(t *testing.T) lisafs.ConnectionImpl {
-	return fs.NewConnectionImpl(&fs.Config{InodeNumbers: tr.inodeNumbers})
+	return fs.NewConnectionImpl(&fs.Config{
+		HostUDS:      config.HostUDSAll,
+		InodeNumbers: tr.inodeNumbers,
+	})
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.
@@ -56,9 +59,7 @@ func (tester) SetUserGroupIDSupported() bool {
 
 // BindSupported implements testsuite.Tester.BindSupported.
 func (tester) BindSupported() bool {
-	// In some test environments, the mount path is really large and bind(2)
-	// fails with EINVAL if the path length >= 108.
-	return false
+	return true
 }
 
 func TestFSGofer(t *testing.T) {
