@@ -209,10 +209,7 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 func (b *BridgeEndpoint) MTU() uint32 {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.mtu > header.EthernetMinimumSize {
-		return b.mtu - header.EthernetMinimumSize
-	}
-	return 0
+	return b.mtu
 }
 
 // SetMTU implements stack.LinkEndpoint.SetMTU.
