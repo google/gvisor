@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <linux/ethtool.h>
 #include <linux/if.h>
 #include <linux/if_addr.h>
@@ -21,8 +22,13 @@
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <sched.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <cstdint>
@@ -32,8 +38,13 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
+#include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
+#include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -176,6 +187,285 @@ TEST(NetdeviceTest, InterfaceFlags) {
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
   EXPECT_EQ(ifr.ifr_flags & IFF_UP, IFF_UP);
   EXPECT_EQ(ifr.ifr_flags & IFF_RUNNING, IFF_RUNNING);
+}
+
+// Returns the errno of connecting a fresh UDP socket to 127.0.0.1 (AF_INET) or
+// ::1 (AF_INET6), or 0.
+int ConnectUdpToLoopback(int family = AF_INET) {
+  int fd = socket(family, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    return errno;
+  }
+  TestAddress addr =
+      (family == AF_INET ? V4Loopback() : V6Loopback()).WithPort(9);
+  int rc = connect(fd, AsSockAddr(&addr.addr), addr.addr_len);
+  int err = rc < 0 ? errno : 0;
+  close(fd);
+  return err;
+}
+
+// Sets or clears IFF_UP on lo with SIOCSIFFLAGS.
+PosixError SetLoopbackUp(bool up) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor sock, Socket(AF_INET, SOCK_DGRAM, 0));
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+  if (ioctl(sock.get(), SIOCGIFFLAGS, &ifr) < 0) {
+    return PosixError(errno, "SIOCGIFFLAGS");
+  }
+  if (up) {
+    ifr.ifr_flags |= IFF_UP;
+  } else {
+    ifr.ifr_flags &= ~IFF_UP;
+  }
+  if (ioctl(sock.get(), SIOCSIFFLAGS, &ifr) < 0) {
+    return PosixError(errno, "SIOCSIFFLAGS");
+  }
+  return NoError();
+}
+
+TEST(NetdeviceTest, SetInterfaceFlagsDownUp) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+
+  // A new network namespace's loopback may start down; bring it up. Status
+  // bits that are not user-settable are ignored.
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+  ifr.ifr_flags |= IFF_UP | IFF_RUNNING | IFF_LOWER_UP;
+  ASSERT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr), SyscallSucceeds());
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET6), 0);
+
+  // SIOCSIFFLAGS takes the complete flag set: without IFF_UP the device is
+  // taken down.
+  ifr.ifr_flags &= ~IFF_UP;
+  ASSERT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr), SyscallSucceeds());
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_flags & (IFF_UP | IFF_RUNNING | IFF_LOWER_UP), 0);
+  // NETDEV_DOWN leaves host-scope IPv4 local routes in place
+  // (fib_sync_down_dev), so the route lookup still succeeds. rt6_disable_ip
+  // deletes the IPv6 local route for ::1.
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET6), EADDRNOTAVAIL);
+
+  ifr.ifr_flags |= IFF_UP;
+  ASSERT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr), SyscallSucceeds());
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(AF_INET6), 0);
+}
+
+// SIOCSIFFLAGS only reads the ifreq (dev_ioctl clears need_copyout), so it
+// succeeds on a buffer that SIOCGIFFLAGS cannot write to.
+TEST(NetdeviceTest, SetInterfaceFlagsDoesNotCopyOut) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  struct ifreq* ifr = reinterpret_cast<struct ifreq*>(m.ptr());
+  snprintf(ifr->ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, ifr), SyscallSucceeds());
+  ASSERT_THAT(mprotect(m.ptr(), m.len(), PROT_READ), SyscallSucceeds());
+
+  EXPECT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, ifr),
+              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, ifr), SyscallSucceeds());
+}
+
+// Traffic routed through a down loopback is dropped at the device
+// (__dev_queue_xmit); for UDP the send itself still succeeds.
+TEST(NetdeviceTest, DownedLoopbackDropsDatagrams) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  ASSERT_NO_ERRNO(SetLoopbackUp(true));
+
+  FileDescriptor rcv =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct sockaddr_in addr = {};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  socklen_t addrlen = sizeof(addr);
+  ASSERT_THAT(bind(rcv.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
+  ASSERT_THAT(getsockname(rcv.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  const struct timeval timeout = {.tv_sec = 5};
+  ASSERT_THAT(
+      setsockopt(rcv.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)),
+      SyscallSucceeds());
+
+  FileDescriptor snd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  auto send_byte = [&](char c) {
+    return sendto(snd.get(), &c, 1, 0, AsSockAddr(&addr), addrlen);
+  };
+  char got = 0;
+
+  ASSERT_THAT(send_byte('a'), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(recv)(rcv.get(), &got, 1, 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(got, 'a');
+
+  ASSERT_NO_ERRNO(SetLoopbackUp(false));
+  const ssize_t sent = send_byte('b');
+  // gVisor fails the send instead of dropping the datagram at the device.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(sent, SyscallSucceedsWithValue(1));
+  }
+
+  // If 'b' had been delivered it would be read before 'c'.
+  ASSERT_NO_ERRNO(SetLoopbackUp(true));
+  ASSERT_THAT(send_byte('c'), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(recv)(rcv.get(), &got, 1, 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(got, 'c');
+}
+
+// A TCP SYN sent through a down loopback is dropped, so connect does not
+// complete until the device is back up and the SYN is retransmitted.
+TEST(NetdeviceTest, DownedLoopbackDelaysTcpConnect) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  ASSERT_NO_ERRNO(SetLoopbackUp(true));
+
+  FileDescriptor listener =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  struct sockaddr_in addr = {};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  socklen_t addrlen = sizeof(addr);
+  ASSERT_THAT(bind(listener.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(getsockname(listener.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listener.get(), 1), SyscallSucceeds());
+
+  ASSERT_NO_ERRNO(SetLoopbackUp(false));
+  FileDescriptor conn = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
+  ASSERT_THAT(connect(conn.get(), AsSockAddr(&addr), addrlen),
+              SyscallFailsWithErrno(EINPROGRESS));
+  struct pollfd pfd = {.fd = conn.get(), .events = POLLOUT};
+  EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 200), SyscallSucceedsWithValue(0));
+
+  ASSERT_NO_ERRNO(SetLoopbackUp(true));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 10000), SyscallSucceedsWithValue(1));
+  int err = -1;
+  socklen_t errlen = sizeof(err);
+  ASSERT_THAT(getsockopt(conn.get(), SOL_SOCKET, SO_ERROR, &err, &errlen),
+              SyscallSucceeds());
+  EXPECT_EQ(err, 0);
+}
+
+TEST(NetdeviceTest, SetInterfaceFlagsErrors) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+
+  struct ifreq missing = ifr;
+  snprintf(missing.ifr_name, IFNAMSIZ, "nodev0");
+  EXPECT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &missing),
+              SyscallFailsWithErrno(ENODEV));
+
+  // The capability is checked before the device is looked up.
+  AutoCapability cap(CAP_NET_ADMIN, false);
+  EXPECT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &missing),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// netstack cannot model these user-settable flags, so a request that changes
+// one fails instead of being silently ignored. Linux applies them.
+TEST(NetdeviceTest, SetInterfaceFlagsUnsupportedFlags) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+  ifr.ifr_flags |= IFF_UP;
+  ASSERT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr), SyscallSucceeds());
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+  const short current = ifr.ifr_flags;
+
+  // Writing back the flags that were read is accepted.
+  ASSERT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr), SyscallSucceeds());
+
+  for (short flag :
+       {IFF_PROMISC, IFF_ALLMULTI, IFF_NOARP, IFF_DEBUG, IFF_NOTRAILERS,
+        IFF_DYNAMIC, IFF_MULTICAST, IFF_PORTSEL, IFF_AUTOMEDIA}) {
+    SCOPED_TRACE(flag);
+    // The request also clears IFF_UP: nothing is applied if any part fails.
+    ifr.ifr_flags = (current | flag) & ~IFF_UP;
+    EXPECT_THAT(ioctl(sock.get(), SIOCSIFFLAGS, &ifr),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    ifr.ifr_flags = 0;
+    ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+    EXPECT_EQ(ifr.ifr_flags, current);
+  }
 }
 
 TEST(NetdeviceTest, InterfaceMTU) {
