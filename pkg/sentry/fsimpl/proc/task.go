@@ -296,7 +296,15 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
-	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid); err != nil {
+		return err
+	}
+	// /proc/[pid]/fdinfo/[fd] stays mode 0444. Opening it still requires
+	// ptrace read access. See fs/proc/fd.c:proc_fdinfo_permission.
+	if _, ok := i.Inode.(*fdInfoData); ok && !kernel.ContextCanTrace(ctx, i.owner, false /* attach */) {
+		return linuxerr.EACCES
+	}
+	return nil
 }
 
 // +checklocksexclude:i.owner.mu
