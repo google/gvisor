@@ -586,7 +586,13 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 
 	//    (2) returns to TIME-WAIT state if the SYN turns out
 	//      to be an old duplicate".
-	if s.flags.Contains(header.TCPFlagSyn) && r.RcvNxt.LessThan(segSeq) {
+	//
+	// A SYN that also carries an ACK is not a reopening SYN: it belongs to
+	// the old incarnation (a retransmitted SYN-ACK, for instance) and is
+	// handled below like any other segment of that incarnation. Linux does
+	// the same: tcp_timewait_state_process only reopens for a SYN without
+	// ACK or RST.
+	if s.flags.Contains(header.TCPFlagSyn) && !s.flags.Contains(header.TCPFlagAck) && r.RcvNxt.LessThan(segSeq) {
 		return false, true
 	}
 
