@@ -142,7 +142,6 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	return fd, nil
 }
 
-// Preconditions: vp.mu must be held.
 func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks, creds *auth.Credentials) (*vfs.FileDescription, error) {
 	fd := &VFSPipeFD{
 		pipe: &vp.pipe,
