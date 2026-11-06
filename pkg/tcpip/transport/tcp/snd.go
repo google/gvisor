@@ -194,7 +194,7 @@ type sender struct {
 	// RFC3522 Section 3.2.
 	retransmitTS uint32
 
-	// startCork start corking the segments.
+	// startCork records for restore whether corkTimer was armed at save time.
 	startCork bool
 
 	// corkTimer is used to drain the segments which are held when TCP_CORK
@@ -872,9 +872,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				available = limit
 			}
 
-			// nextTooBig indicates that the next segment was too
-			// large to entirely fit in the current segment. It
-			// would be possible to split the next segment and merge
+			// It would be possible to split the next segment and merge
 			// the portion that fits, but unexpectedly splitting
 			// segments can have user visible side-effects which can
 			// break applications. For example, RFC 7766 section 8
@@ -882,17 +880,17 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			// should be sent in the same TCP segment to avoid
 			// triggering bugs in poorly written DNS
 			// implementations.
-			var nextTooBig bool
 			for nSeg := seg.Next(); nSeg != nil && nSeg.payloadSize() != 0; nSeg = seg.Next() {
 				if seg.payloadSize()+nSeg.payloadSize() > available {
-					nextTooBig = true
 					break
 				}
 				seg.merge(nSeg)
 				s.writeList.Remove(nSeg)
 				nSeg.DecRef()
 			}
-			if !nextTooBig {
+			// Only the last write can wait for more data to coalesce.
+			// In particular, a FIN queued behind it must not wait.
+			if seg.Next() == nil {
 				nagle := s.Outstanding > 0 && s.ep.ops.GetDelayOption() &&
 					s.SndUna.LessThan(s.smallSegmentEnd) && !s.SndNxt.LessThan(s.smallSegmentEnd)
 				cork := s.ep.ops.GetCorkOption()
@@ -905,27 +903,23 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 					switch {
 					case full != 0:
 						limit = min(limit, full)
-						if cork {
-							s.startCork = false
-							s.corkTimer.disable()
-						}
 					case seg.payloadSize() < available:
 						// Preserve the exception for a short segment that fills
 						// the available window, and Nagle's precedence over CORK.
 						if nagle {
 							return false
 						}
-						if !s.startCork {
-							s.startCork = true
-							// Enable the timer for
-							// 200ms, after which
-							// the segments are drained.
+						if !s.corkTimer.enabled() {
+							// Flush a partial segment after 200 ms.
 							s.corkTimer.enable(MinRTO)
 						}
 						return false
 					}
 				}
 			}
+			// This segment is no longer waiting for more data. A later
+			// short write must not inherit its cork deadline.
+			s.corkTimer.disable()
 		}
 
 		// Window calculations need the prospective sequence number. Leave
