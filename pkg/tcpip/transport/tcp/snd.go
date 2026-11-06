@@ -162,8 +162,13 @@ type sender struct {
 	// maxRTO is the maximum permitted value for sender.rto.
 	maxRTO time.Duration
 
-	// maxRetries is the maximum permitted retransmissions.
+	// maxRetries is the maximum number of retransmission timeouts permitted
+	// without forward progress.
 	maxRetries uint32
+
+	// rtoRetries is the number of retransmission timeouts since SND.UNA last
+	// advanced.
+	rtoRetries uint32
 
 	// gso is set if generic segmentation offload is enabled.
 	gso bool
@@ -694,8 +699,11 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 
 	seg := s.writeNext
 	// RFC 1122 4.2.3.5: Close the connection when the number of
-	// retransmissions for this segment is beyond a limit.
-	if seg != nil && seg.xmitCount > s.maxRetries {
+	// retransmissions is beyond a limit. Count only timeouts. SACK recovery and
+	// RACK can resend a segment many times within a few RTTs, which does not
+	// show that the path has failed.
+	s.rtoRetries++
+	if seg != nil && s.rtoRetries > s.maxRetries {
 		s.ep.stack.Stats().TCP.EstablishedTimedout.Increment()
 		return &tcpip.ErrTimeout{}
 	}
@@ -1668,6 +1676,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Ignore ack if it doesn't acknowledge any new data.
 	if (ack - 1).InRange(s.SndUna, s.SndNxt) {
 		s.DupAckCount = 0
+		s.rtoRetries = 0
 
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
 		// Specifically we should only update the RTO using TSEcr if the

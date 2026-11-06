@@ -1124,6 +1124,168 @@ func TestRACKWithWindowFull(t *testing.T) {
 	c.CheckNoPacket("unexpected packet received after userTimeout has expired")
 }
 
+// retryLimitConn is a connection with a manual clock and a low retry limit. The
+// peer negotiates SACK without timestamps.
+type retryLimitConn struct {
+	*context.Context
+	t     *testing.T
+	clock *faketime.ManualClock
+	peer  *context.RawEndpoint
+	mss   int
+}
+
+func newRetryLimitConn(t *testing.T, maxRetries int, recovery tcpip.TCPRecovery) *retryLimitConn {
+	t.Helper()
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{EnableV4: true, MTU: 1500, Clock: clock})
+	t.Cleanup(c.Cleanup)
+	e2e.SetStackSACKPermitted(t, c, true)
+	opt := tcpip.TCPMaxRetriesOption(maxRetries)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+	}
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &recovery); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, recovery, recovery, err)
+	}
+	r := &retryLimitConn{Context: c, t: t, clock: clock, peer: e2e.CreateConnectedWithSACKPermittedOption(c)}
+	r.mss = int(r.info().SndMss)
+	return r
+}
+
+func (r *retryLimitConn) info() tcpip.TCPInfoOption {
+	r.t.Helper()
+	var info tcpip.TCPInfoOption
+	if err := r.EP.GetSockOpt(&info); err != nil {
+		r.t.Fatalf("GetSockOpt(TCPInfoOption): %s", err)
+	}
+	return info
+}
+
+func (r *retryLimitConn) write(data []byte) {
+	r.t.Helper()
+	if n, err := r.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+		r.t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+	}
+}
+
+func (r *retryLimitConn) ack(bytesReceived int, sacks ...header.SACKBlock) {
+	r.SendAckWithSACK(r.peer.NextSeqNum, bytesReceived, sacks)
+	r.Stack().Pause()
+	r.Stack().Resume()
+}
+
+// timeout fires the retransmission timer and checks the resulting counters.
+func (r *retryLimitConn) timeout(wantTimeouts, wantTimedOut uint64) {
+	r.t.Helper()
+	r.clock.Advance(r.info().RTO)
+	r.checkCounters(wantTimeouts, wantTimedOut)
+}
+
+func (r *retryLimitConn) checkCounters(wantTimeouts, wantTimedOut uint64) {
+	r.t.Helper()
+	stats := r.Stack().Stats().TCP
+	if got := stats.Timeouts.Value(); got != wantTimeouts {
+		r.t.Errorf("Timeouts = %d, want %d", got, wantTimeouts)
+	}
+	if got := stats.EstablishedTimedout.Value(); got != wantTimedOut {
+		r.t.Fatalf("EstablishedTimedout = %d, want %d", got, wantTimedOut)
+	}
+}
+
+// TestRetryLimitCountsOnlyTimeouts checks that a segment RACK resends many times
+// during SACK recovery does not use up the retry limit, which still applies to
+// the timeouts that follow.
+func TestRetryLimitCountsOnlyTimeouts(t *testing.T) {
+	const (
+		maxRetries = 2
+		rtt        = 10 * time.Millisecond
+		segments   = 10
+	)
+	c := newRetryLimitConn(t, maxRetries, tcpip.TCPRACKLossDetection)
+	data := make([]byte, segments*c.mss)
+	c.write(data)
+	for i := 0; i < segments; i++ {
+		c.ReceiveAndCheckPacket(data, i*c.mss, c.mss)
+	}
+
+	// Count every transmission of the oldest segment, so that the test cannot
+	// pass without the condition it exercises.
+	head := c.peer.AckNum
+	headSends := 1
+	drain := func() {
+		for pkt := c.GetPacketNonBlocking(); pkt != nil; pkt = c.GetPacketNonBlocking() {
+			if seqnum.Value(header.TCP(header.IPv4(pkt.AsSlice()).Payload()).SequenceNumber()) == head {
+				headSends++
+			}
+			pkt.Release()
+		}
+	}
+	sackFrom := func(first int) {
+		c.ack(0, header.SACKBlock{
+			Start: head.Add(seqnum.Size(first * c.mss)),
+			End:   head.Add(seqnum.Size(segments * c.mss)),
+		})
+		drain()
+	}
+
+	// The last three segments arrive, which starts SACK recovery and resends
+	// the oldest segment. The repeated SACK sends the other repairs.
+	c.clock.Advance(rtt)
+	sackFrom(segments - 3)
+	sackFrom(segments - 3)
+
+	// Each later repair that arrives proves that the oldest one was lost.
+	for first := segments - 4; first > segments-7; first-- {
+		c.clock.Advance(rtt)
+		sackFrom(first)
+	}
+	if got, want := c.info().CcState, tcpip.SACKRecovery; got != want {
+		t.Fatalf("after resending the oldest segment: state = %v, want %v", got, want)
+	}
+	if headSends <= maxRetries {
+		t.Fatalf("oldest segment sent %d times before the first timeout, want more than %d", headSends, maxRetries)
+	}
+	c.checkCounters(0, 0)
+
+	// The limit allows maxRetries timeouts, and each one resends the segment.
+	for timeouts := uint64(1); timeouts <= maxRetries; timeouts++ {
+		c.timeout(timeouts, 0)
+		c.ReceiveAndCheckPacket(data, 0, c.mss)
+	}
+	c.timeout(maxRetries+1, 1)
+}
+
+// TestRetryLimitRestartsAfterProgress checks that a cumulative ACK restarts the
+// count of timeouts.
+func TestRetryLimitRestartsAfterProgress(t *testing.T) {
+	const maxRetries = 2
+	// Without RACK, the first timer to fire is the retransmission timer rather
+	// than a tail loss probe.
+	c := newRetryLimitConn(t, maxRetries, 0)
+	data := make([]byte, 2*c.mss)
+	c.write(data)
+	c.ReceiveAndCheckPacket(data, 0, c.mss)
+	c.ReceiveAndCheckPacket(data, c.mss, c.mss)
+
+	timeouts := uint64(0)
+	for i := 0; i < maxRetries; i++ {
+		timeouts++
+		c.timeout(timeouts, 0)
+		c.ReceiveAndCheckPacket(data, 0, c.mss)
+	}
+
+	// The first segment is acknowledged, so the timeouts of the second start
+	// from zero, and the limit is reached only after maxRetries more.
+	c.ack(c.mss)
+	c.ReceiveAndCheckPacket(data, c.mss, c.mss)
+	for i := 0; i < maxRetries; i++ {
+		timeouts++
+		c.timeout(timeouts, 0)
+		c.ReceiveAndCheckPacket(data, c.mss, c.mss)
+	}
+	c.timeout(timeouts+1, 1)
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
