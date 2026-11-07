@@ -15,17 +15,191 @@
 package forwardcmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
+	pgallocpb "gvisor.dev/gvisor/pkg/sentry/pgalloc/pgalloc_metadata_go_proto"
+	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/state/wire"
 	"gvisor.dev/gvisor/runsc/flag"
 )
+
+// checkpointObject encodes one wire struct and any objects its field references.
+func checkpointObject(t *testing.T, name, field string, value wire.Object, referenced ...wire.Object) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := wire.Writer{Writer: &buf}
+	if err := state.WriteHeader(&w, uint64(1+len(referenced)), true); err != nil {
+		t.Fatal(err)
+	}
+	wire.Save(&w, &wire.Type{Name: name, Fields: []string{field}})
+	root := wire.Struct{TypeID: 1}
+	root.Alloc(1)
+	*root.Field(0) = value
+	wire.Save(&w, wire.Uint(1))
+	wire.Save(&w, &root)
+	for i, ref := range referenced {
+		wire.Save(&w, wire.Uint(i+2))
+		wire.Save(&w, ref)
+	}
+	return buf.Bytes()
+}
+
+func checkpointRaw(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := state.WriteHeader(&wire.Writer{Writer: &buf}, uint64(len(data)), false); err != nil {
+		t.Fatal(err)
+	}
+	buf.Write(data)
+	return buf.Bytes()
+}
+
+// The generic printer can show an inline MemoryFile if its protobuf is given
+// an ordinary raw frame in place of the historical little-endian byte count.
+func checkpointMemoryFile(t *testing.T, pages int) (inline, framed []byte) {
+	t.Helper()
+	meta := &pgallocpb.MemoryFileMetadataProto{Version: 1}
+	if pages != 0 {
+		meta.MemAcct = []*pgallocpb.MemAcctRangeProto{{End: uint64(pages), KnownCommitted: true}}
+	}
+	data, err := proto.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline = append(binary.LittleEndian.AppendUint64(nil, uint64(len(data))), data...)
+	framed = checkpointRaw(t, data)
+	if pages != 0 {
+		raw := checkpointRaw(t, make([]byte, pages))
+		inline, framed = append(inline, raw...), append(framed, raw...)
+	}
+	return inline, framed
+}
+
+func dumpTestStatefile(t *testing.T, cmd Statefile, payload []byte) (string, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "checkpoint")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := statefile.NewWriter(f, nil, map[string]string{"runsc_version": "test", "container_count": "1"})
+	if err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if _, err := w.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	var out strings.Builder
+	err = cmd.writeTo(&out, r)
+	return out.String(), err
+}
+
+func TestStatefileDumpMemoryFiles(t *testing.T) {
+	join := func(parts ...[]byte) []byte { return bytes.Join(parts, nil) }
+	cpu := checkpointObject(t, "pkg/cpuid.FeatureSet", "marker", wire.Uint(1))
+	kernel := checkpointObject(t, "pkg/sentry/kernel.Kernel", "marker", wire.Uint(2))
+	roots := join(cpu, kernel)
+	const ownerType = "pkg/sentry/kernel.privateMemoryFileMetadata"
+	noOwners := checkpointObject(t, ownerType, "owners", wire.Nil{})
+	oneOwner := checkpointObject(t, ownerType, "owners", &wire.Slice{
+		Length: 1, Capacity: 2, Ref: wire.Ref{Root: 2},
+	}, &wire.Array{Contents: []wire.Object{wire.Nil{}, wire.Nil{}}})
+	app, appFramed := checkpointMemoryFile(t, 17)
+	private, privateFramed := checkpointMemoryFile(t, 29)
+	tail := checkpointObject(t, "legacyMemoryFile", "marker", wire.Uint(3))
+	for _, tc := range []struct {
+		name             string
+		payload, generic []byte
+	}{
+		{"Generic", tail, tail},
+		{"CPUWithoutKernel", join(cpu, tail), join(cpu, tail)},
+		{"Split", roots, roots},
+		{"Legacy", join(roots, tail), join(roots, tail)},
+		{"ZeroOwners", join(roots, app, noOwners), join(roots, appFramed, noOwners)},
+		{"Inline", join(roots, app, oneOwner, private), join(roots, appFramed, oneOwner, privateFramed)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, html := range []bool{false, true} {
+				got, err := dumpTestStatefile(t, Statefile{html: html}, tc.payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				print := pretty.PrintText
+				var want strings.Builder
+				if html {
+					want.WriteString("<html><body>\n")
+					print = pretty.PrintHTML
+				}
+				if err := print(&want, bytes.NewReader(tc.generic)); err != nil {
+					t.Fatal(err)
+				}
+				if html {
+					want.WriteString("</body></html>\n")
+				}
+				if tc.name == "Inline" {
+					_, rest, found := strings.Cut(got, "(17 bytes non-object data)\n")
+					if !found || !strings.Contains(rest, "(29 bytes non-object data)\n") {
+						t.Fatalf("missing application or private page region in %q", got)
+					}
+				}
+				if got != want.String() {
+					t.Errorf("html=%t: got %q, want %q", html, got, want.String())
+				}
+			}
+		})
+	}
+	t.Run("GenericCollision", func(t *testing.T) {
+		// Eight empty raw frames also look like a zero-length protobuf.
+		data := join(roots, bytes.Repeat(checkpointRaw(t, nil), 8), tail)
+		if _, err := dumpTestStatefile(t, Statefile{}, data); err == nil {
+			t.Error("accepted malformed MemoryFile data after the checkpoint roots")
+		}
+	})
+
+	// Truncate the last owner's metadata or pages: there is no later frame
+	// whose absence could mask a reader that accepted a short MemoryFile.
+	for _, tc := range []struct {
+		name string
+		body []byte
+		want error
+	}{
+		{"MissingOwners", app, io.ErrUnexpectedEOF},
+		{"NonSliceOwners", join(app, checkpointObject(t, ownerType, "owners", wire.Uint(0))), nil},
+		{"MissingPrivate", join(app, oneOwner), io.EOF},
+		{"ExtraPrivate", join(app, noOwners, private), nil},
+		{"ShortMetadata", join(app, oneOwner, private[:9]), io.ErrUnexpectedEOF},
+		{"ShortPage", join(app, oneOwner, private[:len(private)-1]), io.EOF},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := printState(io.Discard, bytes.NewReader(join(roots, tc.body)), false)
+			if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) {
+				t.Fatalf("printState error = %v, want rejection (cause %v)", err, tc.want)
+			}
+		})
+	}
+}
 
 func TestCheckStickyDirOwnership(t *testing.T) {
 	stickyWorld := &unix.Stat_t{Mode: unix.S_IFDIR | unix.S_ISVTX | 0777, Uid: 0}

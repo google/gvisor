@@ -189,6 +189,7 @@ go_library(
         "//pkg/sentry/checkpoint",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc/metadata",
         "//pkg/sentry/state/stateio",
         "//pkg/sentry/usage",
         "//pkg/state",
@@ -224,4 +225,8 @@ go_test(
 proto_library(
     name = "pgalloc_metadata",
     srcs = ["pgalloc.proto"],
+    visibility = [
+        "//pkg/sentry/pgalloc:__subpackages__",
+        "//runsc/cmd/sentry/forwardcmd:__pkg__",
+    ],
 )

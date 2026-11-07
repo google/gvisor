@@ -108,8 +108,12 @@ func TestPrintGraphSliceNotation(t *testing.T) {
 	}
 	raw := encodeRawGraph(t, &x)
 	var out strings.Builder
-	if err := PrintGraph(&out, raw, 0, false); err != nil {
-		t.Fatalf("PrintGraph: %v", err)
+	name, length, err := PrintGraphRoot(&out, raw, 0, false, x.StateTypeName(), "part")
+	if err != nil {
+		t.Fatalf("PrintGraphRoot: %v", err)
+	}
+	if name != x.StateTypeName() || length != int64(len(x.part)) {
+		t.Errorf("root = (%q, %d), want (%q, %d)", name, length, x.StateTypeName(), len(x.part))
 	}
 	got := out.String()
 	for _, want := range []string{"full: g0r1[:4:4]", "part: g0r2[:2:8]"} {

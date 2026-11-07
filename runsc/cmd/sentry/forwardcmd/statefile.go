@@ -15,6 +15,7 @@
 package forwardcmd
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -29,6 +30,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc/metadata"
 	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
@@ -485,6 +487,72 @@ func writeStagedExistingFile(dirFD int, base, outPath string, inStat, origStat *
 	return nil
 }
 
+// printState switches to the MemoryFile layout when the first two frames
+// have the roots written by kernel.Kernel.SaveTo. Other state streams use
+// the ordinary graph printer.
+func printState(w io.Writer, input io.Reader, asHTML bool) error {
+	r := bufio.NewReader(input)
+	const ownersRoot = "pkg/sentry/kernel.privateMemoryFileMetadata"
+	var sawCPU, needOwners bool
+	after := func(frame int, root string, length int64, report func(int64) error) error {
+		switch frame {
+		case 0:
+			sawCPU = root == (*cpuid.FeatureSet)(nil).StateTypeName()
+		case 1:
+			if !sawCPU || root != "pkg/sentry/kernel.Kernel" {
+				return nil
+			}
+			prefix, err := r.Peek(8)
+			if err == io.EOF && len(prefix) == 0 {
+				return nil // The split checkpoint ends after the kernel graph.
+			}
+			if err != nil {
+				return io.ErrUnexpectedEOF
+			}
+			// Before the protobuf conversion the next ordinary object header
+			// used a 10-byte varint. A nonnegative LE64 length cannot have
+			// all eight of these continuation bits set.
+			if prefix[7]&0x80 != 0 {
+				for _, b := range prefix {
+					if b&0x80 == 0 {
+						return fmt.Errorf("invalid MemoryFile metadata length")
+					}
+				}
+				return nil
+			}
+			needOwners = true
+			return metadata.InspectInline(r, report)
+		default:
+			if !needOwners {
+				return nil
+			}
+			if frame != 2 || root != ownersRoot || length < 0 {
+				return fmt.Errorf("missing or invalid private MemoryFile owners slice")
+			}
+			for i := int64(0); i < length; i++ {
+				if err := metadata.InspectInline(r, report); err != nil {
+					return fmt.Errorf("private MemoryFile %d of %d: %w", i+1, length, err)
+				}
+			}
+			if _, err := r.Peek(1); err != io.EOF {
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("unexpected data after the private MemoryFiles")
+			}
+			needOwners = false
+		}
+		return nil
+	}
+	if err := pretty.PrintWithAfterGraph(w, r, asHTML, ownersRoot, "owners", after); err != nil {
+		return err
+	}
+	if needOwners {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
 func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
 	var key []byte
 	if s.key != "" {
@@ -502,21 +570,16 @@ func (s *Statefile) writeTo(output io.Writer, input *os.File) error {
 			if _, err := fmt.Fprintf(output, "<html><body>\n"); err != nil {
 				return fmt.Errorf("error writing output: %w", err)
 			}
-			if err := pretty.PrintHTML(output, rc); err != nil {
-				return fmt.Errorf("error printing state: %w", err)
-			}
-			if err := rc.Verify(); err != nil {
-				return fmt.Errorf("error verifying statefile: %w", err)
-			}
+		}
+		if err := printState(output, rc, s.html); err != nil {
+			return fmt.Errorf("error printing state: %w", err)
+		}
+		if err := rc.Verify(); err != nil {
+			return fmt.Errorf("error verifying statefile: %w", err)
+		}
+		if s.html {
 			if _, err := fmt.Fprintf(output, "</body></html>\n"); err != nil {
 				return fmt.Errorf("error writing output: %w", err)
-			}
-		} else {
-			if err := pretty.PrintText(output, rc); err != nil {
-				return fmt.Errorf("error printing state: %w", err)
-			}
-			if err := rc.Verify(); err != nil {
-				return fmt.Errorf("error verifying statefile: %w", err)
 			}
 		}
 		return nil
