@@ -1179,6 +1179,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
+        "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:posix_error",
@@ -1190,6 +1191,7 @@ cc_binary(
         "//test/util:time_util",
         "//test/util:timer_util",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
     ],
 )
