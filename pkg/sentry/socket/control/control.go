@@ -42,6 +42,10 @@ type SCMCredentials interface {
 	// Credentials returns properly namespaced values for the sender's pid, uid
 	// and gid.
 	Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
+
+	// Groups returns the sender's supplementary group IDs, translated into
+	// t's user namespace.
+	Groups(t *kernel.Task) []auth.GID
 }
 
 // scmCredentials represents an SCM_CREDENTIALS socket control message.
@@ -56,6 +60,12 @@ type scmCredentials struct {
 
 	kuid auth.KUID
 	kgid auth.KGID
+
+	// extraKGIDs are the supplementary groups of the task that created the
+	// credentials, reported by SO_PEERGROUPS. SCM_CREDENTIALS messages don't
+	// carry supplementary groups, so this is deliberately left out of
+	// Equals(). The slice is shared with auth.Credentials and is immutable.
+	extraKGIDs []auth.KGID
 }
 
 // NewSCMCredentials creates a new SCM_CREDENTIALS socket control message
@@ -77,7 +87,7 @@ func NewSCMCredentials(t *kernel.Task, cred linux.ControlMessageCredentials) (SC
 	if namespacedIDs == nil {
 		return nil, linuxerr.ESRCH
 	}
-	return &scmCredentials{namespacedIDs, kuid, kgid}, nil
+	return &scmCredentials{pids: namespacedIDs, kuid: kuid, kgid: kgid}, nil
 }
 
 // Equals implements transport.CredentialsControlMessage.Equals.
@@ -178,6 +188,16 @@ func (c *scmCredentials) Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID,
 	gid := c.kgid.In(t.UserNamespace()).OrOverflow()
 
 	return pid, uid, gid
+}
+
+// Groups implements SCMCredentials.Groups.
+func (c *scmCredentials) Groups(t *kernel.Task) []auth.GID {
+	userNS := t.UserNamespace()
+	gids := make([]auth.GID, len(c.extraKGIDs))
+	for i, kgid := range c.extraKGIDs {
+		gids[i] = kgid.In(userNS).OrOverflow()
+	}
+	return gids
 }
 
 // PackCredentials packs the credentials in the control message (or default
@@ -647,7 +667,12 @@ func MakeCreds(t *kernel.Task) SCMCredentials {
 		return nil
 	}
 	tcred := t.Credentials()
-	return &scmCredentials{t.PIDNamespacedIDs(), tcred.EffectiveKUID, tcred.EffectiveKGID}
+	return &scmCredentials{
+		pids:       t.PIDNamespacedIDs(),
+		kuid:       tcred.EffectiveKUID,
+		kgid:       tcred.EffectiveKGID,
+		extraKGIDs: tcred.ExtraKGIDs,
+	}
 }
 
 // New creates default control messages if needed.
