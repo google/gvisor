@@ -11,6 +11,7 @@ go_library(
         "annotations.go",
         "cleanup.go",
         "fuse.go",
+        "options.go",
         "utils.go",
         "volumes.go",
     ],
@@ -32,6 +33,7 @@ go_test(
     srcs = [
         "cleanup_test.go",
         "fuse_test.go",
+        "options_test.go",
         "volumes_test.go",
     ],
     embed = [":utils"],
