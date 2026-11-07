@@ -58,6 +58,10 @@ type MountNamespace struct {
 	// MountNamespace; this is required to ensure that
 	// VFS.PrepareDeleteDentry() and VFS.PrepareRemoveDentry() operate
 	// correctly on unreferenced MountNamespaces.
+	//
+	// Callers reach this namespace through mounts owned by the same VFS.
+	// checklocks cannot infer that owner equality from the mount and namespace
+	// relationships, so it cannot verify a vfs.mountMu field guard here.
 	mountpoints map[*Dentry]uint32
 
 	// mounts is the total number of mounts in this mount namespace.
