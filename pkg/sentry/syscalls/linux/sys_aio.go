@@ -361,7 +361,9 @@ func getAIOCallback(t *kernel.Task, fd, eventFD *vfs.FileDescription, cbAddr hos
 		// Update the result.
 		if err != nil {
 			err = HandleIOError(ctx, ev.Result != 0 /* partial */, err, nil /* never interrupted */, "aio", fd)
-			ev.Result = -int64(kernel.ExtractErrno(err, 0))
+			if err != nil {
+				ev.Result = -int64(kernel.ExtractErrno(err, 0))
+			}
 		}
 
 		// Queue the result for delivery.
