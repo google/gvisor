@@ -63,7 +63,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	// Leaving the top page unmapped here is fine: it only ever holds the
 	// host thread stack (accessed via the lower half), whereas the upper
 	// half is only used for kernel entry code and Go heap structs.
-	const maxUpperOffset = ring0.UserspaceSize - hostarch.PageSize
+	maxUpperOffset := ring0.UserspaceSize - hostarch.PageSize
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		if pr.virtual >= maxUpperOffset {
 			return true
