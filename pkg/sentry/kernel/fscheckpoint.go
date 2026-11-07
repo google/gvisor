@@ -122,7 +122,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 	}
 	return k.quiescePausedAnd(ctx, func() error {
 		for i := range opts.Bundles {
-			if err := k.fsSaveLocked(ctx, &opts.Bundles[i], opts.RunscVersion, nil /* mfsToSave */, nil /* matchCtx */); err != nil {
+			if err := k.fsSaveLocked(ctx, &opts.Bundles[i], opts.RunscVersion, nil /* mfsToSave */, nil /* matchCtx */, pgalloc.SaveOpts{}); err != nil {
 				return fmt.Errorf("bundle %d: %w", i, err)
 			}
 		}
@@ -167,7 +167,7 @@ func (k *Kernel) newFSCheckpointMatchContext(ctx context.Context, paths []checkp
 // fsSaveLocked collects a filesystem checkpoint of bundle.
 //
 // Preconditions: The kernel must be paused and quiesced.
-func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVersion string, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) error {
+func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVersion string, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext, mfOpts pgalloc.SaveOpts) error {
 	if matchCtx == nil {
 		matchCtx = k.newFSCheckpointMatchContext(ctx, bundle.Paths)
 	}
@@ -199,9 +199,7 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVe
 		asyncPageSaveWg.Wait()
 	})
 	defer asyncPageSaveCleanup.Clean()
-	mfOpts := pgalloc.SaveOpts{
-		PagesFile: apfs,
-	}
+	mfOpts.PagesFile = apfs
 
 	manifest := &fspb.Manifest{
 		Version:      1,

@@ -9,6 +9,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "filestore_snapshot.go",
         "gofer_to_host_rpc.go",
         "null_netns.go",
         "state_file.go",
@@ -22,6 +23,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/hostmm",
         "//pkg/sighandling",
@@ -80,6 +82,7 @@ go_test(
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/seccheck/scsdk",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
@@ -149,6 +152,7 @@ go_test(
     srcs = ["serialization_test.go"],
     deps = [
         ":container",
+        "//pkg/sentry/checkpoint",
         "//runsc/sandbox",
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
@@ -180,6 +184,7 @@ go_test(
     ],
     deps = [
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/test/testutil",
         "//runsc/config",
         "//runsc/flag",
@@ -252,6 +257,18 @@ go_test(
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+go_test(
+    name = "filestore_snapshot_test",
+    size = "small",
+    srcs = ["filestore_snapshot_test.go"],
+    embed = [":container"],
+    deps = [
+        "//pkg/sentry/checkpoint",
+        "//runsc/config",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )

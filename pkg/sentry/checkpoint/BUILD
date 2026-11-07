@@ -6,7 +6,10 @@ licenses(["notice"])
 
 go_library(
     name = "checkpoint",
-    srcs = ["checkpoint.go"],
+    srcs = [
+        "checkpoint.go",
+        "filestore_snapshot.go",
+    ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/checkpoint",
     visibility = ["//pkg/sentry:internal"],
 )

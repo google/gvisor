@@ -18,6 +18,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/kernel",
         "//pkg/sentry/platform",
         "//pkg/sentry/state/stateio",

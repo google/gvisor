@@ -49,6 +49,7 @@ import (
 	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/prometheus"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
@@ -259,6 +260,9 @@ type Sandbox struct {
 	// Checkpointed will be true when the sandbox has been checkpointed.
 	Checkpointed bool `json:"checkpointed"`
 
+	// FilestoreReflink records whether the Sentry permits reflink ioctls.
+	FilestoreReflink bool `json:"filestoreReflink"`
+
 	// Restored will be true when the sandbox has been restored.
 	Restored bool `json:"restored"`
 
@@ -372,7 +376,8 @@ type Args struct {
 // sandbox.
 func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	s := &Sandbox{
-		ID: args.ID,
+		FilestoreReflink: conf.FilestoreReflink == config.FilestoreReflinkEnabled,
+		ID:               args.ID,
 		CgroupJSON: cgroup.CgroupJSON{
 			Cgroup: args.Cgroup,
 		},
@@ -2024,6 +2029,22 @@ func (s *Sandbox) SignalProcessGroup(cid string, pgid int32, sig unix.Signal) er
 
 // CheckpointOpts contains the options for checkpointing a sandbox.
 type CheckpointOpts struct {
+	// SkipFilestorePages causes private (disk-backed) MemoryFiles to save
+	// only segment metadata; their backing host files (gofer filestore files)
+	// must be captured out-of-band and adopted on restore.
+	SkipFilestorePages bool
+
+	// FilestoreSnapshotDir internalizes the filestore capture: inside the
+	// checkpoint's freeze window, each private MemoryFile's backing file is
+	// reflink-cloned to FilestoreSnapshotFiles[i] (created by the container
+	// process under this directory), and the filestores.json manifest is
+	// written to FilestoreSidecarFile and renamed into place on success.
+	// Requires SkipFilestorePages.
+	FilestoreSnapshotDir     string
+	FilestoreSnapshotTargets []checkpoint.ResourceID
+	FilestoreSnapshotFiles   []*os.File
+	FilestoreSidecarFile     *os.File
+
 	Compression               statefile.CompressionLevel
 	Resume                    bool
 	Direct                    bool
@@ -2063,6 +2084,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
 		Resume:                         opts.Resume,
+		PrivateMFExternalContent:       opts.SkipFilestorePages,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
 		SplitFSCheckpointPaths:         bundles,
@@ -2086,6 +2108,29 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return err
 	}
 
+	if opts.FilestoreSnapshotDir != "" {
+		if !opts.SkipFilestorePages {
+			return fmt.Errorf("--filestore-snapshot-dir requires --skip-filestore-pages")
+		}
+		if opt.UseCheckpointGofer {
+			return fmt.Errorf("--filestore-snapshot-dir is not supported with the checkpoint gofer")
+		}
+		// The snapshot destination FDs (and the sidecar temp file, last) are
+		// donated after the save files; the sentry FICLONEs into them inside
+		// the save freeze window.
+		base := len(opt.FilePayload.Files)
+		for i, dest := range opts.FilestoreSnapshotFiles {
+			opt.FilestoreSnapshot = append(opt.FilestoreSnapshot, controlapi.FilestoreSnapshotTarget{
+				ResourceID: opts.FilestoreSnapshotTargets[i],
+				Name:       fmt.Sprintf("filestore-%d", i),
+				FDIndex:    base + i,
+			})
+			opt.FilePayload.Files = append(opt.FilePayload.Files, dest)
+		}
+		opt.FilestoreSidecarFDIndex = base + len(opts.FilestoreSnapshotFiles)
+		opt.FilePayload.Files = append(opt.FilePayload.Files, opts.FilestoreSidecarFile)
+	}
+
 	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
 		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
 	}
@@ -2100,6 +2145,38 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 			}
 		}
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
+	}
+	if opts.FilestoreSnapshotDir != "" {
+		// The sentry wrote the sidecar manifest during the freeze window;
+		// make it durable and visible atomically (tmp+rename).
+		fileSyncStart := time.Now()
+		if err := opts.FilestoreSidecarFile.Sync(); err != nil {
+			return fmt.Errorf("failed to fsync filestores.json: %w", err)
+		}
+		fileSyncNS := time.Since(fileSyncStart).Nanoseconds()
+		if err := opts.FilestoreSidecarFile.Close(); err != nil {
+			return fmt.Errorf("failed to close filestores.json.tmp: %w", err)
+		}
+		final := filepath.Join(opts.FilestoreSnapshotDir, "filestores.json")
+		if err := os.Rename(opts.FilestoreSidecarFile.Name(), final); err != nil {
+			return fmt.Errorf("failed to rename filestores.json into place: %w", err)
+		}
+		// fsync the snapshot directory itself so the rename is durable too;
+		// the artifact files were already fsynced inside the freeze window.
+		snapDir, err := os.Open(opts.FilestoreSnapshotDir)
+		if err != nil {
+			return fmt.Errorf("failed to open filestore snapshot dir %q for fsync: %w", opts.FilestoreSnapshotDir, err)
+		}
+		dirSyncStart := time.Now()
+		if err := snapDir.Sync(); err != nil {
+			snapDir.Close()
+			return fmt.Errorf("failed to fsync filestore snapshot dir %q: %w", opts.FilestoreSnapshotDir, err)
+		}
+		dirSyncNS := time.Since(dirSyncStart).Nanoseconds()
+		if err := snapDir.Close(); err != nil {
+			return fmt.Errorf("failed to close filestore snapshot dir %q: %w", opts.FilestoreSnapshotDir, err)
+		}
+		log.Debugf("Filestore manifest timing: file_fsync_ns=%d directory_fsync_ns=%d", fileSyncNS, dirSyncNS)
 	}
 	s.Checkpointed = true
 	if opts.Resume {

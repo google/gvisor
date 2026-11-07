@@ -45,6 +45,8 @@ const (
 	flagReproduceNFTables       = "reproduce-nftables"
 	flagOCISeccomp              = "oci-seccomp"
 	flagOverlay2                = "overlay2"
+	flagFilestoreAdoptDir       = "filestore-adopt-dir"
+	flagFilestoreAdoptMode      = "filestore-adopt-mode"
 	flagAllowFlagOverride       = "allow-flag-override"
 	flagPauseExternalNetworking = "pause-external-networking"
 	flagAllowConnectedOnSave    = "allow-connected-on-save"
@@ -155,6 +157,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 		"    'size' optional parameter overrides default overlay upper layer size\n")
 	flagSet.Var(tarTimestampResolutionPtr(TarTimestampSeconds), "tar-timestamp-resolution", "resolution of modification times in tar archives of overlay upper layers and filesystem checkpoints. 'nanoseconds' adds about 1 KiB per tar entry. Values: seconds|nanoseconds, default: seconds")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
+	flagSet.Var(FilestoreReflinkDisabled.Ptr(), "filestore-reflink", "Permit reflink filestore snapshots during checkpoint. Set when creating the sandbox.")
+	flagSet.String(flagFilestoreAdoptDir, "", "directory containing host filestore files to adopt as the sandbox's writable-layer backing files, instead of creating new anonymous ones. Files are named 'filestore-<n>' in mount order (root first). Requires restoring a state checkpoint saved with --skip-filestore-pages (experimental)")
+	flagSet.Var(FilestoreAdoptClone.Ptr(), flagFilestoreAdoptMode, "Filestore adoption mode: clone (default) creates an independent reflink copy; consume mutates the artifact in place and supports one writable instance.")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 	flagSet.Var(charDevicePolicyPtr(CharDevEmulatedOnly), "character-device-policy", "controls how character device files on gofer mounts (rootfs and bind mounts) are handled. 'emulated-only' serves devices implemented by the sentry and fails opens of other devices with ENXIO (default and more secure); 'prefer-emulated' serves sentry-implemented devices from the sentry and opens the rest through the host; 'passthrough' opens all of them through the host. Values: emulated-only|prefer-emulated|passthrough, default: emulated-only")
 	flagSet.Var(inodeNumbersPtr(InodeNumbersPassthrough), "inode-numbers", "controls inode numbers on gofer mounts: 'passthrough' reports host inode numbers; 'virtual' assigns sandbox-private sequential numbers, which costs memory per file seen and a stat(2) per getdents(2) entry. Values: passthrough|virtual, default: passthrough")

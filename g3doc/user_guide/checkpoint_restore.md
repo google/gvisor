@@ -124,6 +124,52 @@ that until the sandbox has fully restored (async page loading has completed):
 You can use `runsc wait --restore` to wait for restore to complete fully, after
 which you can clean up the `--image-path` directory if necessary.
 
+### External writable-layer filestores (experimental)
+
+For disk-backed writable layers configured with `--overlay2=all:dir=...`,
+checkpoint can save filestore metadata and a separate reflink snapshot instead
+of copying file contents into the pages file. Enable the host reflink ioctl
+when creating the sandbox:
+
+```bash
+runsc --filestore-reflink=enabled --overlay2=all:dir=/mnt/xfs/stores run <container id>
+runsc checkpoint --image-path=/images/state --skip-filestore-pages \
+  --filestore-snapshot-dir=/mnt/xfs/snapshot <container id>
+runsc --filestore-reflink=enabled --overlay2=all:dir=/mnt/xfs/stores \
+  --filestore-adopt-dir=/mnt/xfs/snapshot restore \
+  --image-path=/images/state <restored container id>
+```
+
+Provide the other top-level flags required by the sandbox as usual. The snapshot
+directory must be empty. Its files must be on the same reflink-capable
+filesystem as the filestores, such as XFS or btrfs. Snapshotting runs while the
+sandbox is paused and supports `--leave-running`. The operation can include
+dirty-data writeback; its latency is not guaranteed to be independent of layer
+size.
+
+Keep the checkpoint image and snapshot directory together. Both are required
+for restore and must be transferred when migrating to another host. The sidecar
+manifest identifies each mount and records exact file sizes and a sampled
+fingerprint. The fingerprint detects some mismatched artifacts; it is not a
+full-file integrity check.
+
+By default, restore makes a private reflink copy of each artifact. Multiple
+restores therefore have independent writable layers and leave the template
+unchanged. `--filestore-adopt-mode=consume` instead consumes each artifact in
+place and supports only one writable instance per artifact.
+
+This interface currently supports single-container sandboxes. Self-backed
+filestores and the checkpoint gofer are not supported by this
+snapshot interface. Split filesystem bundles retain their separate metadata
+and use the same external filestore artifacts. `--skip-filestore-pages` without
+`--filestore-snapshot-dir` is intended for external orchestrators that preserve
+the backing files themselves; that form cannot use `--leave-running`.
+
+The reproducible comparison harness is
+[`test/benchmarks/filestore/benchmark.py`](../../test/benchmarks/filestore/benchmark.py).
+It alternates baseline and candidate runs and verifies the complete payload
+after each restore. Compare its output with `benchstat`.
+
 ## How to use checkpoint/restore in Docker:
 
 Run a container:
