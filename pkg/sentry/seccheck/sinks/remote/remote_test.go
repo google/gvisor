@@ -17,6 +17,7 @@ package remote
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -193,26 +194,61 @@ func TestExample(t *testing.T) {
 		t.Fatalf("newExampleServer(): %v", err)
 	}
 	defer server.stop()
+	checkExample(t, server)
+}
 
+// TestExampleStalledClient checks that a client that connects to the example
+// server but never sends the handshake doesn't prevent other clients from
+// connecting.
+func TestExampleStalledClient(t *testing.T) {
+	server, err := newExampleServer(false)
+	if err != nil {
+		t.Fatalf("newExampleServer(): %v", err)
+	}
+	defer server.stop()
+
+	stalled, err := net.Dial("unixpacket", server.path)
+	if err != nil {
+		t.Fatalf("Dial(%q): %v", server.path, err)
+	}
+	defer stalled.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		checkExample(t, server)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Timed out connecting to the server while another client is stalled in the handshake, out: %q", server.out.String())
+	}
+}
+
+func checkExample(t *testing.T, server *exampleServer) {
 	endpoint, err := setup(server.path)
 	if err != nil {
-		t.Fatalf("setup(): %v", err)
+		t.Errorf("setup(): %v", err)
+		return
 	}
 	endpointFD, err := fd.NewFromFile(endpoint)
 	if err != nil {
 		_ = endpoint.Close()
-		t.Fatalf("NewFromFile(): %v", err)
+		t.Errorf("NewFromFile(): %v", err)
+		return
 	}
 	_ = endpoint.Close()
 
 	r, err := new(nil, endpointFD)
 	if err != nil {
-		t.Fatalf("New(): %v", err)
+		t.Errorf("New(): %v", err)
+		return
 	}
 
 	info := pb.ExitNotifyParentInfo{ExitStatus: 123}
 	if err := r.ExitNotifyParent(nil, seccheck.FieldSet{}, &info); err != nil {
-		t.Fatalf("ExitNotifyParent: %v", err)
+		t.Errorf("ExitNotifyParent: %v", err)
+		return
 	}
 	check := func() error {
 		gotRaw := server.out.String()
