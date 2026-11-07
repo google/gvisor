@@ -38,6 +38,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
@@ -464,6 +465,11 @@ type sock struct {
 	//
 	// +checklocks:readMu
 	sockOptInq bool
+
+	// udpGSOSize corresponds to UDP_SEGMENT. It is the payload size of each
+	// datagram a write is split into when the write carries no UDP_SEGMENT
+	// control message, and zero sends each write as one datagram.
+	udpGSOSize atomicbitops.Uint32
 }
 
 var _ = socket.Socket(&sock{})
@@ -570,7 +576,10 @@ func (s *sock) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Write
 		n, err = s.Endpoint.Write(&s.readWriter, tcpip.WriteOptions{})
 		s.mu.Unlock()
 	default:
-		n, err = s.Endpoint.Write(src.Reader(ctx), tcpip.WriteOptions{})
+		writeOpts := tcpip.WriteOptions{
+			ControlMessages: tcpip.SendableControlMessages{GSOSize: uint16(s.udpGSOSize.Load())},
+		}
+		n, err = s.Endpoint.Write(src.Reader(ctx), writeOpts)
 	}
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		return 0, linuxerr.ErrWouldBlock
@@ -686,7 +695,17 @@ func (s *sock) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch.Addr,
 
 	case linux.SOL_PACKET:
 		return s.getSockOptPacket(t, s.Endpoint, name, outPtr, outLen)
-	case linux.SOL_UDP, linux.SOL_RAW:
+
+	case linux.SOL_UDP:
+		if name == linux.UDP_SEGMENT && s.isUDP() {
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+			v := primitive.Int32(s.udpGSOSize.Load())
+			return &v, nil
+		}
+
+	case linux.SOL_RAW:
 		// Not supported.
 	}
 
@@ -745,11 +764,30 @@ func (s *sock) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *s
 	case linux.SOL_PACKET:
 		return s.setSockOptPacket(t, s.Endpoint, name, optVal)
 
-	case linux.SOL_UDP, linux.SOL_RAW:
+	case linux.SOL_UDP:
+		if name == linux.UDP_SEGMENT && s.isUDP() {
+			if len(optVal) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			v := int32(hostarch.ByteOrder.Uint32(optVal))
+			if v < 0 || v > math.MaxUint16 {
+				return syserr.ErrInvalidArgument
+			}
+			s.udpGSOSize.Store(uint32(v))
+			return nil
+		}
+
+	case linux.SOL_RAW:
 		// Not supported.
 	}
 
 	return nil
+}
+
+// isUDP reports whether the socket is an IPv4 or IPv6 UDP socket.
+func (s *sock) isUDP() bool {
+	return (s.family == linux.AF_INET || s.family == linux.AF_INET6) &&
+		s.skType == linux.SOCK_DGRAM && s.protocol == linux.IPPROTO_UDP
 }
 
 // minSockAddrLen returns the minimum length in bytes of a socket address for
@@ -3224,11 +3262,16 @@ func (s *sock) netstackToLinuxControlMessages(cm tcpip.ReceivableControlMessages
 }
 
 func (s *sock) linuxToNetstackControlMessages(cm socket.ControlMessages) tcpip.SendableControlMessages {
+	gsoSize := uint16(s.udpGSOSize.Load())
+	if cm.IP.HasGSOSize {
+		gsoSize = cm.IP.GSOSize
+	}
 	return tcpip.SendableControlMessages{
 		HasTTL:      cm.IP.HasTTL,
 		TTL:         uint8(cm.IP.TTL),
 		HasHopLimit: cm.IP.HasHopLimit,
 		HopLimit:    uint8(cm.IP.HopLimit),
+		GSOSize:     gsoSize,
 	}
 }
 

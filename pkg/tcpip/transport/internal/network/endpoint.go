@@ -287,6 +287,45 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Buffe
 	return c.newPacketBufferLocked(reserveHdrBytes, data, mark)
 }
 
+// TryNewPacketBuffersFromPayloader returns one packet buffer for every
+// segmentSize bytes of `payloader`, the last holding what remains, if the
+// endpoint's send buffer is not full. Otherwise, data from `payloader` isn't
+// read. It returns ErrWouldBlock when the send buffer is full and ErrBadBuffer
+// when `payloader` cannot be read.
+func (c *WriteContext) TryNewPacketBuffersFromPayloader(reserveHdrBytes int, payloader tcpip.Payloader, segmentSize int) ([]*stack.PacketBuffer, tcpip.Error) {
+	e := c.e
+
+	e.sendBufferSizeInUseMu.Lock()
+	defer e.sendBufferSizeInUseMu.Unlock()
+
+	if !e.hasSendSpaceRLocked() {
+		return nil, &tcpip.ErrWouldBlock{}
+	}
+	// The payload is read in full before any packet is charged to the send
+	// buffer, so a read failure leaves nothing to undo.
+	segments := make([]buffer.Buffer, 0, (payloader.Len()+segmentSize-1)/segmentSize)
+	for remaining := payloader.Len(); remaining > 0; remaining -= segmentSize {
+		var data buffer.Buffer
+		if _, err := data.WriteFromReader(payloader, int64(min(segmentSize, remaining))); err != nil {
+			data.Release()
+			for i := range segments {
+				segments[i].Release()
+			}
+			return nil, &tcpip.ErrBadBuffer{}
+		}
+		segments = append(segments, data)
+	}
+	// Like a single packet, the segments may oversubscribe the send buffer
+	// once it has any space, as Linux accounts a UDP_SEGMENT write as one
+	// buffer.
+	mark := e.ops.GetMark()
+	pkts := make([]*stack.PacketBuffer, 0, len(segments))
+	for _, data := range segments {
+		pkts = append(pkts, c.newPacketBufferLocked(reserveHdrBytes, data, mark))
+	}
+	return pkts, nil
+}
+
 // TryNewPacketBufferFromPayloader returns a new packet buffer if the endpoint's send buffer
 // is not full. Otherwise, data from `payloader` isn't read.
 func (c *WriteContext) TryNewPacketBufferFromPayloader(reserveHdrBytes int, payloader tcpip.Payloader) (*stack.PacketBuffer, tcpip.Error) {

@@ -606,6 +606,20 @@ func Parse(t *kernel.Task, socketOrEndpoint any, buf []byte, width uint) (socket
 			default:
 				return socket.ControlMessages{}, linuxerr.EINVAL
 			}
+		case linux.SOL_UDP:
+			switch h.Type {
+			case linux.UDP_SEGMENT:
+				var gsoSize primitive.Uint16
+				if length != gsoSize.SizeBytes() {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				gsoSize.UnmarshalUnsafe(buf)
+				cmsgs.IP.HasGSOSize = true
+				cmsgs.IP.GSOSize = uint16(gsoSize)
+
+			default:
+				return socket.ControlMessages{}, linuxerr.EINVAL
+			}
 		default:
 			return socket.ControlMessages{}, linuxerr.EINVAL
 		}

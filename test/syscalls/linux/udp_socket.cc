@@ -35,7 +35,9 @@
 #include <linux/filter.h>
 #include <netinet/ip.h>
 #endif  // __linux__
+#include <net/if.h>
 #include <netinet/in.h>
+#include <netinet/udp.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -62,6 +64,13 @@
 
 namespace gvisor {
 namespace testing {
+
+#ifndef SOL_UDP
+#define SOL_UDP 17
+#endif
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT 103
+#endif
 
 namespace {
 
@@ -2086,6 +2095,285 @@ TEST_P(UdpSocketTest, SetPMTUD) {
   EXPECT_THAT(
       setsockopt(bind_.get(), SOL_IP, IP_MTU_DISCOVER, &invalid, length),
       SyscallFails());
+}
+
+// Sends len bytes counting up from 0 on fd with a UDP_SEGMENT control
+// message of gso_size, and returns what sendmsg returns.
+ssize_t SendWithSegmentSize(int fd, size_t len, uint16_t gso_size) {
+  std::vector<char> data(len);
+  for (size_t i = 0; i < len; i++) {
+    data[i] = static_cast<char>(i);
+  }
+  struct iovec iov = {.iov_base = data.data(), .iov_len = data.size()};
+  char control[CMSG_SPACE(sizeof(uint16_t))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_UDP;
+  cmsg->cmsg_type = UDP_SEGMENT;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(uint16_t));
+  memcpy(CMSG_DATA(cmsg), &gso_size, sizeof(gso_size));
+  return sendmsg(fd, &msg, 0);
+}
+
+// Receives the next datagram on fd and checks that it is the want bytes that
+// start at offset in the counting payload SendWithSegmentSize sends.
+void ExpectDatagram(int fd, size_t offset, size_t want) {
+  std::vector<char> buf(want + 1);
+  ASSERT_THAT(RecvTimeout(fd, buf.data(), buf.size(), 1 /*timeout*/),
+              IsPosixErrorOkAndHolds(want));
+  for (size_t i = 0; i < want; i++) {
+    ASSERT_EQ(buf[i], static_cast<char>(offset + i)) << "byte " << i;
+  }
+}
+
+TEST_P(UdpSocketTest, SegmentOptionIsZeroByDefault) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  int v = -1;
+  socklen_t optlen = sizeof(v);
+  ASSERT_THAT(getsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, &optlen),
+              SyscallSucceeds());
+  EXPECT_EQ(v, 0);
+}
+
+TEST_P(UdpSocketTest, SegmentOptionRoundTrips) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  int v = 1200;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, sizeof(v)),
+              SyscallSucceeds());
+  int got = 0;
+  socklen_t optlen = sizeof(got);
+  ASSERT_THAT(getsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &got, &optlen),
+              SyscallSucceeds());
+  EXPECT_EQ(got, v);
+}
+
+TEST_P(UdpSocketTest, SegmentOptionRefusesValuesOutsideU16) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  for (int v : {-1, 65536}) {
+    EXPECT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, sizeof(v)),
+                SyscallFailsWithErrno(EINVAL))
+        << v;
+  }
+}
+
+TEST_P(UdpSocketTest, SegmentOptionSplitsSends) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  int v = 100;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, sizeof(v)),
+              SyscallSucceeds());
+
+  std::vector<char> data(250);
+  for (size_t i = 0; i < data.size(); i++) {
+    data[i] = static_cast<char>(i);
+  }
+  ASSERT_THAT(send(sock_.get(), data.data(), data.size(), 0),
+              SyscallSucceedsWithValue(data.size()));
+
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 0, 100));
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 100, 100));
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 200, 50));
+}
+
+TEST_P(UdpSocketTest, SegmentControlMessageSplitsSends) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  ASSERT_THAT(SendWithSegmentSize(sock_.get(), 300, 100),
+              SyscallSucceedsWithValue(300));
+
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 0, 100));
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 100, 100));
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 200, 100));
+  char buf[1];
+  EXPECT_THAT(RetryEINTR(recv)(bind_.get(), buf, sizeof(buf), MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST_P(UdpSocketTest, SegmentControlMessageOverridesOption) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  int v = 100;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, sizeof(v)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(SendWithSegmentSize(sock_.get(), 250, 0),
+              SyscallSucceedsWithValue(250));
+
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 0, 250));
+}
+
+TEST_P(UdpSocketTest, SegmentSendSplitsIntoManySegments) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  // 64 segments is the smallest UDP_MAX_SEGMENTS Linux has had.
+  ASSERT_THAT(SendWithSegmentSize(sock_.get(), 64 * 10, 10),
+              SyscallSucceedsWithValue(64 * 10));
+  for (size_t i = 0; i < 64; i++) {
+    ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), i * 10, 10));
+  }
+}
+
+TEST_P(UdpSocketTest, SegmentSendRefusesMoreThanMaxSegments) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  // 129 segments exceeds every UDP_MAX_SEGMENTS Linux has had.
+  EXPECT_THAT(SendWithSegmentSize(sock_.get(), 129 * 10, 10),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(UdpSocketTest, SegmentFillsTheMtuBesideItsHeaders) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  if (GetParam() != AF_INET6) {
+    GTEST_SKIP() << "An IPv4 segment that fills the loopback MTU exceeds the "
+                    "largest IPv4 UDP payload";
+  }
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  int rcvbuf = 1 << 20;
+  ASSERT_THAT(
+      setsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)),
+      SyscallSucceeds());
+  struct ifreq ifr = {};
+  strncpy(ifr.ifr_name, "lo", sizeof(ifr.ifr_name));
+  ASSERT_THAT(ioctl(sock_.get(), SIOCGIFMTU, &ifr), SyscallSucceeds());
+
+  // The largest segment leaves room for the 40-byte IPv6 and 8-byte UDP
+  // headers within the MTU.
+  ASSERT_LE(ifr.ifr_mtu, 65535 + 48);
+  const uint16_t gso_size = ifr.ifr_mtu - 48;
+  ASSERT_THAT(SendWithSegmentSize(sock_.get(), gso_size + 1, gso_size),
+              SyscallSucceedsWithValue(gso_size + 1));
+
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 0, gso_size));
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), gso_size, 1));
+}
+
+TEST_P(UdpSocketTest, SegmentLargerThanTheMtuFails) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  if (GetParam() != AF_INET6) {
+    GTEST_SKIP() << "An IPv4 segment that fills the loopback MTU exceeds the "
+                    "largest IPv4 UDP payload";
+  }
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  struct ifreq ifr = {};
+  strncpy(ifr.ifr_name, "lo", sizeof(ifr.ifr_name));
+  ASSERT_THAT(ioctl(sock_.get(), SIOCGIFMTU, &ifr), SyscallSucceeds());
+  ASSERT_LE(ifr.ifr_mtu, 65535 + 47);
+
+  // One byte more than fits beside the 40-byte IPv6 and 8-byte UDP headers.
+  const uint16_t gso_size = ifr.ifr_mtu - 47;
+  EXPECT_THAT(SendWithSegmentSize(sock_.get(), gso_size + 1, gso_size),
+              SyscallFailsWithErrno(EMSGSIZE));
+}
+
+TEST_P(UdpSocketTest, SegmentOptionSplitsWrites) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  int v = 100;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, sizeof(v)),
+              SyscallSucceeds());
+
+  std::vector<char> data(150);
+  for (size_t i = 0; i < data.size(); i++) {
+    data[i] = static_cast<char>(i);
+  }
+  ASSERT_THAT(write(sock_.get(), data.data(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 0, 100));
+  ASSERT_NO_FATAL_FAILURE(ExpectDatagram(bind_.get(), 100, 50));
+}
+
+TEST_P(UdpSocketTest, SegmentControlMessageNeedsU16) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  char data[200] = {};
+  struct iovec iov = {.iov_base = data, .iov_len = sizeof(data)};
+  char control[CMSG_SPACE(sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_UDP;
+  cmsg->cmsg_type = UDP_SEGMENT;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+  int gso_size = 100;
+  memcpy(CMSG_DATA(cmsg), &gso_size, sizeof(gso_size));
+  EXPECT_THAT(sendmsg(sock_.get(), &msg, 0), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(UdpSocketTest, SegmentSendRefusesNoCheckOverIPv4) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  if (GetParam() != AF_INET) {
+    GTEST_SKIP() << "SO_NO_CHECK only affects UDP_SEGMENT over IPv4";
+  }
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  int v = 1;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_SOCKET, SO_NO_CHECK, &v, sizeof(v)),
+              SyscallSucceeds());
+  int gso_size = 100;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &gso_size,
+                         sizeof(gso_size)),
+              SyscallSucceeds());
+
+  char data[300] = {};
+  EXPECT_THAT(send(sock_.get(), data, sizeof(data), 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(UdpSocketTest, SegmentSendLargerThanOneIPPacketFails) {
+  // hostinet sockets do not implement UDP_SEGMENT.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  // The largest write is the payload of one IP packet beside the 8-byte UDP
+  // header, and over IPv4 the 20-byte IPv4 header too.
+  const size_t max = GetParam() == AF_INET ? 65507 : 65527;
+  EXPECT_THAT(SendWithSegmentSize(sock_.get(), max + 1, 1000),
+              SyscallFailsWithErrno(EMSGSIZE));
+  EXPECT_THAT(SendWithSegmentSize(sock_.get(), max, 1000),
+              SyscallSucceedsWithValue(max));
+}
+
+TEST_P(UdpSocketTest, SegmentOptionIsUnavailableWithHostinet) {
+  // hostinet sockets do not pass a UDP_SEGMENT control message to the host.
+  SKIP_IF(!IsRunningWithHostinet());
+  int v = 100;
+  EXPECT_THAT(setsockopt(sock_.get(), SOL_UDP, UDP_SEGMENT, &v, sizeof(v)),
+              SyscallFailsWithErrno(ENOPROTOOPT));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
