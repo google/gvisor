@@ -118,6 +118,8 @@ func (c conntrackMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, _ 
 }
 
 // conntrackMatcher matches on the connection-tracking --ctstate of a packet.
+//
+// +stateify savable
 type conntrackMatcher struct {
 	rev         uint8
 	matchFlags  uint16

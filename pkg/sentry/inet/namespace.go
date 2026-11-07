@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Namespace represents a network namespace. See network_namespaces(7).
@@ -42,6 +43,9 @@ type Namespace struct {
 	// isRoot indicates whether this is the root network namespace.
 	isRoot bool
 
+	// root owns the registry of child namespaces. It is nil in the root.
+	root *Namespace
+
 	userNS *auth.UserNamespace
 
 	// abstractSockets tracks abstract sockets that are in use.
@@ -49,6 +53,15 @@ type Namespace struct {
 
 	// netlinkMcastTable manages multicast group membership for netlink sockets.
 	netlinkMcastTable *McastTable
+
+	// children tracks non-root namespaces derived from the root namespace
+	// (root only), so checkpointing can quiesce every network stack in the
+	// sandbox rather than just the root one. It is savable so restored
+	// namespaces stay tracked across checkpoint/restore cycles.
+	//
+	// +checklocks:childrenMu
+	children   map[*Namespace]struct{}
+	childrenMu sync.Mutex `state:"nosave"`
 }
 
 // NewRootNamespace creates the root network namespace, with creator
@@ -89,14 +102,55 @@ func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
 	n := &Namespace{
 		creator:           root.creator,
 		userNS:            userNS,
+		root:              root,
 		netlinkMcastTable: NewNetlinkMcastTable(),
 	}
 	n.init()
+	root.registerChild(n)
 	return n
+}
+
+// ChildrenSnapshot returns non-root namespaces while namespace creation and
+// destruction are quiesced. The caller must keep them quiesced while using the
+// result. The registry does not own namespace references.
+func (n *Namespace) ChildrenSnapshot() []*Namespace {
+	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
+	out := make([]*Namespace, 0, len(n.children))
+	for ns := range n.children {
+		out = append(out, ns)
+	}
+	return out
+}
+
+// registerChild adds ns to the root namespace's children registry.
+func (n *Namespace) registerChild(ns *Namespace) {
+	if !n.isRoot {
+		panic("registerChild called on a non-root namespace")
+	}
+	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
+	if n.children == nil {
+		n.children = make(map[*Namespace]struct{})
+	}
+	n.children[ns] = struct{}{}
+}
+
+// unregisterChild removes ns from the root namespace's children registry.
+func (n *Namespace) unregisterChild(ns *Namespace) {
+	if !n.isRoot {
+		return
+	}
+	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
+	delete(n.children, ns)
 }
 
 // Destroy implements nsfs.Namespace.Destroy.
 func (n *Namespace) Destroy(ctx context.Context) {
+	if root := n.root; root != nil && root != n {
+		root.unregisterChild(n)
+	}
 	if s := n.Stack(); s != nil {
 		s.Destroy()
 	}
@@ -166,6 +220,10 @@ func (n *Namespace) init() {
 
 // afterLoad is invoked by stateify.
 func (n *Namespace) afterLoad(goContext.Context) {
+	if n.isRoot || n.stack != nil {
+		// Stack restore is deferred until the kernel has initialized its clocks.
+		return
+	}
 	n.init()
 }
 

@@ -922,7 +922,17 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 		log.Infof("Pausing root network namespace")
 		k.rootNetworkNamespace.Stack().Pause()
 		defer k.rootNetworkNamespace.Stack().Resume()
-		log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
+		// Non-root network namespaces (e.g. inner container namespaces
+		// created by a nested docker daemon) carry their own network
+		// stacks, which are part of the saved state: quiesce them too
+		// so the snapshot is not torn by protocol background workers.
+		for _, ns := range rootNS.ChildrenSnapshot() {
+			if stk := ns.Stack(); stk != nil {
+				stk.Pause()
+				defer stk.Resume()
+			}
+		}
+		log.Infof("Pausing network namespaces took [%s].", time.Since(netstackPauseStart))
 	}
 
 	// Save the kernel state.
@@ -1168,6 +1178,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		close(timeReady)
 	}
 
+	var restoredStacks []inet.Stack
 	if s := k.rootNetworkNamespace.Stack(); s != nil {
 		if networkArgs == nil {
 			return fmt.Errorf("network configuration cannot be nil during restore")
@@ -1177,9 +1188,33 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		if err := networkArgs.ConfigureNetwork(s); err != nil {
 			return fmt.Errorf("configuring network: %w", err)
 		}
-		s.Restore()
-		timeline.Reached("Network stack restored")
+		restoredStacks = append(restoredStacks, s)
 	}
+
+	// Non-root network namespaces restored from the checkpoint keep their
+	// saved stacks (see inet.Namespace.afterLoad); bring those stacks back
+	// to working order now that the clocks are running and the root stack
+	// has been reconfigured.
+	if rootNS := k.rootNetworkNamespace; rootNS != nil {
+		for _, ns := range rootNS.ChildrenSnapshot() {
+			if stk := ns.Stack(); stk != nil {
+				restoredStacks = append(restoredStacks, stk)
+			}
+		}
+	}
+	// TCP restore dependencies are process-global, including endpoints in child
+	// network namespaces. Never wait for completion on one stack before the
+	// remaining stacks have had a chance to restore their endpoints.
+	for _, s := range restoredStacks {
+		s.PrepareRestore()
+	}
+	for _, s := range restoredStacks {
+		s.RestoreEndpoints()
+	}
+	for _, s := range restoredStacks {
+		s.CompleteRestore()
+	}
+	timeline.Reached("Network stacks restored")
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
 		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)

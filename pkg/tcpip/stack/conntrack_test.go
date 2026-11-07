@@ -15,9 +15,14 @@
 package stack
 
 import (
+	"bytes"
+	"context"
+	"math/rand"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -409,4 +414,60 @@ func (cn *conn) checkReplySeq(t *testing.T, seq uint32) {
 	if got, want := cn.tcb.ReplySendSequenceNumber(), seqnum.Value(seq); got != want {
 		t.Fatalf("checkReplySeq: got %d, wanted %d", got, want)
 	}
+}
+
+func TestConntrackCheckpointRoundTrip(t *testing.T) {
+	ct := NewConnTrack(faketime.NewManualClock(), rand.New(rand.NewSource(1)), nil)
+	pkt := genTCPPacket(genTCPOpts{})
+	defer pkt.DecRef()
+	pkt.tuple = ct.getConnAndUpdate(pkt, true)
+	var route Route
+	route.routeInfo.Loop = PacketLoop
+	if IPTHandlePacket(pkt, Output, &route) {
+		t.Fatal("unexpected NAT")
+	}
+	if !pkt.tuple.conn.finalize() {
+		t.Fatal("finalize failed")
+	}
+	original, reply := pkt.tuple.conn.original.tupleID, pkt.tuple.conn.reply.tupleID
+	var encoded bytes.Buffer
+	if _, err := state.Save(context.Background(), &encoded, ct); err != nil {
+		t.Fatal(err)
+	}
+	var restored ConnTrack
+	if _, err := state.Load(context.Background(), &encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	runtimeRNG := rand.New(rand.NewSource(2))
+	restored.restore(runtimeRNG, 42, 43)
+	if restored.rng != runtimeRNG {
+		t.Fatal("restore changed the runtime NAT random source")
+	}
+	if restored.seed == ct.seed {
+		t.Fatal("seed did not change")
+	}
+	for _, id := range []tupleID{original, reply} {
+		entry := restored.connForTID(id)
+		if entry == nil {
+			t.Fatalf("restored tuple not found: %+v", id)
+		}
+		if !entry.conn.finalize() {
+			t.Fatal("restored finalized connection was inserted twice")
+		}
+	}
+	restored.checkNumTuples(t, 2)
+	// Exercise the restored TCP handler function pointers as another SYN arrives.
+	next := genTCPPacket(genTCPOpts{})
+	defer next.DecRef()
+	next.tuple = restored.getConnAndUpdate(next, true)
+	if next.tuple == nil {
+		t.Fatal("restored flow disappeared")
+	}
+	if IPTHandlePacket(next, Output, &route) {
+		t.Fatal("unexpected NAT after restore")
+	}
+	restored.checkNumTuples(t, 2)
+	restored.clock.(*faketime.ManualClock).Advance(unestablishedTimeout + time.Nanosecond)
+	restored.reapEverything()
+	restored.checkNumTuples(t, 0)
 }
