@@ -179,6 +179,49 @@ func TestRandomGraphs(t *testing.T) {
 	})
 }
 
+// TestGrowingSliceWindows checks that a growing prefix still finds interior
+// views and merges a previously separate window when the prefix reaches it.
+func TestGrowingSliceWindows(t *testing.T) {
+	runWithBothEngines(t, func(t *testing.T) {
+		skipUnlessSliceWindows(t)
+		backing := make([]byte, 2048)
+		for i := range backing {
+			backing[i] = byte(i)
+		}
+		saved := [][]byte{
+			backing[:1:2], backing[:9:10], backing[8:10:10],
+			backing[1500:1510:1520], backing[:1000:1200], backing[1100:1110:1120],
+			backing[:],
+		}
+		offsets := []int{0, 0, 8, 1500, 0, 1100, 0}
+		for _, tc := range []struct {
+			name    string
+			n, full int
+		}{
+			// Stop before a later containing slice can merge a detached view.
+			{"new_tail", 3, 1},
+			{"later_merge", len(saved), len(saved) - 1},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				windows := saved[:tc.n:tc.n]
+				got := *loadBytes[[][]byte](t, saveBytes(t, &windows))
+				if len(got) != len(windows) {
+					t.Fatalf("restored %d windows, want %d", len(got), len(windows))
+				}
+				full := got[tc.full]
+				for i, view := range got {
+					if !bytes.Equal(view, saved[i]) || cap(view) != cap(saved[i]) {
+						t.Errorf("window %d: incorrect bytes or capacity", i)
+					}
+					if &view[0] != &full[offsets[i]] {
+						t.Errorf("window %d: lost alias at offset %d", i, offsets[i])
+					}
+				}
+			})
+		}
+	})
+}
+
 // TestSharedSliceWindows tests graph save/load.
 func TestSharedSliceWindows(t *testing.T) {
 	runWithBothEngines(t, func(t *testing.T) {

@@ -215,8 +215,8 @@ const blockShift = 9
 
 // blockEntry is an entry in a list of objects intersecting a block.
 type blockEntry struct {
-	// addr and end are the range of the object, so that entries can be
-	// checked without accessing the object.
+	// addr and end bound the indexed portion of the object in this block.
+	// Earlier full blocks keep their cached end when an array grows.
 	addr, end uintptr
 	obj, next int32
 }
