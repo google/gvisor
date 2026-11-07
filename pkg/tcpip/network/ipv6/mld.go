@@ -172,7 +172,7 @@ func (b *mldv2ReportBuilder) Send() (sent bool, err tcpip.Error) {
 			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
 		},
 	}
-	mtu := int(b.mld.ep.MTU()) - extensionHeaders.Length()
+	mtu := int(b.mld.ep.MTU()) - extensionHeaders.Length() - header.ICMPv6HeaderSize - (&header.MLDv2ReportSerializer{}).Length()
 
 	allSentWithSpecifiedAddress := true
 	var firstErr tcpip.Error
@@ -182,11 +182,14 @@ func (b *mldv2ReportBuilder) Send() (sent bool, err tcpip.Error) {
 
 		for ; maxRecords < len(records); maxRecords++ {
 			tmp := spaceLeft - records[maxRecords].Length()
-			if tmp > 0 {
+			if tmp >= 0 {
 				spaceLeft = tmp
 			} else {
 				break
 			}
+		}
+		if maxRecords == 0 {
+			return false, &tcpip.ErrMessageTooLong{}
 		}
 
 		serializer := header.MLDv2ReportSerializer{Records: records[:maxRecords]}
@@ -202,8 +205,8 @@ func (b *mldv2ReportBuilder) Send() (sent bool, err tcpip.Error) {
 			extensionHeaders,
 			header.MLDv2RoutersAddress,
 		); err != nil {
-			if firstErr != nil {
-				firstErr = nil
+			if firstErr == nil {
+				firstErr = err
 			}
 			allSentWithSpecifiedAddress = false
 		} else if !sentWithSpecifiedAddress {

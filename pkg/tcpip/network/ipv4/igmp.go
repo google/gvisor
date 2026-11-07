@@ -222,7 +222,7 @@ func (b *igmpv3ReportBuilder) Send() (sent bool, err tcpip.Error) {
 	options := header.IPv4OptionsSerializer{
 		&header.IPv4SerializableRouterAlertOption{},
 	}
-	mtu := int(b.igmp.ep.MTU()) - int(options.Length())
+	mtu := int(b.igmp.ep.MTU()) - int(options.Length()) - (&header.IGMPv3ReportSerializer{}).Length()
 
 	allSentWithSpecifiedAddress := true
 	var firstErr tcpip.Error
@@ -232,11 +232,14 @@ func (b *igmpv3ReportBuilder) Send() (sent bool, err tcpip.Error) {
 
 		for ; maxRecords < len(records); maxRecords++ {
 			tmp := spaceLeft - records[maxRecords].Length()
-			if tmp > 0 {
+			if tmp >= 0 {
 				spaceLeft = tmp
 			} else {
 				break
 			}
+		}
+		if maxRecords == 0 {
+			return false, &tcpip.ErrMessageTooLong{}
 		}
 
 		serializer := header.IGMPv3ReportSerializer{Records: records[:maxRecords]}
@@ -250,8 +253,8 @@ func (b *igmpv3ReportBuilder) Send() (sent bool, err tcpip.Error) {
 			options,
 			header.IGMPv3RoutersAddress,
 		); err != nil {
-			if firstErr != nil {
-				firstErr = nil
+			if firstErr == nil {
+				firstErr = err
 			}
 			allSentWithSpecifiedAddress = false
 		} else if !sentWithSpecifiedAddress {
