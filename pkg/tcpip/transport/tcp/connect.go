@@ -634,7 +634,7 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 	// the connection with another ACK or data (as ACKs are never
 	// retransmitted on their own).
 	if h.active || !h.acked || h.deferAccept != 0 && e.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
-		e.sendSynTCP(e.route, tcpFields{
+		err := e.sendSynTCP(e.route, tcpFields{
 			id:        e.TransportEndpointInfo.ID,
 			ttl:       calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
 			tos:       e.sendTOS,
@@ -645,6 +645,14 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 			df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 			expOptVal: e.getExperimentOptionValue(e.route),
 		}, h.sendSYNOpts)
+		// Linux charges an active SYN when it attempts retransmission. A
+		// passive connection inherits only successfully retransmitted SYN-ACKs.
+		// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_output.c#L3393-L3399
+		// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/inet_connection_sock.c#L905-L912
+		// https://github.com/torvalds/linux/blob/adc218676/net/ipv4/tcp_minisocks.c#L549-L556
+		if h.active || err == nil {
+			e.countRetransmits(1)
+		}
 		// If we have ever retransmitted the SYN-ACK or
 		// SYN segment, we should only measure RTT if
 		// TS option is present.
@@ -831,9 +839,13 @@ type tcpFields struct {
 	expOptVal uint16
 }
 
+func (e *Endpoint) countRetransmits(packets uint64) {
+	e.stack.Stats().TCP.Retransmits.IncrementBy(packets)
+	e.stats.SendErrors.Retransmits.IncrementBy(packets)
+}
+
 func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) tcpip.Error {
 	tf.opts = makeSynOptions(opts)
-	// We ignore SYN send errors and let the callers re-attempt send.
 	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + len(tf.opts)
 	if r.NetProto() == header.IPv6ProtocolNumber && tf.expOptVal != 0 {
 		hdrSize += header.IPv6ExperimentHdrLength
@@ -843,11 +855,12 @@ func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOp
 		Mark:               e.ops.GetMark(),
 	})
 	defer p.DecRef()
-	if err := e.sendTCP(r, tf, p, stack.GSO{}); err != nil {
+	err := e.sendTCP(r, tf, p, stack.GSO{})
+	if err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
 	}
 	putOptions(tf.opts)
-	return nil
+	return err
 }
 
 // This method takes ownership of pkt.
