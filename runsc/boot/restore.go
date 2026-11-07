@@ -714,31 +714,49 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 	defer timer.Log()
 	defer timeline.End()
 
-	timeline.Reached("scheduled")
-	if err := control.PostRestore(k, timeline); err != nil {
-		r.cm.onRestoreFailed(fmt.Errorf("post restore work failed: %w", err))
-		log.Warningf("Killing the sandbox after post restore work failed: %v", err)
+	fail := func(err error) {
+		r.cm.onRestoreFailed(err)
+		log.Warningf("Killing the sandbox after restore failed: %v", err)
 		k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 		r.cm.l.stopIfKilled()
-		return
 	}
-	timeline.Reached("post restore done")
-
-	// Now that post restore work succeeded, increment the checkpoint gen
-	// manually. The count was saved while the previous kernel was being saved
-	// and checkpoint success was unknown at that time. Now we know the had
-	// checkpoint succeeded. Allow the application to proceed while pages may
-	// keep loading in the background.
-	k.IncCheckpointGenOnRestore()
-
-	// Wait for page loading to complete if happening in the background.
-	if r.asyncMFLoader != nil {
-		if err := r.asyncMFLoader.Wait(); err != nil {
-			r.cm.onRestoreFailed(fmt.Errorf("async MemoryFile loading failed: %w", err))
-			log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
-			k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
-			r.cm.l.stopIfKilled()
+	timeline.Reached("scheduled")
+	// PostRestore may wait for an application hook. Observe page loading
+	// independently so its failures are reported immediately.
+	type result struct {
+		postRestore bool
+		err         error
+	}
+	const numRestoreTasks = 2 // PostRestore and MemoryFile loading.
+	// Both workers must be able to finish sending after a failure returns.
+	done := make(chan result, numRestoreTasks)
+	work := timeline.Fork("work")
+	go func() {
+		defer work.End()
+		done <- result{postRestore: true, err: control.PostRestore(k, work)}
+	}()
+	if r.asyncMFLoader == nil {
+		done <- result{}
+	} else {
+		go func() {
+			done <- result{err: r.asyncMFLoader.Wait()}
+		}()
+	}
+	for range numRestoreTasks {
+		res := <-done
+		if res.err != nil {
+			phase := "async MemoryFile loading"
+			if res.postRestore {
+				phase = "post restore work"
+			}
+			fail(fmt.Errorf("%s failed: %w", phase, res.err))
 			return
+		}
+		if res.postRestore {
+			timeline.Reached("post restore done")
+			// The saved count predates checkpoint completion. Increment it only
+			// after post-restore work succeeds.
+			k.IncCheckpointGenOnRestore()
 		}
 	}
 
