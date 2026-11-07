@@ -1085,6 +1085,62 @@ func TestSealedMapping(t *testing.T) {
 	wantError(t, linuxerr.EPERM, "child MUnmap(sealed)", mm2.MUnmap(ctx, sealedAddr, pageSize))
 }
 
+func TestCheckIOVecBounds(t *testing.T) {
+	var mm MemoryManager
+	mm.layout.MaxAddr = 0x10000
+	for _, tc := range []struct {
+		start hostarch.Addr
+		end   hostarch.Addr
+		valid bool
+	}{
+		{0, 0, true},
+		{0x10000, 0x10000, true},
+		{0x10001, 0x10001, false},
+		{0xfffc, 0x10000, true},
+		{0xfffc, 0x10001, false},
+	} {
+		ars := hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: tc.start, End: tc.end})
+		got, ok := mm.checkIOVec(ars)
+		if ok != tc.valid {
+			t.Fatalf("checkIOVec(%#x, %#x) valid = %t, want %t", tc.start, tc.end, ok, tc.valid)
+		}
+		if ok && (got.NumRanges() != 1 || got.Head() != ars.Head()) {
+			t.Fatalf("checkIOVec changed a valid untagged range: %v", got)
+		}
+	}
+}
+
+func BenchmarkCheckIOVec(b *testing.B) {
+	var mm MemoryManager
+	mm.layout.MaxAddr = 1 << 47
+	for _, tc := range []struct {
+		name string
+		ars  hostarch.AddrRangeSeq
+	}{
+		{
+			name: "Scalar",
+			ars:  hostarch.AddrRangeSeqOf(hostarch.AddrRange{Start: 4096, End: 8192}),
+		},
+		{
+			name: "MultiRange",
+			ars: hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
+				{Start: 4096, End: 8192},
+				{Start: 12288, End: 16384},
+			}),
+		},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				got, ok := mm.checkIOVec(tc.ars)
+				if !ok || got.NumRanges() != tc.ars.NumRanges() {
+					b.Fatal("valid range rejected or changed")
+				}
+			}
+		})
+	}
+}
+
 // gatedReaderAt blocks reads past offset from until `gate` is closed.
 type gatedReaderAt struct {
 	io.ReaderAt
