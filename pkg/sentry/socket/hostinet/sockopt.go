@@ -244,6 +244,14 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 	}
 	sockOpt, ok := sockOptMap[levelName{uint64(level), uint64(name)}]
 	if !ok {
+		if level == linux.SOL_UDP {
+			// No SOL_UDP option is implemented. A value shorter than an
+			// int is rejected, then the option itself is rejected.
+			if len(opt) < sizeofInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			return syserr.ErrProtocolNotAvailable
+		}
 		// Pretend to accept socket options we don't understand. This
 		// seems dangerous, but it's what netstack does...
 		return nil
