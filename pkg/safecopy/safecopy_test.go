@@ -97,21 +97,24 @@ func TestCopySuccess(t *testing.T) {
 }
 
 func TestZeroOutSuccess(t *testing.T) {
-	// Test that ZeroOut does not return an error when all pages are
-	// accessible.
-	const bufLen = 8192
-	a := make([]byte, bufLen)
-	b := randBuf(bufLen)
-
-	n, err := ZeroOut(unsafe.Pointer(&b[0]), bufLen)
-	if n != bufLen {
-		t.Errorf("Unexpected copy length, got %v, want %v", n, bufLen)
-	}
+	// Leave a byte on either side to catch stores outside an unaligned range.
+	b := bytes.Repeat([]byte{0xff}, 8192)
+	dst := b[1 : len(b)-1]
+	n, err := ZeroOut(unsafe.Pointer(&dst[0]), uintptr(len(dst)))
 	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if !bytes.Equal(a, b) {
-		t.Errorf("Buffers are not equal when they should be: %v %v", a, b)
+	if got, want := n, uintptr(len(dst)); got != want {
+		t.Errorf("ZeroOut returned %d bytes, want %d", got, want)
+	}
+	for i, got := range b {
+		want := byte(0)
+		if i == 0 || i == len(b)-1 {
+			want = 0xff
+		}
+		if got != want {
+			t.Fatalf("b[%d] = %#x, want %#x", i, got, want)
+		}
 	}
 }
 

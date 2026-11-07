@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
@@ -678,14 +679,10 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 			needHugeTouch = true
 		}
 
+		needCommit := opts.Mode == AllocateAndCommit
 		switch alloc.opts.Mode {
-		case AllocateUncommitted, AllocateCallerIndirectCommit:
-			// Nothing for us to do.
-		case AllocateAndCommit:
-			if err := f.commitFile(fr); err != nil {
-				f.DecRef(fr)
-				return memmap.FileRange{}, err
-			}
+		case AllocateUncommitted, AllocateCallerIndirectCommit, AllocateAndCommit:
+			// No mapping is needed.
 		case AllocateAndWritePopulate:
 			dsts, err = f.MapInternal(fr, hostarch.Write)
 			if err != nil {
@@ -703,26 +700,39 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 				}
 			}
 			if alloc.recycled {
-				// The contents of recycled waste pages are initially unknown, so we
-				// need to zero them. Zeroing also commits them unless it skips pages
-				// of a disk-backed file; commit those if the caller asked for
-				// AllocateAndCommit.
-				if !f.manuallyZero(fr) && opts.Mode == AllocateAndCommit {
-					if err := f.commitFile(fr); err != nil {
-						f.DecRef(fr)
-						return memmap.FileRange{}, err
+				err = f.manuallyZero(fr)
+				// Writing all shmem pages commits them. Disk-backed files
+				// still require fallocate's storage reservation.
+				needCommit = needCommit && f.opts.DiskBackedFile
+			} else if needHugeTouch || needCommit {
+				// Population may skip short or unaligned ranges. Touch one
+				// byte per huge page through the advised mapping before
+				// fallocate chooses backing for the rest.
+				f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+					bs := chunk.sliceAt(chunkFR)
+					for off := chunkFR.Start; off < chunkFR.End; off = hostarch.HugePageRoundDown(off) + uint64(hostarch.HugePageSize) {
+						i := off - chunkFR.Start
+						if _, err = safemem.Zero(safemem.BlockFromUnsafeSlice(bs[i : i+1])); err != nil {
+							return false
+						}
 					}
-				}
-			} else if needHugeTouch {
-				// We only need to touch a single byte in each huge page.
-				f.forEachMappingSlice(fr, func(bs []byte) {
-					for i := 0; i < len(bs); i += int(hostarch.HugePageSize) {
-						bs[i] = 0
-					}
+					return true
 				})
 			}
 		default:
 			panic(fmt.Sprintf("unknown AllocOpts.Mode %d", alloc.opts.Mode))
+		}
+		if err == nil && needCommit {
+			err = f.commitFile(fr)
+		}
+		if err != nil {
+			f.DecRef(fr)
+			if _, ok := err.(safecopy.BusError); ok {
+				// A fault backing our allocation is distinct from an
+				// error reading application data in ReaderFunc.
+				err = linuxerr.ENOMEM
+			}
+			return memmap.FileRange{}, err
 		}
 	}
 	if alloc.opts.ReaderFunc != nil {
@@ -1149,22 +1159,19 @@ func (f *MemoryFile) decommitFile(fr memmap.FileRange) error {
 		int64(fr.Length()))
 }
 
-// manuallyZero zeroes the pages in fr through f's mappings. It returns false if
-// it skipped pages of a disk-backed file; see zeroDiskBacked.
-func (f *MemoryFile) manuallyZero(fr memmap.FileRange) bool {
-	wroteAll := true
+// manuallyZero zeroes the pages in fr through f's mappings.
+func (f *MemoryFile) manuallyZero(fr memmap.FileRange) error {
+	var err error
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
 		bs := chunk.sliceAt(chunkFR)
 		if f.opts.DiskBackedFile {
-			if !zeroDiskBacked(int(f.file.Fd()), chunkFR.Start, bs) {
-				wroteAll = false
-			}
+			zeroDiskBacked(int(f.file.Fd()), chunkFR.Start, bs)
 		} else {
-			clear(bs)
+			_, err = safemem.Zero(safemem.BlockFromUnsafeSlice(bs))
 		}
-		return true
+		return err == nil
 	})
-	return wroteAll
+	return err
 }
 
 // zeroDiskBacked zeroes bs, which maps the pages of the disk-backed file fd
@@ -1172,17 +1179,14 @@ func (f *MemoryFile) manuallyZero(fr memmap.FileRange) bool {
 // allocate disk space for it, for example because its filesystem is full.
 // Such pages are skipped if they already read as zero, as holes do. They are
 // read with pread(2) instead of through bs, since a read fault on a hole can
-// also allocate, for example on tmpfs. zeroDiskBacked returns false if it
-// skipped any pages, which then remain uncommitted.
-func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
-	wroteAll := true
+// also allocate, for example on tmpfs. Skipped pages remain uncommitted.
+func zeroDiskBacked(fd int, off uint64, bs []byte) {
 	for len(bs) != 0 {
-		n, err := safemem.ZeroSeq(safemem.BlockSeqOf(safemem.BlockFromUnsafeSlice(bs)))
+		n, err := safemem.Zero(safemem.BlockFromUnsafeSlice(bs))
 		if err == nil {
-			return wroteAll
+			return
 		}
-		wroteAll = false
-		start := hostarch.PageRoundDown(n)
+		start := hostarch.PageRoundDown(uint64(n))
 		end := start + hostarch.PageSize
 		buf := make([]byte, hostarch.PageSize)
 		rn, rerr := unix.Pread(fd, buf, int64(off+start))
@@ -1192,7 +1196,6 @@ func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
 		bs = bs[end:]
 		off += end
 	}
-	return wroteAll
 }
 
 func (f *MemoryFile) decommitOrManuallyZero(fr memmap.FileRange) {
@@ -1200,7 +1203,9 @@ func (f *MemoryFile) decommitOrManuallyZero(fr memmap.FileRange) {
 		log.Warningf("Failed to decommit %v: %v", fr, err)
 		// Zero the pages manually. This won't reduce memory usage, but at
 		// least ensures that the pages will be zeroed when reallocated.
-		f.manuallyZero(fr)
+		if err := f.manuallyZero(fr); err != nil {
+			panic(fmt.Sprintf("failed to zero released pages in %v: %v", fr, err))
+		}
 	}
 }
 
