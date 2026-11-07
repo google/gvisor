@@ -32,6 +32,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -550,6 +551,28 @@ TEST_F(OpenTest, OPathWithODirectory) {
   auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   EXPECT_THAT(open(newFile.path().c_str(), O_RDONLY | O_DIRECTORY | O_PATH),
               SyscallFailsWithErrno(ENOTDIR));
+}
+
+// Reopening a file through one of its FDs must reach that file even after its
+// name has been unlinked and reused for another file.
+TEST_F(OpenTest, ReopenDeletedFileWithReusedName) {
+  // Only runsc supports reopening unlinked files.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningOnRunsc());
+
+  const std::string path = NewTempAbsPath();
+  // Creating the file read-only leaves the sandbox with only a read-only host
+  // FD, so the O_RDWR open below has to reopen the file.
+  const FileDescriptor ro =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDONLY | O_CREAT | O_EXCL, 0644));
+  ASSERT_THAT(unlink(path.c_str()), SyscallSucceeds());
+  ASSERT_NO_ERRNO(CreateWithContents(path, "bbb", 0644));
+
+  const FileDescriptor rw = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(absl::StrCat("/proc/self/fd/", ro.get()), O_RDWR));
+  ASSERT_THAT(pwrite(rw.get(), "ccc", 3, 0), SyscallSucceedsWithValue(3));
+
+  EXPECT_THAT(GetContentsFD(ro.get()), IsPosixErrorOkAndHolds("ccc"));
+  EXPECT_THAT(GetContents(path), IsPosixErrorOkAndHolds("bbb"));
 }
 
 // Truncate operations that don't change file size should still update mtime

@@ -1115,12 +1115,8 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return nil, err
 		}
 	}
-	if !d.inode.isSynthetic() {
-		// renameMu is locked here because it is required by d.openHandle(), which
-		// is called by d.ensureSharedHandle() and d.openSpecialFile() below. It is
-		// also required by d.connect() which is called by
-		// d.openSocketByConnecting(). Note that opening non-synthetic pipes may
-		// block, renameMu is unlocked separately in d.openSpecialFile() for pipes.
+	if d.inode.fileType() == linux.S_IFSOCK && !d.inode.isSynthetic() {
+		// d.connect(), called by d.openSocketByConnecting(), requires renameMu.
 		d.inode.fs.renameMu.RLock()
 		defer d.inode.fs.renameMu.RUnlock()
 	}
@@ -1217,20 +1213,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			emulate = rp.VirtualFilesystem().IsDeviceRegistered(vfs.CharDevice, d.inode.rdevMajor, d.inode.rdevMinor)
 		}
 		if emulate {
-			// Dispatch to the sentry's device registry with renameMu dropped (so
-			// that it may block and lock in peace).
-			//
-			// It is safe because renameMu guards the dentry tree (parents, names,
-			// children); this dispatch consults none of it. It passes only mnt,
-			// &d.vfsd, and the immutable device numbers, and d stays alive across
-			// the window because the caller holds a reference on it (see the
-			// child.IncRef in the open path). A concurrent rename may relink d
-			// while we are unlocked, but we read no tree state afterwards: we
-			// re-acquire only to satisfy the deferred RUnlock and return at once.
-			d.inode.fs.renameMu.RUnlock()
-			fd, err := rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, mnt, &d.vfsd, vfs.CharDevice, d.inode.rdevMajor, d.inode.rdevMinor, opts)
-			d.inode.fs.renameMu.RLock()
-			return fd, err
+			return rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, mnt, &d.vfsd, vfs.CharDevice, d.inode.rdevMajor, d.inode.rdevMinor, opts)
 		}
 	case linux.S_IFBLK:
 		// This should be unreachable: block devices are rejected at walk time
@@ -1293,8 +1276,7 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptio
 
 // Preconditions:
 //   - !d.inode.isSynthetic().
-//   - fs.renameMu is locked. It may be released temporarily while pipe blocks.
-//   - If d is a pipe, no other locks (other than fs.renameMu) should be held.
+//   - If d is a pipe, no locks should be held.
 func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if opts.Flags&linux.O_DIRECT != 0 && !d.inode.isRegularFile() {
@@ -1318,12 +1300,8 @@ retry:
 		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
 			// with ENXIO if opening the same named pipe with O_WRONLY would
-			// block because there are no readers of the pipe. Release renameMu
-			// while blocking.
-			d.inode.fs.renameMu.RUnlock()
-			err := sleepBetweenNamedPipeOpenChecks(ctx)
-			d.inode.fs.renameMu.RLock()
-			if err != nil {
+			// block because there are no readers of the pipe.
+			if err := sleepBetweenNamedPipeOpenChecks(ctx); err != nil {
 				return nil, err
 			}
 			goto retry
@@ -1331,11 +1309,7 @@ retry:
 		return nil, err
 	}
 	if isBlockingOpenOfNamedPipe && ats == vfs.MayRead && h.fd >= 0 {
-		// Release renameMu while blocking.
-		d.inode.fs.renameMu.RUnlock()
-		err := blockUntilNonblockingPipeHasWriter(ctx, h.fd)
-		d.inode.fs.renameMu.RLock()
-		if err != nil {
+		if err := blockUntilNonblockingPipeHasWriter(ctx, h.fd); err != nil {
 			h.close(ctx)
 			return nil, err
 		}
