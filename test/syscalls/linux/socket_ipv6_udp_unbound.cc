@@ -30,10 +30,8 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/posix_error.h"
-#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -163,6 +161,7 @@ TEST_P(IPv6UDPUnboundSocketTest, SetAndReceiveIPReceiveOrigDstAddr) {
   msghdr sent_msg = {};
   iovec sent_iov = {};
   char sent_data[kDataLength];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
   sent_iov.iov_base = sent_data;
   sent_iov.iov_len = kDataLength;
   sent_msg.msg_iov = &sent_iov;
