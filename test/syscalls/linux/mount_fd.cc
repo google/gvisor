@@ -28,6 +28,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -1171,6 +1172,61 @@ TEST(MoveMountTest, MoveMountDirOntoFileFails) {
   EXPECT_THAT(move_mount(treefd, "", AT_FDCWD, dst.path().c_str(),
                          MOVE_MOUNT_F_EMPTY_PATH),
               SyscallFailsWithErrno(EINVAL));
+}
+
+// A symlink can be the root of a mount (open_tree(AT_SYMLINK_NOFOLLOW) +
+// move_mount onto a non-directory, as util-linux does for
+// mount -o bind,X-mount.nocanonicalize=source). Path resolution that reaches
+// such a mount point must treat the mount root like any other symlink.
+TEST(MoveMountTest, BindMountedSymlinkIsFollowed) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const target = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "target", 0644));
+  auto const subdir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  auto const child = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(subdir.path(), "child", 0644));
+  const std::string file_link = JoinPath(dir.path(), "file_link");
+  const std::string dir_link = JoinPath(dir.path(), "dir_link");
+  ASSERT_THAT(symlink(target.path().c_str(), file_link.c_str()),
+              SyscallSucceeds());
+  ASSERT_THAT(symlink(subdir.path().c_str(), dir_link.c_str()),
+              SyscallSucceeds());
+  auto const file_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "file_mnt", 0644));
+  auto const dir_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "dir_mnt", 0644));
+
+  for (const auto& [link, mnt] : {std::make_pair(file_link, file_mnt.path()),
+                                  std::make_pair(dir_link, dir_mnt.path())}) {
+    int treefd =
+        open_tree(AT_FDCWD, link.c_str(),
+                  OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_SYMLINK_NOFOLLOW);
+    ASSERT_THAT(treefd, SyscallSucceeds());
+    ASSERT_THAT(
+        move_mount(treefd, "", AT_FDCWD, mnt.c_str(), MOVE_MOUNT_F_EMPTY_PATH),
+        SyscallSucceeds());
+    close(treefd);
+  }
+  auto cleanup = Cleanup([&]() {
+    umount2(file_mnt.path().c_str(), MNT_DETACH);
+    umount2(dir_mnt.path().c_str(), MNT_DETACH);
+  });
+
+  struct stat st;
+  ASSERT_THAT(lstat(file_mnt.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISLNK(st.st_mode));
+  ASSERT_THAT(stat(file_mnt.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(file_mnt.path())), "target");
+  EXPECT_THAT(open(file_mnt.path().c_str(), O_RDONLY | O_NOFOLLOW),
+              SyscallFailsWithErrno(ELOOP));
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(
+                GetContents(JoinPath(dir_mnt.path(), Basename(child.path())))),
+            "child");
 }
 
 }  // namespace
