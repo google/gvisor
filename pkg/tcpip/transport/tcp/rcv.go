@@ -523,6 +523,9 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// By consuming the current segment, we may have filled a gap in the
 	// sequence number domain that allows pending segments to be consumed
 	// now. So try to do it.
+	if r.pendingRcvdSegments.Len() > 0 {
+		r.ep.snd.gapFilled = true
+	}
 	for !r.closed && r.pendingRcvdSegments.Len() > 0 {
 		s := r.pendingRcvdSegments[0]
 		segLen := seqnum.Size(s.payloadSize())
