@@ -646,7 +646,7 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 	defer cu.Clean()
 
 	// Set the owners as requested by the client.
-	if err := fchown(childHostFD, uid, gid); err != nil {
+	if err := fchownCreated(childHostFD, uid, gid); err != nil {
 		return nil, lisafs.Statx{}, nil, -1, err
 	}
 
@@ -702,7 +702,7 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	if err != nil {
 		return nil, lisafs.Statx{}, err
 	}
-	if err := fchown(childDirFd, uid, gid); err != nil {
+	if err := fchownCreated(childDirFd, uid, gid); err != nil {
 		unix.Close(childDirFd)
 		return nil, lisafs.Statx{}, err
 	}
@@ -1149,7 +1149,7 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 		_ = unix.Close(sockFileFD)
 	})
 
-	if err := fchown(sockFileFD, uid, gid); err != nil {
+	if err := fchownCreated(sockFileFD, uid, gid); err != nil {
 		return nil, lisafs.Statx{}, nil, -1, err
 	}
 
@@ -1492,6 +1492,19 @@ func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
 		g = int(gid)
 	}
 	return unix.Fchownat(hostFD, "", u, g, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
+}
+
+func fchownCreated(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
+	err := fchown(hostFD, uid, gid)
+	if (err == unix.EINVAL || err == unix.EPERM) && gid.Ok() {
+		// When a child is created in a setgid directory whose GID is
+		// unmapped in the user namespace (EINVAL) or outside the caller's
+		// supplementary groups without CAP_CHOWN (EPERM), the host kernel
+		// already assigned the inherited GID on creation; retry setting
+		// only the UID.
+		return fchown(hostFD, uid, lisafs.NoGID)
+	}
+	return err
 }
 
 func fstatTo(hostFD int) (lisafs.Statx, error) {

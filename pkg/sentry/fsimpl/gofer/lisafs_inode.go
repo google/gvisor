@@ -498,7 +498,7 @@ func (i *lisafsInode) mknod(ctx context.Context, name string, creds *auth.Creden
 
 	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID))
+	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(i.childGID(creds)))
 	if err != nil {
 		return nil, err
 	}
