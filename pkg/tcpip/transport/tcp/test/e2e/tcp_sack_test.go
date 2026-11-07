@@ -932,6 +932,90 @@ func testSpuriousRecoveryWithRTO(t *testing.T, timestamps bool, ackOptions func(
 	}
 }
 
+func TestEifelRetransmissionTimestamps(t *testing.T) {
+	// The first retransmission wraps the timestamp. Neither transmission uses
+	// zero, which denotes a missing echo.
+	const nearWrap = ^uint32(0) - 5
+
+	// A timestamp above 2^31 precedes zero in TCP serial order. If the
+	// second timeout clears retransmitTS, an ACK echoing the first repair
+	// would incorrectly count the timeout as spurious.
+	const highTimestamp = 3 << 30
+	for _, tc := range []struct {
+		name        string
+		start       uint32
+		timeouts    int
+		ackOriginal bool
+	}{
+		{"wrap/original", nearWrap, 1, true},
+		{"wrap/repair", nearWrap, 1, false},
+		{"two_timeouts/original", highTimestamp, 2, true},
+		{"two_timeouts/repair", highTimestamp, 2, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			c := context.NewWithOpts(t, context.Options{MTU: mtu, EnableV4: true, Clock: clock})
+			defer c.Cleanup()
+			e2e.SetStackSACKPermitted(t, c, true)
+			e2e.SetStackTCPRecovery(t, c, 0)
+			peer := e2e.CreateConnectedWithSACKAndTS(c)
+			// Account for the connection's random timestamp offset.
+			clock.Advance(time.Duration(tc.start-peer.RecentTS) * time.Millisecond)
+
+			data := make([]byte, 2*maxPayload)
+			if n, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+				t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+			}
+			readTS := func(offset uint32) uint32 {
+				t.Helper()
+				v := c.GetPacket()
+				defer v.Release()
+				h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+				checkReceivedPacket(t, c, h, offset, v, data)
+				opts := h.ParsedOptions()
+				if !opts.TS || len(h.Payload()) != maxPayload {
+					t.Fatalf("segment at %d: TS = %t, size = %d", offset, opts.TS, len(h.Payload()))
+				}
+				return opts.TSVal
+			}
+			original := readTS(0)
+			readTS(maxPayload)
+			if original != tc.start {
+				t.Fatalf("original TS = %d, want %d", original, tc.start)
+			}
+			var repair uint32
+			for range tc.timeouts {
+				var info tcpip.TCPInfoOption
+				if err := c.EP.GetSockOpt(&info); err != nil {
+					t.Fatal(err)
+				}
+				clock.Advance(info.RTO + time.Millisecond)
+				repair = readTS(0)
+			}
+			if (repair < original) != (tc.start == nearWrap) {
+				t.Fatalf("unexpected timestamp order: original %d, repair %d", original, repair)
+			}
+
+			// The first advancing ACK covers only the first segment. Echo the
+			// timestamp of the copy the peer accepted.
+			echo, want := repair, uint64(0)
+			if tc.ackOriginal {
+				echo, want = original, 1
+			}
+			peer.Flags = header.TCPFlagAck
+			peer.AckNum = peer.AckNum.Add(maxPayload)
+			peer.SendPacket(nil, timestampOption(peer.TSVal+1, echo))
+			// Drain the ACK before reading the counter, whether or not TCP sends
+			// another packet in response.
+			c.Stack().Pause()
+			c.Stack().Resume()
+			if got := c.Stack().Stats().TCP.SpuriousRTORecovery.Value(); got != want {
+				t.Errorf("original %d, repair %d, echo %d: spurious RTOs = %d, want %d", original, repair, echo, got, want)
+			}
+		})
+	}
+}
+
 func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	numAck := 0
 	probeDone := make(chan struct{})
