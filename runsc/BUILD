@@ -1,5 +1,4 @@
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//tools:defs.bzl", "go_binary", "go_cov")
+load("//tools:defs.bzl", "go_binary", "go_cov", "go_test")
 load("//tools:deps.bzl", "deps_test")
 
 package(
@@ -148,12 +147,12 @@ deps_test(
     ],
 )
 
-sh_test(
+go_test(
     name = "version_test",
     size = "small",
-    srcs = ["version_test.sh"],
-    args = ["$(location :runsc)"],
+    srcs = ["version_test.go"],
     data = [":runsc"],
+    deps = ["//pkg/test/testutil"],
 )
 
 go_cov(
