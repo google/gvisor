@@ -17,9 +17,12 @@ package sys
 import (
 	"fmt"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -138,6 +141,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 	// synthesized /sys/bus/pci, so it is not a host escape hatch. The
 	// bus/<bus> entry each device sits on is created for pci_bus below.
 	cores := kernel.KernelFromContext(ctx).ApplicationCores()
+	hostNodes := hostCPUNodes(snap.NUMA)
 	for _, n := range snap.PCINodes {
 		if err := checkRelPath(n.Path); err != nil {
 			return nil, err
@@ -151,14 +155,20 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 		// CPU-affinity attributes (from pciAttrNames) need to be rewritten.
 		// gVisor presents just 1 NUMA node (over CPUs 0..cores-1) to the
 		// application. A "-1" numa_node (device on no node) is preserved.
+		// Devices keep their relative host locality: a device on the i-th of
+		// the n host nodes with CPUs is local to the i-th of n shares of the
+		// CPUs, so topology tools such as hwloc still group devices by host
+		// node.
+		first, end := uint(0), cores
 		if v, ok := d.files["numa_node"]; ok && strings.TrimSpace(v) != "-1" {
+			first, end = localCPUs(v, hostNodes, cores)
 			d.files["numa_node"] = "0\n"
 		}
 		if _, ok := d.files["local_cpus"]; ok {
-			d.files["local_cpus"] = fullCPUMask(cores) + "\n"
+			d.files["local_cpus"] = cpuMask(first, end, cores) + "\n"
 		}
 		if _, ok := d.files["local_cpulist"]; ok {
-			d.files["local_cpulist"] = cpuListString(cores)
+			d.files["local_cpulist"] = cpuListString(first, end)
 		}
 		// Raw PCI config space (binary). hwloc reads it to rebuild the PCI
 		// bridge hierarchy; without it aws-ofi-nccl's NCCL topology write fails.
@@ -372,20 +382,50 @@ func (fs *filesystem) buildNUMA(ctx context.Context, creds *auth.Credentials, nu
 	}
 	entries["node0"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 		"cpumap":  fs.newStaticFile(ctx, creds, defaultSysMode, fullCPUMask(cores)+"\n"),
-		"cpulist": fs.newStaticFile(ctx, creds, defaultSysMode, cpuListString(cores)),
+		"cpulist": fs.newStaticFile(ctx, creds, defaultSysMode, cpuListString(0, cores)),
 		// The only node's distance to itself (LOCAL_DISTANCE).
 		"distance": fs.newStaticFile(ctx, creds, defaultSysMode, "10\n"),
 	})
 	return fs.newDir(ctx, creds, defaultSysDirMode, entries)
 }
 
-// cpuListString formats CPUs 0..cores-1 in the kernel's cpulist format
+// cpuListString formats CPUs [first, end) in the kernel's cpulist format
 // (lib/bitmap.c:bitmap_print_to_pagebuf(list=true)).
-func cpuListString(cores uint) string {
-	if cores == 1 {
-		return "0\n"
+//
+// Preconditions: first < end.
+func cpuListString(first, end uint) string {
+	if end-first == 1 {
+		return fmt.Sprintf("%d\n", first)
 	}
-	return fmt.Sprintf("0-%d\n", cores-1)
+	return fmt.Sprintf("%d-%d\n", first, end-1)
+}
+
+// hostCPUNodes returns the host's NUMA nodes with CPUs in ascending order.
+// Memory-only nodes (e.g. CXL or HBM) have no CPUs to share.
+func hostCPUNodes(numa *rdma.NUMA) []uint32 {
+	if numa == nil {
+		return nil
+	}
+	// 1024 is Linux's largest MAX_NUMNODES.
+	nodes, err := bitmap.ParseList(numa.Aggregate["has_cpu"], 1024)
+	if err != nil {
+		return nil
+	}
+	return nodes.ToSlice()
+}
+
+// localCPUs returns the share [first, end) of CPUs 0..cores-1 that is local
+// to a device on host NUMA node numaNode. hostNodes are the host nodes with
+// CPUs, one share each. All CPUs are local if the device's node is not one of
+// them, there is a single one, or there are too few CPUs to share.
+func localCPUs(numaNode string, hostNodes []uint32, cores uint) (first, end uint) {
+	n := uint(len(hostNodes))
+	node, err := strconv.ParseUint(strings.TrimSpace(numaNode), 10, 32)
+	i := slices.Index(hostNodes, uint32(node))
+	if err != nil || i < 0 || n < 2 || cores < n {
+		return 0, cores
+	}
+	return uint(i) * cores / n, (uint(i) + 1) * cores / n
 }
 
 // buildRDMADir converts an rdmaDirTree into kernfs inodes.

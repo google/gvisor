@@ -79,6 +79,24 @@ func TestOneCPUMask(t *testing.T) {
 	}
 }
 
+func TestCPUMask(t *testing.T) {
+	for _, test := range []struct {
+		first, end, cores uint
+		want              string
+	}{
+		{0, 2, 4, "3"},
+		{2, 4, 4, "c"},
+		{1, 4, 5, "0e"},
+		{0, 43, 86, "000000,000007ff,ffffffff"},
+		{43, 86, 86, "3fffff,fffff800,00000000"},
+		{32, 64, 65, "0,ffffffff,00000000"},
+	} {
+		if got := cpuMask(test.first, test.end, test.cores); got != test.want {
+			t.Errorf("cpuMask(%d, %d, %d): got %s, want %s", test.first, test.end, test.cores, got, test.want)
+		}
+	}
+}
+
 func TestIsCPUDirName(t *testing.T) {
 	for _, test := range []struct {
 		name string
