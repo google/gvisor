@@ -195,7 +195,7 @@ func (cm *containerManager) CreateSubcontainer(args *sentryapi.CreateArgs, _ *st
 }
 
 // StartSubcontainer runs a created container within a sandbox.
-func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *struct{}) error {
+func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, reply *sentryapi.RestoreReply) error {
 	// Validate arguments.
 	if args == nil {
 		return errors.New("start missing arguments")
@@ -218,7 +218,7 @@ func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *stru
 			// Translate the `runsc start` to `runsc restore`.
 			// TODO(b/441106898): Move this to the shim once single-shim-per-pod is implemented.
 			log.Warningf("StartSubcontainer called on a restoring sandbox, restoring subcontainer instead: id=%s", args.CID)
-			return cm.RestoreSubcontainer(args, nil)
+			return cm.RestoreSubcontainer(args, reply)
 		}
 		return fmt.Errorf("sandbox is not in started state, cannot start subcontainer: state=%s", state)
 	}
