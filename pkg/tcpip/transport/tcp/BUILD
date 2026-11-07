@@ -218,6 +218,7 @@ go_test(
     size = "small",
     srcs = [
         "accept_test.go",
+        "connect_test.go",
         "cubic_test.go",
         "endpoint_test.go",
         "main_test.go",
@@ -238,6 +239,7 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
         "//pkg/waiter",
