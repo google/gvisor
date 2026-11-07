@@ -79,6 +79,14 @@ func (mm *MemoryManager) CheckIORange(addr hostarch.Addr, length int64) (hostarc
 // checkIOVec applies bound checks consistent with Linux's
 // arch/x86/include/asm/uaccess.h:access_ok() to ars.
 func (mm *MemoryManager) checkIOVec(ars hostarch.AddrRangeSeq) (hostarch.AddrRangeSeq, bool) {
+	if ars.NumRanges() == 1 {
+		ar := ars.Head()
+		nar, ok := mm.CheckIORange(ar.Start, int64(ar.Length()))
+		if !ok {
+			return hostarch.AddrRangeSeq{}, false
+		}
+		return hostarch.AddrRangeSeqOf(nar), true
+	}
 	var res []hostarch.AddrRange
 	for !ars.IsEmpty() {
 		ar := ars.Head()
