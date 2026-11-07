@@ -185,6 +185,13 @@ type sender struct {
 	// probeTimer is used to schedule PTO for RACK TLP algorithm.
 	probeTimer timer `state:"nosave"`
 
+	// spuriousTimeoutResumed indicates that the sender resumed with unsent
+	// data after a spurious timeout (RFC4015 step (8)) and that no loss
+	// recovery has started since. Duplicate ACKs then no longer come from
+	// go-back-N retransmits, so they may trigger fast retransmit before the
+	// cumulative ACK passes FastRecovery.Last (RFC4015 Section 4).
+	spuriousTimeoutResumed bool
+
 	// spuriousRecovery indicates whether the sender entered recovery
 	// spuriously as described in RFC3522 Section 3.2.
 	spuriousRecovery bool
@@ -647,6 +654,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	//     transmitted in the variable recover, and exit the fast recovery
 	//     procedure if applicable.
 	s.FastRecovery.Last = s.SndNxt - 1
+	s.spuriousTimeoutResumed = false
 
 	if s.FastRecovery.Active {
 		// We were attempting fast recovery but were not successful.
@@ -1190,6 +1198,7 @@ func (s *sender) enterRecovery() {
 	s.DupAckCount = 0
 	s.FastRecovery.First = s.SndUna
 	s.FastRecovery.Last = s.SndNxt - 1
+	s.spuriousTimeoutResumed = false
 	s.FastRecovery.MaxCwnd = s.SndCwnd + s.Outstanding
 	s.FastRecovery.HighRxt = s.SndUna
 	s.FastRecovery.RescueRxt = s.SndUna
@@ -1231,6 +1240,41 @@ func (s *sender) leaveRecovery() {
 // sequence number assigned to it.
 func (s *sender) isAssignedSequenceNumber(seg *segment) bool {
 	return seg.flags != 0
+}
+
+// resumeAfterSpuriousTimeout applies RFC4015 step (8) once a timeout has been
+// detected spurious: resume the transmission with previously unsent data
+// (SND.NXT <- SND.MAX).
+//
+// The RTO rewound writeNext to SND.UNA and zeroed Outstanding so that the
+// whole flight would be resent. An ACK for an original transmission shows
+// that the timeout was spurious, so skip writeNext past the data already
+// sent and count that data as outstanding again. SACKed segments stay out of
+// Outstanding, as in the ACK removal loop. A segment of that data that was
+// really lost is then repaired by fast retransmit, which detectLoss allows
+// from here on (RFC4015 Section 4).
+//
+// See: https://datatracker.ietf.org/doc/html/rfc4015#section-3.3.
+//
+// +checklocks:s.ep.mu
+func (s *sender) resumeAfterSpuriousTimeout() {
+	if wn := s.writeNext; wn == nil || !s.isAssignedSequenceNumber(wn) || !wn.sequenceNumber.LessThan(s.SndNxt) {
+		// writeNext already points at unsent data.
+		return
+	}
+	s.Outstanding = 0
+	var next *segment
+	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
+		if !s.isAssignedSequenceNumber(seg) || !seg.sequenceNumber.LessThan(s.SndNxt) {
+			next = seg
+			break
+		}
+		if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+			s.Outstanding += s.pCount(seg, s.MaxPayloadSize)
+		}
+	}
+	s.updateWriteNext(next)
+	s.spuriousTimeoutResumed = true
 }
 
 // SetPipe implements the SetPipe() function described in RFC6675. Netstack
@@ -1343,7 +1387,11 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 	// Note that we only enter recovery when at least one more byte of data
 	// beyond s.fr.last (the highest byte that was outstanding when fast
 	// retransmit was last entered) is acked.
-	if !s.FastRecovery.Last.LessThan(seg.ackNumber - 1) {
+	//
+	// The check keeps duplicate ACKs for go-back-N retransmits from starting
+	// another recovery. Once a spurious timeout has stopped those
+	// retransmits (RFC4015 step (8)), RFC4015 Section 4 drops it.
+	if !s.spuriousTimeoutResumed && !s.FastRecovery.Last.LessThan(seg.ackNumber-1) {
 		s.DupAckCount = 0
 		return false
 	}
@@ -1761,8 +1809,11 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		// Eifel compares the ACK's echo to the retransmission time (RFC 3522, section 3.2).
 		// Like Linux, treat a zero echo as unavailable for this comparison.
+		spuriousTimeout := false
 		if s.inRecovery() && s.ep.SendTSOk && rcvdSeg.parsedOptions.TS && rcvdSeg.parsedOptions.TSEcr != 0 {
+			wasSpurious := s.spuriousRecovery
 			s.detectSpuriousRecovery(hasDSACK, rcvdSeg.parsedOptions.TSEcr)
+			spuriousTimeout = !wasSpurious && s.spuriousRecovery && s.state == tcpip.RTORecovery
 		}
 
 		// If we are not in fast recovery then update the congestion
@@ -1779,6 +1830,14 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				}
 				s.reorderTimer.disable()
 			}
+		}
+
+		// RFC4015 step (8): a spurious timeout was just detected, so
+		// resume with unsent data instead of the go-back-N retransmits.
+		// This runs after cc.Update, which must see only what this ACK
+		// removed from flight.
+		if spuriousTimeout {
+			s.resumeAfterSpuriousTimeout()
 		}
 
 		// Update the send buffer usage and notify potential waiters.
