@@ -486,7 +486,11 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 	}
 
 	// Send a message to the sandbox control server to start the root container.
-	if err := conn.Call(sentryapi.ContMgrRootContainerStart, &s.ID, nil); err != nil {
+	startArgs := sentryapi.StartArgs{
+		CID:         s.ID,
+		MemoryLimit: s.effectiveMemoryLimit(),
+	}
+	if err := conn.Call(sentryapi.ContMgrRootContainerStart, &startArgs, nil); err != nil {
 		return fmt.Errorf("starting root container: %w", err)
 	}
 	s.RegisteredMetrics = registeredMetrics
@@ -540,6 +544,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		Spec:                        spec,
 		Conf:                        conf,
 		CID:                         cid,
+		MemoryLimit:                 s.effectiveMemoryLimit(),
 		NumGoferFilestoreFDs:        len(goferFilestores),
 		IsDevIoFilePresent:          devIOFile != nil,
 		GoferMountConfs:             goferConfs,
@@ -603,6 +608,26 @@ func (d DirectIO) String() string {
 		return "off"
 	}
 	panic(fmt.Sprintf("invalid direct I/O mode %d", d))
+}
+
+// effectiveMemoryLimit reads the current host and cgroup memory bound because
+// container updates can change the cgroup limit after sandbox creation. Returns
+// zero if the bound cannot be read so ordinary GC remains enabled.
+func (s *Sandbox) effectiveMemoryLimit() uint64 {
+	host, err := hostos.TotalSystemMemory()
+	if err != nil {
+		log.Warningf("Reading host memory limit: %v", err)
+		return 0
+	}
+	if s.CgroupJSON.Cgroup == nil {
+		return host
+	}
+	limit, err := s.CgroupJSON.Cgroup.MemoryLimit()
+	if err != nil {
+		log.Warningf("Reading cgroup memory limit: %v", err)
+		return 0
+	}
+	return min(host, limit)
 }
 
 // Restore sends the restore call for a container in the sandbox.
@@ -683,6 +708,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	// Restore the container and start the root container.
 	var reply sentryapi.RestoreReply
+	opt.MemoryLimit = s.effectiveMemoryLimit()
 	if err := conn.Call(sentryapi.ContMgrRestore, &opt, &reply); err != nil {
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
@@ -838,6 +864,7 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 		NumGoferFilestoreFDs: len(goferFilestoreFiles),
 		IsDevIoFilePresent:   devIOFile != nil,
 		GoferMountConfs:      goferMountConf,
+		MemoryLimit:          s.effectiveMemoryLimit(),
 		FilePayload:          payload,
 	}
 	var reply sentryapi.RestoreReply
@@ -2089,6 +2116,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
 		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
 	}
+	opt.MemoryLimit = s.effectiveMemoryLimit()
 	if err := s.call(sentryapi.ContMgrCheckpoint, &opt, nil); err != nil {
 		// The application may still be running.
 		if err := s.applyAppCPULimit(cpuPhaseLifecycle); err != nil {

@@ -76,6 +76,7 @@ go_test(
     embed = [":sandbox"],
     deps = [
         "//pkg/control/server",
+        "//pkg/hostos",
         "//pkg/prometheus",
         "//pkg/sentry/control/controlapi",
         "//runsc/boot/sentryapi",

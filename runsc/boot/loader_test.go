@@ -16,9 +16,14 @@ package boot
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
+	runtimedebug "runtime/debug"
+	"runtime/metrics"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,19 +35,23 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/gccontrol"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/capabilitytest"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	fsgofer "gvisor.dev/gvisor/runsc/gofer/fs"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 func init() {
@@ -119,6 +128,17 @@ func startGofer(root string, conf *config.Config) (int, func(), error) {
 }
 
 func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error) {
+	l, cleanup, err := createLoaderWithDefaultFreeOSMemory(conf, spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Stub background idle heap releases so short tests do not call
+	// gccontrol.MaybeFreeOSMemory after Destroy into later tests.
+	l.freeOSMemory = func() {}
+	return l, cleanup, nil
+}
+
+func createLoaderWithDefaultFreeOSMemory(conf *config.Config, spec *specs.Spec) (*Loader, func(), error) {
 	sock := fmt.Sprintf("\x00loader-test.%010d", rand.Int())
 	fd, err := server.CreateSocket(sock)
 	if err != nil {
@@ -234,8 +254,11 @@ func TestStartSignal(t *testing.T) {
 	}
 
 	// Trigger the control server StartRoot method.
-	cid := "foo"
-	if err := l.ctrl.manager.StartRoot(&cid, nil); err != nil {
+	startArgs := sentryapi.StartArgs{
+		CID:         "foo",
+		MemoryLimit: gccontrol.NoMemoryLimit,
+	}
+	if err := l.ctrl.manager.StartRoot(&startArgs, nil); err != nil {
 		t.Errorf("error calling StartRoot: %v", err)
 	}
 
@@ -331,6 +354,400 @@ func TestStartupHeapReleaseOnRestore(t *testing.T) {
 	// A second trigger while the release is pending doesn't add a release.
 	l.releaseStartupHeapWhenIdle()
 	expectOneStartupHeapRelease(t, released)
+}
+
+func TestStartupGC(t *testing.T) {
+	const (
+		gcDisabled       = -1
+		defaultGCPercent = 100
+		queryMemoryLimit = -1
+	)
+	gcPercent := func() int {
+		sample := [1]metrics.Sample{{Name: "/gc/gogc:percent"}}
+		metrics.Read(sample[:])
+		if sample[0].Value.Uint64() == math.MaxUint64 {
+			return gcDisabled
+		}
+		return int(int32(sample[0].Value.Uint64()))
+	}
+	resetRuntimeGC := func(t *testing.T) {
+		t.Helper()
+		gccontrol.MaybeFreeOSMemory()
+		origPercent := runtimedebug.SetGCPercent(defaultGCPercent)
+		origLimit := runtimedebug.SetMemoryLimit(math.MaxInt64)
+		t.Cleanup(func() {
+			gccontrol.MaybeFreeOSMemory()
+			runtimedebug.SetGCPercent(origPercent)
+			runtimedebug.SetMemoryLimit(origLimit)
+		})
+	}
+
+	t.Run("runResumesOnIdleRelease", func(t *testing.T) {
+		resetRuntimeGC(t)
+		bootGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if bootGCSuspension == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer bootGCSuspension.End()
+		bootGCSuspension.EndAfter(time.Hour)
+
+		l, cleanup, err := createLoaderWithDefaultFreeOSMemory(testConfig(), testSpec())
+		if err != nil {
+			t.Fatalf("createLoaderWithDefaultFreeOSMemory: %v", err)
+		}
+		defer l.Destroy()
+		defer cleanup()
+
+		origFree := l.freeOSMemory
+		gotAfterRelease := make(chan int, 1)
+		l.freeOSMemory = func() {
+			origFree()
+			gotAfterRelease <- gcPercent()
+		}
+
+		go func() { <-l.ctrl.manager.startResultChan }()
+		if err := l.Run(); err != nil {
+			t.Fatalf("l.Run(): %v", err)
+		}
+		if got := <-gotAfterRelease; got != defaultGCPercent {
+			t.Fatalf("GCPercent after idle freeOSMemory = %d, want %d", got, defaultGCPercent)
+		}
+		if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+			t.Errorf("application exited with %s, want exit status 0", status)
+		}
+	})
+
+	t.Run("runResumesAfterStartupGCDelay", func(t *testing.T) {
+		resetRuntimeGC(t)
+		origDelay := startupGCResumeDelay
+		startupGCResumeDelay = 20 * time.Millisecond
+		t.Cleanup(func() { startupGCResumeDelay = origDelay })
+
+		l, cleanup, err := createLoader(testConfig(), testSpec())
+		if err != nil {
+			t.Fatalf("createLoader: %v", err)
+		}
+		defer l.Destroy()
+		defer cleanup()
+		released := watchStartupHeapReleases(l)
+
+		bootGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if bootGCSuspension == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer bootGCSuspension.End()
+		bootGCSuspension.EndAfter(5 * time.Millisecond)
+
+		go func() { <-l.ctrl.manager.startResultChan }()
+		if err := l.Run(); err != nil {
+			t.Fatalf("l.Run(): %v", err)
+		}
+		if got := gcPercent(); got != gcDisabled {
+			t.Fatalf("GCPercent right after l.Run() = %d, want %d", got, gcDisabled)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		resumed := false
+		for time.Now().Before(deadline) {
+			if runtimedebug.SetMemoryLimit(queryMemoryLimit) == math.MaxInt64 && gcPercent() == defaultGCPercent {
+				resumed = true
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if !resumed {
+			t.Fatal("GC remained suspended past startupGCResumeDelay")
+		}
+		<-released
+		if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+			t.Errorf("application exited with %s, want exit status 0", status)
+		}
+	})
+
+	t.Run("resumesOnCreatedRunError", func(t *testing.T) {
+		resetRuntimeGC(t)
+		bootGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if bootGCSuspension == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer bootGCSuspension.End()
+		bootGCSuspension.EndAfter(time.Hour)
+
+		l, cleanup, err := createLoader(testConfig(), testSpec())
+		if err != nil {
+			t.Fatalf("createLoader: %v", err)
+		}
+		defer l.Destroy()
+		defer cleanup()
+		defer l.ctrl.srv.Stop(time.Hour)
+
+		l.mu.Lock()
+		l.networkArgs = &sentryapi.CreateLinksAndRoutesArgs{
+			FDBasedLinks: []sentryapi.FDBasedLink{{}},
+			XDPLinks:     []sentryapi.XDPLink{{}},
+		}
+		l.mu.Unlock()
+		if err := l.run(); err == nil {
+			t.Fatal("l.run() with conflicting network links succeeded")
+		}
+		if got := gcPercent(); got != defaultGCPercent {
+			t.Fatalf("GCPercent after failed created run = %d, want %d", got, defaultGCPercent)
+		}
+	})
+
+	t.Run("postRestoreResumesOnIdleRelease", func(t *testing.T) {
+		resetRuntimeGC(t)
+		l, cleanup, err := createLoaderWithDefaultFreeOSMemory(testConfig(), testSpec())
+		if err != nil {
+			t.Fatalf("createLoaderWithDefaultFreeOSMemory: %v", err)
+		}
+		defer l.Destroy()
+		defer cleanup()
+		defer l.ctrl.srv.Stop(time.Hour)
+
+		origFree := l.freeOSMemory
+		gotAfterRelease := make(chan int, 1)
+		l.freeOSMemory = func() {
+			origFree()
+			gotAfterRelease <- gcPercent()
+		}
+
+		restoreGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if restoreGCSuspension == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer restoreGCSuspension.End()
+		restoreGCSuspension.EndAfter(time.Hour)
+
+		l.mu.Lock()
+		l.state = restoringStarted
+		l.mu.Unlock()
+		l.ctrl.manager.onRestoreDone(sentryapi.Savings{})
+		if got := <-gotAfterRelease; got != defaultGCPercent {
+			t.Fatalf("GCPercent after post-restore freeOSMemory = %d, want %d", got, defaultGCPercent)
+		}
+	})
+
+	t.Run("multiContainerRestoreClampsBeforeSubcontainers", func(t *testing.T) {
+		resetRuntimeGC(t)
+		bootGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+		if bootGCSuspension == nil {
+			t.Fatal("gccontrol.Suspend returned nil")
+		}
+		defer bootGCSuspension.End()
+		bootGCSuspension.EndAfter(time.Hour)
+
+		const (
+			savedMFBytes = 128 << 20
+			rootLimit    = 512 << 20
+			higherLimit  = 1024 << 20
+		)
+		r := &restorer{
+			totalContainers:      3,
+			savedMemoryFileBytes: savedMFBytes,
+		}
+		started, err := r.restoreContainerInfo(nil, &containerInfo{cid: "root", containerName: "root"}, rootLimit)
+		if err != nil || started {
+			t.Fatalf("restoreContainerInfo(root) = (%v, %v), want (false, nil)", started, err)
+		}
+		const wantSoftLimit = int64((rootLimit - savedMFBytes) / 2)
+		if got := runtimedebug.SetMemoryLimit(queryMemoryLimit); got != wantSoftLimit {
+			t.Fatalf("MemoryLimit after container 1/3 = %d, want %d", got, wantSoftLimit)
+		}
+		if started, err := r.restoreContainerInfo(nil, &containerInfo{cid: "sub1", containerName: "sub1"}, higherLimit); err != nil || started {
+			t.Fatalf("restoreContainerInfo(sub1) = (%v, %v), want (false, nil)", started, err)
+		}
+		if r.memoryLimit != rootLimit {
+			t.Fatalf("r.memoryLimit = %d, want %d", r.memoryLimit, rootLimit)
+		}
+
+		// Tight headroom on a pending container resumes Boot's GC
+		// suspension early.
+		rTight := &restorer{
+			totalContainers:      2,
+			savedMemoryFileBytes: savedMFBytes,
+		}
+		if started, err := rTight.restoreContainerInfo(nil, &containerInfo{cid: "root", containerName: "root"}, savedMFBytes); err != nil || started {
+			t.Fatalf("restoreContainerInfo(tight) = (%v, %v), want (false, nil)", started, err)
+		}
+		if got := gcPercent(); got != defaultGCPercent {
+			t.Fatalf("GCPercent after tight container 1/2 = %d, want %d", got, defaultGCPercent)
+		}
+	})
+
+	t.Run("startRootClampsBootLimit", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			memoryLimit uint64
+			wantPercent int
+			wantLimit   int64
+		}{
+			{
+				name:        "loweredLimit",
+				memoryLimit: 384 << 20,
+				wantPercent: gcDisabled,
+				wantLimit:   192 << 20,
+			},
+			{
+				name:        "unknownLimitResumesBootGC",
+				memoryLimit: 0,
+				wantPercent: defaultGCPercent,
+				wantLimit:   math.MaxInt64,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				resetRuntimeGC(t)
+				bootGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+				if bootGCSuspension == nil {
+					t.Fatal("gccontrol.Suspend returned nil")
+				}
+				defer bootGCSuspension.End()
+				bootGCSuspension.EndAfter(time.Hour)
+
+				l, cleanup, err := createLoader(testConfig(), testSpec())
+				if err != nil {
+					t.Fatalf("createLoader: %v", err)
+				}
+				defer l.Destroy()
+				defer cleanup()
+				released := watchStartupHeapReleases(l)
+
+				runDone := make(chan error, 1)
+				go func() {
+					l.WaitForStartSignal()
+					runDone <- l.Run()
+				}()
+
+				startArgs := sentryapi.StartArgs{
+					CID:         "foo",
+					MemoryLimit: tc.memoryLimit,
+				}
+				if err := l.ctrl.manager.StartRoot(&startArgs, nil); err != nil {
+					t.Fatalf("StartRoot: %v", err)
+				}
+				if err := <-runDone; err != nil {
+					t.Fatalf("l.Run(): %v", err)
+				}
+				if got := gcPercent(); got != tc.wantPercent {
+					t.Fatalf("GCPercent = %d, want %d", got, tc.wantPercent)
+				}
+				if got := runtimedebug.SetMemoryLimit(queryMemoryLimit); got != tc.wantLimit {
+					t.Fatalf("MemoryLimit = %d, want %d", got, tc.wantLimit)
+				}
+				<-released
+				if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+					t.Errorf("application exited with %s, want exit status 0", status)
+				}
+			})
+		}
+	})
+
+	t.Run("saveOptsFromSpecOmitsMemoryLimit", func(t *testing.T) {
+		opts, err := saveOptsFromSpec(testSpec(), nil, false /* useCheckpointGofer */)
+		if err != nil {
+			t.Fatalf("saveOptsFromSpec: %v", err)
+		}
+		if opts.MemoryLimit != 0 {
+			t.Fatalf("saveOptsFromSpec().MemoryLimit = %d, want 0", opts.MemoryLimit)
+		}
+	})
+
+	t.Run("restoreClampsBootLimitFromStatefile", func(t *testing.T) {
+		const savedMFBytes = 256 << 20
+		specsStr, err := specutils.ConvertSpecsToString(map[string]*specs.Spec{
+			"foo": testSpec(),
+			"sub": testSpec(),
+		})
+		if err != nil {
+			t.Fatalf("ConvertSpecsToString: %v", err)
+		}
+		statePath := filepath.Join(t.TempDir(), "state.img")
+		sf, err := os.Create(statePath)
+		if err != nil {
+			t.Fatalf("os.Create: %v", err)
+		}
+		sw, err := statefile.NewWriter(sf, nil, map[string]string{
+			ContainerCountKey:               "2",
+			ContainerSpecsKey:               specsStr,
+			VersionKey:                      version.Version(),
+			"gvisor_memory_file_used_bytes": strconv.FormatUint(savedMFBytes, 10),
+		})
+		if err != nil {
+			sf.Close()
+			t.Fatalf("statefile.NewWriter: %v", err)
+		}
+		if err := sw.Close(); err != nil {
+			t.Fatalf("statefile.Writer.Close: %v", err)
+		}
+
+		for _, tc := range []struct {
+			name        string
+			memoryLimit uint64
+			wantPercent int
+			wantLimit   int64
+		}{
+			{
+				name:        "loweredLimitSubtractsSavedMemoryFile",
+				memoryLimit: 640 << 20,
+				wantPercent: gcDisabled,
+				wantLimit:   (640<<20 - savedMFBytes) / 2,
+			},
+			{
+				name:        "unknownLimitResumesBootGC",
+				memoryLimit: 0,
+				wantPercent: defaultGCPercent,
+				wantLimit:   math.MaxInt64,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				resetRuntimeGC(t)
+				bootGCSuspension := gccontrol.Suspend(gccontrol.NoMemoryLimit, 0)
+				if bootGCSuspension == nil {
+					t.Fatal("boot Suspend returned nil")
+				}
+				defer bootGCSuspension.End()
+				bootGCSuspension.EndAfter(time.Hour)
+
+				l, cleanup, err := createLoader(testConfig(), testSpec())
+				if err != nil {
+					t.Fatalf("createLoader: %v", err)
+				}
+				defer func() {
+					if r := l.ctrl.manager.restorer; r != nil {
+						if r.stateFile != nil {
+							_ = r.stateFile.Close()
+						}
+						if r.mainMF != nil {
+							r.mainMF.Destroy()
+						}
+						l.k.Unpause()
+					}
+					l.Destroy()
+					cleanup()
+				}()
+
+				rf, err := os.Open(statePath)
+				if err != nil {
+					t.Fatalf("os.Open: %v", err)
+				}
+				defer rf.Close()
+
+				var reply sentryapi.RestoreReply
+				opts := sentryapi.RestoreOpts{
+					FilePayload: urpc.FilePayload{Files: []*os.File{rf}},
+					MemoryLimit: tc.memoryLimit,
+				}
+				if err := l.ctrl.manager.Restore(&opts, &reply); err != nil {
+					t.Fatalf("Restore: %v", err)
+				}
+				if got := gcPercent(); got != tc.wantPercent {
+					t.Fatalf("GCPercent = %d, want %d", got, tc.wantPercent)
+				}
+				if got := runtimedebug.SetMemoryLimit(queryMemoryLimit); got != tc.wantLimit {
+					t.Fatalf("MemoryLimit = %d, want %d", got, tc.wantLimit)
+				}
+			})
+		}
+	})
 }
 
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the

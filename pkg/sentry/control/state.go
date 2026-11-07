@@ -77,6 +77,7 @@ func ConvertToStateSaveOpts(o *controlapi.SaveOpts) (*state.SaveOpts, error) {
 		CudaCheckpointSequential:       o.CudaCheckpointSequential,
 		ValidateMetadata:               o.ValidateMetadata,
 		GraphEngine:                    o.GraphEngine,
+		MemoryLimit:                    o.MemoryLimit,
 	}
 	if err := setSaveOpts(o, saveOpts); err != nil {
 		saveOpts.Close()

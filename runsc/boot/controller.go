@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/gccontrol"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
@@ -148,10 +149,13 @@ type containerManager struct {
 }
 
 // StartRoot will start the root container process.
-func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.StartRoot, cid: %s", *cid)
+func (cm *containerManager) StartRoot(args *sentryapi.StartArgs, _ *struct{}) error {
+	log.Debugf("containerManager.StartRoot, cid: %s", args.CID)
 	cm.l.mu.Lock()
 	state := cm.l.state
+	if state == created {
+		cm.l.startMemoryLimit = args.MemoryLimit
+	}
 	cm.l.mu.Unlock()
 	if state != created {
 		return fmt.Errorf("sandbox is not in created state, cannot start root container: state=%s", state)
@@ -418,9 +422,10 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 	timer.Reached("got restore readers")
 
 	cm.restorer = &restorer{
-		cm:         cm,
-		background: o.Background,
-		timer:      timer,
+		cm:          cm,
+		background:  o.Background,
+		timer:       timer,
+		memoryLimit: o.MemoryLimit,
 	}
 
 	// Create the main MemoryFile.
@@ -429,6 +434,18 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		return fmt.Errorf("creating memory file: %v", err)
 	}
 	timer.Reached("created MemoryFile")
+
+	// Read checkpoint metadata before starting async page loading so saved
+	// MemoryFile usage is excluded from the GC memory limit.
+	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
+	if err != nil {
+		return fmt.Errorf("creating statefile reader: %w", err)
+	}
+	stateFile = nil
+	timer.Reached("created statefile reader")
+	cm.restorer.savedMemoryFileBytes = state.SavedMemoryFileBytes(cm.restorer.metadata)
+	// Keep GC suspended under the restore bound while containers arrive.
+	gccontrol.Suspend(o.MemoryLimit, cm.restorer.savedMemoryFileBytes).EndAfter(startupGCResumeDelay)
 
 	if o.HavePagesFile {
 		// This immediately starts loading the main MemoryFile asynchronously.
@@ -439,13 +456,6 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		pagesFile = nil
 		timer.Reached("created async MF loader")
 	}
-
-	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
-	if err != nil {
-		return fmt.Errorf("creating statefile reader: %w", err)
-	}
-	stateFile = nil
-	timer.Reached("created statefile reader")
 
 	cm.l.state = restoringUnstarted
 
@@ -495,7 +505,7 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		return fmt.Errorf("checkpoint taken with no-root-container=%t cannot be restored with no-root-container=%t", saved, cm.l.noRootContainer.enabled)
 	}
 	timer.Reached("restorer initialized")
-	reply.KernelStarted, err = cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
+	reply.KernelStarted, err = cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, o.MemoryLimit)
 	return err
 }
 
@@ -696,7 +706,10 @@ func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, reply
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
 	}
 
-	reply.KernelStarted, err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs)
+	kernelStarted, err := cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs, args.MemoryLimit)
+	if reply != nil {
+		reply.KernelStarted = kernelStarted
+	}
 	if err != nil {
 		log.Debugf("containerManager.RestoreSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
