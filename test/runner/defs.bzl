@@ -535,6 +535,9 @@ def syscall_test(
 
     # Add save and save_resume variants to all other variants generated above.
     if save:
+        # Saving the sandbox needs at least a large worker. Keep a higher
+        # estimate when the test itself needs more memory.
+        save_size = "enormous" if size == "enormous" else "large"
         # Disable go sanitizers for save tests.
         tags.append("nogotsan")
         syscall_test_variants(
@@ -557,7 +560,7 @@ def syscall_test(
             tags,
             True,  # save, generate all tests with save variant.
             False,  # save_resume, generate all tests without save_resume variant.
-            "large",  # size, use size as large by default for all S/R tests.
+            save_size,
             "long",  # timeout, use long timeout for S/R tests.
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
@@ -586,7 +589,7 @@ def syscall_test(
             tags,
             False,  # save, generate all tests without save variant.
             True,  # save_resume, generate all tests with save_resume variant.
-            "large",  # size, use size as large by default for all S/R tests.
+            save_size,
             "long",  # timeout, use long timeout for S/R tests.
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
