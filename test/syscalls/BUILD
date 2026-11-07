@@ -428,6 +428,8 @@ syscall_test(
 )
 
 syscall_test(
+    # The test populates 512 MiB and keeps the mapping across restore.
+    size = "enormous",
     test = "//test/syscalls/linux:memory_accounting_test",
 )
 
@@ -1369,6 +1371,8 @@ syscall_test(
 )
 
 syscall_test(
+    # Ptrace needs tracer threads in addition to the 1,000 guest threads.
+    size = "large",
     # Per-syscall tracing dominates the million deliberately invalid close calls.
     # Keep debug logs without formatting a trace for every call.
     args = ["--strace=false"],
