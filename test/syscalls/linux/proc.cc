@@ -1545,6 +1545,57 @@ TEST(ProcSelfFdInfo, Flags) {
   EXPECT_THAT(fd_info, HasSubstr(absl::StrFormat("flags:\t%#o", flags)));
 }
 
+// Like Linux's fs/proc/fd.c:proc_fdinfo_permission, access to another task's
+// /proc/[pid]/fdinfo requires ptrace read-mode access to that task: fdinfo
+// leaks the task's file offsets, open flags and mount IDs.
+TEST(ProcPidFdInfo, DifferentUserDenied) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  // Keep a child process around whose fdinfo the other-uid reader probes.
+  int pfd[2];
+  ASSERT_THAT(pipe(pfd), SyscallSucceeds());
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    TEST_PCHECK(close(pfd[1]) == 0);
+    // Await parent OK to die.
+    char ok = 0;
+    TEST_CHECK(ReadFd(pfd[0], &ok, sizeof(ok)) == sizeof(ok));
+    TEST_PCHECK(close(pfd[0]) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  EXPECT_THAT(close(pfd[0]), SyscallSucceeds());
+
+  ScopedThread([&] {
+    // Drop to an unprivileged uid on this thread only; the child (uid 0) must
+    // then be unreadable.
+    constexpr int kNobody = 65534;
+    EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+
+    std::string const fdinfo_dir = absl::StrCat("/proc/", child_pid, "/fdinfo");
+    EXPECT_THAT(open(fdinfo_dir.c_str(), O_RDONLY | O_DIRECTORY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(open(absl::StrCat(fdinfo_dir, "/", pfd[0]).c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // Same-thread-group access is always allowed, even with mismatched
+    // credentials: "If the calling thread and the target thread are in the
+    // same thread group, access is always allowed." - ptrace(2)
+    auto self_fd_info = ASSERT_NO_ERRNO_AND_VALUE(
+        GetContents(absl::StrCat("/proc/self/fdinfo/", pfd[1])));
+    EXPECT_THAT(self_fd_info, HasSubstr("flags:"));
+  });
+
+  // Release the child and reap it.
+  char ok = 1;
+  EXPECT_THAT(WriteFd(pfd[1], &ok, sizeof(ok)),
+              SyscallSucceedsWithValue(sizeof(ok)));
+  EXPECT_THAT(close(pfd[1]), SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
 TEST(ProcSelfExe, Absolute) {
   auto exe = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/exe"));
   EXPECT_EQ(exe[0], '/');
