@@ -3748,7 +3748,21 @@ TEST(NetlinkRouteTest, VethAdd) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
-  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+
+  for (const auto& [name, peer_name, mtu] :
+       {std::tuple{"veth1", "veth2", 3000},
+        std::tuple{"veth2", "veth1", 1460}}) {
+    SCOPED_TRACE(name);
+    const Link link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(name));
+    const Link peer = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(peer_name));
+    MtuRequest set_mtu = GetMtuRequest(link, RTM_SETLINK, mtu);
+    ASSERT_NO_ERRNO(
+        NetlinkRequestAckOrError(fd, kSeq, &set_mtu, sizeof(set_mtu)));
+    EXPECT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(name)).mtu, link.mtu);
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(peer_name)).mtu,
+              peer.mtu);
+  }
 }
 
 TEST(NetlinkRouteTest, DeleteRouteRemovesFirstMatchOnly) {
