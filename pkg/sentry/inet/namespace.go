@@ -15,12 +15,14 @@
 package inet
 
 import (
-	goContext "context"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // Namespace represents a network namespace. See network_namespaces(7).
@@ -34,13 +36,20 @@ type Namespace struct {
 
 	// creator allows kernel to create new network stack for network namespaces.
 	// If nil, no networking will function if network is namespaced.
-	//
-	// At afterLoad(), creator will be used to create network stack. Stateify
-	// needs to wait for this field to be loaded before calling afterLoad().
-	creator NetworkStackCreator `state:"wait"`
+	creator NetworkStackCreator
 
 	// isRoot indicates whether this is the root network namespace.
 	isRoot bool
+
+	// root is the root network namespace. Only set for non-root namespaces.
+	root *Namespace
+
+	// childrenMu protects children. Only used on the root network namespace.
+	childrenMu sync.Mutex `state:"nosave"`
+
+	// children tracks active non-root network namespaces in creation order.
+	// +checklocks:childrenMu
+	children []*Namespace
 
 	userNS *auth.UserNamespace
 
@@ -85,18 +94,46 @@ func (n *Namespace) GetInode() *nsfs.Inode {
 }
 
 // NewNamespace creates a new network namespace from the root.
-func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
+func NewNamespace(parent *Namespace, userNS *auth.UserNamespace) *Namespace {
+	root := parent
+	if !root.isRoot {
+		root = parent.root
+	}
 	n := &Namespace{
-		creator:           root.creator,
+		root:              root,
+		creator:           parent.creator,
 		userNS:            userNS,
 		netlinkMcastTable: NewNetlinkMcastTable(),
 	}
-	n.init()
+	n.abstractSockets.init()
+	if n.creator != nil {
+		var err error
+		n.stack, err = n.creator.CreateStack()
+		if err != nil {
+			panic(err)
+		}
+		n.stack.PreserveLoopback()
+		if eventPublishingStack, ok := n.stack.(InterfaceEventPublisher); ok {
+			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
+		}
+	}
+	if root != nil {
+		root.childrenMu.Lock()
+		root.children = append(root.children, n)
+		root.childrenMu.Unlock()
+	}
 	return n
 }
 
 // Destroy implements nsfs.Namespace.Destroy.
 func (n *Namespace) Destroy(ctx context.Context) {
+	if n.root != nil {
+		n.root.childrenMu.Lock()
+		n.root.children = slices.DeleteFunc(n.root.children, func(c *Namespace) bool {
+			return c == n
+		})
+		n.root.childrenMu.Unlock()
+	}
 	if s := n.Stack(); s != nil {
 		s.Destroy()
 	}
@@ -146,27 +183,56 @@ func (n *Namespace) ResetStack() {
 	n.stack = nil
 }
 
-func (n *Namespace) init() {
-	// Root network namespace will have stack assigned later.
-	if n.isRoot {
-		return
+func (n *Namespace) allStacks() []Stack {
+	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
+	stacks := make([]Stack, 0, 1+len(n.children))
+	if n.stack != nil {
+		stacks = append(stacks, n.stack)
 	}
-	if n.creator != nil {
-		var err error
-		n.stack, err = n.creator.CreateStack()
-		if err != nil {
-			panic(err)
-		}
-		if eventPublishingStack, ok := n.stack.(InterfaceEventPublisher); ok {
-			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
+	for _, child := range n.children {
+		if s := child.Stack(); s != nil {
+			stacks = append(stacks, s)
 		}
 	}
-	n.abstractSockets.init()
+	return stacks
 }
 
-// afterLoad is invoked by stateify.
-func (n *Namespace) afterLoad(goContext.Context) {
-	n.init()
+// SetRemoveConfStacks sets removeConf on the root network namespace stack and
+// all child network namespace stacks.
+func (n *Namespace) SetRemoveConfStacks(removeConf bool) {
+	for _, s := range n.allStacks() {
+		s.SetRemoveConf(removeConf)
+	}
+}
+
+// PauseStacks pauses the root network namespace stack and all child network
+// namespace stacks.
+func (n *Namespace) PauseStacks() {
+	for _, s := range n.allStacks() {
+		s.Pause()
+	}
+}
+
+// ResumeStacks resumes the root network namespace stack and all child network
+// namespace stacks.
+func (n *Namespace) ResumeStacks() {
+	for _, s := range n.allStacks() {
+		s.Resume()
+	}
+}
+
+// RestoreStacks restores the root network namespace stack and all child
+// network namespace stacks after checkpoint load.
+func (n *Namespace) RestoreStacks() {
+	stacks := n.allStacks()
+	for _, s := range stacks {
+		s.RestoreNICsAndEndpoints()
+	}
+	tcpip.AsyncLoading.Wait()
+	for _, s := range stacks {
+		s.StartTransportProtocols()
+	}
 }
 
 // AbstractSockets returns AbstractSocketNamespace.

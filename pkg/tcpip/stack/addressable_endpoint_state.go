@@ -738,6 +738,29 @@ func (a *AddressableEndpointState) Cleanup() {
 	}
 }
 
+// Restore drops references on saved addresses that were held by unsaved
+// objects (such as Route.localAddressEndpoint) at save time, before restored
+// transport endpoints re-acquire routes. extraRefs specifies additional
+// references retained by saved network-layer state (such as IPv6 NDP SLAAC).
+func (a *AddressableEndpointState) Restore(extraRefs map[AddressEndpoint]int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for _, addrState := range a.endpoints {
+		var wantRefs int64
+		addrState.mu.RLock()
+		if addrState.kind.IsPermanent() {
+			wantRefs = 1
+		}
+		addrState.mu.RUnlock()
+		wantRefs += int64(extraRefs[addrState])
+
+		for gotRefs := addrState.refs.ReadRefs(); gotRefs > wantRefs; gotRefs-- {
+			a.decAddressRefLocked(addrState)
+		}
+	}
+}
+
 var _ AddressEndpoint = (*addressState)(nil)
 
 // addressState holds state for an address.

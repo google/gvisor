@@ -114,6 +114,7 @@ type endpoint struct {
 // Restore implements stack.RestorableNetworkEndpoint.
 func (e *endpoint) Restore() {
 	e.mu.Lock()
+	e.addressableEndpointState.Restore(nil)
 	e.igmp.restore()
 	e.mu.Unlock()
 

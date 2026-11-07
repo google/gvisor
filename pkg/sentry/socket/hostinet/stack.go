@@ -462,10 +462,16 @@ func (*Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error
 // Pause implements inet.Stack.Pause.
 func (*Stack) Pause() {}
 
-// Restore implements inet.Stack.Restore.
-func (*Stack) Restore() {
+// RestoreNICsAndEndpoints implements inet.Stack.RestoreNICsAndEndpoints.
+func (*Stack) RestoreNICsAndEndpoints() {
 	restoreListeners()
 }
+
+// StartTransportProtocols implements inet.Stack.StartTransportProtocols.
+func (*Stack) StartTransportProtocols() {}
+
+// PreserveLoopback implements inet.Stack.PreserveLoopback.
+func (*Stack) PreserveLoopback() {}
 
 // ResetConfig implements inet.Stack.ResetConfig.
 func (s *Stack) ResetConfig() {

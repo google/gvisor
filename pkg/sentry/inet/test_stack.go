@@ -182,8 +182,14 @@ func (s *TestStack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 // Pause implements Stack.
 func (s *TestStack) Pause() {}
 
-// Restore implements Stack.
-func (s *TestStack) Restore() {}
+// RestoreNICsAndEndpoints implements Stack.
+func (s *TestStack) RestoreNICsAndEndpoints() {}
+
+// StartTransportProtocols implements Stack.
+func (s *TestStack) StartTransportProtocols() {}
+
+// PreserveLoopback implements Stack.
+func (s *TestStack) PreserveLoopback() {}
 
 // ResetConfig implements Stack.
 func (s *TestStack) ResetConfig() {

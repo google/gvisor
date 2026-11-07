@@ -100,6 +100,9 @@ func (s *Stack) afterLoad(context.Context) {
 	s.ensureRNG()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.nics == nil {
+		s.nics = make(map[tcpip.NICID]*nic)
+	}
 	if s.preservedNICs == nil {
 		s.preservedNICs = make(map[tcpip.NICID]*nic)
 	}

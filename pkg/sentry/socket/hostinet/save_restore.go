@@ -28,9 +28,9 @@ import (
 // saved and the checkpointed sandbox retains ownership of it.
 //
 // Listening sockets carry no connection state, so beforeSave records what is
-// needed to re-create them and Stack.Restore re-creates the host socket with
-// socket/bind/listen. Connections that were pending in the backlog are lost.
-// UDP sockets will not be recreated after restore.
+// needed to re-create them and Stack.RestoreNICsAndEndpoints re-creates the
+// host socket with socket/bind/listen. Connections that were pending in the
+// backlog are lost. UDP sockets will not be recreated after restore.
 //
 // All other sockets are restored with fd -1. Host socket operations fail
 // with ECONNRESET (or EPIPE/SIGPIPE for writes on connection oriented sockets)
@@ -49,7 +49,7 @@ type listenerState struct {
 }
 
 // The restore helpers acquire this mutex themselves. checklocks cannot export
-// that exclusion through Stack.Restore's private package-global guard.
+// that exclusion through Stack.RestoreNICsAndEndpoints's private package-global guard.
 var restoredListeners struct {
 	mu sync.Mutex
 
