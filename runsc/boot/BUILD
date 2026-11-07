@@ -195,6 +195,7 @@ go_test(
         "//pkg/fd",
         "//pkg/fspath",
         "//pkg/gomaxprocs",
+        "//pkg/hostarch",
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/seccomp",

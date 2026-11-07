@@ -53,8 +53,18 @@ func init() {
 	}
 
 	// Parse the result.
-	systemMMapMinAddr, err = strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
+	hostMMapMinAddr, err := strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
 	if err != nil {
 		panic(fmt.Sprintf("couldn't parse %s from %s: %v", string(b), systemMMapMinAddrSource, err))
 	}
+	systemMMapMinAddr = pageRoundUpMMapMinAddr(hostMMapMinAddr)
+}
+
+// pageRoundUpMMapMinAddr returns addr rounded up to a page boundary, the lowest
+// address Linux can map. It returns addr if rounding overflows.
+func pageRoundUpMMapMinAddr(addr uint64) uint64 {
+	if rounded, ok := hostarch.PageRoundUp(addr); ok {
+		return rounded
+	}
+	return addr
 }
