@@ -494,6 +494,10 @@ func TestPlatformDeviceFor(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
 			RegisterFlags(testFlags)
+			// The default, --platform=auto, rejects a single path.
+			if err := testFlags.Lookup("platform").Value.Set("systrap"); err != nil {
+				t.Fatalf("platform=systrap: %v", err)
+			}
 			if err := testFlags.Lookup("platform_device_path").Value.Set(tc.flag); err != nil {
 				t.Fatalf("platform_device_path=%q: %v", tc.flag, err)
 			}
