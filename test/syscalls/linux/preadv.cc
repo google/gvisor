@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cstring>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -43,17 +44,48 @@ namespace testing {
 
 namespace {
 
+TEST(PreadvTest, LargeRegularFileReadPastEOF) {
+  constexpr size_t kSize = 8 << 20;
+  constexpr size_t kFirstVectorSize = kSize / 2;
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  ASSERT_THAT(ftruncate(fd.get(), kSize), SyscallSucceeds());
+  const char markers[] = {'a', 'b'};
+  ASSERT_THAT(
+      PwriteFd(fd.get(), markers, sizeof(markers), kFirstVectorSize - 1),
+      SyscallSucceedsWithValue(sizeof(markers)));
+
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kSize + kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  std::memset(m.ptr(), '?', kSize + kPageSize);
+  struct iovec iov[2] = {
+      {m.ptr(), kFirstVectorSize},
+      {static_cast<char*>(m.ptr()) + kFirstVectorSize,
+       kSize - kFirstVectorSize + kPageSize},
+  };
+  ASSERT_THAT(preadv(fd.get(), iov, 2, 0), SyscallSucceedsWithValue(kSize));
+  std::string expected(kSize, '\0');
+  expected[kFirstVectorSize - 1] = markers[0];
+  expected[kFirstVectorSize] = markers[1];
+  EXPECT_EQ(std::memcmp(m.ptr(), expected.data(), kSize), 0);
+  EXPECT_EQ(static_cast<char*>(m.ptr())[kSize], '?');
+}
+
 // Stress copy-on-write. Attempts to reproduce b/38430174.
-TEST(PreadvTest, MMConcurrencyStress) {
-  // Fill a one-page file with zeroes (the contents don't really matter).
+class PreadvMMConcurrencyTest : public ::testing::TestWithParam<size_t> {};
+
+TEST_P(PreadvMMConcurrencyTest, MMConcurrencyStress) {
+  const size_t buffer_size = GetParam();
+  // The large case exercises pinned destinations.
   const auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       /* parent = */ GetAbsoluteTestTmpdir(),
-      /* content = */ std::string(kPageSize, 0), TempPath::kDefaultFileMode));
+      /* content = */ std::string(buffer_size, 0), TempPath::kDefaultFileMode));
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDONLY));
 
-  // Get a one-page private mapping to read to.
+  // Read into a private mapping while another thread forks.
   const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
-      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+      MmapAnon(buffer_size, PROT_READ | PROT_WRITE, MAP_PRIVATE));
 
   // Repeatedly fork in a separate thread to force the mapping to become
   // copy-on-write.
@@ -93,9 +125,9 @@ TEST(PreadvTest, MMConcurrencyStress) {
   // Repeatedly read to the mapping.
   struct iovec iov[2];
   iov[0].iov_base = m.ptr();
-  iov[0].iov_len = kPageSize / 2;
-  iov[1].iov_base = reinterpret_cast<void*>(m.addr() + kPageSize / 2);
-  iov[1].iov_len = kPageSize / 2;
+  iov[0].iov_len = buffer_size / 2;
+  iov[1].iov_base = reinterpret_cast<void*>(m.addr() + buffer_size / 2);
+  iov[1].iov_len = buffer_size / 2;
   constexpr absl::Duration kTestDuration = absl::Seconds(5);
   const absl::Time end = absl::Now() + kTestDuration;
   while (absl::Now() < end) {
@@ -116,6 +148,10 @@ TEST(PreadvTest, MMConcurrencyStress) {
 
   // The test passes if it neither deadlocks nor crashes the OS.
 }
+
+INSTANTIATE_TEST_SUITE_P(Sizes, PreadvMMConcurrencyTest,
+                         ::testing::Values(static_cast<size_t>(kPageSize),
+                                           size_t{8} << 20));
 
 // This test calls preadv with an O_PATH fd.
 TEST(PreadvTest, PreadvWithOpath) {

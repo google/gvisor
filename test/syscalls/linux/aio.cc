@@ -121,6 +121,36 @@ class AIOTest : public FileTest {
   aio_context_t ctx_;
 };
 
+TEST_F(AIOTest, ReadPartialFault) {
+  ASSERT_THAT(SetupContext(128), SyscallSucceeds());
+  for (const size_t size :
+       {size_t{kPageSize}, size_t{2} << 20, size_t{8} << 20}) {
+    const int raw_fd = syscall(SYS_memfd_create, "aio-partial-read", 0);
+    ASSERT_THAT(raw_fd, SyscallSucceeds());
+    const FileDescriptor fd(raw_fd);
+    const std::string data(size + kPageSize, 'x');
+    ASSERT_THAT(pwrite(fd.get(), data.data(), data.size(), 0),
+                SyscallSucceedsWithValue(data.size()));
+    const Mapping buf = ASSERT_NO_ERRNO_AND_VALUE(
+        MmapAnon(size + kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+    ASSERT_THAT(
+        mprotect(static_cast<char*>(buf.ptr()) + size, kPageSize, PROT_NONE),
+        SyscallSucceeds());
+    struct iovec iov = {buf.ptr(), size + kPageSize};
+    struct iocb cb = CreateCallback();
+    cb.aio_fildes = fd.get();
+    cb.aio_lio_opcode = IOCB_CMD_PREADV;
+    cb.aio_buf = reinterpret_cast<uint64_t>(&iov);
+    cb.aio_nbytes = 1;
+    struct iocb* cbs[] = {&cb};
+    ASSERT_THAT(Submit(1, cbs), SyscallSucceedsWithValue(1));
+    struct io_event events[1];
+    ASSERT_THAT(GetEvents(1, 1, events, nullptr), SyscallSucceedsWithValue(1));
+    EXPECT_EQ(events[0].res, size);
+    EXPECT_EQ(std::memcmp(buf.ptr(), data.data(), size), 0);
+  }
+}
+
 TEST_F(AIOTest, BasicWrite) {
   // Copied from fs/aio.c.
   constexpr unsigned AIO_RING_MAGIC = 0xa10a10a1;
