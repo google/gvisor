@@ -148,21 +148,18 @@ func (m *processorManager) connectionHash(cid *connectionID) uint32 {
 // queuePacket queues a packet to be delivered to the appropriate processor.
 func (m *processorManager) queuePacket(pkt *stack.PacketBuffer, hasEthHeader bool) {
 	var pIdx uint32
-	cid, nonConnectionPkt := tcpipConnectionID(pkt)
-	if !hasEthHeader {
-		if nonConnectionPkt {
-			// If there's no eth header this should be a standard tcpip packet. If
-			// it isn't the packet is invalid so drop it.
-			return
+	if len(m.processors) > 1 || !hasEthHeader {
+		cid, nonConnectionPkt := tcpipConnectionID(pkt)
+		if !hasEthHeader {
+			if nonConnectionPkt {
+				// Headerless packets need an IP header to identify the protocol.
+				return
+			}
+			pkt.NetworkProtocolNumber = cid.proto
 		}
-		pkt.NetworkProtocolNumber = cid.proto
-	}
-	if len(m.processors) == 1 || nonConnectionPkt {
-		// If the packet is not associated with an active connection, use the
-		// first processor.
-		pIdx = 0
-	} else {
-		pIdx = m.connectionHash(&cid) % uint32(len(m.processors))
+		if len(m.processors) > 1 && !nonConnectionPkt {
+			pIdx = m.connectionHash(&cid) % uint32(len(m.processors))
+		}
 	}
 	p := &m.processors[pIdx]
 	p.mu.Lock()
