@@ -111,12 +111,13 @@ TEST_P(UnixSocketPeerCredTest, PeerCredAfterListen) {
 }
 
 TEST_P(UnixSocketPeerCredTest, AfterConnectClientPeerCred) {
-  if (GetParam().type != SOCK_STREAM) {
-    GTEST_SKIP() << "Test requires SOCK_STREAM";
+  const int socket_type = GetParam().type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+  if (socket_type == SOCK_DGRAM) {
+    GTEST_SKIP() << "Test requires SOCK_STREAM or SOCK_SEQPACKET";
   }
   auto addr = ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
   auto server_socket =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, socket_type, 0));
   ASSERT_THAT(bind(server_socket.get(), AsSockAddr(&addr), sizeof(addr)),
               SyscallSucceeds());
   ASSERT_THAT(listen(server_socket.get(), 5), SyscallSucceeds());
@@ -125,7 +126,7 @@ TEST_P(UnixSocketPeerCredTest, AfterConnectClientPeerCred) {
   gid_t server_gid = getgid();
   uid_t server_uid = getuid();
   const auto client = [&] {
-    auto client_socket = Socket(AF_UNIX, SOCK_STREAM, 0);
+    auto client_socket = Socket(AF_UNIX, socket_type, 0);
     TEST_PCHECK_MSG(client_socket.ok(), "client socket failed");
     TEST_PCHECK_MSG(connect(client_socket.ValueOrDie().get(), AsSockAddr(&addr),
                             sizeof(addr)) == 0,
@@ -143,8 +144,9 @@ TEST_P(UnixSocketPeerCredTest, AfterConnectClientPeerCred) {
 }
 
 TEST_P(UnixSocketPeerCredTest, AfterConnectServerPeerCred) {
-  if (GetParam().type != SOCK_STREAM) {
-    GTEST_SKIP() << "Test requires SOCK_STREAM";
+  const int socket_type = GetParam().type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+  if (socket_type == SOCK_DGRAM) {
+    GTEST_SKIP() << "Test requires SOCK_STREAM or SOCK_SEQPACKET";
   }
   // Create a pipe.
   int pipe_fd[2];
@@ -152,14 +154,14 @@ TEST_P(UnixSocketPeerCredTest, AfterConnectServerPeerCred) {
   // Create a server socket.
   auto addr = ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
   auto server_socket =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, socket_type, 0));
   ASSERT_THAT(bind(server_socket.get(), AsSockAddr(&addr), sizeof(addr)),
               SyscallSucceeds());
   ASSERT_THAT(listen(server_socket.get(), 5), SyscallSucceeds());
 
   const auto client = [&] {
     TEST_PCHECK_MSG(close(pipe_fd[1]) == 0, "close failed");
-    auto client_socket = Socket(AF_UNIX, SOCK_STREAM, 0);
+    auto client_socket = Socket(AF_UNIX, socket_type, 0);
     auto client_soc = client_socket.ValueOrDie().get();
     TEST_PCHECK_MSG(client_socket.ok(), "client socket failed");
     TEST_PCHECK_MSG(connect(client_soc, AsSockAddr(&addr), sizeof(addr)) == 0,
@@ -209,8 +211,9 @@ TEST_P(UnixSocketPeerCredTest, AfterConnectServerPeerCred) {
 // SO_PEERCRED must keep reporting the PID captured at connection time even
 // after the peer has exited and been reaped.
 TEST_P(UnixSocketPeerCredTest, PeerCredSurvivesPeerExit) {
-  if (GetParam().type != SOCK_STREAM) {
-    GTEST_SKIP() << "Test requires SOCK_STREAM";
+  const int socket_type = GetParam().type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+  if (socket_type == SOCK_DGRAM) {
+    GTEST_SKIP() << "Test requires SOCK_STREAM or SOCK_SEQPACKET";
   }
   // Pipe used to tell the client when to exit (after we have accepted).
   int pipe_fd[2];
@@ -218,14 +221,14 @@ TEST_P(UnixSocketPeerCredTest, PeerCredSurvivesPeerExit) {
 
   auto addr = ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
   auto server_socket =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, socket_type, 0));
   ASSERT_THAT(bind(server_socket.get(), AsSockAddr(&addr), sizeof(addr)),
               SyscallSucceeds());
   ASSERT_THAT(listen(server_socket.get(), 5), SyscallSucceeds());
 
   const auto client = [&] {
     TEST_PCHECK_MSG(close(pipe_fd[1]) == 0, "close failed");
-    auto client_socket = Socket(AF_UNIX, SOCK_STREAM, 0);
+    auto client_socket = Socket(AF_UNIX, socket_type, 0);
     TEST_PCHECK_MSG(client_socket.ok(), "client socket failed");
     auto client_soc = client_socket.ValueOrDie().get();
     TEST_PCHECK_MSG(connect(client_soc, AsSockAddr(&addr), sizeof(addr)) == 0,
@@ -272,6 +275,8 @@ TEST_P(UnixSocketPeerCredTest, PeerCredSurvivesPeerExit) {
 // process in its own PID namespace.
 struct PeerCredNSChildArgs {
   struct sockaddr_un addr;
+  // type is the socket type to create.
+  int type;
   // pipe_w is written with the child's PID as seen in its own (new) PID
   // namespace, signalling the parent that the connection is established.
   int pipe_w;
@@ -282,7 +287,7 @@ struct PeerCredNSChildArgs {
 // in-namespace PID, then blocks until the parent closes the connection.
 int peerCredNSConnectChild(void* arg) {
   auto* a = static_cast<PeerCredNSChildArgs*>(arg);
-  int s = socket(AF_UNIX, SOCK_STREAM, 0);
+  int s = socket(AF_UNIX, a->type, 0);
   TEST_PCHECK_MSG(s >= 0, "child socket failed");
   TEST_PCHECK_MSG(connect(s, AsSockAddr(&a->addr), sizeof(a->addr)) == 0,
                   "child connect failed");
@@ -303,15 +308,16 @@ int peerCredNSConnectChild(void* arg) {
 // ancestor (root) namespace must see the peer's root-namespace PID, not its
 // in-namespace PID (which is 1).
 TEST_P(UnixSocketPeerCredTest, PeerCredAcrossPIDNamespace) {
-  if (GetParam().type != SOCK_STREAM) {
-    GTEST_SKIP() << "Test requires SOCK_STREAM";
+  const int socket_type = GetParam().type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+  if (socket_type == SOCK_DGRAM) {
+    GTEST_SKIP() << "Test requires SOCK_STREAM or SOCK_SEQPACKET";
   }
   // Creating a PID namespace requires CAP_SYS_ADMIN.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto addr = ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
   auto server_socket =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, socket_type, 0));
   ASSERT_THAT(bind(server_socket.get(), AsSockAddr(&addr), sizeof(addr)),
               SyscallSucceeds());
   ASSERT_THAT(listen(server_socket.get(), 5), SyscallSucceeds());
@@ -321,6 +327,7 @@ TEST_P(UnixSocketPeerCredTest, PeerCredAcrossPIDNamespace) {
 
   PeerCredNSChildArgs args = {
       .addr = addr,
+      .type = socket_type,
       .pipe_w = sync_pipe[1],
   };
 
