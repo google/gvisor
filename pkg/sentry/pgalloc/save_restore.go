@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/ringdeque"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc/metadata"
 	pgallocpb "gvisor.dev/gvisor/pkg/sentry/pgalloc/pgalloc_metadata_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -119,10 +120,7 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	return pb
 }
 
-func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) error {
-	if pb.Version != 1 {
-		return fmt.Errorf("unsupported MemoryFileMetadataProto version %d", pb.Version)
-	}
+func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) {
 	f.subreleased = make(map[uint64]uint64, len(pb.Subreleased))
 	for k, v := range pb.Subreleased {
 		f.subreleased[k] = v
@@ -159,7 +157,6 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 	for _, s := range pb.UnwasteHuge {
 		f.unwasteHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
 	}
-	return nil
 }
 
 // SaveOpts provides options to MemoryFile.SaveTo().
@@ -1148,22 +1145,19 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 
 	// Load metadata.
 	timeMetadataStart := gohacks.Nanotime()
-	var lengthBuf [8]byte
-	if _, err := io.ReadFull(r, lengthBuf[:]); err != nil {
-		return fmt.Errorf("failed to read metadata length: %w", err)
+	length, err := metadata.ReadLength(r)
+	if err != nil {
+		return err
 	}
-	length := binary.LittleEndian.Uint64(lengthBuf[:])
 	data := make([]byte, length)
 	if _, err := io.ReadFull(r, data); err != nil {
 		return fmt.Errorf("failed to read metadata: %w", err)
 	}
-	var pb pgallocpb.MemoryFileMetadataProto
-	if err := proto.Unmarshal(data, &pb); err != nil {
-		return fmt.Errorf("failed to unmarshal metadata: %w", err)
+	pb, err := metadata.Decode(data)
+	if err != nil {
+		return err
 	}
-	if err := f.importMetadataProto(&pb); err != nil {
-		return fmt.Errorf("failed to import metadata: %w", err)
-	}
+	f.importMetadataProto(pb)
 	chunks := f.chunksLoad()
 	mfTimeline.Reached("metadata loaded")
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
@@ -1293,18 +1287,8 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			opts.PagesFileOffset += amount
 			amfl.pf.lfStatus.Notify(aplLFPending)
 		} else {
-			// Verify header.
-			length, object, err := state.ReadHeader(&wr)
-			if err != nil {
-				return fmt.Errorf("failed to read header: %w", err)
-			}
-			if object {
-				// Not expected.
-				return fmt.Errorf("unexpected object")
-			}
-			if length != amount {
-				// Size mismatch.
-				return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
+			if err := metadata.ReadPageHeader(&wr, amount); err != nil {
+				return err
 			}
 			// Read data.
 			var ioErr error
