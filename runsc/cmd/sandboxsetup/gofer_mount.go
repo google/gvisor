@@ -39,6 +39,12 @@ const ProcFDBindMount = "/proc/fs"
 // vfioPathDir is the directory containing VFIO device nodes.
 const vfioPathDir = "/dev/vfio"
 
+// rdmaPathDir is the directory containing RDMA device nodes.
+const rdmaPathDir = "/dev/infiniband"
+
+// rdmaDevPathReg matches RDMA uverbs device nodes.
+var rdmaDevPathReg = regexp.MustCompile(`^/dev/infiniband/uverbs\d+$`)
+
 // MountOpener is used in two cases:
 //
 // (1) when the gofer process cannot access a mount source directly (e.g.
@@ -518,7 +524,16 @@ func ShouldExposeNvidiaDevice(path string) bool {
 // ShouldExposeVFIODevice returns true if path refers to a VFIO device
 // which should be exposed to the container.
 func ShouldExposeVFIODevice(path string) bool {
-	return strings.HasPrefix(path, vfioPathDir)
+	if path != vfioPathDir && !strings.HasPrefix(path, vfioPathDir+"/") {
+		return false
+	}
+	// SetupDev bind-mounts from path as given, so it must not contain ".."
+	// components that resolve outside of vfioPathDir.
+	if path != filepath.Clean(path) {
+		log.Warningf("Not mounting VFIO device %q: path is not clean", path)
+		return false
+	}
+	return true
 }
 
 // ShouldExposeTpuDevice returns true if path refers to a TPU device which
@@ -534,7 +549,16 @@ func ShouldExposeTpuDevice(path string) bool {
 //
 // Precondition: rdmaproxy is enabled.
 func ShouldExposeRDMADevice(path string) bool {
-	return strings.HasPrefix(path, "/dev/infiniband/uverbs")
+	if !strings.HasPrefix(path, rdmaPathDir+"/") {
+		return false
+	}
+	// SetupDev bind-mounts from path as given, so it must not contain ".."
+	// components that resolve outside of rdmaPathDir.
+	if path != filepath.Clean(path) {
+		log.Warningf("Not mounting RDMA device %q: path is not clean", path)
+		return false
+	}
+	return rdmaDevPathReg.MatchString(path)
 }
 
 // SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
