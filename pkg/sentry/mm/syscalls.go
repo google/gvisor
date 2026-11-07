@@ -1404,6 +1404,31 @@ func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork
 	})
 }
 
+// CheckMadviseRange returns the error that Linux's madvise() returns for the
+// given range when the advice has no effect: EINVAL if the range is invalid,
+// and ENOMEM if part of the range is not mapped.
+//
+// +checklocksexclude:mm.mappingMu
+func (mm *MemoryManager) CheckMadviseRange(addr hostarch.Addr, length uint64) error {
+	ar, err := madviseAddrRange(addr, length)
+	if err != nil {
+		return err
+	}
+	if length == 0 {
+		return nil
+	}
+	ar, ok := hostarch.UntaggedUserAddr(addr).ToRange(uint64(ar.Length()))
+	if !ok {
+		return linuxerr.EINVAL
+	}
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+	if mm.vmas.SpanRange(ar) != ar.Length() {
+		return linuxerr.ENOMEM
+	}
+	return nil
+}
+
 // SetVMAAnonName implements the semantics of Linux's
 // prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME).
 //
