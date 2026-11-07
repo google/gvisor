@@ -124,7 +124,7 @@ TEST_P(GoferStreamSeqpacketTest, EpollBindListenWaitAccept) {
   ASSERT_THAT(efd = epoll_create(1), SyscallSucceeds());
   FileDescriptor epollfd(efd);
   struct epoll_event event = {};
-  event.events = EPOLLIN;
+  event.events = EPOLLIN | EPOLLET;
   ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, sock.get(), &event),
               SyscallSucceeds());
 
@@ -142,7 +142,21 @@ TEST_P(GoferStreamSeqpacketTest, EpollBindListenWaitAccept) {
 
   struct epoll_event results = {};
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &results, 1, -1),
+              SyscallSucceedsWithValue(1));
+  ASSERT_EQ(results.events, EPOLLIN);
+
+  // The external connector makes one connection. A second epoll instance
+  // should see it, without delivering the same edge to the first instance.
+  int second;
+  ASSERT_THAT(second = epoll_create1(EPOLL_CLOEXEC), SyscallSucceeds());
+  FileDescriptor second_epoll(second);
+  ASSERT_THAT(epoll_ctl(second, EPOLL_CTL_ADD, sock.get(), &event),
               SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(epoll_wait)(second, &results, 1, 0),
+              SyscallSucceedsWithValue(1));
+  ASSERT_EQ(results.events, EPOLLIN);
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &results, 1, 250),
+              SyscallSucceedsWithValue(0));
 
   FileDescriptor accSock =
       ASSERT_NO_ERRNO_AND_VALUE(Accept(sock.get(), NULL, NULL));
