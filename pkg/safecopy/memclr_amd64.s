@@ -39,7 +39,18 @@ TEXT ·memclr(SB), NOSPLIT|NOFRAME, $0-28
 	MOVQ	n+8(FP), BX
 	XORQ	AX, AX
 
-	// MOVOU seems always faster than REP STOSQ.
+	// As in runtime.memclrNoHeapPointers, amortize the startup cost of
+	// enhanced REP STOS over at least 2 KiB. Keep the stores inside memclr
+	// so its signal handler can recover from a fault partway through.
+	// https://github.com/golang/go/blob/022c86361/src/runtime/memclr_amd64.s#L44-L52
+	CMPQ	BX, $2048
+	JB	tail
+	CMPB	·hasERMS(SB), $0
+	JE	tail
+	MOVQ	BX, CX
+	SHRQ	$3, CX
+	ANDQ	$7, BX
+	REP;	STOSQ
 tail:
 	TESTQ	BX, BX
 	JEQ	_0
