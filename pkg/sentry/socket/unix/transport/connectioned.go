@@ -126,6 +126,10 @@ type connectionedEndpoint struct {
 	//
 	// boundSocketFD is protected by baseEndpoint.mu.
 	boundSocketFD BoundSocketFD
+
+	// connectWaiters is notified when acceptedChan gains room or the endpoint
+	// stops listening, so blocked connect(2) calls retry.
+	connectWaiters waiter.Queue
 }
 
 var (
@@ -267,6 +271,7 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	}
 	e.Unlock()
 	if acceptedChan != nil {
+		e.connectWaiters.Notify(waiter.WritableEvents)
 		for n := range acceptedChan {
 			// When listener is closed, pending connections should receive
 			// ECONNRESET instead of EOF to match Linux behavior.
@@ -414,6 +419,11 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	}
 }
 
+// ConnectWaiters implements BoundEndpoint.ConnectWaiters.
+func (e *connectionedEndpoint) ConnectWaiters() *waiter.Queue {
+	return &e.connectWaiters
+}
+
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
 func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context) (Sender, *syserr.Error) {
 	return nil, syserr.ErrConnectionRefused
@@ -452,6 +462,9 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 		for ep := range origChan {
 			e.acceptedChan <- ep
 		}
+		if backlog > cap(origChan) {
+			e.connectWaiters.Notify(waiter.WritableEvents)
+		}
 		if e.boundSocketFD != nil {
 			if err := e.boundSocketFD.Listen(ctx, int32(backlog)); err != nil {
 				return syserr.FromError(err)
@@ -488,6 +501,7 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address) (E
 	if err != nil {
 		return nil, err
 	}
+	e.connectWaiters.Notify(waiter.WritableEvents)
 
 	if peerAddr != nil {
 		ne.Lock()

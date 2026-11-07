@@ -19,6 +19,7 @@ package unix
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -619,17 +620,56 @@ func (s *Socket) extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.Bou
 
 // Connect implements the linux syscall connect(2) for unix sockets.
 func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
-	ep, err := s.extractEndpoint(t, sockaddr)
-	if err != nil {
-		return err
+	// A blocking connect to a listener with a full accept queue waits for
+	// room, bounded by SO_SNDTIMEO, like Linux's unix_stream_connect.
+	timeout := s.SendTimeout()
+	if timeout < 0 {
+		blocking = false
 	}
-	defer ep.Release(t)
+	var deadline ktime.Time
+	if timeout > 0 {
+		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(timeout))
+	}
 
-	// Initialize the peer credentials of client endpoint.
-	s.ep.SetPeerCreds(control.MakeCreds(t))
+	var err *syserr.Error
+	for attempt := 0; ; attempt++ {
+		// Look the listener up again on every attempt, like Linux, but
+		// release it before blocking.
+		var ep transport.BoundEndpoint
+		ep, err = s.extractEndpoint(t, sockaddr)
+		if err != nil {
+			return err
+		}
 
-	// Connect the server endpoint.
-	err = s.ep.Connect(t, ep)
+		// Initialize the peer credentials of client endpoint once, since
+		// another thread may connect it while this one waits.
+		if attempt == 0 {
+			s.ep.SetPeerCreds(control.MakeCreds(t))
+		}
+
+		q := ep.ConnectWaiters()
+		if !blocking || q == nil {
+			err = s.ep.Connect(t, ep)
+			ep.Release(t)
+			break
+		}
+		e, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+		q.EventRegister(&e)
+		err = s.ep.Connect(t, ep)
+		ep.Release(t)
+		if err != syserr.ErrTryAgain {
+			q.EventUnregister(&e)
+			break
+		}
+		blockErr := t.BlockWithDeadline(ch, timeout > 0, deadline)
+		q.EventUnregister(&e)
+		if linuxerr.Equals(linuxerr.ETIMEDOUT, blockErr) {
+			// Like Linux, try once more after the timeout expires.
+			blocking = false
+		} else if blockErr != nil {
+			return syserr.FromError(blockErr)
+		}
+	}
 
 	if err == syserr.ErrWrongProtocolForSocket {
 		// Linux for abstract sockets returns ErrConnectionRefused

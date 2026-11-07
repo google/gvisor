@@ -286,7 +286,17 @@ func Connect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	}
 
 	blocking := (file.StatusFlags() & linux.SOCK_NONBLOCK) == 0
-	return 0, nil, linuxerr.ConvertIntr(s.Connect(t, a, blocking).ToError(), linuxerr.ERESTARTSYS)
+	err = s.Connect(t, a, blocking).ToError()
+	if linuxerr.Equals(linuxerr.ErrInterrupted, err) && s.SendTimeout() > 0 {
+		// Like Linux's sock_intr_errno, a signal fails a connect that has
+		// SO_SNDTIMEO set, since restarting it would reset the timeout.
+		// Interruptions without a signal, like checkpoints, restart it.
+		if t.SignalPending() {
+			return 0, nil, linuxerr.EINTR
+		}
+		return 0, nil, linuxerr.ERESTARTNOHAND
+	}
+	return 0, nil, linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // accept is the implementation of the accept syscall. It is called by accept

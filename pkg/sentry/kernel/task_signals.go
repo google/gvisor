@@ -793,6 +793,18 @@ func (t *Task) SignalMask() linux.SignalSet {
 	return linux.SignalSet(t.signalMask.Load())
 }
 
+// SignalPending returns true if t has an unmasked pending signal, group stop
+// or ptrace trap, like Linux's signal_pending(). Internal stops, such as for
+// checkpointing, don't count.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) SignalPending() bool {
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	return t.PendingSignals()&^t.SignalMask() != 0 ||
+		t.groupStopPending || t.trapStopPending || t.trapNotifyPending
+}
+
 // SetSignalMask sets t's signal mask.
 //
 // Preconditions:
