@@ -57,6 +57,27 @@ void CheckAllMappingBytes(Mapping const& m, char c) {
   }
 }
 
+// Ignored advice still validates its address range.
+TEST(MadviseTest, ValidatesRange) {
+  auto m =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  char* const addr = static_cast<char*>(m.ptr());
+  EXPECT_THAT(madvise(addr, 1, MADV_NORMAL), SyscallSucceeds());
+  EXPECT_THAT(madvise(addr, 0, MADV_NORMAL), SyscallSucceeds());
+  EXPECT_THAT(madvise(addr + 1, kPageSize, MADV_NORMAL),
+              SyscallFailsWithErrno(EINVAL));
+  m.reset();
+  EXPECT_THAT(madvise(addr, kPageSize, MADV_NORMAL),
+              SyscallFailsWithErrno(ENOMEM));
+}
+
+// posix_madvise returns the error number directly instead of setting errno.
+TEST(MadviseTest, PosixWillneedOverflow) {
+  EXPECT_EQ(posix_madvise(nullptr, std::numeric_limits<size_t>::max(),
+                          POSIX_MADV_WILLNEED),
+            EINVAL);
+}
+
 TEST(MadviseDontneedTest, ZerosPrivateAnonPage) {
   auto m = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
