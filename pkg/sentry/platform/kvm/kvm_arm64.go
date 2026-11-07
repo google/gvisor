@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -68,9 +69,10 @@ type kvmVcpuEvents struct {
 
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
-	if err := disableHostPAC(); err != nil {
-		return err
-	}
+	// Initialize is idempotent; HWCAP_PACA must be read before any vCPU is
+	// bound (see disableHostPAC).
+	cpuid.Initialize()
+	hostAddressAuth = cpuid.HostFeatureSet().HasPointerAuth()
 	err := updateSystemValues(int(fd))
 
 	maxIPA, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(fd), KVM_CHECK_EXTENSION, _KVM_CAP_ARM_VM_IPA_SIZE)
