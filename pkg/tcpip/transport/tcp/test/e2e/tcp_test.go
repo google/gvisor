@@ -7249,6 +7249,12 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	}
 	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
 
+	// Register for the accept notification before completing the
+	// handshake, so that the notification can't be missed.
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
+	defer c.WQ.EventUnregister(&we)
+
 	// Now complete the previous connection.
 	// Send ACK.
 	c.SendPacket(nil, &context.Headers{
@@ -7261,9 +7267,6 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	})
 
 	// Verify if that is delivered to the accept queue.
-	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-	c.WQ.EventRegister(&we)
-	defer c.WQ.EventUnregister(&we)
 	<-ch
 
 	// Now execute send one more SYN. The stack should not respond as the backlog
@@ -9785,11 +9788,13 @@ func TestTimestampSynCookies(t *testing.T) {
 		AckNum:  c.IRS + 1,
 		TCPOpts: tcpOpts[:],
 	})
-	c.EP, _, err = ep.Accept(nil)
-	// Try to accept the connection.
+	// Register before trying to accept, so that a connection that becomes
+	// ready after the attempt still wakes the wait below.
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
 	wq.EventRegister(&we)
 	defer wq.EventUnregister(&we)
+	// Try to accept the connection.
+	c.EP, _, err = ep.Accept(nil)
 	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
 		// Wait for connection to be established.
 		select {
