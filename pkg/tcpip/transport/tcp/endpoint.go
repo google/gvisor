@@ -483,7 +483,9 @@ type Endpoint struct {
 	// tcpRecovery is the loss recovery algorithm used by TCP.
 	tcpRecovery tcpip.TCPRecovery
 
-	// sack holds TCP SACK related information for this endpoint.
+	// sack holds the out-of-order blocks to report in outgoing ACKs.
+	//
+	// +checklocks:mu
 	sack SACKInfo
 
 	// delay enables Nagle's algorithm.
