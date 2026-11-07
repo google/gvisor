@@ -213,7 +213,7 @@ func PrepareVDSO(mf *pgalloc.MemoryFile) (*VDSO, error) {
 	}
 
 	// Finally, allocate a param page for this VDSO.
-	paramPage, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.System})
+	paramPage, err := mf.Allocate(uint64(hostarch.PageSize), pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
 		mf.DecRef(vdso)
 		return nil, fmt.Errorf("unable to allocate VDSO param page: %v", err)
@@ -229,6 +229,24 @@ func PrepareVDSO(mf *pgalloc.MemoryFile) (*VDSO, error) {
 		arch:  info.arch,
 		phdrs: info.phdrs,
 	}, nil
+}
+
+// vdsoParamsOffset is the offset of the VDSO parameters from the start of the
+// VDSO (i.e. the parameters start vdsoParamsOffset bytes before the VDSO). It
+// is fixed when the VDSO is linked, see vdso/vdso_*.lds:_params.
+const vdsoParamsOffset = 0x1000
+
+// ParamsFileRange returns the range of v.ParamPage at which the VDSO expects
+// its parameters (see kernel.VDSOParamPage).
+//
+// The parameter page is mapped just before the VDSO, and the VDSO expects its
+// parameters vdsoParamsOffset bytes before its own start. If the page size is
+// larger than vdsoParamsOffset, the parameters are thus at the end of the
+// parameter page rather than at its start.
+func (v *VDSO) ParamsFileRange() memmap.FileRange {
+	fr := v.ParamPage.FileRange()
+	fr.Start = fr.End - vdsoParamsOffset
+	return fr
 }
 
 // loadVDSO loads the VDSO into m.
