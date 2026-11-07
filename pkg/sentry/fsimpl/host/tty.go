@@ -51,6 +51,25 @@ func (t *TTYFileDescription) TTY() *kernel.TTY {
 	return t.inode.tty
 }
 
+// TTYNode is a node in another filesystem that exposes a host TTY. It opens
+// the TTY with kernel.TTYOperations.OpenTTY, and it does not hold a reference
+// on the TTY.
+type TTYNode interface {
+	// Remove removes the node. It is called when the host inode of the TTY
+	// is released, unless SetTTYNode replaced the node before then.
+	Remove(ctx context.Context)
+}
+
+// SetTTYNode sets node as the node that exposes the TTY. It replaces any
+// previous node without removing it.
+//
+// +checklocksexclude:t.inode.ttyNodeMu
+func (t *TTYFileDescription) SetTTYNode(node TTYNode) {
+	t.inode.ttyNodeMu.Lock()
+	defer t.inode.ttyNodeMu.Unlock()
+	t.inode.ttyNode = node
+}
+
 // ThreadGroup returns the kernel.ThreadGroup associated with this tty.
 func (t *TTYFileDescription) ThreadGroup() *kernel.ThreadGroup {
 	return t.inode.tty.ThreadGroup()

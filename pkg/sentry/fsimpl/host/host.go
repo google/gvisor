@@ -234,6 +234,14 @@ type inode struct {
 	//
 	// +checklocks:termiosMu
 	termios linux.KernelTermios
+
+	ttyNodeMu sync.Mutex `state:"nosave"`
+
+	// If the inode corresponds to a TTY, ttyNode is the node in another
+	// filesystem that exposes the TTY, or nil if there is none.
+	//
+	// +checklocks:ttyNodeMu
+	ttyNode TTYNode
 }
 
 func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
@@ -260,8 +268,9 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, res
 	}
 
 	if isTTY {
-		// Allocate a new TTY for this inode. TTY number does not
-		// matter, since this inode is not reachable via devpts.
+		// Allocate a new TTY for this inode. Its index is unused: if
+		// the TTY is exposed in devpts (see TTYNode), the TTY's device
+		// number names the devpts node.
 		i.tty = kernel.NewTTY(0, i)
 		i.termios = linux.DefaultReplicaTermios
 	}
@@ -715,6 +724,13 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 // +checklocksexclude:i.queue.mu
 func (i *inode) DecRef(ctx context.Context) {
 	i.inodeRefs.DecRef(func() {
+		i.ttyNodeMu.Lock()
+		node := i.ttyNode
+		i.ttyNode = nil
+		i.ttyNodeMu.Unlock()
+		if node != nil {
+			node.Remove(ctx)
+		}
 		if i.hostFD >= 0 {
 			if i.epollable {
 				fdnotifier.RemoveFD(int32(i.hostFD))
@@ -791,15 +807,24 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 	}
 
 	flags := opts.Flags & supportedOpenFlags
-	// Every TTYFileDescription holds an explicit reference on the inode.
-	i.IncRef()
+	// Every TTYFileDescription holds an explicit reference on the inode. The
+	// caller may not hold one (see TTYNode), so the inode may already be
+	// released.
+	if !i.TryIncRef() {
+		return nil, linuxerr.EIO
+	}
 	fd := &TTYFileDescription{
 		fileDescription: fileDescription{inode: i},
 	}
 	fd.LockFD.Init(&i.locks)
 	vfsfd := &fd.vfsfd
+	_, isHostMount := mnt.Filesystem().Impl().(*filesystem)
 	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
 		SpecialFile: true,
+		// If the TTY is opened through a node in another filesystem,
+		// its metadata is that of the node, as for device special
+		// files.
+		UseDentryMetadata: !isHostMount,
 	}); err != nil {
 		i.DecRef(ctx)
 		return nil, err

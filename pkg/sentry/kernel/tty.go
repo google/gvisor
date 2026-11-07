@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
@@ -47,6 +48,10 @@ type TTY struct {
 	// index is the terminal index. It is immutable.
 	index uint32
 
+	// devID is the device number of the terminal, as encoded by
+	// linux.MakeDeviceID. It is 0 if the terminal has no device number.
+	devID atomicbitops.Uint32
+
 	mu sync.Mutex `state:"nosave"`
 
 	// +checklocks:mu
@@ -64,6 +69,17 @@ func NewTTY(index uint32, ttyOps TTYOperations) *TTY {
 // Index returns the tty's index.
 func (tty *TTY) Index() uint32 {
 	return tty.index
+}
+
+// DeviceID returns the device number of the tty, as encoded by
+// linux.MakeDeviceID. It returns 0 if the tty has no device number.
+func (tty *TTY) DeviceID() uint32 {
+	return tty.devID.Load()
+}
+
+// SetDeviceID sets the device number of the tty.
+func (tty *TTY) SetDeviceID(major uint16, minor uint32) {
+	tty.devID.Store(linux.MakeDeviceID(major, minor))
 }
 
 // ThreadGroup returns the ThreadGroup this TTY is associated with.

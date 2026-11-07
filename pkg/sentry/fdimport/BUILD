@@ -8,12 +8,17 @@ package(
 go_library(
     name = "fdimport",
     srcs = [
+        "console.go",
         "fdimport.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/fd",
+        "//pkg/fspath",
+        "//pkg/sentry/fsimpl/devpts",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
