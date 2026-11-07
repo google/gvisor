@@ -295,6 +295,32 @@ func (c *Client) CloseFD(ctx context.Context, fd FDID, flush bool) {
 		c.fdsMu.Unlock()
 		return
 	}
+	if err := c.flushClosesLocked(ctx); err != nil {
+		log.Warningf("lisafs: batch closing FDs returned error: %v", err)
+	}
+}
+
+// FlushCloses sends any queued FD closes to the server and waits for its reply.
+// It does not wait for batches that other goroutines are already sending.
+//
+// +checklocksexclude:c.channelsMu
+// +checklocksexclude:c.sockMu
+// +checklocksexclude:c.fdsMu
+func (c *Client) FlushCloses(ctx context.Context) error {
+	c.fdsMu.Lock()
+	return c.flushClosesLocked(ctx)
+}
+
+// flushClosesLocked sends the queued FD closes after releasing fdsMu.
+//
+// +checklocksexclude:c.channelsMu
+// +checklocksexclude:c.sockMu
+// +checklocksrelease:c.fdsMu
+func (c *Client) flushClosesLocked(ctx context.Context) error {
+	if len(c.fdsToClose) == 0 {
+		c.fdsMu.Unlock()
+		return nil
+	}
 
 	// Flush the cache. We should not hold fdsMu while making an RPC, so be sure
 	// to copy the fdsToClose to another buffer before unlocking fdsMu.
@@ -311,9 +337,7 @@ func (c *Client) CloseFD(ctx context.Context, fd FDID, flush bool) {
 	ctx.UninterruptibleSleepStart()
 	err := c.SndRcvMessage(Close, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
 	ctx.UninterruptibleSleepFinish()
-	if err != nil {
-		log.Warningf("lisafs: batch closing FDs returned error: %v", err)
-	}
+	return err
 }
 
 // SyncFDs makes a Fsync RPC to sync multiple FDs.
