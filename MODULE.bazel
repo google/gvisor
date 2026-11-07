@@ -19,6 +19,9 @@ bazel_dep(name = "rules_qemu", version = "0.3.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.16.0")
 bazel_dep(name = "grpc", version = "1.84.0", repo_name = "com_github_grpc_grpc")
 
+# Select gRPC's c-ares configuration header without a shell.
+bazel_dep(name = "c-ares", version = "1.34.9.bcr.1", repo_name = None)
+
 # gRPC's older minimum imports a removed Google APIs extension repository.
 bazel_dep(name = "envoy_api", version = "0.0.0-20260130-84e8436")
 bazel_dep(name = "protobuf", version = "35.1", repo_name = "com_google_protobuf")
