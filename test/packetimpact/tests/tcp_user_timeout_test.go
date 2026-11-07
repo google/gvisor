@@ -15,6 +15,7 @@
 package tcp_user_timeout_test
 
 import (
+	"bytes"
 	"flag"
 	"testing"
 	"time"
@@ -96,4 +97,104 @@ func TestTCPUserTimeout(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestUserTimeoutOnNextFlight leaves fresh data outstanding when the peer
+// acknowledges the complete window that was in flight at the prior timeout.
+func TestUserTimeoutOnNextFlight(t *testing.T) {
+	t.Run("beforeNextRTO", func(t *testing.T) { testUserTimeoutOnNextFlight(t, false) })
+	t.Run("afterNextRTO", func(t *testing.T) { testUserTimeoutOnNextFlight(t, true) })
+}
+
+func testUserTimeoutOnNextFlight(t *testing.T, retryOldest bool) {
+	dut := testbench.NewDUT(t)
+	listener, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listener)
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+	defer conn.Close(t)
+	const mss = 512
+	conn.ConnectWithOptions(t, []byte{header.TCPOptionMSS, 4, mss >> 8, mss & 255})
+	fd, _ := dut.Accept(t, listener)
+	defer dut.Close(t, fd)
+	dut.SetSockOptInt(t, fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+	base := uint32(*conn.RemoteSeqNum(t))
+	send := func(ch byte) {
+		t.Helper()
+		if n := dut.Send(t, fd, bytes.Repeat([]byte{ch}, mss), 0); n != mss {
+			t.Fatalf("Send(%c)=%d, want %d", ch, n, mss)
+		}
+	}
+	expect := func(ch byte, offset int, within time.Duration) {
+		t.Helper()
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(base + uint32(offset))}, &testbench.Payload{Bytes: bytes.Repeat([]byte{ch}, mss)}, within); err != nil {
+			t.Fatalf("waiting for %c at %d: %v", ch, offset, err)
+		}
+	}
+	ack := func(size int) {
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(base + uint32(size))})
+	}
+	send('w')
+	expect('w', 0, time.Second)
+	time.Sleep(30 * time.Millisecond)
+	ack(mss)
+	base += mss
+	wait := time.Now().Add(time.Second)
+	for {
+		info := dut.GetSockOptTCPInfo(t, fd)
+		if info.Unacked == 0 {
+			break
+		}
+		if time.Now().After(wait) {
+			t.Fatal("warm-up data still outstanding")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	rto := time.Duration(dut.GetSockOptTCPInfo(t, fd).RTO) * time.Microsecond
+	if rto < 50*time.Millisecond || rto > 2*time.Second {
+		t.Fatalf("unexpected starting RTO: %s", rto)
+	}
+	uto := 4 * rto
+	if retryOldest {
+		uto = 8 * rto
+	}
+	dut.SetSockOptInt(t, fd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int32(uto.Milliseconds()))
+	t0 := time.Now()
+	send('a')
+	expect('a', 0, time.Second)
+	send('b')
+	expect('b', mss, time.Second)
+	expect('a', 0, 2*rto+time.Second)
+	// The sender's window fell to one segment. Queue c now so the ACK
+	// for a can send c while b remains in the old recovery window.
+	send('c')
+	expect('a', 0, 3*rto+time.Second)
+	ack(mss)
+	expect('c', 2*mss, 3*rto)
+	fresh := time.Since(t0)
+	if retryOldest {
+		// A further RTO retransmits b while c is already outstanding.
+		expect('b', mss, 6*rto)
+		if elapsed := time.Since(t0) - fresh; elapsed < rto/2 {
+			t.Fatalf("b arrived %s after c, before another RTO", elapsed)
+		}
+		// There is less than one initial RTO left before the old user
+		// timeout. The actual RTO must still reflect the backoff.
+		if got := time.Duration(dut.GetSockOptTCPInfo(t, fd).RTO) * time.Microsecond; got < 2*rto {
+			t.Fatalf("RTO after retransmitting b = %s, want at least %s", got, 2*rto)
+		}
+	}
+	ack(2 * mss)
+	checkAt := t0.Add(uto + 3*rto/2)
+	if time.Until(checkAt) <= 0 || checkAt.Sub(t0.Add(fresh)) >= uto {
+		t.Fatalf("no disjoint old/new deadline: fresh=%s, check=%s, timeout=%s", fresh, checkAt.Sub(t0), uto)
+	}
+	time.Sleep(time.Until(checkAt))
+	errno := dut.GetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_ERROR)
+	if errno != 0 {
+		t.Fatalf("SO_ERROR=%d (%s) on new flight", errno, unix.Errno(errno))
+	}
+	ack(3 * mss)
+	send('d')
+	expect('d', 3*mss, time.Second)
+	ack(4 * mss)
 }

@@ -73,20 +73,43 @@ func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	}
 	// Record the duration for first probe, the dut sends the zero window probe after
 	// a retransmission time interval.
-	startProbeDuration := time.Now().Sub(start)
+	firstProbe := time.Now()
+	probeDelay := firstProbe.Sub(start)
 
 	// Test 2: Check if the dut times out the connection by honoring usertimeout
 	//         when the dut is sending zero-window probes.
 	//
-	// Reduce the retransmit timeout.
-	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int32(startProbeDuration.Milliseconds()))
+	// Put the user timeout between the second and third probe deadlines.
+	userTimeout := 4 * probeDelay
+	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int32(userTimeout.Milliseconds()))
 	// Advertise zero window again.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 	// Ask the dut to send out data that would trigger zero window probe retransmissions.
 	dut.Send(t, acceptFd, sampleData, 0)
 
-	// Wait for the connection to timeout after multiple zero-window probe retransmissions.
-	time.Sleep(8 * startProbeDuration)
+	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: probeSeq}, nil, 3*probeDelay); err != nil {
+		t.Fatalf("expected a second zero-window probe: %v", err)
+	}
+	secondProbe := time.Now()
+	probeInterval := secondProbe.Sub(firstProbe)
+	// Linux measures a persist timeout from the first probe. Allow half
+	// an initial interval for scheduling, but check before the next
+	// uncapped probe could time out the socket.
+	earliest := start.Add(userTimeout - probeDelay/2)
+	latest := firstProbe.Add(userTimeout + probeDelay/2)
+	uncapped := secondProbe.Add(2*probeInterval - probeDelay/2)
+	if !secondProbe.Before(earliest) || !latest.Before(uncapped) {
+		t.Fatalf("probe timings do not distinguish the user timeout from the next probe: first=%v, second=%v", probeDelay, secondProbe.Sub(start))
+	}
+	ready := dut.Poll(t, []unix.PollFd{{Fd: acceptFd, Events: unix.POLLERR}}, max(0, time.Until(latest)))
+	errno := dut.GetSockOptInt(t, acceptFd, unix.SOL_SOCKET, unix.SO_ERROR)
+	observed := time.Now()
+	if !observed.Before(uncapped) {
+		t.Fatalf("observed SO_ERROR too late to distinguish the next probe: %v", observed.Sub(start))
+	}
+	if len(ready) != 1 || ready[0].Revents&unix.POLLERR == 0 || errno != int32(unix.ETIMEDOUT) || observed.Before(earliest) {
+		t.Fatalf("after %v: poll=%v, SO_ERROR=%d (%s); want ETIMEDOUT near the user timeout %v", time.Since(start), ready, errno, unix.Errno(errno), userTimeout)
+	}
 
 	// Expect the connection to have timed out and closed which would cause the dut
 	// to reply with a RST to the ACK we send.
