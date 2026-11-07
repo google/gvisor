@@ -1323,10 +1323,10 @@
   sha256: 327b3fcacde97b9665424db2b6c37e6f8da59ecc783dc5b8683c69396f820a12
   license: Apache-2.0
 - dependency: rules_go
-  version: https://github.com/bazel-contrib/rules_go/releases/download/v0.63.0/rules_go-v0.63.0.zip
-  retrieved: "2026-09-29"
-  commit: 9792f1c079a7602347e0fd966542b6d6b35a6c64
-  sha256: c3e253237109ab2e2a8d3cb075688b98a6e6fce43d849849648e8e3a84f20d6f
+  version: https://github.com/bazel-contrib/rules_go/releases/download/v0.65.0/rules_go-v0.65.0.zip
+  retrieved: "2026-10-27"
+  commit: fb591bc876354b939ef767887e772c15f679a283
+  sha256: d4a6e93dc63944172bc3b915a11bfa8d7391c9f1fdc11d7e43724f497617f0e5
   license: Apache-2.0
 - dependency: rules_img
   version: https://github.com/bazel-contrib/rules_img/releases/download/v0.3.23/rules_img-v0.3.23.tar.gz
