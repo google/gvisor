@@ -16,6 +16,8 @@ package sandboxsetup
 
 import (
 	"testing"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func TestShouldExposeNvidiaDevice(t *testing.T) {
@@ -84,6 +86,43 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 			got := ShouldExposeTpuDevice(tst.path)
 			if got != tst.want {
 				t.Errorf("ShouldExposeTpuDevice(%q) = %v, want %v", tst.path, got, tst.want)
+			}
+		})
+	}
+}
+
+func TestCopyableMounts(t *testing.T) {
+	tests := []struct {
+		name string
+		spec specs.Spec
+		want bool
+	}{
+		{name: "no mounts", spec: specs.Spec{}, want: true},
+		{
+			name: "slave and private mounts",
+			spec: specs.Spec{
+				Linux:  &specs.Linux{RootfsPropagation: "rslave"},
+				Mounts: []specs.Mount{{Destination: "/a", Options: []string{"rbind", "rprivate"}}, {Destination: "/b", Options: []string{"slave"}}},
+			},
+			want: true,
+		},
+		{name: "unbindable rootfs", spec: specs.Spec{Linux: &specs.Linux{RootfsPropagation: "unbindable"}}, want: false},
+		{name: "rshared rootfs", spec: specs.Spec{Linux: &specs.Linux{RootfsPropagation: "rshared"}}, want: false},
+		{
+			name: "runbindable mount",
+			spec: specs.Spec{Mounts: []specs.Mount{{Destination: "/a"}, {Destination: "/b", Options: []string{"runbindable"}}}},
+			want: false,
+		},
+		{
+			name: "shared mount",
+			spec: specs.Spec{Mounts: []specs.Mount{{Destination: "/a", Options: []string{"bind", "shared"}}}},
+			want: false,
+		},
+	}
+	for _, tst := range tests {
+		t.Run(tst.name, func(t *testing.T) {
+			if got := copyableMounts(&tst.spec); got != tst.want {
+				t.Errorf("copyableMounts() = %v, want %v", got, tst.want)
 			}
 		})
 	}
