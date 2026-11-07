@@ -44,7 +44,7 @@ import (
 // LINT.IfChange
 
 const (
-	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
+	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_NOCTTY
 
 	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
 	unixPathMax = 108
@@ -311,7 +311,7 @@ func (fd *controlFDLisa) getParentFD() (int, string, error) {
 	// As a defense-in-depth measure, do not follow symlinks in the parent's path
 	// to prevent attackers from redirecting the parent to a different location.
 	parent, err := unix.Openat2(unix.AT_FDCWD, path.Dir(filePath), &unix.OpenHow{
-		Flags:   uint64(openFlags | unix.O_PATH),
+		Flags:   uint64((openFlags &^ unix.O_NOCTTY) | unix.O_PATH),
 		Resolve: unix.RESOLVE_NO_SYMLINKS,
 	})
 	return parent, path.Base(filePath), err
