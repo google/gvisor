@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stddef.h>
+#include <stdint.h>
+
 // This is a test file for the driver_ast_parser. It contains a simple struct
 // definition that we can use to test the parser.
 
@@ -46,3 +49,7 @@ const unsigned int VAR_ADDITION_MACRO = ADDITION_MACRO;
 const unsigned int VAR_UNSIGNED_HEX_MACRO = UNSIGNED_HEX_MACRO;
 const unsigned int VAR_PARENTHESIZED_HEX_MACRO = PARENTHESIZED_HEX_MACRO;
 const unsigned int VAR_USES_FUNCTION_MACRO = USES_FUNCTION_MACRO;
+
+// These must come from the parser's declared Clang resource directory.
+static_assert(sizeof(size_t) == sizeof(void*));
+static_assert(sizeof(uint32_t) == 4);
