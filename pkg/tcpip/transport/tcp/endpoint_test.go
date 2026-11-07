@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 func TestSendBufferStateSnapshot(t *testing.T) {
@@ -47,5 +49,78 @@ func TestSendBufferStateSnapshot(t *testing.T) {
 	}
 	if got := snapshot.AutoTuneSndBufDisabled.Load(); got > 1 {
 		t.Errorf("snapshot AutoTuneSndBufDisabled = %d, want 0 or 1", got)
+	}
+}
+
+func queueListenerRSTs(t *testing.T, st *stack.Stack, p *processor, packets int, consumed func()) *Endpoint {
+	t.Helper()
+	ep := &Endpoint{stack: st}
+	ep.segmentQueue.ep = ep
+	ep.state.Store(uint32(StateListen))
+	for range packets {
+		s := newSegment()
+		s.flags = header.TCPFlagRst
+		s.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{OnRelease: consumed})
+		queued := ep.enqueueSegment(s)
+		s.DecRef()
+		if !queued {
+			t.Fatal("listener rejected an empty RST segment")
+		}
+	}
+	p.epQ.enqueue(ep)
+	return ep
+}
+
+func TestProcessorYieldsAfterReadyEndpoints(t *testing.T) {
+	st := stack.New(stack.Options{})
+	defer st.Destroy()
+	var p processor
+	var blockedPackets, readyPackets int
+	blocked := queueListenerRSTs(t, st, &p, 1, func() { blockedPackets++ })
+	queueListenerRSTs(t, st, &p, maxSegmentsPerWake+1, func() { readyPackets++ })
+
+	func() {
+		blocked.StopWork()
+		defer blocked.ResumeWork()
+		if !p.drainQueue() {
+			t.Error("processor drained the queue while the first listener was locked")
+		}
+		if blockedPackets != 0 || readyPackets != maxSegmentsPerWake {
+			t.Errorf("before yielding: processed %d blocked and %d ready packets, want 0 and %d", blockedPackets, readyPackets, maxSegmentsPerWake)
+		}
+	}()
+
+	if p.drainQueue() || blockedPackets != 1 || readyPackets != maxSegmentsPerWake+1 {
+		t.Errorf("after unlocking: processed %d blocked and %d ready packets, want 1 and %d with the queue drained", blockedPackets, readyPackets, maxSegmentsPerWake+1)
+	}
+}
+
+func TestProcessorRetriesUnlockedEndpoint(t *testing.T) {
+	st := stack.New(stack.Options{})
+	defer st.Destroy()
+	var p processor
+	var processed int
+	blocked := queueListenerRSTs(t, st, &p, 1, func() { processed++ })
+	peerReady := make(chan struct{})
+	resume := make(chan struct{})
+	queueListenerRSTs(t, st, &p, 1, func() {
+		close(peerReady)
+		<-resume
+	})
+
+	done := make(chan bool, 1)
+	func() {
+		blocked.StopWork()
+		defer blocked.ResumeWork()
+		go func() { done <- p.drainQueue() }()
+		select {
+		case <-peerReady:
+		case <-done:
+			t.Fatal("processor returned before serving the ready peer")
+		}
+	}()
+	close(resume)
+	if yielded := <-done; yielded || processed != 1 {
+		t.Errorf("after listener unlocked: yielded=%t, processed=%d, want false, 1", yielded, processed)
 	}
 }
