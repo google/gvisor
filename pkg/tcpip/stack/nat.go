@@ -566,19 +566,21 @@ func (cn *conn) ConfigureNoopNAT(pkt *PacketBuffer, natType NATType) bool {
 	return cn.ConfigureNAT(portsOrIdents, tcpip.Address{}, natType, true /* changePort */, false /* changeAddress */)
 }
 
-// ConfigureMasquerade configures the connection for masquerade.
-func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, stk *Stack, ports PortOrIdentRange, changePort bool) bool {
+// configureMasquerade configures the connection for masquerade to the primary
+// address of outNICID. route, if set, only supplies the next hop.
+func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, stk *Stack, ports PortOrIdentRange, changePort bool) bool {
 	srcAddr := pkt.Network().SourceAddress()
 	if srcAddr == header.IPv4Any || srcAddr == header.IPv6Any {
 		return false
 	}
-	// Masquerade is only supported for postrouting.
-	if route == nil {
+	// Masquerade is only supported for postrouting, which has an output
+	// interface.
+	if outNICID == 0 {
 		return false
 	}
 
 	// Get the network endpoint for the outgoing interface to find its primary address.
-	netEP, err := stk.GetNetworkEndpoint(route.NICID(), route.NetProto())
+	netEP, err := stk.GetNetworkEndpoint(outNICID, pkt.NetworkProtocolNumber)
 	if err != nil {
 		return false
 	}
@@ -590,7 +592,10 @@ func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, stk *Stack,
 
 	// Ref: net/netfilter/nf_nat_masquerade.c:nf_nat_masquerade_ipv[4|6]()
 	// Use the next hop address as the destination address if it is set.
-	nh := route.NextHop()
+	var nh tcpip.Address
+	if route != nil {
+		nh = route.NextHop()
+	}
 	if nh.Len() == 0 {
 		nh = pkt.Network().DestinationAddress()
 	}
