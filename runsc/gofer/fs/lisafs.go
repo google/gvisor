@@ -44,7 +44,7 @@ import (
 // LINT.IfChange
 
 const (
-	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
+	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_NOCTTY
 
 	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
 	unixPathMax = 108
