@@ -53,7 +53,10 @@ void BM_PollTimeout(benchmark::State& state) {
 }
 
 BENCHMARK(BM_PollTimeout)
-    ->ArgsProduct({{0, 1, 2, 4, 8}, {3, 256, 1000}})
+    ->ArgsProduct({{0, 1}, {3, 256, 1000}})
+    ->Args({2, 3})
+    ->Args({4, 3})
+    ->Args({8, 3})
     ->UseRealTime();
 
 void BM_PollAllEvents(benchmark::State& state) {
