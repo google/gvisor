@@ -53,7 +53,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 		maxInFlight: maxInFlight,
 		handler:     handler,
 		inFlight:    make(map[stack.TransportEndpointID]struct{}),
-		listen:      newListenContext(s, protocolFromStack(s), nil /* listenEP */, seqnum.Size(rcvWnd), true, 0),
+		listen:      newListenContext(s, protocolFromStack(s), seqnum.Size(rcvWnd), true, 0),
 	}
 }
 
@@ -155,18 +155,76 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	}
 
 	f := r.forwarder
-	ep, err := f.listen.performHandshake(r.segment, header.TCPSynOptions{
+	ep, err := f.performHandshake(r.segment, header.TCPSynOptions{
 		MSS:           r.synOptions.MSS,
 		WS:            r.synOptions.WS,
 		TS:            r.synOptions.TS,
 		TSVal:         r.synOptions.TSVal,
 		TSEcr:         r.synOptions.TSEcr,
 		SACKPermitted: r.synOptions.SACKPermitted,
-	}, queue, nil)
+	}, queue)
 	if err != nil {
 		return nil, err
 	}
 
+	return ep, nil
+}
+
+// performHandshake performs a TCP 3-way handshake. On success, the new
+// established endpoint is returned.
+func (f *Forwarder) performHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue) (*Endpoint, tcpip.Error) {
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	queue.EventRegister(&waitEntry)
+	defer queue.EventUnregister(&waitEntry)
+
+	isn := generateSecureISN(s.id, f.listen.stack.Clock(), f.listen.protocol.seqnumSecret)
+	route, err := f.listen.findReplyRoute(s)
+	if err != nil {
+		return nil, err
+	}
+	child := f.listen.createConnectingEndpoint(s, route, opts, queue)
+	h, err := child.startPassiveHandshake(isn, s.sequenceNumber, opts, nil /* listener */, 0 /* deferAccept */)
+	if err != nil {
+		return nil, err
+	}
+
+	// performHandshake is used by the Forwarder which will block till the
+	// handshake either succeeds or fails. We do this by registering for
+	// events above and block on the notification channel.
+	<-notifyCh
+
+	ep := h.ep
+	ep.mu.Lock()
+	if !ep.EndpointState().connected() {
+		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		ep.stats.FailedConnectionAttempts.Increment()
+		ep.h = nil
+		ep.mu.Unlock()
+		ep.Close()
+		ep.notifyAborted()
+		ep.drainClosingSegmentQueue()
+		err := ep.LastError()
+		if err == nil {
+			// If err was nil then return the best error we can to indicate
+			// a connection failure.
+			err = &tcpip.ErrConnectionAborted{}
+		}
+		return nil, err
+	}
+
+	ep.isConnectNotified = true
+
+	// Transfer any state from the completed handshake to the endpoint.
+	//
+	// Update the receive window scaling. We can't do it before the
+	// handshake because it's possible that the peer doesn't support window
+	// scaling.
+	ep.rcv.RcvWndScale = ep.h.effectiveRcvWndScale()
+
+	// Clean up handshake state stored in the endpoint so that it can be
+	// GCed.
+	ep.h = nil
+	ep.mu.Unlock()
 	return ep, nil
 }
 

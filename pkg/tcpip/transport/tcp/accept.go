@@ -86,10 +86,6 @@ type listenContext struct {
 	// the SYN cookie.
 	nonce [2][sha1.BlockSize]byte
 
-	// listenEP is a reference to the listening endpoint associated with
-	// this context. Can be nil if the context is created by the forwarder.
-	listenEP *Endpoint
-
 	hasherMu hasherMutex
 
 	// hasher is the hash function used to generate a SYN cookie.
@@ -97,8 +93,7 @@ type listenContext struct {
 	// +checklocks:hasherMu
 	hasher hash.Hash
 
-	// v6Only is true if listenEP is a dual stack socket and has the
-	// IPV6_V6ONLY option set.
+	// v6Only supplies the IPV6_V6ONLY setting for new endpoints.
 	v6Only bool
 
 	// netProto indicates the network protocol(IPv4/v6) for the listening
@@ -112,7 +107,7 @@ func timeStamp(clock tcpip.Clock) uint32 {
 }
 
 // newListenContext creates a new listen context.
-func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *Endpoint, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
+func newListenContext(stk *stack.Stack, protocol *protocol, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
 	l := &listenContext{
 		stack:    stk,
 		protocol: protocol,
@@ -120,7 +115,6 @@ func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *Endpoint, 
 		hasher:   sha1.New(),
 		v6Only:   v6Only,
 		netProto: netProto,
-		listenEP: listenEP,
 	}
 
 	for i := range l.nonce {
@@ -190,20 +184,20 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 	return (v - l.cookieHash(id, cookieTS, 1)) & hashMask, true
 }
 
-// createConnectingEndpoint creates a new endpoint in a connecting state, with
-// the connection parameters given by the arguments. The newly created endpoint
-// will be locked.
+func (l *listenContext) findReplyRoute(s *segment) (*stack.Route, tcpip.Error) {
+	net := s.pkt.Network()
+	return l.stack.FindRoute(s.pkt.NICID, net.DestinationAddress(), net.SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
+}
+
+// createConnectingEndpoint creates a connecting child and takes ownership of
+// route. The child is returned locked.
+//
 // +checklocksacquire:n.mu
-func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.TCPSynOptions, queue *waiter.Queue) (n *Endpoint, _ tcpip.Error) {
+func (l *listenContext) createConnectingEndpoint(s *segment, route *stack.Route, rcvdSynOpts header.TCPSynOptions, queue *waiter.Queue) (n *Endpoint) {
 	// Create a new endpoint.
 	netProto := l.netProto
 	if netProto == 0 {
 		netProto = s.pkt.NetworkProtocolNumber
-	}
-
-	route, err := l.stack.FindRoute(s.pkt.NICID, s.pkt.Network().DestinationAddress(), s.pkt.Network().SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		return nil, err // +checklocksignore
 	}
 
 	n = newEndpoint(l.stack, l.protocol, netProto, queue)
@@ -230,137 +224,62 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 	n.RcvAutoParams.PrevCopiedBytes = initWnd
 	n.rcvQueueMu.Unlock()
 
-	return n, nil
+	return n
 }
 
-// startHandshake creates a new endpoint in connecting state and then sends
-// the SYN-ACK for the TCP 3-way handshake. It returns the state of the
-// handshake in progress, which includes the new endpoint in the SYN-RCVD
-// state.
+// startHandshake creates a child of the listening endpoint and sends its
+// SYN-ACK. On success, the handshake's endpoint is unlocked.
 //
-// On success, a handshake h is returned.
-//
-// NOTE: h.ep.mu is not held and must be acquired if any state needs to be
-// modified.
-//
-// Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
-func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (h *handshake, _ tcpip.Error) {
-	// Create new endpoint.
-	irs := s.sequenceNumber
-	isn := generateSecureISN(s.id, l.stack.Clock(), l.protocol.seqnumSecret)
-	ep, err := l.createConnectingEndpoint(s, opts, queue)
+// +checklocks:e.mu
+func (e *Endpoint) startHandshake(s *segment, opts header.TCPSynOptions) (*handshake, tcpip.Error) {
+	isn := generateSecureISN(s.id, e.stack.Clock(), e.protocol.seqnumSecret)
+	route, err := e.listenCtx.findReplyRoute(s)
 	if err != nil {
-		return nil, err // +checklocksignore
+		return nil, err
 	}
+	ep := e.listenCtx.createConnectingEndpoint(s, route, opts, &waiter.Queue{})
+	ep.owner = e.owner
 
-	ep.owner = owner
-
-	// listenEP is nil when listenContext is used by tcp.Forwarder.
-	deferAccept := time.Duration(0)
-	if l.listenEP != nil {
-		if l.listenEP.EndpointState() != StateListen {
-
-			// Ensure we release any registrations done by the newly
-			// created endpoint.
-			ep.mu.Unlock()
-			ep.Close()
-
-			return nil, &tcpip.ErrConnectionAborted{} // +checklocksignore
-		}
-
-		// Propagate any inheritable options from the listening endpoint
-		// to the newly created endpoint.
-		l.listenEP.propagateInheritableOptionsLocked(ep) // +checklocksforce:ep.mu
-
-		if !ep.reserveTupleLocked() {
-			ep.mu.Unlock()
-			ep.Close()
-
-			return nil, &tcpip.ErrConnectionAborted{} // +checklocksignore
-		}
-
-		deferAccept = l.listenEP.deferAccept
-	}
-
-	// Register new endpoint so that packets are routed to it.
-	if err := ep.stack.RegisterTransportEndpoint(
-		ep.effectiveNetProtos,
-		ProtocolNumber,
-		ep.TransportEndpointInfo.ID,
-		ep,
-		ep.boundPortFlags,
-		ep.boundBindToDevice,
-	); err != nil {
+	e.propagateInheritableOptionsLocked(ep)
+	if !ep.reserveTupleLocked() {
 		ep.mu.Unlock()
 		ep.Close()
-
-		ep.drainClosingSegmentQueue()
-
-		return nil, err // +checklocksignore
+		return nil, &tcpip.ErrConnectionAborted{}
 	}
 
-	ep.isRegistered = true
+	return ep.startPassiveHandshake(isn, s.sequenceNumber, opts, e, e.deferAccept)
+}
+
+// startPassiveHandshake registers the child before sending its SYN-ACK.
+// A forwarded connection has no listening endpoint.
+//
+// +checklocksrelease:e.mu
+func (e *Endpoint) startPassiveHandshake(isn, irs seqnum.Value, opts header.TCPSynOptions, listener *Endpoint, deferAccept time.Duration) (*handshake, tcpip.Error) {
+	// Register new endpoint so that packets are routed to it.
+	if err := e.stack.RegisterTransportEndpoint(
+		e.effectiveNetProtos,
+		ProtocolNumber,
+		e.TransportEndpointInfo.ID,
+		e,
+		e.boundPortFlags,
+		e.boundBindToDevice,
+	); err != nil {
+		e.mu.Unlock()
+		e.Close()
+
+		e.drainClosingSegmentQueue()
+
+		return nil, err
+	}
+
+	e.isRegistered = true
 
 	// Initialize and start the handshake.
-	h = ep.newPassiveHandshake(isn, irs, opts, deferAccept)
-	h.listenEP = l.listenEP
+	h := e.newPassiveHandshake(isn, irs, opts, deferAccept)
+	h.listenEP = listener
 	h.start()
-	h.ep.mu.Unlock()
+	e.mu.Unlock()
 	return h, nil
-}
-
-// performHandshake performs a TCP 3-way handshake. On success, the new
-// established endpoint is returned.
-//
-// Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
-func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*Endpoint, tcpip.Error) {
-	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
-	queue.EventRegister(&waitEntry)
-	defer queue.EventUnregister(&waitEntry)
-
-	h, err := l.startHandshake(s, opts, queue, owner)
-	if err != nil {
-		return nil, err
-	}
-
-	// performHandshake is used by the Forwarder which will block till the
-	// handshake either succeeds or fails. We do this by registering for
-	// events above and block on the notification channel.
-	<-notifyCh
-
-	ep := h.ep
-	ep.mu.Lock()
-	if !ep.EndpointState().connected() {
-		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
-		ep.stats.FailedConnectionAttempts.Increment()
-		ep.h = nil
-		ep.mu.Unlock()
-		ep.Close()
-		ep.notifyAborted()
-		ep.drainClosingSegmentQueue()
-		err := ep.LastError()
-		if err == nil {
-			// If err was nil then return the best error we can to indicate
-			// a connection failure.
-			err = &tcpip.ErrConnectionAborted{}
-		}
-		return nil, err
-	}
-
-	ep.isConnectNotified = true
-
-	// Transfer any state from the completed handshake to the endpoint.
-	//
-	// Update the receive window scaling. We can't do it before the
-	// handshake because it's possible that the peer doesn't support window
-	// scaling.
-	ep.rcv.RcvWndScale = ep.h.effectiveRcvWndScale()
-
-	// Clean up handshake state stored in the endpoint so that it can be
-	// GCed.
-	ep.h = nil
-	ep.mu.Unlock()
-	return ep, nil
 }
 
 // propagateInheritableOptionsLocked propagates any options set on the listening
@@ -455,8 +374,8 @@ func (a *acceptQueue) isFull() bool {
 // and needs to handle it.
 //
 // +checklocks:e.mu
-// +checklocksexclude:ctx.hasherMu
-func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Error {
+// +checklocksexclude:e.listenCtx.hasherMu
+func (e *Endpoint) handleListenSegment(s *segment) tcpip.Error {
 	// A child may have been registered after this segment was queued on the
 	// listener. Forward it before treating a retransmitted SYN as a new
 	// connection, or a queued ACK/RST as a segment for the listening socket.
@@ -496,6 +415,7 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 	}
 
+	ctx := e.listenCtx
 	switch {
 	case s.flags.Contains(header.TCPFlagRst):
 		e.stack.Stats().DroppedPackets.Increment()
@@ -533,7 +453,7 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 				return true, nil
 			}
 
-			h, err := ctx.startHandshake(s, opts, &waiter.Queue{}, e.owner)
+			h, err := e.startHandshake(s, opts)
 			if err != nil {
 				e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 				e.stats.FailedConnectionAttempts.Increment()
@@ -677,11 +597,12 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			rcvdSynOptions.SACKPermitted = s.parsedOptions.TSEcr&cookieTimestampSACK != 0
 		}
 
-		n, err := ctx.createConnectingEndpoint(s, rcvdSynOptions, &waiter.Queue{})
+		route, err := ctx.findReplyRoute(s)
 		if err != nil {
 			e.acceptMu.Unlock()
 			return err
 		}
+		n := ctx.createConnectingEndpoint(s, route, rcvdSynOptions, &waiter.Queue{})
 
 		// Propagate any inheritable options from the listening endpoint
 		// to the newly created endpoint.
