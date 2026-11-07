@@ -270,6 +270,45 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   EXPECT_EQ(expected, n);
 }
 
+TEST(BasicPtyTest, ReuseIndexAfterLastReplicaDescriptionCloses) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "devpts_reuse", dir.path(), "devpts", 0, "newinstance,ptmxmode=0666", 0));
+  const std::string ptmx = JoinPath(dir.path(), "ptmx");
+  FileDescriptor first =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ptmx, O_RDWR | O_NOCTTY));
+  const int first_index = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first));
+  EXPECT_EQ(first_index, 0);
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), absl::StrCat(first_index)), O_RDWR | O_NOCTTY));
+  const int duplicated = dup(replica.get());
+  ASSERT_THAT(duplicated, SyscallSucceeds());
+  FileDescriptor duplicate(duplicated);
+  first.reset();
+  replica.reset();
+
+  FileDescriptor second =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ptmx, O_RDWR | O_NOCTTY));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(second)), 1);
+  duplicate.reset();
+  FileDescriptor reused =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ptmx, O_RDWR | O_NOCTTY));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), first_index);
+}
+
+TEST(BasicPtyTest, ReuseIndexAfterMasterOnlyCloses) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "devpts_reuse", dir.path(), "devpts", 0, "newinstance,ptmxmode=0666", 0));
+  for (int i = 0; i < 8; ++i) {
+    FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+        Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_NOCTTY));
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(master)), 0);
+  }
+}
+
 TEST(BasicPtyTest, OpenMasterReplica) {
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
