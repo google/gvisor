@@ -16,6 +16,7 @@ package tcp_rack_test
 
 import (
 	"flag"
+	"slices"
 	"testing"
 	"time"
 
@@ -67,6 +68,38 @@ func createSACKConnection(t *testing.T) (testbench.DUT, testbench.TCPIPv4, int32
 		t.Fatalf("TCP_INFO send MSS = %d, want positive", payloadSize)
 	}
 	return dut, conn, acceptFd, payloadSize
+}
+
+// TestDSACKBelowCumulativeACK checks that the receiver reports the duplicate
+// bytes in the first SACK block, as described in RFC 2883 section 4.1.
+func TestDSACKBelowCumulativeACK(t *testing.T) {
+	_, conn, _, _ := createSACKConnection(t)
+	if !header.ParseSynOptions(conn.SynAck(t).Options, true /* isAck */).SACKPermitted {
+		t.Fatal("SYN-ACK did not permit SACK")
+	}
+	const data = "abcdef"
+	first := *conn.LocalSeqNum(t)
+	sendAndCheck := func(start, end, ack int, want ...header.SACKBlock) {
+		t.Helper()
+		conn.Send(t, testbench.TCP{
+			SeqNum: testbench.Uint32(uint32(first.Add(seqnum.Size(start)))),
+			Flags:  testbench.TCPFlags(header.TCPFlagAck),
+		}, &testbench.Payload{Bytes: []byte(data[start:end])})
+		reply, err := conn.Expect(t, testbench.TCP{
+			AckNum: testbench.Uint32(uint32(first.Add(seqnum.Size(ack)))),
+			Flags:  testbench.TCPFlags(header.TCPFlagAck),
+		}, time.Second)
+		if err != nil {
+			t.Fatalf("waiting for ACK of %d after sending [%d,%d): %v", ack, start, end, err)
+		}
+		if got := header.ParseTCPOptions(reply.Options).SACKBlocks; !slices.Equal(got, want) {
+			t.Fatalf("SACK blocks after sending [%d,%d) = %v, want %v", start, end, got, want)
+		}
+	}
+	sendAndCheck(0, 4, 4)
+	sendAndCheck(1, 3, 4, header.SACKBlock{Start: first.Add(1), End: first.Add(3)})
+	// Only the first two bytes overlap. The new suffix advances the ACK.
+	sendAndCheck(2, 6, 6, header.SACKBlock{Start: first.Add(2), End: first.Add(4)})
 }
 
 func getRTTAndRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rtt, rto time.Duration) {
