@@ -303,6 +303,11 @@ type Kernel struct {
 	// +checkatomic
 	userSysCPUClock atomicbitops.Int64
 
+	// containerCPU keeps lifetime task charges and host allocations across
+	// short-lived runsc clients and checkpoints.
+	containerCPUMu sync.Mutex `state:"nosave"`
+	containerCPU   containerCPUAccounting
+
 	// uniqueID is used to generate unique identifiers.
 	//
 	// +checkatomic
@@ -925,9 +930,13 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 		log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
 	}
 
-	// Save the kernel state.
+	// Save the kernel state. Event RPCs can update CPU accounting while
+	// checkpointing; hold its mutex for the generated state serializer.
+	// The CPU clock ticker has already stopped in quiescePausedAnd.
 	kernelStart := time.Now()
+	k.containerCPUMu.Lock()
 	stats, err := state.Save(ctx, stateFile, k)
+	k.containerCPUMu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -2786,6 +2795,12 @@ func (k *Kernel) RegisterContainerName(cid, containerName string) {
 func (k *Kernel) RestoreContainerMapping(containerIDs map[string]string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
+	k.containerCPUMu.Lock()
+	k.containerCPU.lifetime = remapContainerCPUValues(k.containerCPU.lifetime, k.containerNames, containerIDs)
+	k.containerCPU.guestPrev = remapContainerCPUValues(k.containerCPU.guestPrev, k.containerNames, containerIDs)
+	k.containerCPU.cgroupPrev = remapContainerCPUValues(k.containerCPU.cgroupPrev, k.containerNames, containerIDs)
+	k.containerCPU.allocated = remapContainerCPUValues(k.containerCPU.allocated, k.containerNames, containerIDs)
+	k.containerCPUMu.Unlock()
 
 	newContainerEnvs := make(map[string][]string, len(k.containerEnvs))
 	for oldCID, env := range k.containerEnvs {

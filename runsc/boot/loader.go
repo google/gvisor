@@ -275,7 +275,8 @@ type Loader struct {
 	// freeOSMemory is runtimedebug.FreeOSMemory, replaced in tests.
 	freeOSMemory func()
 
-	// saveMu serializes save operations. Saves can be requested concurrently:
+	// saveMu serializes save operations and Event cgroup/CPU snapshots.
+	// Saves can be requested concurrently:
 	// autosave in save-resume mode is triggered by any task executing the
 	// trigger syscall, and checkpoints may be requested concurrently via the
 	// control API. Overlapping saves race: post-save cleanup
@@ -1907,6 +1908,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	}
 
 	// No more failure from this point on.
+	l.k.RetireContainerCPU(cid)
 
 	// Remove all container thread groups from the map.
 	for key, ep := range l.processes {

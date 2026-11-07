@@ -367,15 +367,7 @@ func ttyName(tty *kernel.TTY) string {
 
 // ContainerUsage retrieves per-container CPU usage.
 func ContainerUsage(kr *kernel.Kernel) map[string]uint64 {
-	cusage := make(map[string]uint64)
-	for _, tg := range kr.TaskSet().Root.ThreadGroups() {
-		// We want each tg's usage including reaped children.
-		cid := tg.Leader().ContainerID()
-		stats := tg.CPUStats()
-		stats.Accumulate(tg.JoinedChildCPUStats())
-		cusage[cid] += uint64(stats.UserTime.Nanoseconds()) + uint64(stats.SysTime.Nanoseconds())
-	}
-	return cusage
+	return kr.ContainerCPUUsage()
 }
 
 // unpackFiles unpacks the file descriptor map and, if applicable, the file
