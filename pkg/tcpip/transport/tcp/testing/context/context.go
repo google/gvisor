@@ -128,6 +128,11 @@ type Options struct {
 	// MTU indicates the maximum transmission unit on the link layer.
 	MTU uint32
 
+	// LinkWriteError, if not nil, is called with each batch of outbound
+	// packets. If it returns an error, the batch is dropped and the error is
+	// returned to the stack.
+	LinkWriteError func(stack.PacketBufferList) tcpip.Error
+
 	// Clock that is used by Stack.
 	Clock tcpip.Clock
 
@@ -137,6 +142,20 @@ type Options struct {
 	// EnableExperimentIPOption indicates whether the NIC is responsible for
 	// passing the experiment IP option.
 	EnableExperimentIPOption bool
+}
+
+// writeErrorEndpoint is a link endpoint that may fail writes.
+type writeErrorEndpoint struct {
+	stack.LinkEndpoint
+	writeError func(stack.PacketBufferList) tcpip.Error
+}
+
+// WritePackets implements stack.LinkEndpoint.WritePackets.
+func (e *writeErrorEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	if err := e.writeError(pkts); err != nil {
+		return 0, err
+	}
+	return e.LinkEndpoint.WritePackets(pkts)
 }
 
 // Context provides an initialized Network stack and a link layer endpoint
@@ -251,6 +270,9 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 	wep := stack.LinkEndpoint(ep)
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
+	}
+	if opts.LinkWriteError != nil {
+		wep = &writeErrorEndpoint{wep, opts.LinkWriteError}
 	}
 	nicOpts := stack.NICOptions{Name: "nic1", EnableExperimentIPOption: opts.EnableExperimentIPOption}
 	if err := s.CreateNICWithOptions(1, wep, nicOpts); err != nil {

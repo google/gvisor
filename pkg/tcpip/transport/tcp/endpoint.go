@@ -1215,6 +1215,7 @@ func (e *Endpoint) cleanupLocked() {
 		e.snd.probeTimer.cleanup()
 		e.snd.reorderTimer.cleanup()
 		e.snd.corkTimer.cleanup()
+		e.snd.ackTimer.cleanup()
 	}
 
 	if e.finWait2Timer != nil {
@@ -1848,6 +1849,21 @@ func (e *Endpoint) OnCorkOptionSet(v bool) {
 		// Handle the corked data.
 		if e.EndpointState().connected() {
 			e.sendData(nil /* next */)
+		}
+	}
+}
+
+// OnQuickAckSet implements tcpip.SocketOptionsHandler.OnQuickAckSet.
+//
+// +checklocksexclude:e.segmentQueue.mu
+// +checklocksexclude:e.pendingProcessingMu
+func (e *Endpoint) OnQuickAckSet(v bool) {
+	if v {
+		e.LockUser()
+		defer e.UnlockUser()
+		// Send a delayed ACK now, like Linux.
+		if e.EndpointState().connected() && e.rcv.RcvNxt != e.snd.MaxSentAck {
+			e.snd.sendAck()
 		}
 	}
 }
