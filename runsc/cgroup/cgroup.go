@@ -382,6 +382,9 @@ type Cgroup interface {
 	NumCPU() (int, error)
 	MemoryLimit() (uint64, error)
 	MakePath(controllerName string) string
+	// SetMemorySwapMax sets memory.swap.max to swap bytes. A swap value of -1
+	// means unlimited. It fails on cgroup v1.
+	SetMemorySwapMax(swap int64) error
 }
 
 // cgroupV1 represents a group inside all controllers. For example:
@@ -849,6 +852,12 @@ func (c *cgroupV1) NumCPU() (int, error) {
 		return 0, err
 	}
 	return countCpuset(strings.TrimSpace(cpuset))
+}
+
+// SetMemorySwapMax implements Cgroup.SetMemorySwapMax. cgroup v1 has no
+// separate swap limit.
+func (c *cgroupV1) SetMemorySwapMax(int64) error {
+	return errors.New("cgroup v1 has no memory.swap.max")
 }
 
 // MemoryLimit returns the memory limit.
