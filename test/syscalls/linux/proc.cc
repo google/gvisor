@@ -1545,6 +1545,140 @@ TEST(ProcSelfFdInfo, Flags) {
   EXPECT_THAT(fd_info, HasSubstr(absl::StrFormat("flags:\t%#o", flags)));
 }
 
+// A child holds a file open at a known offset so another process can try to
+// read /proc/<pid>/fdinfo/<fd>.
+constexpr int kFdinfoOffset = 7;
+constexpr int kFdinfoOwner = 1000;
+constexpr int kFdinfoOther = 1001;
+
+struct FdinfoTarget {
+  pid_t pid = -1;
+  int fd = -1;
+  int stopfd = -1;
+};
+
+void StopFdinfoTarget(FdinfoTarget* target) {
+  if (target->stopfd >= 0) {
+    char ok = 1;
+    WriteFd(target->stopfd, &ok, sizeof(ok));
+    close(target->stopfd);
+    target->stopfd = -1;
+  }
+  if (target->pid > 0) {
+    RetryEINTR(waitpid)(target->pid, nullptr, 0);
+    target->pid = -1;
+  }
+}
+
+PosixErrorOr<FdinfoTarget> StartFdinfoTarget() {
+  ASSIGN_OR_RETURN_ERRNO(auto file, TempPath::CreateFileWith(
+                                        GetAbsoluteTestTmpdir(),
+                                        std::string(kFdinfoOffset, 'a'), 0644));
+  int ready[2];
+  int stop[2];
+  RETURN_ERROR_IF_SYSCALL_FAIL(pipe(ready));
+  RETURN_ERROR_IF_SYSCALL_FAIL(pipe(stop));
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    int err = errno;
+    close(ready[0]);
+    close(ready[1]);
+    close(stop[0]);
+    close(stop[1]);
+    return PosixError(err, "fork");
+  }
+  if (pid == 0) {
+    close(ready[0]);
+    close(stop[1]);
+    TEST_PCHECK(syscall(SYS_setuid, kFdinfoOwner) == 0);
+    // setuid clears dumpability. Restore it so a peer with the same uid can
+    // pass the ptrace read check.
+    TEST_PCHECK(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER) == 0);
+    int fd = open(file.path().c_str(), O_RDONLY);
+    TEST_PCHECK(fd >= 0);
+    char buf[kFdinfoOffset];
+    TEST_CHECK(ReadFd(fd, buf, sizeof(buf)) == sizeof(buf));
+    TEST_CHECK(WriteFd(ready[1], &fd, sizeof(fd)) == sizeof(fd));
+    close(ready[1]);
+    char ok = 0;
+    TEST_CHECK(ReadFd(stop[0], &ok, sizeof(ok)) == sizeof(ok));
+    _exit(0);
+  }
+
+  close(ready[1]);
+  close(stop[0]);
+  FdinfoTarget target;
+  target.pid = pid;
+  target.stopfd = stop[1];
+  if (ReadFd(ready[0], &target.fd, sizeof(target.fd)) != sizeof(target.fd)) {
+    int err = errno;
+    close(ready[0]);
+    StopFdinfoTarget(&target);
+    return PosixError(err == 0 ? EIO : err, "read child fd");
+  }
+  close(ready[0]);
+  return target;
+}
+
+std::string FdinfoDir(pid_t pid) {
+  return absl::StrCat("/proc/", pid, "/fdinfo");
+}
+
+std::string FdinfoPath(const FdinfoTarget& target) {
+  return absl::StrCat(FdinfoDir(target.pid), "/", target.fd);
+}
+
+// Another uid cannot open /proc/<pid>/fdinfo or a file inside it. The mode
+// stays 0555/0444; the ptrace read check is what refuses the open.
+TEST(ProcPidFdInfo, DifferentUser) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  FdinfoTarget target = ASSERT_NO_ERRNO_AND_VALUE(StartFdinfoTarget());
+  auto cleanup = Cleanup([&] { StopFdinfoTarget(&target); });
+
+  ScopedThread([&] {
+    EXPECT_THAT(syscall(SYS_setuid, kFdinfoOther), SyscallSucceeds());
+    EXPECT_THAT(open(FdinfoDir(target.pid).c_str(), O_RDONLY | O_DIRECTORY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(open(FdinfoPath(target).c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+  });
+}
+
+// A different process with the same uid can read the file offset.
+TEST(ProcPidFdInfo, SameUser) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  FdinfoTarget target = ASSERT_NO_ERRNO_AND_VALUE(StartFdinfoTarget());
+  auto cleanup = Cleanup([&] { StopFdinfoTarget(&target); });
+
+  ScopedThread([&] {
+    EXPECT_THAT(syscall(SYS_setuid, kFdinfoOwner), SyscallSucceeds());
+    auto fd_info = ASSERT_NO_ERRNO_AND_VALUE(GetContents(FdinfoPath(target)));
+    EXPECT_THAT(fd_info,
+                HasSubstr(absl::StrCat("pos:\t", kFdinfoOffset, "\n")));
+  });
+}
+
+// CAP_SYS_PTRACE allows a different uid to read the file offset.
+TEST(ProcPidFdInfo, DifferentUserPtrace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_PTRACE)));
+
+  FdinfoTarget target = ASSERT_NO_ERRNO_AND_VALUE(StartFdinfoTarget());
+  auto cleanup = Cleanup([&] { StopFdinfoTarget(&target); });
+
+  ScopedThread([&] {
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0), SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_setuid, kFdinfoOther), SyscallSucceeds());
+    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, true));
+    auto fd_info = ASSERT_NO_ERRNO_AND_VALUE(GetContents(FdinfoPath(target)));
+    EXPECT_THAT(fd_info,
+                HasSubstr(absl::StrCat("pos:\t", kFdinfoOffset, "\n")));
+  });
+}
+
 TEST(ProcSelfExe, Absolute) {
   auto exe = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/exe"));
   EXPECT_EQ(exe[0], '/');

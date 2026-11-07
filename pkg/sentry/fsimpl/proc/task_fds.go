@@ -332,6 +332,27 @@ func (i *fdInfoDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *ker
 	return fd.VFSFileDescription(), nil
 }
 
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
+//
+// The mode check matches /proc/[pid]/fd: the owning thread group can still
+// open this directory after setuid. A caller that passes the mode check must
+// also have ptrace read access. See fs/proc/fd.c:proc_fdinfo_permission.
+//
+// +checklocksexclude:i.fdDir.task.mu
+func (i *fdInfoDirInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	err := i.InodeAttrs.CheckPermissions(ctx, creds, ats)
+	if err != nil {
+		t := kernel.TaskFromContext(ctx)
+		if t == nil || i.task.ThreadGroup() != t.ThreadGroup() {
+			return err
+		}
+	}
+	if !kernel.ContextCanTrace(ctx, i.task, false /* attach */) {
+		return linuxerr.EACCES
+	}
+	return nil
+}
+
 // DecRef implements kernfs.Inode.DecRef.
 func (i *fdInfoDirInode) DecRef(ctx context.Context) {
 	i.fdInfoDirInodeRefs.DecRef(func() { i.Destroy(ctx) })
