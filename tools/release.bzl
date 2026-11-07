@@ -1,6 +1,6 @@
 """Rules assembling the gVisor release binaries in their installed layout."""
 
-load("//tools:defs.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action", "cov_available", "pkg_tar")
+load("//tools:defs.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action")
 
 # FLAVORS are the instrumentation flavors of gVisor binaries.
 FLAVORS = [
@@ -129,37 +129,3 @@ release_files = rule(
           "`gvisor-bin/` directory.",
     toolchains = COPY_FILE_TOOLCHAINS,
 )
-
-def instrumented_release_tars(name, flavor, bins = [], visibility = None):
-    """Defines release tarballs of gVisor built with the given instrumentation flavor.
-
-    Defines `<name>-tar-bz2` and `<name>-tar-zstd` targets.
-
-    Args:
-      name: prefix of the tarball target names and of the tarball file names.
-      flavor: one of FLAVORS.
-      bins: additional top-level binaries, e.g. the containerd shim.
-      visibility: visibility of the tarball targets.
-    """
-    if not cov_available and ("coverage" in flavor):
-        return
-    runsc = RUNSC[flavor]
-    gvisor_bin = name + "-gvisor-bin"
-    pkg_tar(
-        name = gvisor_bin,
-        files = sidecars(flavor),
-        mode = "0755",
-        package_dir = "gvisor-bin",
-    )
-    for extension, compressor in (("tar.bz2", None), ("tar.zstd", "//tools/zstd:compressor")):
-        pkg_tar(
-            name = "%s-%s" % (name, extension.replace(".", "-")),
-            srcs = bins,
-            compressor = compressor,
-            extension = extension,
-            files = {runsc: "runsc"},
-            mode = "0755",
-            package_file_name = "%s.%s" % (name, extension),
-            visibility = visibility,
-            deps = [":" + gvisor_bin],
-        )
