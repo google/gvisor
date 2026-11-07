@@ -1855,10 +1855,10 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 		// retransmission, including a tail loss probe (RFC 6298, section 3).
 		// Timestamp-based samples are selected separately by the ACK path.
 		s.RTTMeasureSeqNum = s.SndNxt
-		s.ep.stack.Stats().TCP.Retransmits.Increment()
-		s.ep.stats.SendErrors.Retransmits.Increment()
+		packets := uint64(s.pCount(seg, s.MaxPayloadSize))
+		s.ep.countRetransmits(packets)
 		if s.SndCwnd < s.Ssthresh {
-			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
+			s.ep.stack.Stats().TCP.SlowStartRetransmits.IncrementBy(packets)
 		}
 	}
 	seg.xmitTime = s.ep.stack.Clock().NowMonotonic()
