@@ -69,6 +69,25 @@ image_outputs(
     image_name = "basic/fsstress",
 )
 
+# Exercise containerd's resolver mounts through a symlink in the image.
+image_layer(
+    name = "symlink_resolv_layer",
+    symlinks = {"/etc/resolv.conf": "../tmp/resolv.conf"},
+)
+
+image_manifest(
+    name = "symlink_resolv",
+    base = "@test_busybox",
+    layers = [":symlink_resolv_layer"],
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "symlink_resolv",
+    image = ":symlink_resolv",
+    image_name = "basic/symlink-resolv",
+)
+
 # The integration test checks that mounting /tmp preserves image contents.
 image_layer(
     name = "tmpfile_layer",
