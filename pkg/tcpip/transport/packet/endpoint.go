@@ -476,6 +476,11 @@ func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
+	case tcpip.PacketMMapReserveOption:
+		ep.packetMmapMu.RLock()
+		defer ep.packetMmapMu.RUnlock()
+		return ep.packetMMapReserve, nil
+
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
 		ep.rcvMu.Lock()
