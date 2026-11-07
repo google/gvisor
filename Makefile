@@ -301,8 +301,7 @@ HOST_KERNEL ?= $(shell uname -r)
 #   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared OPTIONS=--nocache_test_results
 # To run multiple specific syscall tests:
 #   make syscall-tests TARGETS="//test/syscalls:signalfd_test_runsc_systrap_shared //test/syscalls:link_test_runsc_systrap_shared"
-# To run a single syscall test with the lockdep lock-order checker (use
-# BAZEL_OPTIONS, not OPTIONS, so the runtime under test is rebuilt):
+# To run a single syscall test with the lockdep lock-order checker:
 #   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared BAZEL_OPTIONS=--config=lockdep OPTIONS=--nocache_test_results
 # To run a single syscall test with the Go race detector in runsc and the Sentry:
 #   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared BAZEL_OPTIONS=--config=race OPTIONS=--nocache_test_results
@@ -316,8 +315,15 @@ HOST_KERNEL ?= $(shell uname -r)
 # (sudo make syscall-tests strips privileges, so use the sudo rule; ARGS are
 # gtest flags):
 #   make sudo TARGETS=//test/syscalls/linux:chown_test ARGS='--gtest_filter=*Root*'
+# The runner finds the matching runsc and Sentry in its Bazel runfiles.
+# Stage a runtime when the caller selects other binaries or an install path.
+ifneq (,$(strip $(STAGED_BINARIES) $(EXTRA_SIDECAR_TARGETS) $(filter-out //runsc,$(RUNSC_TARGET)) \
+                $(filter-out file,$(origin RUNTIME_BIN) $(origin RUNTIME_DIR))))
 syscall-tests: $(RUNTIME_BIN)
-	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --test_env=GVISOR_SIDECAR_BINARIES_DIR=$(RUNTIME_DIR)/gvisor-bin --test_env=HOST_KERNEL=$(HOST_KERNEL) --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
+syscall-tests: syscall_runtime_flags = --test_env=RUNTIME=$(RUNTIME_BIN) --test_env=GVISOR_SIDECAR_BINARIES_DIR=$(RUNTIME_DIR)/gvisor-bin
+endif
+syscall-tests:
+	@$(call test,$(OPTIONS) $(syscall_runtime_flags) --test_env=HOST_KERNEL=$(HOST_KERNEL) --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
 .PHONY: syscall-tests
 
 # `make syscall-test-boot-log` prints the newest runsc boot log written by a
