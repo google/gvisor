@@ -147,6 +147,10 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		return 0, rfd.inode.t.ld.inputQueueReadSize(t, io, args)
 	case linux.TCGETS:
 		return rfd.inode.t.ld.getTermios(t, args)
+	case linux.TIOCGLCKTRMIOS:
+		return rfd.inode.t.ld.getLockedTermios(t, args)
+	case linux.TIOCSLCKTRMIOS:
+		return rfd.inode.t.ld.setLockedTermios(t, args)
 	case linux.TCGETS2:
 		return rfd.inode.t.ld.getTermios2(t, args)
 	case linux.TCSETS:

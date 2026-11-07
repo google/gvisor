@@ -270,6 +270,69 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   EXPECT_EQ(expected, n);
 }
 
+TEST(BasicPtyTest, LockedTermiosInitiallyEmpty) {
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  const kernel_termios empty = {};
+  for (int fd : {master.get(), replica.get()}) {
+    kernel_termios locked = {};
+    ASSERT_THAT(ioctl(fd, TIOCGLCKTRMIOS, &locked), SyscallSucceeds());
+    EXPECT_EQ(locked, empty);
+  }
+}
+
+TEST(BasicPtyTest, LockedTermiosSharedAndEnforced) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios before = {};
+  ASSERT_THAT(ioctl(replica.get(), TCGETS, &before), SyscallSucceeds());
+  kernel_termios locked = {};
+  locked.c_lflag = ECHO;
+  locked.c_cc[VINTR] = 1;
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+  kernel_termios from_replica = {};
+  ASSERT_THAT(ioctl(replica.get(), TIOCGLCKTRMIOS, &from_replica),
+              SyscallSucceeds());
+  EXPECT_EQ(from_replica, locked);
+
+  kernel_termios next = before;
+  next.c_lflag ^= ECHO | ICANON;
+  next.c_cc[VINTR] ^= 0x40;
+  next.c_cc[VQUIT] ^= 0x40;
+  ASSERT_THAT(ioctl(replica.get(), TCSETS, &next), SyscallSucceeds());
+  kernel_termios after = {};
+  ASSERT_THAT(ioctl(master.get(), TCGETS, &after), SyscallSucceeds());
+  EXPECT_EQ(after.c_lflag & ECHO, before.c_lflag & ECHO);
+  EXPECT_EQ(after.c_lflag & ICANON, next.c_lflag & ICANON);
+  EXPECT_EQ(after.c_cc[VINTR], before.c_cc[VINTR]);
+  EXPECT_EQ(after.c_cc[VQUIT], next.c_cc[VQUIT]);
+
+  FileDescriptor other =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  kernel_termios independent = {};
+  ASSERT_THAT(ioctl(other.get(), TIOCGLCKTRMIOS, &independent),
+              SyscallSucceeds());
+  const kernel_termios empty = {};
+  EXPECT_EQ(independent, empty);
+}
+
+TEST(BasicPtyTest, LockedTermiosPermissionBeforePointer) {
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  AutoCapability no_admin(CAP_SYS_ADMIN, false);
+  AutoCapability no_checkpoint_restore(CAP_CHECKPOINT_RESTORE, false);
+  for (int fd : {master.get(), replica.get()}) {
+    EXPECT_THAT(ioctl(fd, TIOCSLCKTRMIOS, reinterpret_cast<void*>(1)),
+                SyscallFailsWithErrno(EPERM));
+  }
+}
+
 TEST(BasicPtyTest, OpenMasterReplica) {
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
