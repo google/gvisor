@@ -391,6 +391,48 @@ TEST(Signalfd, RtQueueDeliversPayload) {
   EXPECT_EQ(ssi.ssi_int, second.sival_int);
 }
 
+TEST(Signalfd, ShortBufferFailsWithoutConsumingSignal) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, kSigno);
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, SFD_NONBLOCK));
+
+  const auto scoped_sigmask =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
+  ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+
+  char buf[sizeof(struct signalfd_siginfo) / 2];
+  EXPECT_THAT(read(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EINVAL));
+
+  struct signalfd_siginfo ssi;
+  ASSERT_THAT(read(fd.get(), &ssi, sizeof(ssi)),
+              SyscallSucceedsWithValue(sizeof(ssi)));
+  EXPECT_EQ(ssi.ssi_signo, kSigno);
+}
+
+TEST(Signalfd, ReadReturnsMultipleRecords) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, kSigno);
+  sigaddset(&mask, kSignoAlt);
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, SFD_NONBLOCK));
+
+  const auto scoped_sigmask1 =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSigno));
+  const auto scoped_sigmask2 =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, kSignoAlt));
+  ASSERT_THAT(tgkill(getpid(), gettid(), kSigno), SyscallSucceeds());
+  ASSERT_THAT(tgkill(getpid(), gettid(), kSignoAlt), SyscallSucceeds());
+
+  struct signalfd_siginfo ssi[3] = {};
+  ASSERT_THAT(read(fd.get(), ssi, sizeof(ssi)),
+              SyscallSucceedsWithValue(2 * sizeof(ssi[0])));
+  EXPECT_EQ(ssi[0].ssi_signo, kSigno);
+  EXPECT_EQ(ssi[1].ssi_signo, kSignoAlt);
+}
+
 // Sends fd over the connected Unix domain socket sock. Returns true on success.
 //
 // Async-signal-safe.
