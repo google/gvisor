@@ -679,11 +679,12 @@ func TestFindAllocatable(t *testing.T) {
 	}
 }
 
-// mapFileWithReadOnlyPage returns a file of three pages filled with ones,
-// except that the middle page is filled with b, and a shared mapping of the
-// file in which the middle page is read-only. Writes to the middle page fault,
-// like writes to a page of a disk-backed file that the host cannot allocate
-// disk space for.
+// mapFileWithReadOnlyPage returns a read-only file descriptor for a file of
+// three pages filled with ones, except that the middle page is filled with b,
+// and a shared mapping of the file in which the middle page is read-only.
+// fallocate(2) fails on the file descriptor, and writes to the middle page
+// fault, like for a disk-backed file that the host cannot allocate disk space
+// for.
 func mapFileWithReadOnlyPage(t *testing.T, b byte) (int, []byte) {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "pgalloc")
@@ -691,6 +692,11 @@ func mapFileWithReadOnlyPage(t *testing.T, b byte) (int, []byte) {
 		t.Fatalf("CreateTemp failed: %v", err)
 	}
 	t.Cleanup(func() { f.Close() })
+	ro, err := os.Open(f.Name())
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	t.Cleanup(func() { ro.Close() })
 	data := make([]byte, 3*page)
 	for i := range data {
 		data[i] = 1
@@ -709,7 +715,33 @@ func mapFileWithReadOnlyPage(t *testing.T, b byte) (int, []byte) {
 	if err := unix.Mprotect(m[page:2*page], unix.PROT_READ); err != nil {
 		t.Fatalf("Mprotect failed: %v", err)
 	}
-	return int(f.Fd()), m
+	return int(ro.Fd()), m
+}
+
+func TestZeroDiskBacked(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "pgalloc")
+	if err != nil {
+		t.Fatalf("CreateTemp failed: %v", err)
+	}
+	defer f.Close()
+	// The second page is written, and the others are holes.
+	if err := f.Truncate(3 * page); err != nil {
+		t.Fatalf("Truncate failed: %v", err)
+	}
+	if _, err := f.WriteAt(slices.Repeat([]byte{1}, page), page); err != nil {
+		t.Fatalf("WriteAt failed: %v", err)
+	}
+	m, err := unix.Mmap(int(f.Fd()), 0, 3*page, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	if err != nil {
+		t.Fatalf("Mmap failed: %v", err)
+	}
+	defer unix.Munmap(m)
+	if !zeroDiskBacked(int(f.Fd()), page, m[page:]) {
+		t.Errorf("zeroDiskBacked returned false")
+	}
+	if i := slices.IndexFunc(m, func(b byte) bool { return b != 0 }); i >= 0 {
+		t.Errorf("zeroDiskBacked left byte %d nonzero", i)
+	}
 }
 
 func TestZeroDiskBackedSkipsZeroUnwritablePage(t *testing.T) {

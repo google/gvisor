@@ -1169,12 +1169,20 @@ func (f *MemoryFile) manuallyZero(fr memmap.FileRange) bool {
 
 // zeroDiskBacked zeroes bs, which maps the pages of the disk-backed file fd
 // that start at offset off. Writing to a page raises SIGBUS if the host cannot
-// allocate disk space for it, for example because its filesystem is full.
-// Such pages are skipped if they already read as zero, as holes do. They are
-// read with pread(2) instead of through bs, since a read fault on a hole can
-// also allocate, for example on tmpfs. zeroDiskBacked returns false if it
-// skipped any pages, which then remain uncommitted.
+// allocate disk space for it, for example because its filesystem is full, so
+// zeroDiskBacked first asks the host to allocate disk space for every page. If
+// that fails, it zeroes the pages with safecopy instead, and skips pages that
+// fault if they already read as zero, as holes do. They are read with pread(2)
+// instead of through bs, since a read fault on a hole can also allocate, for
+// example on tmpfs. zeroDiskBacked returns false if it skipped any pages, which
+// then remain uncommitted.
 func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
+	if unix.Fallocate(fd, 0 /* mode */, int64(off), int64(len(bs))) == nil {
+		// Writes to pages with allocated disk space cannot fault, and clear is
+		// much faster than safecopy.
+		clear(bs)
+		return true
+	}
 	wroteAll := true
 	for len(bs) != 0 {
 		n, err := safemem.ZeroSeq(safemem.BlockSeqOf(safemem.BlockFromUnsafeSlice(bs)))
