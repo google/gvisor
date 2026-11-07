@@ -381,10 +381,10 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 // synRcvdState handles a segment received when the TCP 3-way handshake is in
 // the SYN-RCVD state.
+//
 // +checklocks:h.ep.mu
 // +checklocksexclude:h.ep.segmentQueue.mu
 // +checklocksexclude:h.ep.pendingProcessingMu
-// +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	if s.flags.Contains(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
@@ -521,7 +521,6 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 // +checklocks:h.ep.mu
 // +checklocksexclude:h.ep.segmentQueue.mu
 // +checklocksexclude:h.ep.pendingProcessingMu
-// +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) handleSegment(s *segment) tcpip.Error {
 	h.sndWnd = s.window
 	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
@@ -539,10 +538,10 @@ func (h *handshake) handleSegment(s *segment) tcpip.Error {
 
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
+//
 // +checklocks:h.ep.mu
 // +checklocksexclude:h.ep.segmentQueue.mu
 // +checklocksexclude:h.ep.pendingProcessingMu
-// +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) processSegments() tcpip.Error {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := h.ep.segmentQueue.dequeue()

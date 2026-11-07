@@ -50,13 +50,6 @@ declare_mutex(
 )
 
 declare_mutex(
-    name = "hasher_mutex",
-    out = "hasher_mutex.go",
-    package = "tcp",
-    prefix = "hasher",
-)
-
-declare_mutex(
     name = "forwarder_mutex",
     out = "forwarder_mutex.go",
     package = "tcp",
@@ -156,7 +149,6 @@ go_library(
         "forwarder.go",
         "forwarder_mutex.go",
         "forwarder_request_mutex.go",
-        "hasher_mutex.go",
         "keepalive_mutex.go",
         "last_error_mutex.go",
         "pending_processing_mutex.go",
