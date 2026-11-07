@@ -91,7 +91,7 @@ func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
 		userNS:            userNS,
 		netlinkMcastTable: NewNetlinkMcastTable(),
 	}
-	n.init()
+	n.init(false /* restore */)
 	return n
 }
 
@@ -146,14 +146,20 @@ func (n *Namespace) ResetStack() {
 	n.stack = nil
 }
 
-func (n *Namespace) init() {
+// init creates the network stack of a non-root network namespace. restore is
+// true if n is a restored network namespace.
+func (n *Namespace) init(restore bool) {
 	// Root network namespace will have stack assigned later.
 	if n.isRoot {
 		return
 	}
 	if n.creator != nil {
 		var err error
-		n.stack, err = n.creator.CreateStack()
+		if rc, ok := n.creator.(RestoreNetworkStackCreator); ok && restore {
+			n.stack, err = rc.CreateStackForRestore()
+		} else {
+			n.stack, err = n.creator.CreateStack()
+		}
 		if err != nil {
 			panic(err)
 		}
@@ -166,7 +172,7 @@ func (n *Namespace) init() {
 
 // afterLoad is invoked by stateify.
 func (n *Namespace) afterLoad(goContext.Context) {
-	n.init()
+	n.init(true /* restore */)
 }
 
 // AbstractSockets returns AbstractSocketNamespace.
@@ -190,4 +196,18 @@ func (n *Namespace) HasCapability(ctx context.Context, cp linux.Capability) bool
 type NetworkStackCreator interface {
 	// CreateStack creates a new network stack for a network namespace.
 	CreateStack() (Stack, error)
+}
+
+// RestoreNetworkStackCreator is an optional interface of a
+// NetworkStackCreator. If the creator of a restored network namespace
+// implements it, the namespace gets its network stack from
+// CreateStackForRestore. If not, the namespace gets its network stack from
+// CreateStack.
+//
+// TODO(gvisor.dev/issue/4595): Remove this when a restored network namespace
+// gets its saved network stack.
+type RestoreNetworkStackCreator interface {
+	// CreateStackForRestore creates the network stack of a restored network
+	// namespace.
+	CreateStackForRestore() (Stack, error)
 }
