@@ -116,6 +116,8 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, freqMHz float64, w io.Writ
 	fmt.Fprintf(w, "\n") // The /proc/cpuinfo file ends with an extra newline.
 }
 
+var archIgnoredFeatures []Feature
+
 // archCheckHostCompatible is a noop on arm64.
 func (FeatureSet) archCheckHostCompatible(FeatureSet) error {
 	return nil
