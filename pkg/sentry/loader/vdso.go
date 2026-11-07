@@ -213,7 +213,7 @@ func PrepareVDSO(mf *pgalloc.MemoryFile) (*VDSO, error) {
 	}
 
 	// Finally, allocate a param page for this VDSO.
-	paramPage, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.System})
+	paramPage, err := mf.Allocate(uint64(hostarch.PageSize), pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
 		mf.DecRef(vdso)
 		return nil, fmt.Errorf("unable to allocate VDSO param page: %v", err)
