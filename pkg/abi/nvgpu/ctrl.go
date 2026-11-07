@@ -243,6 +243,12 @@ type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT struct {
 	Data [12]byte // union
 }
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000unix.h:
+const (
+	NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TYPE_RM              = 1
+	NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_FLAGS_EMPTY_FD = 0x1
+)
+
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS struct {
 	_      structs.HostLayout

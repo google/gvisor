@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -132,6 +133,10 @@ type frontendFD struct {
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by dev.nvp.clientsMu.
 	clients map[*rootClient]struct{}
+
+	exportedMu sync.Mutex `state:"nosave"`
+	// exported is protected by exportedMu.
+	exported exportedObject
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -1030,6 +1035,14 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 }
 
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	return ctrlHasFrontendFDInvoke(fi, ioctlParams, func(_ *frontendFD, ctrlParams PtrParams) (uintptr, error) {
+		return rmControlInvoke(fi, ioctlParams, ctrlParams)
+	})
+}
+
+// ctrlHasFrontendFDInvoke is ctrlHasFrontendFD, but makes the control with
+// invoke, given the params' frontendFD.
+func ctrlHasFrontendFDInvoke[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, invoke func(*frontendFD, PtrParams) (uintptr, error)) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
@@ -1051,7 +1064,7 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	}
 
 	ctrlParams.SetFrontendFD(ctlFile.hostFD)
-	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	n, err := invoke(ctlFile, ctrlParams)
 	ctrlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
