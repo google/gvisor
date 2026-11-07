@@ -27,6 +27,7 @@ go_library(
         "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/sighandling",
+        "@org_golang_x_sys//cpu:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
