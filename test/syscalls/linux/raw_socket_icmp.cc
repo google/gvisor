@@ -124,6 +124,17 @@ TEST_F(RawSocketICMPTest, IPv6ChecksumNotSupported) {
   EXPECT_EQ(len, sizeof(v));
 }
 
+TEST_F(RawSocketICMPTest, SendToInet6AddrReturnsEAFNOSUPPORT) {
+  sockaddr_in6 addr6 = {};
+  addr6.sin6_family = AF_INET6;
+  addr6.sin6_port = 0;
+  addr6.sin6_addr = in6addr_loopback;
+  constexpr char kBuf[1] = {};
+  EXPECT_THAT(sendto(s_, kBuf, sizeof(kBuf), 0,
+                     reinterpret_cast<const sockaddr*>(&addr6), sizeof(addr6)),
+              SyscallFailsWithErrno(EAFNOSUPPORT));
+}
+
 TEST_F(RawSocketICMPTest, ICMPv6FilterNotSupported) {
   icmp6_filter v;
   EXPECT_THAT(setsockopt(s_, SOL_ICMPV6, ICMP6_FILTER, &v, sizeof(v)),
