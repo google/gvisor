@@ -57,7 +57,10 @@ type Port struct {
 	// GIDNames are the entry names of the GID table (typically "0".."255").
 	// The same names index gids/<n>, gid_attrs/types/<n> and
 	// gid_attrs/ndevs/<n>, all served live.
-	GIDNames       []string `json:"gid_names"`
+	GIDNames []string `json:"gid_names"`
+	// PKeyNames are the entry names of the P_Key table (pkeys/<n>), served
+	// live. Empty when the port has no P_Key table (pkey_tbl_len == 0).
+	PKeyNames      []string `json:"pkey_names"`
 	CounterNames   []string `json:"counter_names"`
 	HWCounterNames []string `json:"hw_counter_names"`
 }
