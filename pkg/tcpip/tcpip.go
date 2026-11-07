@@ -1288,6 +1288,9 @@ type TCPInfoOption struct {
 	// SndMss is the maximum TCP payload size, in bytes.
 	SndMss uint32
 
+	// TotalRetrans is the lifetime number of retransmitted TCP segments.
+	TotalRetrans uint32
+
 	// SndSsthresh is the threshold between slow start and congestion
 	// avoidance.
 	SndSsthresh uint32
