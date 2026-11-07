@@ -282,11 +282,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		switch r.ep.EndpointState() {
 		case StateFinWait1:
 			r.ep.setEndpointState(StateFinWait2)
-			if e := r.ep; e.closed {
-				// The socket has been closed and we are in
-				// FIN-WAIT-2 so start the FIN-WAIT-2 timer.
-				e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
-			}
+			r.ep.maybeStartFinWait2TimerLocked()
 
 		case StateClosing:
 			r.ep.setEndpointState(StateTimeWait)

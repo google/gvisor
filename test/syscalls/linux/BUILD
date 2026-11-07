@@ -3257,7 +3257,6 @@ cc_library(
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:thread_util",
-        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/time",
     ],
     alwayslink = 1,
