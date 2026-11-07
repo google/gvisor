@@ -77,11 +77,49 @@ func (b *Buffer) Release() {
 
 // TrimFront removes the first count bytes from the buffer.
 func (b *Buffer) TrimFront(count int64) {
-	if count >= b.size {
-		b.advanceRead(b.size)
-	} else {
-		b.advanceRead(count)
+	b.removeFrom(b.data.Front(), min(count, b.size))
+}
+
+// Remove removes up to count bytes starting at offset. A nonpositive count or
+// an offset at or beyond the end leaves b unchanged.
+//
+// Precondition: offset must be nonnegative.
+func (b *Buffer) Remove(offset, count int64) {
+	if offset == 0 {
+		b.TrimFront(count)
+		return
 	}
+	if offset < 0 {
+		panic("negative offset")
+	}
+	if count <= 0 || offset >= b.size {
+		return
+	}
+	if count >= b.size-offset {
+		b.Truncate(offset)
+		return
+	}
+	v := b.data.Front()
+	for offset >= int64(v.Size()) {
+		offset -= int64(v.Size())
+		v = v.Next()
+	}
+	if offset != 0 {
+		tail := int64(v.Size()) - offset
+		if count < tail {
+			// Both sides of the hole are in v. Keep the prefix in v and
+			// give the suffix its own view of the same chunk.
+			suffix := v.Clone()
+			suffix.TrimFront(int(offset + count))
+			b.data.InsertAfter(v, suffix)
+			tail = count
+		}
+		v.CapLength(int(offset))
+		b.size -= tail
+		count -= tail
+		v = v.Next()
+	}
+	b.removeFrom(v, count)
 }
 
 // ReadAt implements io.ReaderAt.ReadAt.
@@ -108,17 +146,16 @@ func (b *Buffer) ReadAt(p []byte, offset int64) (int, error) {
 	return int(done), nil
 }
 
-// advanceRead advances the Buffer's read index.
+// removeFrom removes count bytes starting at the front of v.
 //
-// Precondition: there must be sufficient bytes in the buffer.
-func (b *Buffer) advanceRead(count int64) {
-	for v := b.data.Front(); v != nil && count > 0; {
+// Precondition: at least count bytes must remain from v to the end of b.
+func (b *Buffer) removeFrom(v *View, count int64) {
+	for v != nil && count > 0 {
 		sz := int64(v.Size())
 		if sz > count {
 			// There is still data for reading.
 			v.TrimFront(int(count))
 			b.size -= count
-			count = 0
 			return
 		}
 
@@ -132,7 +169,7 @@ func (b *Buffer) advanceRead(count int64) {
 		b.size -= sz
 	}
 	if count > 0 {
-		panic(fmt.Sprintf("advanceRead still has %d bytes remaining", count))
+		panic(fmt.Sprintf("removeFrom still has %d bytes remaining", count))
 	}
 }
 
