@@ -96,6 +96,12 @@ func (fs FeatureSet) HasPointerAuth() bool {
 	return fs.hwCap.hwCap1&HWCAP_PACA != 0
 }
 
+// HasSSBS returns true if the CPU implements FEAT_SSBS, which lets software
+// control speculative store bypass through PSTATE.SSBS (HWCAP_SSBS).
+func (fs FeatureSet) HasSSBS() bool {
+	return fs.hwCap.hwCap1&HWCAP_SSBS != 0
+}
+
 // CPUFreqMHz returns the CPU frequency to report in /proc/cpuinfo.
 func (fs FeatureSet) CPUFreqMHz() float64 {
 	return fs.cpuFreqMHz
