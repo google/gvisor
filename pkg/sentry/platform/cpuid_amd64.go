@@ -27,21 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// taskWrapper wraps a context.Context.
-type taskWrapper struct {
-	context.Context
-}
-
-// emulationContext is used for emulation.
-//
-// It wraps an existing context but prioritizes resolution via context.NoTask,
-// since the task state should not be modified during emulation. However, we
-// allow logging and other operations to be directed to the correct task.
-type emulationContext struct {
-	taskWrapper
-	context.NoTask
-}
-
 // TryCPUIDEmulate checks for a CPUID instruction and performs emulation.
 func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac *arch.Context64) bool {
 	s := ac.StateData()

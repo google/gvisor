@@ -190,6 +190,36 @@ TEXT ·AddrOfPACLoop(SB),NOSPLIT,$0-8
 	MOVD R0, ret+0(FP)
 	RET
 
+// idRegisterLoop reads MIDR_EL1, which an application can't read at EL0
+// without the kernel's emulation, and then performs a syscall, in a loop.
+TEXT ·idRegisterLoop(SB),NOSPLIT,$0
+start:
+	MOVD $SYS_GETPID, R8
+	WORD $0xd5380000 // mrs x0, midr_el1
+	SVC
+	B start
+
+TEXT ·AddrOfIDRegisterLoop(SB),NOSPLIT,$0-8
+	MOVD $·idRegisterLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
+// wfeLoop executes WFE, which traps to EL1 while SCTLR_EL1.nTWE is clear
+// and no event is pending, and then performs a syscall, in a loop. The first
+// WFE may only consume the event that the exception return set.
+TEXT ·wfeLoop(SB),NOSPLIT,$0
+start:
+	MOVD $SYS_GETPID, R8
+	WFE
+	WFE
+	SVC
+	B start
+
+TEXT ·AddrOfWFELoop(SB),NOSPLIT,$0-8
+	MOVD $·wfeLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
 // func LoadPair(addr uintptr) (uint64, uint64)
 TEXT ·LoadPair(SB),NOSPLIT,$0-24
 	MOVD addr+0(FP), R0
