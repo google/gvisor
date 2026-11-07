@@ -52,6 +52,7 @@ type iovecBuffer struct {
 
 	// skipsVnetHdr is true if virtioNetHdr is to skipped.
 	skipsVnetHdr bool
+	vnetHdr      [virtioNetHdrSize]byte `state:"nosave"`
 
 	// pulledIndex is the index of the last []byte buffer pulled from the
 	// underlying buffer storage during a call to pullBuffers. It is -1
@@ -76,11 +77,8 @@ func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
 func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 	vnetHdrOff := 0
 	if b.skipsVnetHdr {
-		var vnetHdr [virtioNetHdrSize]byte
-		// The kernel adds virtioNetHdr before each packet, but
-		// we don't use it, so we allocate a buffer for it,
-		// add it in iovecs but don't add it in a view.
-		b.iovecs[0] = unix.Iovec{Base: &vnetHdr[0]}
+		// Keep the host's virtio header separate from payload views.
+		b.iovecs[0] = unix.Iovec{Base: &b.vnetHdr[0]}
 		b.iovecs[0].SetLen(virtioNetHdrSize)
 		vnetHdrOff++
 	}
@@ -97,13 +95,9 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 	return b.iovecs
 }
 
-// pullBuffer extracts the enough underlying storage from b.buffer to hold n
-// bytes. It removes this storage from b.buffer, returns a new buffer
-// that holds the storage, and updates pulledIndex to indicate which part
-// of b.buffer's storage must be reallocated during the next call to
-// nextIovecs.
+// pullBuffer removes received payload views and returns them as a Buffer.
 func (b *iovecBuffer) pullBuffer(n int) buffer.Buffer {
-	var views []*buffer.View
+	var used int
 	c := 0
 	if b.skipsVnetHdr {
 		c += virtioNetHdrSize
@@ -117,19 +111,18 @@ func (b *iovecBuffer) pullBuffer(n int) buffer.Buffer {
 		c += v.Size()
 		if c >= n {
 			b.views[i].CapLength(v.Size() - (c - n))
-			views = append(views, b.views[:i+1]...)
+			used = i + 1
 			break
 		}
-	}
-	for i := range views {
-		b.views[i] = nil
 	}
 	if b.skipsVnetHdr {
 		// Exclude the size of the vnet header.
 		n -= virtioNetHdrSize
 	}
 	pulled := buffer.Buffer{}
-	for _, v := range views {
+	for i := range used {
+		v := b.views[i]
+		b.views[i] = nil
 		pulled.Append(v)
 	}
 	pulled.Truncate(int64(n))
