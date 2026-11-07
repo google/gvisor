@@ -123,6 +123,13 @@ go_test(
 )
 
 go_test(
+    name = "state_file_test",
+    size = "small",
+    srcs = ["state_file_test.go"],
+    embed = [":container"],
+)
+
+go_test(
     name = "gofer_maxprocs_test",
     srcs = ["gofer_maxprocs_test.go"],
     embed = [":container"],
