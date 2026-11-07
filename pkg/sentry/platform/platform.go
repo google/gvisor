@@ -46,6 +46,13 @@ type Platform interface {
 	// unchanged over the lifetime of the Platform.
 	SupportsAddressSpaceIO() bool
 
+	// SupportsMapZero returns true if AddressSpaces returned by this Platform
+	// support AddressSpace.MapZero.
+	//
+	// The value returned by SupportsMapZero is guaranteed to remain unchanged
+	// over the lifetime of the Platform.
+	SupportsMapZero() bool
+
 	// DetectsCPUPreemption returns true if Contexts returned by the Platform
 	// can reliably return ErrContextCPUPreempted.
 	DetectsCPUPreemption() bool
@@ -388,6 +395,30 @@ type AddressSpace interface {
 	//		continue to be held as long as pages are mapped.
 	MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRange, at hostarch.AccessType, precommit bool) error
 
+	// MapZero creates a private, read-only mapping of zero-filled memory of
+	// the given length at address addr. Any existing overlapping mappings are
+	// silently replaced.
+	//
+	// MapZero is used to map application memory that has never been written.
+	// This is meant to mirror Linux's shared zero page. Since zero mappings
+	// are never writable, when an app writes to the shared mapping, it should
+	// be replaced with a writable mapping using MapFile.
+	//
+	// If precommit is true, the platform should eagerly commit resources (e.g.
+	// page table entries) to the mapping. The precommit flag is advisory and
+	// implementations may choose to ignore it.
+	//
+	// MapZero is supported iff the associated platform's
+	// Platform.SupportsMapZero() == true. AddressSpaces for which this does
+	// not hold may panic if MapZero is invoked.
+	//
+	// Preconditions:
+	//	* addr and length must be page-aligned.
+	//	* length > 0.
+	//	* at.Any() == true.
+	//	* at.Write == false.
+	MapZero(addr hostarch.Addr, length uint64, at hostarch.AccessType, precommit bool) error
+
 	// Unmap unmaps the given range.
 	//
 	// Preconditions:
@@ -426,6 +457,15 @@ type AddressSpaceOptions struct {
 	// Since a MemoryManager acquires a fresh AddressSpace on fork() and after
 	// restore, it must be initialized to match the parent's state.
 	DisableSyscallPatching bool
+}
+
+// NoMapZero implements AddressSpace.MapZero by panicking. Used
+// by AddressSpaces whose don't support mapping a zero page.
+type NoMapZero struct{}
+
+// MapZero implements AddressSpace.MapZero.
+func (NoMapZero) MapZero(addr hostarch.Addr, length uint64, at hostarch.AccessType, precommit bool) error {
+	panic("This platform does not support MapZero")
 }
 
 // AddressSpaceIO supports IO through the memory mappings installed in an

@@ -79,6 +79,11 @@ func Program(defaultAction seccomp.Action) *seccomp.Program {
 				// Injected to support the address space operations.
 				unix.SYS_MMAP:   seccomp.MatchAll{},
 				unix.SYS_MUNMAP: seccomp.MatchAll{},
+				unix.SYS_MADVISE: seccomp.PerArg{
+					seccomp.AnyValue{},
+					seccomp.AnyValue{},
+					seccomp.EqualTo(unix.MADV_NOHUGEPAGE),
+				},
 			}),
 			Action: seccomp.Allow,
 		}}
