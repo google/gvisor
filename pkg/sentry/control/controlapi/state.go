@@ -86,6 +86,10 @@ type SaveOpts struct {
 	// for this checkpoint operation. When nil, the sandbox's configured state
 	// engine is used.
 	GraphEngine *bool `json:"graph_engine,omitempty"`
+
+	// MemoryLimit is the current host and cgroup memory bound in bytes, or
+	// zero if unknown.
+	MemoryLimit uint64 `json:"memory_limit,omitempty"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary

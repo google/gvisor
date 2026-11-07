@@ -22,6 +22,7 @@ go_library(
         "//pkg/coretag",
         "//pkg/cpuid",
         "//pkg/fd",
+        "//pkg/gccontrol",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/metric",
@@ -56,7 +57,10 @@ go_library(
 go_test(
     name = "sentrycmd_test",
     size = "small",
-    srcs = ["chroot_test.go"],
+    srcs = [
+        "boot_test.go",
+        "chroot_test.go",
+    ],
     embed = [":sentrycmd"],
     deps = [
         "//runsc/config",

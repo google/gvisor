@@ -21,7 +21,6 @@ import (
 	"maps"
 	"os"
 	"runtime"
-	runtimedebug "runtime/debug"
 	"strconv"
 	"strings"
 	gtime "time"
@@ -37,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/gccontrol"
 	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
@@ -272,7 +272,7 @@ type Loader struct {
 	// Loader.releaseStartupHeapWhenIdle.
 	startupHeapReleasePending atomicbitops.Bool
 
-	// freeOSMemory is runtimedebug.FreeOSMemory, replaced in tests.
+	// freeOSMemory is gccontrol.MaybeFreeOSMemory, replaced in tests.
 	freeOSMemory func()
 
 	// saveMu serializes save operations. Saves can be requested concurrently:
@@ -290,6 +290,12 @@ type Loader struct {
 
 	// +checklocks:mu
 	state loaderState
+
+	// startMemoryLimit is the memory bound in bytes for root container
+	// startup.
+	//
+	// +checklocks:mu
+	startMemoryLimit uint64
 
 	// sharedMounts holds VFS mounts that may be shared between containers within
 	// the same pod. It is mapped by mount source.
@@ -698,10 +704,16 @@ func New(args Args) (*Loader, error) {
 		rdmanetlink.Init(args.RDMASysfs)
 	}
 
+	// Seed the startup GC memory bound until StartRoot refreshes it.
+	startMemoryLimit := gccontrol.NoMemoryLimit
+	if args.TotalMem > 0 {
+		startMemoryLimit = args.TotalMem
+	}
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		sandboxID:    args.ID,
-		freeOSMemory: runtimedebug.FreeOSMemory,
+		sandboxID:        args.ID,
+		freeOSMemory:     gccontrol.MaybeFreeOSMemory,
+		startMemoryLimit: startMemoryLimit,
 		noRootContainer: noRootContainer{
 			enabled: args.NoRootContainer,
 			exit:    make(chan struct{}),
@@ -1390,6 +1402,16 @@ func (l *Loader) Run() error {
 // before the Sentry returns its free startup heap memory to the host.
 const startupHeapReleaseIdleDelay = 250 * gtime.Millisecond
 
+// StartupGCResumeDelay bounds how long boot or post-restore GC suspension stays
+// active if the sandbox does not go idle first.
+//
+// TODO(gvisor.dev/issue/16134): Benchmark and tune this timeout for
+// long background restores.
+const StartupGCResumeDelay = 500 * gtime.Millisecond
+
+// startupGCResumeDelay is a variable so tests can shorten the fallback timer.
+var startupGCResumeDelay = StartupGCResumeDelay
+
 // releaseStartupHeapWhenIdle returns the free Sentry heap memory to the host
 // when the application is next idle for startupHeapReleaseIdleDelay. If a
 // release is already pending, it does nothing.
@@ -1406,7 +1428,7 @@ func (l *Loader) releaseStartupHeapWhenIdle() {
 }
 
 // +checklocksexclude:l.mu
-func (l *Loader) run() error {
+func (l *Loader) run() (retErr error) {
 	if l.root.conf.Network == config.NetworkHost {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
@@ -1429,6 +1451,14 @@ func (l *Loader) run() error {
 
 	switch l.state {
 	case created:
+		gcSuspension := gccontrol.Suspend(l.startMemoryLimit, 0 /* untrackedMem */)
+		defer func() {
+			if retErr == nil {
+				gcSuspension.EndAfter(startupGCResumeDelay)
+				return
+			}
+			gcSuspension.End()
+		}()
 		if l.root.conf.ProfileEnable {
 			pprof.Initialize()
 		}
@@ -1486,7 +1516,8 @@ func (l *Loader) run() error {
 			}
 		}
 	case restoringUnstarted:
-		// If we are restoring, we do not want to create a process.
+		// If we are restoring, we do not want to create a process;
+		// restorer.restore already holds GC suspended across onStart.
 	default:
 		return fmt.Errorf("Loader.Run() called in unexpected state=%s", l.state)
 	}
