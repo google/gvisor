@@ -7,6 +7,7 @@ licenses(["notice"])
 go_binary(
     name = "go_marshal",
     srcs = ["main.go"],
+    pure = True,
     visibility = ["//:sandbox"],
     deps = [
         "//tools/go_marshal/gomarshal",
