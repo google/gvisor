@@ -952,6 +952,12 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
+	// As in ip_rcv_core, frames for another host's link address are dropped
+	// before they are counted.
+	if pkt.PktType == tcpip.PacketOtherHost {
+		return
+	}
+
 	stats := e.stats.ip
 
 	stats.PacketsReceived.Increment()
