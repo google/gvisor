@@ -1812,6 +1812,20 @@ func (d *dentry) DecRef(ctx context.Context) {
 	}
 }
 
+// DecRefDentries drops a reference on each of ds, which must belong to fs,
+// under one renameMu write lock, so that evicting the dentries that become
+// unreferenced does not lock renameMu once per dentry.
+func (fs *filesystem) DecRefDentries(ctx context.Context, ds []*vfs.Dentry) {
+	fs.renameMu.Lock()
+	defer fs.renameMu.Unlock()
+	for _, vd := range ds {
+		d := vd.Impl().(*dentry)
+		if d.decRefNoCaching() == 0 {
+			d.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+		}
+	}
+}
+
 // decRefNoCaching decrements d's reference count without calling
 // d.checkCachingLocked, even if d's reference count reaches 0; callers are
 // responsible for ensuring that d.checkCachingLocked will be called later.
