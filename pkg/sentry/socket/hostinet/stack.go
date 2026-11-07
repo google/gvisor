@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"os"
 	"reflect"
 	"slices"
@@ -29,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -65,6 +67,12 @@ type Stack struct {
 	netSNMPFile     *os.File `state:"nosave"`
 	// allowedSocketTypes is the list of allowed socket types
 	allowedSocketTypes []AllowedSocketType `state:"nosave"`
+
+	// The host enforces these for host sockets; they are read from the host
+	// so that /proc/sys/net reports what applies.
+	unprivilegedPortStart uint16
+	pingGroupLow          auth.KGID
+	pingGroupHigh         auth.KGID
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -81,7 +89,12 @@ func (s *Stack) Destroy() {
 
 // NewStack returns an empty Stack containing no configuration.
 func NewStack() *Stack {
-	return &Stack{}
+	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
+	return &Stack{
+		unprivilegedPortStart: 1024,
+		pingGroupLow:          1,
+		pingGroupHigh:         0,
+	}
 }
 
 // Configure sets up the stack using the current state of the host network.
@@ -117,6 +130,21 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.tcpSACKEnabled = strings.TrimSpace(string(sack)) != "0"
 	} else {
 		log.Warningf("Failed to read if TCP SACK if enabled, setting to true")
+	}
+
+	if v, err := readUint32s("/proc/sys/net/ipv4/ip_unprivileged_port_start", 1); err == nil && v[0] <= math.MaxUint16 {
+		s.unprivilegedPortStart = uint16(v[0])
+	} else {
+		log.Warningf("Failed to read ip_unprivileged_port_start, using default value")
+	}
+
+	// The range is kept as the GIDs the sandbox process reads from the host,
+	// without mapping them from the host's user namespace into the
+	// sandbox's.
+	if v, err := readUint32s("/proc/sys/net/ipv4/ping_group_range", 2); err == nil {
+		s.pingGroupLow, s.pingGroupHigh = auth.KGID(v[0]), auth.KGID(v[1])
+	} else {
+		log.Warningf("Failed to read ping_group_range, using default values")
 	}
 
 	if f, err := os.Open("/proc/net/dev"); err != nil {
@@ -191,6 +219,28 @@ func readPortRangeFile(filename string) ([2]uint16, error) {
 		return [2]uint16{}, fmt.Errorf("invalid port range in %s: %q", filename, contents)
 	}
 	return ports, nil
+}
+
+// readUint32s reads exactly n whitespace-separated unsigned integers from
+// filename.
+func readUint32s(filename string, n int) ([]uint32, error) {
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(contents))
+	if len(fields) != n {
+		return nil, fmt.Errorf("failed to parse %s (%q): got %d fields, want %d", filename, contents, len(fields), n)
+	}
+	vals := make([]uint32, n)
+	for i, f := range fields {
+		v, err := strconv.ParseUint(f, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse %s (%q): %w", filename, contents, err)
+		}
+		vals[i] = uint32(v)
+	}
+	return vals, nil
 }
 
 // Interfaces implements inet.Stack.Interfaces.
@@ -524,6 +574,26 @@ func (s *Stack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements inet.Stack.SetPortRange.
 func (*Stack) SetPortRange(uint16, uint16) error {
+	return linuxerr.EACCES
+}
+
+// UnprivilegedPortStart implements inet.Stack.UnprivilegedPortStart.
+func (s *Stack) UnprivilegedPortStart() uint16 {
+	return s.unprivilegedPortStart
+}
+
+// SetUnprivilegedPortStart implements inet.Stack.SetUnprivilegedPortStart.
+func (*Stack) SetUnprivilegedPortStart(uint16) error {
+	return linuxerr.EACCES
+}
+
+// PingGroupRange implements inet.Stack.PingGroupRange.
+func (s *Stack) PingGroupRange() (auth.KGID, auth.KGID) {
+	return s.pingGroupLow, s.pingGroupHigh
+}
+
+// SetPingGroupRange implements inet.Stack.SetPingGroupRange.
+func (*Stack) SetPingGroupRange(auth.KGID, auth.KGID) error {
 	return linuxerr.EACCES
 }
 

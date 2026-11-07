@@ -54,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -880,6 +881,9 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
+	if err := applyNetSysctls(args.Spec, netns.Stack(), rootUserNs, rootNetSysctlDefaults(args.Conf)); err != nil {
+		return nil, err
+	}
 	args.StartupTimer.Reached("network stack created")
 
 	if args.TotalHostMem > 0 {
@@ -1608,6 +1612,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	if creds == nil {
 		return fmt.Errorf("getting root credentials")
 	}
+	// All containers share the root network namespace.
+	if err := applyNetSysctls(spec, l.k.RootNetworkNamespace().Stack(), l.k.RootUserNamespace(), nil /* defaults */); err != nil {
+		return err
+	}
 	var pidns *kernel.PIDNamespace
 	if ns, ok := specutils.GetNS(specs.PIDNamespace, spec); ok {
 		if ns.Path != "" {
@@ -2204,6 +2212,49 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
 
+}
+
+// netSysctls are the OCI linux.sysctl keys that are applied to the sandbox's
+// netstack, in the order they are applied.
+var netSysctls = []string{"ip_unprivileged_port_start", "ping_group_range"}
+
+// rootNetSysctlDefaults returns the netSysctls values that the root network
+// namespace gets when the spec does not set them. Without raw sockets, ICMP
+// datagram sockets are the only way to send echo requests, so every group may
+// create them. New network namespaces keep Linux's defaults.
+func rootNetSysctlDefaults(conf *config.Config) map[string]string {
+	if conf.EnableRaw {
+		return nil
+	}
+	return map[string]string{"ping_group_range": "0 2147483647"}
+}
+
+// applyNetSysctls applies the netSysctls present in spec to s, and the value
+// in defaults for each one that spec does not set. As when a runtime writes
+// them to /proc/sys, an invalid value is an error. Host network stacks are left
+// alone: the host's network namespace applies to host sockets.
+func applyNetSysctls(spec *specs.Spec, s inet.Stack, userns *auth.UserNamespace, defaults map[string]string) error {
+	if _, ok := s.(*netstack.Stack); !ok {
+		return nil
+	}
+	var sysctl map[string]string
+	if spec.Linux != nil {
+		sysctl = spec.Linux.Sysctl
+	}
+	for _, name := range netSysctls {
+		key := "net.ipv4." + name
+		val, ok := sysctl[key]
+		if !ok {
+			val, ok = defaults[name]
+		}
+		if !ok {
+			continue
+		}
+		if err := proc.SetNetIPv4Sysctl(context.Background(), s, userns, name, val); err != nil {
+			return fmt.Errorf("setting %s=%s: %w", key, val, err)
+		}
+	}
+	return nil
 }
 
 func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack, error) {
