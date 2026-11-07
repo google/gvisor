@@ -77,7 +77,9 @@ func (r *fileDescriptionConn) Read(ctx context.Context, buf []byte, cancel <-cha
 func (r *fileDescriptionConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var notifyCh chan struct{}
 	var waitEntry waiter.Entry
-	n, err := r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
+	// A write may make partial progress before returning EWOULDBLOCK, so only
+	// retry the bytes that haven't been written yet.
+	written, err := r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
 	for linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 		if notifyCh == nil {
 			waitEntry, notifyCh = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
@@ -88,11 +90,13 @@ func (r *fileDescriptionConn) Write(ctx context.Context, buf []byte, cancel <-ch
 		select {
 		case <-notifyCh:
 		case <-cancel:
-			return 0, io.EOF
+			return int(written), io.EOF
 		}
-		n, err = r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
+		var n int64
+		n, err = r.file.Write(ctx, usermem.BytesIOSequence(buf[written:]), vfs.WriteOptions{})
+		written += n
 	}
-	return int(n), err
+	return int(written), err
 }
 
 // Close implements proxyConn.Close.
