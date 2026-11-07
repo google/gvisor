@@ -5,6 +5,122 @@
 gVisor has the ability to checkpoint a process, save its current state in a
 state file, and restore into a new container using the state file.
 
+## Choosing a way to save sandbox state
+
+gVisor has four ways to save state and use it in a later sandbox. They differ
+in what they save, when they save it, and what the new sandbox starts with.
+
+Method                                              | Saves                                                                                | When                                  | New sandbox gets
+--------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | ----------------
+Checkpoint/restore (this page)                      | Processes, memory, open files and all filesystems                                    | When you run `runsc checkpoint`       | The same processes, resumed
+[Filesystem snapshot](fs_snapshot.md)               | Rootfs upper layers of all containers, and optionally other disk-backed tmpfs mounts | When you run `runsc fscheckpoint`     | The saved files, with new processes
+[Rootfs tar snapshot](rootfs_snapshot.md)           | Rootfs upper layer of one container, as a tar file                                   | When you run `runsc tar rootfs-upper` | The saved files, with new processes
+[Journaling rootfs upper](#journaling-rootfs-upper) | Rootfs upper layer of each journaled container                                       | At each filesystem change             | The files as of the last change, with new processes
+
+### Comparison
+
+*   **Recovery point.** The first three methods save a point in time, so
+    changes made after the last save are lost. The journaling rootfs upper
+    records every change as it happens. After a sentry crash or a clean stop,
+    the next sandbox gets the upper layer as of the last completed file
+    operation. An operation that was in progress during a crash can be missing
+    or partly applied, as after a `SIGKILL`.
+
+*   **Crash recovery.** Only the journaling rootfs upper recovers from a crash
+    without an earlier save. It does not cover a host crash: it relies on the
+    host page cache, and it does not `fsync` its files. The other methods can
+    recover from any crash, but only to their last saved image.
+
+*   **Processes.** Only checkpoint/restore resumes processes, memory and open
+    file descriptors. The other methods restore files only, and the new sandbox
+    starts its processes from the beginning.
+
+*   **Cost.** Checkpoint/restore cost grows with application memory and
+    filesystem size, and the sandbox pauses while the checkpoint is taken.
+    Filesystem and tar snapshots cost grows with the size of the saved upper
+    layers. The journaling rootfs upper adds a small, synchronous metadata
+    record to each filesystem change, and data is never copied: a restart
+    reuses the pages already in the filestore, so its cost grows with the
+    number of files, not the amount of data. While the journal is compacted,
+    files can't be created, deleted or renamed, and the start of a new journal
+    after a restore pauses the sandbox. Both grow with the number of files.
+
+*   **Restore speed.** Checkpoint/restore and filesystem snapshots can load
+    data in the background while the application runs. A rootfs tar snapshot
+    must be applied completely before the container starts. The journaling
+    rootfs upper only rebuilds metadata at start.
+
+*   **Format and portability.** Rootfs tar snapshots are standard tar files
+    that other tools can read and change. Checkpoint images, filesystem
+    snapshots and journaling rootfs upper files can only be used by the same
+    runsc version that wrote them. The journaling rootfs upper also refuses to
+    start if the container's image ID differs from the one it was created
+    with.
+
+*   **Scope.** Checkpoint/restore and filesystem snapshots cover all
+    containers in a sandbox. A rootfs tar snapshot covers one container. The
+    journaling rootfs upper is enabled per container.
+
+*   **File management.** Checkpoint images, filesystem snapshots and tar files
+    are written where you choose, and you delete them when you no longer need
+    them. The journaling rootfs upper keeps two files per container on the
+    host, which runsc never deletes.
+
+### Combining methods
+
+The journaling rootfs upper works with the other methods:
+
+*   You can checkpoint, filesystem-checkpoint or tar-snapshot a sandbox that
+    uses a journaling rootfs upper. These saves only read the upper layer, and
+    with `--leave-running` the journal stays valid.
+
+*   An image restored into a journaling rootfs upper takes precedence. A
+    restore, a filesystem snapshot restore or a rootfs tar snapshot replaces
+    the existing journal with the image's contents.
+
+*   Images saved from a sandbox that uses a journaling rootfs upper restore
+    with it, or without it with a root overlay medium of `dir=`, such as
+    `--overlay2=root:dir=<dir>`.
+
+### Journaling rootfs upper
+
+> Note: This feature is experimental.
+
+The journaling rootfs upper keeps a container's rootfs overlay upper layer in
+two files on the host: `<prefix>.filestore` holds the file data, and
+`<prefix>.journal` holds a log of the metadata changes. A new sandbox started
+with the same prefix rebuilds the upper layer from these files.
+
+To enable it for the root container, pass the prefix with
+`--journaling-rootfs-upper`. To enable it for any container, use the
+`dev.gvisor.journal.rootfs.upper` annotation; in pods with multiple
+containers, append the container name to the key, as for
+`dev.gvisor.tar.rootfs.upper`. To record the identity of the container image,
+pass `--journaling-rootfs-upper-image-id` or the
+`dev.gvisor.journal.rootfs.upper.image-id` annotation. To prevent unauthorized
+use, runsc accepts the annotations only with
+`--rootfs-journal-annotation=allow`.
+
+```bash
+runsc --journaling-rootfs-upper=/var/lib/sandboxes/app/upper \
+    --journaling-rootfs-upper-image-id=<image digest> run <container id>
+```
+
+*   The container must have a rootfs overlay. Its `--overlay2` medium is
+    ignored, because the upper layer's data always lives in
+    `<prefix>.filestore`.
+
+*   runsc takes an exclusive lock on the journal. Two sandboxes or containers
+    cannot use the same prefix at the same time.
+
+*   If a restore with the journaling rootfs upper fails, a plain start refuses
+    the incomplete journal. Restore again to recover.
+
+*   In a sandbox created with `--fs-restore-image-path`, every journaled
+    container counts as restored. A container that the filesystem snapshot
+    does not include starts with an empty upper layer, and its old journal is
+    discarded.
+
 ## How to use checkpoint/restore
 
 Checkpoint/restore functionality is currently available via raw `runsc`

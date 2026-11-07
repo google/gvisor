@@ -6,6 +6,9 @@ gVisor allows users to snapshot changes made to the root filesystem and save
 them to a tar file. These changes in the tar file can then be applied to a new
 sandbox upon creation.
 
+For a comparison of all the ways to save sandbox state, see
+[Choosing a way to save sandbox state](checkpoint_restore.md#choosing-a-way-to-save-sandbox-state).
+
 Compared to [filesystem snapshots](fs_snapshot.md):
 
 *   Rootfs tar snapshots include root filesystem changes from a single

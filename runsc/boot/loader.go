@@ -378,6 +378,35 @@ type Loader struct {
 	// is a socket connected to a checkpoint gofer.
 	fsSaveCheckpointGofer bool
 
+	// journalingUpperFailActivation is true if
+	// config.Config.TestOnlyJournalingRootfsUpperFault is "activation". It
+	// is immutable.
+	journalingUpperFailActivation bool
+
+	// journalingUpperRegionSize is
+	// config.Config.TestOnlyJournalingRootfsUpperRegionSize. It is
+	// immutable.
+	journalingUpperRegionSize uint64
+
+	journalingUpperMu sync.Mutex
+
+	// journalingUppers holds the journaling rootfs upper of each container
+	// that has one, by container ID.
+	//
+	// +checklocks:journalingUpperMu
+	journalingUppers map[string]*journalingUpper
+
+	// journalingUpperActivations activate journaling rootfs upper journals
+	// after the kernel starts. See activateJournalingUpperAsync.
+	//
+	// +checklocks:journalingUpperMu
+	journalingUpperActivations []func()
+
+	// journalingUpperKernelStarted is true after the kernel started.
+	//
+	// +checklocks:journalingUpperMu
+	journalingUpperKernelStarted bool
+
 	// hostinetNetDevFile is the pre-opened /proc/net/dev file for hostinet restore.
 	//
 	// Restore initializes both hostinet files before taking mu.
@@ -572,6 +601,9 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+	// RootfsUpperJournalFD is the file descriptor of the journal of the
+	// journaling rootfs upper of the root container, or -1.
+	RootfsUpperJournalFD int
 	// NoRootContainer boots without a root container; Spec then has neither
 	// Process nor Root. See Loader.noRootContainer.
 	NoRootContainer bool
@@ -811,6 +843,21 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("rootfs upper tar file is mutually exclusive with filesystem checkpoint restore")
 		}
 		l.root.rootfsUpperTarFD = fd.New(args.RootfsUpperTarFD)
+	}
+	l.journalingUpperFailActivation = args.Conf.TestOnlyJournalingRootfsUpperFault == "activation"
+	l.journalingUpperRegionSize = args.Conf.TestOnlyJournalingRootfsUpperRegionSize
+	if args.RootfsUpperJournalFD >= 0 {
+		// Donated FDs don't have FD_CLOEXEC. The journal's lock must not
+		// outlive the sandbox in a child process.
+		unix.CloseOnExec(args.RootfsUpperJournalFD)
+		if err := l.addJournalingUpper(args.ID, args.Spec, args.Conf, os.NewFile(uintptr(args.RootfsUpperJournalFD), "journaling-rootfs-upper-journal")); err != nil {
+			return nil, err
+		}
+		if l.fsRestore != nil || args.RootfsUpperTarFD >= 0 {
+			if err := l.checkJournalingUpperPopulate(args.ID); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Create kernel and platform.
@@ -1211,6 +1258,7 @@ func (l *Loader) Destroy() {
 	for _, f := range l.root.goferFilestoreFDs {
 		_ = f.Close()
 	}
+	l.closeJournalingUpperJournals("" /* cid */)
 	if l.root.devGoferFD != nil {
 		_ = l.root.devGoferFD.Close()
 	}
@@ -1550,6 +1598,7 @@ func (l *Loader) run() error {
 		return err
 	}
 	l.startupTimer.Reached("kernel started")
+	l.startJournalingUpperActivations()
 	l.root.procArgs.StartupTimeline.End()
 	l.root.procArgs.StartupTimeline = nil
 	switch l.state {
@@ -1883,6 +1932,7 @@ func (l *Loader) startGoferMonitor(info *containerInfo) {
 //
 // +checklocksexclude:l.mu
 func (l *Loader) destroySubcontainer(cid string) error {
+	l.closeJournalingUpperJournals(cid)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

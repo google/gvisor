@@ -73,6 +73,34 @@ const (
 	//	"dev.gvisor.tar.rootfs.upper.<container-name>": "<path>"
 	AnnotationRootfsUpperTar = "dev.gvisor.tar.rootfs.upper"
 
+	// AnnotationRootfsUpperJournal journals the container's rootfs overlay
+	// upper layer: its value is the path prefix of the files that store the
+	// upper layer, as for --journaling-rootfs-upper. The container's rootfs
+	// overlay medium is ignored for a journaled upper. In a sandbox created
+	// with --fs-restore-image-path, every journaled container counts as
+	// restored, so its existing journal is replaced. If the filesystem
+	// checkpoint has no entry for that container's rootfs upper, the
+	// container starts with an empty upper, as it would without journaling,
+	// and the old journal's contents are discarded. The annotation requires
+	// --rootfs-journal-annotation=allow. In multi-container pods,
+	// append the container name to select a specific container:
+	//
+	// Usage:
+	//	"dev.gvisor.journal.rootfs.upper": "<prefix>"
+	//	"dev.gvisor.journal.rootfs.upper.<container-name>": "<prefix>"
+	AnnotationRootfsUpperJournal = "dev.gvisor.journal.rootfs.upper"
+
+	// AnnotationRootfsUpperJournalImageID identifies the lower layer of the
+	// container's rootfs overlay, as for --journaling-rootfs-upper-image-id.
+	// The annotation requires --rootfs-journal-annotation=allow.
+	// In multi-container pods, append the container name to select a
+	// specific container:
+	//
+	// Usage:
+	//	"dev.gvisor.journal.rootfs.upper.image-id": "<id>"
+	//	"dev.gvisor.journal.rootfs.upper.image-id.<container-name>": "<id>"
+	AnnotationRootfsUpperJournalImageID = "dev.gvisor.journal.rootfs.upper.image-id"
+
 	// annotationSeccomp indicates what seccomp rules was set to a given container.
 	//
 	// Usage:
@@ -208,6 +236,11 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config, noRootContainer bool) e
 		if spec.Root.Readonly {
 			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
 		}
+	}
+
+	// Validate the journaling rootfs upper annotations.
+	if _, _, err := JournalingRootfsUpper(spec, conf); err != nil {
+		return err
 	}
 
 	// CRI specifies whether a container should start a new sandbox, or run
@@ -1079,17 +1112,64 @@ func containerNameNoRemap(spec *specs.Spec) string {
 // string if not set. In multi-container mode, only container-specific
 // annotations are used.
 func RootfsTarUpperPath(spec *specs.Spec) string {
+	return containerAnnotation(spec, AnnotationRootfsUpperTar)
+}
+
+// containerAnnotation returns the value of the annotation with the given key
+// for the container, or empty string if not set. In multi-container mode,
+// only container-specific annotations (key + "." + container name) are used.
+func containerAnnotation(spec *specs.Spec, key string) string {
 	if spec == nil || spec.Annotations == nil {
 		return ""
 	}
 	if name := ContainerName(spec); name != "" {
-		return spec.Annotations[AnnotationRootfsUpperTar+"."+name]
+		return spec.Annotations[key+"."+name]
 	}
 	// Multi-container sandbox must use container-specific annotations.
 	if cType := SpecContainerType(spec); cType == ContainerTypeContainer || cType == ContainerTypeSandbox {
 		return ""
 	}
-	return spec.Annotations[AnnotationRootfsUpperTar]
+	return spec.Annotations[key]
+}
+
+// JournalingRootfsUpper returns the path prefix and the image ID of the
+// journaling rootfs upper of the container, or an empty prefix if its rootfs
+// upper isn't journaled. The container's annotations
+// (AnnotationRootfsUpperJournal and AnnotationRootfsUpperJournalImageID)
+// select it. For the root container, --journaling-rootfs-upper and
+// --journaling-rootfs-upper-image-id select it too; if both an annotation
+// and the matching flag are set, they must be equal. The annotations require
+// --rootfs-journal-annotation=allow.
+func JournalingRootfsUpper(spec *specs.Spec, conf *config.Config) (prefix, imageID string, err error) {
+	prefix = containerAnnotation(spec, AnnotationRootfsUpperJournal)
+	imageID = containerAnnotation(spec, AnnotationRootfsUpperJournalImageID)
+	if (prefix != "" || imageID != "") && conf.RootfsJournalAnnotation != config.RootfsJournalAnnotationAllow {
+		return "", "", fmt.Errorf("rootfs journal annotation is disabled, use --rootfs-journal-annotation=allow to enable it")
+	}
+	if IsRootContainer(spec) {
+		if flag := conf.JournalingRootfsUpper; flag != "" {
+			if prefix != "" && prefix != flag {
+				return "", "", fmt.Errorf("--journaling-rootfs-upper=%q and annotation %s=%q differ", flag, AnnotationRootfsUpperJournal, prefix)
+			}
+			prefix = flag
+		}
+		if flag := conf.JournalingRootfsUpperImageID; flag != "" {
+			if imageID != "" && imageID != flag {
+				return "", "", fmt.Errorf("--journaling-rootfs-upper-image-id=%q and annotation %s=%q differ", flag, AnnotationRootfsUpperJournalImageID, imageID)
+			}
+			imageID = flag
+		}
+	}
+	if prefix == "" {
+		if imageID != "" {
+			return "", "", fmt.Errorf("annotation %s requires %s", AnnotationRootfsUpperJournalImageID, AnnotationRootfsUpperJournal)
+		}
+		return "", "", nil
+	}
+	if !filepath.IsAbs(prefix) {
+		return "", "", fmt.Errorf("journaling rootfs upper prefix must be an absolute path, got %q", prefix)
+	}
+	return prefix, imageID, nil
 }
 
 // IsProcFDPath returns true if the path is a numeric procfs/devfd magic link

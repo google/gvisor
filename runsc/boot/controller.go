@@ -236,6 +236,9 @@ func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *stru
 		}
 		expectedFDs++
 	}
+	if args.IsUpperJournalFilePresent {
+		expectedFDs++
+	}
 	if len(args.Files) < expectedFDs {
 		return fmt.Errorf("start arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
 	}
@@ -296,6 +299,18 @@ func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *stru
 		}
 		goferFiles = goferFiles[1:]
 		defer rootfsUpperTarFD.Close()
+	}
+
+	if args.IsUpperJournalFilePresent {
+		if err := cm.l.addJournalingUpperFromPayload(args, goferFiles[0]); err != nil {
+			return err
+		}
+		goferFiles = goferFiles[1:]
+		if args.IsRootfsUpperTarFilePresent || cm.l.fsRestore != nil {
+			if err := cm.l.checkJournalingUpperPopulate(args.CID); err != nil {
+				return err
+			}
+		}
 	}
 
 	goferFDs, err := fd.NewFromFiles(goferFiles)
@@ -379,6 +394,10 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		}
 	}()
 	cm.l.lifecycleCPUs.holdForRestore()
+
+	if err := cm.l.checkJournalingUpperPopulate(cm.l.root.cid); err != nil {
+		return err
+	}
 
 	// If filesystem restore files were donated to the loader during sandbox
 	// creation, we must perform a split filesystem restore. Restoring a split
@@ -651,6 +670,9 @@ func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, reply
 	if args.IsRootfsUpperTarFilePresent {
 		return errors.New("rootfs upper tar file is not supported during restore")
 	}
+	if args.IsUpperJournalFilePresent {
+		expectedFDs++
+	}
 	if len(args.Files) < expectedFDs {
 		return fmt.Errorf("restore arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
 	}
@@ -689,6 +711,16 @@ func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, reply
 			return fmt.Errorf("error dup'ing dev gofer file: %w", err)
 		}
 		goferFiles = goferFiles[1:]
+	}
+
+	if args.IsUpperJournalFilePresent {
+		if err := cm.l.addJournalingUpperFromPayload(args, goferFiles[0]); err != nil {
+			return err
+		}
+		goferFiles = goferFiles[1:]
+		if err := cm.l.checkJournalingUpperPopulate(args.CID); err != nil {
+			return err
+		}
 	}
 
 	goferFDs, err := fd.NewFromFiles(goferFiles)

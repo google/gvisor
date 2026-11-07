@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -138,6 +139,29 @@ type filesystem struct {
 
 	// ovlWhiteout is the shared overlay whiteout device. It is protected by mu.
 	ovlWhiteout *deviceFile
+
+	// journal records changes to the filesystem's metadata, or is nil. It
+	// is set by GetFilesystem or ActivateJournal; see startJournal. It is
+	// not saved: a checkpoint of a journaled filesystem restores as a
+	// filesystem that is not journaled.
+	journal atomic.Pointer[journal.Journal] `state:"nosave"`
+
+	// journalStop is closed to stop the journal compactor goroutine.
+	journalStop chan struct{} `state:"nosave"`
+
+	// journaled is true if a journal was started for the filesystem. Its
+	// data then outlives the sandbox, so Release keeps its pages. It is not
+	// saved, since a restored filesystem is not journaled.
+	journaled atomicbitops.Bool `state:"nosave"`
+
+	// released is true after Release starts.
+	//
+	// +checklocks:mu
+	released bool `state:"nosave"`
+
+	// If retainPages is true, releasing a regular file does not return its
+	// pages to the MemoryFile. Release of a journaled filesystem sets it.
+	retainPages atomicbitops.Bool `state:"nosave"`
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -196,6 +220,17 @@ type FilesystemOpts struct {
 	// TarWrite.
 	SourceTar             io.ReadCloser
 	SourceTarFSCheckpoint bool
+
+	// If Journal is not nil, the filesystem records changes to its metadata
+	// in Journal, so that a new sentry can rebuild it after this one stops
+	// or crashes. Ownership of Journal is transferred to GetFilesystem,
+	// whether or not it returns an error. Journal requires a directory root,
+	// and is incompatible with SourceTar.
+	Journal *journal.Journal `state:"nosave"`
+
+	// If JournalState is not empty, GetFilesystem rebuilds the filesystem
+	// from it. MemoryFile must have adopted JournalState.UsedRanges().
+	JournalState *journal.State `state:"nosave"`
 }
 
 // Amount of total physical RAM, in bytes. It is immutable after initialization.
@@ -272,6 +307,17 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		if tmpfsOpts.SourceTar != nil {
 			defer tmpfsOpts.SourceTar.Close()
+		}
+	}
+	journalStarted := false
+	if j := tmpfsOpts.Journal; j != nil {
+		defer func() {
+			if !journalStarted {
+				j.Close()
+			}
+		}()
+		if tmpfsOpts.SourceTar != nil || rootFileType != linux.S_IFDIR {
+			return nil, nil, fmt.Errorf("tmpfs journal requires a directory root and no source tar")
 		}
 	}
 
@@ -481,11 +527,39 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Infof("tmpfs.filesystem: loaded SourceTar in %s", time.Since(timeUntarStart))
 	}
 
+	if j := tmpfsOpts.Journal; j != nil {
+		if st := tmpfsOpts.JournalState; st != nil && !st.Empty() {
+			timeRebuildStart := time.Now()
+			if err := fs.rebuildFromJournal(ctx, st); err != nil {
+				fs.vfsfs.DecRef(ctx)
+				return nil, nil, fmt.Errorf("failed to rebuild tmpfs from journal: %w", err)
+			}
+			ctx.Infof("tmpfs.filesystem: rebuilt %d inodes from journal in %s", len(st.Inodes), time.Since(timeRebuildStart))
+		}
+		if err := fs.startJournal(j); err != nil {
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, err
+		}
+		journalStarted = true
+	}
+
 	return &fs.vfsfs, &root.vfsd, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	// Releasing the filesystem must not delete its files from the journal,
+	// or return their pages to the MemoryFile, which hole-punches free
+	// pages: the journal still refers to them. Marking fs released first
+	// keeps ActivateJournal from starting the journal later; see
+	// startJournal.
+	fs.mu.Lock()
+	fs.released = true
+	fs.mu.Unlock()
+	fs.stopJournal()
+	if fs.journaled.Load() {
+		fs.retainPages.Store(true)
+	}
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.mu.Lock()
 	if fs.root.inode.isDir() {
@@ -803,6 +877,8 @@ func (i *inode) tryIncRef() bool {
 func (i *inode) decRef(ctx context.Context) {
 	i.refs.DecRef(func() {
 		i.watches.HandleDeletion(ctx)
+		// Journal the release before the pages are freed below.
+		i.journalRelease()
 		// Remove pages used if child being removed is a SymLink or Regular File.
 		switch impl := i.impl.(type) {
 		case *directory:
@@ -818,7 +894,15 @@ func (i *inode) decRef(ctx context.Context) {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.
-			pagesDec := impl.data.DropAll(i.fs.mf)
+			var pagesDec uint64
+			if i.fs.retainPages.Load() {
+				// The pages hold journaled file data; see
+				// filesystem.Release.
+				pagesDec = impl.data.Span() >> hostarch.PageShift
+				impl.data.RemoveAll()
+			} else {
+				pagesDec = impl.data.DropAll(i.fs.mf)
+			}
 			impl.inode.fs.unaccountPages(pagesDec)
 		}
 
@@ -1013,6 +1097,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	if needsCtimeBump {
 		i.ctime.Store(now)
 	}
+	i.journalInodeLocked()
 
 	return nil
 }
@@ -1150,6 +1235,14 @@ func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (st
 }
 
 func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
+	if err := i.setXattrNoJournal(creds, opts); err != nil {
+		return err
+	}
+	i.journalInode()
+	return nil
+}
+
+func (i *inode) setXattrNoJournal(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
 	if err := i.checkXattrPrefix(opts.Name); err != nil {
 		return err
 	}
@@ -1178,6 +1271,14 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 }
 
 func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
+	if err := i.removeXattrNoJournal(creds, name); err != nil {
+		return err
+	}
+	i.journalInode()
+	return nil
+}
+
+func (i *inode) removeXattrNoJournal(creds *auth.Credentials, name string) error {
 	if err := i.checkXattrPrefix(name); err != nil {
 		return err
 	}
@@ -1202,6 +1303,15 @@ func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 	}
 
 	return i.xattrs.RemoveXattr(creds, mode, kuid, name)
+}
+
+// setPosixACLAndJournal calls setPosixACL, then journals the change.
+func (i *inode) setPosixACLAndJournal(creds *auth.Credentials, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	newACL, mode, err := i.setPosixACL(creds, t, acl, clearSGID)
+	if err == nil {
+		i.journalInode()
+	}
+	return newACL, mode, err
 }
 
 func (i *inode) setPosixACL(creds *auth.Credentials, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
@@ -1330,7 +1440,7 @@ func (fd *fileDescription) GetPosixACL(ctx context.Context, t vfs.ACLType) (*vfs
 
 // SetPosixACL implements vfs.FileDescriptionImpl.SetPosixACL.
 func (fd *fileDescription) SetPosixACL(ctx context.Context, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
-	return fd.dentry().inode.setPosixACL(auth.CredentialsFromContext(ctx), t, acl, clearSGID)
+	return fd.dentry().inode.setPosixACLAndJournal(auth.CredentialsFromContext(ctx), t, acl, clearSGID)
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync. It does nothing because all

@@ -742,6 +742,12 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 		}
 	}
 
+	if err := r.cm.l.activateJournalingUppersAfterRestore(k.SupervisorContext()); err != nil {
+		r.cm.onRestoreFailed(fmt.Errorf("journaling rootfs upper activation failed: %w", err))
+		r.cm.l.killForJournalingUpper(err)
+		return
+	}
+
 	var s sentryapi.Savings
 	if err := r.calculateCPUSavings(&s); err != nil {
 		log.Warningf("Failed to calculate CPU savings: %v", err)

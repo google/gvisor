@@ -72,11 +72,16 @@ type StartArgs struct {
 	// IsRootfsUpperTarFilePresent indicates whether the rootfs upper tar file is present.
 	IsRootfsUpperTarFilePresent bool
 
+	// IsUpperJournalFilePresent indicates whether the journal of the
+	// journaling rootfs upper is present.
+	IsUpperJournalFilePresent bool
+
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
 	//   * file descriptors to gofer-backing host files (optional).
 	//   * file descriptor for /dev gofer connection (optional)
 	//   * file descriptor for rootfs upper tar file (optional)
+	//   * file descriptor for the journal of the journaling rootfs upper (optional)
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }

@@ -251,6 +251,10 @@ type Boot struct {
 	// rootfsUpperTarFD is the file descriptor to a tar file that has rootfs change at startup.
 	rootfsUpperTarFD int
 
+	// rootfsUpperJournalFD is the file descriptor of the journal of the
+	// journaling rootfs upper of the root container.
+	rootfsUpperJournalFD int
+
 	// noRootContainer boots without a root container. See Create.noRootContainer.
 	noRootContainer bool
 }
@@ -322,6 +326,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.fsRestoreFDs, "fs-restore-fds", "ordered list of file descriptors for filesystem checkpoint restore")
 	f.BoolVar(&b.fsRestoreCheckpointGofer, "fs-restore-checkpoint-gofer", false, "if true, -fs-restore-fds is a socket connected to checkpoint gofer")
 	f.IntVar(&b.rootfsUpperTarFD, "rootfs-upper-tar-fd", -1, "file descriptor to the tar file containing the rootfs upper layer changes.")
+	f.IntVar(&b.rootfsUpperJournalFD, "rootfs-upper-journal-fd", -1, "file descriptor of the journal of the journaling rootfs upper.")
 
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
@@ -748,6 +753,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		FSRestoreFDs:             b.fsRestoreFDs.GetFDs(),
 		FSRestoreCheckpointGofer: b.fsRestoreCheckpointGofer,
 		RootfsUpperTarFD:         b.rootfsUpperTarFD,
+		RootfsUpperJournalFD:     b.rootfsUpperJournalFD,
 		NoRootContainer:          b.noRootContainer,
 		StartupTimer:             timer,
 	}
