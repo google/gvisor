@@ -104,7 +104,7 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	// The check must apply to the same MemoryManager we access, so that a
 	// concurrent execve of the remote task cannot substitute a new
 	// (e.g. non-dumpable) mm between the check and the access.
-	remoteMM, err := t.CanTraceAndGetMM(remoteTask, true /* attach */)
+	remoteMM, err := t.CanTraceModeAndGetMM(remoteTask, kernel.PtraceAccessModeAttach|kernel.PtraceAccessModeRealCreds)
 	if err != nil {
 		if linuxerr.Equals(linuxerr.EACCES, err) {
 			// As in Linux's mm/process_vm_access.c:process_vm_rw_core(),
