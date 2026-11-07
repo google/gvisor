@@ -1414,3 +1414,8 @@ syscall_test(
     save = False,
     test = "//test/syscalls/linux:posix_acl_test",
 )
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:overlay_inode_test",
+)

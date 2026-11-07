@@ -364,8 +364,9 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		return err
 	}
 
-	// Update the dentry's device and inode numbers (except for directories,
-	// for which these remain overlay-assigned).
+	// The overlay device and inode numbers stay as assigned at lookup.
+	// Record the new upper file under that same inode number so a later
+	// lookup, after this dentry is gone, still publishes it.
 	if ftype != linux.S_IFDIR {
 		upperStat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
 			Root:  d.upperVD,
@@ -381,9 +382,10 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return linuxerr.EREMOTE
 		}
-		d.devMajor.Store(upperStat.DevMajor)
-		d.devMinor.Store(upperStat.DevMinor)
-		d.ino.Store(upperStat.Ino)
+		d.fs.aliasIno(layerDevNoAndIno{
+			layerDevNumber: layerDevNumber{upperStat.DevMajor, upperStat.DevMinor},
+			ino:            upperStat.Ino,
+		}, d.ino.Load())
 
 		// Lower level dentries for non-directories are no longer accessible from
 		// the overlayfs anymore after copyup. Ask filesystems to release their
@@ -520,7 +522,7 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 //   - d.dirMu must be locked.
 //   - d.isDir().
 func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) error {
-	dirents, err := d.getDirentsLocked(ctx)
+	dirents, err := d.getDirentsLocked(ctx, ds)
 	if err != nil {
 		return err
 	}
