@@ -1220,18 +1220,19 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 // RemoveNIC removes NIC and all related routes from the network stack.
 func (s *Stack) RemoveNIC(id tcpip.NICID) tcpip.Error {
 	s.mu.Lock()
-	deferAct, err := s.removeNICLocked(id, true /* closeLinkEndpoint */)
+	n, err := s.removeNICLocked(id, true /* closeLinkEndpoint */)
 	s.mu.Unlock()
-	if deferAct != nil {
-		deferAct()
+	if err == nil {
+		s.closeRemovedNICs([]*nic{n}, nil)
 	}
 	return err
 }
 
-// removeNICLocked removes NIC and all related routes from the network stack.
+// removeNICLocked unlinks and disables the NIC. The caller is responsible for
+// detaching its link after releasing s.mu.
 //
 // +checklocks:s.mu
-func (s *Stack) removeNICLocked(id tcpip.NICID, closeLinkEndpoint bool) (func(), tcpip.Error) {
+func (s *Stack) removeNICLocked(id tcpip.NICID, closeLinkEndpoint bool) (*nic, tcpip.Error) {
 	nic, ok := s.nics[id]
 	if !ok {
 		return nil, &tcpip.ErrUnknownNICID{}
@@ -1260,7 +1261,24 @@ func (s *Stack) removeNICLocked(id tcpip.NICID, closeLinkEndpoint bool) (func(),
 	if s.loopbackNIC == nic {
 		s.loopbackNIC = nil
 	}
-	return nic.remove(closeLinkEndpoint)
+	nic.disableForRemoval(closeLinkEndpoint)
+	return nic, nil
+}
+
+// closeRemovedNICs drains the removed NICs and waits for the requested links
+// before closing any of them. Closing a veth can also close its peer.
+//
+// +checklocksexclude:s.mu
+func (s *Stack) closeRemovedNICs(removed []*nic, waitFor []NetworkLinkEndpoint) {
+	for _, n := range removed {
+		n.detachLink()
+	}
+	for _, ep := range waitFor {
+		ep.Wait()
+	}
+	for _, n := range removed {
+		n.NetworkLinkEndpoint.Close()
+	}
 }
 
 // GetNICCoordinatorID returns the ID of the coordinator device of a NIC.
@@ -2233,23 +2251,18 @@ func (s *Stack) Wait() {
 		p.Wait()
 	}
 
-	deferActs := make([]func(), 0)
-
+	var removed []*nic
+	var waitFor []NetworkLinkEndpoint
 	s.mu.Lock()
 	for id, n := range s.nics {
-		// Remove NIC to ensure that qDisc goroutines are correctly
-		// terminated on stack teardown.
-		act, _ := s.removeNICLocked(id, true /* closeLinkEndpoint */)
-		n.NetworkLinkEndpoint.Wait()
-		if act != nil {
-			deferActs = append(deferActs, act)
+		waitFor = append(waitFor, n.NetworkLinkEndpoint)
+		if _, err := s.removeNICLocked(id, true /* closeLinkEndpoint */); err == nil {
+			removed = append(removed, n)
 		}
 	}
 	s.mu.Unlock()
 
-	for _, act := range deferActs {
-		act()
-	}
+	s.closeRemovedNICs(removed, waitFor)
 }
 
 // Destroy destroys the stack with all endpoints.
@@ -2831,14 +2844,12 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 		MaxMTU: nic.maxMTU,
 	}
 
-	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
+	_, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
 	s.mu.Unlock()
-	if deferAct != nil {
-		deferAct()
-	}
 	if err != nil {
 		return 0, err
 	}
+	nic.detachLink()
 
 	id = tcpip.NICID(peer.NextNICID())
 	return id, peer.CreateNICWithOptions(id, linkEp, opts)

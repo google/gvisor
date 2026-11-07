@@ -1041,6 +1041,69 @@ func TestRemoveUnknownNIC(t *testing.T) {
 	}
 }
 
+type drainingLink struct {
+	stack.LinkEndpoint
+	drain func(string)
+}
+
+func (e *drainingLink) Attach(dispatcher stack.NetworkDispatcher) {
+	if dispatcher == nil {
+		e.drain("detach")
+	}
+	e.LinkEndpoint.Attach(dispatcher)
+}
+
+func (e *drainingLink) Wait() {
+	e.drain("wait")
+	e.LinkEndpoint.Wait()
+}
+
+func (e *drainingLink) Close() {
+	e.drain("close")
+	e.LinkEndpoint.Close()
+}
+
+func TestStackWaitAllowsReceiveLookup(t *testing.T) {
+	s := stack.New(stack.Options{})
+	defer s.Close()
+
+	const links = 2
+	calls := make(map[string]int)
+	for i := range links {
+		id := tcpip.NICID(i + 1)
+		ep := &drainingLink{
+			LinkEndpoint: channel.New(0, defaultMTU, ""),
+			drain: func(phase string) {
+				calls[phase]++
+				if phase == "close" {
+					if calls["detach"] != links || calls["wait"] != links {
+						t.Errorf("closed NIC %d before both links drained: %v", id, calls)
+					}
+					return
+				}
+				// A link waits for a worker finishing a packet's NIC lookup.
+				done := make(chan struct{})
+				go func() {
+					s.FindNICNameFromID(id)
+					close(done)
+				}()
+				select {
+				case <-done:
+				case <-time.After(3 * time.Second):
+					t.Errorf("receive worker blocked on NIC lookup during %s", phase)
+				}
+			},
+		}
+		if err := s.CreateNIC(id, ep); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Wait()
+	if diff := cmp.Diff(map[string]int{"detach": links, "wait": links, "close": links}, calls); diff != "" {
+		t.Errorf("link teardown calls (-want +got):\n%s", diff)
+	}
+}
+
 func TestRemoveNIC(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
