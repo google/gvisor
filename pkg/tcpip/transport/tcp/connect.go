@@ -1039,6 +1039,7 @@ func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rc
 
 // currentSACKBlocks returns the SACK blocks to include in an outgoing segment
 // with the given flags.
+//
 // +checklocks:e.mu
 func (e *Endpoint) currentSACKBlocks(flags header.TCPFlags) []header.SACKBlock {
 	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && flags.Contains(header.TCPFlagAck) {
