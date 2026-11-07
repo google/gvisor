@@ -171,7 +171,7 @@ func (c *capturedRmAllocParams) restore() error {
 	}
 
 	h := ioctlParams.HObjectNew
-	if _, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd.hostFD), frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters), uintptr(unsafe.Pointer(&ioctlParams))); errno != 0 {
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(c.fd.hostFD), frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters), uintptr(unsafe.Pointer(&ioctlParams))); errno != 0 {
 		return errno
 	}
 	if ioctlParams.Status != 0 {
