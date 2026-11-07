@@ -1256,7 +1256,8 @@ func Init() {
 		}, v580_173_02)
 		// Drivers only handle the application-provided flags and attributes of
 		// NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR safely starting with 580.178.04 in
-		// the 580 branch and 610.57.04 in the 610 branch.
+		// the 580 branch, 595.91.07 in the 595 branch, and 610.57.04 in the 610
+		// branch.
 		_ = addDriverABI(580, 178, 04, "5975a86ee45bffcb626f51ae33d1169b108186a2ea47ad651e72f13fa4b6d6f9", "ef59ec5d24850e12d6f7550ec1f7cf84db53a84ce9c63eb3ba55ef5ed0c4f049", func() *driverABI {
 			abi := v580_173_10()
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_VID_HEAP_CONTROL] = feHandler(rmVidHeapControlWithOSDescriptor, compUtil)
@@ -1286,6 +1287,16 @@ func Init() {
 		v590_48_01 := addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
 
 		v595_71_05 := addUnsupportedDriverABI(595, 71, 05, v590_48_01)
+
+		// The following versions exist on the "595" branch, which was branched
+		// from the main branch at 595.71.05. 595.91.07 is not registered
+		// because it has unfixed security issues.
+		v595_91_07 := func() *driverABI {
+			abi := v595_71_05()
+			abi.frontendIoctl[nvgpu.NV_ESC_RM_VID_HEAP_CONTROL] = feHandler(rmVidHeapControlWithOSDescriptor, compUtil)
+			return abi
+		}
+		_ = addDriverABI(595, 112, 07, "1a38ecd538a2da6232a7330184063af59e9fc946c908cca555bd07909848b9f0", "eea42e38a5fdc52ff0a4a6be6c43aab12d9eb898c9bb5f36be5fba514e9bc51d", v595_91_07)
 
 		v610_43_02 := addUnsupportedDriverABI(610, 43, 02, func() *driverABI {
 			abi := v595_71_05()
@@ -1382,6 +1393,19 @@ func Init() {
 			return abi
 		})
 
+		// The following versions exist on the "615" branch, which was branched
+		// from the main branch at 615.71.09.
+		_ = addDriverABIWithChecksums(615, 71, 10, Checksums{
+			X86_64:                 "fbaa4207968510e9c80b19a3388d1332b033054be7fcdc99ecf9ccfc8a25e67e",
+			ARM64:                  "7821a5a7fe4f4eaaedb3d5d63bb97055177dbdbb48bafe6b5a6876f7470e5aa5",
+			NoPublicARM64Installer: true,
+		}, v615_71_09)
+		_ = addDriverABIWithChecksums(615, 78, 8, Checksums{
+			X86_64:                  "3e3f6dddc2ee767a08185300af7be3cb286ece76698d2dde3524599782d07ffe",
+			ARM64:                   "5076011350181e81a031f0fd012fe35fe4be37c7820d651fb7aaa894af447a37",
+			NoPublicX86_64Installer: true,
+		}, v615_71_09)
+
 		v620_06_00 := addDriverABIWithChecksums(620, 6, 0, Checksums{
 			X86_64:                 ChecksumNoDriver,
 			ARM64:                  "95b94e43fd0cb0fb409fd523be491ac7248fec6d1cf82543fa4119cdcbad05b3",
@@ -1448,11 +1472,38 @@ func Init() {
 			}
 			return abi
 		})
-		_ = addDriverABIWithChecksums(620, 51, 03, Checksums{
+		v620_51_03 := addDriverABIWithChecksums(620, 51, 03, Checksums{
 			X86_64:                 ChecksumNoDriver,
 			ARM64:                  "7c7f4e71ec27a6c050ed3d074eda4bd3c10a0c2d3f330cd1bf9485e5265a569e",
 			NoPublicARM64Installer: true,
 		}, v620_51_00)
+		// 620.06.00 through 620.51.03 are pre-release builds without public
+		// source. 620.70.06's ABI changes may apply to some of them too, but are
+		// only introduced at 620.70.06 until that can be verified.
+		_ = addDriverABI(620, 70, 06, "29118e3abd08c07559bcca3d9c76238d039490af0362a2e5bcfcbe7204afd4b1", "3fa65a9271e0dde2a4e58c4965c38885a02a3a42accdcb26fc817410607f3e03", func() *driverABI {
+			abi := v620_51_03()
+			abi.allocationClass[nvgpu.FERMI_CONTEXT_SHARE_A] = allocHandler(rmAllocContextShareV620, compUtil)
+			abi.allocationClass[nvgpu.KEPLER_CHANNEL_GROUP_A] = allocHandler(rmAllocChannelGroupV620, compUtil)
+			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2)
+			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2)
+			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V3)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2_V620] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2_V620] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
+
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				info.AllocationInfos[nvgpu.FERMI_CONTEXT_SHARE_A] = ioctlInfoWithStructName("FERMI_CONTEXT_SHARE_A", nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS_V620{}, "NV_CTXSHARE_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.KEPLER_CHANNEL_GROUP_A] = ioctlInfoWithStructName("KEPLER_CHANNEL_GROUP_A", nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V620{}, "NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS")
+				delete(info.ControlInfos, nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2)
+				delete(info.ControlInfos, nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2)
+				delete(info.ControlInfos, nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V3)
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2_V620] = ioctlInfo("NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2", nvgpu.NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS{})
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2_V620] = simpleIoctlInfo("NV2080_CTRL_NVLINK_GET_UPDATE_NVLE_LIDS_V2", "NV2080_CTRL_NVLINK_GET_UPDATE_NVLE_LIDS_V2_PARAMS")
+				return info
+			}
+			return abi
+		})
 	})
 }
 
