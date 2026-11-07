@@ -26,6 +26,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -33,7 +34,9 @@
 #include "absl/strings/string_view.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/temp_path.h"
@@ -159,6 +162,41 @@ TEST(ProcPidSmapsTest, SharedReadOnlyFile) {
     EXPECT_THAT(entry.vm_flags.value(), Not(Contains("sh")));
     EXPECT_THAT(entry.vm_flags.value(), Not(Contains("mw")));
   }
+}
+
+// MADV_DONTDUMP is reported as "dd" on the madvised address.
+TEST(ProcPidSmapsTest, DontDump) {
+  Mapping const reserved = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_NONE, MAP_PRIVATE));
+  const auto rest = [&] {
+    void* addr = MmapSafe(reserved.ptr(), kPageSize, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+    TEST_PCHECK(addr == reserved.ptr());
+    TEST_PCHECK(munmap(reinterpret_cast<char*>(reserved.ptr()) + kPageSize,
+                       kPageSize) == 0);
+    TEST_PCHECK(madvise(addr, kPageSize, MADV_DONTDUMP) == 0);
+
+    auto expect_dd = [](uintptr_t at, bool present) {
+      auto const entries = ReadProcSelfSmaps();
+      TEST_CHECK(entries.ok());
+      auto const entry = FindUniqueSmapsEntry(entries.ValueOrDie(), at);
+      TEST_CHECK(entry.ok());
+      TEST_CHECK(entry.ValueOrDie().vm_flags.has_value());
+      TEST_CHECK(absl::c_linear_search(entry.ValueOrDie().vm_flags.value(),
+                                       "dd") == present);
+    };
+    const uintptr_t start = reinterpret_cast<uintptr_t>(addr);
+    expect_dd(start, true);
+    TEST_PCHECK(madvise(addr, kPageSize, MADV_DODUMP) == 0);
+    expect_dd(start, false);
+    TEST_PCHECK(madvise(addr, kPageSize, MADV_DONTDUMP) == 0);
+
+    void* grown = mremap(addr, kPageSize, 2 * kPageSize, 0);
+    TEST_PCHECK(grown == addr);
+    expect_dd(start, true);
+    expect_dd(start + kPageSize, true);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 // Tests that gVisor's /proc/[pid]/smaps provides all of the fields we expect it
