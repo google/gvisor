@@ -131,7 +131,7 @@ func loadFloat64(r *Reader) Float64 {
 
 func loadComplex64(r *Reader) Complex64 {
 	re, im := math.Float32frombits(uint32(loadUint(r))), math.Float32frombits(uint32(loadUint(r)))
-	return Complex64(complex(float64(re), float64(im)))
+	return Complex64(complex(re, im))
 }
 
 func loadComplex128(r *Reader) Complex128 {
