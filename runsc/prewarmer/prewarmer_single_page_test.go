@@ -38,6 +38,9 @@ func TestPrewarmerFitsInOnePage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot stat %q: %v", path, err)
 	}
+	if !st.Mode().IsRegular() {
+		t.Fatalf("prewarmer %q is not a regular file: %v", path, st.Mode())
+	}
 	if st.Size() > maxSize {
 		t.Errorf("gvisor-sentry-prewarmer is %d bytes, which does not fit in a single %d-byte page", st.Size(), maxSize)
 	}
