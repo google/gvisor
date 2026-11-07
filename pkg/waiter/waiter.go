@@ -108,7 +108,8 @@ type Waitable interface {
 
 	// EventRegister registers the given waiter entry to receive
 	// notifications when an event occurs that makes the object ready for
-	// at least one of the events in mask.
+	// at least one of the events in mask. On error, the entry must not
+	// remain registered.
 	EventRegister(e *Entry) error
 
 	// EventUnregister unregisters a waiter entry previously registered with

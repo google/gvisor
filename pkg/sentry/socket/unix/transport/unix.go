@@ -964,6 +964,7 @@ func (e *baseEndpoint) EventRegister(we *waiter.Entry) error {
 	e.Unlock()
 	if c != nil {
 		if err := c.EventUpdate(); err != nil {
+			e.WaitQueue.EventUnregister(we)
 			return err
 		}
 	}
