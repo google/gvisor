@@ -41,6 +41,7 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -958,27 +959,47 @@ type baseEndpoint struct {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (e *baseEndpoint) EventRegister(we *waiter.Entry) error {
-	e.WaitQueue.EventRegister(we)
 	e.Lock()
-	c := e.peer
-	e.Unlock()
-	if c != nil {
-		if err := c.EventUpdate(); err != nil {
-			e.WaitQueue.EventUnregister(we)
-			return err
-		}
+	defer e.Unlock()
+	return e.eventRegisterLocked(we, nil)
+}
+
+// +checklocks:e.endpointMutex
+func (e *baseEndpoint) eventRegisterLocked(we *waiter.Entry, bound BoundSocketFD) error {
+	e.WaitQueue.EventRegister(we)
+	if err := e.updateEventsLocked(bound); err != nil {
+		e.WaitQueue.EventUnregister(we)
+		return err
+	}
+	return nil
+}
+
+// A connected socket gets its readiness from its peer. Only a listening
+// socket gets readiness from the host pathname it bound.
+//
+// +checklocks:e.endpointMutex
+func (e *baseEndpoint) updateEventsLocked(bound BoundSocketFD) error {
+	if e.peer != nil {
+		return e.peer.EventUpdate()
+	}
+	if bound != nil {
+		return fdnotifier.UpdateFD(bound.NotificationFD())
 	}
 	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (e *baseEndpoint) EventUnregister(we *waiter.Entry) {
-	e.WaitQueue.EventUnregister(we)
 	e.Lock()
-	c := e.peer
-	e.Unlock()
-	if c != nil {
-		c.EventUpdate()
+	defer e.Unlock()
+	e.eventUnregisterLocked(we, nil)
+}
+
+// +checklocks:e.endpointMutex
+func (e *baseEndpoint) eventUnregisterLocked(we *waiter.Entry, bound BoundSocketFD) {
+	e.WaitQueue.EventUnregister(we)
+	if err := e.updateEventsLocked(bound); err != nil {
+		log.Warningf("Updating Unix socket notifications after waiter removal: %v", err)
 	}
 }
 
