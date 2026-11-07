@@ -919,3 +919,33 @@ func TestChecksum(t *testing.T) {
 		}
 	}
 }
+
+func TestBufferPrependReadOffset(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		headroom int
+	}{
+		{name: "partial backfill", headroom: 2},
+		{name: "full backfill", headroom: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := MakeWithData([]byte(strings.Repeat(".", tc.headroom) + "tail"))
+			defer b.Release()
+			b.TrimFront(int64(tc.headroom))
+			src := NewViewWithData([]byte("...head"))
+			src.TrimFront(3)
+			observer := src.Clone()
+			defer observer.Release()
+			if err := b.Prepend(src); err != nil {
+				t.Fatalf("Prepend failed: %v", err)
+			}
+			if got := string(b.Flatten()); got != "headtail" {
+				t.Fatalf("buffer = %q, want headtail", got)
+			}
+			b.Release()
+			if got := string(observer.AsSlice()); got != "head" {
+				t.Errorf("source observer = %q, want head", got)
+			}
+		})
+	}
+}

@@ -16,6 +16,7 @@ package stack
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -836,5 +837,109 @@ func TestCalculateTransportChecksumUDPZero(t *testing.T) {
 
 	if got, want := udpHdr.Checksum(), uint16(0xFFFF); got != want {
 		t.Errorf("got udpHdr.Checksum() = 0x%x, want = 0x%x", got, want)
+	}
+}
+
+func TestPacketDataReadToPreservesHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		size    int
+		peek    bool
+		wantErr error
+		pieces  []string
+	}{
+		{name: "partial read", size: 3, wantErr: io.ErrShortWrite},
+		{name: "full read", size: 6},
+		{name: "fragmented partial read", size: 3, wantErr: io.ErrShortWrite, pieces: []string{"he", "adab", "cd", "ef"}},
+		{name: "peek", size: 3, peek: true, wantErr: io.ErrShortWrite},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pieces := tc.pieces
+			if len(pieces) == 0 {
+				pieces = []string{"headabcdef"}
+			}
+			var payload buffer.Buffer
+			for _, piece := range pieces {
+				fragment := buffer.MakeWithData([]byte(piece))
+				payload.Merge(&fragment)
+			}
+			pkt := NewPacketBuffer(PacketBufferOptions{Payload: payload})
+			defer pkt.DecRef()
+			if _, ok := pkt.NetworkHeader().Consume(2); !ok {
+				t.Fatal("network header Consume failed")
+			}
+			if _, ok := pkt.TransportHeader().Consume(2); !ok {
+				t.Fatal("header Consume failed")
+			}
+			observer := pkt.Clone()
+			defer observer.DecRef()
+			dst := make([]byte, tc.size)
+			writer := tcpip.SliceWriter(dst)
+			n, err := pkt.Data().ReadTo(&writer, tc.peek)
+			if n != tc.size || err != tc.wantErr || string(dst) != "abcdef"[:tc.size] {
+				t.Fatalf("ReadTo = (%d, %v, %q), want (%d, %v, %q)", n, err, dst, tc.size, tc.wantErr, "abcdef"[:tc.size])
+			}
+			checkPacketHeader(t, "network", pkt.NetworkHeader(), []byte("he"))
+			checkPacketHeader(t, "transport", pkt.TransportHeader(), []byte("ad"))
+			removed := n
+			if tc.peek {
+				removed = 0
+			}
+			if got, want := string(pkt.Data().AsRange().ToSlice()), "abcdef"[removed:]; got != want {
+				t.Errorf("payload = %q, want %q", got, want)
+			}
+			var rest bytes.Buffer
+			if _, err := pkt.Data().ReadTo(&rest, false); err != nil {
+				t.Fatal(err)
+			}
+			if got, want := rest.String(), "abcdef"[removed:]; got != want {
+				t.Errorf("remaining read = %q, want %q", got, want)
+			}
+			checkPacketHeader(t, "network", pkt.NetworkHeader(), []byte("he"))
+			checkPacketHeader(t, "transport", pkt.TransportHeader(), []byte("ad"))
+			if got := string(observer.Data().AsRange().ToSlice()); got != "abcdef" {
+				t.Errorf("observer payload = %q, want abcdef", got)
+			}
+		})
+	}
+}
+
+func BenchmarkPacketDataReadTo(b *testing.B) {
+	for _, headerSize := range []int{0, 4} {
+		for _, fragments := range []int{1, 16} {
+			b.Run(fmt.Sprintf("headers=%d/fragments=%d", headerSize, fragments), func(b *testing.B) {
+				var payload buffer.Buffer
+				for range fragments {
+					fragment := buffer.MakeWithData(make([]byte, 1536/fragments))
+					payload.Merge(&fragment)
+				}
+				defer payload.Release()
+				var dst [64]byte
+				b.ReportAllocs()
+				b.SetBytes(int64(1536 - headerSize))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					pkt := NewPacketBuffer(PacketBufferOptions{Payload: payload.Clone()})
+					if headerSize != 0 {
+						if _, ok := pkt.TransportHeader().Consume(headerSize); !ok {
+							b.Fatal("header Consume failed")
+						}
+					}
+					for pkt.Data().Size() != 0 {
+						remaining := pkt.Data().Size()
+						writer := tcpip.SliceWriter(dst[:])
+						n, err := pkt.Data().ReadTo(&writer, false)
+						var wantErr error
+						if remaining > len(dst) {
+							wantErr = io.ErrShortWrite
+						}
+						if want := min(remaining, len(dst)); n != want || err != wantErr {
+							b.Fatalf("ReadTo = %d, %v; want %d, %v", n, err, want, wantErr)
+						}
+					}
+					pkt.DecRef()
+				}
+			})
+		}
 	}
 }
