@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/veth"
+	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -350,15 +352,16 @@ func TestNicExitingStackExitsBridgeToo(t *testing.T) {
 
 // makeEthernetFrame builds an inbound frame whose ethernet header is still in
 // the payload, for injection into a channel endpoint wrapped by ethernet.New.
-func makeEthernetFrame(src, dst tcpip.LinkAddress) *stack.PacketBuffer {
-	hdr := make([]byte, header.EthernetMinimumSize)
-	header.Ethernet(hdr).Encode(&header.EthernetFields{
+func makeEthernetFrame(src, dst tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, payload []byte) *stack.PacketBuffer {
+	frame := make([]byte, header.EthernetMinimumSize+len(payload))
+	header.Ethernet(frame).Encode(&header.EthernetFields{
 		SrcAddr: src,
 		DstAddr: dst,
-		Type:    header.IPv4ProtocolNumber,
+		Type:    proto,
 	})
+	copy(frame[header.EthernetMinimumSize:], payload)
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(hdr),
+		Payload: buffer.MakeWithData(frame),
 	})
 }
 
@@ -371,96 +374,288 @@ func drainChannels(eps ...*channel.Endpoint) {
 	}
 }
 
-// TestBridgeDispatchOnlyForLocalOrMulticast checks that only group frames and
-// frames addressed to the bridge or to the receiving port are passed up; other
-// frames are only forwarded.
-func TestBridgeDispatchOnlyForLocalOrMulticast(t *testing.T) {
-	const (
-		channelLinkAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x10")
-		channelLinkAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x11")
-		bridgeLinkAddr   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x12")
-		unknownLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x13")
+const (
+	dispatchPort1Addr   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x10")
+	dispatchPort2Addr   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x11")
+	dispatchBridgeAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x12")
+	dispatchUnknownAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x13")
+	// dispatchRemoteAddr is a host the bridge learns behind port 2.
+	dispatchRemoteAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x14")
+	// dispatchSrcAddr is a host behind port 1 that sends the test frames.
+	dispatchSrcAddr       = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x15")
+	dispatchMulticastAddr = tcpip.LinkAddress("\x01\x00\x5e\x00\x00\x01")
+	dispatchNewPort1Addr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x16")
+	dispatchNewPort2Addr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x17")
+	dispatchPort1ID       = 11
+	dispatchPort2ID       = 12
+	dispatchBridgeID      = 13
+)
 
-		nicID1   = 11
-		nicID2   = 12
-		bridgeID = 13
-	)
+var (
+	dispatchBridgeIP = tcpip.AddrFrom4([4]byte{192, 0, 2, 1})
+	dispatchSrcIP    = tcpip.AddrFrom4([4]byte{192, 0, 2, 2})
+)
 
-	tests := []struct {
-		name       string
-		dst        tcpip.LinkAddress
-		wantUpcall bool
-		// checkFwd checks that port 2 receives the frame. Frames for the bridge
-		// or the receiving port are not checked because they are still flooded.
-		checkFwd bool
-	}{
-		{name: "unicast to other port", dst: channelLinkAddr2, checkFwd: true},
-		{name: "unknown unicast", dst: unknownLinkAddr, checkFwd: true},
-		{name: "unicast to bridge", dst: bridgeLinkAddr, wantUpcall: true},
-		{name: "unicast to receiving port", dst: channelLinkAddr1, wantUpcall: true},
-		{name: "broadcast", dst: header.EthernetBroadcastAddress, wantUpcall: true, checkFwd: true},
+// dispatchTestContext is a bridge with two ports. It records the packet type
+// of every frame the bridge passes up.
+type dispatchTestContext struct {
+	s        *stack.Stack
+	bridge   *stack.BridgeEndpoint
+	ch1, ch2 *channel.Endpoint
+	// classifying is whether port 1 classifies frames itself, as the ethernet
+	// wrapper does. Otherwise port 1 behaves like a tap, fdbased, xdp or
+	// sharedmem port, which leave the packet type unset.
+	classifying bool
+	passedUp    []tcpip.PacketType
+}
+
+// HandlePacket implements stack.PacketEndpoint.
+func (c *dispatchTestContext) HandlePacket(_ tcpip.NICID, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	c.passedUp = append(c.passedUp, pkt.PktType)
+}
+
+func newDispatchTestContext(t *testing.T, classifying bool) *dispatchTestContext {
+	t.Helper()
+	c := &dispatchTestContext{
+		bridge:      stack.NewBridgeEndpoint(1500),
+		ch1:         channel.New(1, 1500, dispatchPort1Addr),
+		ch2:         channel.New(1, 1500, dispatchPort2Addr),
+		classifying: classifying,
+	}
+	c.bridge.SetLinkAddress(dispatchBridgeAddr)
+	c.s = stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
+	})
+	t.Cleanup(func() {
+		drainChannels(c.ch1, c.ch2)
+		c.ch1.Close()
+		c.ch2.Close()
+		c.s.Destroy()
+	})
+	if err := c.s.CreateNICWithOptions(dispatchBridgeID, c.bridge, stack.NICOptions{DeliverLinkPackets: true}); err != nil {
+		t.Fatalf("s.CreateNICWithOptions(%d, _, _): %s", dispatchBridgeID, err)
+	}
+	port1 := stack.LinkEndpoint(c.ch1)
+	if classifying {
+		port1 = ethernet.New(c.ch1)
+	}
+	if err := c.s.CreateNIC(dispatchPort1ID, port1); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", dispatchPort1ID, err)
+	}
+	if err := c.s.CreateNIC(dispatchPort2ID, ethernet.New(c.ch2)); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", dispatchPort2ID, err)
+	}
+	for _, id := range []tcpip.NICID{dispatchPort1ID, dispatchPort2ID} {
+		if err := c.s.SetNICCoordinator(id, dispatchBridgeID); err != nil {
+			t.Fatalf("s.SetNICCoordinator(%d, %d): %s", id, dispatchBridgeID, err)
+		}
+	}
+	if err := c.s.RegisterPacketEndpoint(dispatchBridgeID, header.EthernetProtocolAll, c); err != nil {
+		t.Fatalf("s.RegisterPacketEndpoint(%d, _, _): %s", dispatchBridgeID, err)
+	}
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{Address: dispatchBridgeIP, PrefixLen: 24},
+	}
+	if err := c.s.AddProtocolAddress(dispatchBridgeID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", dispatchBridgeID, protocolAddr, err)
 	}
 
+	// Learn a host behind port 2 so that frames to it are forwarded, not
+	// flooded.
+	learn := makeEthernetFrame(dispatchRemoteAddr, dispatchUnknownAddr, header.IPv4ProtocolNumber, nil)
+	c.ch2.InjectInbound(header.IPv4ProtocolNumber, learn)
+	learn.DecRef()
+	drainChannels(c.ch1, c.ch2)
+	return c
+}
+
+// injectFromPort1 injects a frame into port 1. A port
+// that doesn't classify frames delivers them with the ethernet header already
+// in the link header, as a tap does.
+func (c *dispatchTestContext) injectFromPort1(src, dst tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, payload []byte) {
+	pkt := makeEthernetFrame(src, dst, proto, payload)
+	defer pkt.DecRef()
+	if !c.classifying {
+		pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+	}
+	c.ch1.InjectInbound(proto, pkt)
+}
+
+type dispatchTest struct {
+	name string
+	dst  tcpip.LinkAddress
+	// wantUpcall is whether the bridge passes the frame up, and wantPktType
+	// the packet type it is passed up with.
+	wantUpcall  bool
+	wantPktType tcpip.PacketType
+	// wantIP is whether IPv4 counts the frame as received.
+	wantIP bool
+	// wantFwd is whether port 2 sends out the frame.
+	wantFwd bool
+}
+
+// check injects an IPv4 frame for test.dst into port 1 and checks what the
+// bridge does with it.
+func (c *dispatchTestContext) check(t *testing.T, test dispatchTest) {
+	t.Helper()
+	c.passedUp = nil
+	ipRx := c.s.Stats().IP.PacketsReceived
+	ipBefore := ipRx.Value()
+	c.injectFromPort1(dispatchSrcAddr, test.dst, header.IPv4ProtocolNumber, nil)
+
+	switch {
+	case !test.wantUpcall && len(c.passedUp) != 0:
+		t.Errorf("got frames passed up with packet types %v, want none", c.passedUp)
+	case test.wantUpcall && (len(c.passedUp) != 1 || c.passedUp[0] != test.wantPktType):
+		t.Errorf("got frames passed up with packet types %v, want [%d]", c.passedUp, test.wantPktType)
+	}
+	var wantIP uint64
+	if test.wantIP {
+		wantIP = 1
+	}
+	if got := ipRx.Value() - ipBefore; got != wantIP {
+		t.Errorf("got %d frames received by IPv4, want %d", got, wantIP)
+	}
+	if fwd := c.ch2.Read(); fwd == nil {
+		if test.wantFwd {
+			t.Error("frame was not forwarded to port 2")
+		}
+	} else {
+		if !test.wantFwd {
+			t.Error("frame was forwarded to port 2")
+		}
+		fwd.LinkHeader().Consume(header.EthernetMinimumSize)
+		if got := header.Ethernet(fwd.LinkHeader().Slice()).DestinationAddress(); got != test.dst {
+			t.Errorf("got forwarded destination = %s, want = %s", got, test.dst)
+		}
+		fwd.DecRef()
+	}
+	drainChannels(c.ch1, c.ch2)
+}
+
+// portKinds runs a test with port 1 wrapped by the ethernet endpoint, which
+// classifies frames, and with a bare port, which doesn't.
+var portKinds = []struct {
+	name        string
+	classifying bool
+}{
+	{name: "ethernet port", classifying: true},
+	{name: "unclassified port", classifying: false},
+}
+
+// TestBridgeDispatchOnlyForLocalOrMulticast checks that only group frames and
+// frames addressed to the bridge or to one of its ports are passed up; other
+// frames are only forwarded. Frames for the bridge or a port are not
+// forwarded. The bridge classifies every frame it passes up.
+func TestBridgeDispatchOnlyForLocalOrMulticast(t *testing.T) {
+	tests := []dispatchTest{
+		{name: "unicast to host behind other port", dst: dispatchRemoteAddr, wantFwd: true},
+		{name: "unknown unicast", dst: dispatchUnknownAddr, wantFwd: true},
+		{name: "unicast to bridge", dst: dispatchBridgeAddr, wantUpcall: true, wantPktType: tcpip.PacketHost, wantIP: true},
+		{name: "unicast to receiving port", dst: dispatchPort1Addr, wantUpcall: true, wantPktType: tcpip.PacketHost, wantIP: true},
+		{name: "unicast to other port", dst: dispatchPort2Addr, wantUpcall: true, wantPktType: tcpip.PacketOtherHost},
+		{name: "broadcast", dst: header.EthernetBroadcastAddress, wantUpcall: true, wantPktType: tcpip.PacketBroadcast, wantIP: true, wantFwd: true},
+		{name: "multicast", dst: dispatchMulticastAddr, wantUpcall: true, wantPktType: tcpip.PacketMulticast, wantIP: true, wantFwd: true},
+	}
+	for _, kind := range portKinds {
+		for _, test := range tests {
+			t.Run(kind.name+"/"+test.name, func(t *testing.T) {
+				newDispatchTestContext(t, kind.classifying).check(t, test)
+			})
+		}
+	}
+}
+
+// TestBridgePortAddressChange checks that the bridge tracks changes to its
+// ports' addresses after they are added, as br_fdb_changeaddr does.
+func TestBridgePortAddressChange(t *testing.T) {
+	tests := []dispatchTest{
+		{name: "new receiving port address", dst: dispatchNewPort1Addr, wantUpcall: true, wantPktType: tcpip.PacketHost, wantIP: true},
+		{name: "new other port address", dst: dispatchNewPort2Addr, wantUpcall: true, wantPktType: tcpip.PacketOtherHost},
+		{name: "old receiving port address", dst: dispatchPort1Addr, wantFwd: true},
+		{name: "old other port address", dst: dispatchPort2Addr, wantFwd: true},
+	}
+	for _, kind := range portKinds {
+		for _, test := range tests {
+			t.Run(kind.name+"/"+test.name, func(t *testing.T) {
+				c := newDispatchTestContext(t, kind.classifying)
+				if err := c.s.SetNICAddress(dispatchPort1ID, dispatchNewPort1Addr); err != nil {
+					t.Fatalf("s.SetNICAddress(%d, %s): %s", dispatchPort1ID, dispatchNewPort1Addr, err)
+				}
+				if err := c.s.SetNICAddress(dispatchPort2ID, dispatchNewPort2Addr); err != nil {
+					t.Fatalf("s.SetNICAddress(%d, %s): %s", dispatchPort2ID, dispatchNewPort2Addr, err)
+				}
+				c.check(t, test)
+			})
+		}
+	}
+}
+
+// TestBridgeDoesNotLearnLocalAddresses checks that, as in br_fdb_update, the
+// bridge doesn't learn its own or its ports' addresses as source addresses.
+func TestBridgeDoesNotLearnLocalAddresses(t *testing.T) {
+	tests := []struct {
+		name        string
+		src         tcpip.LinkAddress
+		wantLearned bool
+	}{
+		{name: "remote host", src: dispatchSrcAddr, wantLearned: true},
+		{name: "bridge", src: dispatchBridgeAddr},
+		{name: "receiving port", src: dispatchPort1Addr},
+		{name: "other port", src: dispatchPort2Addr},
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ch1 := channel.New(1, header.EthernetMinimumSize, channelLinkAddr1)
-			ch2 := channel.New(1, header.EthernetMinimumSize, channelLinkAddr2)
-			bridgeEndpoint := stack.NewBridgeEndpoint(1500)
-			bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
-
-			s := stack.New(stack.Options{})
-			defer s.Destroy()
-			if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
-				t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+			c := newDispatchTestContext(t, true /* classifying */)
+			c.injectFromPort1(test.src, header.EthernetBroadcastAddress, header.IPv4ProtocolNumber, nil)
+			var want tcpip.LinkAddress
+			if test.wantLearned {
+				want = dispatchPort1Addr
 			}
-			if err := s.CreateNIC(nicID1, ethernet.New(ch1)); err != nil {
-				t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
+			if got := c.bridge.FindFDBEntry(test.src).PortLinkAddress(); got != want {
+				t.Errorf("got FDB entry for %s on port %q, want %q", test.src, got, want)
 			}
-			if err := s.CreateNIC(nicID2, ethernet.New(ch2)); err != nil {
-				t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
-			}
-			if err := s.SetNICCoordinator(nicID1, bridgeID); err != nil {
-				t.Fatalf("s.SetNICCoordinator(%d, %d): %s", nicID1, bridgeID, err)
-			}
-			if err := s.SetNICCoordinator(nicID2, bridgeID); err != nil {
-				t.Fatalf("s.SetNICCoordinator(%d, %d): %s", nicID2, bridgeID, err)
-			}
-
-			// Learn port 2 so that frames to it are forwarded, not flooded.
-			learn := makeEthernetFrame(channelLinkAddr2, channelLinkAddr1)
-			ch2.InjectInbound(header.IPv4ProtocolNumber, learn)
-			learn.DecRef()
-			drainChannels(ch1, ch2)
-
-			rx := s.NICInfo()[bridgeID].Stats.Rx.Packets
-			before := rx.Value()
-			pkt := makeEthernetFrame(channelLinkAddr1, test.dst)
-			ch1.InjectInbound(header.IPv4ProtocolNumber, pkt)
-			pkt.DecRef()
-
-			var wantUpcalls uint64
-			if test.wantUpcall {
-				wantUpcalls = 1
-			}
-			if got := rx.Value() - before; got != wantUpcalls {
-				t.Errorf("got %d frames passed up to the bridge, want %d", got, wantUpcalls)
-			}
-			if test.checkFwd {
-				if fwd := ch2.Read(); fwd == nil {
-					t.Error("frame was not forwarded to port 2")
-				} else {
-					fwd.LinkHeader().Consume(header.EthernetMinimumSize)
-					if got := header.Ethernet(fwd.LinkHeader().Slice()).DestinationAddress(); got != test.dst {
-						t.Errorf("got forwarded destination = %s, want = %s", got, test.dst)
-					}
-					fwd.DecRef()
-				}
-			}
-
-			drainChannels(ch1, ch2)
-			ch1.Close()
-			ch2.Close()
 		})
+	}
+}
+
+// TestBridgeARPRequests checks that, as in arp_rcv, the bridge doesn't answer
+// an ARP request in a frame addressed to another port.
+func TestBridgeARPRequests(t *testing.T) {
+	tests := []struct {
+		name      string
+		dst       tcpip.LinkAddress
+		wantReply bool
+	}{
+		{name: "bridge", dst: dispatchBridgeAddr, wantReply: true},
+		{name: "receiving port", dst: dispatchPort1Addr, wantReply: true},
+		{name: "other port", dst: dispatchPort2Addr, wantReply: false},
+		{name: "broadcast", dst: header.EthernetBroadcastAddress, wantReply: true},
+	}
+	for _, kind := range portKinds {
+		for _, test := range tests {
+			t.Run(kind.name+"/"+test.name, func(t *testing.T) {
+				c := newDispatchTestContext(t, kind.classifying)
+				request := make([]byte, header.ARPSize)
+				h := header.ARP(request)
+				h.SetIPv4OverEthernet()
+				h.SetOp(header.ARPRequest)
+				copy(h.HardwareAddressSender(), dispatchSrcAddr)
+				copy(h.ProtocolAddressSender(), dispatchSrcIP.AsSlice())
+				copy(h.ProtocolAddressTarget(), dispatchBridgeIP.AsSlice())
+				replies := c.s.Stats().ARP.OutgoingRepliesSent
+				before := replies.Value()
+				c.injectFromPort1(dispatchSrcAddr, test.dst, header.ARPProtocolNumber, request)
+				var want uint64
+				if test.wantReply {
+					want = 1
+				}
+				if got := replies.Value() - before; got != want {
+					t.Errorf("got %d ARP replies, want %d", got, want)
+				}
+			})
+		}
 	}
 }
 
