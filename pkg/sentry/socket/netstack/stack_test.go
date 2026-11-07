@@ -19,6 +19,7 @@ import (
 	"net"
 	"slices"
 	"testing"
+	"testing/synctest"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -27,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -160,4 +162,56 @@ func TestRouteTableDumpOrder(t *testing.T) {
 	if got := s.Stack.GetRouteTable()[0].Destination.Prefix(); got != 128 {
 		t.Errorf("GetRouteTable()[0] prefix = %d, want 128", got)
 	}
+}
+
+type blockedCloseEndpoint struct {
+	*channel.Endpoint
+	closing chan struct{}
+	resume  chan struct{}
+}
+
+func (e *blockedCloseEndpoint) Close() {
+	close(e.closing)
+	<-e.resume
+	e.Endpoint.Close()
+}
+
+func TestDestroyWaitsForNICs(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := netstack.NewStack(stack.New(stack.Options{}), 1)
+		ep := &blockedCloseEndpoint{
+			Endpoint: channel.New(1, 1500, ""),
+			closing:  make(chan struct{}),
+			resume:   make(chan struct{}),
+		}
+		if err := s.Stack.CreateNIC(1, ep); err != nil {
+			t.Fatalf("CreateNIC: %s", err)
+		}
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
+		var packets stack.PacketBufferList
+		packets.PushBack(pkt)
+		n, err := ep.WritePackets(packets)
+		pkt.DecRef()
+		if n != 1 || err != nil {
+			t.Fatalf("WritePackets = (%d, %v), want (1, nil)", n, err)
+		}
+		done := make(chan struct{})
+		go func() {
+			s.Destroy()
+			close(done)
+		}()
+		<-ep.closing
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Error("Destroy returned before NIC cleanup released its packet")
+		default:
+		}
+		close(ep.resume)
+		<-done
+		synctest.Wait()
+		if got := ep.NumQueued(); got != 0 {
+			t.Errorf("NumQueued after Destroy = %d, want 0", got)
+		}
+	})
 }
