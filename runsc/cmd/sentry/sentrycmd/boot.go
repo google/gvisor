@@ -222,11 +222,6 @@ type Boot struct {
 	// and without rootless.
 	procUmounterFD int
 
-	// procMountSyncFile holds the *os.File for procMountSyncFD when this
-	// process continues without re-exec'ing itself (see
-	// `applyCapsAllThreads`). It keeps the FD alive.
-	procMountSyncFile *os.File
-
 	// syncUsernsFD is the file descriptor that has to be closed when the
 	// boot process should invoke setuid/setgid for root user. This is mainly
 	// used to synchronize rootless user namespace initialization.
@@ -482,6 +477,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		timer.Reached("set nvproxy flags")
 	}
 
+	// After an exec, only the synchronization FD survives.
+	umountProc := func() { sandboxsetup.UmountProc(b.procMountSyncFD) }
 	if b.setUpRoot {
 		if err := setUpChroot(spec, conf, timer); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
@@ -504,8 +501,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				defer cmd.Wait()
 				defer w.Close()
 			} else {
-				// Keep `w` alive until UmountProcFile uses it.
-				b.procMountSyncFile = w
+				// This process started the helper. Wait through its Cmd so
+				// Go also closes the pidfd it acquired at Start.
+				umountProc = func() { sandboxsetup.UmountProcFile(w, cmd.Wait) }
 			}
 			if b.procMountSyncFD != -1 {
 				panic("procMountSyncFD is set")
@@ -769,11 +767,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// startup (for now at least...), so safe to record here.
 			timer.Reached("open FDs validated")
 			// Umount /proc right before installing seccomp filters.
-			if b.procMountSyncFile != nil {
-				sandboxsetup.UmountProcFile(b.procMountSyncFile)
-			} else {
-				sandboxsetup.UmountProc(b.procMountSyncFD)
-			}
+			umountProc()
 		}
 	}
 
