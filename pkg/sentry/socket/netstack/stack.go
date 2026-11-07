@@ -519,7 +519,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	if ifname == "" {
 		ifname = s.allocDeviceName("veth", dstNs)
 	}
-	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.New(ep)), stack.NICOptions{
+	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.NewWithNetworkMTU(ep)), stack.NICOptions{
 		Name: ifname,
 		Kind: "veth",
 	})
@@ -546,7 +546,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerName = peerStack.allocDeviceName("veth", peerDstNs)
 	}
 
-	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.New(peerEP)), stack.NICOptions{
+	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.NewWithNetworkMTU(peerEP)), stack.NICOptions{
 		Name: peerName,
 		Kind: "veth",
 	})

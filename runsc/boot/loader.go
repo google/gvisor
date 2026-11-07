@@ -2286,7 +2286,7 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 		return nil, fmt.Errorf("loopback device should always have index %d, got %d", linux.LOOPBACK_IFINDEX, nicID)
 	}
 	link := sentryapi.DefaultLoopbackLink
-	linkEP := ethernet.New(loopback.New())
+	linkEP := ethernet.NewWithNetworkMTU(loopback.New())
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
