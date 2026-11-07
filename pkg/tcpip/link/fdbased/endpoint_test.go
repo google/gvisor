@@ -840,7 +840,10 @@ func TestIovecBufferRetainsPackets(t *testing.T) {
 				if vnet {
 					n += virtioNetHdrSize
 				}
-				input := bytes.Repeat([]byte{0xa5}, n)
+				input := make([]byte, n)
+				for i := range input {
+					input[i] = byte(i ^ (i >> 8))
+				}
 				remaining := input
 				for _, iov := range recv.nextIovecs() {
 					copied := copy(unsafe.Slice(iov.Base, int(iov.Len)), remaining)
