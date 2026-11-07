@@ -64,6 +64,7 @@ go_library(
         "//pkg/rand",
         "//pkg/rdma",
         "//pkg/refs",
+        "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/checkpoint",

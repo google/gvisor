@@ -344,11 +344,11 @@ func TestCreateSysmsgThreadDeadClone(t *testing.T) {
 	}
 	go func() {
 		req := (<-s.requests).(requestThread)
-		req.thread <- &thread{
+		req.thread <- threadCreationResult{thread: &thread{
 			tgid:          1 << 30,
 			tid:           1 << 30,
 			sysmsgStackID: id,
-		}
+		}}
 	}()
 
 	if err := s.createSysmsgThread(); err == nil {
@@ -370,10 +370,10 @@ func TestSyscallThreadKillMarksSubprocessDead(t *testing.T) {
 	if err := s.createSysmsgThread(); !errors.Is(err, errDeadSubprocess) {
 		t.Fatalf("createSysmsgThread got error %v, want %v", err, errDeadSubprocess)
 	}
-	req := requestThread{thread: make(chan *thread, 1)}
+	req := requestThread{thread: make(chan threadCreationResult, 1)}
 	s.handlePtraceSyscallRequest(req)
-	if got := <-req.thread; got != nil {
-		t.Fatalf("handlePtraceSyscallRequest got %v, want nil when subprocess is dead", got)
+	if got := <-req.thread; got.thread != nil || !errors.Is(got.err, errDeadSubprocess) {
+		t.Fatalf("handlePtraceSyscallRequest got %+v, want no thread and errDeadSubprocess", got)
 	}
 }
 

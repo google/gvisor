@@ -231,7 +231,7 @@ func Init() {
 					nvgpu.UVM_UNREGISTER_GPU:                 uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNREGISTER_GPU_PARAMS], compUtil),
 					nvgpu.UVM_PAGEABLE_MEM_ACCESS:            uvmHandler(uvmIoctlSimple[nvgpu.UVM_PAGEABLE_MEM_ACCESS_PARAMS], compUtil),
 					nvgpu.UVM_SET_PREFERRED_LOCATION:         uvmHandler(uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS], compUtil),
-					nvgpu.UVM_UNSET_PREFERRED_LOCATION:       uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS], compUtil),
+					nvgpu.UVM_UNSET_PREFERRED_LOCATION:       uvmHandler(uvmUnsetPreferredLocation, compUtil),
 					nvgpu.UVM_ENABLE_READ_DUPLICATION:        uvmHandler(uvmIoctlSimple[nvgpu.UVM_ENABLE_READ_DUPLICATION_PARAMS], compUtil),
 					nvgpu.UVM_DISABLE_READ_DUPLICATION:       uvmHandler(uvmIoctlSimple[nvgpu.UVM_DISABLE_READ_DUPLICATION_PARAMS], compUtil),
 					nvgpu.UVM_SET_ACCESSED_BY:                uvmHandler(uvmIoctlSimple[nvgpu.UVM_SET_ACCESSED_BY_PARAMS], compUtil),
@@ -241,7 +241,8 @@ func Init() {
 					nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION: uvmHandler(uvmIoctlSimple[nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS], compUtil),
 					nvgpu.UVM_UNMAP_EXTERNAL:                 uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNMAP_EXTERNAL_PARAMS], compUtil),
 					nvgpu.UVM_ALLOC_SEMAPHORE_POOL:           uvmHandler(uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS], compUtil),
-					nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU:     uvmHandler(uvmIoctlSimple[nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS], nvconf.CapVideo),
+					nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU:     uvmHandler(uvmIoctlSimple[nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS], compUtil|nvconf.CapVideo),
+					nvgpu.UVM_POPULATE_PAGEABLE:              uvmHandler(uvmPopulatePageable, compUtil),
 					nvgpu.UVM_VALIDATE_VA_RANGE:              uvmHandler(uvmIoctlSimple[nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS], compUtil),
 					nvgpu.UVM_CREATE_EXTERNAL_RANGE:          uvmHandler(uvmIoctlSimple[nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS], compUtil),
 					nvgpu.UVM_MM_INITIALIZE:                  uvmHandler(uvmMMInitialize, compUtil),
@@ -585,6 +586,7 @@ func Init() {
 							nvgpu.UVM_UNMAP_EXTERNAL:                 ioctlInfo("UVM_UNMAP_EXTERNAL", nvgpu.UVM_UNMAP_EXTERNAL_PARAMS{}),
 							nvgpu.UVM_ALLOC_SEMAPHORE_POOL:           ioctlInfo("UVM_ALLOC_SEMAPHORE_POOL", nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS{}),
 							nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU:     ioctlInfo("UVM_PAGEABLE_MEM_ACCESS_ON_GPU", nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS{}),
+							nvgpu.UVM_POPULATE_PAGEABLE:              ioctlInfo("UVM_POPULATE_PAGEABLE", nvgpu.UVM_POPULATE_PAGEABLE_PARAMS{}),
 							nvgpu.UVM_VALIDATE_VA_RANGE:              ioctlInfo("UVM_VALIDATE_VA_RANGE", nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS{}),
 							nvgpu.UVM_CREATE_EXTERNAL_RANGE:          ioctlInfo("UVM_CREATE_EXTERNAL_RANGE", nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS{}),
 							nvgpu.UVM_MM_INITIALIZE:                  ioctlInfo("UVM_MM_INITIALIZE", nvgpu.UVM_MM_INITIALIZE_PARAMS{}),
@@ -949,7 +951,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ctrlHandler(ctrlClientSystemGetP2PCapsV550, compUtil)
 			abi.controlCmd[nvgpu.NV00FE_CTRL_CMD_SUBMIT_OPERATIONS] = ctrlHandler(rmControlSimple, compUtil)
-			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550], compUtil)
+			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmHandler(uvmSetPreferredLocationV550, compUtil)
 			abi.uvmIoctl[nvgpu.UVM_MIGRATE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_MIGRATE_PARAMS_V550], compUtil)
 			abi.allocationClass[nvgpu.NV_IMEX_SESSION] = allocHandler(rmAllocIMEXSession, nvconf.CapFabricIMEXManagement)
 			abi.allocationClass[nvgpu.NV_MEMORY_FABRIC_IMPORTED_REF] = allocHandler(rmAllocSimple[nvgpu.NV00FB_ALLOCATION_PARAMETERS], nvconf.CapFabricIMEXManagement)

@@ -325,6 +325,11 @@ type vma struct {
 	// being marked for COW
 	eagerForkCopy bool
 
+	// requirePlatformEffect is memmap.MMapOpts.RequirePlatformEffect. Such
+	// mappings may have host-device mmap semantics and must not be replaced
+	// just to populate an existing range in EnsureAddressSpaceMappings.
+	requirePlatformEffect bool
+
 	// sealed tells us whether the vma can be modified or not.
 	sealed bool
 
@@ -360,24 +365,25 @@ type vma struct {
 
 func (v *vma) copy() vma {
 	return vma{
-		mappable:       v.mappable,
-		off:            v.off,
-		realPerms:      v.realPerms,
-		effectivePerms: v.effectivePerms,
-		maxPerms:       v.maxPerms,
-		private:        v.private,
-		growsDown:      v.growsDown,
-		isStack:        v.isStack,
-		dontfork:       v.dontfork,
-		eagerForkCopy:  v.eagerForkCopy,
-		sealed:         v.sealed,
-		mlockMode:      v.mlockMode,
-		numaPolicy:     v.numaPolicy,
-		numaNodemask:   v.numaNodemask,
-		id:             v.id,
-		name:           v.name,
-		nameMut:        v.nameMut,
-		lastFault:      atomic.LoadUintptr(&v.lastFault),
+		mappable:              v.mappable,
+		off:                   v.off,
+		realPerms:             v.realPerms,
+		effectivePerms:        v.effectivePerms,
+		maxPerms:              v.maxPerms,
+		private:               v.private,
+		growsDown:             v.growsDown,
+		isStack:               v.isStack,
+		dontfork:              v.dontfork,
+		eagerForkCopy:         v.eagerForkCopy,
+		requirePlatformEffect: v.requirePlatformEffect,
+		sealed:                v.sealed,
+		mlockMode:             v.mlockMode,
+		numaPolicy:            v.numaPolicy,
+		numaNodemask:          v.numaNodemask,
+		id:                    v.id,
+		name:                  v.name,
+		nameMut:               v.nameMut,
+		lastFault:             atomic.LoadUintptr(&v.lastFault),
 	}
 }
 

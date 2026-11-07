@@ -136,7 +136,6 @@ go_test(
         "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/hostsyscall",
-        "//pkg/pool",
         "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",

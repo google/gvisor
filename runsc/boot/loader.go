@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -823,7 +824,7 @@ func New(args Args) (*Loader, error) {
 		}
 		unix.Close(args.CPUDMALatencyFD)
 	}
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing, 0 /* tscOffset */)
+	p, err := createPlatform(args.Spec, args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing, 0 /* tscOffset */)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -1220,15 +1221,25 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing, tscOffset uint64) (platform.Platform, error) {
+func createPlatform(spec *specs.Spec, conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing, tscOffset uint64) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
 	}
 
+	var hostMMIOIoctlRules seccomp.SyscallRule
+	if specutils.NVProxyEnabled(spec, conf) {
+		caps, err := specutils.NVProxyDriverCapsAllowed(conf)
+		if err != nil {
+			return nil, fmt.Errorf("NVIDIA capabilities: %w", err)
+		}
+		hostMMIOIoctlRules = nvproxy.HostMMIOIoctlRules(caps)
+	}
+
 	log.Infof("Platform: %s", platformName)
 	plat, err := p.New(platform.Options{
+		HostMMIOIoctlRules:     hostMMIOIoctlRules,
 		DeviceFile:             deviceFile,
 		DisableSyscallPatching: platformName == "systrap" && conf.SystrapDisableSyscallPatching,
 		DisableFastPath:        platformName == "systrap" && conf.SystrapDisableFastPath,

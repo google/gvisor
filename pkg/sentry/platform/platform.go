@@ -428,6 +428,35 @@ type AddressSpaceOptions struct {
 	DisableSyscallPatching bool
 }
 
+// HostMMIO is optionally implemented by AddressSpaces that can issue device
+// ioctls in the host mm containing application mappings.
+type HostMMIO interface {
+	// IoctlFlat copies buf to application-writable scratch, executes the
+	// ioctl, and copies it back. hostFD, request, and the scratch address must
+	// be protected from application modification. The caller must hold a
+	// reference to hostFD and authorize the request and all its arguments.
+	// buf must not contain translated host FDs or pointers into the Sentry;
+	// embedded addresses may only refer to application memory. buf must be
+	// large enough for the ioctl ABI, even when request does not encode its
+	// size. The ioctl must not create or return host file descriptors.
+	//
+	// buf and the result are untrusted, including Errno. They must not
+	// control privileged Sentry decisions. The separate error reports only
+	// platform failures. Implementations support at least 4088 bytes and may
+	// return E2BIG for larger arguments.
+	//
+	// An attempted ioctl may bind the device to this host mm, regardless of
+	// its reported result. The implementation must prevent reuse of that mm
+	// or its mappings after AddressSpace.Release, even if hostFD survives.
+	IoctlFlat(hostFD int32, request uint32, buf []byte) (HostIoctlResult, error)
+}
+
+// HostIoctlResult is an untrusted host ioctl result.
+type HostIoctlResult struct {
+	Return uintptr
+	Errno  unix.Errno
+}
+
 // AddressSpaceIO supports IO through the memory mappings installed in an
 // AddressSpace.
 //
@@ -604,6 +633,11 @@ func (s StaticSeccompInfo) HottestSyscalls() []uintptr {
 
 // Options is a collection variables and flags for platform initialization.
 type Options struct {
+	// HostMMIOIoctlRules admits ioctls executed through HostMMIO. Device
+	// proxies supply these rules; nil admits none. Process-based platforms
+	// with a global process pool may require the same rules for every New.
+	HostMMIOIoctlRules seccomp.SyscallRule
+
 	// DeviceFile is the device file to use (e.g. /dev/kvm for the KVM
 	// platform).
 	DeviceFile *fd.FD
