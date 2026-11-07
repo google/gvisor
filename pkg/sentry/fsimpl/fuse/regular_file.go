@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -36,25 +35,9 @@ type regularFileFD struct {
 	offMu sync.Mutex `state:"nosave"`
 
 	// off is the file offset.
+	//
 	// +checklocks:offMu
 	off int64
-
-	// mapsMu protects mappings.
-	mapsMu sync.Mutex `state:"nosave"`
-
-	// mappings tracks mappings of the file into memmap.MappingSpaces.
-	//
-	// Protected by mapsMu.
-	mappings memmap.MappingSet
-
-	// dataMu protects the fields below.
-	dataMu sync.RWMutex `state:"nosave"`
-
-	// data maps offsets into the file to offsets into memFile that store
-	// the file's data.
-	//
-	// Protected by dataMu.
-	data fsutil.FileRangeSet
 }
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
