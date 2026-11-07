@@ -41,7 +41,7 @@ class Sandbox
 #### \_\_init\_\_
 
 ```python
-def __init__(self, runtime_dir: Optional[str] = None, sandbox_id: Optional[str] = None, network: Union[NetworkMode, str] = NetworkMode.NONE, env: Optional[Union[List[str], Dict[str, str]]] = None, mounts: Optional[Sequence[Union[Mount, Dict[str, Any]]]] = None, working_dir: str = "/")
+def __init__(self, runtime_dir: Optional[str] = None, sandbox_id: Optional[str] = None, network: Union[NetworkMode, str] = NetworkMode.NONE, env: Optional[Union[List[str], Dict[str, str]]] = None, mounts: Optional[Sequence[Union[Mount, Dict[str, Any]]]] = None, working_dir: str = "/", shared_root: Optional[str] = None)
 ```
 
 Initializes and starts a new sandbox.
@@ -58,12 +58,17 @@ Initializes and starts a new sandbox.
 *   `mounts`: Optional sequence of Mount objects or dicts defining mounts.
 *   `working_dir`: The initial working directory inside the sandbox. Relative
     paths are normalized relative to container root ('/'). Defaults to "/".
+*   `shared_root`: An existing directory for sharing the gofers' empty network
+    namespace across sandboxes. Relative paths are resolved from the caller's
+    working directory. After all users finish, the caller must unmount every
+    bind mount on `null-netns` before removing the directory. Concurrent starts
+    can stack multiple mounts on that file.
 
 **Raises:**
 
 *   `Error`: If sandbox creation fails.
-*   `ValueError`: If an invalid network mode, working_dir, mount, or environment
-    variable format is provided.
+*   `ValueError`: If `shared_root` is empty or an invalid network mode,
+    working_dir, mount, or environment variable format is provided.
 *   `TypeError`: If env, mounts, or network has an invalid type.
 
 #### id
