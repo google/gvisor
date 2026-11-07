@@ -67,7 +67,7 @@ namespace {
 static sigjmp_buf jmpbuf;
 static volatile int si_code_received;
 
-void MprotectProtNoneHandler(int sig, siginfo_t* info, void* ctx) {
+void RecordSiCodeHandler(int sig, siginfo_t* info, void* ctx) {
   si_code_received = info->si_code;
   siglongjmp(jmpbuf, 1);
 }
@@ -673,7 +673,7 @@ TEST_F(MMapTest, MprotectProtNone) {
     TEST_PCHECK(mprotect(p, kPageSize, PROT_NONE) == 0);
 
     struct sigaction sa = {};
-    sa.sa_sigaction = MprotectProtNoneHandler;
+    sa.sa_sigaction = RecordSiCodeHandler;
     sa.sa_flags = SA_SIGINFO;
     TEST_PCHECK(sigaction(SIGSEGV, &sa, nullptr) == 0);
 
@@ -682,6 +682,59 @@ TEST_F(MMapTest, MprotectProtNone) {
     }
 
     TEST_CHECK(si_code_received == SEGV_ACCERR);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+enum class Access { kRead, kWrite, kExecute };
+
+// Returns the si_code of the SIGSEGV raised by accessing addr, or 0 if the
+// access doesn't fault. Replaces the SIGSEGV handler, so call it only in a
+// forked process.
+int SigsegvCode(void* addr, Access access) {
+  struct sigaction sa = {};
+  sa.sa_sigaction = RecordSiCodeHandler;
+  sa.sa_flags = SA_SIGINFO;
+  TEST_PCHECK(sigaction(SIGSEGV, &sa, nullptr) == 0);
+
+  si_code_received = 0;
+  if (sigsetjmp(jmpbuf, 1) == 0) {
+    switch (access) {
+      case Access::kRead:
+        (void)*static_cast<volatile char*>(addr);
+        break;
+      case Access::kWrite:
+        *static_cast<volatile char*>(addr) = 1;
+        break;
+      case Access::kExecute:
+        reinterpret_cast<void (*)()>(addr)();
+        break;
+    }
+  }
+  return si_code_received;
+}
+
+// A fault on an address that no vma covers is SEGV_MAPERR for any access type.
+TEST(MMapNoFixtureTest, UnmappedIsMapErr) {
+  const auto rest = [] {
+    void* addr = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    TEST_PCHECK(addr != MAP_FAILED);
+    TEST_PCHECK(munmap(addr, kPageSize) == 0);
+    TEST_CHECK(SigsegvCode(addr, Access::kRead) == SEGV_MAPERR);
+    TEST_CHECK(SigsegvCode(addr, Access::kWrite) == SEGV_MAPERR);
+    TEST_CHECK(SigsegvCode(addr, Access::kExecute) == SEGV_MAPERR);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+// A fault that the covering vma's protection forbids is SEGV_ACCERR.
+TEST(MMapNoFixtureTest, WriteReadOnlyIsAccErr) {
+  const auto rest = [] {
+    void* addr =
+        mmap(nullptr, kPageSize, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    TEST_PCHECK(addr != MAP_FAILED);
+    TEST_CHECK(SigsegvCode(addr, Access::kWrite) == SEGV_ACCERR);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
