@@ -107,9 +107,10 @@ var rdmaDriverIDFromName = map[string]uint32{
 //
 // Only devices derived from the container's OCI spec are captured: the
 // closure starts at the spec's /dev/infiniband/uverbs* entries and expands
-// to their ibdevs, associated netdevs, PCI ancestor chains, GPU PCI
-// functions, and the NUMA node topology. Nothing outside that closure is
-// exposed to the sandbox.
+// to their ibdevs, associated netdevs, PCI ancestor chains, the PCI functions
+// NCCL reads in place of each NIC (see addNCCLMergePaths), GPU PCI functions,
+// and the NUMA node topology. Nothing outside that closure is exposed to the
+// sandbox.
 //
 // It must run while the RDMA netdevs are still in the host netns.
 func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
@@ -159,6 +160,9 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 			return nil, fmt.Errorf("resolving PCI device of %s: %w", ibdev, err)
 		}
 		if err := addWithAncestors(pciPaths, leaf); err != nil {
+			return nil, fmt.Errorf("ibdev %s: %w", ibdev, err)
+		}
+		if err := addNCCLMergePaths(sysRoot, pciPaths, leaf); err != nil {
 			return nil, fmt.Errorf("ibdev %s: %w", ibdev, err)
 		}
 
@@ -258,6 +262,36 @@ func addWithAncestors(set map[string]bool, leaf string) error {
 		}
 		return fmt.Errorf("unexpected component %q in PCI path %q", base, leaf)
 	}
+}
+
+// addNCCLMergePaths records the PCI functions that NCCL reads in place of a
+// NIC leaf. NCCL merges the ports of a multi-port NIC by rewriting the leaf's
+// address to function 0 of its slot, and by default (NCCL_IB_MERGE_VFS=1)
+// merges virtual functions by also rewriting the slot to 0. It then treats the
+// PCI function at the rewritten address as the NIC, whatever that function
+// is: e.g. a host bridge in VMs that place NICs directly on a root bus.
+func addNCCLMergePaths(sysRoot string, set map[string]bool, leaf string) error {
+	dir, bdf := path.Split(leaf)
+	if !bdfRE.MatchString(bdf) {
+		return fmt.Errorf("PCI path %q does not end in a PCI function", leaf)
+	}
+	// bdf is "DDDD:BB:SS.F".
+	for _, p := range []string{
+		dir + bdf[:len(bdf)-1] + "0",
+		dir + bdf[:len(bdf)-4] + "00.0",
+	} {
+		if set[p] {
+			continue
+		}
+		if _, err := os.Lstat(path.Join(sysRoot, p)); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return err
+		}
+		set[p] = true
+	}
+	return nil
 }
 
 func (d *Device) collectPorts(ibDir string) error {
