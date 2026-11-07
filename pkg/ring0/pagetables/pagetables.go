@@ -62,6 +62,12 @@ type PageTables struct {
 	largeAddressesEnabled bool
 }
 
+// PageSize returns the size of the memory mapped by a last-level page table
+// entry, i.e. the page size of the translation granule used by page tables.
+func PageSize() uintptr {
+	return pteSize
+}
+
 // Init initializes a set of PageTables.
 //
 // +checkescape:hard,stack
@@ -308,7 +314,7 @@ func (*lookupVisitor) requiresSplit() bool { return false }
 //
 //go:nosplit
 func (p *PageTables) Lookup(addr hostarch.Addr, findFirst bool) (virtual hostarch.Addr, physical, size uintptr, opts MapOpts) {
-	mask := uintptr(hostarch.PageSize - 1)
+	mask := uintptr(pteSize - 1)
 	addr &^= hostarch.Addr(mask)
 	w := lookupWalker{
 		pageTables: p,
