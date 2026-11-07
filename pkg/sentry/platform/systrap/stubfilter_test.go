@@ -33,7 +33,7 @@ func TestStubFilterPrecompiled(t *testing.T) {
 	const stubROMapLen = 0x9000
 	rendered := map[string][]bpf.Instruction{}
 	for range 16 {
-		stubStart := rand.Uint64N(1<<47) &^ (hostarch.PageSize - 1)
+		stubStart := rand.Uint64N(1<<47) &^ uint64(hostarch.PageMask)
 		stubSysmsgStart := stubStart + 0x5000
 		for _, test := range []struct {
 			name string

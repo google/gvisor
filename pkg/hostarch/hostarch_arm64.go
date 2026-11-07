@@ -26,8 +26,26 @@ const (
 	// or 64K pages by using the pagesize_64k build tag.
 	PageSize = 1 << PageShift
 
+	// PageMask is PageSize - 1.
+	PageMask = PageSize - 1
+
 	// HugePageSize is the system huge page size.
 	HugePageSize = 1 << HugePageShift
+
+	// HugePageMask is HugePageSize - 1.
+	HugePageMask = HugePageSize - 1
+
+	// MinPageShift is the binary log of the smallest supported page size.
+	MinPageShift = 12
+
+	// MinPageSize is the smallest supported page size.
+	MinPageSize = 1 << MinPageShift
+
+	// MaxPageShift is the binary log of the largest supported page size.
+	MaxPageShift = 16
+
+	// MaxPageSize is the largest supported page size.
+	MaxPageSize = 1 << MaxPageShift
 
 	// JumboPageSize is the 1GB jumbo page size.
 	JumboPageSize = 1 << JumboPageShift
@@ -46,6 +64,12 @@ var (
 	// ByteOrder is the native byte order (little endian).
 	ByteOrder = binary.LittleEndian
 )
+
+// IsSupportedPageSize returns true if gVisor supports running on hosts with
+// the given page size.
+func IsSupportedPageSize(size int) bool {
+	return size == 1<<12 || size == 1<<16
+}
 
 // Arm64: Exception Syndrome Register EL1.
 const (
