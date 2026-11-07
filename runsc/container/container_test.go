@@ -2488,6 +2488,70 @@ func TestInodeNumbers(t *testing.T) {
 	}
 }
 
+// TestHostOverlayfsWhiteouts checks that listing a directory that Linux
+// overlayfs on the host does not merge omits the whiteouts that it lists.
+func TestHostOverlayfsWhiteouts(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "whiteout-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	top := path.Join(dir, "top")
+	bottom := path.Join(dir, "bottom")
+	merged := path.Join(dir, "merged")
+	for _, d := range []string{top, path.Join(bottom, "d"), merged} {
+		if err := os.MkdirAll(d, 0777); err != nil {
+			t.Fatalf("os.MkdirAll() failed: %v", err)
+		}
+	}
+	if err := os.WriteFile(path.Join(bottom, "d", "file"), nil, 0666); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	if err := unix.Mknod(path.Join(bottom, "d", "whiteout"), unix.S_IFCHR, 0); err != nil {
+		t.Skipf("cannot create a whiteout: %v", err)
+	}
+	if err := unix.Mount("overlay", merged, "overlay", unix.MS_RDONLY, "lowerdir="+top+":"+bottom); err != nil {
+		t.Skipf("cannot mount overlayfs: %v", err)
+	}
+	defer unix.Unmount(merged, unix.MNT_DETACH)
+
+	for name, conf := range configs(t, false /* noOverlay */) {
+		for _, directfs := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/directfs=%t", name, directfs), func(t *testing.T) {
+				conf.DirectFS = directfs
+				spec, _ := sleepSpecConf(t)
+				// The bind mount of the test tmpdir must be recursive to
+				// include the overlayfs mount.
+				for i := range spec.Mounts {
+					if spec.Mounts[i].Destination == testutil.TmpDir() {
+						spec.Mounts[i].Options = append(spec.Mounts[i].Options, "rbind")
+					}
+				}
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+				cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(conf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+				out, err := executeCombinedOutput(conf, cont, nil, "/bin/ls", path.Join(merged, "d"))
+				if err != nil {
+					t.Fatalf("ls failed: %v, output: %s", err, out)
+				}
+				if got, want := strings.TrimSpace(string(out)), "file"; got != want {
+					t.Errorf("ls got %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
 const (
 	unimplementedCharDevSrc  = "/dev/port"
 	unimplementedCharDevRdev = "1:4"

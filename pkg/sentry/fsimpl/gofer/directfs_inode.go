@@ -861,6 +861,11 @@ func (i *directfsInode) getDirentsLocked(recordDirent func(name string, key inoK
 
 	return fsutil.ForEachDirent(readFD, func(ino uint64, off int64, ftype uint8, name string, reclen uint16) {
 		if !i.fs.opts.virtualInodeNumbers {
+			if ftype == linux.DT_CHR {
+				if _, err := fsutil.StatAt(i.controlFD, name); err != nil {
+					return
+				}
+			}
 			recordDirent(name, inoKey{ino: ino}, ftype)
 			return
 		}

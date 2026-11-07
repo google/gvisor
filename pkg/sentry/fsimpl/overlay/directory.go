@@ -83,6 +83,9 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 				Start: layerVD,
 				Path:  fspath.Parse(maybeWhiteoutName),
 			}, &vfs.StatOptions{})
+			if linuxerr.Equals(linuxerr.ENOENT, err) {
+				continue
+			}
 			if err != nil {
 				readdirErr = err
 				return false
@@ -225,6 +228,10 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 				Start: layerVD,
 				Path:  fspath.Parse(dirent.Name),
 			}, &vfs.StatOptions{})
+			if linuxerr.Equals(linuxerr.ENOENT, err) {
+				delete(prevDirents, dirent.Name)
+				continue
+			}
 			if err != nil {
 				readdirErr = err
 				return false
