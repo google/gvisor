@@ -201,6 +201,10 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 
 		// Detach the set before taking any EpollInstance.interestMu:
 		// registering or deleting an interest takes interestMu before epollMu.
+		//
+		// Linux's eventpoll_release_file likewise drops file->f_lock before
+		// acquiring ep->mtx:
+		// https://github.com/torvalds/linux/blob/adc218676/fs/eventpoll.c#L1095-L1107
 		fd.epollMu.Lock()
 		epolls := fd.epolls
 		fd.epolls = nil
