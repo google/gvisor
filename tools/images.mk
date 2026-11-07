@@ -56,6 +56,7 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_symlink-resolv=//images/basic:symlink_resolv_context \
   basic_tmpfile=//images/basic:tmpfile_context \
   benchmarks_bun-spawn=//images/benchmarks/bun-spawn:bun_spawn_context \
+  basic_tomcat=//images/basic:tomcat_context \
   compatibility_postgresql_postgresql=//images/compatibility:postgresql_context
 ifeq ($(ARCH),x86_64)
 BAZEL_IMAGE_CONTEXTS += benchmarks_syscallbench=//images/benchmarks/syscallbench:syscallbench_context
