@@ -78,6 +78,7 @@ func TestSandboxOptions(t *testing.T) {
 		sandbox.WithID(id),
 		sandbox.WithRuntimeDir(runtimeDir),
 		sandbox.WithNetwork(sandbox.NetworkModeHost),
+		sandbox.WithPlatform("systrap"),
 	}
 
 	sb, err := sandbox.New(ctx, opts...)
@@ -93,6 +94,34 @@ func TestSandboxOptions(t *testing.T) {
 
 	if got := sb.Bundle(); !strings.HasPrefix(got, runtimeDir) {
 		t.Errorf("sb.Bundle() = %v; want prefix %v", got, runtimeDir)
+	}
+}
+
+func TestSandboxPlatforms(t *testing.T) {
+	ctx := context.Background()
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
+		sandbox.WithPlatform("systrap"),
+	)
+	if err != nil {
+		t.Fatalf("failed to create sandbox with known good platform: %v", err)
+	}
+
+	if err := sb.Close(ctx); err != nil {
+		t.Fatalf("failed to clean up sandbox: %v", err)
+	}
+
+	sb, err = sandbox.New(ctx,
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
+		sandbox.WithPlatform("stub"),
+	)
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded with an invalid platform; want error: %v", err)
+	}
+
+	expectedErr := "unknown platform"
+	if !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
 	}
 }
 

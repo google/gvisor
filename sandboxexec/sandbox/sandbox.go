@@ -36,6 +36,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -70,6 +71,7 @@ type Options struct {
 	err        error
 	workingDir string
 	hostname   string
+	platform   string
 
 	// Process and filesystem layout.
 	rootPath     string
@@ -153,6 +155,23 @@ func WithRuntimeDir(runtimeDir string) Option {
 func WithID(id string) Option {
 	return func(o *Options) {
 		o.id = id
+	}
+}
+
+// WithPlatform sets a specific runsc platform. If not set, the default runsc platform will be used.
+func WithPlatform(platform string) Option {
+	return func(o *Options) {
+		if o.err != nil {
+			return
+		}
+
+		if _, err := platformdesc.Lookup(platform); err != nil {
+			o.err = err
+
+			return
+		}
+
+		o.platform = platform
 	}
 }
 
@@ -409,6 +428,9 @@ func (o *Options) runscGlobalArgs() []string {
 	}
 	if os.Geteuid() != 0 {
 		args = append(args, "--ignore-cgroups")
+	}
+	if o.platform != "" {
+		args = append(args, "--platform", o.platform)
 	}
 	switch o.network {
 	case NetworkModeHost:

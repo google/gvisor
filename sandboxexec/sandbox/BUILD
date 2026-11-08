@@ -20,6 +20,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",
+        "//pkg/sentry/platform/platformdesc",
         "//pkg/sighandling",
         "//runsc/specutils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
