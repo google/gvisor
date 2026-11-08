@@ -3358,10 +3358,8 @@ func (e *Endpoint) initHostGSO() {
 	switch e.route.NetProto() {
 	case header.IPv4ProtocolNumber:
 		e.gso.Type = stack.GSOTCPv4
-		e.gso.L3HdrLen = header.IPv4MinimumSize
 	case header.IPv6ProtocolNumber:
 		e.gso.Type = stack.GSOTCPv6
-		e.gso.L3HdrLen = header.IPv6MinimumSize
 	default:
 		panic(fmt.Sprintf("Unknown netProto: %v", e.NetProto))
 	}

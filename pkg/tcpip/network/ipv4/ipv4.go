@@ -474,6 +474,9 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.Packet
 		return &tcpip.ErrMessageTooLong{}
 	}
 	ipH := header.IPv4(pkt.NetworkHeader().Push(hdrLen))
+	if pkt.GSOOptions.NeedsCsum {
+		pkt.GSOOptions.L3HdrLen = uint16(len(ipH))
+	}
 	length := pkt.Size()
 	if length > math.MaxUint16 {
 		return &tcpip.ErrMessageTooLong{}

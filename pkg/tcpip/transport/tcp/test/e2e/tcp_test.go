@@ -10188,6 +10188,14 @@ func TestSynCookieACKAfterClose(t *testing.T) {
 }
 
 func TestSetExperimentOption(t *testing.T) {
+	for _, gso := range []bool{false, true} {
+		t.Run(fmt.Sprintf("host_GSO=%t", gso), func(t *testing.T) {
+			testSetExperimentOption(t, gso)
+		})
+	}
+}
+
+func testSetExperimentOption(t *testing.T, gso bool) {
 	c := context.NewWithOpts(t, context.Options{
 		EnableV4:                 true,
 		MTU:                      e2e.DefaultMTU,
@@ -10195,6 +10203,7 @@ func TestSetExperimentOption(t *testing.T) {
 	})
 	defer c.Cleanup()
 
+	c.SetGSOEnabled(gso)
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	var expval uint16 = 99
@@ -10219,6 +10228,14 @@ func TestSetExperimentOption(t *testing.T) {
 }
 
 func TestSetExperimentOptionIPv6(t *testing.T) {
+	for _, gso := range []bool{false, true} {
+		t.Run(fmt.Sprintf("host_GSO=%t", gso), func(t *testing.T) {
+			testSetExperimentOptionIPv6(t, gso)
+		})
+	}
+}
+
+func testSetExperimentOptionIPv6(t *testing.T, gso bool) {
 	c := context.NewWithOpts(t, context.Options{
 		EnableV4:                 false,
 		EnableV6:                 true,
@@ -10227,6 +10244,7 @@ func TestSetExperimentOptionIPv6(t *testing.T) {
 	})
 	defer c.Cleanup()
 
+	c.SetGSOEnabled(gso)
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
@@ -10313,7 +10331,7 @@ func TestSetExperimentOptionIPv6(t *testing.T) {
 	v := c.GetV6Packet()
 	defer v.Release()
 
-	checker.IPv6WithExtHdr(t, v, checker.IPv6ExtHdr(checker.IPv6ExperimentHeader(expval)))
+	checker.IPv6WithExtHdr(t, v, checker.IPv6ExtHdr(checker.IPv6ExperimentHeader(expval)), checker.TCP(checker.Payload([]byte{0})))
 }
 
 func TestSetExperimentOptionWithOptionDisabled(t *testing.T) {

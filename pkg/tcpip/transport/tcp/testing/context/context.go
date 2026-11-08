@@ -416,10 +416,6 @@ func (c *Context) packetView(pkt *stack.PacketBuffer) *buffer.View {
 	cu := cleanup.Make(view.Release)
 	defer cu.Clean()
 
-	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
-		c.t.Errorf("got L3HdrLen = %d, want = %d", pkt.GSOOptions.L3HdrLen, header.IPv4MinimumSize)
-	}
-
 	checker.IPv4(c.t, view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
 	if gso := pkt.GSOOptions; gso.NeedsCsum {
 		if got, want := gso.Type, stack.GSOTCPv4; got != want {
@@ -687,6 +683,15 @@ func (c *Context) GetV6Packet() *buffer.View {
 	defer cu.Clean()
 
 	checker.IPv6(c.t, v, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
+	if gso := pkt.GSOOptions; gso.NeedsCsum {
+		hdrLen := len(pkt.NetworkHeader().Slice())
+		if int(gso.L3HdrLen) != hdrLen || gso.CsumOffset != header.TCPChecksumOffset {
+			c.t.Fatalf("GSO checksum geometry = (%d, %d), want (%d, %d)", gso.L3HdrLen, gso.CsumOffset, hdrLen, header.TCPChecksumOffset)
+		}
+		// Complete the host's partial checksum on the copy returned to the test.
+		tcp := header.TCP(v.AsSlice()[hdrLen:])
+		tcp.SetChecksum(^checksum.Checksum(tcp, 0))
+	}
 	cu.Release()
 	return v
 }
