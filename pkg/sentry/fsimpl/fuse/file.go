@@ -68,26 +68,24 @@ func (fd *fileDescription) statusFlags() uint32 {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *fileDescription) Release(ctx context.Context) {
-	// no need to release if FUSE server doesn't implement Open.
-	fs := fd.inode().fs
-	if fs.conn.noOpen {
-		return
+	inode := fd.inode()
+	inode.attrMu.Lock()
+	defer inode.attrMu.Unlock()
+	fs := inode.fs
+	var opcode linux.FUSEOpcode
+	if inode.filemode().IsDir() {
+		opcode = linux.FUSE_RELEASEDIR
+	} else {
+		if fs.conn.noOpen.Load() {
+			return
+		}
+		opcode = linux.FUSE_RELEASE
 	}
-
 	in := linux.FUSEReleaseIn{
 		Fh:    fd.Fh,
 		Flags: fd.statusFlags(),
 	}
 	// TODO(gvisor.dev/issue/3245): add logic when we support file lock owners.
-	inode := fd.inode()
-	inode.attrMu.Lock()
-	defer inode.attrMu.Unlock()
-	var opcode linux.FUSEOpcode
-	if inode.filemode().IsDir() {
-		opcode = linux.FUSE_RELEASEDIR
-	} else {
-		opcode = linux.FUSE_RELEASE
-	}
 	// As in Linux, FUSE_RELEASE is sent as a forced background request.
 	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, opcode, &in)
 	req.force = true
@@ -101,7 +99,7 @@ func (fd *fileDescription) OnClose(ctx context.Context) error {
 	inode.attrMu.Lock()
 	defer inode.attrMu.Unlock()
 
-	if fs.conn.noOpen {
+	if fs.conn.noOpen.Load() {
 		return nil
 	}
 	if fd.OpenFlag&linux.FOPEN_NOFLUSH != 0 || fs.conn.noFlush.Load() {
@@ -190,7 +188,7 @@ func (fd *fileDescription) Sync(ctx context.Context, opts vfs.SyncOptions) error
 	defer inode.attrMu.Unlock()
 	fs := inode.fs
 	// no need to proceed if FUSE server doesn't implement Open.
-	if fs.conn.noOpen {
+	if fs.conn.noOpen.Load() {
 		return linuxerr.EINVAL
 	}
 
