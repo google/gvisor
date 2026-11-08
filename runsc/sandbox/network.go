@@ -297,6 +297,24 @@ func addrBitLength(ip net.IP) int {
 	return 8 * net.IPv6len
 }
 
+// keepHostAddrs reports whether the host IP addresses of the named interface
+// must be preserved on the host NIC, per the --keep-host-addrs flag. When true,
+// runsc does not remove the interface's addresses from the host, so the host
+// kernel keeps answering for them even though the sandbox network stack also
+// owns the interface.
+func keepHostAddrs(conf *config.Config, linkName string) bool {
+	if conf.KeepHostAddrs == "" {
+		return false
+	}
+	for _, name := range strings.Split(conf.KeepHostAddrs, ",") {
+		if strings.TrimSpace(name) == linkName {
+			return true
+		}
+	}
+
+	return false
+}
+
 // removeLinkAddresses removes IP addresses from the host NIC for a link.
 func removeLinkAddresses(linkName string, addresses []sentryapi.IPWithPrefix) error {
 	ifaceLink, err := netlink.LinkByName(linkName)
@@ -529,6 +547,9 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	for i := range args.XDPLinks {
+		if keepHostAddrs(conf, args.XDPLinks[i].Name) {
+			continue
+		}
 		if err := removeLinkAddresses(args.XDPLinks[i].Name, args.XDPLinks[i].Addresses); err != nil {
 			return 0, fmt.Errorf("removing link addresses for interface %q: %w", args.XDPLinks[i].Name, err)
 		}
@@ -537,6 +558,10 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// In network UDS mode the primary interface keeps its host
 		// addresses, unlike every other link.
 		if conf.UseNetworkProxy() && args.FDBasedLinks[i].Name == primaryIface {
+			continue
+		}
+		// Interfaces listed in --keep-host-addrs keep their host addresses too.
+		if keepHostAddrs(conf, args.FDBasedLinks[i].Name) {
 			continue
 		}
 		if err := removeLinkAddresses(args.FDBasedLinks[i].Name, args.FDBasedLinks[i].Addresses); err != nil {
