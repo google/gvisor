@@ -365,6 +365,20 @@ img_pull(
     tag = "18.4",
 )
 
+# The profiling DaemonSet runs GNU rm --one-file-system on a host mount.
+img_pull(
+    name = "profile_helper_ubuntu",
+    digest = "sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/ubuntu",
+    tag = "22.04",
+)
+
 img_pull(
     name = "test_nginx",
     digest = "sha256:bc4cad49969aaf95eb4eecec5572846f86e59f1e8332aba36ed64b91aff8b724",
@@ -492,6 +506,7 @@ use_repo(
     "com_github_opencontainers_runtime_spec",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
+    "com_github_rakyll_hey",
     "com_github_sirupsen_logrus",
     "com_github_spf13_pflag",
     "com_github_vishvananda_netlink",
@@ -951,6 +966,22 @@ go_deps.module(
     path = "golang.org/x/xerrors",
     sum = "h1:H2TDz8ibqkAF6YGhCdN3jS9O0/s90v0rJh3X/OLHEUk=",
     version = "v0.0.0-20220907171357-04be3eba64a2",
+)
+
+# HTTP benchmark client; its source is not imported by gVisor's Go packages.
+go_deps.module(
+    path = "github.com/rakyll/hey",
+    sum = "h1:oc3QhpT8ETXcr5xIE2xgWYNSNA/Z52XA20ku9hWCchY=",
+    version = "v0.1.5",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:go_naming_convention go_default_library",
+        # In Hey's generated BUILD file, @@// points to the gVisor workspace.
+        # buildifier: disable=canonical-repository
+        "gazelle:go_visibility @@//images/benchmarks/hey:__pkg__",
+    ],
+    path = "github.com/rakyll/hey",
 )
 go_deps.module_override(
     patch_strip = 1,
