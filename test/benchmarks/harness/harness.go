@@ -29,8 +29,15 @@ var (
 	debug = flag.Bool("debug", false, "turns on debug messages for individual benchmarks")
 )
 
-// Init performs any harness initialization before runs.
+// Init parses the benchmark flags and checks the Docker server version.
 func Init() error {
+	ParseFlags()
+	dockerutil.EnsureSupportedDockerVersion()
+	return nil
+}
+
+// ParseFlags parses the benchmark flags and handles -help.
+func ParseFlags() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s -- --test.bench=<regex>\n", os.Args[0])
 		flag.PrintDefaults()
@@ -40,8 +47,6 @@ func Init() error {
 		flag.Usage()
 		os.Exit(0)
 	}
-	dockerutil.EnsureSupportedDockerVersion()
-	return nil
 }
 
 // SetFixedBenchmarks causes all benchmarks to run once.
