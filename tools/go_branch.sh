@@ -124,6 +124,7 @@ declare -ar binaries=(
   "runsc"
   "runsc/checkpointgofer"
   "runsc/cmd/metricserver"
+  "runsc/cmd/netgofer"
   "runsc/cmd/sentry"
   "shim"
   "webhook"
