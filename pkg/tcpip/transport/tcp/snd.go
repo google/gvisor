@@ -125,16 +125,23 @@ type sender struct {
 	// lr is the loss recovery algorithm used by the sender.
 	lr lossRecovery
 
-	// firstRetransmittedSegXmitTime is the original transmit time of
-	// the first segment that was retransmitted due to RTO expiration.
+	// firstRetransmittedSegXmitTime is the baseline for the user timeout.
+	// If unset, use the oldest outstanding segment's transmit time on an
+	// RTO, or the current time on entry to zero-window probing.
+	//
+	// +checklocks:ep.mu
 	firstRetransmittedSegXmitTime tcpip.MonotonicTime
 
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
+	//
+	// +checklocks:ep.mu
 	zeroWindowProbing bool `state:"nosave"`
 
 	// unackZeroWindowProbes is the number of unacknowledged zero
 	// window probes.
+	//
+	// +checklocks:ep.mu
 	unackZeroWindowProbes uint32 `state:"nosave"`
 
 	// writeNext is the next segment to write that hasn't already been
@@ -1082,6 +1089,7 @@ func (s *sender) enableZeroWindowProbing() {
 	}
 }
 
+// +checklocks:s.ep.mu
 func (s *sender) disableZeroWindowProbing() {
 	s.zeroWindowProbing = false
 	s.unackZeroWindowProbes = 0
