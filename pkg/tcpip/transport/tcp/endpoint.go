@@ -2504,6 +2504,7 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 }
 
 // connect connects the endpoint to its peer.
+//
 // +checklocks:e.mu
 // +checklocksexclude:e.segmentQueue.mu
 func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
@@ -2557,6 +2558,16 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 
 	default:
 		return &tcpip.ErrInvalidEndpointState{}
+	}
+
+	// A wildcard bind leaves boundNICID unset even when SO_BINDTODEVICE
+	// restricts a new connection. Restore supplies the NIC it selected for
+	// the established connection in addr.NIC.
+	if device := tcpip.NICID(e.ops.GetBindToDevice()); handshake && device != 0 {
+		if addr.NIC != 0 && addr.NIC != device {
+			return &tcpip.ErrInvalidEndpointState{}
+		}
+		nicID = device
 	}
 
 	// Find a route to the desired destination.

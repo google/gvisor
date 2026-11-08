@@ -5193,6 +5193,58 @@ PosixErrorOr<std::pair<int, int>> UpVethPair() {
   return std::make_pair(veth1, veth2);
 }
 
+TEST(NetlinkRouteTest, TCPConnectUsesBoundDevice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup(
+      [&] { EXPECT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceeds()); });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+
+  const auto [first, second] = ASSERT_NO_ERRNO_AND_VALUE(UpVethPair());
+  FileDescriptor netlink =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  in_addr first_addr = {}, second_addr = {};
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &first_addr), 1);
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.129", &second_addr), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(netlink, first, AF_INET, 24, &first_addr,
+                                   sizeof(first_addr)));
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(netlink, second, AF_INET, 25, &second_addr,
+                                   sizeof(second_addr)));
+
+  // Both prefixes cover the peer. The selected source address identifies
+  // the route even while the handshake is waiting for a neighbor.
+  sockaddr_in peer = {};
+  peer.sin_family = AF_INET;
+  peer.sin_port = htons(12345);
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.200", &peer.sin_addr), 1);
+  for (const auto& [device, expected] :
+       {std::pair{"veth1", first_addr}, std::pair{"veth2", second_addr}}) {
+    SCOPED_TRACE(device);
+    FileDescriptor sock = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    ASSERT_THAT(setsockopt(sock.get(), SOL_SOCKET, SO_BINDTODEVICE, device,
+                           strlen(device) + 1),
+                SyscallSucceeds());
+    sockaddr_in local = {};
+    local.sin_family = AF_INET;
+    ASSERT_THAT(
+        bind(sock.get(), reinterpret_cast<sockaddr*>(&local), sizeof(local)),
+        SyscallSucceeds());
+    ASSERT_THAT(
+        connect(sock.get(), reinterpret_cast<sockaddr*>(&peer), sizeof(peer)),
+        SyscallFailsWithErrno(EINPROGRESS));
+    socklen_t len = sizeof(local);
+    ASSERT_THAT(
+        getsockname(sock.get(), reinterpret_cast<sockaddr*>(&local), &len),
+        SyscallSucceeds());
+    EXPECT_EQ(local.sin_addr.s_addr, expected.s_addr);
+  }
+}
+
 // A new route to a destination that already has a route through another
 // interface is announced without NLM_F_EXCL (fib_table_insert,
 // fib6_add_rt2node).
