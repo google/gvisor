@@ -51,7 +51,7 @@ func newRACKTestContext(clock tcpip.Clock, resolution time.Duration) *rackTestCo
 		scoreboard: NewSACKScoreboard(1, 0),
 	}
 	ctx.snd.writeList.set = make(map[*segment]struct{})
-	ctx.snd.reorderTimer.init(clock, func() {})
+	ctx.snd.reorderTimer = newTestTimer(clock, func() {})
 	ctx.snd.rc.init(&ctx.snd, 0)
 	return ctx
 }
@@ -115,7 +115,7 @@ func TestRACKQuantizedClockPreventsPrematureLossAndSchedulesRecheck(t *testing.T
 
 	var timerFired bool
 	ctx.snd.reorderTimer.cleanup()
-	ctx.snd.reorderTimer.init(clock, func() { timerFired = true })
+	ctx.snd.reorderTimer = newTestTimer(clock, func() { timerFired = true })
 	if got := ctx.snd.rc.detectLoss(ack.rcvdTime); got != 0 {
 		t.Fatalf("detectLoss at ACK got %d losses, want 0", got)
 	}
@@ -146,6 +146,9 @@ func TestRACKQuantizedClockPreventsPrematureLossAndSchedulesRecheck(t *testing.T
 	ctx.snd.FastRecovery.Active = true
 	ctx.snd.SndNxt = 1
 	ctx.snd.SndCwnd = 0
+	if !ctx.snd.reorderTimer.consumeClockWake() {
+		t.Fatal("clock wake did not expire the reordering timer")
+	}
 	if err := ctx.snd.rc.reorderTimerExpired(); err != nil {
 		t.Fatalf("reorderTimerExpired failed: %v", err)
 	}
@@ -228,7 +231,7 @@ func TestRACKReorderTimerDeclaresLossOnFirstExpiry(t *testing.T) {
 
 	var timerFired bool
 	ctx.snd.reorderTimer.cleanup()
-	ctx.snd.reorderTimer.init(clock, func() { timerFired = true })
+	ctx.snd.reorderTimer = newTestTimer(clock, func() { timerFired = true })
 
 	// detectLoss must not declare loss while the uncertainty boundary has
 	// not elapsed, and must arm the timer through that boundary so that the
@@ -254,6 +257,9 @@ func TestRACKReorderTimerDeclaresLossOnFirstExpiry(t *testing.T) {
 	ctx.snd.FastRecovery.Active = true
 	ctx.snd.SndNxt = 1
 	ctx.snd.SndCwnd = 0
+	if !ctx.snd.reorderTimer.consumeClockWake() {
+		t.Fatal("clock wake did not expire the reordering timer")
+	}
 	if err := ctx.snd.rc.reorderTimerExpired(); err != nil {
 		t.Fatalf("reorderTimerExpired failed: %v", err)
 	}
@@ -487,13 +493,13 @@ func TestRACKPTODuration(t *testing.T) {
 			ctx.snd.rtt.TCPRTTState.SRTT = test.srtt
 			ctx.snd.rtt.Unlock()
 			var expirations int
-			ctx.snd.probeTimer.init(clock, func() {
-				if ctx.snd.probeTimer.checkExpiration() {
+			ctx.snd.probeTimer = newTestTimer(clock, func() {
+				if ctx.snd.probeTimer.consumeClockWake() {
 					expirations++
 				}
 			})
 			defer ctx.snd.probeTimer.cleanup()
-			ctx.snd.resendTimer.init(clock, func() {})
+			ctx.snd.resendTimer = newTestTimer(clock, func() {})
 			defer ctx.snd.resendTimer.cleanup()
 			if test.rto != 0 {
 				// Some of the RTO has already elapsed. Bound the PTO by the

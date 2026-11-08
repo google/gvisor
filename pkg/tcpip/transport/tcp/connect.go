@@ -122,44 +122,42 @@ type handshake struct {
 	retransmitTimer *backoffTimer `state:"nosave"`
 }
 
-// timerHandler takes a handler function for a timer and returns a function that
-// will invoke the provided handler with the endpoint mutex held. In addition
-// the returned function will perform any cleanup that may be required if the
-// timer handler returns an error. In the case of no errors it will notify the
-// processor if there are pending segments that need to be processed.
-//
-// NOTE: e.mu is held for the duration of the call to f().
-// The wrapper does not acquire a sender RTT mutex before calling f. checklocks
-// cannot recover f's captured sender to express that exclusion; the returned
-// callback runs later, so its lock state is not a precondition on timerHandler.
+// timerHandler returns a clock callback for the handshake backoff timer.
 func timerHandler(e *Endpoint, f func() tcpip.Error) func() {
-	return func() {
-		e.mu.Lock()
-		if err := f(); err != nil {
-			e.lastErrorMu.Lock()
-			// If the handler timed out and we have a lastError recorded (maybe due
-			// to an ICMP message received), promote it to be the hard error.
-			if _, isTimeout := err.(*tcpip.ErrTimeout); e.lastError != nil && isTimeout {
-				e.hardError = e.lastError
-			} else {
-				e.hardError = err
-			}
-			e.lastError = err
-			e.lastErrorMu.Unlock()
-			e.cleanupLocked()
-			e.setEndpointState(StateError)
-			e.mu.Unlock()
-			e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
-			return
-		}
-		processor := e.protocol.dispatcher.selectProcessor(e.ID)
-		e.mu.Unlock()
+	return func() { e.handleTimer(f) }
+}
 
-		// notify processor if there are pending segments to be
-		// processed.
-		if !e.segmentQueue.empty() {
-			processor.queueEndpoint(e)
+// handleTimer invokes f with the endpoint mutex held. A timer error closes
+// the connection and notifies waiters. Otherwise, schedule pending segments.
+//
+// The caller holds no sender RTT mutex. checklocks cannot express that
+// exclusion on the sender captured by f.
+func (e *Endpoint) handleTimer(f func() tcpip.Error) {
+	e.mu.Lock()
+	if err := f(); err != nil {
+		e.lastErrorMu.Lock()
+		// If the handler timed out and we have a lastError recorded (maybe due
+		// to an ICMP message received), promote it to be the hard error.
+		if _, isTimeout := err.(*tcpip.ErrTimeout); e.lastError != nil && isTimeout {
+			e.hardError = e.lastError
+		} else {
+			e.hardError = err
 		}
+		e.lastError = err
+		e.lastErrorMu.Unlock()
+		e.cleanupLocked()
+		e.setEndpointState(StateError)
+		e.mu.Unlock()
+		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+		return
+	}
+	processor := e.protocol.dispatcher.selectProcessor(e.ID)
+	e.mu.Unlock()
+
+	// notify processor if there are pending segments to be
+	// processed.
+	if !e.segmentQueue.empty() {
+		processor.queueEndpoint(e)
 	}
 }
 
@@ -1420,7 +1418,7 @@ func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 		return nil
 	}
 	e.keepalive.Lock()
-	if !e.SocketOptions().GetKeepAlive() || e.keepalive.timer.isUninitialized() || !e.keepalive.timer.checkExpiration() {
+	if !e.SocketOptions().GetKeepAlive() {
 		e.keepalive.Unlock()
 		return nil
 	}
