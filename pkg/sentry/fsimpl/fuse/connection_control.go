@@ -78,9 +78,7 @@ func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
 	return conn.CallAsync(context.Background(), req)
 }
 
-// InitRecv receives a FUSE_INIT reply and process it.
-//
-// Preconditions: conn.asyncMu must not be held if minor version is newer than 13.
+// InitRecv processes a FUSE_INIT reply.
 //
 // +checklocks:conn.mu
 func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
@@ -99,8 +97,7 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 	return conn.initProcessReply(&initRes.initOut, hasSysAdminCap)
 }
 
-// Process the FUSE_INIT reply from the FUSE server.
-// It tries to acquire the conn.asyncMu lock if minor version is newer than 13.
+// initProcessReply applies the limits and flags negotiated with the FUSE server.
 //
 // +checklocks:conn.mu
 func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap bool) error {
@@ -153,8 +150,6 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 
 	// No support for limits before minor version 13.
 	if out.Minor >= 13 {
-		conn.asyncMu.Lock()
-
 		if out.MaxBackground > 0 {
 			conn.asyncNumMax = out.MaxBackground
 
@@ -172,34 +167,25 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 				conn.asyncCongestionThreshold = MaxUserCongestionThreshold
 			}
 		}
-
-		conn.asyncMu.Unlock()
 	}
 
 	return nil
 }
 
-// Abort this FUSE connection.
-// It tries to acquire conn.fd.mu, conn.lock, conn.bgLock in order.
-// All possible requests waiting or blocking will be aborted.
+// Abort disconnects the FUSE connection and wakes blocked requests.
 func (conn *connection) Abort(ctx context.Context) {
 	conn.mu.Lock()
-	conn.asyncMu.Lock()
+	defer conn.mu.Unlock()
 
 	if !conn.connected {
-		conn.asyncMu.Unlock()
-		conn.mu.Unlock()
 		return
 	}
 
 	conn.connected = false
 
-	// Empty the `conn.queue` that holds the requests
-	// not yet read by the FUSE daemon yet.
-	// These are a subset of the requests in `fuse.completion` map.
+	// Requests still queued for the daemon also have pending completions.
 	for !conn.queue.Empty() {
-		req := conn.queue.Front()
-		conn.queue.Remove(req)
+		conn.queue.Remove(conn.queue.Front())
 	}
 
 	// Likewise for pending FUSE_INTERRUPT requests, including those for
@@ -208,38 +194,16 @@ func (conn *connection) Abort(ctx context.Context) {
 		conn.interrupts.Remove(conn.interrupts.Front())
 	}
 
-	var terminate []linux.FUSEOpID
+	// Callers waiting for INIT will see that the connection is disconnected.
+	conn.setInitializedLocked()
 
-	// 2. Collect the requests have not been sent to FUSE daemon,
-	// or have not received a reply.
 	for unique, fut := range conn.completions {
+		// Any pending interrupt was removed above.
 		fut.intrReq = nil
-		terminate = append(terminate, unique)
+		conn.sendError(ctx, -int32(unix.ECONNABORTED), unique)
 	}
 
-	// Release locks to avoid deadlock.
-	conn.asyncMu.Unlock()
-	conn.mu.Unlock()
-
-	// 1. The request blocked before initialization.
-	// Will reach call() `connected` check and return.
-	if !conn.isInitialized() {
-		conn.setInitialized()
-	}
-
-	// 2. Terminate the requests collected above.
-	// Set ECONNABORTED error.
-	// sendError() will remove them from `fd.completion` map.
-	// Will enter the path of a normally received error.
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	for _, toTerminate := range terminate {
-		conn.sendError(ctx, -int32(unix.ECONNABORTED), toTerminate)
-	}
-
-	// 3. The requests not yet written to FUSE device.
-	// Early terminate.
-	// Will reach callFutureLocked() `connected` check and return.
+	// sendError signals fullQueueCh, so close it after completing requests.
 	close(conn.fullQueueCh)
 
 	// TODO(gvisor.dev/issue/3528): Forget all pending forget reqs.
