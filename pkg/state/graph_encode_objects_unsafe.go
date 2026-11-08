@@ -29,7 +29,7 @@ func (es *graphEncodeState) index(obj int32) {
 		if !ok {
 			head = -1
 		}
-		es.blockEntries = append(es.blockEntries, blockEntry{addr: o.addr, end: o.end, obj: obj, next: head})
+		es.blockEntries = append(es.blockEntries, blockEntry{obj: obj, next: head})
 		es.blocks.set(b, int32(len(es.blockEntries)-1))
 	}
 }
@@ -52,11 +52,8 @@ func (es *graphEncodeState) query(addr, end uintptr) []int32 {
 		}
 		for ; e >= 0; e = es.blockEntries[e].next {
 			be := &es.blockEntries[e]
-			if be.addr >= end || addr >= be.end {
-				continue
-			}
 			o := es.obj(be.obj)
-			if o.parent >= 0 || o.dead || o.stamp == es.stamp {
+			if o.addr >= end || addr >= o.end || o.parent >= 0 || o.dead || o.stamp == es.stamp {
 				continue
 			}
 			o.stamp = es.stamp
