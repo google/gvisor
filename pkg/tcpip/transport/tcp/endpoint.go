@@ -1705,20 +1705,27 @@ func (e *Endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 // +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
-	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
-	// and opts.EndOfRecord are also ignored.
+	// (without the MSG_FASTOPEN flag). opts.EndOfRecord is also ignored.
 
 	e.LockUser()
 	defer e.UnlockUser()
 
 	// Return if either we didn't queue anything or if an error occurred while
 	// attempting to queue data.
+	wanted := p.Len()
 	nextSeg, n, err := e.queueSegment(p, opts)
 	if n == 0 || err != nil {
 		return 0, err
 	}
 
-	e.sendData(nextSeg)
+	mode := sendNormal
+	switch {
+	case n < wanted:
+		mode = sendPush
+	case opts.More:
+		mode = sendMore
+	}
+	e.sendData(nextSeg, mode)
 	return int64(n), nil
 }
 
@@ -1835,7 +1842,7 @@ func (e *Endpoint) OnDelayOptionSet(v bool) {
 		defer e.UnlockUser()
 		// Handle delayed data.
 		if e.EndpointState().connected() {
-			e.sendData(nil /* next */)
+			e.sendData(nil /* next */, sendNormal)
 		}
 	}
 }
@@ -1853,7 +1860,7 @@ func (e *Endpoint) OnCorkOptionSet(v bool) {
 		}
 		// Handle the corked data.
 		if e.EndpointState().connected() {
-			e.sendData(nil /* next */)
+			e.sendData(nil /* next */, sendNormal)
 		}
 	}
 }
@@ -2719,7 +2726,7 @@ func (e *Endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			e.sndQueueInfo.sndQueueMu.Unlock()
 
 			// Drain the send queue.
-			e.sendData(s)
+			e.sendData(s, sendNormal)
 
 			// Mark send side as closed.
 			e.snd.Closed = true
