@@ -250,14 +250,19 @@ type Sandbox struct {
 	// will have it as a child process.
 	child bool `nojson:"true"`
 
-	// netgoferMu protects NetgoferPid, netgoferIsChild, and netgoferStopped.
+	// netgoferMu protects the child and reaper state associated with
+	// NetgoferPid. The PID alone can be read atomically.
 	netgoferMu sync.Mutex `nojson:"true"`
 
 	// netgoferIsChild is set if the netgofer process is a child of the current process.
+	//
+	// +checklocks:netgoferMu
 	netgoferIsChild bool `nojson:"true"`
 
 	// netgoferStopped is closed when a child netgofer process has been reaped by
 	// reapNetgoferBackground.
+	//
+	// +checklocks:netgoferMu
 	netgoferStopped chan struct{} `nojson:"true"`
 
 	// statusMu protects status.
