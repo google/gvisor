@@ -246,9 +246,9 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 	var standaloneZero []int32
 	for resolved := 0; ; {
 		for ; resolved < len(es.zeroTargets); resolved++ {
-			tid := es.zeroTargets[resolved]
-			t := es.target(tid)
-			if obj, off := es.resolveZeroTarget(t.addr, t.ti); obj >= 0 {
+			z := es.zeroTargets[resolved]
+			t := es.target(z.id)
+			if obj, off := es.resolveZeroTarget(uintptr(z.ptr), t.ti); obj >= 0 {
 				t.obj, t.off = obj, off
 			}
 		}
@@ -257,10 +257,10 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 			continue
 		}
 		queued := false
-		for _, tid := range es.zeroTargets {
-			t := es.target(tid)
+		for _, z := range es.zeroTargets {
+			t := es.target(z.id)
 			if t.obj < 0 && !t.ti.pod {
-				obj := es.newObject(t.ptr, t.addr+1, t.ti, 1, false)
+				obj := es.newObject(z.ptr, uintptr(z.ptr)+1, t.ti, 1, false)
 				t.obj, t.off = obj, 0
 				standaloneZero = append(standaloneZero, obj)
 				es.enqueue(obj, 0, 1)
