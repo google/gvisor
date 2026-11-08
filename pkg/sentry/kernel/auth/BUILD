@@ -9,7 +9,7 @@ package(
 
 go_template_instance(
     name = "atomicptr_credentials",
-    out = "atomicptr_credentials_unsafe.go",
+    out = "atomicptr_credentials.go",
     package = "auth",
     suffix = "Credentials",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -64,7 +64,7 @@ declare_rwmutex(
 go_library(
     name = "auth",
     srcs = [
-        "atomicptr_credentials_unsafe.go",
+        "atomicptr_credentials.go",
         "auth.go",
         "capability_set.go",
         "context.go",

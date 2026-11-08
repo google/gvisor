@@ -19,7 +19,7 @@ declare_mutex(
 
 go_template_instance(
     name = "atomicptr_bucket",
-    out = "atomicptr_bucket_unsafe.go",
+    out = "atomicptr_bucket.go",
     package = "futex",
     suffix = "Bucket",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -43,7 +43,7 @@ go_template_instance(
 go_library(
     name = "futex",
     srcs = [
-        "atomicptr_bucket_unsafe.go",
+        "atomicptr_bucket.go",
         "futex.go",
         "futex_mutex.go",
         "waiter_list.go",
