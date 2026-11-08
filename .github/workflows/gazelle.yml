@@ -27,8 +27,5 @@ jobs:
         persist-credentials: false
 
     # The runner's bazel is bazelisk, which honors .bazelversion.
-    - run: |
-        if ! bazel run //:gazelle_check; then
-          echo "::error::BUILD files are out of date. Run 'make gazelle-fix' and commit the result."
-          exit 1
-        fi
+    - name: Check BUILD files (apply reported diffs with bazel run //:gazelle_fix)
+      run: bazel run //:gazelle_check
