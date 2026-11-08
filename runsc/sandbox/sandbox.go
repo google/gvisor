@@ -254,6 +254,8 @@ type Sandbox struct {
 	// child==true and the sandbox was waited on. This field allows for multiple
 	// threads to wait on sandbox and get the exit code, since Linux will return
 	// WaitStatus to one of the waiters only.
+	//
+	// +checklocks:statusMu
 	status unix.WaitStatus `nojson:"true"`
 
 	// Checkpointed will be true when the sandbox has been checkpointed.
