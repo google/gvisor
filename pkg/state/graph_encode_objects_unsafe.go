@@ -483,10 +483,7 @@ func (es *graphEncodeState) ptrTarget(p unsafe.Pointer, ti *typeInfo) int32 {
 		// Zero-sized values may share addresses with other values, so they
 		// are not objects. They are resolved once all objects are known.
 		tid = es.newTarget(-1, 0, ti)
-		t := es.target(tid)
-		t.ptr = p
-		t.addr = addr
-		es.zeroTargets = append(es.zeroTargets, tid)
+		es.zeroTargets = append(es.zeroTargets, zeroTarget{ptr: p, id: tid})
 	} else {
 		end := addr + ti.size
 		ov := es.query(addr, end)
