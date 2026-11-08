@@ -235,11 +235,6 @@ type sourceBuffer struct {
 	b bytes.Buffer
 }
 
-func (b *sourceBuffer) reset() {
-	b.indent = 0
-	b.b.Reset()
-}
-
 func (b *sourceBuffer) incIndent() {
 	b.indent++
 }

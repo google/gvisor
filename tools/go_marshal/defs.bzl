@@ -4,13 +4,11 @@ def _go_marshal_impl(ctx):
     """Execute the go_marshal tool."""
     output = ctx.outputs.lib
     output_test = ctx.outputs.test
-    output_test_unconditional = ctx.outputs.test_unconditional
 
     # Run the marshal command.
     args = ["-output=%s" % output.path]
     args.append("-pkg=%s" % ctx.attr.package)
     args.append("-output_test=%s" % output_test.path)
-    args.append("-output_test_unconditional=%s" % output_test_unconditional.path)
 
     if ctx.attr.debug:
         args += ["-debug"]
@@ -20,7 +18,7 @@ def _go_marshal_impl(ctx):
         args += [f.path for f in src.files.to_list()]
     ctx.actions.run(
         inputs = ctx.files.srcs,
-        outputs = [output, output_test, output_test_unconditional],
+        outputs = [output, output_test],
         mnemonic = "GoMarshal",
         progress_message = "go_marshal: %s" % ctx.label,
         arguments = args,
@@ -50,7 +48,6 @@ go_marshal = rule(
     outputs = {
         "lib": "%{name}_unsafe.go",
         "test": "%{name}_test.go",
-        "test_unconditional": "%{name}_unconditional_test.go",
     },
 )
 

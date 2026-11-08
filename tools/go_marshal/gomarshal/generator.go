@@ -68,8 +68,6 @@ type Generator struct {
 	output *os.File
 	// Output file to write generated tests.
 	outputTest *os.File
-	// Output file to write unconditionally generated tests.
-	outputTestUC *os.File
 	// Package name for the generated file.
 	pkg string
 	// Set of extra packages to import in the generated file.
@@ -77,7 +75,7 @@ type Generator struct {
 }
 
 // NewGenerator creates a new code Generator.
-func NewGenerator(srcs []string, out, outTest, outTestUnconditional, pkg string, imports []string) (*Generator, error) {
+func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*Generator, error) {
 	f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't open output file %q: %w", out, err)
@@ -86,17 +84,12 @@ func NewGenerator(srcs []string, out, outTest, outTestUnconditional, pkg string,
 	if err != nil {
 		return nil, fmt.Errorf("couldn't open test output file %q: %w", out, err)
 	}
-	fTestUC, err := os.OpenFile(outTestUnconditional, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't open unconditional test output file %q: %w", out, err)
-	}
 	g := Generator{
-		inputs:       srcs,
-		output:       f,
-		outputTest:   fTest,
-		outputTestUC: fTestUC,
-		pkg:          pkg,
-		imports:      newImportTable(),
+		inputs:     srcs,
+		output:     f,
+		outputTest: fTest,
+		pkg:        pkg,
+		imports:    newImportTable(),
 	}
 	for _, i := range imports {
 		// All imports on the extra imports list are unconditionally marked as
@@ -538,40 +531,9 @@ func (g *Generator) Run() error {
 func (g *Generator) writeTests(ts []*testGenerator) error {
 	var b sourceBuffer
 
-	// Write the unconditional test file. This file is always compiled,
-	// regardless of what build tags were specified on the original input
-	// files. We use this file to guarantee we never end up with an empty test
-	// file, as that causes the build to fail with "no tests/benchmarks/examples
-	// found".
-	//
-	// There's no easy way to determine ahead of time if we'll end up with an
-	// empty build file since build constraints can arbitrarily cause some of
-	// the original types to be not defined. We also have no way to tell bazel
-	// to omit the entire test suite since the output files are already defined
-	// before go-marshal is called.
-	b.emit("// Automatically generated marshal tests. See tools/go_marshal.\n\n")
-	b.emit("package %s\n\n", g.pkg)
-	b.emit("func Example() {\n")
-	b.inIndent(func() {
-		b.emit("// This example is intentionally empty, and ensures this package contains at\n")
-		b.emit("// least one testable entity. go-marshal is forced to emit a test package if the\n")
-		b.emit("// input package is marked marshallable, but emitting no testable entities \n")
-		b.emit("// results in a build failure.\n")
-	})
-	b.emit("}\n")
-	if err := b.write(g.outputTestUC); err != nil {
-		return err
-	}
-
-	// Now generate the real test file that contains the real types we
-	// processed. These need to be conditionally compiled according to the build
-	// tags, as the original types may not be defined under all build
-	// configurations.
-
-	b.reset()
 	b.emit("// Automatically generated marshal tests. See tools/go_marshal.\n\n")
 
-	// Emit build constraints.
+	// Apply the input constraints so tests only reference types defined in this build.
 	bcexpr, err := constraintutil.CombineFromFiles(g.inputs)
 	if err != nil {
 		return err
