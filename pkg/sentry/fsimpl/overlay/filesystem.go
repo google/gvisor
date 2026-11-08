@@ -146,7 +146,7 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 			rp.Advance()
 			return d, d.topLookupLayer(), false, nil
 		}
-		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, nil, &parent.vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
 		}
 		rp.Advance()
@@ -159,7 +159,7 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 	if err != nil {
 		return nil, topLookupLayer, false, err
 	}
-	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
+	if err := rp.CheckMount(ctx, &d.vfsd, &child.vfsd); err != nil {
 		return nil, lookupLayerNone, false, err
 	}
 	if child.isSymlink() && rp.ShouldFollowSymlink() {

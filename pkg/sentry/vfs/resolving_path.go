@@ -421,7 +421,14 @@ func (rp *ResolvingPath) CheckRoot(ctx context.Context, d *Dentry) (bool, error)
 	return isRoot, err
 }
 
-func (rp *ResolvingPath) checkMount(ctx context.Context, d *Dentry) error {
+// checkMount is called after resolving the parent or child of another Dentry
+// to d. parent is the directory that contains d, or nil if d was resolved by
+// "..". A symlink at the root of a Mount is followed only when the mount point
+// is reached from its containing directory, so callers resolving ".." pass nil.
+// If d is a mount point, such that path resolution should switch to another
+// Mount, checkMount returns resolveMountPointError. Otherwise, checkMount
+// returns nil.
+func (rp *ResolvingPath) checkMount(ctx context.Context, parent, d *Dentry) error {
 	if !d.isMounted() {
 		return nil
 	}
@@ -433,17 +440,26 @@ func (rp *ResolvingPath) checkMount(ctx context.Context, d *Dentry) error {
 		}
 
 		rp.nextMount = mnt
+		if parent != nil {
+			// If the mount root is a symlink with a relative target, the target
+			// is resolved against the directory that contains the mount point.
+			parent.IncRef()
+			rp.nextStart = parent
+		}
 		return resolveMountPointError{}
 	}
 	return nil
 }
 
 // CheckMount is called after resolving the parent or child of another Dentry
-// to d. If d is a mount point, such that path resolution should switch to
-// another Mount, CheckMount returns a non-nil error. Otherwise, CheckMount
-// returns nil.
-func (rp *ResolvingPath) CheckMount(ctx context.Context, d *Dentry) error {
-	err := rp.checkMount(ctx, d)
+// to d. parent is the directory that contains d, or nil if d was resolved by
+// "..". A symlink at the root of a Mount is followed only when the mount point
+// is reached from its containing directory, so callers resolving ".." pass nil.
+// If d is a mount point, such that path resolution should switch to another
+// Mount, CheckMount returns a non-nil error. Otherwise, CheckMount returns
+// nil.
+func (rp *ResolvingPath) CheckMount(ctx context.Context, parent, d *Dentry) error {
+	err := rp.checkMount(ctx, parent, d)
 	// For `..` on scoped mounts, if the caller would continue the walk after
 	// CheckMount, we must check if we raced with a mount or rename operation.
 	if rp.scoped() && rp.Component() == ".." && (err == nil || rp.canHandleError(err)) && !rp.checkDotDotRace() {
@@ -594,7 +610,11 @@ func (rp *ResolvingPath) HandleJump(target VirtualDentry) (bool, error) {
 	return true, resolveMountRootOrJumpError{}
 }
 
-func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
+// handleError attempts to handle an error returned by a FilesystemImpl method
+// during path resolution. It returns nil if the error was handled and path
+// resolution should be retried. Otherwise, it returns the error that the
+// caller must return.
+func (rp *ResolvingPath) handleError(ctx context.Context, err error) error {
 	switch err.(type) {
 	case resolveMountRootOrJumpError:
 		// Switch to the new Mount. We hold references on the Mount and Dentry.
@@ -611,9 +631,50 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		// Restart path resolution on the new Mount. Don't bother calling
 		// rp.releaseErrorState() since we already set nextMount and nextStart
 		// to nil above.
-		return true
+		return nil
 
 	case resolveMountPointError:
+		// The root of the new Mount may be a symlink, for example when a
+		// symlink is bind mounted onto a file. Treat it like any other
+		// symlink in the path.
+		//
+		// rp.nextStart is nil for mount points reached by "..", which must
+		// not follow a symlink at the mount root.
+		if rp.nextStart != nil {
+			mntRoot := VirtualDentry{mount: rp.nextMount, dentry: rp.nextMount.root}
+			if target, rerr := rp.vfs.ReadlinkAt(ctx, rp.creds, &PathOperation{Root: mntRoot, Start: mntRoot}); rerr == nil {
+				if rp.ShouldFollowSymlink() {
+					followed, herr := rp.HandleSymlink(target)
+					if !followed {
+						// The symlink must not be followed, e.g. due to
+						// RESOLVE_NO_SYMLINKS.
+						rp.releaseErrorState(ctx)
+						return herr
+					}
+					if herr != nil {
+						// The target is absolute. Restart path resolution at
+						// rp.root, so the mount point's parent is no longer
+						// needed.
+						rp.releaseErrorState(ctx)
+						return rp.handleError(ctx, herr)
+					}
+					// The target is relative. Restart path resolution at the
+					// directory that contains the mount point, in the current
+					// Mount.
+					if rp.flags&rpflagsHaveStartRef != 0 {
+						rp.start.DecRef(ctx)
+					}
+					rp.start = rp.nextStart
+					rp.nextStart = nil
+					rp.flags |= rpflagsHaveStartRef
+					rp.nextMount.DecRef(ctx)
+					rp.nextMount = nil
+					return nil
+				}
+			}
+			// The mount root cannot be read as a symlink, or the walk must not
+			// follow it. Enter the Mount, as for any other mount root.
+		}
 		// Switch to the new Mount. We hold a reference on the Mount, but
 		// borrow the reference on the mount root from the Mount.
 		rp.decRefStartAndMount(ctx)
@@ -625,7 +686,7 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.Advance()
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
-		return true
+		return nil
 
 	case resolveAbsSymlinkError:
 		// Switch to the new Mount. References are borrowed from rp.root.
@@ -641,11 +702,11 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		}
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
-		return true
+		return nil
 
 	default:
 		// Not an error we can handle.
-		return false
+		return err
 	}
 }
 

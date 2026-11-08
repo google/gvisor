@@ -293,8 +293,8 @@ func (vfs *VirtualFilesystem) AccessAt(ctx context.Context, creds *auth.Credenti
 		if err == nil {
 			return nil
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -321,8 +321,8 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 			rp.mount.IncRef()
 			return vd, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return VirtualDentry{}, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return VirtualDentry{}, terr
 		}
 	}
 }
@@ -355,8 +355,8 @@ func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *au
 				panic(fmt.Sprintf("%T.GetParentDentryAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return VirtualDentry{}, "", err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return VirtualDentry{}, "", terr
 		}
 	}
 }
@@ -403,9 +403,9 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 				panic(fmt.Sprintf("%T.LinkAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
+		if terr := rp.handleError(ctx, err); terr != nil {
 			oldVD.DecRef(ctx)
-			return err
+			return terr
 		}
 	}
 }
@@ -448,8 +448,8 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 				panic(fmt.Sprintf("%T.MkdirAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -490,8 +490,8 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 				panic(fmt.Sprintf("%T.MknodAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -588,8 +588,8 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			}
 			return fd, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return nil, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return nil, terr
 		}
 	}
 }
@@ -611,8 +611,8 @@ func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Creden
 		if err == nil {
 			return target, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return "", err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return "", terr
 		}
 	}
 }
@@ -677,9 +677,9 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 				panic(fmt.Sprintf("%T.RenameAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
+		if terr := rp.handleError(ctx, err); terr != nil {
 			oldParentVD.DecRef(ctx)
-			return err
+			return terr
 		}
 	}
 }
@@ -719,8 +719,8 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 				panic(fmt.Sprintf("%T.RmdirAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -742,8 +742,8 @@ func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credent
 		if err == nil {
 			return nil
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -769,8 +769,8 @@ func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credential
 			}
 			return stat, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return linux.Statx{}, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return linux.Statx{}, terr
 		}
 	}
 }
@@ -794,8 +794,8 @@ func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credenti
 			statfs.Flags |= rp.mount.MountFlags()
 			return statfs, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return linux.Statfs{}, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return linux.Statfs{}, terr
 		}
 	}
 }
@@ -835,8 +835,8 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 				panic(fmt.Sprintf("%T.SymlinkAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -876,8 +876,8 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 				panic(fmt.Sprintf("%T.UnlinkAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -904,8 +904,8 @@ func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.C
 				panic(fmt.Sprintf("%T.BoundEndpointAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
-		if !rp.handleError(ctx, err) {
-			return nil, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return nil, terr
 		}
 	}
 }
@@ -935,8 +935,8 @@ func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Crede
 			// default don't exist.
 			return nil, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return nil, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return nil, terr
 		}
 	}
 }
@@ -959,8 +959,8 @@ func (vfs *VirtualFilesystem) GetXattrAt(ctx context.Context, creds *auth.Creden
 		if err == nil {
 			return val, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return "", err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return "", terr
 		}
 	}
 }
@@ -983,8 +983,8 @@ func (vfs *VirtualFilesystem) SetXattrAt(ctx context.Context, creds *auth.Creden
 		if err == nil {
 			return nil
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -1006,8 +1006,8 @@ func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Cre
 		if err == nil {
 			return nil
 		}
-		if !rp.handleError(ctx, err) {
-			return err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return terr
 		}
 	}
 }
@@ -1030,8 +1030,8 @@ func (vfs *VirtualFilesystem) GetPosixACLAt(ctx context.Context, creds *auth.Cre
 		if err == nil {
 			return acl, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return nil, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return nil, terr
 		}
 	}
 }
@@ -1056,8 +1056,8 @@ func (vfs *VirtualFilesystem) SetPosixACLAt(ctx context.Context, creds *auth.Cre
 		if err == nil {
 			return acl, mode, nil
 		}
-		if !rp.handleError(ctx, err) {
-			return nil, 0, err
+		if terr := rp.handleError(ctx, err); terr != nil {
+			return nil, 0, terr
 		}
 	}
 }
