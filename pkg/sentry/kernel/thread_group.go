@@ -198,11 +198,15 @@ type ThreadGroup struct {
 	rlimitCPUHardTimer    ktime.SyntheticTimer
 	rlimitCPUHardListener rlimitCPUHardListener
 
-	// timers is the thread group's POSIX interval timers. nextTimerID is the
-	// TimerID at which allocation should begin searching for an unused ID.
+	// timers is the thread group's POSIX interval timers.
 	//
-	// timers and nextTimerID are protected by timerMu.
-	timers      map[linux.TimerID]*IntervalTimer
+	// +checklocks:timerMu
+	timers map[linux.TimerID]*IntervalTimer
+
+	// nextTimerID is the TimerID at which allocation should begin searching
+	// for an unused ID.
+	//
+	// +checklocks:timerMu
 	nextTimerID linux.TimerID
 
 	// appCPUClockLast is the last task to have incremented appCPUClock or set
@@ -377,6 +381,7 @@ func (tg *ThreadGroup) Limits() *limits.LimitSet {
 
 // Release releases the thread group's resources.
 //
+// +checklocksexclude:tg.timerMu
 // +checklocksexclude:tg.pidns.owner.mu
 // +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) Release(ctx context.Context) {
@@ -387,12 +392,7 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	tg.itimerProfTimer.Destroy()
 	tg.rlimitCPUSoftTimer.Destroy()
 	tg.rlimitCPUHardTimer.Destroy()
-	var its []*IntervalTimer
 	tg.signalHandlers.mu.Lock()
-	for _, it := range tg.timers {
-		its = append(its, it)
-	}
-	clear(tg.timers) // nil maps can't be saved
 	// Disassociate from the tty if we have one.
 	var tty *TTY
 	if tg.tty != nil {
@@ -411,10 +411,23 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 		tty.mu.Unlock()
 		tty.DecRef(ctx)
 	}
-	for _, it := range its {
+	tg.destroyIntervalTimers()
+	tg.pidns.DecRef(ctx)
+}
+
+// destroyIntervalTimers removes all POSIX timers on exec or thread group exit.
+// A timer may be delivering a signal while DestroyTimer waits for it.
+//
+// +checklocksexclude:tg.timerMu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
+func (tg *ThreadGroup) destroyIntervalTimers() {
+	tg.timerMu.Lock()
+	defer tg.timerMu.Unlock()
+	for _, it := range tg.timers {
 		it.DestroyTimer()
 	}
-	tg.pidns.DecRef(ctx)
+	clear(tg.timers) // Keep the map for timers created after exec.
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.
