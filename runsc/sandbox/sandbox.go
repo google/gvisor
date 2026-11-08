@@ -174,6 +174,9 @@ type Sandbox struct {
 	// Zero if unknown.
 	PidIdentity uint64 `json:"pidIdentity,omitempty"`
 
+	// NetgoferPid is the PID of the netgofer running alongside the sandbox.
+	NetgoferPid Pid `json:"netgoferPid"`
+
 	// UID is the user ID in the parent namespace that the sandbox is running as.
 	UID int `json:"uid"`
 	// GID is the group ID in the parent namespace that the sandbox is running as.
@@ -246,6 +249,16 @@ type Sandbox struct {
 	// This field isn't saved to json, because only a creator of sandbox
 	// will have it as a child process.
 	child bool `nojson:"true"`
+
+	// netgoferMu protects NetgoferPid, netgoferIsChild, and netgoferStopped.
+	netgoferMu sync.Mutex `nojson:"true"`
+
+	// netgoferIsChild is set if the netgofer process is a child of the current process.
+	netgoferIsChild bool `nojson:"true"`
+
+	// netgoferStopped is closed when a child netgofer process has been reaped by
+	// reapNetgoferBackground.
+	netgoferStopped chan struct{} `nojson:"true"`
 
 	// statusMu protects status.
 	statusMu sync.Mutex `nojson:"true"`
@@ -476,7 +489,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 		return err
 	}
 	// Configure the network.
-	if err := setupNetwork(conn, pid, conf, disableIPv6, false); err != nil {
+	if err := s.setupNetwork(conn, pid, spec, conf, disableIPv6, false); err != nil {
 		return fmt.Errorf("setting up network: %w", err)
 	}
 
@@ -487,6 +500,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 
 	// Send a message to the sandbox control server to start the root container.
 	if err := conn.Call(sentryapi.ContMgrRootContainerStart, &s.ID, nil); err != nil {
+		s.stopNetgofer()
 		return fmt.Errorf("starting root container: %w", err)
 	}
 	s.RegisteredMetrics = registeredMetrics
@@ -664,10 +678,13 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		}
 		// Scrape the host network to get the network config and store it in the
 		// loader. The kernel will restore loaded network stack with this config.
-		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6, true); err != nil {
+		if err := s.setupNetwork(conn, s.Pid.Load(), spec, conf, disableIPv6, true); err != nil {
 			return fmt.Errorf("setting up network: %w", err)
 		}
 	} else {
+		if conf.Netgofer.Enabled() {
+			log.Warningf("Netgofer proxy is enabled (--netgofer=%s) but custom network args are provided for restore; netgofer will not be started", conf.Netgofer)
+		}
 		// When network args is not nil, set it in the loader which will be used
 		// during restore to configure the loaded stack.
 		log.Debugf("Setting up network args, config: %+v", networkArgs)
@@ -684,6 +701,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	// Restore the container and start the root container.
 	var reply sentryapi.RestoreReply
 	if err := conn.Call(sentryapi.ContMgrRestore, &opt, &reply); err != nil {
+		s.stopNetgofer()
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
 				return fmt.Errorf("restoring container %q from %s: %w", cid, target, err)
@@ -1951,7 +1969,132 @@ func (s *Sandbox) destroy() error {
 		}
 	}
 
+	s.stopNetgofer()
+
 	return nil
+}
+
+func isNetgoferProcess(pid int, sandboxID string) bool {
+	if pid <= 0 || sandboxID == "" {
+		return false
+	}
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return false
+	}
+	args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
+	if len(args) == 0 || args[0] != "runsc-netgofer" {
+		return false
+	}
+	// startProxy() always appends the sandbox ID as the final positional
+	// argument.
+	return args[len(args)-1] == sandboxID
+}
+
+// netgoferGracePeriod is how long stopNetgofer() waits for netgofer to notice
+// that its UDS peer closed and exit on its own, before resorting to SIGKILL.
+const netgoferGracePeriod = 100 * time.Millisecond
+
+// netgoferKillTimeout bounds how long stopNetgofer() waits for netgofer to die
+// after SIGKILL. stopNetgofer() runs on the container deletion path and must
+// not be able to block indefinitely.
+const netgoferKillTimeout = 5 * time.Second
+
+// StopNetgofer stops the netgofer process running alongside the sandbox.
+func (s *Sandbox) StopNetgofer() {
+	s.stopNetgofer()
+}
+
+func (s *Sandbox) stopNetgofer() {
+	s.netgoferMu.Lock()
+	netgoferPid := s.NetgoferPid.Load()
+	if netgoferPid == 0 {
+		s.netgoferMu.Unlock()
+		return
+	}
+	isChild := s.netgoferIsChild
+	stopped := s.netgoferStopped
+	s.netgoferMu.Unlock()
+
+	if isChild && stopped != nil {
+		// Wait briefly for netgofer to exit gracefully (e.g. when the sandbox
+		// process exits and closes its end of the UDS socketpair).
+		select {
+		case <-stopped:
+			return
+		case <-time.After(netgoferGracePeriod):
+		}
+
+		s.netgoferMu.Lock()
+		if pid := s.NetgoferPid.Load(); pid == netgoferPid {
+			log.Debugf("Killing netgofer %q PID %d", s.ID, pid)
+			_ = unix.Kill(pid, unix.SIGKILL)
+		}
+		s.netgoferMu.Unlock()
+		select {
+		case <-stopped:
+		case <-time.After(netgoferKillTimeout):
+			log.Warningf("Timed out waiting for netgofer %q PID %d to be reaped", s.ID, netgoferPid)
+		}
+		return
+	}
+
+	if !isNetgoferProcess(netgoferPid, s.ID) {
+		s.netgoferMu.Lock()
+		if s.NetgoferPid.Load() == netgoferPid {
+			s.NetgoferPid.Store(0)
+		}
+		s.netgoferMu.Unlock()
+		return
+	}
+
+	if err := specutils.WaitForNonChildExit(netgoferPid, 0, netgoferGracePeriod); err != nil {
+		if isNetgoferProcess(netgoferPid, s.ID) {
+			log.Debugf("Killing netgofer %q PID %d", s.ID, netgoferPid)
+			_ = unix.Kill(netgoferPid, unix.SIGKILL)
+			if err := specutils.WaitForNonChildExit(netgoferPid, 0, netgoferKillTimeout); err != nil {
+				log.Warningf("Timed out waiting for netgofer %q PID %d to exit: %v", s.ID, netgoferPid, err)
+			}
+		}
+	}
+	s.netgoferMu.Lock()
+	if s.NetgoferPid.Load() == netgoferPid {
+		s.NetgoferPid.Store(0)
+	}
+	s.netgoferMu.Unlock()
+}
+
+func (s *Sandbox) reapNetgoferBackground(pid int, stopped chan struct{}) {
+	go func() {
+		defer close(stopped)
+		// Wait for the child to exit WITHOUT reaping it from the kernel process
+		// table (WNOWAIT), so the PID cannot be recycled before we clear NetgoferPid.
+		for {
+			err := unix.Waitid(unix.P_PID, pid, &unix.Siginfo{}, unix.WEXITED|unix.WNOWAIT, nil)
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			break
+		}
+		s.netgoferMu.Lock()
+		defer s.netgoferMu.Unlock()
+		if s.NetgoferPid.Load() == pid {
+			s.NetgoferPid.Store(0)
+		}
+		var status unix.WaitStatus
+		for {
+			_, err := unix.Wait4(pid, &status, 0, nil)
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			if err == nil {
+				log.Infof("Netgofer process (PID=%d) reaped: exit code = %v", pid, status.ExitStatus())
+			} else if !errors.Is(err, unix.ECHILD) {
+				log.Warningf("error reaping netgofer process (PID=%d) from background goroutine: %v", pid, err)
+			}
+			break
+		}
+	}()
 }
 
 // SignalContainer sends the signal to a container in the sandbox. If all is
