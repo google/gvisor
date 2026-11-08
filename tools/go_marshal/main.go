@@ -31,11 +31,10 @@ import (
 )
 
 var (
-	pkg                     = flag.String("pkg", "", "output package")
-	output                  = flag.String("output", "", "output file")
-	outputTest              = flag.String("output_test", "", "output file for tests")
-	outputTestUnconditional = flag.String("output_test_unconditional", "", "output file for unconditional tests")
-	imports                 = flag.String("imports", "", "comma-separated list of extra packages to import in generated code")
+	pkg        = flag.String("pkg", "", "output package")
+	output     = flag.String("output", "", "output file")
+	outputTest = flag.String("output_test", "", "output file for tests")
+	imports    = flag.String("imports", "", "comma-separated list of extra packages to import in generated code")
 )
 
 func main() {
@@ -62,7 +61,7 @@ func main() {
 		// as an import.
 		extraImports = strings.Split(*imports, ",")
 	}
-	g, err := gomarshal.NewGenerator(flag.Args(), *output, *outputTest, *outputTestUnconditional, *pkg, extraImports)
+	g, err := gomarshal.NewGenerator(flag.Args(), *output, *outputTest, *pkg, extraImports)
 	if err != nil {
 		panic(err)
 	}

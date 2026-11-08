@@ -203,12 +203,14 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
         if force_add_state_pkg or "//pkg/state" not in all_deps:
             all_deps = all_deps + ["//pkg/state"]
 
+    marshal_rules = []
     if marshal:
         # See above.
-        marshal_sets = calculate_sets(srcs)
-        for (suffix, src_subset) in marshal_sets.items():
+        for suffix, src_subset in calculate_sets(srcs).items():
+            marshal_rule = name + suffix + "_abi_autogen"
+            marshal_rules.append(marshal_rule)
             go_marshal(
-                name = name + suffix + "_abi_autogen",
+                name = marshal_rule,
                 srcs = src_subset,
                 debug = select({
                     "//tools/go_marshal:marshal_config_verbose": True,
@@ -223,10 +225,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
             if not dep in all_deps
         ]
         all_deps = all_deps + extra_deps
-        all_srcs = all_srcs + [
-            name + suffix + "_abi_autogen_unsafe.go"
-            for suffix in marshal_sets.keys()
-        ]
+        all_srcs = all_srcs + [rule + "_unsafe.go" for rule in marshal_rules]
 
     # For template rendering, split all the sources into groups of related
     # files. This will prevent us from generating non-sensical combinations,
@@ -301,23 +300,17 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
             library = ":" + name,
         )
 
-    if marshal:
+    if marshal_rules:
         # Ignore importpath for go_test.
         kwargs.pop("importpath", None)
 
-        # See above.
-        marshal_sets = calculate_sets(srcs)
-        for (suffix, _) in marshal_sets.items():
-            _go_test(
-                name = name + suffix + "_abi_autogen_test",
-                srcs = [
-                    name + suffix + "_abi_autogen_test.go",
-                    name + suffix + "_abi_autogen_unconditional_test.go",
-                ],
-                library = ":" + name,
-                deps = marshal_test_deps,
-                **kwargs
-            )
+        _go_test(
+            name = name + "_abi_autogen_test",
+            srcs = [rule + "_test.go" for rule in marshal_rules],
+            library = ":" + name,
+            deps = marshal_test_deps,
+            **kwargs
+        )
 
 def go_test(name, nogo = True, **kwargs):
     """Wraps the standard go_test.
