@@ -74,7 +74,6 @@ if [[ "${BUILDKITE_COMMAND:-}" =~ "pipeline upload" ]]; then
   git checkout -- .buildkite/pipeline.yaml 2>/dev/null || true
 fi
 
-# Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   set -x
   dmesg -kT | tail -n 50
@@ -85,9 +84,6 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
       tar -czf "/tmp/${BUILDKITE_JOB_ID}.tar.gz" -C /tmp/ "${runtime}"
       buildkite-agent artifact upload "/tmp/${BUILDKITE_JOB_ID}.tar.gz"
   fi
-  # Attempt to clear the cache and shut down.
-  make clean || echo "make clean failed with code $?"
-  make bazel-shutdown || echo "make bazel-shutdown failed with code $?"
   # Attempt to clear any Go cache.
   sudo rm -rf "${HOME}/.cache/go-build"
   sudo rm -rf "${HOME}/go"
@@ -133,4 +129,15 @@ fi
 # Cleanup temporary directory where STAGED_BINARIES may have been extracted.
 if [[ -n "${BUILDKITE_STAGED_BINARIES_DIRECTORY:-}" ]]; then
   rm -rf "$BUILDKITE_STAGED_BINARIES_DIRECTORY" || true
+fi
+
+if [[ -n "${BUILDKITE_BAZEL_DIRECTORY:-}" ]]; then
+  # The native Bazel server runs on the host, outside the containers stopped above.
+  shutdown_status=0
+  bazel shutdown || shutdown_status=$?
+  rm -f -- "$BUILDKITE_BAZEL_DIRECTORY/bazel"
+  rmdir -- "$BUILDKITE_BAZEL_DIRECTORY"
+  if [[ "$shutdown_status" != 0 && "$BUILDKITE_COMMAND_EXIT_STATUS" == 0 ]]; then
+    exit "$shutdown_status"
+  fi
 fi

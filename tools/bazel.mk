@@ -41,12 +41,12 @@
 ##                              (default: no device file is exposed).
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
-DOCKER_BUILD := true
 ifneq ($(MAKECMDGOALS),)
 ifeq ($(filter-out help,$(MAKECMDGOALS)),)
 DOCKER_BUILD := false
 endif
 endif
+DOCKER_BUILD ?= true
 ifeq ($(DOCKER_BUILD),true)
 -include bazel-server-inc
 endif

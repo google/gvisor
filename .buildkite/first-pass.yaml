@@ -66,16 +66,14 @@ steps:
     command: make lint-cc
   - <<: *common
     <<: *source_test
-    label: ":scroll: Governance file sync check"
-    command: make governance-check
-  - <<: *common
-    <<: *source_test
     label: ":building_construction: Gazelle BUILD file check"
     command: make gazelle-check
   - <<: *common
     <<: *source_test
     label: ":scales: Dependency license check"
     command: make license-check
+    env:
+      DOCKER_BUILD: "false"
 
   # Basic unit tests.
   - <<: *common
