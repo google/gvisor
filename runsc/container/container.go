@@ -608,6 +608,18 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 	var err error
 	if specutils.IsRootContainer(c.Spec) {
 		err = startRoot(conf, c.Spec)
+		if err == nil {
+			// Save container state right after startRoot succeeds so that NetgoferPid
+			// and any other runtime updates are persisted to state.json. This ensures
+			// a subsequent `runsc delete` can find and terminate netgofer even if
+			// poststart hooks or subsequent steps fail.
+			if err = c.saveLocked(); err != nil {
+				if c.Sandbox != nil {
+					c.Sandbox.StopNetgofer()
+				}
+				return err
+			}
+		}
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
@@ -670,6 +682,9 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 		}
 	}
 	if err != nil {
+		if specutils.IsRootContainer(c.Spec) && c.Sandbox != nil {
+			c.Sandbox.StopNetgofer()
+		}
 		// Errors reported by the sandbox mean that it was up at *some* point,
 		// even if it exited since.
 		var remoteErr urpc.RemoteError
@@ -694,6 +709,9 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 	// stop the container, and continue the lifecycle at step 12" - OCI spec.
 	if c.Spec.Hooks != nil {
 		if err := specutils.ExecuteHooks(c.Spec.Hooks.Poststart, c.State()); err != nil {
+			if specutils.IsRootContainer(c.Spec) && c.Sandbox != nil {
+				c.Sandbox.StopNetgofer()
+			}
 			return err
 		}
 	}

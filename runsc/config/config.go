@@ -184,6 +184,11 @@ type Config struct {
 	// PCAP is a file to which network packets should be logged in PCAP format.
 	PCAP string `flag:"pcap-log"`
 
+	// Netgofer controls whether and how netgofer is used for networking via UDS.
+	// Note: It is experimental and currently only proxies outbound TCP traffic.
+	// Active TCP connections cannot be preserved across save/restore.
+	Netgofer NetgoferMode `flag:"netgofer"`
+
 	// NetworkProxyPath, if set, is the path of an external UDS that the
 	// sentry attaches its primary network interface to instead of creating
 	// an AF_PACKET socket.
@@ -531,7 +536,7 @@ type Config struct {
 // UseNetworkProxy reports whether the primary sandbox network interface should
 // be attached to a unix domain socket instead of AF_PACKET socket.
 func (c *Config) UseNetworkProxy() bool {
-	return c.NetworkProxyPath != ""
+	return c.Netgofer.Enabled() || c.NetworkProxyPath != ""
 }
 
 // platformDevicePaths is the parsed value of --platform_device_path.
@@ -606,7 +611,7 @@ func (c *Config) Validate() error {
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
 	}
-	if c.UseNetworkProxy() {
+	if c.NetworkProxyPath != "" {
 		if !filepath.IsAbs(c.NetworkProxyPath) {
 			return fmt.Errorf("network-proxy-path must be an absolute path, got %q", c.NetworkProxyPath)
 		}
@@ -615,6 +620,17 @@ func (c *Config) Validate() error {
 		}
 		if c.XDP.Mode != XDPModeOff {
 			return fmt.Errorf("network-proxy-path flag is incompatible with XDP")
+		}
+	}
+	if c.Netgofer.Enabled() {
+		if c.NetworkProxyPath != "" {
+			return fmt.Errorf("netgofer and network-proxy-path flags cannot both be set")
+		}
+		if c.Network != NetworkSandbox {
+			return fmt.Errorf("netgofer flag is only supported with sandbox networking")
+		}
+		if c.XDP.Mode != XDPModeOff {
+			return fmt.Errorf("netgofer flag is incompatible with XDP")
 		}
 	}
 	if c.TBFBurst > maxQDiscTBFBurst {
@@ -2030,4 +2046,55 @@ func (p StateEnginePolicy) String() string {
 	default:
 		panic(fmt.Sprintf("invalid state engine policy %d", p))
 	}
+}
+
+// NetgoferMode specifies whether and how the netgofer UDS proxy is used.
+type NetgoferMode int
+
+const (
+	// NetgoferModeOff disables the netgofer UDS proxy.
+	NetgoferModeOff NetgoferMode = iota
+
+	// NetgoferModeProxy runs netgofer in user-space Netstack TCP proxy mode.
+	NetgoferModeProxy
+)
+
+// Enabled reports whether UDS proxy networking is enabled.
+func (n NetgoferMode) Enabled() bool {
+	return n != NetgoferModeOff
+}
+
+// Ptr returns a pointer to n.
+func (n NetgoferMode) Ptr() *NetgoferMode {
+	return &n
+}
+
+// Get implements flag.Getter.
+func (n *NetgoferMode) Get() any {
+	return *n
+}
+
+// String implements flag.Getter.
+func (n NetgoferMode) String() string {
+	switch n {
+	case NetgoferModeOff:
+		return "off"
+	case NetgoferModeProxy:
+		return "proxy"
+	default:
+		panic(fmt.Sprintf("invalid netgofer mode %d", n))
+	}
+}
+
+// Set implements flag.Getter. Set(String()) should be idempotent.
+func (n *NetgoferMode) Set(v string) error {
+	switch v {
+	case "", "off":
+		*n = NetgoferModeOff
+	case "proxy":
+		*n = NetgoferModeProxy
+	default:
+		return fmt.Errorf("invalid netgofer mode %q (must be one of: off, proxy)", v)
+	}
+	return nil
 }

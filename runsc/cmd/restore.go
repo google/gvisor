@@ -204,7 +204,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	log.Debugf("Restore: %v", r.imagePath)
 	err = c.Restore(conf, r.imagePath, r.directIO, r.background, nil /* networkArgs */)
 	if err != nil {
-		return util.Errorf("starting container: %v", err)
+		return util.Errorf("restoring container: %v", err)
 	}
 
 	// If we allocate a terminal, forward signals to the sandbox process.
