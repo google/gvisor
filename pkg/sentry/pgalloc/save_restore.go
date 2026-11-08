@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -63,9 +64,21 @@ func (f *MemoryFile) ResourceID() checkpoint.ResourceID {
 	return f.opts.ResourceID
 }
 
+// MemoryFileMetadataProto versions identify the pages file encoding. In
+// version 1, each saved page occupies a whole page. In version 2, each saved
+// page contains only the blocks selected by its subpage mask. Readers without
+// subpage support ignore subpage_size and subpage_masks but reject versions
+// other than 1, so version 2 makes them fail before loading any pages instead
+// of misinterpreting the pages file. This identifies the encoding; it does not
+// make checkpoints restorable across runsc versions.
+const (
+	metadataVersionWholePages = 1
+	metadataVersionSubpages   = 2
+)
+
 func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	pb := &pgallocpb.MemoryFileMetadataProto{
-		Version:     1,
+		Version:     metadataVersionWholePages,
 		Subreleased: make(map[uint64]uint64, len(f.subreleased)),
 	}
 	for k, v := range f.subreleased {
@@ -119,10 +132,8 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	return pb
 }
 
+// Preconditions: checkMetadataVersion(pb) == nil.
 func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) error {
-	if pb.Version != 1 {
-		return fmt.Errorf("unsupported MemoryFileMetadataProto version %d", pb.Version)
-	}
 	f.subreleased = make(map[uint64]uint64, len(pb.Subreleased))
 	for k, v := range pb.Subreleased {
 		f.subreleased[k] = v
@@ -184,10 +195,22 @@ type SaveOpts struct {
 	// returns, so SaveTo() may leave zero pages that are already committed on
 	// the host in place rather than decommit them.
 	ExitAfterSaving bool
+
+	// If SubpageSize is not 0 and the MemoryFile is disk-backed, SaveTo()
+	// saves each committed page to PagesFile as only its SubpageSize-byte
+	// blocks that contain non-zero bytes. SubpageSize must be 0 or a valid
+	// subpage size (see ValidSubpageSize). SubpageSize has no effect on
+	// MemoryFiles that are not disk-backed, or if PagesFile is nil. With an
+	// O_DIRECT pages file, SubpageSize must also be a multiple of the file's
+	// direct I/O alignment.
+	SubpageSize uint64
 }
 
 // SaveTo writes f's state to the given stream.
 func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) error {
+	if opts.SubpageSize != 0 && !ValidSubpageSize(opts.SubpageSize) {
+		return fmt.Errorf("invalid subpage size %d for page size %d", opts.SubpageSize, hostarch.PageSize)
+	}
 	if err := f.AwaitLoadAll(); err != nil {
 		return fmt.Errorf("previous async page loading failed: %w", err)
 	}
@@ -249,7 +272,28 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		newUncommittedBytes     uint64
 		hostHoleBytes           uint64
 		queuedPageBytes         uint64
+		queuedFileBytes         uint64
+		subpageSavedBytes       uint64
 	)
+	// Subpage saving applies only to disk-backed MemoryFiles saved with a pages
+	// file. runsc only sets SubpageSize to SubpageSize4K(), which is 0 if
+	// hostarch.PageSize is 4 KiB. If subpageSize is 0, the rest of SaveTo()
+	// behaves exactly as it does without subpage saving.
+	subpageSize := uint64(0)
+	if amfs != nil && f.opts.DiskBackedFile {
+		subpageSize = opts.SubpageSize
+	}
+	// With subpage saving, committed pages are scanned even if they are known
+	// to be committed, both to find their non-zero blocks and to exclude zero
+	// pages. subpageMasks maps the offset of each partially-zero committed page
+	// to the mask of its non-zero blocks.
+	var subpageMasks map[uint64]uint64
+	if subpageSize != 0 {
+		subpageMasks = make(map[uint64]uint64)
+		subpageOpts := *opts
+		subpageOpts.ExcludeCommittedZeroPages = true
+		opts = &subpageOpts
+	}
 	asyncWritePages := func(fr memmap.FileRange) {}
 	if amfs != nil {
 		asyncWritePages = func(fr memmap.FileRange) {
@@ -261,6 +305,48 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 				FileRange: fr,
 			})
 			amfs.pf.saveOff += amount
+			amfs.pf.mu.Unlock()
+			amfs.pf.stStatus.Notify(apsSTPending)
+		}
+	}
+	if subpageSize != 0 {
+		// Queue only the non-zero blocks of each page, coalescing contiguous
+		// blocks to keep amfs.pf.unsaved small.
+		asyncWritePages = func(fr memmap.FileRange) {
+			queuedPageBytes += fr.Length()
+			amfs.pf.mu.Lock()
+			var cur memmap.FileRange
+			push := func() {
+				amfs.pf.unsaved.PushBack(apsRange{
+					amfs:      amfs,
+					FileRange: cur,
+				})
+				amfs.pf.saveOff += cur.Length()
+				queuedFileBytes += cur.Length()
+			}
+			add := func(r memmap.FileRange) {
+				if cur.Length() != 0 && cur.End == r.Start {
+					cur.End = r.End
+					return
+				}
+				if cur.Length() != 0 {
+					push()
+				}
+				cur = r
+			}
+			for off := fr.Start; off < fr.End; off += hostarch.PageSize {
+				mask, ok := subpageMasks[off]
+				if !ok {
+					add(memmap.FileRange{off, off + hostarch.PageSize})
+					continue
+				}
+				forEachSubpageRun(mask, func(first, end uint64) {
+					add(memmap.FileRange{off + first*subpageSize, off + end*subpageSize})
+				})
+			}
+			if cur.Length() != 0 {
+				push()
+			}
 			amfs.pf.mu.Unlock()
 			amfs.pf.stStatus.Notify(apsSTPending)
 		}
@@ -429,6 +515,13 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 					} else {
 						alreadyCommittedBytes += uint64(hostarch.PageSize)
 					}
+					if subpageSize != 0 {
+						mask := subpageMask(pg, subpageSize, zeroPage)
+						if mask != fullSubpageMask(subpageSize) {
+							subpageMasks[off] = mask
+						}
+						subpageSavedBytes += uint64(bits.OnesCount64(mask)) * subpageSize
+					}
 				}
 				maseg = updateAddRange(maseg, memmap.FileRange{Start: off, End: off + uint64(hostarch.PageSize)}, wasCommitted, !isZeroed)
 			}
@@ -533,6 +626,30 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		return fmt.Errorf("async page save queued %d bytes, but metadata describes %d bytes", queuedPageBytes, f.knownCommittedBytes)
 	}
 	pb := f.exportMetadataProto()
+	if subpageSize != 0 {
+		pb.Version = metadataVersionSubpages
+		pb.SubpageSize = subpageSize
+		full := fullSubpageMask(subpageSize)
+		maskedBytes := uint64(0)
+		for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+			if !maseg.ValuePtr().knownCommitted {
+				continue
+			}
+			for off := maseg.Start(); off < maseg.End(); off += hostarch.PageSize {
+				mask, ok := subpageMasks[off]
+				if !ok {
+					mask = full
+				}
+				pb.SubpageMasks = append(pb.SubpageMasks, mask)
+				maskedBytes += uint64(bits.OnesCount64(mask)) * subpageSize
+			}
+		}
+		if queuedFileBytes != maskedBytes {
+			// As above: LoadFrom finds each page's blocks from the masks.
+			return fmt.Errorf("async page save queued %d bytes of blocks, but subpage masks describe %d bytes", queuedFileBytes, maskedBytes)
+		}
+		log.Infof("MemoryFile(%p): subpage saving %d of %d committed bytes in %d-byte blocks (%d partially-zero pages)", f, subpageSavedBytes, alreadyCommittedBytes+newCommittedBytes, subpageSize, len(subpageMasks))
+	}
 	data, err := proto.Marshal(pb)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -835,7 +952,8 @@ func (apfs *AsyncPagesFileSave) enqueueCurOp() {
 // Preconditions:
 // - apfs.canEnqueue() == true.
 // - mfr.Length() > 0.
-// - mfr must be page-aligned.
+// - mfr must be page-aligned, or aligned to SaveOpts.SubpageSize if
+// mfr.amfs.f is saved with subpage saving.
 func (apfs *AsyncPagesFileSave) enqueueRange(mfr apsRange) uint64 {
 	for {
 		if apfs.curOp == nil {
@@ -868,7 +986,8 @@ func (apfs *AsyncPagesFileSave) enqueueRange(mfr apsRange) uint64 {
 //
 // Preconditions:
 // - mfr.Length() > 0.
-// - mfr must be page-aligned.
+// - mfr must be page-aligned, or aligned to SaveOpts.SubpageSize if
+// mfr.amfs.f is saved with subpage saving.
 func (apfs *AsyncPagesFileSave) combine(mfr apsRange) uint64 {
 	op := apfs.curOp
 	if op.total != 0 {
@@ -1123,7 +1242,9 @@ type LoadOpts struct {
 	// MemoryFile completes. DoneCallback will be called whether or not
 	// LoadFrom returns a non-nil error.
 	//
-	// Invariant: PagesFileOffset must be page-aligned.
+	// Invariant: PagesFileOffset must be page-aligned, unless a MemoryFile
+	// saved before this one in the pages file used subpage saving, in which
+	// case it is aligned to that MemoryFile's subpage size.
 	PagesFile       *AsyncPagesFileLoad
 	PagesFileOffset uint64
 	DoneCallback    func(error)
@@ -1160,6 +1281,33 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	var pb pgallocpb.MemoryFileMetadataProto
 	if err := proto.Unmarshal(data, &pb); err != nil {
 		return fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+	// Check subpage saving before importing metadata, so that invalid
+	// metadata leaves f unchanged. The layout is complete before async page
+	// loading, which reads it concurrently, starts. Metadata saved without
+	// subpage saving has neither field set, leaving subpages nil, and the rest
+	// of LoadFrom() then behaves exactly as it does without subpage saving.
+	var (
+		subpages    *subpageLayout
+		subpagesEnd uint64
+	)
+	if err := checkMetadataVersion(&pb); err != nil {
+		return err
+	}
+	if pb.SubpageSize != 0 {
+		if !ValidSubpageSize(pb.SubpageSize) {
+			return fmt.Errorf("invalid subpage size %d for page size %d", pb.SubpageSize, hostarch.PageSize)
+		}
+		if opts.PagesFile == nil {
+			return fmt.Errorf("MemoryFile saved with subpage saving requires a pages file")
+		}
+		if n := maxSubpageRuns(pb.SubpageSize); opts.PagesFile.ar.MaxRanges() < n {
+			return fmt.Errorf("MemoryFile saved with %d-byte subpages requires reads of at least %d ranges, pages file supports %d", pb.SubpageSize, n, opts.PagesFile.ar.MaxRanges())
+		}
+		var err error
+		if subpages, subpagesEnd, err = newSubpageLayout(&pb, opts.PagesFileOffset); err != nil {
+			return err
+		}
 	}
 	if err := f.importMetadataProto(&pb); err != nil {
 		return fmt.Errorf("failed to import metadata: %w", err)
@@ -1230,6 +1378,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			df:           df,
 			doneCallback: opts.DoneCallback,
 			timeline:     mfTimeline.Transfer(),
+			subpages:     subpages,
 		}
 		amfl.pf.amflsMu.Lock()
 		if err := amfl.pf.err(); err != nil {
@@ -1326,6 +1475,13 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		if !f.opts.DisableMemoryAccounting {
 			usage.MemoryAccounting.Inc(amount, maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
 		}
+	}
+	if subpages != nil {
+		// The loop above recorded offsets as if every page had been saved
+		// whole, which keeps segments of amfl.unloaded splitting and merging
+		// as usual; amfl.subpages maps pages to where their blocks actually
+		// are. The next MemoryFile starts after this one's blocks.
+		opts.PagesFileOffset = subpagesEnd
 	}
 	durPages := time.Duration(gohacks.Nanotime() - timePagesStart)
 	if amfl != nil {
@@ -1472,6 +1628,13 @@ type asyncMemoryFileLoad struct {
 	// minUnstarted is the lowest offset that may map to a segment in unloaded
 	// for which aplUnloadedInfo.started == false.
 	minUnstarted uint64
+
+	// If subpages is not nil, the MemoryFile was saved with subpage saving,
+	// and aplUnloadedInfo.off is the offset its pages would have in the pages
+	// file if they had been saved whole, which is used only to split and merge
+	// segments of unloaded; subpages gives the offsets of their saved blocks.
+	// subpages is immutable.
+	subpages *subpageLayout
 }
 
 // aplUnloadedInfo is the value type of asyncMemoryFileLoad.unloaded.
@@ -1523,19 +1686,34 @@ type aplOp struct {
 	// amfl represents the MemoryFile being loaded.
 	amfl *asyncMemoryFileLoad
 
-	// frs are the MemoryFile ranges being loaded.
+	// frs are the MemoryFile ranges being read.
 	frs []memmap.FileRange
 
 	// iovecs contains mappings of frs.
 	iovecs []unix.Iovec
 
-	// If tempRef is true, a temporary reference is held on pages in frs that
-	// should be dropped after completion.
+	// If amfl.subpages is not nil, pages are the MemoryFile pages being
+	// loaded, of which frs are the saved blocks.
+	pages []memmap.FileRange
+
+	// pagesBytes is the total length of pages.
+	pagesBytes uint64
+
+	// If tempRef is true, a temporary reference is held on pages in
+	// loaded() that should be dropped after completion.
 	tempRef bool
 }
 
 func (op *aplOp) off() int64 {
 	return int64(op.end - op.total)
+}
+
+// loaded returns the MemoryFile ranges whose pages are loaded by op.
+func (op *aplOp) loaded() []memmap.FileRange {
+	if op.amfl.subpages != nil {
+		return op.pages
+	}
+	return op.frs
 }
 
 // AsyncPagesFileLoadOpts contains options to StartAsyncPagesFileLoad.
@@ -1730,6 +1908,8 @@ func (apfl *AsyncPagesFileLoad) enqueueRange(amfl *asyncMemoryFileLoad, fr memma
 			op.total = 0
 			op.frs = op.frs[:0]
 			op.iovecs = op.iovecs[:0]
+			op.pages = op.pages[:0]
+			op.pagesBytes = 0
 			apfl.curOp = op
 			apfl.curOpID = id
 		}
@@ -1752,6 +1932,9 @@ func (apfl *AsyncPagesFileLoad) enqueueRange(amfl *asyncMemoryFileLoad, fr memma
 // - fr.Length() > 0.
 // - fr must be page-aligned.
 func (apfl *AsyncPagesFileLoad) combine(amfl *asyncMemoryFileLoad, fr memmap.FileRange, off uint64, tempRef bool) uint64 {
+	if amfl.subpages != nil {
+		return apfl.combineSubpages(amfl, fr, tempRef)
+	}
 	op := apfl.curOp
 	if op.total != 0 {
 		if op.end != off {
@@ -1826,6 +2009,103 @@ func (apfl *AsyncPagesFileLoad) combine(amfl *asyncMemoryFileLoad, fr memmap.Fil
 	return n
 }
 
+// combineSubpages is the equivalent of combine for a MemoryFile saved with
+// subpage saving. Pages are added whole to op.pages, and their saved blocks to
+// op.frs and op.iovecs; it returns the number of MemoryFile bytes added, which
+// may exceed the number of bytes read.
+//
+// Preconditions: Same as combine.
+func (apfl *AsyncPagesFileLoad) combineSubpages(amfl *asyncMemoryFileLoad, fr memmap.FileRange, tempRef bool) uint64 {
+	sp := amfl.subpages
+	op := apfl.curOp
+	i := sp.pageIndex(fr.Start)
+	if op.total != 0 {
+		if op.end != sp.offs[i] || op.amfl != amfl || op.tempRef != tempRef {
+			return 0
+		}
+	} else {
+		op.end = sp.offs[i]
+		op.amfl = amfl
+		op.tempRef = tempRef
+	}
+	if op.pages == nil {
+		// Each page in op.pages starts a new range in op.frs, so op.pages
+		// needs no more capacity than op.frs.
+		op.pages = make([]memmap.FileRange, 0, cap(op.frs))
+	}
+
+	var (
+		added  uint64
+		runs   [32]memmap.FileRange
+		slices [32][]byte
+	)
+	for pgOff := fr.Start; pgOff < fr.End; pgOff, i = pgOff+hostarch.PageSize, i+1 {
+		if sp.offs[i] != op.end {
+			// Unreachable for pages saved in order, but keep reads exact.
+			break
+		}
+		mask := sp.masks[i]
+		size := uint64(bits.OnesCount64(mask)) * sp.size
+		if op.total+size > apfl.maxReadBytes {
+			break
+		}
+		// Also bound the MemoryFile bytes that op loads, as whole-page reads
+		// are bounded. A waiter for any of op's pages waits for all of op, and
+		// bounding only the bytes read would let op load up to
+		// hostarch.PageSize/sp.size times as much memory.
+		if op.pagesBytes+hostarch.PageSize > apfl.maxReadBytes {
+			break
+		}
+		// Map each run of saved blocks (which lies within a single chunk), and
+		// check that the page's ranges and iovecs fit before adding any of
+		// them. LoadFrom ensures that a page always fits in an empty op.
+		nruns := 0
+		forEachSubpageRun(mask, func(first, end uint64) {
+			runs[nruns] = memmap.FileRange{pgOff + first*sp.size, pgOff + end*sp.size}
+			nruns++
+		})
+		newFRs, newIovecs := nruns, nruns
+		for r := 0; r < nruns; r++ {
+			amfl.f.forEachMappingSlice(runs[r], func(bs []byte) { slices[r] = bs })
+		}
+		if len(op.frs) > 0 && op.frs[len(op.frs)-1].End == runs[0].Start {
+			newFRs--
+		}
+		if len(op.iovecs) > 0 && canMergeIovecAndSlice(op.iovecs[len(op.iovecs)-1], slices[0]) {
+			newIovecs--
+		}
+		if len(op.frs)+newFRs > cap(op.frs) || len(op.iovecs)+newIovecs > cap(op.iovecs) {
+			break
+		}
+		for r := 0; r < nruns; r++ {
+			if len(op.frs) > 0 && op.frs[len(op.frs)-1].End == runs[r].Start {
+				op.frs[len(op.frs)-1].End = runs[r].End
+			} else {
+				op.frs = append(op.frs, runs[r])
+			}
+			bs := slices[r]
+			if len(op.iovecs) > 0 && canMergeIovecAndSlice(op.iovecs[len(op.iovecs)-1], bs) {
+				op.iovecs[len(op.iovecs)-1].Len += uint64(len(bs))
+			} else {
+				op.iovecs = append(op.iovecs, unix.Iovec{
+					Base: &bs[0],
+					Len:  uint64(len(bs)),
+				})
+			}
+		}
+		if len(op.pages) > 0 && op.pages[len(op.pages)-1].End == pgOff {
+			op.pages[len(op.pages)-1].End = pgOff + hostarch.PageSize
+		} else {
+			op.pages = append(op.pages, memmap.FileRange{pgOff, pgOff + hostarch.PageSize})
+		}
+		op.total += size
+		op.end += size
+		added += hostarch.PageSize
+		op.pagesBytes += hostarch.PageSize
+	}
+	return added
+}
+
 func (apfl *AsyncPagesFileLoad) main() {
 	maxParallel := apfl.ar.MaxParallel()
 	// Storage reused between main loop iterations:
@@ -1837,7 +2117,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 	// only after releasing both loader locks.
 	collectRefs := func(op *aplOp) {
 		if op.tempRef {
-			for _, fr := range op.frs {
+			for _, fr := range op.loaded() {
 				decRefs = append(decRefs, aplFileRange{op.amfl, fr})
 			}
 		}
@@ -2113,7 +2393,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 			amfl := op.amfl
 			haveWaiters := false
 			now := int64(0)
-			for _, fr := range op.frs {
+			for _, fr := range op.loaded() {
 				// All pages in fr have been started and were split around fr
 				// when they were started (above), and fr.amfl.unloaded never
 				// merges started segments. Thus, we don't need to split around

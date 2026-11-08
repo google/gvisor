@@ -66,6 +66,11 @@ type SaveOpts struct {
 	// file.
 	AppMFExcludeCommittedZeroPages bool
 
+	// If SubpageBlocks is true, disk-backed MemoryFiles (such as overlay
+	// filestores) saved to PagesFile are saved in 4 KiB blocks, omitting zero
+	// blocks, if host pages are larger than 4 KiB. See pgalloc.SubpageSize4K.
+	SubpageBlocks bool
+
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
 
@@ -180,7 +185,7 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 		vfsOpts := vfs.PrepareSaveOptions{
 			ValidateMetadata: opts.ValidateMetadata,
 		}
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume, opts.FSSaveOpts, vfsOpts, opts.GraphEngine) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile, opts.FSSaveOpts
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume, opts.SubpageBlocks, opts.FSSaveOpts, vfsOpts, opts.GraphEngine) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile, opts.FSSaveOpts
 		opts.PagesMetadata = nil
 		opts.PagesFile = nil
 		opts.FSSaveOpts = nil

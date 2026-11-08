@@ -45,6 +45,7 @@ type Checkpoint struct {
 	saveRestoreExecTimeout    time.Duration
 	splitFSCheckpointPaths    pathVar
 	stateEngine               optionalStateEnginePolicy
+	saveSubpageBlocks         optionalSubpageBlocksPolicy
 
 	// direct indicates whether O_DIRECT should be used for writing the
 	// checkpoint pages file. It bypasses the kernel page cache. It is beneficial
@@ -84,6 +85,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	c.splitFSCheckpointPaths.defaultPrefix = checkpointfiles.FSCheckpointDir
 	f.Var(&c.splitFSCheckpointPaths, "fs-checkpoint-paths", `[<prefix>=][<container>:]<path> target to include in the filesystem checkpoint (can be repeated). <prefix> defaults to "fs". The files are written to --image-path as <prefix>_*, or into a <prefix>/ subdirectory if <prefix> ends with "/". Paths containing "=" require an explicit prefix. For capturing all of tmpfs, the path should be "all-tmpfs".`)
 	f.Var(&c.stateEngine, "state-engine", "override the sandbox's boot-time state serialization engine for this checkpoint. Values: wire|graph.")
+	f.Var(&c.saveSubpageBlocks, "save-subpage-blocks", saveSubpageBlocksUsage)
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -133,6 +135,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		SaveRestoreExecContainerID: cont.ID,
 		SplitFSCheckpointPaths:     c.splitFSCheckpointPaths.targets,
 		StateEngine:                c.stateEngine.ptr(),
+		SubpageBlocks:              c.saveSubpageBlocks.ptr(),
 	}
 
 	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {
@@ -210,6 +213,50 @@ func (o *optionalStateEnginePolicy) Get() any {
 }
 
 func (o *optionalStateEnginePolicy) ptr() *config.StateEnginePolicy {
+	if !o.set {
+		return nil
+	}
+	v := o.value
+	return &v
+}
+
+// saveSubpageBlocksUsage is the usage of the --save-subpage-blocks flag of the
+// checkpoint and fscheckpoint commands.
+const saveSubpageBlocksUsage = "override the sandbox's boot-time --save-subpage-blocks for this checkpoint. Values: none|4k."
+
+// optionalSubpageBlocksPolicy is a config.SubpageBlocksPolicy flag that
+// records whether it was set.
+type optionalSubpageBlocksPolicy struct {
+	set   bool
+	value config.SubpageBlocksPolicy
+}
+
+// String implements flag.Value.
+func (o *optionalSubpageBlocksPolicy) String() string {
+	if !o.set {
+		return ""
+	}
+	return o.value.String()
+}
+
+// Set implements flag.Value.
+func (o *optionalSubpageBlocksPolicy) Set(v string) error {
+	if err := o.value.Set(v); err != nil {
+		return err
+	}
+	o.set = true
+	return nil
+}
+
+// Get implements flag.Getter.
+func (o *optionalSubpageBlocksPolicy) Get() any {
+	if !o.set {
+		return nil
+	}
+	return o.value
+}
+
+func (o *optionalSubpageBlocksPolicy) ptr() *config.SubpageBlocksPolicy {
 	if !o.set {
 		return nil
 	}

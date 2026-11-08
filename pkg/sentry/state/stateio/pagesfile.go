@@ -14,17 +14,28 @@
 
 package stateio
 
-import (
-	"gvisor.dev/gvisor/pkg/hostarch"
-)
-
 const (
 	pagesFileFDDefaultMaxReadBytes  = 4 << 20
 	pagesFileFDMaxReads             = 12
 	pagesFileFDMinReads             = 4
 	pagesFileFDDefaultMaxWriteBytes = 256 << 10
 	pagesFileFDDefaultMaxWrites     = 128
+
+	// pagesFileMinRangeBytes is the smallest discontiguous range that async
+	// page saving and loading use in production: a page, or a 4 KiB block of
+	// a MemoryFile saved with subpage saving (pgalloc.SubpageSize4K) on hosts
+	// with larger pages.
+	pagesFileMinRangeBytes = 4 << 10
 )
+
+// pagesFileMaxRanges returns the number of ranges to provision for reads or
+// writes of up to maxBytes: one per pagesFileMinRangeBytes, the most that async
+// page loading and saving use. With 4 KiB pages, this is one per page. Smaller
+// ranges (from test-only subpage sizes) remain correct, since async page
+// loading and saving end a read or write when it runs out of ranges.
+func pagesFileMaxRanges(maxBytes uint64) int {
+	return int(maxBytes / pagesFileMinRangeBytes)
+}
 
 // NewPagesFileFDReader returns a FDReader that reads a pages file from the
 // given host file descriptor. It takes ownership of the file descriptor.
@@ -33,9 +44,7 @@ const (
 // - hostarch.PageSize <= maxReadBytes <= linux.MAX_RW_COUNT.
 // - maxParallel > 0.
 func NewPagesFileFDReader(fd int32, maxReadBytes uint64, maxParallel int) *FDReader {
-	// Provision one range per page of maxReadBytes, since this is the maximum
-	// number of ranges that async page loading will use.
-	return NewFDReader(fd, maxReadBytes, int(maxReadBytes>>hostarch.PageShift), maxParallel)
+	return NewFDReader(fd, maxReadBytes, pagesFileMaxRanges(maxReadBytes), maxParallel)
 }
 
 // pagesFileFDReads returns the default number of concurrent reads of a
@@ -64,9 +73,7 @@ func NewPagesFileFDReaderDefault(fd int32, cpus int) *FDReader {
 // - hostarch.PageSize <= maxWriteBytes <= linux.MAX_RW_COUNT.
 // - maxParallel > 0.
 func NewPagesFileFDWriter(fd int32, maxWriteBytes uint64, maxParallel int) *FDWriter {
-	// Provision one range per page of maxWriteBytes, since this is the maximum
-	// number of ranges that async page saving will use.
-	return NewFDWriter(fd, maxWriteBytes, int(maxWriteBytes>>hostarch.PageShift), maxParallel)
+	return NewFDWriter(fd, maxWriteBytes, pagesFileMaxRanges(maxWriteBytes), maxParallel)
 }
 
 // NewPagesFileFDWriterDefault returns a FDWriter that writes to the given host

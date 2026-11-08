@@ -135,6 +135,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(RestoreSpecValidationEnforce.Ptr(), "restore-spec-validation", "how to handle spec validation during restore.")
 	flagSet.Bool("systrap-disable-syscall-patching", false, "disables syscall patching when using the Systrap platform. May be necessary to use in case the workload uses the GS register, or uses ptrace within gVisor. Has significant performance implications and is only recommended when the sandbox is known to run otherwise-incompatible workloads. Only relevant for x86.")
 	flagSet.Bool("systrap-disable-fast-path", false, "unconditionally disables the Systrap fast path.")
+	flagSet.Var(SubpageBlocksNone.Ptr(), "save-subpage-blocks", "how checkpoints of the sandbox save the pages of disk-backed memory files (such as overlay filestores), unless the checkpoint or fscheckpoint command overrides it: none (default, whole pages), or 4k (on hosts whose page size is larger than 4 KiB, 4 KiB blocks, omitting blocks of zeros; whole pages on other hosts).")
 	flagSet.Bool("allow-suid", false, "allows ID elevation when executing binaries with the SUID/SGID bits set. The OCI --no-new-privileges flag continues to prevent ID elevation even when this flag is true.")
 	flagSet.Bool("kvm-use-cpu-nums", false, "on KVM use vCPU numbers as CPU numbers in the sentry. This is necessary to support features like rseq.")
 	flagSet.Bool("allow-rootfs-tar-annotation", false, "allows the rootfs tar annotation to be set.")
@@ -363,6 +364,10 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 		v := conf.StateEngine
 		conf.cliStateEngine = &v
 	}
+	if _, ok := conf.explicitlySet["save-subpage-blocks"]; ok {
+		v := conf.SaveSubpageBlocks
+		conf.cliSaveSubpageBlocks = &v
+	}
 
 	if len(conf.RootDir) == 0 {
 		// If not set, set default root dir to something (hopefully) user-writeable.
@@ -586,6 +591,15 @@ func (c *Config) CLIStateEngine() (StateEnginePolicy, bool) {
 		return 0, false
 	}
 	return *c.cliStateEngine, true
+}
+
+// CLISaveSubpageBlocks returns the --save-subpage-blocks policy explicitly
+// passed on the command line when this Config was created via NewFromFlags.
+func (c *Config) CLISaveSubpageBlocks() (SubpageBlocksPolicy, bool) {
+	if c.cliSaveSubpageBlocks == nil {
+		return "", false
+	}
+	return *c.cliSaveSubpageBlocks, true
 }
 
 // IsFlagSafeToOverride returns true if the given flag name is in the override

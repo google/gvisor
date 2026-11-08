@@ -27,7 +27,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/aio",
         "//pkg/atomicbitops",
-        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/sentry/hostfd",

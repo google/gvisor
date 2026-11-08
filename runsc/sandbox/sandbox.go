@@ -2183,6 +2183,10 @@ type CheckpointOpts struct {
 	// StateEngine, when non-nil, overrides the sandbox's boot-time state
 	// serialization engine for this checkpoint.
 	StateEngine *config.StateEnginePolicy
+
+	// SubpageBlocks, when non-nil, overrides the sandbox's boot-time
+	// --save-subpage-blocks for this checkpoint. See subpageBlocksOverride.
+	SubpageBlocks *config.SubpageBlocksPolicy
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
@@ -2224,6 +2228,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 			opt.GraphEngine = &useGraph
 		}
 	}
+	opt.SubpageBlocks = subpageBlocksOverride(opts.SubpageBlocks, conf)
 	defer opt.FilePayload.Close()
 	if err := s.setCheckpointOptsFiles(conf, imagePath, opts, bundles, &opt); err != nil {
 		return err
@@ -2527,6 +2532,28 @@ type FSSaveOpts struct {
 	// save. Both prefixed (e.g., "rootfs=/", "fs=/data") and
 	// unprefixed (e.g., "/", "all-tmpfs", "c1:/data") formats are supported.
 	Paths []string
+
+	// SubpageBlocks, when non-nil, overrides the sandbox's boot-time
+	// --save-subpage-blocks for this checkpoint. See subpageBlocksOverride.
+	SubpageBlocks *config.SubpageBlocksPolicy
+}
+
+// subpageBlocksOverride returns the value of controlapi.SaveOpts.SubpageBlocks
+// and sentryapi.FSSaveArgs.SubpageBlocks for a checkpoint: policy if it is not
+// nil, or else the --save-subpage-blocks policy explicitly passed on the
+// command line that conf was created from, or else nil, which selects the
+// sandbox's boot-time policy.
+func subpageBlocksOverride(policy *config.SubpageBlocksPolicy, conf *config.Config) *bool {
+	if policy == nil && conf != nil {
+		if p, ok := conf.CLISaveSubpageBlocks(); ok {
+			policy = &p
+		}
+	}
+	if policy == nil {
+		return nil
+	}
+	v := *policy == config.SubpageBlocks4K
+	return &v
 }
 
 // FSSave sends the filesystem checkpointing call to the sandbox.
@@ -2544,6 +2571,7 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 	args := sentryapi.FSSaveArgs{
 		ExitAfterSaving: opts.ExitAfterSaving,
 		Paths:           bundles,
+		SubpageBlocks:   subpageBlocksOverride(opts.SubpageBlocks, conf),
 	}
 	defer args.FilePayload.Close()
 	if err := s.setFSSaveArgs(conf, imagePath, opts.Direct, bundles, &args); err != nil {

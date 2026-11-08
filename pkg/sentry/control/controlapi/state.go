@@ -86,6 +86,11 @@ type SaveOpts struct {
 	// for this checkpoint operation. When nil, the sandbox's configured state
 	// engine is used.
 	GraphEngine *bool `json:"graph_engine,omitempty"`
+
+	// SubpageBlocks, when non-nil, overrides the sandbox's boot-time
+	// --save-subpage-blocks for this save, including its split filesystem
+	// bundles. See state.SaveOpts.SubpageBlocks.
+	SubpageBlocks *bool `json:"subpage_blocks,omitempty"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary

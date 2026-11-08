@@ -48,4 +48,13 @@ message MemoryFileMetadataProto {
   repeated FileRangeProto unwaste_small = 6;
   repeated FileRangeProto unwaste_huge = 7;
   map<uint64, uint64> subreleased = 8;
+
+  // If subpage_size is non-zero, each committed page was saved to the pages
+  // file as only its subpage_size-byte blocks whose bits are set in the
+  // corresponding element of subpage_masks (one per committed page, in
+  // MemoryFile offset order); all other blocks are zero. Metadata with these
+  // fields has version 2, so that readers that only support version 1, and
+  // would ignore these fields, reject it.
+  uint64 subpage_size = 9;
+  repeated uint64 subpage_masks = 10;
 }

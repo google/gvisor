@@ -44,6 +44,12 @@ type FSSaveOpts struct {
 	// FSSave returns, whether or not it returns a non-nil error.
 	ExitAfterSaving bool
 
+	// If SubpageBlocks is true, FSSave saves the MemoryFiles of disk-backed
+	// tmpfs filesystems as described by state.SaveOpts.SubpageBlocks. Bundles
+	// saved by Kernel.SaveTo follow its subpageBlocks argument instead, like
+	// the rest of the checkpoint.
+	SubpageBlocks bool
+
 	// Bundles are the filesystem checkpoint bundles to save, each to its own
 	// set of files.
 	Bundles []FSSaveBundle
@@ -122,7 +128,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 	}
 	return k.quiescePausedAnd(ctx, func() error {
 		for i := range opts.Bundles {
-			if err := k.fsSaveLocked(ctx, &opts.Bundles[i], opts.RunscVersion, nil /* mfsToSave */, nil /* matchCtx */); err != nil {
+			if err := k.fsSaveLocked(ctx, &opts.Bundles[i], opts.RunscVersion, opts.SubpageBlocks, nil /* mfsToSave */, nil /* matchCtx */); err != nil {
 				return fmt.Errorf("bundle %d: %w", i, err)
 			}
 		}
@@ -167,7 +173,7 @@ func (k *Kernel) newFSCheckpointMatchContext(ctx context.Context, paths []checkp
 // fsSaveLocked collects a filesystem checkpoint of bundle.
 //
 // Preconditions: The kernel must be paused and quiesced.
-func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVersion string, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) error {
+func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVersion string, subpageBlocks bool, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) error {
 	if matchCtx == nil {
 		matchCtx = k.newFSCheckpointMatchContext(ctx, bundle.Paths)
 	}
@@ -201,6 +207,12 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVe
 	defer asyncPageSaveCleanup.Clean()
 	mfOpts := pgalloc.SaveOpts{
 		PagesFile: apfs,
+	}
+	if subpageBlocks {
+		// MemoryFiles after a sparsely saved one start at offsets that are
+		// only subpage-aligned; restore accepts any multiple of
+		// pgalloc.MinSubpageSize.
+		mfOpts.SubpageSize = pgalloc.SubpageSize4K()
 	}
 
 	manifest := &fspb.Manifest{

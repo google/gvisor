@@ -455,6 +455,11 @@ type Config struct {
 	// OCI annotation or bundle overrides run.
 	cliStateEngine *StateEnginePolicy
 
+	// cliSaveSubpageBlocks records the --save-subpage-blocks policy explicitly
+	// passed on the command line when this Config was constructed via
+	// NewFromFlags.
+	cliSaveSubpageBlocks *SubpageBlocksPolicy
+
 	// ReproduceNAT, when true, tells runsc to scrape the host network
 	// namespace's NAT iptables and reproduce it inside the sandbox.
 	ReproduceNAT bool `flag:"reproduce-nat"`
@@ -496,6 +501,12 @@ type Config struct {
 	// AllowSUID causes ID elevation to be allowed when execving into executables
 	// with the SUID/SGID bits set.
 	AllowSUID bool `flag:"allow-suid"`
+
+	// SaveSubpageBlocks controls whether checkpoints save the pages of
+	// disk-backed memory files (such as overlay filestores) in blocks smaller
+	// than a page, omitting blocks of zeros. It is the sandbox's default, which
+	// the checkpoint and fscheckpoint commands can override per checkpoint.
+	SaveSubpageBlocks SubpageBlocksPolicy `flag:"save-subpage-blocks"`
 
 	// UseCPUNums causes the sentry to use KVM CPU numbers as CPU numbers in the
 	// sentry. This is necessary to support features like rseq.
@@ -1631,6 +1642,49 @@ func (p HostSettingsPolicy) String() string {
 	default:
 		panic(fmt.Sprintf("Invalid host settings policy %d", p))
 	}
+}
+
+// SubpageBlocksPolicy controls subpage saving of disk-backed memory files in
+// checkpoints.
+type SubpageBlocksPolicy string
+
+// SubpageBlocksPolicy values.
+const (
+	// SubpageBlocksNone saves whole pages.
+	SubpageBlocksNone SubpageBlocksPolicy = "none"
+
+	// SubpageBlocks4K saves 4 KiB blocks, omitting blocks of zeros, on hosts
+	// whose page size is larger than 4 KiB, and whole pages on other hosts.
+	// Checkpoints saved this way are only saved with a pages file, and can
+	// only be restored by a runsc that supports subpage saving.
+	SubpageBlocks4K SubpageBlocksPolicy = "4k"
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SubpageBlocksPolicy) Set(v string) error {
+	sp := SubpageBlocksPolicy(strings.ToLower(v))
+	switch sp {
+	case SubpageBlocksNone, SubpageBlocks4K:
+		*p = sp
+		return nil
+	}
+	return fmt.Errorf("invalid value %q; must be %s or %s", v, SubpageBlocksNone, SubpageBlocks4K)
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SubpageBlocksPolicy) Ptr() *SubpageBlocksPolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SubpageBlocksPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SubpageBlocksPolicy) String() string {
+	return string(p)
 }
 
 // SidecarReleasePolicy controls sidecar release version enforcement policy.

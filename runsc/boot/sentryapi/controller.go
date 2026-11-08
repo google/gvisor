@@ -311,6 +311,10 @@ type FSSaveArgs struct {
 	// exactly one FD, which is a Unix domain socket connected to a URPC server
 	// implementing stateipc.AsyncFileServer.
 	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
+
+	// SubpageBlocks, when non-nil, overrides the sandbox's boot-time
+	// --save-subpage-blocks for this save. See kernel.FSSaveOpts.SubpageBlocks.
+	SubpageBlocks *bool `json:"subpage_blocks,omitempty"`
 }
 
 // ContMgrGetSavings gets the savings for restored sandboxes.

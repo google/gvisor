@@ -86,6 +86,7 @@ func (l *Loader) FSSave() error {
 		l.k.SignalAllFSSaveWaiters(err)
 		return err
 	}
+	opts.SubpageBlocks = l.saveSubpageBlocks()
 	return l.k.FSSave(context.Background(), &opts)
 }
 
@@ -630,8 +631,10 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	if mmf.PagesMetadataStart > mmf.PagesMetadataEnd || mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
 		return nil, nil, c.setError(fmt.Errorf("MemoryFile %q has invalid pages metadata range [%d, %d) for file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata))) // +checklocksignore
 	}
-	if !hostarch.IsPageAligned(mmf.PagesStart) {
-		return nil, nil, c.setError(fmt.Errorf("MemoryFile %q pages offset %d is not page-aligned (page size %d)", mmf.ResourceID, mmf.PagesStart, hostarch.PageSize)) // +checklocksignore
+	// MemoryFiles saved after one saved with subpage saving start at offsets
+	// that need not be page-aligned.
+	if mmf.PagesStart%pgalloc.MinSubpageSize != 0 {
+		return nil, nil, c.setError(fmt.Errorf("MemoryFile %q pages offset %d is not a multiple of %d", mmf.ResourceID, mmf.PagesStart, pgalloc.MinSubpageSize)) // +checklocksignore
 	}
 	c.asyncLoads++ // +checklocksignore
 	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), &pgalloc.LoadOpts{

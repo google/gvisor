@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -685,4 +686,51 @@ func TestSentryGODEBUG(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSubpageBlocksOverride(t *testing.T) {
+	none, k4 := config.SubpageBlocksNone, config.SubpageBlocks4K
+	confFromArgs := func(args ...string) *config.Config {
+		t.Helper()
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		config.RegisterFlags(flagSet)
+		if err := flagSet.Parse(args); err != nil {
+			t.Fatalf("flagSet.Parse(%v): %v", args, err)
+		}
+		conf, err := config.NewFromFlags(flagSet)
+		if err != nil {
+			t.Fatalf("NewFromFlags: %v", err)
+		}
+		return conf
+	}
+	for _, tc := range []struct {
+		name   string
+		policy *config.SubpageBlocksPolicy
+		conf   *config.Config
+		want   *bool
+	}{
+		{name: "no override", conf: confFromArgs(), want: nil},
+		{name: "no config", want: nil},
+		{name: "command override 4k", policy: &k4, conf: confFromArgs(), want: boolPtr(true)},
+		{name: "command override none", policy: &none, conf: confFromArgs(), want: boolPtr(false)},
+		{name: "global flag 4k", conf: confFromArgs("--save-subpage-blocks=4k"), want: boolPtr(true)},
+		{name: "global flag none", conf: confFromArgs("--save-subpage-blocks=none"), want: boolPtr(false)},
+		{name: "command override beats global flag", policy: &none, conf: confFromArgs("--save-subpage-blocks=4k"), want: boolPtr(false)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := subpageBlocksOverride(tc.policy, tc.conf)
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Errorf("subpageBlocksOverride() = %s, want %s", fmtBoolPtr(got), fmtBoolPtr(tc.want))
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func fmtBoolPtr(b *bool) string {
+	if b == nil {
+		return "nil"
+	}
+	return fmt.Sprint(*b)
 }

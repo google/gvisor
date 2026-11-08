@@ -35,9 +35,10 @@ func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 		// verify the state file, we just need the sandbox to continue running
 		// after save.
 		saveOpts := state.SaveOpts{
-			Autosave:    true,
-			Resume:      true,
-			Destination: io.Discard,
+			Autosave:      true,
+			Resume:        true,
+			Destination:   io.Discard,
+			SubpageBlocks: l.saveSubpageBlocks(),
 		}
 		defer saveOpts.Close()
 		l.saveWithOpts(&saveOpts, &controlapi.SaveRestoreExecOpts{})
@@ -53,9 +54,10 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 	return func(k *kernel.Kernel) {
 		once.Do(func() {
 			saveOpts := state.SaveOpts{
-				Autosave:    true,
-				Resume:      false,
-				Destination: files[0],
+				Autosave:      true,
+				Resume:        false,
+				Destination:   files[0],
+				SubpageBlocks: l.saveSubpageBlocks(),
 			}
 			if len(files) == 3 {
 				saveOpts.PagesMetadata = stateio.NewBufioWriteCloser(files[1])

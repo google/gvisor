@@ -37,6 +37,8 @@ type FSCheckpoint struct {
 	leaveRunning bool
 	direct       bool
 	paths        pathVar
+
+	saveSubpageBlocks optionalSubpageBlocksPolicy
 }
 
 // pathVar is a repeatable flag of [<prefix>=][<container>:]<path> filesystem
@@ -95,6 +97,7 @@ func (c *FSCheckpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved filesystem checkpoint")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "if true, resume containers after checkpointing; if false, containers exit with status 0 after checkpointing")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint files")
+	f.Var(&c.saveSubpageBlocks, "save-subpage-blocks", saveSubpageBlocksUsage)
 	f.Var(&c.paths, "path", `path inside the container to save to the checkpoint (can be repeated). Format: [<prefix>=][<container_id>:]<path>. Without <prefix>, the files are written unprefixed; otherwise as <prefix>_*, or into a <prefix>/ subdirectory if <prefix> ends with "/". Paths containing "=" require an explicit prefix. The special path value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed. Defaults to "/" if not specified.`)
 }
 
@@ -138,6 +141,7 @@ func (c *FSCheckpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 		Direct:          c.direct,
 		ExitAfterSaving: !c.leaveRunning,
 		Paths:           paths,
+		SubpageBlocks:   c.saveSubpageBlocks.ptr(),
 	}); err != nil {
 		util.Fatalf("filesystem checkpoint saving failed: %v", err)
 	}

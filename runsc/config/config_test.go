@@ -1377,3 +1377,40 @@ func TestIsFlagExplicitlySet(t *testing.T) {
 		})
 	}
 }
+
+func TestCLISaveSubpageBlocks(t *testing.T) {
+	for _, tc := range []struct {
+		args    []string
+		want    SubpageBlocksPolicy
+		wantSet bool
+	}{
+		{args: nil, want: "", wantSet: false},
+		{args: []string{"--save-subpage-blocks=none"}, want: SubpageBlocksNone, wantSet: true},
+		{args: []string{"--save-subpage-blocks=4k"}, want: SubpageBlocks4K, wantSet: true},
+		{args: []string{"--save-subpage-blocks=4K"}, want: SubpageBlocks4K, wantSet: true},
+	} {
+		t.Run(fmt.Sprintf("%v", tc.args), func(t *testing.T) {
+			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+			RegisterFlags(flagSet)
+			if err := flagSet.Parse(tc.args); err != nil {
+				t.Fatalf("flagSet.Parse(%v): %v", tc.args, err)
+			}
+			conf, err := NewFromFlags(flagSet)
+			if err != nil {
+				t.Fatalf("NewFromFlags: %v", err)
+			}
+			if got, ok := conf.CLISaveSubpageBlocks(); got != tc.want || ok != tc.wantSet {
+				t.Errorf("CLISaveSubpageBlocks() = (%q, %t), want (%q, %t)", got, ok, tc.want, tc.wantSet)
+			}
+			if !tc.wantSet && conf.SaveSubpageBlocks != SubpageBlocksNone {
+				t.Errorf("default SaveSubpageBlocks = %q, want %q", conf.SaveSubpageBlocks, SubpageBlocksNone)
+			}
+		})
+	}
+
+	flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(flagSet)
+	if err := flagSet.Parse([]string{"--save-subpage-blocks=2k"}); err == nil {
+		t.Errorf("--save-subpage-blocks=2k parsed, want error")
+	}
+}

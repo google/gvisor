@@ -96,7 +96,7 @@ func (c *controller) registerHandlers() {
 	c.srv.Register(&control.Lifecycle{Kernel: l.k})
 	c.srv.Register(&control.Logging{})
 	c.srv.Register(&control.Proc{Kernel: l.k})
-	c.srv.Register(&control.State{Kernel: l.k})
+	c.srv.Register(&control.State{Kernel: l.k, SubpageBlocks: l.saveSubpageBlocks()})
 	c.srv.Register(&control.Usage{Kernel: l.k})
 	c.srv.Register(&control.Metrics{})
 	c.srv.Register(&debug{})
@@ -916,6 +916,10 @@ func (cm *containerManager) FSSave(args *sentryapi.FSSaveArgs, _ *struct{}) erro
 	if err != nil {
 		cm.l.k.SignalAllFSSaveWaiters(err)
 		return err
+	}
+	kopts.SubpageBlocks = cm.l.saveSubpageBlocks()
+	if args.SubpageBlocks != nil {
+		kopts.SubpageBlocks = *args.SubpageBlocks
 	}
 	defer cm.l.stopIfKilled()
 	return cm.l.k.FSSave(cm.l.k.SupervisorContext(), &kopts)

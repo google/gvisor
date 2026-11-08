@@ -110,3 +110,22 @@ func TestStateSaveGraphEngineOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestSubpageBlocks(t *testing.T) {
+	yes, no := true, false
+	for _, tc := range []struct {
+		override *bool
+		def      bool
+		want     bool
+	}{
+		{nil, false, false},
+		{nil, true, true},
+		{&yes, false, true},
+		{&no, true, false},
+	} {
+		o := &controlapi.SaveOpts{SubpageBlocks: tc.override}
+		if got := SubpageBlocks(o, tc.def); got != tc.want {
+			t.Errorf("SubpageBlocks(override %v, default %t) = %t, want %t", tc.override, tc.def, got, tc.want)
+		}
+	}
+}

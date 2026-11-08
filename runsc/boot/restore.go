@@ -875,8 +875,16 @@ func (l *Loader) save(o *controlapi.SaveOpts) error {
 		return err
 	}
 	defer saveOpts.Close()
+	saveOpts.SubpageBlocks = control.SubpageBlocks(o, l.saveSubpageBlocks())
 
 	return l.saveWithOpts(saveOpts, &o.ExecOpts)
+}
+
+// saveSubpageBlocks returns the default value of state.SaveOpts.SubpageBlocks
+// and kernel.FSSaveOpts.SubpageBlocks for checkpoints of this sandbox, which
+// the save options of a checkpoint can override.
+func (l *Loader) saveSubpageBlocks() bool {
+	return l.root.conf.SaveSubpageBlocks == config.SubpageBlocks4K
 }
 
 // saveWithOpts saves the kernel with the given options.
