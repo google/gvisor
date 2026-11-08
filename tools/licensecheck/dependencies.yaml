@@ -728,6 +728,12 @@
   commit: 217fd62d44a79db8f842113234ae9383b8374983
   sha256: b5922c5ceedb86debbb05a3c2c78616273c9f45f127dada540dbb1a61d7e0b02
   license: Apache-2.0
+- dependency: github.com/rakyll/hey
+  version: v0.1.5
+  retrieved: "2026-10-21"
+  commit: e64ec7a3ad1ef8bc828fe61e1fb324cc2e74c604
+  sha256: f5354b335ebda92ca7829cab90b6134daae4bf4e1d90ebc705fd3d7a529bcf0a
+  license: Apache-2.0
 - dependency: github.com/sirupsen/logrus
   version: v1.9.3
   retrieved: "2026-08-27"

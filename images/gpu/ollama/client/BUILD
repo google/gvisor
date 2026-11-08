@@ -1,3 +1,4 @@
+load("//images:img.bzl", "executable_image")
 load("//tools:defs.bzl", "go_binary")
 
 package(
@@ -17,4 +18,12 @@ go_binary(
     pure = True,
     static = True,
     visibility = ["//images:__pkg__"],
+)
+
+executable_image(
+    name = "client",
+    base = "//images:alpine_base",
+    cmd = ["/usr/bin/httpclient"],
+    executables = {"/usr/bin/httpclient": ":client"},
+    image_name = "gpu/ollama/client",
 )
