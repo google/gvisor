@@ -8,36 +8,60 @@ package(
 
 runtime_test(
     name = "go1.22",
-    exclude_file = "exclude/go1.22.csv",
-    lang = "go",
+    args = [
+        "--lang",
+        "go",
+        "--exclude_file",
+        "$(rootpath :exclude/go1.22.csv)",
+    ],
+    data = ["exclude/go1.22.csv"],
     shard_count = more_shards,
 )
 
 runtime_test(
     name = "java21",
-    batch = 100,
-    exclude_file = "exclude/java21.csv",
-    lang = "java",
+    args = [
+        "--lang",
+        "java",
+        "--batch",
+        "100",
+        "--exclude_file",
+        "$(rootpath :exclude/java21.csv)",
+    ],
+    data = ["exclude/java21.csv"],
     shard_count = most_shards,
 )
 
 runtime_test(
     name = "nodejs22.2.0",
-    exclude_file = "exclude/nodejs22.2.0.csv",
-    lang = "nodejs",
+    args = [
+        "--lang",
+        "nodejs",
+        "--exclude_file",
+        "$(rootpath :exclude/nodejs22.2.0.csv)",
+    ],
+    data = ["exclude/nodejs22.2.0.csv"],
     shard_count = most_shards,
 )
 
 runtime_test(
     name = "php8.5.11",
-    lang = "php",
+    args = [
+        "--lang",
+        "php",
+    ],
     shard_count = more_shards,
 )
 
 runtime_test(
     name = "python3.12.3",
-    exclude_file = "exclude/python.csv",
-    lang = "python",
+    args = [
+        "--lang",
+        "python",
+        "--exclude_file",
+        "$(rootpath :exclude/python.csv)",
+    ],
+    data = ["exclude/python.csv"],
     shard_count = more_shards,
 )
 
@@ -45,5 +69,8 @@ bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:private"],
-    deps = ["//tools:defs_bzl"],
+    deps = [
+        "//tools:defs_bzl",
+        "@bazel_skylib//rules:native_binary",
+    ],
 )
