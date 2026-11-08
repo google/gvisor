@@ -162,6 +162,74 @@ func TestRACKTLPLost(t *testing.T) {
 	}
 }
 
+func TestRACKFreshTimeoutRetransmission(t *testing.T) {
+	dut, conn, fd, mss := createSACKConnection(t)
+	sendAndReceive(t, dut, conn, numPktsForRTT, fd, mss, true /* sendACK */)
+	first := *conn.RemoteSeqNum(t)
+	sendAndReceive(t, dut, conn, 3, fd, mss, false /* sendACK */)
+	time.Sleep(simulatedRTT / 2)
+	sendAndReceive(t, dut, conn, 4, fd, mss, false /* sendACK */)
+
+	// Withhold all ACKs until the retransmission timeout repairs the first
+	// segment. A tail loss probe may have retransmitted the last one.
+	head := &testbench.TCP{SeqNum: testbench.Uint32(uint32(first))}
+	payload := &testbench.Payload{Bytes: make([]byte, mss)}
+	timeoutRepair, err := conn.ExpectData(t, head, payload, 3*time.Second)
+	if err != nil {
+		t.Fatalf("timeout retransmission: %v", err)
+	}
+	flow := timeoutRepair[2].(*testbench.TCP)
+	info := dut.GetSockOptTCPInfo(t, fd)
+	if info.CaState != linux.TCP_CA_Loss {
+		t.Fatalf("TCP state after head retransmission = %d, want Loss", info.CaState)
+	}
+
+	// Segments 4–6 were sent after segments 2 and 3, but before the repair
+	// of segment 1. They cannot establish that the repair was lost.
+	var opts [40]byte
+	n := header.EncodeSACKBlocks([]header.SACKBlock{{
+		Start: first.Add(seqnum.Size(3 * mss)),
+		End:   first.Add(seqnum.Size(6 * mss)),
+	}}, opts[:])
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(first)), Options: opts[:n]})
+	frames, repeatedHead := conn.ListenForFrame(t, testbench.Layers{nil, nil, head, payload}, time.Duration(info.RTO)*time.Microsecond/2)
+	if repeatedHead {
+		t.Fatal("SACK of later segments retransmitted the freshly repaired head")
+	}
+	// The sender need not repair both holes in this half-RTO window. It must
+	// send some data from segments 2–3 without replaying the rest of the flight.
+	lo := first.Add(seqnum.Size(mss))
+	hi := first.Add(seqnum.Size(3 * mss))
+	var repaired bool
+	for _, frame := range frames {
+		if len(frame) != 4 {
+			continue
+		}
+		tcp, ok := frame[2].(*testbench.TCP)
+		data, hasData := frame[3].(*testbench.Payload)
+		if !ok || !hasData || len(data.Bytes) == 0 || *tcp.SrcPort != *flow.SrcPort || *tcp.DstPort != *flow.DstPort {
+			continue
+		}
+		start := seqnum.Value(*tcp.SeqNum)
+		end := start.Add(seqnum.Size(len(data.Bytes)))
+		t.Logf("post-SACK repair: offset=%d length=%d MSS=%d", start-first, len(data.Bytes), mss)
+		if !start.InRange(lo, hi) || hi.LessThan(end) {
+			t.Fatalf("repair [%d, %d) outside the holes [%d, %d)", start, end, lo, hi)
+		}
+		repaired = true
+	}
+	if !repaired {
+		t.Fatal("no later hole was repaired after the SACK")
+	}
+
+	// We have now received the entire flight. Confirm that the connection
+	// delivers new data after recovery.
+	end := first.Add(seqnum.Size(7 * mss))
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end))})
+	*conn.RemoteSeqNum(t) = end
+	sendAndReceive(t, dut, conn, 1, fd, mss, true /* sendACK */)
+}
+
 // TestRACKWithSACK tests that RACK marks the packets as lost after receiving
 // the ACK for retransmitted packets.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-8.1
