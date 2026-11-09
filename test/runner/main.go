@@ -443,7 +443,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-net-raw")
 	}
 	if *overlay {
-		args = append(args, "-overlay2=all:dir=/tmp")
+		// Honor the test scratch directory: /tmp may share the gofer's root
+		// mount, whose read-only remount is blocked by writable backing files.
+		args = append(args, "-overlay2=all:dir="+testutil.TmpDir())
 	} else {
 		args = append(args, "-overlay2=none")
 	}
