@@ -16,6 +16,7 @@ package systrap
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,32 +32,18 @@ import (
 	"gvisor.dev/gvisor/pkg/pool"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
 )
-
-// startStuckChild starts a child process that never responds
-// as a stand-in for a stub process.
-func startStuckChild() (*exec.Cmd, error) {
-	cmd := exec.Command(os.Args[0])
-	cmd.Env = append(os.Environ(), childEnv+"=stuck")
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("cannot start stuck child: %w", err)
-	}
-	return cmd, nil
-}
-
-func stopChild(cmd *exec.Cmd) {
-	cmd.Process.Kill()
-	cmd.Wait()
-}
 
 func newTestSharedContext(t *testing.T) *sharedContext {
 	t.Helper()
-
-	cmd, err := startStuckChild()
-	if err != nil {
+	cmd := testprocess.Pause.Command(t.Context())
+	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { stopChild(cmd) })
+	// thread.wait may consume the child's exit status during the test. Wait
+	// here after the test context has killed any surviving child.
+	t.Cleanup(func() { cmd.Wait() })
 	return newChildSharedContext(cmd.Process.Pid)
 }
 
@@ -146,9 +133,12 @@ func TestSleepOnStateHostStall(t *testing.T) {
 		t.Fatalf("cannot create pipe: %v", err)
 	}
 	defer readyRead.Close()
-	cmd := exec.Command(os.Args[0])
+	cmd := exec.CommandContext(t.Context(), os.Args[0])
 	cmd.Env = append(os.Environ(), childEnv+"=hoststall")
 	cmd.ExtraFiles = []*os.File{readyWrite}
+	// The child must own the stub to check its liveness with waitid. Put
+	// both in one process group so a failed test can terminate them together.
+	cmd.SysProcAttr = &unix.SysProcAttr{Setpgid: true}
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -157,7 +147,16 @@ func TestSleepOnStateHostStall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot start child: %v", err)
 	}
-	defer cmd.Process.Kill()
+	defer func() {
+		if t.Failed() {
+			if err := unix.Kill(-cmd.Process.Pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
+				t.Errorf("cannot kill child process group: %v", err)
+			}
+		}
+		if err := cmd.Wait(); err != nil && !t.Failed() {
+			t.Errorf("child failed: %v\n%s", err, out.String())
+		}
+	}()
 	if _, err := io.ReadAll(readyRead); err != nil {
 		t.Fatalf("cannot wait for child readiness: %v", err)
 	}
@@ -169,21 +168,21 @@ func TestSleepOnStateHostStall(t *testing.T) {
 	if err := cmd.Process.Signal(unix.SIGCONT); err != nil {
 		t.Fatalf("cannot continue child: %v", err)
 	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("child failed: %v\n%s", err, out.String())
-	}
 }
 
 // hostStallChild waits on a context whose stub thread responds shortly after
 // the host stall ends.
 // Closes FD 3 once it is about to wait.
-func hostStallChild() error {
+func hostStallChild(ctx context.Context) error {
 	unix.CloseOnExec(3)
-	cmd, err := startStuckChild()
-	if err != nil {
-		return err
+	cmd := testprocess.Pause.Command(ctx)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("cannot start stuck child: %w", err)
 	}
-	defer stopChild(cmd)
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
 	sc := newChildSharedContext(cmd.Process.Pid)
 	go func() {
 		for last := time.Now(); ; {

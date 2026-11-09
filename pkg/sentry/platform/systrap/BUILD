@@ -148,6 +148,7 @@ go_test(
         "//pkg/sentry/platform/systrap/sysmsg",
         "//pkg/sentry/platform/systrap/testutil",
         "//pkg/sentry/usage",
+        "//pkg/test/testprocess",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

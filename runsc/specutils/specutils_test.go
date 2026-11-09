@@ -20,7 +20,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,33 +28,14 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-const testProcessEnv = "SPECUTILS_TEST_PROCESS"
-
 func TestMain(m *testing.M) {
-	switch os.Getenv(testProcessEnv) {
-	case "exit":
-		os.Exit(0)
-	case "pause":
-		for {
-			if err := unix.Pause(); err != unix.EINTR {
-				fmt.Fprintf(os.Stderr, "unix.Pause() = %v, want EINTR\n", err)
-				os.Exit(1)
-			}
-		}
-	}
+	testprocess.RunIfChild()
 	os.Exit(m.Run())
-}
-
-// testProcess runs this test binary as a child that exits or waits to be killed.
-func testProcess(mode string) *exec.Cmd {
-	cmd := exec.Command("/proc/self/exe")
-	cmd.Env = append(os.Environ(), testProcessEnv+"="+mode)
-	cmd.Stderr = os.Stderr
-	return cmd
 }
 
 func TestFixConfigBundleValidation(t *testing.T) {
@@ -131,7 +111,7 @@ func TestIsProcessRunning(t *testing.T) {
 		}
 	}
 
-	cmd := testProcess("exit")
+	cmd := testprocess.Exit.Command(t.Context())
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +143,7 @@ func TestIsProcessRunning(t *testing.T) {
 }
 
 func TestWaitForReadyHappy(t *testing.T) {
-	cmd := testProcess("pause")
+	cmd := testprocess.Pause.Command(t.Context())
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
@@ -186,7 +166,7 @@ func TestWaitForReadyHappy(t *testing.T) {
 }
 
 func TestWaitForReadyFail(t *testing.T) {
-	cmd := testProcess("pause")
+	cmd := testprocess.Pause.Command(t.Context())
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
@@ -209,7 +189,7 @@ func TestWaitForReadyFail(t *testing.T) {
 }
 
 func TestWaitForReadyNotRunning(t *testing.T) {
-	cmd := testProcess("exit")
+	cmd := testprocess.Exit.Command(t.Context())
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
@@ -227,7 +207,7 @@ func TestWaitForReadyNotRunning(t *testing.T) {
 }
 
 func TestWaitForReadyTimeout(t *testing.T) {
-	cmd := testProcess("pause")
+	cmd := testprocess.Pause.Command(t.Context())
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
@@ -1153,16 +1133,13 @@ func TestCopySpec(t *testing.T) {
 // that KillProcess doesn't kill a process with a different identity but the
 // same PID.
 func TestProcessIdentity(t *testing.T) {
-	var procs [2]*exec.Cmd
+	var procs [2]*os.Process
+	var exited [2]<-chan error
 	var identities [2]uint64
 	for i := range procs {
-		procs[i] = testProcess("pause")
-		if err := procs[i].Start(); err != nil {
-			t.Fatalf("cmd.Start() failed: %v", err)
-		}
-		defer procs[i].Process.Kill()
+		procs[i], exited[i] = testprocess.Pause.Start(t)
 		var err error
-		if identities[i], err = ProcessIdentity(procs[i].Process.Pid); err != nil {
+		if identities[i], err = ProcessIdentity(procs[i].Pid); err != nil {
 			t.Fatalf("ProcessIdentity failed: %v", err)
 		}
 		if identities[i] == 0 {
@@ -1172,7 +1149,7 @@ func TestProcessIdentity(t *testing.T) {
 	if identities[0] == identities[1] {
 		t.Errorf("two processes have the same identity %d", identities[0])
 	}
-	pid := procs[0].Process.Pid
+	pid := procs[0].Pid
 	pidfd, err := OpenProcess(pid, identities[0])
 	if err != nil {
 		t.Errorf("OpenProcess with the process identity failed: %v", err)
@@ -1185,14 +1162,19 @@ func TestProcessIdentity(t *testing.T) {
 	if err := KillProcess(pid, identities[1]); err != nil {
 		t.Errorf("KillProcess with another process identity failed: %v", err)
 	}
-	if err := procs[0].Process.Signal(unix.Signal(0)); err != nil {
+	if err := procs[0].Signal(unix.Signal(0)); err != nil {
 		t.Errorf("KillProcess with another process identity killed the process: %v", err)
 	}
 	if err := KillProcess(pid, identities[0]); err != nil {
-		t.Errorf("KillProcess failed: %v", err)
+		t.Fatalf("KillProcess failed: %v", err)
 	}
-	if err := procs[0].Wait(); err == nil {
-		t.Errorf("process exited cleanly, expected it to be killed")
+	select {
+	case err := <-exited[0]:
+		if err == nil {
+			t.Error("process exited cleanly, expected it to be killed")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("matching process survived KillProcess")
 	}
 }
 

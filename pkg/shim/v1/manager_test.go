@@ -32,8 +32,14 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go/features"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsc"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+func TestMain(m *testing.M) {
+	testprocess.RunIfChild()
+	os.Exit(m.Run())
+}
 
 // TestResolveGrouping verifies that resolveGrouping correctly extracts the
 // sandbox ID from both containerd and CRI-O annotations.
@@ -93,7 +99,7 @@ func TestResolveGrouping(t *testing.T) {
 // about the runtime.
 func TestManagerInfo(t *testing.T) {
 	m := NewShimManager("io.containerd.runsc.v1")
-	info, err := m.Info(context.Background(), bytes.NewReader(nil))
+	info, err := m.Info(t.Context(), bytes.NewReader(nil))
 	if err != nil {
 		t.Fatalf("Standalone ShimManager::Info call returned unexpected error: %v", err)
 	}
@@ -123,10 +129,7 @@ func TestManagerStopBoundsWedgedRuntime(t *testing.T) {
 			stopRunscTimeout = 100 * time.Millisecond
 			dir := t.TempDir()
 			t.Chdir(dir)
-			fake := filepath.Join(dir, "fake-runsc")
-			if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec >/dev/null 2>&1\nexec sleep 60\n"), 0o755); err != nil {
-				t.Fatal(err)
-			}
+			fake := testprocess.Pause.Path(t)
 			st := runsc.State{Options: runsc.Options{BinaryName: fake, Root: dir}, Rootfs: dir}
 			if err := st.Save(dir); err != nil {
 				t.Fatal(err)
@@ -153,7 +156,7 @@ func TestManagerStopBoundsWedgedRuntime(t *testing.T) {
 				stopRunscTimeout, unmountRootfs = oldTimeout, oldUnmount
 			})
 			start := time.Now()
-			status, err := (&manager{}).Stop(namespaces.WithNamespace(context.Background(), "test"), "test")
+			status, err := (&manager{}).Stop(namespaces.WithNamespace(t.Context(), "test"), "test")
 			if !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("Stop error = %v, want deadline failure", err)
 			}
@@ -184,10 +187,7 @@ func TestManagerStopPreservesCallerCancellation(t *testing.T) {
 			stopRunscTimeout = time.Second
 			dir := t.TempDir()
 			t.Chdir(dir)
-			fake := filepath.Join(dir, "fake-runsc")
-			if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec >/dev/null 2>&1\nexec sleep 60\n"), 0o755); err != nil {
-				t.Fatal(err)
-			}
+			fake := testprocess.Pause.Path(t)
 			st := runsc.State{Options: runsc.Options{BinaryName: fake, Root: dir}, Rootfs: dir}
 			if err := st.Save(dir); err != nil {
 				t.Fatal(err)
@@ -195,7 +195,7 @@ func TestManagerStopPreservesCallerCancellation(t *testing.T) {
 			var calls atomic.Int32
 			unmountRootfs = func(string, int) error { calls.Add(1); return nil }
 			t.Cleanup(func() { stopRunscTimeout, unmountRootfs = oldTimeout, oldUnmount })
-			ctx := namespaces.WithNamespace(context.Background(), "test")
+			ctx := namespaces.WithNamespace(t.Context(), "test")
 			want := errors.New("caller canceled teardown")
 			var cancel context.CancelFunc
 			if deadline {
@@ -247,7 +247,7 @@ func TestManagerStopBoundsBlockedUnmountAndReportsFailure(t *testing.T) {
 	}
 	unblock := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(func() { unblock(); <-finished; stopRunscTimeout, unmountRootfs = oldTimeout, oldUnmount })
-	ctx := namespaces.WithNamespace(context.Background(), "test")
+	ctx := namespaces.WithNamespace(t.Context(), "test")
 	for range 2 {
 		start := time.Now()
 		status, err := (&manager{}).Stop(ctx, "test")
@@ -295,7 +295,7 @@ func TestManagerStopCleansRootfsAfterDeleteFailure(t *testing.T) {
 		}
 		return nil
 	}
-	ctx := namespaces.WithNamespace(context.Background(), "test")
+	ctx := namespaces.WithNamespace(t.Context(), "test")
 	for attempt := int32(1); attempt <= 2; attempt++ {
 		status, err := (&manager{}).Stop(ctx, "test")
 		if err == nil || !strings.Contains(err.Error(), "delete runsc container") {
