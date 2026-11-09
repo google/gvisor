@@ -20,6 +20,7 @@ import (
 	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -732,4 +733,58 @@ func TestZeroDiskBackedPanicsOnNonzeroUnwritablePage(t *testing.T) {
 		}
 	}()
 	zeroDiskBacked(fd, 0, m)
+}
+
+// TestReleaseAcrossHugePageBoundaries verifies that partial releases at both
+// ends of a multi-huge-page range can eventually free the entire allocation.
+func TestReleaseAcrossHugePageBoundaries(t *testing.T) {
+	fd, err := unix.MemfdCreate("pgalloc-release-test", unix.MFD_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := os.NewFile(uintptr(fd), "pgalloc-release-test")
+	f, err := NewMemoryFile(file, MemoryFileOpts{
+		DelayedEviction:         DelayedEvictionManual,
+		DisableMemoryAccounting: true,
+		ExpectHugepages:         true,
+	})
+	if err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	defer f.Destroy()
+	fr, err := f.Allocate(3*hugepage, AllocOpts{Huge: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := func(part memmap.FileRange) {
+		t.Helper()
+		f.DecRef(part)
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			f.mu.Lock()
+			pending := f.haveWaste
+			f.mu.Unlock()
+			if !pending {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("timed out waiting for waste release")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	// Keep one small page at either end referenced until the interior has
+	// been released. Waiting prevents the releaser from merging the steps.
+	release(memmap.FileRange{fr.Start + page, fr.End - page})
+	release(memmap.FileRange{fr.Start, fr.Start + page})
+	release(memmap.FileRange{fr.End - page, fr.End})
+	reused, err := f.Allocate(fr.Length(), AllocOpts{Huge: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.DecRef(reused)
+	if reused != fr {
+		t.Fatalf("allocation after complete release = %v, want original range %v", reused, fr)
+	}
 }
