@@ -46,7 +46,7 @@ func HostDriverVersion() (string, error) {
 	ioctlParams := nvgpu.RMAPIVersion{
 		Cmd: '2',
 	}
-	if _, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ctlFD), uintptr(linux.IOWR(nvgpu.NV_IOCTL_MAGIC, nvgpu.NV_ESC_CHECK_VERSION_STR, uint32(unsafe.Sizeof(ioctlParams)))), uintptr(unsafe.Pointer(&ioctlParams))); errno != 0 {
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(ctlFD), uintptr(linux.IOWR(nvgpu.NV_IOCTL_MAGIC, nvgpu.NV_ESC_CHECK_VERSION_STR, uint32(unsafe.Sizeof(ioctlParams)))), uintptr(unsafe.Pointer(&ioctlParams))); errno != 0 {
 		return "", fmt.Errorf("NV_ESC_CHECK_VERSION_STR ioctl error: %w", errno)
 	}
 	if ioctlParams.Reply != NV_RM_API_VERSION_REPLY_RECOGNIZED {
@@ -57,7 +57,7 @@ func HostDriverVersion() (string, error) {
 		ioctlParams.Reply = 0
 		// We expect the check to fail on our empty version string, so tolerate
 		// EINVAL.
-		if _, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ctlFD), uintptr(linux.IOWR(nvgpu.NV_IOCTL_MAGIC, nvgpu.NV_ESC_CHECK_VERSION_STR, uint32(unsafe.Sizeof(ioctlParams)))), uintptr(unsafe.Pointer(&ioctlParams))); errno != 0 && errno != unix.EINVAL {
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(ctlFD), uintptr(linux.IOWR(nvgpu.NV_IOCTL_MAGIC, nvgpu.NV_ESC_CHECK_VERSION_STR, uint32(unsafe.Sizeof(ioctlParams)))), uintptr(unsafe.Pointer(&ioctlParams))); errno != 0 && errno != unix.EINVAL {
 			return "", fmt.Errorf("fallback NV_ESC_CHECK_VERSION_STR ioctl error: %w", errno)
 		}
 		if ioctlParams.Reply != NV_RM_API_VERSION_REPLY_RECOGNIZED {

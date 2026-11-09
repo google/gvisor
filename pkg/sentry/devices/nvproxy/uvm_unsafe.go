@@ -26,7 +26,7 @@ import (
 )
 
 func uvmIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.hostFD), uintptr(ui.cmd), uintptr(unsafe.Pointer(ioctlParams)))
+	n, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(ui.hostFD), uintptr(ui.cmd), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno != 0 {
 		return n, errno
 	}
