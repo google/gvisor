@@ -25,7 +25,6 @@ EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
 SHELL = /bin/bash
 REPO_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
-COMMA := ,
 
 ## usage: make <target>
 ##         or
@@ -261,15 +260,11 @@ nogo-tests:
 	@$(call test,--test_tag_filters=nogo --build_tests_only //...)
 .PHONY: nogo-tests
 
-# For unit tests, we take everything in the root, pkg/... and tools/..., and
-# pull in all directories in runsc except runsc/container.
-#
-# FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
-unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/runner/... test/trace/...)
+unit-tests: ## Run the package unit tests.
+	@$(call test,--config=unit-tests --test_env=CGROUPV2=$(CGROUPV2))
 .PHONY: unit-tests
 
-# See unit-tests: this includes runsc/container.
+# Include the runsc/container tests that require KVM.
 container-tests: ## Run all tests in runsc/container/...
 	@$(call test,--test_tag_filters=-nogo --test_env=CGROUPV2=$(CGROUPV2) runsc/container/...)
 .PHONY: container-tests
