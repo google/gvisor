@@ -22,7 +22,10 @@ var renamelockNames []string
 type renamelockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	renameLockD1 = renamelockNameIndex(0)
+	renameLockD2 = renamelockNameIndex(1)
+)
 const ()
 
 // Lock locks m.
@@ -60,11 +63,25 @@ func (m *renameRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *renameRWMutex) NestedRLock(i renamelockNameIndex) {
+	locking.AddGLock(renameprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *renameRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(renameprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *renameRWMutex) NestedRUnlock(i renamelockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(renameprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -88,7 +105,7 @@ func (m *renameRWMutex) DowngradeLock() {
 var renameprefixIndex *locking.MutexClass
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func renameinitLockNames() {}
+func renameinitLockNames() { renamelockNames = []string{"d1", "d2"} }
 
 func init() {
 	renameinitLockNames()

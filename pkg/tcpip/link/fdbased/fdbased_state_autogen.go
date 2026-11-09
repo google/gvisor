@@ -323,7 +323,6 @@ func (r *recvMMsgDispatcher) StateFields() []string {
 		"e",
 		"bufs",
 		"pkts",
-		"gro",
 		"mgr",
 	}
 }
@@ -338,8 +337,7 @@ func (r *recvMMsgDispatcher) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &r.e)
 	stateSinkObject.Save(3, &r.bufs)
 	stateSinkObject.Save(4, &r.pkts)
-	stateSinkObject.Save(5, &r.gro)
-	stateSinkObject.Save(6, &r.mgr)
+	stateSinkObject.Save(5, &r.mgr)
 }
 
 // +checklocksignore
@@ -349,8 +347,7 @@ func (r *recvMMsgDispatcher) StateLoad(ctx context.Context, stateSourceObject st
 	stateSourceObject.Load(2, &r.e)
 	stateSourceObject.Load(3, &r.bufs)
 	stateSourceObject.Load(4, &r.pkts)
-	stateSourceObject.Load(5, &r.gro)
-	stateSourceObject.Load(6, &r.mgr)
+	stateSourceObject.Load(5, &r.mgr)
 	stateSourceObject.AfterLoadTo(r)
 }
 

@@ -25,9 +25,14 @@ type dirlockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
 const (
-	dirLockNew      = dirlockNameIndex(0)
-	dirLockReplaced = dirlockNameIndex(1)
-	dirLockChild    = dirlockNameIndex(2)
+	dirLockD1         = dirlockNameIndex(0)
+	dirLockD1New      = dirlockNameIndex(1)
+	dirLockD1Replaced = dirlockNameIndex(2)
+	dirLockD1Child    = dirlockNameIndex(3)
+	dirLockD2         = dirlockNameIndex(4)
+	dirLockD2New      = dirlockNameIndex(5)
+	dirLockD2Replaced = dirlockNameIndex(6)
+	dirLockD2Child    = dirlockNameIndex(7)
 )
 const ()
 
@@ -60,7 +65,9 @@ func (m *dirMutex) NestedUnlock(i dirlockNameIndex) {
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func dirinitLockNames() { dirlockNames = []string{"new", "replaced", "child"} }
+func dirinitLockNames() {
+	dirlockNames = []string{"d1", "d1new", "d1replaced", "d1child", "d2", "d2new", "d2replaced", "d2child"}
+}
 
 func init() {
 	dirinitLockNames()

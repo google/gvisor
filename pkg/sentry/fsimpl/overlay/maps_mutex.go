@@ -24,7 +24,10 @@ var mapslockNames []string
 type mapslockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	mapsLockD1 = mapslockNameIndex(0)
+	mapsLockD2 = mapslockNameIndex(1)
+)
 const ()
 
 // Lock locks m.
@@ -56,7 +59,7 @@ func (m *mapsMutex) NestedUnlock(i mapslockNameIndex) {
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func mapsinitLockNames() {}
+func mapsinitLockNames() { mapslockNames = []string{"d1", "d2"} }
 
 func init() {
 	mapsinitLockNames()

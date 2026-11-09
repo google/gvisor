@@ -60,11 +60,25 @@ func (m *taskRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *taskRWMutex) NestedRLock(i tasklockNameIndex) {
+	locking.AddGLock(taskprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *taskRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(taskprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *taskRWMutex) NestedRUnlock(i tasklockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(taskprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

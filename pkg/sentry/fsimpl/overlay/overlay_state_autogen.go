@@ -112,6 +112,7 @@ func (fs *filesystem) StateFields() []string {
 		"dirInoCache",
 		"lastDirIno",
 		"maxFilenameLen",
+		"stackDepth",
 	}
 }
 
@@ -131,6 +132,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &fs.dirInoCache)
 	stateSinkObject.SaveUint64(9, &fs.lastDirIno)
 	stateSinkObject.SaveUint64(10, &fs.maxFilenameLen)
+	stateSinkObject.SaveInt(11, &fs.stackDepth)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -148,6 +150,7 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(8, &fs.dirInoCache)
 	stateSourceObject.LoadUint64(9, &fs.lastDirIno)
 	stateSourceObject.LoadUint64(10, &fs.maxFilenameLen)
+	stateSourceObject.LoadInt(11, &fs.stackDepth)
 }
 
 func (l *layerDevNumber) StateTypeName() string {

@@ -60,11 +60,25 @@ func (m *neighborEntryRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *neighborEntryRWMutex) NestedRLock(i neighborEntrylockNameIndex) {
+	locking.AddGLock(neighborEntryprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *neighborEntryRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(neighborEntryprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *neighborEntryRWMutex) NestedRUnlock(i neighborEntrylockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(neighborEntryprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

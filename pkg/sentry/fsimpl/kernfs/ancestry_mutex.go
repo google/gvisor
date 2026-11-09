@@ -60,11 +60,25 @@ func (m *ancestryRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *ancestryRWMutex) NestedRLock(i ancestrylockNameIndex) {
+	locking.AddGLock(ancestryprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *ancestryRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(ancestryprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *ancestryRWMutex) NestedRUnlock(i ancestrylockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(ancestryprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

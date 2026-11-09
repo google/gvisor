@@ -60,11 +60,25 @@ func (m *keysetRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *keysetRWMutex) NestedRLock(i keysetlockNameIndex) {
+	locking.AddGLock(keysetprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *keysetRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(keysetprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *keysetRWMutex) NestedRUnlock(i keysetlockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(keysetprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

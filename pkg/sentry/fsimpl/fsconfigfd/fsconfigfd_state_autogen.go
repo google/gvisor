@@ -185,7 +185,7 @@ func (a *awaitingMountContext) StateFields() []string {
 	return []string{
 		"filesystem",
 		"root",
-		"opts",
+		"readOnly",
 		"creds",
 	}
 }
@@ -197,7 +197,7 @@ func (a *awaitingMountContext) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.filesystem)
 	stateSinkObject.Save(1, &a.root)
-	stateSinkObject.Save(2, &a.opts)
+	stateSinkObject.SaveBool(2, &a.readOnly)
 	stateSinkObject.Save(3, &a.creds)
 }
 
@@ -207,8 +207,33 @@ func (a *awaitingMountContext) afterLoad(context.Context) {}
 func (a *awaitingMountContext) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.filesystem)
 	stateSourceObject.Load(1, &a.root)
-	stateSourceObject.Load(2, &a.opts)
+	stateSourceObject.LoadBool(2, &a.readOnly)
 	stateSourceObject.Load(3, &a.creds)
+}
+
+func (r *reconfParamsContext) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fsconfigfd.reconfParamsContext"
+}
+
+func (r *reconfParamsContext) StateFields() []string {
+	return []string{
+		"creds",
+	}
+}
+
+func (r *reconfParamsContext) beforeSave() {}
+
+// +checklocksignore
+func (r *reconfParamsContext) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.creds)
+}
+
+func (r *reconfParamsContext) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *reconfParamsContext) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.creds)
 }
 
 func (f *failedContext) StateTypeName() string {
@@ -242,5 +267,6 @@ func init() {
 	state.RegisterNoHooks((*FSParameter)(nil))
 	state.RegisterNoHooks((*createParamsContext)(nil))
 	state.RegisterNoHooks((*awaitingMountContext)(nil))
+	state.RegisterNoHooks((*reconfParamsContext)(nil))
 	state.RegisterNoHooks((*failedContext)(nil))
 }

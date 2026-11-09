@@ -60,11 +60,25 @@ func (m *filesystemRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *filesystemRWMutex) NestedRLock(i filesystemlockNameIndex) {
+	locking.AddGLock(filesystemprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *filesystemRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(filesystemprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *filesystemRWMutex) NestedRUnlock(i filesystemlockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(filesystemprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

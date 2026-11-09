@@ -60,11 +60,25 @@ func (m *addressStateRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *addressStateRWMutex) NestedRLock(i addressStatelockNameIndex) {
+	locking.AddGLock(addressStateprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *addressStateRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(addressStateprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *addressStateRWMutex) NestedRUnlock(i addressStatelockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(addressStateprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

@@ -60,11 +60,25 @@ func (m *ipTablesRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *ipTablesRWMutex) NestedRLock(i ipTableslockNameIndex) {
+	locking.AddGLock(ipTablesprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *ipTablesRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(ipTablesprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *ipTablesRWMutex) NestedRUnlock(i ipTableslockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(ipTablesprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

@@ -60,11 +60,25 @@ func (m *protocolRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *protocolRWMutex) NestedRLock(i protocollockNameIndex) {
+	locking.AddGLock(protocolprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *protocolRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(protocolprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *protocolRWMutex) NestedRUnlock(i protocollockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(protocolprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

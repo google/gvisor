@@ -60,11 +60,25 @@ func (m *serverEndpointRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *serverEndpointRWMutex) NestedRLock(i serverEndpointlockNameIndex) {
+	locking.AddGLock(serverEndpointprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *serverEndpointRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(serverEndpointprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *serverEndpointRWMutex) NestedRUnlock(i serverEndpointlockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(serverEndpointprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

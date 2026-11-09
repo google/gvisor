@@ -22,7 +22,10 @@ var datalockNames []string
 type datalockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	dataLockD1 = datalockNameIndex(0)
+	dataLockD2 = datalockNameIndex(1)
+)
 const ()
 
 // Lock locks m.
@@ -60,11 +63,25 @@ func (m *dataRWMutex) RLock() {
 	m.mu.RLock()
 }
 
+// NestedRLock locks m for reading knowing that another lock of the same type is held.
+// +checklocksignore
+func (m *dataRWMutex) NestedRLock(i datalockNameIndex) {
+	locking.AddGLock(dataprefixIndex, int(i)) // escapes: lockdep.
+	m.mu.RLock()
+}
+
 // RUnlock undoes a single RLock call.
 // +checklocksignore
 func (m *dataRWMutex) RUnlock() {
 	m.mu.RUnlock()
 	locking.DelGLock(dataprefixIndex, -1) // escapes: lockdep.
+}
+
+// NestedRUnlock undoes a single NestedRLock call.
+// +checklocksignore
+func (m *dataRWMutex) NestedRUnlock(i datalockNameIndex) {
+	m.mu.RUnlock()
+	locking.DelGLock(dataprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -88,7 +105,7 @@ func (m *dataRWMutex) DowngradeLock() {
 var dataprefixIndex *locking.MutexClass
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func datainitLockNames() {}
+func datainitLockNames() { datalockNames = []string{"d1", "d2"} }
 
 func init() {
 	datainitLockNames()

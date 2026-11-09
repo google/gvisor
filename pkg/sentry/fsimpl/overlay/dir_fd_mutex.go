@@ -24,7 +24,10 @@ var directoryFDlockNames []string
 type directoryFDlockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	directoryFDLockD1 = directoryFDlockNameIndex(0)
+	directoryFDLockD2 = directoryFDlockNameIndex(1)
+)
 const ()
 
 // Lock locks m.
@@ -56,7 +59,7 @@ func (m *directoryFDMutex) NestedUnlock(i directoryFDlockNameIndex) {
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func directoryFDinitLockNames() {}
+func directoryFDinitLockNames() { directoryFDlockNames = []string{"d1", "d2"} }
 
 func init() {
 	directoryFDinitLockNames()

@@ -24,7 +24,10 @@ var regularFileFDlockNames []string
 type regularFileFDlockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	regularFileFDLockD1 = regularFileFDlockNameIndex(0)
+	regularFileFDLockD2 = regularFileFDlockNameIndex(1)
+)
 const ()
 
 // Lock locks m.
@@ -56,7 +59,7 @@ func (m *regularFileFDMutex) NestedUnlock(i regularFileFDlockNameIndex) {
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func regularFileFDinitLockNames() {}
+func regularFileFDinitLockNames() { regularFileFDlockNames = []string{"d1", "d2"} }
 
 func init() {
 	regularFileFDinitLockNames()
