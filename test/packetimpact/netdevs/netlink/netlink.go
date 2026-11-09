@@ -19,11 +19,27 @@
 package netlink
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
+
+func addrList(link netlink.Link, family int) ([]netlink.Addr, error) {
+	// An interrupted dump may contain an address for this link even when the
+	// list is incomplete. Only use the result of a completed dump.
+	const maxAttempts = 10
+	for attempt := 1; ; attempt++ {
+		addrs, err := netlink.AddrList(link, family)
+		if err == nil {
+			return addrs, nil
+		}
+		if attempt == maxAttempts || !errors.Is(err, netlink.ErrDumpInterrupted) {
+			return nil, err
+		}
+	}
+}
 
 // IfaceInfo returns the device with its IPv4 and IPv6 addresses. An error is
 // returned if the device is not present or there are no or more than 1 ip addr
@@ -33,14 +49,14 @@ func IfaceInfo(name string) (netlink.Link, netlink.Addr, netlink.Addr, error) {
 	if err != nil {
 		return nil, netlink.Addr{}, netlink.Addr{}, fmt.Errorf("failed to get interface %s: %w", name, err)
 	}
-	ipv4Addrs, err := netlink.AddrList(link, unix.AF_INET)
+	ipv4Addrs, err := addrList(link, unix.AF_INET)
 	if err != nil {
 		return nil, netlink.Addr{}, netlink.Addr{}, fmt.Errorf("failed to get ipv4 addrs: %w", err)
 	}
 	if len(ipv4Addrs) != 1 {
 		return nil, netlink.Addr{}, netlink.Addr{}, fmt.Errorf("expected 1 ipv4 addresses, got %d", len(ipv4Addrs))
 	}
-	ipv6Addrs, err := netlink.AddrList(link, unix.AF_INET6)
+	ipv6Addrs, err := addrList(link, unix.AF_INET6)
 	if err != nil {
 		return nil, netlink.Addr{}, netlink.Addr{}, fmt.Errorf("failed to get ipv6 addrs: %w", err)
 	}
