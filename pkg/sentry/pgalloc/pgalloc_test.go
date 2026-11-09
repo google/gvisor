@@ -55,6 +55,8 @@ func TestFindAllocatable(t *testing.T) {
 		huge    bool
 		recycle bool
 		dir     Direction
+		// diskBacked is MemoryFileOpts.DiskBackedFile.
+		diskBacked bool
 		// Expected outcome:
 		want uint64
 	}{
@@ -387,6 +389,44 @@ func TestFindAllocatable(t *testing.T) {
 			want:   chunkSize - 2*hugepage,
 		},
 		{
+			name:      "non-recycling small allocation recycles waste pages once waste is large",
+			chunkHuge: []bool{false, false},
+			existing: []existingSegment{
+				{0, recycleUncommittedWasteBytes, existingWaste},
+			},
+			length: 2 * page,
+			want:   0,
+		},
+		{
+			name:      "non-recycling small allocation skips waste pages while waste is small",
+			chunkHuge: []bool{false, false},
+			existing: []existingSegment{
+				{0, recycleUncommittedWasteBytes - page, existingWaste},
+				{recycleUncommittedWasteBytes - page, chunkSize, existingUsed},
+			},
+			length: 2 * page,
+			want:   chunkSize,
+		},
+		{
+			name:      "non-recycling large allocation skips waste pages even if waste is large",
+			chunkHuge: []bool{false, false},
+			existing: []existingSegment{
+				{0, chunkSize, existingWaste},
+			},
+			length: 2 * maxRecycleUncommittedBytes,
+			want:   chunkSize,
+		},
+		{
+			name:       "non-recycling small allocation from disk-backed file skips waste pages even if waste is large",
+			chunkHuge:  []bool{false, false},
+			diskBacked: true,
+			existing: []existingSegment{
+				{0, chunkSize, existingWaste},
+			},
+			length: 2 * page,
+			want:   chunkSize,
+		},
+		{
 			name:      "recycling bottom-up small allocation recycles waste pages",
 			chunkHuge: []bool{false},
 			existing: []existingSegment{
@@ -611,6 +651,7 @@ func TestFindAllocatable(t *testing.T) {
 				opts: MemoryFileOpts{
 					ExpectHugepages:         true,
 					DisableMemoryAccounting: true,
+					DiskBackedFile:          test.diskBacked,
 				},
 			}
 			f.initFields()
@@ -637,6 +678,7 @@ func TestFindAllocatable(t *testing.T) {
 					case existingWaste:
 						unfree.InsertRange(chunkFR, unfreeInfo{refs: 0})
 						unwaste.RemoveRange(chunkFR)
+						f.wasteBytes += chunkFR.Length()
 					case existingReleasing:
 						unfree.InsertRange(chunkFR, unfreeInfo{refs: 0})
 					default:

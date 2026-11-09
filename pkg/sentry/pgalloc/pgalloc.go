@@ -121,6 +121,12 @@ type MemoryFile struct {
 	// haveWaste is protected by mu.
 	haveWaste bool
 
+	// wasteBytes is the number of bytes in waste pages, excluding releasing
+	// pages.
+	//
+	// wasteBytes is protected by mu.
+	wasteBytes uint64
+
 	// releaseCond is signaled (with mu locked) when haveWaste or destroyed
 	// transitions from false to true.
 	releaseCond sync.Cond
@@ -224,6 +230,15 @@ const (
 	chunkSize  = 1 << chunkShift // 1 GB
 	chunkMask  = chunkSize - 1
 	maxChunks  = math.MaxInt64 / chunkSize // because file size is int64
+
+	// recycleUncommittedWasteBytes is the amount of waste at which allocations
+	// that don't commit their pages start recycling waste pages.
+	recycleUncommittedWasteBytes = 1 << 30 // 1 GB
+
+	// maxRecycleUncommittedBytes is the largest allocation that recycles waste
+	// pages without committing its pages. Larger allocations of this kind are
+	// often sparsely used, e.g. System V shared memory segments.
+	maxRecycleUncommittedBytes = 4 << 20 // 4 MB
 )
 
 // chunkInfo is the value type of MemoryFile.chunks.
@@ -636,7 +651,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	}
 
 	var dsts safemem.BlockSeq
-	if alloc.willCommit {
+	if alloc.willCommit || alloc.recycled {
 		needHugeTouch := false
 		if alloc.recycled {
 			// We will need writable page table entries in our address space to
@@ -752,14 +767,22 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if alloc.willCommit {
-		// Try to recycle waste pages, since this avoids the overhead of
-		// decommitting and then committing them again.
+	// Allocations that will commit their pages recycle waste pages, since this
+	// avoids the overhead of decommitting and then committing them again.
+	// Other allocations recycle waste only once the releaser has fallen
+	// behind: under concurrent page faults, the host decommits pages of a
+	// single file far slower than applications can free them, so the waste
+	// would otherwise grow without bound. Recycled pages are zeroed by
+	// Allocate(), which commits them; this is cheap compared to waste that
+	// stays committed until the releaser gets to it.
+	if alloc.willCommit || (f.wasteBytes >= recycleUncommittedWasteBytes &&
+		alloc.length <= maxRecycleUncommittedBytes && !f.opts.DiskBackedFile) {
 		var uwgap unwasteGapIterator
 		uwgap, fr = findRecyclable(unwaste, alloc)
 		if uwgap.Ok() {
 			alloc.recycled = true
 			unwaste.Insert(uwgap, fr, unwasteInfo{})
+			f.wasteBytes -= fr.Length()
 			// Update reference count for these pages from 0 to 1.
 			unfree.MutateFullRange(fr, func(ufseg unfreeIterator) bool {
 				uf := ufseg.ValuePtr()
@@ -1279,6 +1302,7 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 				// Mark these pages as waste.
 				wasteFR := ufseg.Range()
 				unwaste.RemoveFullRange(wasteFR)
+				f.wasteBytes += wasteFR.Length()
 				haveWaste = true
 				// Reclassify waste memory as System until it's recycled or
 				// released.
@@ -1352,6 +1376,7 @@ MainLoop:
 					fr.Start = fr.End - maxReleasingBytes
 				}
 				unwaste.Insert(uwgap, fr, unwasteInfo{})
+				f.wasteBytes -= fr.Length()
 				f.releaseLocked(fr, i == 1)
 				continue MainLoop
 			}
