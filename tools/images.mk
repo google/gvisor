@@ -50,6 +50,7 @@ REMOTE_IMAGE_PREFIX ?= us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presub
 LOCAL_IMAGE_PREFIX  ?= gvisor.dev/images
 BAZEL_IMAGE_CONTEXTS := \
   benchmarks_alpine=//images:benchmark_alpine_context \
+  benchmarks_hackbench=//images/benchmarks/hackbench:hackbench_context \
   basic_alpine=//images/basic:alpine_context \
   basic_busybox=//images/basic:busybox_context \
   basic_fsstress=//images/basic:fsstress_context \

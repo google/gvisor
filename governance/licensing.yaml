@@ -235,3 +235,10 @@ exceptions:
       machines. The executable uses QEMU's GPL terms, not the MIT license of
       the prebuilt repository's build scripts. Used only for cross-compilation;
       QEMU is neither linked into nor distributed with gVisor.
+  - dependency: rt_tests
+    license: GPL-2.0-only
+    exception_rationale: >-
+      Hackbench is a standalone test image executable built under the
+      GPLv2 option of its GPL-2.0-or-later license. Its source archive is
+      pinned and its COPYING file is retained in the image. It is not
+      linked into gVisor release binaries.
