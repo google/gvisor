@@ -103,12 +103,23 @@ go_library(
 
 go_test(
     name = "nvproxy_test",
-    srcs = ["nvproxy_test.go"],
+    srcs = [
+        "frontend_unsafe_test.go",
+        "nvproxy_test.go",
+    ],
     embed = [":nvproxy"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/abi/nvgpu",
+        "//pkg/hostarch",
         "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/sentry/fsimpl/testutil",
+        "//pkg/sentry/fsimpl/tmpfs",
+        "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/memmap",
+        "//pkg/sentry/vfs",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

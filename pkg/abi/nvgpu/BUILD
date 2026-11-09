@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -23,4 +23,11 @@ go_library(
         "//tools:__subpackages__",
     ],
     deps = ["//pkg/marshal"],
+)
+
+go_test(
+    name = "nvgpu_test",
+    size = "small",
+    srcs = ["frontend_unsafe_test.go"],
+    embed = [":nvgpu"],
 )

@@ -578,8 +578,9 @@ func (n *NVOS32_PARAMETERS) SetStatus(status uint32) {
 
 // Possible values for NVOS32Parameters.Function:
 const (
-	NVOS32_FUNCTION_ALLOC_SIZE          = 2
-	NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR = 27
+	NVOS32_FUNCTION_ALLOC_SIZE               = 2
+	NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT = 6
+	NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR      = 27
 )
 
 // NVOS32AllocSize is the type of NVOS32Parameters.Data for
@@ -598,6 +599,33 @@ type NVOS32AllocSize struct {
 	Width           uint32
 	Height          uint32
 	Pad0            [4]byte
+	Size            uint64
+	Alignment       uint64
+	Offset          uint64
+	Limit           uint64
+	Address         P64
+	RangeBegin      uint64
+	RangeEnd        uint64
+	Attr2           uint32
+	CtagOffset      uint32
+}
+
+// NVOS32AllocTiledPitchHeight is the type of NVOS32Parameters.Data for
+// NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT.
+type NVOS32AllocTiledPitchHeight struct {
+	_               structs.HostLayout
+	Owner           uint32
+	HMemory         Handle
+	Type            uint32
+	Flags           uint32
+	Height          uint32
+	Pitch           int32
+	Attr            uint32
+	Width           uint32
+	Format          uint32
+	ComprCovg       uint32
+	ZcullCovg       uint32
+	PartitionStride uint32
 	Size            uint64
 	Alignment       uint64
 	Offset          uint64

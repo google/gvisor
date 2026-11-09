@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -579,10 +580,20 @@ func rmAllocMemory(fi *frontendIoctlState) (uintptr, error) {
 		return rmAllocMemorySimple(fi, &ioctlParams)
 	case nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR:
 		return rmAllocOSDescriptor(fi, &ioctlParams)
-	default:
-		fi.ctx.Warningf("nvproxy: %s for NV_ESC_RM_ALLOC_MEMORY class %v", errUndefinedHandler.Error(), ioctlParams.Params.HClass)
-		return 0, linuxerr.EINVAL
+	case nvgpu.NV01_MEMORY_SYSTEM_DYNAMIC:
+		// Only the NVIDIA X driver allocates this class with
+		// NV_ESC_RM_ALLOC_MEMORY. See
+		// src/nvidia/interface/deprecated/rmapi_deprecated_allocmemory.c:_rmAllocMemorySystemDynamic(),
+		// which ignores the FD and the address. It is the allocation of
+		// NV01_MEMORY_VIRTUAL through NV_ESC_RM_ALLOC, so it also needs one
+		// of the capabilities that that allocation needs.
+		caps := fi.fd.dev.nvp.capsEnabled
+		if caps&nvconf.CapDisplay != 0 && caps&(nvconf.CapGraphics|nvconf.CapVideo) != 0 {
+			return rmAllocMemorySimple(fi, &ioctlParams)
+		}
 	}
+	fi.ctx.Warningf("nvproxy: %s for NV_ESC_RM_ALLOC_MEMORY class %v", errUndefinedHandler.Error(), ioctlParams.Params.HClass)
+	return 0, linuxerr.EINVAL
 }
 
 func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
@@ -1811,6 +1822,11 @@ func rmVidHeapControlCommon(fi *frontendIoctlState, allowAllocOSDescriptor bool)
 	switch ioctlParams.Function {
 	case nvgpu.NVOS32_FUNCTION_ALLOC_SIZE:
 		return rmVidHeapControlAllocSize(fi, &ioctlParams)
+	case nvgpu.NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT:
+		// Only display drivers (the NVIDIA X driver) use this function.
+		if fi.fd.dev.nvp.capsEnabled&nvconf.CapDisplay != 0 {
+			return rmVidHeapControlAllocTiledPitchHeight(fi, &ioctlParams)
+		}
 	case nvgpu.NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR:
 		if allowAllocOSDescriptor {
 			return rmVidHeapControlAllocOSDescriptor(fi, &ioctlParams)
