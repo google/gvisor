@@ -244,14 +244,16 @@ through VirtualGL's EGL back end does not need it.
 
 gVisor only exposes `/dev/nvidiactl`, `/dev/nvidia-uvm` and `/dev/nvidia#`.
 
+With the `display` capability, `/dev/nvidia-modeset` can also be opened if it
+is in the container spec, but gVisor emulates it without the host device, so
+all its operations fail and modesetting through NVKMS is not supported.
+
 Some unsupported NVIDIA device files are:
 
 -   `/dev/nvidia-caps/*`: Controls `nvidia-capabilities`, which is mainly used
     by Multi-instance GPUs (MIGs).
 -   `/dev/nvidia-drm`: Plugs into Linux's Direct Rendering Manager (DRM)
     subsystem.
--   `/dev/nvidia-modeset`: Enables `DRIVER_MODESET` capability in `nvidia-drm`
-    devices.
 
 ### Supported `ioctl` Set {#ioctls}
 

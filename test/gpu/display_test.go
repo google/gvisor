@@ -72,6 +72,9 @@ def probe_modeset():
         print("modeset_open", errno.errorcode[e.errno])
         return
     print("modeset_open OK")
+    # NVKMS_IOCTL_CMD with a zeroed struct NvKmsIoctlParams.
+    params = ctypes.create_string_buffer(16)
+    print("modeset_ioctl", ioctl(fd, (3 << 30) | (16 << 16) | (ord("m") << 8), params))
     os.close(fd)
 
 probe_render_node(sys.argv[1])
@@ -192,8 +195,11 @@ func TestDisplayDevices(t *testing.T) {
 			want: map[string]string{
 				"modeset_open": "OK",
 			},
+			// nvproxy emulates the device without the host device, so it
+			// opens and every NVKMS ioctl fails.
 			gVisorWant: map[string]string{
-				"modeset_open": "ENXIO",
+				"modeset_open":  "OK",
+				"modeset_ioctl": "ENOTTY",
 			},
 		},
 	} {
