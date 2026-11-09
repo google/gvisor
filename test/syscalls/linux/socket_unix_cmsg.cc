@@ -1595,6 +1595,25 @@ TEST_P(UnixSocketPairCmsgTest, CloexecDroppedWhenFDPassed) {
   EXPECT_THAT(fcntl(fd, F_GETFD), SyscallSucceedsWithValue(0));
 }
 
+// MSG_CMSG_CLOEXEC is returned even without a control buffer.
+TEST_P(UnixSocketPairCmsgTest, CloexecRecvWithoutControl) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  for (int flags : {0, static_cast<int>(MSG_CMSG_CLOEXEC)}) {
+    char data = 'a';
+    ASSERT_THAT(RetryEINTR(send)(sockets->first_fd(), &data, sizeof(data), 0),
+                SyscallSucceedsWithValue(sizeof(data)));
+
+    struct iovec iov = {&data, sizeof(data)};
+    struct msghdr msg = {};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, flags),
+                SyscallSucceedsWithValue(sizeof(data)));
+    EXPECT_EQ(msg.msg_flags, flags);
+  }
+}
+
 TEST_P(UnixSocketPairCmsgTest, CloexecRecvFDPass) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -1621,6 +1640,7 @@ TEST_P(UnixSocketPairCmsgTest, CloexecRecvFDPass) {
 
   ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, MSG_CMSG_CLOEXEC),
               SyscallSucceedsWithValue(sizeof(received_data)));
+  EXPECT_EQ(msg.msg_flags, MSG_CMSG_CLOEXEC);
   struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
   ASSERT_NE(cmsg, nullptr);
   ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
