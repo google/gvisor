@@ -60,7 +60,7 @@ PosixError PopulateLinkAddrNlmsghdr(NetlinkModification modification,
       return NoError();
     case NetlinkModification::kAddExclusive:
       hdr->nlmsg_type = RTM_NEWADDR;
-      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL | NLM_F_ACK;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
       return NoError();
     case NetlinkModification::kReplace:
       hdr->nlmsg_type = RTM_NEWADDR;
