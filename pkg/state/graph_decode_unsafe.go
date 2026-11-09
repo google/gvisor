@@ -63,11 +63,25 @@ type decodeCallback struct {
 // callbacks (such as AfterLoad) run and unblock any objects waiting on it.
 type graphObjectDecodeState struct {
 	blockedBy int32
-	// cbHead..cbTail delimit this object's own callbacks; waitHead..waitTail
-	// delimit callbacks waiting for this object to complete, or are -1.
-	cbHead, cbTail     int32
-	waitHead, waitTail int32
-	complete           bool
+	// cbHead..cbTail delimit this object's own callbacks, or are -1.
+	cbHead, cbTail int32
+	waiters        graphWaiters
+	complete       bool
+}
+
+// graphWaiters holds the objects waiting for one object to complete. A single
+// waiter without a user callback needs only its object ID. In that case first
+// holds the ID and callbackTail is -1. Otherwise first and callbackTail delimit
+// a list of decodeCallbacks, or are both -1 when there are no waiters.
+type graphWaiters struct {
+	first, callbackTail int32
+}
+
+func (w graphWaiters) singleWaiter() int32 {
+	if w.callbackTail >= 0 {
+		return -1
+	}
+	return w.first
 }
 
 // graphDecodeState is the state of Load.
@@ -278,7 +292,7 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 	var totalBytes uint64
 	for i := range ds.objs {
 		o := &ds.objs[i]
-		ds.ods[i] = graphObjectDecodeState{cbHead: -1, cbTail: -1, waitHead: -1, waitTail: -1}
+		ds.ods[i] = graphObjectDecodeState{cbHead: -1, cbTail: -1, waiters: graphWaiters{-1, -1}}
 		o.kind = d.byte()
 		o.inexact = o.kind&objInexact != 0
 		o.kind &^= objInexact
@@ -466,7 +480,15 @@ func (ds *graphDecodeState) wait(waiter, obj int32, cb decodeCallback) {
 		return
 	}
 	ds.ods[waiter].blockedBy++
-	o := &ds.ods[obj]
+	w := &ds.ods[obj].waiters
+	if w.callbackTail < 0 {
+		if w.first >= 0 {
+			ds.appendCallback(&w.first, &w.callbackTail, decodeCallback{waiter: w.first})
+		} else if !cb.user() {
+			w.first = waiter
+			return
+		}
+	}
 	cb.waiter = waiter
-	ds.appendCallback(&o.waitHead, &o.waitTail, cb)
+	ds.appendCallback(&w.first, &w.callbackTail, cb)
 }
