@@ -201,16 +201,25 @@ func (ds *graphDecodeState) runCallbacks() {
 	defer func() { ds.leaves = leaves }()
 	for i := range ds.ods {
 		o := &ds.ods[i]
-		if o.waitHead >= 0 {
+		if o.waiters.callbackTail >= 0 {
 			if o.cbTail < 0 {
-				o.cbHead = o.waitHead
+				o.cbHead = o.waiters.first
 			} else {
-				ds.cbs[o.cbTail].next = o.waitHead
+				ds.cbs[o.cbTail].next = o.waiters.first
 			}
-			o.cbTail = o.waitTail
+			o.cbTail = o.waiters.callbackTail
 		}
 		if o.blockedBy == 0 {
 			leaves = append(leaves, int32(i))
+		}
+	}
+	unblock := func(waiter int32) {
+		w := &ds.ods[waiter]
+		w.blockedBy--
+		if w.blockedBy == 0 {
+			leaves = append(leaves, waiter)
+		} else if w.blockedBy < 0 {
+			Failf("object %d has negative blockedBy: %d", waiter, w.blockedBy)
 		}
 	}
 	pending := len(ds.ods)
@@ -222,23 +231,22 @@ func (ds *graphDecodeState) runCallbacks() {
 			if o.blockedBy != 0 || o.complete {
 				continue
 			}
-			if ds.stats.enabled && o.cbHead >= 0 && ds.objs[cur].ti != nil {
+			waiter := o.waiters.singleWaiter()
+			timed := ds.stats.enabled && (o.cbHead >= 0 || waiter >= 0) && ds.objs[cur].ti != nil
+			if timed {
 				ds.stats.start(ds.objs[cur].ti)
 			}
 			for c := o.cbHead; c >= 0; c = ds.cbs[c].next {
 				cb := &ds.cbs[c]
 				ds.runCallback(cb)
 				if cb.waiter >= 0 {
-					w := &ds.ods[cb.waiter]
-					w.blockedBy--
-					if w.blockedBy == 0 {
-						leaves = append(leaves, cb.waiter)
-					} else if w.blockedBy < 0 {
-						Failf("object %d has negative blockedBy: %d", cb.waiter, w.blockedBy)
-					}
+					unblock(cb.waiter)
 				}
 			}
-			if ds.stats.enabled && o.cbHead >= 0 && ds.objs[cur].ti != nil {
+			if waiter >= 0 {
+				unblock(waiter)
+			}
+			if timed {
 				ds.stats.done()
 			}
 			o = &ds.ods[cur]
@@ -315,6 +323,9 @@ func (ds *graphDecodeState) findCycle() []int32 {
 			if w := ds.cbs[c].waiter; w >= 0 {
 				blockers[w] = int32(i)
 			}
+		}
+		if w := o.waiters.singleWaiter(); w >= 0 {
+			blockers[w] = int32(i)
 		}
 	}
 	visited := make(map[int32]int)
