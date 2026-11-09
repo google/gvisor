@@ -42,10 +42,7 @@ func (s *Hackbench) MakeCmd(b *testing.B) []string {
 	} else {
 		cmd = append(cmd, "--process")
 	}
-	// rt-tests 2.2 incorrectly validates long options against argv indices.
-	// Use the short loop option to avoid its incorrect argv check:
-	// https://kernel.googlesource.com/pub/scm/utils/rt-tests/rt-tests/+/778a02b7c
-	cmd = append(cmd, "-l", strconv.Itoa(b.N))
+	cmd = append(cmd, "--loops="+strconv.Itoa(b.N))
 	return cmd
 }
 

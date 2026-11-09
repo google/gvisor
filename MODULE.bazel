@@ -87,6 +87,16 @@ http_archive(
     ],
 )
 
+### rt-tests
+# rt-tests supplies the hackbench source used by the benchmark.
+http_archive(
+    name = "rt_tests",
+    build_file_content = 'exports_files(["COPYING", "src/hackbench/hackbench.c"])',
+    sha256 = "c01ce99d4b86a99ef83fb75ddc97ddd7669eb85996a2c35bc9ad9e83ecad47bc",
+    strip_prefix = "rt-tests-2.11",
+    urls = ["https://www.kernel.org/pub/linux/utils/rt-tests/rt-tests-2.11.tar.xz"],
+)
+
 ### Python
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.11")

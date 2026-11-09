@@ -1310,6 +1310,12 @@
   sha256: 58d31d097b72207702458bcd5927337e3428bad3f97d3075ff6c7b4ca13ecf50
   license: GPL-2.0-only
   license_source: https://raw.githubusercontent.com/qemu/qemu/98b060da3a4f92b2a994ead5b16a87e783baf77c/COPYING
+- dependency: rt_tests
+  version: https://www.kernel.org/pub/linux/utils/rt-tests/rt-tests-2.11.tar.xz
+  retrieved: "2026-11-02"
+  commit: ""
+  sha256: c01ce99d4b86a99ef83fb75ddc97ddd7669eb85996a2c35bc9ad9e83ecad47bc
+  license: GPL-2.0-only
 - dependency: rules_cc
   version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.25/rules_cc-0.2.25.tar.gz
   retrieved: "2026-10-02"
