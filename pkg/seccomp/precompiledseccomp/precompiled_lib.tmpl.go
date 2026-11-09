@@ -17,6 +17,8 @@
 package precompiled
 
 import (
+	"runtime"
+
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
 
@@ -32,16 +34,29 @@ var (
 // indicate that precompilation was disabled at build time.
 const PrecompilationDisabledAtBuildTime = false // PRECOMPILATION_DISABLED_AT_BUILD_TIME_THIS_IS_A_LOAD_BEARING_COMMENT
 
+// precompiledArch is the GOARCH of the generator that wrote this file, which
+// is the architecture the programs above were compiled for.
+const precompiledArch = "" // PRECOMPILED_ARCH_THIS_IS_A_LOAD_BEARING_COMMENT
+
 // GetPrecompiled returns the precompiled program for the given name,
-// and whether that program name exists.
+// and whether that program name exists for this architecture.
 func GetPrecompiled(programName string) (precompiledseccomp.Program, bool) {
+	// Programs compiled for another architecture would be wrong here. The go
+	// branch carries files that a single amd64 build generated.
+	if runtime.GOARCH != precompiledArch {
+		return precompiledseccomp.Program{}, false
+	}
 	switch programName {
 	// PROGRAM_REGISTRATION_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT
 	}
 	return precompiledseccomp.Program{}, false
 }
 
-// ListPrecompiled returns a list of all registered program names.
+// ListPrecompiled returns a list of all registered program names for this
+// architecture.
 func ListPrecompiled() []string {
+	if runtime.GOARCH != precompiledArch {
+		return nil
+	}
 	return append([]string(nil), precompiledProgramNames...)
 }

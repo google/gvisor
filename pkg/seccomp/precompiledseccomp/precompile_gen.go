@@ -21,6 +21,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -40,6 +41,7 @@ const (
 	registrationComment           = "PROGRAM_REGISTRATION_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT"
 	namesListComment              = "PROGRAM_NAMES_LIST_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT"
 	disabledAtBuildtimeComment    = "PRECOMPILATION_DISABLED_AT_BUILD_TIME_THIS_IS_A_LOAD_BEARING_COMMENT"
+	archComment                   = "PRECOMPILED_ARCH_THIS_IS_A_LOAD_BEARING_COMMENT"
 )
 
 // Flags.
@@ -116,6 +118,8 @@ func main() {
 			}
 		case strings.Contains(line, disabledAtBuildtimeComment):
 			fmt.Fprintf(outFile, "const PrecompilationDisabledAtBuildTime = %t\n", disabledAtBuildTime)
+		case strings.Contains(line, archComment):
+			fmt.Fprintf(outFile, "const precompiledArch = %q\n", runtime.GOARCH)
 		default:
 			fmt.Fprintf(outFile, "%s\n", line)
 		}

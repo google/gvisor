@@ -92,6 +92,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/bitmap",
+        "//pkg/bpf",
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/eventfd",

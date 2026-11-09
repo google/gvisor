@@ -60,7 +60,7 @@ func createStub() (*thread, error) {
 // Precondition: the runtime OS thread must be locked.
 func attachedThread(flags uintptr) (*thread, error) {
 	vars := stubfilter.StubProcessVars(uint64(stubStart), uint64(stubROMapEnd-stubStart))
-	return forkStub(flags, renderStubFilter(stubfilter.StubProcessName, vars))
+	return forkStub(flags, renderStubFilter(stubfilter.StubProcessName, stubfilter.StubProcess, vars))
 }
 
 // In the child, this function must not acquire any locks, because they might

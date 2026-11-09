@@ -73,13 +73,18 @@ func createStub() (*thread, error) {
 // Precondition: the runtime OS thread must be locked.
 func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error) {
 	name := stubfilter.ProgramName(defaultAction)
-	program, ok := GetPrecompiled(name)
-	if !ok {
-		panic(fmt.Sprintf("precompiled seccomp program %q not found", name))
+	var (
+		instrs []bpf.Instruction
+		err    error
+	)
+	if program, ok := GetPrecompiled(name); ok {
+		instrs, err = program.RenderInstructions(nil)
+	} else {
+		log.Warningf("No precompiled program found for %q, building seccomp program from scratch. This slows down sandbox startup.", name)
+		instrs, _, err = stubfilter.Program(defaultAction).Build()
 	}
-	instrs, err := program.RenderInstructions(nil)
 	if err != nil {
-		return nil, fmt.Errorf("cannot render precompiled seccomp program %q: %w", name, err)
+		return nil, fmt.Errorf("cannot build seccomp program %q: %w", name, err)
 	}
 	return forkStub(flags, instrs)
 }

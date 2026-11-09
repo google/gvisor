@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safecopy"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/stubfilter"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
@@ -56,23 +57,29 @@ func prepareSeccompRules(stubSysmsgStart,
 	stubSysmsgRules, stubSysmsgRulesLen,
 	stubSyscallRules, stubSyscallRulesLen uintptr) {
 	vars := stubfilter.SysmsgThreadVars(uint64(stubStart), uint64(stubSysmsgStart))
-	instrs := renderStubFilter(stubfilter.SysmsgThreadName, vars)
+	instrs := renderStubFilter(stubfilter.SysmsgThreadName, stubfilter.SysmsgThread, vars)
 	copySeccompRulesToStub(instrs, stubSysmsgRules, stubSysmsgRulesLen)
 
-	instrs = renderStubFilter(stubfilter.SyscallThreadName, nil)
+	instrs = renderStubFilter(stubfilter.SyscallThreadName, stubfilter.SyscallThread, nil)
 	copySeccompRulesToStub(instrs, stubSyscallRules, stubSyscallRulesLen)
 }
 
 // renderStubFilter renders the precompiled stubfilter program with the given
-// name.
-func renderStubFilter(name string, vars precompiledseccomp.Values) []bpf.Instruction {
-	program, ok := GetPrecompiled(name)
-	if !ok {
-		panic(fmt.Sprintf("precompiled seccomp program %q not found", name))
+// name, or builds it with build if it wasn't precompiled for this
+// architecture.
+func renderStubFilter(name string, build func(precompiledseccomp.Values) *seccomp.Program, vars precompiledseccomp.Values) []bpf.Instruction {
+	var (
+		instrs []bpf.Instruction
+		err    error
+	)
+	if program, ok := GetPrecompiled(name); ok {
+		instrs, err = program.RenderInstructions(vars)
+	} else {
+		log.Warningf("No precompiled program found for %q, building seccomp program from scratch. This slows down sandbox startup.", name)
+		instrs, _, err = build(vars).Build()
 	}
-	instrs, err := program.RenderInstructions(vars)
 	if err != nil {
-		panic(fmt.Sprintf("cannot render precompiled seccomp program %q: %v", name, err))
+		panic(fmt.Sprintf("cannot build seccomp program %q: %v", name, err))
 	}
 	return instrs
 }

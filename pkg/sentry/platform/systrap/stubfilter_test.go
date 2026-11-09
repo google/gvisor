@@ -48,7 +48,14 @@ func TestStubFilterPrecompiled(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s (stubStart=%#x): cannot build program: %v", test.name, stubStart, err)
 			}
-			got := renderStubFilter(test.name, test.vars)
+			program, ok := GetPrecompiled(test.name)
+			if !ok {
+				t.Fatalf("%s: precompiled program not found", test.name)
+			}
+			got, err := program.RenderInstructions(test.vars)
+			if err != nil {
+				t.Fatalf("%s (stubStart=%#x): cannot render precompiled program: %v", test.name, stubStart, err)
+			}
 			if !slices.Equal(got, want) {
 				t.Errorf("%s (stubStart=%#x): rendered precompiled program differs from compiled program:\ngot:  %v\nwant: %v", test.name, stubStart, got, want)
 			}

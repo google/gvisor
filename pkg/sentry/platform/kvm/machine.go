@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/hosttid"
@@ -918,13 +919,18 @@ func seccompMmapRules(m *machine) {
 		if err := sighandling.ReplaceSignalHandler(unix.SIGSYS, addrOfSigsysHandler(), &savedSigsysHandler); err != nil {
 			panic(fmt.Sprintf("Unable to set handler for signal %d: %v", unix.SIGSYS, err))
 		}
-		program, ok := GetPrecompiled(mmapfilter.ProgramName)
-		if !ok {
-			panic(fmt.Sprintf("precompiled seccomp program %q not found", mmapfilter.ProgramName))
+		var (
+			instrs []bpf.Instruction
+			err    error
+		)
+		if program, ok := GetPrecompiled(mmapfilter.ProgramName); ok {
+			instrs, err = program.RenderInstructions(nil)
+		} else {
+			log.Warningf("No precompiled program found for %q, building seccomp program from scratch. This slows down sandbox startup.", mmapfilter.ProgramName)
+			instrs, _, err = mmapfilter.Program(nil).Build()
 		}
-		instrs, err := program.RenderInstructions(nil)
 		if err != nil {
-			panic(fmt.Sprintf("cannot render precompiled seccomp program %q: %v", mmapfilter.ProgramName, err))
+			panic(fmt.Sprintf("cannot build seccomp program %q: %v", mmapfilter.ProgramName, err))
 		}
 		// Perform the actual installation.
 		if err := seccomp.SetFilter(instrs); err != nil {
