@@ -168,7 +168,7 @@ func sysSubdirs(path string) []string {
 // which is relative to /proc/sys.
 func (fs *filesystem) sysDirChildren(ctx context.Context, root *auth.Credentials, k *kernel.Kernel, path string) map[string]kernfs.Inode {
 	// TODO(gvisor.dev/issue/1833): Support for using the network stack in the
-	// network namespace of the calling process.
+	// network namespace of the calling process, as netnsSysctlFile does.
 	//
 	// The stack of the root network namespace is set when the kernel is
 	// initialized, before tasks run. It is saved and restored with
@@ -261,12 +261,13 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 		}
 	case "net/ipv4":
 		return map[string]kernfs.Inode{
-			"ip_forward":          fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv4.ProtocolNumber}),
-			"ip_local_port_range": fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
-			"tcp_recovery":        fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
-			"tcp_rmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
-			"tcp_sack":            fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
-			"tcp_wmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
+			"ip_forward":                 fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv4.ProtocolNumber}),
+			"ip_local_port_range":        fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
+			"ip_unprivileged_port_start": fs.newInode(ctx, root, 0644, &netnsSysctlFile{sysctl: unprivilegedPortStartSysctl}),
+			"tcp_recovery":               fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
+			"tcp_rmem":                   fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
+			"tcp_sack":                   fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
+			"tcp_wmem":                   fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
 
 			// The following files are simple stubs until they are implemented in
 			// netstack, most of these files are configuration related. We use the
@@ -794,6 +795,137 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		return 0, err
 	}
 	return n, nil
+}
+
+// netnsSysctl identifies a netnsSysctlFile.
+type netnsSysctl int
+
+const (
+	unprivilegedPortStartSysctl netnsSysctl = iota
+)
+
+// netnsSysctlFile is a /proc/sys/net file that applies to the network
+// namespace of the task that opens it. Linux resolves /proc/sys/net entries in
+// current's network namespace when they are looked up
+// (net/sysctl_net.c:net_ctl_header_lookup()), and an open file keeps referring
+// to that namespace.
+//
+// +stateify savable
+type netnsSysctlFile struct {
+	kernfs.DynamicBytesFile
+
+	sysctl netnsSysctl
+}
+
+var _ dynamicInode = (*netnsSysctlFile)(nil)
+
+// Init implements dynamicInode.Init.
+func (f *netnsSysctlFile) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, _ vfs.DynamicBytesSource, perm linux.FileMode) {
+	f.DynamicBytesFile.Init(ctx, creds, devMajor, devMinor, ino, nil, perm)
+	f.SetDataSourceProvider(f)
+}
+
+// openerNetworkNamespace returns the network namespace of the task in ctx, or
+// the root network namespace if ctx has no task.
+func openerNetworkNamespace(ctx context.Context) *inet.Namespace {
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		return t.NetworkNamespace()
+	}
+	return kernel.KernelFromContext(ctx).RootNetworkNamespace()
+}
+
+// CheckPermissions implements kernfs.Inode.CheckPermissions. As in Linux's
+// net/sysctl_net.c:net_ctl_permissions(), a caller with CAP_NET_ADMIN in the
+// user namespace that owns its network namespace gets the owner's access.
+func (f *netnsSysctlFile) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if netns := openerNetworkNamespace(ctx); netns != nil && creds.HasCapabilityIn(linux.CAP_NET_ADMIN, netns.UserNamespace()) {
+		// fs/proc/proc_sysctl.c:proc_sys_permission() never allows execute.
+		owner := vfs.AccessTypes(f.Mode().Permissions()>>6) & (vfs.MayRead | vfs.MayWrite | vfs.MayExec)
+		if !ats.MayExec() && ats&owner == ats {
+			return nil
+		}
+		return linuxerr.EACCES
+	}
+	return f.DynamicBytesFile.CheckPermissions(ctx, creds, ats)
+}
+
+// DataSource implements kernfs.DataSourceProvider.DataSource.
+func (f *netnsSysctlFile) DataSource(ctx context.Context) (vfs.DynamicBytesSource, error) {
+	netns := openerNetworkNamespace(ctx)
+	if netns.Stack() == nil {
+		return nil, linuxerr.ENOENT
+	}
+	switch f.sysctl {
+	case unprivilegedPortStartSysctl:
+		return &unprivilegedPortStart{netns: netns}, nil
+	default:
+		panic(fmt.Sprintf("unknown sysctl: %d", f.sysctl))
+	}
+}
+
+var _ kernfs.DataSourceProvider = (*netnsSysctlFile)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*netnsSysctlFile) Generate(context.Context, *bytes.Buffer) error {
+	panic("unreachable")
+}
+
+// unprivilegedPortStart implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/ip_unprivileged_port_start. It holds the namespace rather
+// than its stack because a restore gives child namespaces new stacks.
+//
+// +stateify savable
+type unprivilegedPortStart struct {
+	netns *inet.Namespace
+}
+
+var _ vfs.WritableDynamicBytesSource = (*unprivilegedPortStart)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (u *unprivilegedPortStart) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	_, err := fmt.Fprintf(buf, "%d\n", u.netns.Stack().UnprivilegedPortStart())
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (u *unprivilegedPortStart) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	return writeUnprivilegedPortStart(ctx, u.netns.Stack(), src)
+}
+
+// writeUnprivilegedPortStart writes src to net.ipv4.ip_unprivileged_port_start
+// of stack, as Linux's net/ipv4/sysctl_net_ipv4.c:ipv4_privileged_ports()
+// does.
+func writeUnprivilegedPortStart(ctx context.Context, stack inet.Stack, src usermem.IOSequence) (int64, error) {
+	buf := []int32{int32(stack.UnprivilegedPortStart())}
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if buf[0] < 0 || buf[0] > math.MaxUint16 {
+		return 0, linuxerr.EINVAL
+	}
+	if err := stack.SetUnprivilegedPortStart(uint16(buf[0])); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// SetNetIPv4Sysctl writes val to /proc/sys/net/ipv4/<name> of stack. Only
+// ip_unprivileged_port_start is supported.
+func SetNetIPv4Sysctl(ctx context.Context, stack inet.Stack, name, val string) error {
+	src := usermem.BytesIOSequence([]byte(val))
+	var err error
+	switch name {
+	case "ip_unprivileged_port_start":
+		_, err = writeUnprivilegedPortStart(ctx, stack, src)
+	default:
+		return fmt.Errorf("unsupported sysctl net.ipv4.%s", name)
+	}
+	return err
 }
 
 // atomicInt32File implements vfs.WritableDynamicBytesSource sysctls

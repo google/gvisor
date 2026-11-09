@@ -64,6 +64,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -870,7 +871,7 @@ func (s *sock) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.E
 
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
+func (s *sock) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	if len(sockaddr) < 2 {
 		return syserr.ErrInvalidArgument
 	}
@@ -912,6 +913,16 @@ func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 		}
 
 		addr = s.mapFamily(addr, family)
+
+		// Linux: net/ipv4/af_inet.c:__inet_bind() and
+		// net/ipv6/af_inet6.c:__inet6_bind(). Raw and ICMP datagram sockets
+		// bind through their own functions, which have no such check.
+		if s.skType == linux.SOCK_STREAM || (s.skType == linux.SOCK_DGRAM && s.protocol == int(udp.ProtocolNumber)) {
+			if addr.Port != 0 && addr.Port < s.namespace.Stack().UnprivilegedPortStart() &&
+				!t.HasCapabilityIn(linux.CAP_NET_BIND_SERVICE, s.namespace.UserNamespace()) {
+				return syserr.ErrPermissionDenied
+			}
+		}
 	}
 
 	// Issue the bind request to the endpoint.
