@@ -26,6 +26,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 
@@ -86,6 +87,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		capsEnabled:            opts.DriverCaps,
 		useDevGofer:            opts.UseDevGofer,
 		procDriverNvidiaParams: opts.HostSettings.ProcDriverNvidiaParams,
+		migCapabilities:        maps.Clone(opts.HostSettings.MIGCapabilities),
 		frontendFDs:            make(map[*frontendFD]struct{}),
 		clients:                make(map[nvgpu.Handle]*rootClient),
 	}
@@ -137,15 +139,28 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		nvp.devInfo.HaveUVMTools = true
 	}
 
-	if opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0 {
-		if !opts.HostSettings.HaveFabricIMEXManagement {
-			return nil, fmt.Errorf("driver capability %s is enabled, but fabric-imex-mgmt device minor number is unavailable", nvconf.CapFabricIMEXManagement)
-		}
+	if len(nvp.migCapabilities) != 0 || opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0 {
 		capsDevMajor, err := vfsObj.GetDynamicCharDevMajor()
 		if err != nil {
 			return nil, fmt.Errorf("allocating device major number for nvidia-caps: %w", err)
 		}
 		nvp.devInfo.CapsDevMajor = capsDevMajor
+	}
+	for capabilityPath, capability := range nvp.migCapabilities {
+		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvp.devInfo.CapsDevMajor, capability.Minor, &openOnlyDevice{
+			nvp:               nvp,
+			relpath:           fmt.Sprintf("nvidia-caps/nvidia-cap%d", capability.Minor),
+			migCapabilityPath: capabilityPath,
+		}, &vfs.RegisterDeviceOptions{GroupName: "nvidia-caps"}); err != nil {
+			return nil, fmt.Errorf("registering MIG capability %s: %w", capabilityPath, err)
+		}
+	}
+	nvp.devInfo.HaveMIGAccess = len(nvp.migCapabilities) != 0
+	if opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0 {
+		if !opts.HostSettings.HaveFabricIMEXManagement {
+			return nil, fmt.Errorf("driver capability %s is enabled, but fabric-imex-mgmt device minor number is unavailable", nvconf.CapFabricIMEXManagement)
+		}
+		capsDevMajor := nvp.devInfo.CapsDevMajor
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, capsDevMajor, opts.HostSettings.FabricIMEXManagementDevMinor, &openOnlyDevice{
 			nvp:     nvp,
 			relpath: fmt.Sprintf("nvidia-caps/nvidia-cap%d", opts.HostSettings.FabricIMEXManagementDevMinor),
@@ -195,6 +210,10 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 //
 // +stateify savable
 type DeviceInfo struct {
+	// HaveMIGAccess is true if GPU-instance or compute-instance access
+	// capability devices are registered.
+	HaveMIGAccess bool
+
 	// CapsDevMajor is nvidia-caps' device major number. If CapsDevMajor is 0,
 	// nvidia-caps is not enabled.
 	CapsDevMajor uint32
@@ -242,6 +261,7 @@ type nvproxy struct {
 	capsEnabled            nvconf.DriverCaps
 	useDevGofer            bool
 	procDriverNvidiaParams string
+	migCapabilities        map[string]nvconf.MIGCapability
 	devInfo                DeviceInfo
 	regularDevs            [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
 

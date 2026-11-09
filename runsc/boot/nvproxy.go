@@ -49,6 +49,9 @@ const (
 // number of GPUs or more, so only do this if at least one GPU device file is
 // open, which is indicative of GPU usage.
 func (l *Loader) setNvproxyDeviceRemapMetadata(saveOpts *state.SaveOpts) error {
+	if info := nvproxy.DeviceInfoFromVFS(l.k.VFS()); info != nil && info.HaveMIGAccess {
+		return fmt.Errorf("checkpointing NVIDIA MIG devices is not supported")
+	}
 	if !nvproxy.AnyFrontendDevicesOpen(l.k.VFS()) {
 		return nil
 	}

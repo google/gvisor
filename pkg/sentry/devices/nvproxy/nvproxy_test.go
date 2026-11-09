@@ -384,3 +384,81 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// TestMIGABISurface checks every registered version, including intermediate
+// ABIs and newer branches that inherit an older constructor. Instance access
+// must not enable the separate MIG administration interface.
+func TestMIGABISurface(t *testing.T) {
+	Init()
+	firstGIUUID := nvconf.NewDriverVersion(550, 40, 7)
+	for version, entry := range abis {
+		t.Run(version.String(), func(t *testing.T) {
+			abi := entry.cons()
+			info := abi.getInfo()
+			for _, class := range []nvgpu.ClassID{nvgpu.AMPERE_SMC_PARTITION_REF, nvgpu.AMPERE_SMC_EXEC_PARTITION_REF} {
+				handler, ok := abi.allocationClass[class]
+				if !ok || handler.handler == nil || handler.capSet != compUtil {
+					t.Errorf("MIG reference class %s does not have a compute/utility handler", class)
+				}
+				if _, ok := info.AllocationInfos[class]; !ok {
+					t.Errorf("MIG reference class %s has no driver parity metadata", class)
+				}
+			}
+			for _, command := range []uint32{
+				nvgpu.NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO,
+				nvgpu.NV2080_CTRL_CMD_GPU_GET_PARTITIONS,
+				nvgpu.NV2080_CTRL_CMD_GPU_GET_COMPUTE_PROFILES,
+				nvgpu.NVC637_CTRL_CMD_EXEC_PARTITIONS_GET,
+				nvgpu.NVC637_CTRL_EXEC_PARTITIONS_GET_ACTIVE_IDS,
+				nvgpu.NVC637_CTRL_CMD_GET_UUID,
+				nvgpu.NVC638_CTRL_CMD_GET_UUID,
+			} {
+				wantPresent := command != nvgpu.NVC637_CTRL_CMD_GET_UUID || version.IsGreaterThan(firstGIUUID)
+				handler, present := abi.controlCmd[command]
+				if present != wantPresent {
+					t.Errorf("MIG query %#x present=%t, want %t", command, present, wantPresent)
+				}
+				_, haveMetadata := info.ControlInfos[command]
+				if haveMetadata != wantPresent {
+					t.Errorf("MIG query %#x parity metadata present=%t, want %t", command, haveMetadata, wantPresent)
+				}
+				if present && (handler.handler == nil || handler.capSet != compUtil) {
+					t.Errorf("MIG query %#x does not have a compute/utility handler", command)
+				}
+			}
+			for _, command := range []uint32{
+				0x20800174, // NV2080_CTRL_CMD_GPU_SET_PARTITIONS
+				0x20800176, // NV2080_CTRL_CMD_GPU_CONFIGURE_PARTITION
+				0xc6370101, // NVC637_CTRL_CMD_EXEC_PARTITIONS_CREATE
+				0xc6370102, // NVC637_CTRL_CMD_EXEC_PARTITIONS_DELETE
+			} {
+				if _, ok := abi.controlCmd[command]; ok {
+					t.Errorf("MIG administration command %#x is allowlisted", command)
+				}
+				if _, ok := info.ControlInfos[command]; ok {
+					t.Errorf("MIG administration command %#x has allowlist metadata", command)
+				}
+			}
+			const smcConfigSession nvgpu.ClassID = 0xc639 // AMPERE_SMC_CONFIG_SESSION
+			if _, ok := abi.allocationClass[smcConfigSession]; ok {
+				t.Errorf("MIG configuration session class %s is allowlisted", smcConfigSession)
+			}
+		})
+	}
+}
+
+// TestUnknownDriverRejected verifies that the opt-in for known intermediate
+// ABIs cannot select a guessed ABI for a driver absent from the registry.
+func TestUnknownDriverRejected(t *testing.T) {
+	Init()
+	version := nvconf.NewDriverVersion(99999, 1, 1)
+	if _, ok := abis[version]; ok {
+		t.Fatalf("test driver %s is registered", version)
+	}
+	for _, allowUnsupported := range []bool{false, true} {
+		_, err := Register(nil, &Options{DriverVersion: version, AllowUnsupportedDriver: allowUnsupported})
+		if err == nil || !strings.Contains(err.Error(), "unsupported Nvidia driver version") {
+			t.Errorf("Register unknown version, AllowUnsupportedDriver=%t: got %v", allowUnsupported, err)
+		}
+	}
+}

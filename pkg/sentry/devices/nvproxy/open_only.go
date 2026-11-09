@@ -29,6 +29,10 @@ import (
 type openOnlyDevice struct {
 	nvp     *nvproxy
 	relpath string
+	// migCapabilityPath identifies a GPU-instance or compute-instance access
+	// capability relative to /proc/driver/nvidia/. It is empty for other
+	// capability devices.
+	migCapabilityPath string
 }
 
 // Open implements vfs.Device.Open.

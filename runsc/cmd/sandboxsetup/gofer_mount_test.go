@@ -33,6 +33,10 @@ func TestShouldExposeNvidiaDevice(t *testing.T) {
 		{name: "nvidia-modeset", path: "/dev/nvidia-modeset", want: false},
 		{name: "not nvidia", path: "/dev/sda", want: false},
 		{name: "nvidia prefix but not device", path: "/dev/nvidia-cap1", want: false},
+		{name: "instance capability", path: "/dev/nvidia-caps/nvidia-cap67", want: true},
+		{name: "capability directory", path: "/dev/nvidia-caps", want: false},
+		{name: "invalid capability", path: "/dev/nvidia-caps/nvidia-capx", want: false},
+		{name: "capability path traversal", path: "/dev/nvidia-caps/../nvidia0", want: false},
 		{name: "empty", path: "", want: false},
 	}
 	for _, tst := range tests {

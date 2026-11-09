@@ -80,6 +80,65 @@ When using CDI, the `nvidia-container-runtime` shim is not required. `runsc` is
 invoked directly as the low-level runtime, and the higher-level runtime applies
 the CDI spec.
 
+### MIG compute devices
+
+`nvproxy` can run CUDA compute workloads on host-configured NVIDIA
+Multi-Instance GPU (MIG) devices. Create the GPU instance (GI) and compute
+instance (CI) on the host before starting the sandbox.
+
+Supply the parent `/dev/nvidia#`, `/dev/nvidiactl`, `/dev/nvidia-uvm`, and the
+assigned GI and CI `/dev/nvidia-caps/nvidia-cap#` devices in the sandbox root
+container's OCI `linux.devices` entries. A CDI-aware runtime can supply these
+entries. Each capability device's path, major, and minor must match the host
+device. Set `CUDA_VISIBLE_DEVICES` to the assigned MIG UUID when selecting a
+single instance.
+
+`nvproxy` exposes the assigned instance access metadata in
+`/proc/driver/nvidia/capabilities` and registers the capability devices in
+`/proc/devices`. Host procfs bind mounts are not required. Unassigned instance
+capabilities and global MIG configuration and monitoring capabilities are not
+exposed.
+
+MIG checkpoint/restore, adding MIG devices through a workload subcontainer,
+and MIG selection through the legacy `NVIDIA_VISIBLE_DEVICES` hook path are
+not supported. MIG configuration and repartitioning remain host operations.
+
+Some framework diagnostics require more privileges than instance access grants.
+For example, PyTorch 2.11.0's allocator queries processes on the parent GPU after
+memory exhaustion. Without global MIG monitoring permission, NVML can reject
+this query and PyTorch can raise an internal assertion instead of its usual OOM
+exception. This also occurs in a native process restricted to the assigned MIG
+access devices. Applications must handle this framework limitation; global
+monitoring access would expose information about sibling instances.
+
+#### Qualifying a driver upgrade
+
+Qualify the exact NVIDIA driver, CUDA/framework, and `runsc` versions together.
+An ABI declaration review does not establish runtime compatibility, and results
+on one GPU generation do not establish support for another generation.
+
+Before deploying a driver upgrade:
+
+1.  Register the exact driver version using the normal `nvproxy` ABI process.
+    Unknown driver versions are rejected even with
+    `--nvproxy-allow-unsupported-driver`.
+2.  Compare matching NVIDIA headers and kernel implementations, then run
+    `//pkg/sentry/devices/nvproxy:nvproxy_driver_parity_test` and the focused
+    `nvproxy`, `nvconf`, and sandbox device setup tests. Review authorization,
+    reference lifetimes, union selectors, and pointer or file descriptor
+    semantics as well as structure layouts. A same-size structure can change
+    meaning without failing a layout check.
+3.  Compare native and sandbox execution on the target hardware. Include
+    numerical checks, training, CUDA graphs, compiled kernels, memory pressure,
+    process termination, and recovery. Exercise two assigned instances
+    concurrently, including failure on one while the other continues work.
+4.  Recheck denial of sibling instance access, invalid or wrong-type capability
+    descriptors, device-wide profiling, and MIG administration. Verify that
+    only assigned device nodes and procfs access metadata are visible.
+5.  Preserve the exact source and release hashes, driver and framework versions,
+    GPU and instance profiles, and test results. Repeat this qualification for
+    a new GPU architecture or host UVM configuration.
+
 ### Docker
 
 The "legacy" mode of `nvidia-container-runtime` is directly compatible with the
@@ -236,12 +295,13 @@ then all allowed capabilities will be used.
 
 ### Supported Device Files {#device-files}
 
-gVisor only exposes `/dev/nvidiactl`, `/dev/nvidia-uvm` and `/dev/nvidia#`.
+gVisor exposes `/dev/nvidiactl`, `/dev/nvidia-uvm`, `/dev/nvidia#`, and assigned
+MIG instance access capability devices under `/dev/nvidia-caps/`.
 
 Some unsupported NVIDIA device files are:
 
--   `/dev/nvidia-caps/*`: Controls `nvidia-capabilities`, which is mainly used
-    by Multi-instance GPUs (MIGs).
+-   `/dev/nvidia-caps/*` other than assigned MIG instance access devices and
+    supported fabric management capabilities.
 -   `/dev/nvidia-drm`: Plugs into Linux's Direct Rendering Manager (DRM)
     subsystem.
 -   `/dev/nvidia-modeset`: Enables `DRIVER_MODESET` capability in `nvidia-drm`

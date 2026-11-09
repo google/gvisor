@@ -18,15 +18,31 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
 )
 
+// MIGCapability describes an instance access capability in the host driver.
+//
+// +stateify savable
+type MIGCapability struct {
+	// Minor is the host nvidia-caps device minor.
+	Minor uint32
+	// Mode is the mode advertised by DeviceFileMode.
+	Mode uint32
+}
+
 // HostSettings contains properties of the host Nvidia driver that must be
 // observed before filter installation, or entering a chroot or pivot_root.
 type HostSettings struct {
+	// MIGCapabilities contains only explicitly granted GI and CI access
+	// capabilities, keyed by path relative to /proc/driver/nvidia.
+	MIGCapabilities map[string]MIGCapability
+
 	// ProcDriverNvidiaParams is the contents of /proc/driver/nvidia/params.
 	ProcDriverNvidiaParams string
 
@@ -44,6 +60,10 @@ type HostSettings struct {
 
 // HostSettingsOptions holds arguments to GetHostSettings.
 type HostSettingsOptions struct {
+	// MIGDeviceMinors contains explicitly granted host nvidia-caps minors.
+	// An empty list disables MIG capability discovery.
+	MIGDeviceMinors []uint32
+
 	// If WantFabricIMEXManagement is true, ensure that
 	// HaveFabricIMEXManagement and FabricIMEXManagementDevMinor are set in the
 	// returned HostSettings.
@@ -93,7 +113,71 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 		}
 	}
 
+	if len(opts.MIGDeviceMinors) != 0 {
+		settings.MIGCapabilities, err = getMIGCapabilities("/proc/driver/nvidia", opts.MIGDeviceMinors)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return settings, nil
+}
+
+// getMIGCapabilities reads only instance access capabilities. Global MIG
+// configuration and monitoring capabilities are not instance access rights.
+func getMIGCapabilities(root string, minors []uint32) (map[string]MIGCapability, error) {
+	granted := make(map[uint32]bool, len(minors))
+	for _, minor := range minors {
+		granted[minor] = true
+	}
+	capabilities := make(map[string]MIGCapability)
+	validPath := regexp.MustCompile(`^capabilities/gpu[0-9]+/mig/gi[0-9]+(/ci[0-9]+)?/access$`)
+	for _, pattern := range []string{"capabilities/gpu*/mig/gi*/access", "capabilities/gpu*/mig/gi*/ci*/access"} {
+		paths, err := filepath.Glob(filepath.Join(root, pattern))
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range paths {
+			relative, err := filepath.Rel(root, path)
+			if err != nil {
+				return nil, err
+			}
+			if !validPath.MatchString(relative) {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("reading MIG capability %s: %w", path, err)
+			}
+			fields := make(map[string]uint32)
+			for _, line := range strings.Split(string(data), "\n") {
+				key, value, ok := strings.Cut(line, ":")
+				if !ok || (key != "DeviceFileMinor" && key != "DeviceFileMode") {
+					continue
+				}
+				if _, ok := fields[key]; ok {
+					return nil, fmt.Errorf("duplicate %s in %s", key, path)
+				}
+				parsed, err := strconv.ParseUint(strings.TrimSpace(value), 10, 32)
+				if err != nil {
+					return nil, fmt.Errorf("invalid %s in %s: %w", key, path, err)
+				}
+				fields[key] = uint32(parsed)
+			}
+			minor, ok := fields["DeviceFileMinor"]
+			if !ok {
+				return nil, fmt.Errorf("missing DeviceFileMinor in %s", path)
+			}
+			if !granted[minor] {
+				continue
+			}
+			mode, ok := fields["DeviceFileMode"]
+			if !ok || mode & ^uint32(0777) != 0 {
+				return nil, fmt.Errorf("invalid DeviceFileMode in %s", path)
+			}
+			capabilities[relative] = MIGCapability{Minor: minor, Mode: mode}
+		}
+	}
+	return capabilities, nil
 }
 
 // IMEXChannelCount returns the number of IMEX channels indicated by
