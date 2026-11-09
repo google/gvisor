@@ -991,17 +991,68 @@ func removeAddress(source netlink.Link, ipAndMask string) error {
 	return netlink.AddrDel(source, addr)
 }
 
+func openPCAPFile(path string) (*os.File, error) {
+	const openFlags = unix.O_WRONLY | unix.O_CREAT | unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_CLOEXEC
+	var fd int
+	for {
+		var err error
+		fd, err = unix.Open(path, openFlags, 0664)
+		if !errors.Is(err, unix.EINTR) {
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+
+	var st unix.Stat_t
+	for {
+		err := unix.Fstat(fd, &st)
+		if !errors.Is(err, unix.EINTR) {
+			if err != nil {
+				_ = unix.Close(fd)
+				return nil, err
+			}
+			break
+		}
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("not a regular file (mode %#o)", st.Mode)
+	}
+	if st.Nlink > 1 {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("file has multiple hard links (%d)", st.Nlink)
+	}
+
+	if err := unix.SetNonblock(fd, false); err != nil {
+		_ = unix.Close(fd)
+		return nil, err
+	}
+	for {
+		err := unix.Ftruncate(fd, 0)
+		if !errors.Is(err, unix.EINTR) {
+			if err != nil {
+				_ = unix.Close(fd)
+				return nil, err
+			}
+			break
+		}
+	}
+	return os.NewFile(uintptr(fd), path), nil
+}
+
 func pcapAndNAT(args *sentryapi.CreateLinksAndRoutesArgs, conf *config.Config) error {
 	// Possibly enable packet logging.
 	args.LogPackets = conf.LogPackets
 
 	// Pass PCAP log file if present.
 	if conf.PCAP != "" {
-		args.PCAP = true
-		pcap, err := os.OpenFile(conf.PCAP, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+		pcap, err := openPCAPFile(conf.PCAP)
 		if err != nil {
-			return fmt.Errorf("failed to open PCAP file %s: %v", conf.PCAP, err)
+			return fmt.Errorf("failed to open PCAP file %s: %w", conf.PCAP, err)
 		}
+		args.PCAP = true
 		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
 	}
 
