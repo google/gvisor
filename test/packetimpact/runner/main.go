@@ -36,6 +36,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"
+	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -150,19 +152,10 @@ func main() {
 		log.Fatalf("failed to marshal json: %s", err)
 	}
 
+	if err := dropIncomingTCP(duts); err != nil {
+		log.Fatalf("failed to install packetimpact input rules: %v", err)
+	}
 	for _, d := range duts {
-		// When the Linux kernel receives a SYN-ACK for a SYN it didn't send, it
-		// will respond with an RST. In most packetimpact tests, the SYN is sent
-		// by the raw socket, the kernel knows nothing about the connection, this
-		// behavior will break lots of TCP related packetimpact tests. To prevent
-		// this, we can install the following iptables rules. The raw socket that
-		// packetimpact tests use will still be able to see everything.
-		for _, iptables := range []string{"/sbin/iptables-nft", "/sbin/ip6tables-nft"} {
-			cmd := exec.Command(iptables, "-A", "INPUT", "-i", d.peerIface(), "--proto", "tcp", "-j", "DROP")
-			if output, err := cmd.CombinedOutput(); err != nil {
-				log.Fatalf("failed to set iptables: %s, output: %s", err, string(output))
-			}
-		}
 		// Start packet capture.
 		dut := d
 		g.Go(func() error {
@@ -203,6 +196,40 @@ func main() {
 			log.Fatalf("unknown error when executing test: %s", err)
 		}
 	}
+}
+
+// dropIncomingTCP keeps the testbench kernel from sending RSTs in response to
+// connections created by the raw socket. The raw socket still sees incoming
+// packets before they reach the input hook.
+func dropIncomingTCP(duts []*dutProcess) error {
+	var conn nftables.Conn
+	accept := nftables.ChainPolicyAccept
+	// Separate families also work on kernels built without NF_TABLES_INET.
+	for _, family := range []nftables.TableFamily{nftables.TableFamilyIPv4, nftables.TableFamilyIPv6} {
+		table := conn.AddTable(&nftables.Table{Name: "packetimpact", Family: family})
+		input := conn.AddChain(&nftables.Chain{
+			Name:     "input",
+			Table:    table,
+			Type:     nftables.ChainTypeFilter,
+			Hooknum:  nftables.ChainHookInput,
+			Priority: nftables.ChainPriorityFilter,
+			Policy:   &accept,
+		})
+		for _, d := range duts {
+			conn.AddRule(&nftables.Rule{
+				Table: table,
+				Chain: input,
+				Exprs: []expr.Any{
+					&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: append([]byte(d.peerIface()), 0)},
+					&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_TCP}},
+					&expr.Verdict{Kind: expr.VerdictDrop},
+				},
+			})
+		}
+	}
+	return conn.Flush()
 }
 
 type dutProcess struct {

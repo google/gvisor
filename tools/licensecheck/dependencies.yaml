@@ -510,6 +510,12 @@
   commit: a9779d139771f6a06fc983b18e0efd23ca30222f
   sha256: fc8cbe2239683199e677cb39f9303ae8d4a365f3c8cd8a2dcfa1f14c41bcff88
   license: BSD-3-Clause
+- dependency: github.com/google/nftables
+  version: v0.3.0
+  retrieved: "2026-11-08"
+  commit: 6f574e7fd1b4d07006d1c598cdb9b22789e5e541
+  sha256: 70c243170b087a106d2635674d012d12eafa93c3972a1c96f61460693faf418f
+  license: Apache-2.0
 - dependency: github.com/google/pprof
   version: v0.0.0-20240711041743-f6c9dda6c6da
   retrieved: "2026-08-27"
@@ -600,6 +606,12 @@
   commit: c12348ce28de40eed0136aa2b644d0ee0650e56c
   sha256: e64dc58023f4b8c4472d05a44f2719b84d6c2cc364cc682820c9f72b233c9cdc
   license: Apache-2.0
+- dependency: github.com/mdlayher/netlink
+  version: v1.7.3-0.20250113171957-fbb4dce95f42
+  retrieved: "2026-11-08"
+  commit: fbb4dce95f420edbb843b2801504350559a4fa18
+  sha256: b427c8c746e87c2f8033678fb87cdcf5cefb21ce16f35930eff91683661395f0
+  license: MIT
 - dependency: github.com/mdlayher/socket
   version: v0.5.1
   retrieved: "2026-08-27"
