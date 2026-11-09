@@ -56,12 +56,17 @@ const (
 
 	// SupportedDriverCaps is the set of driver capabilities that are supported by
 	// nvproxy.
-	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement | CapProfiling | CapRDMA
+	SupportedDriverCaps = AllContainerDriverCaps | CapDisplay | CapFabricIMEXManagement | CapProfiling | CapRDMA
 
 	// AllContainerDriverCaps is the subset of SupportedDriverCaps that are
 	// enabled when enabling "all" capabilities is requested, which excludes
 	// "privileged" capabilities that are usually not intended. Similar to
 	// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
+	//
+	// CapDisplay is excluded, unlike in nvidia-container-toolkit. Only Vulkan
+	// presentation to an X server and X servers on the NVIDIA driver need it,
+	// and the parts of nvproxy that it enables expose more of the host driver
+	// than CapGraphics.
 	AllContainerDriverCaps = CapCompute | CapUtility | CapGraphics | CapVideo | CapNGX
 
 	// DefaultDriverCaps is the set of driver capabilities that are enabled by
