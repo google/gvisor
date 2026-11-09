@@ -10,6 +10,7 @@ go_binary(
     testonly = 1,
     srcs = [
         "main.go",
+        "udp_network.go",
         "xml.go",
     ],
     data = [
@@ -31,6 +32,7 @@ go_binary(
         "@com_github_creack_pty//:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -41,6 +43,7 @@ go_test(
     srcs = [
         "main.go",
         "main_test.go",
+        "udp_network.go",
         "xml.go",
         "xml_test.go",
     ],
@@ -61,6 +64,7 @@ go_test(
         "@com_github_creack_pty//:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
