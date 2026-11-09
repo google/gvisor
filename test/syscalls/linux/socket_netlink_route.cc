@@ -4560,6 +4560,50 @@ NameRequest GetNameRequest(const Link& link, const char* name, uint32_t seq) {
   return req;
 };
 
+// Linux accepts a bind() mask that includes multicast groups that never emit
+// messages. The socket receives nothing for those groups, but the memberships
+// are still recorded.
+TEST(NetlinkRouteTest, BindUnsupportedMulticastGroups) {
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  constexpr uint32_t kGroups =
+      RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR | RTMGRP_NOTIFY;
+
+  struct sockaddr_nl addr = {};
+  addr.nl_family = AF_NETLINK;
+  addr.nl_groups = kGroups;
+  FileDescriptor bound =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+
+  const socklen_t memberships_len =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkMembershipsSize(bound.get()));
+  ASSERT_GE(memberships_len, sizeof(uint32_t));
+  std::vector<uint32_t> memberships(memberships_len / sizeof(uint32_t));
+  socklen_t len = memberships_len;
+  ASSERT_THAT(getsockopt(bound.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                         memberships.data(), &len),
+              SyscallSucceeds());
+  EXPECT_EQ(memberships[0], kGroups);
+}
+
+// The multicast routing notification groups require CAP_NET_ADMIN.
+TEST(NetlinkRouteTest, BindMrouteRGroupCapNetAdmin) {
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+  AutoCapability cap(CAP_NET_ADMIN, false);
+
+  struct sockaddr_nl addr = {};
+  addr.nl_family = AF_NETLINK;
+  addr.nl_groups = 1u << (RTNLGRP_IPV4_MROUTE_R - 1);
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+  EXPECT_THAT(bind(fd.get(), AsSockAddr(&addr), sizeof(addr)),
+              SyscallFailsWithErrno(EPERM));
+}
+
 TEST(NetlinkRouteTest, LinkMulticastGroupBasic) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
