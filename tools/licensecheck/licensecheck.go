@@ -800,7 +800,7 @@ func licenseSourceCommit(d dep, e Entry) (string, error) {
 // Module ZIPs provide a directory listing and discover suffixed notices below.
 var licenseFileNames = []string{
 	"LICENSE", "LICENSE.txt", "LICENSE.md", "LICENSE.TXT", "LICENSE.MIT",
-	"LICENSE-APACHE-2.0.txt", "LICENCE", "COPYING", "License", "license.md",
+	"LICENSE-APACHE-2.0.txt", "LICENCE", "COPYING", "License", "license.md", "COPYRIGHT",
 }
 
 var pseudoVersionRE = regexp.MustCompile(`\d{14}-([0-9a-f]{12})$`)
