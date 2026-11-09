@@ -196,3 +196,50 @@ func TestXattrCacheList(t *testing.T) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
 	}
 }
+
+// TestCapacityEviction checks the cache policy with live candidates. Removing
+// such candidates must preserve their references even when a batch exceeds the
+// remaining cache population.
+func TestCapacityEviction(t *testing.T) {
+	for _, tc := range []struct {
+		name                        string
+		limit, batch, initial, want uint64
+	}{
+		{"ordinary", 8, 0, 9, 8},
+		{"disabled-cache", 0, 64, 1, 0},
+		{"single", 8, 1, 9, 8},
+		{"batch", 8, 4, 9, 5},
+		{"clamp-to-capacity", 8, 64, 9, 1},
+		{"overfull", 8, 4, 16, 12},
+		{"already-at-limit", 8, 4, 8, 8},
+		{"empty", 8, 4, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			fs := filesystem{
+				opts:        filesystemOptions{dcacheEvictionBatch: tc.batch},
+				dentryCache: &dentryCache{maxCachedDentries: tc.limit},
+			}
+			var dentries []*dentry
+			for i := uint64(0); i < tc.initial; i++ {
+				d := &dentry{inode: &inode{fs: &fs}, cached: true}
+				d.refs.Store(1)
+				d.cacheEntry.d = d
+				fs.dentryCache.dentries.PushFront(&d.cacheEntry)
+				fs.dentryCache.dentriesLen++
+				dentries = append(dentries, d)
+			}
+			fs.renameMu.Lock()
+			fs.evictForCapacityLocked(ctx)
+			fs.renameMu.Unlock()
+			if got := fs.dentryCache.dentriesLen; got != tc.want {
+				t.Errorf("cached dentries = %d, want %d", got, tc.want)
+			}
+			for _, d := range dentries {
+				if got := d.refs.Load(); got != 1 {
+					t.Errorf("live references = %d, want 1", got)
+				}
+			}
+		})
+	}
+}

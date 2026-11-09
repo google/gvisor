@@ -2009,6 +2009,9 @@ func (fs *filesystem) MountOptions() string {
 	} else {
 		optsKV = append(optsKV, mopt{moptDcache, fs.opts.dcache})
 	}
+	if fs.opts.dcacheEvictionBatch != 0 {
+		optsKV = append(optsKV, mopt{moptDcacheEvictionBatch, fs.opts.dcacheEvictionBatch})
+	}
 	switch fs.opts.interop {
 	case InteropModeExclusive:
 		optsKV = append(optsKV, mopt{moptCache, cacheFSCache})
