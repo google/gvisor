@@ -19,9 +19,7 @@
 package linux
 
 import (
-	"os/exec"
-	"strings"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/packetimpact/dut"
 	netdevs "gvisor.dev/gvisor/test/packetimpact/netdevs/netlink"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
@@ -33,32 +31,17 @@ const (
 )
 
 func uname() (*testbench.DUTUname, error) {
-	machine, err := exec.Command("uname", "-m").Output()
-	if err != nil {
-		return nil, err
-	}
-	kernelRelease, err := exec.Command("uname", "-r").Output()
-	if err != nil {
-		return nil, err
-	}
-	kernelVersion, err := exec.Command("uname", "-v").Output()
-	if err != nil {
-		return nil, err
-	}
-	kernelName, err := exec.Command("uname", "-s").Output()
-	if err != nil {
-		return nil, err
-	}
-	operatingSystem, err := exec.Command("uname", "-o").Output()
-	if err != nil {
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
 		return nil, err
 	}
 	return &testbench.DUTUname{
-		Machine:         strings.TrimRight(string(machine), "\n"),
-		KernelName:      strings.TrimRight(string(kernelName), "\n"),
-		KernelRelease:   strings.TrimRight(string(kernelRelease), "\n"),
-		KernelVersion:   strings.TrimRight(string(kernelVersion), "\n"),
-		OperatingSystem: strings.TrimRight(string(operatingSystem), "\n"),
+		Machine:       unix.ByteSliceToString(u.Machine[:]),
+		KernelName:    unix.ByteSliceToString(u.Sysname[:]),
+		KernelRelease: unix.ByteSliceToString(u.Release[:]),
+		KernelVersion: unix.ByteSliceToString(u.Version[:]),
+		// PacketImpact identifies native Linux DUTs by GNU uname's -o value.
+		OperatingSystem: "GNU/Linux",
 	}, nil
 }
 

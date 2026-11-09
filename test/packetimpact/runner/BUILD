@@ -28,6 +28,8 @@ go_binary(
         "@com_github_google_gopacket//:go_default_library",
         "@com_github_google_gopacket//layers:go_default_library",
         "@com_github_google_gopacket//pcapgo:go_default_library",
+        "@com_github_google_nftables//:go_default_library",
+        "@com_github_google_nftables//expr:go_default_library",
         "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

@@ -969,3 +969,21 @@ go_deps.gazelle_override(
     ],
     path = "k8s.io/apimachinery",
 )
+
+# These dependencies are used by the PacketImpact test runner.
+go_deps_dev = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
+go_deps_dev.module(
+    path = "github.com/google/nftables",
+    sum = "h1:bkyZ0cbpVeMHXOrtlFc8ISmfVqq5gPJukoYieyVmITg=",
+    version = "v0.3.0",
+)
+go_deps_dev.module(
+    path = "github.com/mdlayher/netlink",
+    sum = "h1:A1Cq6Ysb0GM0tpKMbdCXCIfBclan4oHk1Jb+Hrejirg=",
+    version = "v1.7.3-0.20250113171957-fbb4dce95f42",
+)
+use_repo(
+    go_deps_dev,
+    "com_github_google_nftables",
+    "com_github_mdlayher_netlink",
+)
