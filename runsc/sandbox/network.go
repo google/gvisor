@@ -431,6 +431,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 		if conf.XDP.Mode == config.XDPModeNS {
 			args.XDPLinks = append(args.XDPLinks, sentryapi.XDPLink{
 				Name:              iface.Name,
+				Multicast:         iface.Flags&net.FlagMulticast != 0,
 				InterfaceIndex:    iface.Index,
 				Routes:            routes,
 				TXChecksumOffload: conf.TXChecksumOffload,
@@ -447,6 +448,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 		} else {
 			link := sentryapi.FDBasedLink{
 				Name:                 iface.Name,
+				Multicast:            iface.Flags&net.FlagMulticast != 0,
 				MTU:                  iface.MTU,
 				Routes:               routes,
 				TXChecksumOffload:    conf.TXChecksumOffload,
@@ -851,6 +853,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (sentryapi.LoopbackLink, error) {
 	link := sentryapi.LoopbackLink{
 		Name:      iface.Name,
+		Multicast: iface.Flags&net.FlagMulticast != 0,
 		GVisorGRO: conf.GVisorGRO,
 	}
 	for _, addr := range addrs {
