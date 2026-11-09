@@ -38,7 +38,7 @@ func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *fronten
 }
 
 func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams *Params) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
+	n, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno != 0 {
 		return n, errno
 	}
