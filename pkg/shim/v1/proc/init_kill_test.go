@@ -15,30 +15,25 @@
 package proc
 
 import (
-	"context"
 	"errors"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/containerd/containerd/v2/pkg/stdio"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
 )
 
 // newWedgedInit returns an Init whose runsc never answers.
-func newWedgedInit(t *testing.T) *Init {
+func newWedgedInit(t *testing.T) (*Init, func()) {
 	t.Helper()
 	old := runscTimeout
 	runscTimeout = 500 * time.Millisecond
 	t.Cleanup(func() { runscTimeout = old })
-	fake := filepath.Join(t.TempDir(), "fake-runsc")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec >/dev/null 2>&1\nexec sleep 60\n"), 0o755); err != nil {
-		t.Fatalf("failed to write fake runsc: %v", err)
-	}
-	return New("test", &runsccmd.Runsc{Command: fake}, stdio.Stdio{})
+	path := testprocess.Pause.Path(t)
+	return New("test", &runsccmd.Runsc{Command: path}, stdio.Stdio{}), expectRuntimeKill(t, path)
 }
 
 func expectBounded(t *testing.T, name string, start time.Time) {
@@ -57,7 +52,7 @@ func TestKillAllWedgedRunscReturnsAndSparesSandbox(t *testing.T) {
 	}
 	defer r.Close()
 
-	sandbox := exec.Command("sleep", "60")
+	sandbox := testprocess.Pause.Command(t.Context())
 	sandbox.ExtraFiles = []*os.File{w}
 	if err := sandbox.Start(); err != nil {
 		t.Fatalf("failed to start fake sandbox: %v", err)
@@ -68,12 +63,13 @@ func TestKillAllWedgedRunscReturnsAndSparesSandbox(t *testing.T) {
 		sandbox.Wait()
 	}()
 
-	p := newWedgedInit(t)
+	p, checkKilled := newWedgedInit(t)
 	p.pid = sandbox.Process.Pid
 
 	start := time.Now()
-	p.KillAll(context.Background())
+	p.KillAll(t.Context())
 	expectBounded(t, "KillAll", start)
+	checkKilled()
 
 	r.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	var b [1]byte
@@ -83,28 +79,31 @@ func TestKillAllWedgedRunscReturnsAndSparesSandbox(t *testing.T) {
 }
 
 func TestStatsWedgedRunscTimesOut(t *testing.T) {
-	p := newWedgedInit(t)
+	p, checkKilled := newWedgedInit(t)
 	start := time.Now()
-	if _, err := p.Stats(context.Background(), "test"); err == nil {
+	if _, err := p.Stats(t.Context(), "test"); err == nil {
 		t.Fatal("Stats succeeded against a wedged runsc")
 	}
 	expectBounded(t, "Stats", start)
+	checkKilled()
 }
 
 func TestStatusWedgedRunscTimesOut(t *testing.T) {
-	p := newWedgedInit(t)
+	p, checkKilled := newWedgedInit(t)
 	start := time.Now()
-	if _, err := p.Status(context.Background()); err == nil {
+	if _, err := p.Status(t.Context()); err == nil {
 		t.Fatal("Status succeeded against a wedged runsc")
 	}
 	expectBounded(t, "Status", start)
+	checkKilled()
 }
 
 func TestKillWedgedRunscTimesOut(t *testing.T) {
-	p := newWedgedInit(t)
+	p, checkKilled := newWedgedInit(t)
 	start := time.Now()
-	if err := p.kill(context.Background(), uint32(unix.SIGTERM), false); err == nil {
+	if err := p.kill(t.Context(), uint32(unix.SIGTERM), false); err == nil {
 		t.Fatal("kill succeeded against a wedged runsc")
 	}
 	expectBounded(t, "kill", start)
+	checkKilled()
 }
