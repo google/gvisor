@@ -1549,6 +1549,16 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		}
 	}
 
+	if d.inode.isSymlink() && stat.Mask&(linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
+		// In directfs, utimensat on a symlink uses (parent.controlFD, d.name).
+		// Hold parent.opMu across the operation to serialize against in-sandbox
+		// operations that unlink or replace d.name under parent.
+		if parent := d.parent.Load(); parent != nil {
+			parent.opMu.RLock()
+			defer parent.opMu.RUnlock()
+		}
+	}
+
 	d.inode.metadataMu.Lock()
 	defer d.inode.metadataMu.Unlock()
 
