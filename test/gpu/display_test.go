@@ -20,18 +20,22 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types/container"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // displayProbe opens the render node in argv[1] and /dev/nvidia-modeset, and
-// prints one "key value" line per result.
+// prints one "key value" line per result. argv[2] and argv[3] are the size of
+// struct drm_nvidia_get_dev_info_params and the offset of its first field that
+// nvidia-drm sets only with modeset=1.
 const displayProbe = `
-import ctypes, errno, os, sys
+import ctypes, errno, mmap, os, sys
 
 libc = ctypes.CDLL(None, use_errno=True)
 libc.ioctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_void_p]
@@ -63,6 +67,25 @@ def probe_render_node(path):
     version = DRMVersion(name_len=len(name), name=ctypes.addressof(name))
     print("version", ioctl(fd, iowr(0x00, ctypes.sizeof(DRMVersion)), ctypes.byref(version)))
     print("version_name", name.value.decode())
+
+    size, modeset_only = int(sys.argv[2]), int(sys.argv[3])
+    info = ctypes.create_string_buffer(size)
+    print("dev_info", ioctl(fd, iowr(0x43, size), info))
+    print("modeset_fields", "set" if any(info.raw[modeset_only:]) else "zero")
+
+    # DRM_IOCTL_NVIDIA_FENCE_SUPPORTED and DRM_IOCTL_NVIDIA_DMABUF_SUPPORTED.
+    print("fence_supported", ioctl(fd, 0x6444, None))
+    print("dmabuf_supported", ioctl(fd, 0x644f, None))
+
+    # DRM_IOCTL_GEM_CLOSE of a handle that does not exist.
+    handle = ctypes.create_string_buffer(8)
+    print("gem_close", ioctl(fd, (1 << 30) | (8 << 16) | (ord("d") << 8) | 0x09, handle))
+
+    try:
+        mmap.mmap(fd, 4096)
+        print("render_mmap OK")
+    except OSError as e:
+        print("render_mmap", errno.errorcode[e.errno])
     os.close(fd)
 
 def probe_modeset():
@@ -96,6 +119,28 @@ func nvidiaRenderNode(t *testing.T) string {
 		}
 	}
 	return ""
+}
+
+// hostDevInfoLayout returns the layout of struct
+// drm_nvidia_get_dev_info_params in the host's NVIDIA driver, from nvproxy's
+// ABI for that driver. The probe must use the driver's own size, since the
+// host kernel accepts the ioctl at any size.
+func hostDevInfoLayout(t *testing.T) nvproxy.DRMDevInfoLayout {
+	t.Helper()
+	nvproxy.Init()
+	versionString, err := nvconf.HostDriverVersion()
+	if err != nil {
+		t.Fatalf("failed to get the host's NVIDIA driver version: %v", err)
+	}
+	version, err := nvconf.DriverVersionFrom(versionString)
+	if err != nil {
+		t.Fatalf("failed to parse the host's NVIDIA driver version: %v", err)
+	}
+	layout, ok := nvproxy.DRMDevInfoLayoutOf(version)
+	if !ok {
+		t.Skipf("nvproxy has no ABI for the host's NVIDIA driver %v", version)
+	}
+	return layout
 }
 
 // displayAllowed returns true if the runtime's flags allow the display driver
@@ -156,7 +201,8 @@ func TestDisplayDevices(t *testing.T) {
 			CgroupPermissions: "rwm",
 		})
 	}
-	out, err := c.Run(ctx, opts, "-c", displayProbe, renderNode)
+	layout := hostDevInfoLayout(t)
+	out, err := c.Run(ctx, opts, "-c", displayProbe, renderNode, strconv.FormatUint(uint64(layout.Size), 10), strconv.FormatUint(uint64(layout.ModesetOnlyOffset), 10))
 	if err != nil {
 		t.Fatalf("failed to run the probe: %v, output:\n%s", err, out)
 	}
@@ -182,9 +228,20 @@ func TestDisplayDevices(t *testing.T) {
 				"render_open":  "OK",
 				"version":      "OK",
 				"version_name": "nvidia-drm",
+				"dev_info":     "OK",
 			},
+			// nvproxy presents the render node as nvidia-drm with modeset=0,
+			// which identifies the GPU but cannot allocate.
 			gVisorWant: map[string]string{
-				"render_open": "ENXIO",
+				"render_open":      "OK",
+				"version":          "OK",
+				"version_name":     "nvidia-drm",
+				"dev_info":         "OK",
+				"modeset_fields":   "zero",
+				"fence_supported":  "EINVAL",
+				"dmabuf_supported": "EINVAL",
+				"gem_close":        "EINVAL",
+				"render_mmap":      "ENODEV",
 			},
 		},
 		{

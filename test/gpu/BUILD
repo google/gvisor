@@ -31,6 +31,7 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/test/dockerutil",
         "@com_github_docker_docker//api/types/container:go_default_library",

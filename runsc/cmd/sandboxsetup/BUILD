@@ -25,6 +25,7 @@ go_library(
         "//pkg/fd",
         "//pkg/log",
         "//pkg/marshal/primitive",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/timing",
         "//pkg/unet",
         "//runsc/boot/sentryapi",
