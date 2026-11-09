@@ -991,7 +991,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // TODO(https://gvisor.dev/issue/6686): gVisor is a strong host, preventing
   // the packet from being sent from the loopback device using the ethernet
   // device's address.
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
     EXPECT_EQ(GetAddrStr(AsSockAddr(&src_addr.addr)),
               GetAddr4Str(&lo_if_addr().sin_addr));
   } else {
@@ -1053,7 +1053,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
     for (const ip_mreqn& iface : ifaces) {
       // FIXME(b/137790511): Disallow mismatching IP_MULTICAST_IF and
       // SO_BINDTODEVICE.
-      if (IsRunningOnGvisor()) {
+      if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
         EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF,
                                &iface, sizeof(iface)),
                     SyscallSucceeds())
