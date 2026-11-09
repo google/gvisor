@@ -76,6 +76,7 @@ const (
 	FERMI_TWOD_A                     = 0x0000902d
 	FERMI_CONTEXT_SHARE_A            = 0x00009067
 	GF100_DISP_SW                    = 0x00009072
+	GF100_TIMED_SEMAPHORE_SW         = 0x00009074
 	GF100_ZBC_CLEAR                  = 0x00009096
 	GF100_SUBDEVICE_INFOROM          = 0x000090e7
 	GF100_PROFILER                   = 0x000090cc
@@ -152,6 +153,13 @@ const (
 	NVD2B0_VIDEO_DECODER             = 0x0000d2b0
 	NVD2D1_VIDEO_NVJPG               = 0x0000d2d1
 	NVD2FA_VIDEO_OFA                 = 0x0000d2fa
+)
+
+// GF100_TIMED_SEMAPHORE_SW notifier statuses, from
+// src/common/sdk/nvidia/inc/class/cl9074.h.
+const (
+	NV9074_NOTIFICATION_STATUS_DONE         = 0x0000
+	NV9074_NOTIFICATION_STATUS_DONE_FLUSHED = 0x0001
 )
 
 // From src/common/sdk/nvidia/inc/class/cl0000.h:
