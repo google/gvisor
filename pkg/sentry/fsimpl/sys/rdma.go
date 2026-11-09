@@ -298,7 +298,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 }
 
 // addPorts populates <ibdev>/ports/<n>/ with static attributes and
-// live host-backed files (GIDs, GID attributes, state, counters).
+// live host-backed files (GIDs, GID attributes, P_Keys, state, counters).
 func (fs *filesystem) addPorts(ib *rdmaDirTree, dev *rdma.Device) {
 	for num, port := range dev.Ports {
 		if !rdma.SafeName(num) {
@@ -326,6 +326,11 @@ func (fs *filesystem) addPorts(ib *rdmaDirTree, dev *rdma.Device) {
 			gids.hostFiles[idx] = path.Join(hostBase, "gids", idx)
 			types.hostFiles[idx] = path.Join(hostBase, "gid_attrs/types", idx)
 			ndevs.hostFiles[idx] = path.Join(hostBase, "gid_attrs/ndevs", idx)
+		}
+		for _, idx := range port.PKeyNames {
+			if rdma.SafeName(idx) {
+				p.get("pkeys").hostFiles[idx] = path.Join(hostBase, "pkeys", idx)
+			}
 		}
 		for _, name := range port.CounterNames {
 			if rdma.SafeName(name) {
