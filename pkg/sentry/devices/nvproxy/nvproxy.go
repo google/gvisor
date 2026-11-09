@@ -250,6 +250,11 @@ type nvproxy struct {
 
 	clientsMu sync.RWMutex `state:"nosave"`
 	clients   map[nvgpu.Handle]*rootClient
+
+	// timedSemaphores is the number of GF100_TIMED_SEMAPHORE_SW objects in
+	// the sandbox, which exist only in nvproxy. It is protected by
+	// clientsMu.
+	timedSemaphores int
 }
 
 func nvproxyFromVFS(vfsObj *vfs.VirtualFilesystem) *nvproxy {

@@ -33,6 +33,12 @@ type object struct {
 	parent nvgpu.Handle
 	impl   objectImpl
 
+	// vaSpace is the handle of the VA space of a channel, channel group,
+	// context share or virtual memory object, as RM's KernelChannel,
+	// KernelChannelGroupApi, KernelCtxShareApi and VirtualMemory keep it in
+	// hVASpace. It is set before nvproxy.objAdd() and is immutable.
+	vaSpace nvgpu.Handle
+
 	// The driver tracks parent/child relationships and "arbitrary dependency"
 	// relationships between objects separately; we treat parent/child
 	// relationships as equivalent to other dependencies. These fields are
@@ -78,8 +84,15 @@ func (nvp *nvproxy) objAdd(ctx context.Context, client *rootClient, h nvgpu.Hand
 	o.handle = h
 	o.parent = parentH
 	o.impl = oi
-	if _, ok := client.resources[h]; ok {
-		ctx.Warningf("nvproxy: handle %v:%v already in use", client.handle, h)
+	if old, ok := client.resources[h]; ok {
+		if _, ok := old.impl.(*timedSemaphore); ok {
+			// RM does not know the handles of objects that exist only in
+			// nvproxy, so it can give one to a new object, through any
+			// ioctl that allocates. The new object replaces the old one.
+			nvp.objFree(ctx, client, h)
+		} else {
+			ctx.Warningf("nvproxy: handle %v:%v already in use", client.handle, h)
+		}
 	}
 	client.resources[h] = o
 
@@ -135,8 +148,15 @@ func (c *rootClient) objAddDep(h1, h2 nvgpu.Handle) {
 	objDep(o1, o2)
 }
 
+// objDep records that o1 depends on o2. Nothing depends on a
+// GF100_TIMED_SEMAPHORE_SW, which RM does not know, so a dependency on one is
+// not recorded, and an object that replaces one takes nothing from it.
+//
 // Precondition: objsMu for clients of both o1 and o2 must be locked.
 func objDep(o1, o2 *object) {
+	if _, ok := o2.impl.(*timedSemaphore); ok {
+		return
+	}
 	if o1.deps == nil {
 		o1.deps = make(map[*object]struct{})
 	}
@@ -272,7 +292,12 @@ func (nvp *nvproxy) objFree(ctx context.Context, client *rootClient, h nvgpu.Han
 		for o3 := range o2.deps {
 			delete(o3.rdeps, o2)
 		}
-		delete(o2.client.resources, o2.handle)
+		// An object that exists only in nvproxy, such as a
+		// GF100_TIMED_SEMAPHORE_SW, can share its handle with an object that
+		// RM allocated later.
+		if o2.client.resources[o2.handle] == o2 {
+			delete(o2.client.resources, o2.handle)
+		}
 		client.objsFreeList.Remove(o2)
 		delete(client.objsFreeSet, o2)
 		if ctx.IsLogging(log.Debug) {
@@ -376,6 +401,23 @@ type rootClient struct {
 	objsFreeSet  map[*object]struct{} `state:"nosave"`
 	resources    map[nvgpu.Handle]*object
 	released     bool
+
+	// kernelDMAMappings and cpuMappings record the client's GPU mappings
+	// with NVOS46_FLAGS_KERNEL_MAPPING_ENABLE and its CPU mappings, with the
+	// display capability only, for GF100_TIMED_SEMAPHORE_SW releases. Each
+	// is pruned of stale entries when it reaches its PruneAt length. They
+	// are protected by objsMu.
+	kernelDMAMappings        []kernelDMAMapping `state:"nosave"`
+	kernelDMAMappingsPruneAt int                `state:"nosave"`
+	cpuMappings              []cpuMapping       `state:"nosave"`
+	cpuMappingsPruneAt       int                `state:"nosave"`
+
+	// timedSemaphores is the number of GF100_TIMED_SEMAPHORE_SW objects the
+	// client holds, and nextTimedSemaphoreHandle the handle from which
+	// nvproxy looks for one to give a semaphore allocated with no handle.
+	// They are protected by objsMu.
+	timedSemaphores          int
+	nextTimedSemaphoreHandle uint32
 
 	params capturedRmAllocParams
 }

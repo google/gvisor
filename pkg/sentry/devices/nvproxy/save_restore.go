@@ -183,6 +183,19 @@ func (nvp *nvproxy) beforeSave() {
 			}
 		}
 	}
+	// Timers keep running while the sandbox is paused. Waiting
+	// GF100_TIMED_SEMAPHORE_SW releases are not saved, so write them now, as a
+	// flush does, and stop their timers before memory is saved. Taking only
+	// objsMu here is free of the inversion with clientsMu above.
+	for _, client := range nvp.clients {
+		client.objsMu.Lock()
+		for _, obj := range client.resources {
+			if ts, ok := obj.impl.(*timedSemaphore); ok {
+				ts.flushForSaveLocked()
+			}
+		}
+		client.objsMu.Unlock()
+	}
 }
 
 // afterLoad is invoked by stateify.
@@ -387,6 +400,14 @@ type restorableObjectImpl interface {
 // Restore implements restorableObjectImpl.Restore.
 func (o *rmAllocObject) Restore(ctx goContext.Context) error {
 	return o.params.restore()
+}
+
+// Restore implements restorableObjectImpl.Restore. A GF100_TIMED_SEMAPHORE_SW
+// exists only in nvproxy, so there is nothing to recreate in the driver. The
+// restored sandbox's mappings are not recorded again, so its releases are
+// not written until the application maps their memory again.
+func (ts *timedSemaphore) Restore(ctx goContext.Context) error {
+	return nil
 }
 
 // Restore implements restorableObjectImpl.Restore.

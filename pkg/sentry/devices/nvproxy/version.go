@@ -196,8 +196,8 @@ func Init() {
 					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),
 					nvgpu.NV_ESC_RM_SHARE:                      feHandler(frontendIoctlSimple[nvgpu.NVOS57_PARAMETERS], compUtil),
 					nvgpu.NV_ESC_RM_UNMAP_MEMORY:               feHandler(frontendIoctlSimple[nvgpu.NVOS34_PARAMETERS], compUtil),
-					nvgpu.NV_ESC_RM_MAP_MEMORY_DMA:             feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS], nvconf.CapGraphics|nvconf.CapVideo),
-					nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA:           feHandler(frontendIoctlSimple[nvgpu.NVOS47_PARAMETERS], nvconf.CapGraphics|nvconf.CapVideo),
+					nvgpu.NV_ESC_RM_MAP_MEMORY_DMA:             feHandler(rmMapMemoryDMA(nvos46Args), nvconf.CapGraphics|nvconf.CapVideo),
+					nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA:           feHandler(rmUnmapMemoryDMA(nvos47Args), nvconf.CapGraphics|nvconf.CapVideo),
 					nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: feHandler(frontendIoctlSimple[nvgpu.NVOS56_PARAMETERS], compUtil),
 					nvgpu.NV_ESC_REGISTER_FD:                   feHandler(frontendRegisterFD, compUtil),
 					nvgpu.NV_ESC_ALLOC_OS_EVENT:                feHandler(frontendIoctlHasFD[nvgpu.IoctlAllocOSEvent], compUtil),
@@ -378,6 +378,9 @@ func Init() {
 					nvgpu.NV906F_CTRL_GET_CLASS_ENGINEID:                                   ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL:                                    ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV906F_CTRL_CMD_GET_MMU_FAULT_INFO:                               ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV9074_CTRL_CMD_FLUSH:                                            ctrlHandler(ctrlTimedSemaphoreFlush, nvconf.CapDisplay),
+					nvgpu.NV9074_CTRL_CMD_GET_TIME:                                         ctrlHandler(ctrlTimedSemaphoreGetTime, nvconf.CapDisplay),
+					nvgpu.NV9074_CTRL_CMD_RELEASE:                                          ctrlHandler(ctrlTimedSemaphoreRelease, nvconf.CapDisplay),
 					nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE:                         ctrlHandler(rmControlSimple, nvconf.CapGraphics),
 					nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_ENTRY:                        ctrlHandler(rmControlSimple, nvconf.CapGraphics),
 					nvgpu.NV90CC_CTRL_CMD_POWER_REQUEST_FEATURES:                           ctrlHandler(rmControlSimple, nvconf.CapProfiling),
@@ -471,7 +474,7 @@ func Init() {
 					nvgpu.NV_MEMORY_MAPPER:           allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS], nvconf.CapGraphics),
 					nvgpu.NV20_SUBDEVICE_0:           allocHandler(rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV2081_BINAPI:              allocHandler(rmAllocSimple[nvgpu.NV2081_ALLOC_PARAMETERS], compUtil),
-					nvgpu.NV50_MEMORY_VIRTUAL:        allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS], compUtil),
+					nvgpu.NV50_MEMORY_VIRTUAL:        allocHandler(rmAllocMemoryVirtualNV50, compUtil),
 					nvgpu.NV50_P2P:                   allocHandler(rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV50_THIRD_PARTY_P2P:       allocHandler(rmAllocSimple[nvgpu.NV503C_ALLOC_PARAMETERS], compUtil),
 					nvgpu.GF100_PROFILER:             allocHandler(rmAllocNoParams, nvconf.CapProfiling),
@@ -482,6 +485,7 @@ func Init() {
 					nvgpu.FERMI_TWOD_A:               allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.FERMI_CONTEXT_SHARE_A:      allocHandler(rmAllocContextShare, compUtil),
 					nvgpu.GF100_DISP_SW:              allocHandler(rmAllocSimple[nvgpu.NV9072_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
+					nvgpu.GF100_TIMED_SEMAPHORE_SW:   allocHandler(rmAllocTimedSemaphore, nvconf.CapDisplay),
 					nvgpu.GF100_ZBC_CLEAR:            allocHandler(rmAllocNoParams, nvconf.CapGraphics),
 					nvgpu.GF100_SUBDEVICE_INFOROM:    allocHandler(rmAllocNoParams, nvconf.CapGraphics),
 					nvgpu.FERMI_VASPACE_A:            allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS], compUtil),
@@ -700,7 +704,7 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             simpleIoctlInfo("NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO", "NV2080_CTRL_RC_GET_WATCHDOG_INFO_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS:                     simpleIoctlInfo("NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS"), // No params.
 							nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG:                         simpleIoctlInfo("NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG"),     // No params.
-							nvgpu.NV2080_CTRL_CMD_TIMER_GET_TIME:                                   simpleIoctlInfo("NV2080_CTRL_CMD_TIMER_GET_TIME", "NV2080_CTRL_TIMER_GET_TIME_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_TIMER_GET_TIME:                                   ioctlInfo("NV2080_CTRL_CMD_TIMER_GET_TIME", nvgpu.NV2080_CTRL_TIMER_GET_TIME_PARAMS{}),
 							nvgpu.NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO:          simpleIoctlInfo("NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO", "NV2080_CTRL_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ:                           simpleIoctlInfo("NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ", "NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_GPU_GET_ENGINES:                                  ioctlInfoWithStructName("NV2080_CTRL_CMD_GPU_GET_ENGINES", nvgpu.RmapiParamNvU32List{}, "NV2080_CTRL_GPU_GET_ENGINES_PARAMS"),
@@ -721,6 +725,9 @@ func Init() {
 							nvgpu.NV906F_CTRL_GET_CLASS_ENGINEID:                                   simpleIoctlInfo("NV906F_CTRL_GET_CLASS_ENGINEID", "NV906F_CTRL_GET_CLASS_ENGINEID_PARAMS"),
 							nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL:                                    simpleIoctlInfo("NV906F_CTRL_CMD_RESET_CHANNEL", "NV906F_CTRL_CMD_RESET_CHANNEL_PARAMS"),
 							nvgpu.NV906F_CTRL_CMD_GET_MMU_FAULT_INFO:                               simpleIoctlInfo("NV906F_CTRL_CMD_GET_MMU_FAULT_INFO", "NV906F_CTRL_GET_MMU_FAULT_INFO_PARAMS"),
+							nvgpu.NV9074_CTRL_CMD_FLUSH:                                            ioctlInfo("NV9074_CTRL_CMD_FLUSH", nvgpu.NV9074_CTRL_CMD_FLUSH_PARAMS{}),
+							nvgpu.NV9074_CTRL_CMD_GET_TIME:                                         ioctlInfo("NV9074_CTRL_CMD_GET_TIME", nvgpu.NV9074_CTRL_CMD_GET_TIME_PARAMS{}),
+							nvgpu.NV9074_CTRL_CMD_RELEASE:                                          ioctlInfo("NV9074_CTRL_CMD_RELEASE", nvgpu.NV9074_CTRL_CMD_RELEASE_PARAMS{}),
 							nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE:                         simpleIoctlInfo("NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE", "NV9096_CTRL_GET_ZBC_CLEAR_TABLE_SIZE_PARAMS"),
 							nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_ENTRY:                        simpleIoctlInfo("NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_ENTRY", "NV9096_CTRL_GET_ZBC_CLEAR_TABLE_ENTRY_PARAMS"),
 							nvgpu.NV90CC_CTRL_CMD_POWER_REQUEST_FEATURES:                           simpleIoctlInfo("NV90CC_CTRL_CMD_POWER_REQUEST_FEATURES", "NV90CC_CTRL_POWER_REQUEST_FEATURES_PARAMS"),
@@ -825,8 +832,9 @@ func Init() {
 							nvgpu.FERMI_TWOD_A:               ioctlInfo("FERMI_TWOD_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.FERMI_CONTEXT_SHARE_A:      ioctlInfo("FERMI_CONTEXT_SHARE_A", nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS{}),
 							nvgpu.GF100_DISP_SW:              ioctlInfo("GF100_DISP_SW", nvgpu.NV9072_ALLOCATION_PARAMETERS{}),
-							nvgpu.GF100_ZBC_CLEAR:            simpleIoctlInfo("GF100_ZBC_CLEAR"),         // No params
-							nvgpu.GF100_SUBDEVICE_INFOROM:    simpleIoctlInfo("GF100_SUBDEVICE_INFOROM"), // No params
+							nvgpu.GF100_TIMED_SEMAPHORE_SW:   simpleIoctlInfo("GF100_TIMED_SEMAPHORE_SW"), // No params
+							nvgpu.GF100_ZBC_CLEAR:            simpleIoctlInfo("GF100_ZBC_CLEAR"),          // No params
+							nvgpu.GF100_SUBDEVICE_INFOROM:    simpleIoctlInfo("GF100_SUBDEVICE_INFOROM"),  // No params
 							nvgpu.FERMI_VASPACE_A:            ioctlInfo("FERMI_VASPACE_A", nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS{}),
 							nvgpu.KEPLER_CHANNEL_GROUP_A:     ioctlInfo("KEPLER_CHANNEL_GROUP_A", nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS{}),
 							nvgpu.KEPLER_INLINE_TO_MEMORY_B:  ioctlInfo("KEPLER_INLINE_TO_MEMORY_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
@@ -902,7 +910,7 @@ func Init() {
 			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
 			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
 			abi.allocationClass[nvgpu.NV01_MEMORY_DEVICELESS] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
-			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
+			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = allocHandler(rmAllocMemoryVirtualNV50V545, compUtil)
 			abi.allocationClass[nvgpu.NVB8FA_VIDEO_OFA] = allocHandler(rmAllocSimple[nvgpu.NV_OFA_ALLOCATION_PARAMETERS_V545], nvconf.CapVideo)
 			abi.allocationClass[nvgpu.NVC6FA_VIDEO_OFA] = allocHandler(rmAllocSimple[nvgpu.NV_OFA_ALLOCATION_PARAMETERS_V545], nvconf.CapVideo)
 			abi.allocationClass[nvgpu.NVC7FA_VIDEO_OFA] = allocHandler(rmAllocSimple[nvgpu.NV_OFA_ALLOCATION_PARAMETERS_V545], nvconf.CapVideo)
@@ -935,7 +943,7 @@ func Init() {
 		v550_40_07 := addUnsupportedDriverABI(550, 40, 07, func() *driverABI {
 			abi := v545_23_06()
 			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = feHandler(frontendIoctlSimple[nvgpu.IoctlWaitOpenComplete], compUtil)
-			abi.frontendIoctl[nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS47_PARAMETERS_V550], nvconf.CapGraphics|nvconf.CapVideo)
+			abi.frontendIoctl[nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA] = feHandler(rmUnmapMemoryDMA(nvos47ArgsV550), nvconf.CapGraphics|nvconf.CapVideo)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = ctrlHandler(rmControlSimple, compUtil)
@@ -1205,7 +1213,7 @@ func Init() {
 
 		v580_65_06 := addDriverABI(580, 65, 06, "04b10867af585e765cfbfdcf39ed5f4bd112375bebab0172eaa187c6aa5024ff", "e02acdc0d20d4a541aa5026bfddb1b9b4fc6bc64ae3b04ff9cb9c892700cf9c4", func() *driverABI {
 			abi := v575_51_02()
-			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS_V580], nvconf.CapGraphics|nvconf.CapVideo)
+			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(rmMapMemoryDMA(nvos46ArgsV580), nvconf.CapGraphics|nvconf.CapVideo)
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
 			abi.allocationClass[nvgpu.NVCEB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 			abi.allocationClass[nvgpu.NVD1B7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)

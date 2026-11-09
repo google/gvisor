@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
@@ -62,4 +63,53 @@ func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Acc
 	// write time. Thus, these mappings should use safecopy (i.e.
 	// BlockFromUnsafePointer rather than BlockFromSafePointer).
 	return safemem.BlockSeqOf(safemem.BlockFromUnsafePointer(unsafe.Pointer(mf.mmapInternal+uintptr(fr.Start)), int(fr.Length()))), nil
+}
+
+// isClosed returns true if mf has been closed, after which it no longer maps
+// memory.
+func (mf *frontendFDMemmapFile) isClosed() bool {
+	mf.mmapMu.Lock()
+	defer mf.mmapMu.Unlock()
+	return mf.closed
+}
+
+// storeUint32s makes stores in order to the memory that mf maps, at offsets
+// from off. Each store is a single 32-bit write, made visible before the
+// next. A store that faults, as one to a mapping without write access does,
+// or that is not 4-byte aligned, ends the sequence.
+func (mf *frontendFDMemmapFile) storeUint32s(off uint64, stores []uint32Store) {
+	mf.mmapMu.Lock()
+	defer mf.mmapMu.Unlock()
+	if mf.closed || mf.mmapLength == 0 || off > mf.mmapLength || !canSwapUint32(mf.memType) {
+		return
+	}
+	if mf.mmapInternal == 0 {
+		// See MapInternal.
+		m, _, errno := unix.Syscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(mf.mmapLength), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(mf.hostFD), 0 /* offset */)
+		if errno != 0 {
+			if log.IsLogging(log.Debug) {
+				log.Debugf("nvproxy: failed to map memory for a timed semaphore release: %v", errno)
+			}
+			return
+		}
+		mf.mmapInternal = m
+	}
+	for _, s := range stores {
+		if s.off+4 > mf.mmapLength-off {
+			return
+		}
+		p := unsafe.Pointer(mf.mmapInternal + uintptr(off+s.off))
+		// SwapUint32 is a single 32-bit store, where CopyOut may store
+		// smaller pieces. An unaligned structure, which RM would write with
+		// unaligned stores, is not written.
+		if uintptr(p)%4 != 0 {
+			return
+		}
+		if _, err := safecopy.SwapUint32(p, s.value); err != nil {
+			if log.IsLogging(log.Debug) {
+				log.Debugf("nvproxy: failed to write a timed semaphore release: %v", err)
+			}
+			return
+		}
+	}
 }
