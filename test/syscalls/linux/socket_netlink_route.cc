@@ -246,6 +246,68 @@ TEST(NetlinkRouteTest, ListMembershipsTruncated) {
   }
 }
 
+TEST(NetlinkRouteTest, CompatibilityMulticastGroups) {
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+  AutoCapability cap(CAP_NET_ADMIN, false);
+
+  constexpr uint32_t kAddressTrackerGroups =
+      RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR;
+  for (const uint32_t mask :
+       {uint32_t{RTMGRP_NOTIFY}, kAddressTrackerGroups | RTMGRP_NOTIFY,
+        kAddressTrackerGroups | RTMGRP_IPV6_MROUTE}) {
+    SCOPED_TRACE(mask);
+    struct sockaddr_nl addr = {};
+    addr.nl_family = AF_NETLINK;
+    addr.nl_groups = mask;
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+
+    const socklen_t size =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkMembershipsSize(fd.get()));
+    ASSERT_GE(size, sizeof(uint32_t));
+    ASSERT_EQ(size % sizeof(uint32_t), 0);
+    std::vector<uint32_t> groups(size / sizeof(uint32_t));
+    const auto expect_groups = [&](uint32_t expected) {
+      socklen_t len = size;
+      ASSERT_THAT(getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                             groups.data(), &len),
+                  SyscallSucceeds());
+      EXPECT_EQ(groups[0], expected);
+    };
+    expect_groups(mask);
+
+    // A bind with a different port ID must leave subscriptions intact.
+    const uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+    addr.nl_pid = port == 1 ? 2 : 1;
+    addr.nl_groups = RTMGRP_LINK;
+    EXPECT_THAT(
+        bind(fd.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+        SyscallFailsWithErrno(EINVAL));
+    expect_groups(mask);
+
+    const bool notify = mask & RTMGRP_NOTIFY;
+    const uint32_t group = notify ? RTNLGRP_NOTIFY : RTNLGRP_IPV6_MROUTE;
+    const uint32_t bit = notify ? RTMGRP_NOTIFY : RTMGRP_IPV6_MROUTE;
+    for (const int opt : {NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP}) {
+      for (const uint32_t invalid : {uint32_t{0}, UINT32_MAX}) {
+        EXPECT_THAT(
+            setsockopt(fd.get(), SOL_NETLINK, opt, &invalid, sizeof(invalid)),
+            SyscallFailsWithErrno(EINVAL));
+      }
+    }
+    expect_groups(mask);
+    ASSERT_THAT(setsockopt(fd.get(), SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+    expect_groups(mask & ~bit);
+    ASSERT_THAT(setsockopt(fd.get(), SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+    expect_groups(mask);
+  }
+}
+
 // Validates the responses to RTM_GETLINK + NLM_F_DUMP.
 void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
   EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWLINK), Eq(NLMSG_DONE)));
@@ -4980,12 +5042,13 @@ TEST_P(NetlinkRouteIpInvariantTest, AddressMulticastGroup) {
   ASSERT_EQ(inet_pton(family, v4 ? "10.0.0.1" : "2001:db8::1", addr.data()), 1);
 
   McastObservers obs = ASSERT_NO_ERRNO_AND_VALUE(MakeMcastObservers(
-      v4 ? RTMGRP_IPV4_IFADDR : RTMGRP_IPV6_IFADDR,
+      RTMGRP_NOTIFY | (v4 ? RTMGRP_IPV4_IFADDR : RTMGRP_IPV6_IFADDR),
       v4 ? RTNLGRP_IPV4_IFADDR : RTNLGRP_IPV6_IFADDR,
       // Groups other than this family's address group. Adding an address also
       // announces its prefix route, so this family's route group is excluded.
-      RTMGRP_LINK | (v4 ? RTMGRP_IPV6_IFADDR | RTMGRP_IPV6_ROUTE
-                        : RTMGRP_IPV4_IFADDR | RTMGRP_IPV4_ROUTE)));
+      RTMGRP_LINK | RTMGRP_NOTIFY |
+          (v4 ? RTMGRP_IPV6_IFADDR | RTMGRP_IPV6_ROUTE
+              : RTMGRP_IPV4_IFADDR | RTMGRP_IPV4_ROUTE)));
 
   FileDescriptor control_fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -5124,12 +5187,12 @@ TEST_P(NetlinkRouteIpInvariantTest, RouteMulticastGroup) {
   ASSERT_EQ(
       inet_pton(family, v4 ? "203.0.113.0" : "2001:db8:ffff::", dst.data()), 1);
 
-  McastObservers obs = ASSERT_NO_ERRNO_AND_VALUE(
-      MakeMcastObservers(v4 ? RTMGRP_IPV4_ROUTE : RTMGRP_IPV6_ROUTE,
-                         v4 ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE,
-                         // Every group but this family's route group.
-                         RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR |
-                             (v4 ? RTMGRP_IPV6_ROUTE : RTMGRP_IPV4_ROUTE)));
+  McastObservers obs = ASSERT_NO_ERRNO_AND_VALUE(MakeMcastObservers(
+      RTMGRP_IPV6_MROUTE | (v4 ? RTMGRP_IPV4_ROUTE : RTMGRP_IPV6_ROUTE),
+      v4 ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE,
+      // Every group but this family's route group.
+      RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR |
+          RTMGRP_IPV6_MROUTE | (v4 ? RTMGRP_IPV6_ROUTE : RTMGRP_IPV4_ROUTE)));
 
   const Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
@@ -5673,8 +5736,12 @@ TEST(NetlinkRouteTest, LinkMulticastGroupCapNetAdmin) {
       .msg_iovlen = 1,
   };
 
-  EXPECT_THAT(RetryEINTR(sendmsg)(nlsk.get(), &msg, 0),
-              SyscallFailsWithErrno(EPERM));
+  for (const uint32_t mask : {RTMGRP_LINK, RTMGRP_NOTIFY, RTMGRP_IPV6_MROUTE}) {
+    SCOPED_TRACE(mask);
+    send_addr.nl_groups = mask;
+    EXPECT_THAT(RetryEINTR(sendmsg)(nlsk.get(), &msg, 0),
+                SyscallFailsWithErrno(EPERM));
+  }
 
   // But joining a multicast group should not require CAP_NET_ADMIN.
   struct sockaddr_nl mcast_addr = {

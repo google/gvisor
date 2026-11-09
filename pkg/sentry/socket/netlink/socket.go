@@ -61,11 +61,14 @@ const (
 	// maxBufferSize is the largest size a send buffer can grow to.
 	maxSendBufferSize = 4 << 20 // 4MB
 
-	// supportedGroups is the set of multicast groups that are supported.
-	supportedGroups = 1<<(linux.RTNLGRP_LINK-1) |
+	// subscribableGroups includes NOTIFY and IPV6_MROUTE for Linux compatibility.
+	// gVisor does not generate events for these two groups.
+	subscribableGroups = 1<<(linux.RTNLGRP_LINK-1) |
+		1<<(linux.RTNLGRP_NOTIFY-1) |
 		1<<(linux.RTNLGRP_IPV4_IFADDR-1) |
 		1<<(linux.RTNLGRP_IPV4_ROUTE-1) |
 		1<<(linux.RTNLGRP_IPV6_IFADDR-1) |
+		1<<(linux.RTNLGRP_IPV6_MROUTE-1) |
 		1<<(linux.RTNLGRP_IPV6_ROUTE-1)
 )
 
@@ -352,21 +355,25 @@ func (s *Socket) checkMcastSupport() *syserr.Error {
 	return nil
 }
 
-// preconditions: the netlink multicast table is locked.
-func (s *Socket) joinGroups(groups uint64) *syserr.Error {
-	if groups&supportedGroups != groups {
+// Preconditions: the netlink multicast table is locked and groups is nonzero.
+func (s *Socket) bindGroups(t *kernel.Task, port int32, groups uint64) *syserr.Error {
+	if groups&subscribableGroups != groups {
 		return syserr.ErrNotSupported
 	}
 	if err := s.checkMcastSupport(); err != nil {
 		return err
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.bindPortLocked(t, port); err != nil {
+		return err
+	}
+
 	oldGroups := s.groups.Load()
 	s.groups.Store(groups)
-	if oldGroups == 0 && s.groups.Load() != 0 {
+	if oldGroups == 0 {
 		s.netns.NetlinkMcastTable().AddSocket(s)
-	} else if oldGroups != 0 && s.groups.Load() == 0 {
-		s.netns.NetlinkMcastTable().RemoveSocket(s)
 	}
 	return nil
 }
@@ -377,7 +384,7 @@ func (s *Socket) joinGroup(group uint32) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 	groups := uint64(1) << (group - 1)
-	if groups&supportedGroups != groups {
+	if groups&subscribableGroups != groups {
 		return syserr.ErrNotSupported
 	}
 	if err := s.checkMcastSupport(); err != nil {
@@ -398,7 +405,7 @@ func (s *Socket) leaveGroup(group uint32) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 	groups := uint64(1) << (group - 1)
-	if groups&supportedGroups != groups {
+	if groups&subscribableGroups != groups {
 		return syserr.ErrNotSupported
 	}
 	if err := s.checkMcastSupport(); err != nil {
@@ -495,13 +502,10 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	}
 
 	if a.Groups != 0 {
-		var err *syserr.Error
 		s.netns.NetlinkMcastTable().WithTableLocked(func() {
-			err = s.joinGroups(uint64(a.Groups))
+			err = s.bindGroups(t, int32(a.PortID), uint64(a.Groups))
 		})
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	s.mu.Lock()
