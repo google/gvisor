@@ -174,6 +174,9 @@ type Kernel struct {
 	// mf provides application memory.
 	mf *pgalloc.MemoryFile `state:"nosave"`
 
+	// mmOpts controls the MemoryManagers that LoadTaskImage creates.
+	mmOpts mm.MemoryManagerOpts `state:"nosave"`
+
 	// See InitKernelArgs for the meaning of these fields.
 	featureSet           cpuid.FeatureSet
 	timekeeper           *Timekeeper
@@ -2322,6 +2325,12 @@ func (k *Kernel) SetSaveError(err error) {
 // LoadFrom.
 func (k *Kernel) SetMemoryFile(mf *pgalloc.MemoryFile) {
 	k.mf = mf
+}
+
+// SetMemoryManagerOpts sets Kernel.mmOpts. SetMemoryManagerOpts must be called
+// before Init or LoadFrom.
+func (k *Kernel) SetMemoryManagerOpts(opts mm.MemoryManagerOpts) {
+	k.mmOpts = opts
 }
 
 // MemoryFile returns the MemoryFile that provides application memory.

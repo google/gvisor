@@ -143,6 +143,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// Flags that control sandbox runtime behavior: MM related.
 	flagSet.Bool("app-huge-pages", true, "enable use of huge pages for application memory; requires /sys/kernel/mm/transparent_hugepage/shmem_enabled = advise")
+	flagSet.Int("fault-alloc-align-shift", -1, "binary logarithm of allocation size for app page faults on private anonymous mappings")
+	flagSet.Int("fault-copy-align-shift", -1, "binary logarithm of allocation size for app page faults on copy-on-write mappings")
 
 	// Flags that control sandbox runtime behavior: FS related.
 	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")

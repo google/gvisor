@@ -49,7 +49,7 @@ var (
 
 func testMemoryManagerWithMmapDirection(ctx context.Context, t *testing.T, mmapDirection arch.MmapDirection) *MemoryManager {
 	p := platform.FromContext(ctx)
-	mm, err := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx))
+	mm, err := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx), MemoryManagerOpts{})
 	if err != nil {
 		t.Fatalf("failed to create MemoryManager: %s", err)
 	}
