@@ -3194,6 +3194,7 @@ func (tty *TTY) StateFields() []string {
 	return []string{
 		"TTYOperations",
 		"index",
+		"devID",
 		"tg",
 	}
 }
@@ -3205,7 +3206,8 @@ func (tty *TTY) StateSave(stateSinkObject state.Sink) {
 	tty.beforeSave()
 	stateSinkObject.Save(0, &tty.TTYOperations)
 	stateSinkObject.SaveUint32(1, &tty.index)
-	stateSinkObject.Save(2, &tty.tg)
+	stateSinkObject.Save(2, &tty.devID)
+	stateSinkObject.Save(3, &tty.tg)
 }
 
 func (tty *TTY) afterLoad(context.Context) {}
@@ -3214,7 +3216,8 @@ func (tty *TTY) afterLoad(context.Context) {}
 func (tty *TTY) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &tty.TTYOperations)
 	stateSourceObject.LoadUint32(1, &tty.index)
-	stateSourceObject.Load(2, &tty.tg)
+	stateSourceObject.Load(2, &tty.devID)
+	stateSourceObject.Load(3, &tty.tg)
 }
 
 func (u *UTSNamespace) StateTypeName() string {

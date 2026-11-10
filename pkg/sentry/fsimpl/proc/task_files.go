@@ -855,7 +855,13 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "%d ", ppid)
 	fmt.Fprintf(buf, "%d ", s.pidns.IDOfProcessGroup(s.task.ThreadGroup().ProcessGroup()))
 	fmt.Fprintf(buf, "%d ", s.pidns.IDOfSession(s.task.ThreadGroup().Session()))
-	fmt.Fprintf(buf, "0 0 " /* tty_nr tpgid */)
+	ttyNr, tpgid := s.task.ThreadGroup().ControllingTTYStat(s.pidns)
+	// Use strconv rather than fmt to avoid boxing the values.
+	var nb [32]byte
+	b := strconv.AppendUint(nb[:0], uint64(ttyNr), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(tpgid), 10)
+	buf.Write(append(b, ' '))
 	flags := 0
 	if s.task.ExitState() >= kernel.TaskExitInitiated {
 		flags |= linux.PF_EXITING

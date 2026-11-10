@@ -128,6 +128,7 @@ func (i *rootInode) StateFields() []string {
 		"master",
 		"opts",
 		"replicas",
+		"externals",
 		"nextIdx",
 	}
 }
@@ -152,7 +153,8 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.master)
 	stateSinkObject.Save(13, &i.opts)
 	stateSinkObject.Save(14, &i.replicas)
-	stateSinkObject.SaveUint32(15, &i.nextIdx)
+	stateSinkObject.Save(15, &i.externals)
+	stateSinkObject.SaveUint32(16, &i.nextIdx)
 }
 
 func (i *rootInode) afterLoad(context.Context) {}
@@ -174,7 +176,8 @@ func (i *rootInode) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(12, &i.master)
 	stateSourceObject.Load(13, &i.opts)
 	stateSourceObject.Load(14, &i.replicas)
-	stateSourceObject.LoadUint32(15, &i.nextIdx)
+	stateSourceObject.Load(15, &i.externals)
+	stateSourceObject.LoadUint32(16, &i.nextIdx)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -196,6 +199,61 @@ func (i *implStatFS) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *implStatFS) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
+func (er *ExternalReplica) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.ExternalReplica"
+}
+
+func (er *ExternalReplica) StateFields() []string {
+	return []string{
+		"implStatFS",
+		"InodeAttrs",
+		"InodeNoopRefCount",
+		"InodeNotAnonymous",
+		"InodeNotDirectory",
+		"InodeNotSymlink",
+		"InodeWatches",
+		"InodeFSOwned",
+		"root",
+		"n",
+		"tty",
+	}
+}
+
+func (er *ExternalReplica) beforeSave() {}
+
+// +checklocksignore
+func (er *ExternalReplica) StateSave(stateSinkObject state.Sink) {
+	er.beforeSave()
+	stateSinkObject.Save(0, &er.implStatFS)
+	stateSinkObject.Save(1, &er.InodeAttrs)
+	stateSinkObject.Save(2, &er.InodeNoopRefCount)
+	stateSinkObject.Save(3, &er.InodeNotAnonymous)
+	stateSinkObject.Save(4, &er.InodeNotDirectory)
+	stateSinkObject.Save(5, &er.InodeNotSymlink)
+	stateSinkObject.Save(6, &er.InodeWatches)
+	stateSinkObject.Save(7, &er.InodeFSOwned)
+	stateSinkObject.Save(8, &er.root)
+	stateSinkObject.SaveUint32(9, &er.n)
+	stateSinkObject.Save(10, &er.tty)
+}
+
+func (er *ExternalReplica) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (er *ExternalReplica) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &er.implStatFS)
+	stateSourceObject.Load(1, &er.InodeAttrs)
+	stateSourceObject.Load(2, &er.InodeNoopRefCount)
+	stateSourceObject.Load(3, &er.InodeNotAnonymous)
+	stateSourceObject.Load(4, &er.InodeNotDirectory)
+	stateSourceObject.Load(5, &er.InodeNotSymlink)
+	stateSourceObject.Load(6, &er.InodeWatches)
+	stateSourceObject.Load(7, &er.InodeFSOwned)
+	stateSourceObject.Load(8, &er.root)
+	stateSourceObject.LoadUint32(9, &er.n)
+	stateSourceObject.Load(10, &er.tty)
 }
 
 func (l *lineDiscipline) StateTypeName() string {
@@ -582,6 +640,7 @@ func init() {
 	state.RegisterNoHooks((*filesystem)(nil))
 	state.RegisterNoHooks((*rootInode)(nil))
 	state.RegisterNoHooks((*implStatFS)(nil))
+	state.RegisterNoHooks((*ExternalReplica)(nil))
 	state.RegisterNoHooks((*lineDiscipline)(nil))
 	state.RegisterNoHooks((*outputQueueTransformer)(nil))
 	state.RegisterNoHooks((*inputQueueTransformer)(nil))

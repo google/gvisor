@@ -75,6 +75,7 @@ func (i *inode) StateFields() []string {
 		"buf",
 		"tty",
 		"termios",
+		"ttyNode",
 	}
 }
 
@@ -108,6 +109,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &i.buf)
 	stateSinkObject.Save(25, &i.tty)
 	stateSinkObject.Save(26, &i.termios)
+	stateSinkObject.Save(27, &i.ttyNode)
 }
 
 // +checklocksignore
@@ -139,6 +141,7 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(24, &i.buf)
 	stateSourceObject.Load(25, &i.tty)
 	stateSourceObject.Load(26, &i.termios)
+	stateSourceObject.Load(27, &i.ttyNode)
 	stateSourceObject.AfterLoadTo(i)
 }
 

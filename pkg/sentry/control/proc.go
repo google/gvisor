@@ -215,6 +215,11 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	}
 
 	if ttyFile != nil {
+		if exposed, err := fdimport.ExposeConsole(ctx, initArgs.MountNamespace, fdTable, ttyFile); err != nil {
+			log.Warningf("Console is not exposed in devpts: %v", err)
+		} else {
+			ttyFile = exposed
+		}
 		initArgs.TTY = ttyFile.TTY()
 	}
 
@@ -362,7 +367,11 @@ func ttyName(tty *kernel.TTY) string {
 	if tty == nil {
 		return "?"
 	}
-	return fmt.Sprintf("pts/%d", tty.Index())
+	if major, minor := linux.DecodeDeviceID(tty.DeviceID()); major == linux.UNIX98_PTY_REPLICA_MAJOR {
+		return fmt.Sprintf("pts/%d", minor)
+	}
+	// The tty has no node in devpts, so it has no name.
+	return "?"
 }
 
 // ContainerUsage retrieves per-container CPU usage.
