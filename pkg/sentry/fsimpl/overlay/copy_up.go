@@ -83,6 +83,12 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	// credentials from context rather an take an explicit creds parameter.
 	ctx = auth.ContextWithCredentials(ctx, d.fs.creds)
 
+	// Record restored layer identities before this copy-up installs an
+	// upper file. The recording reads the layer each dentry has now.
+	if err := d.fs.ensureDirInoCache(ctx); err != nil {
+		return err
+	}
+
 	if !d.canBeCopiedUp() {
 		return linuxerr.EPERM
 	}
@@ -100,10 +106,18 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	d.copyMu.Lock()
 	// Can free renameMu when copying data, but must reclaim it to exit cleanly.
 	renameMuUnlocked := false
+	// A listing can observe an upper entry before its origin is published.
+	invalidateDirents := false
 	defer func() {
 		d.copyMu.Unlock()
 		if renameMuUnlocked {
 			d.fs.renameMu.NestedRLock(d.fs.renameLockIndex())
+		}
+		if invalidateDirents {
+			// The caller may already hold parent.dirMu. dirMu is not
+			// recursive, so bump the listing epoch and let the next
+			// readdir rebuild it.
+			parent.direntsEpoch.Add(1)
 		}
 	}()
 	if d.upperVD.Ok() {
@@ -123,7 +137,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 	const timestampsMask = linux.STATX_ATIME | linux.STATX_MTIME
 	oldStat, err := vfsObj.StatAt(ctx, d.fs.creds, &oldpop, &vfs.StatOptions{
-		Mask: timestampsMask,
+		Mask: timestampsMask | linux.STATX_NLINK,
 	})
 	if err != nil {
 		return err
@@ -131,6 +145,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 
 	// Perform copy-up.
 	ftype := d.mode.Load() & linux.S_IFMT
+	invalidateDirents = ftype != linux.S_IFDIR
 	newpop := vfs.PathOperation{
 		Root:  parent.upperVD,
 		Start: parent.upperVD,
@@ -364,8 +379,11 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		return err
 	}
 
-	// Update the dentry's device and inode numbers (except for directories,
-	// for which these remain overlay-assigned).
+	// A file with one lower link keeps the overlay inode from lookup, and the
+	// new upper file is recorded under it. A lower hard link does not: copy-up
+	// creates an independent upper file and leaves the other names on the
+	// lower object, so the upper file gets its own overlay inode. See
+	// fs/overlayfs/inode.c:ovl_getattr() when lowerstat.nlink != 1.
 	if ftype != linux.S_IFDIR {
 		upperStat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
 			Root:  d.upperVD,
@@ -377,13 +395,19 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		if upperStat.Mask&linux.STATX_INO == 0 {
+		if upperStat.Mask&linux.STATX_INO == 0 || oldStat.Mask&linux.STATX_NLINK == 0 {
 			cleanupUndoCopyUp()
 			return linuxerr.EREMOTE
 		}
-		d.devMajor.Store(upperStat.DevMajor)
-		d.devMinor.Store(upperStat.DevMinor)
-		d.ino.Store(upperStat.Ino)
+		upperKey := layerDevNoAndIno{
+			layerDevNumber: layerDevNumber{upperStat.DevMajor, upperStat.DevMinor},
+			ino:            upperStat.Ino,
+		}
+		if oldStat.Nlink == 1 {
+			d.aliasIno(upperKey)
+		} else {
+			d.assignOverlayIdentity(ctx, upperKey)
+		}
 
 		// Lower level dentries for non-directories are no longer accessible from
 		// the overlayfs anymore after copyup. Ask filesystems to release their
@@ -522,7 +546,7 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 //   - d.dirMu must be locked.
 //   - d.isDir().
 func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) error {
-	dirents, err := d.getDirentsLocked(ctx)
+	dirents, err := d.getDirentsLocked(ctx, ds)
 	if err != nil {
 		return err
 	}

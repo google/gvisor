@@ -180,6 +180,12 @@ TEST(UnlinkTest, OpenFile) {
   int fd;
   EXPECT_THAT(fd = open(file.path().c_str(), O_RDWR, 0666), SyscallSucceeds());
   EXPECT_THAT(unlink(file.path().c_str()), SyscallSucceeds());
+  struct stat st;
+  ASSERT_THAT(fstat(fd, &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, 0);
+  MaybeSave();
+  ASSERT_THAT(fstat(fd, &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, 0);
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
