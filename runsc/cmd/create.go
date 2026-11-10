@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -70,6 +71,10 @@ type Create struct {
 	// passFDs are host FDs exposed to the sandboxed application.
 	passFDs sandboxsetup.FDMappings
 
+	// goferFDs are host FDs connected to lisafs gofers that the caller runs,
+	// keyed by mount destination.
+	goferFDs goferFDFlags
+
 	// userLog is the path to send user-visible logs to. This log is different
 	// from debug logs. The former is meant to be consumed by the users and should
 	// contain only information that is relevant to the person running the
@@ -111,6 +116,7 @@ func (*Create) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Create) SetFlags(f *flag.FlagSet) {
+	f.Var(&c.goferFDs, "gofer-fd", "lisafs connection to a gofer that the caller runs, in DEST:FD or DEST:FD:CONF format, where DEST is the mount destination (/ for the rootfs), FD is the host file descriptor, and CONF says how the gofer backs the mount (e.g. lisafs:memory; defaults to deriving it from --overlay2 and the spec). Every lisafs-backed mount of the root container needs one (can be supplied multiple times). When set, runsc starts no gofer")
 	f.Var(&c.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	f.StringVar(&c.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
@@ -204,9 +210,74 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		FSRestoreImagePaths: []string(c.fsRestoreImagePaths),
 		FSRestoreDirect:     c.fsRestoreDirect,
 		NoRootContainer:     c.noRootContainer,
+		GoferFiles:          c.goferFiles(),
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
 		return util.Errorf("creating container: %v", err)
 	}
 	return subcommands.ExitSuccess
+}
+
+// goferFiles returns the --gofer-fd connections.
+func (c *Create) goferFiles() []container.GoferFile {
+	var files []container.GoferFile
+	for _, g := range c.goferFDs {
+		files = append(files, container.GoferFile{
+			Destination: g.dest,
+			File:        os.NewFile(uintptr(g.fd), "gofer FD"),
+			Conf:        g.conf,
+		})
+	}
+	return files
+}
+
+// goferFD is one --gofer-fd value.
+type goferFD struct {
+	dest string
+	fd   int
+	conf *specutils.GoferMountConf
+}
+
+// goferFDFlags implements flag.Value for --gofer-fd, which may be supplied
+// multiple times.
+type goferFDFlags []goferFD
+
+// String implements flag.Value.
+func (g *goferFDFlags) String() string {
+	vals := make([]string, 0, len(*g))
+	for _, v := range *g {
+		s := fmt.Sprintf("%s:%d", v.dest, v.fd)
+		if v.conf != nil {
+			s += ":" + v.conf.String()
+		}
+		vals = append(vals, s)
+	}
+	return strings.Join(vals, " ")
+}
+
+// Get implements flag.Getter.
+func (g *goferFDFlags) Get() any {
+	return g
+}
+
+// Set implements flag.Value. Mount destinations that contain ':' are not
+// supported.
+func (g *goferFDFlags) Set(s string) error {
+	parts := strings.SplitN(s, ":", 3)
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid gofer FD %q: want DEST:FD or DEST:FD:CONF", s)
+	}
+	fd, err := strconv.Atoi(parts[1])
+	if err != nil || fd < 0 {
+		return fmt.Errorf("invalid gofer FD %q: %q is not a file descriptor", s, parts[1])
+	}
+	v := goferFD{dest: parts[0], fd: fd}
+	if len(parts) == 3 {
+		v.conf = &specutils.GoferMountConf{}
+		if err := v.conf.Set(parts[2]); err != nil {
+			return fmt.Errorf("invalid gofer FD %q: %w", s, err)
+		}
+	}
+	*g = append(*g, v)
+	return nil
 }
