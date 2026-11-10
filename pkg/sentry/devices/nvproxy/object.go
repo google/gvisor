@@ -159,13 +159,6 @@ func (nvp *nvproxy) objDup(ctx context.Context, clientDst, clientSrc *rootClient
 	}
 	oDst := &miscObject{}
 	nvp.objAdd(ctx, clientDst, dstH, oSrc.class, oDst, parentDstH)
-	parentSrc := clientSrc.getObject(ctx, oSrc.parent)
-	// Copy all non-parent dependencies.
-	for dep := range oSrc.deps {
-		if dep != parentSrc {
-			objDep(oDst.Object(), dep)
-		}
-	}
 }
 
 // getClientWithLock returns the rootClient with the given handle.
