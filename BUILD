@@ -249,6 +249,7 @@ go_path(
         "//pkg/tcpip/transport/tcpconntrack",
         "//runsc/checkpointgofer/gcs",
         "//runsc/coretagprime",
+        "//runsc/gofer/net",
         "//runsc/metricserver",
         "//sandboxexec/sandbox",
         "//tools/xdp/cmd",
