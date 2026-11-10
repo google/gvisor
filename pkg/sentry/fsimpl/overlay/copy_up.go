@@ -522,6 +522,15 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 //   - d.dirMu must be locked.
 //   - d.isDir().
 func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) error {
+	return d.copyUpDescendantsAtDepthLocked(ctx, ds, 0)
+}
+
+// copyUpDescendantsAtDepthLocked implements copyUpDescendantsLocked. depth is
+// the number of directories between d and the directory whose descendants are
+// being copied up, so it is 0 for that directory itself.
+//
+// Preconditions: Same as copyUpDescendantsLocked.
+func (d *dentry) copyUpDescendantsAtDepthLocked(ctx context.Context, ds **[]*dentry, depth int) error {
 	dirents, err := d.getDirentsLocked(ctx)
 	if err != nil {
 		return err
@@ -538,10 +547,24 @@ func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) er
 			return err
 		}
 		if child.isDir() {
-			childDirIdx := child.dirLockIndex(dirLockD1Child)
-			child.dirMu.NestedLock(childDirIdx)
-			err := child.copyUpDescendantsLocked(ctx, ds)
-			child.dirMu.NestedUnlock(childDirIdx)
+			// Each level of the recursion holds the dirMu of a directory and
+			// of its child directory, always parent before child, so this
+			// locking cannot deadlock. lockdep has a single subclass for
+			// child directories though, and a grandchild taking it while the
+			// child still holds it looks like nested locking. So lockdep
+			// checks the first level of children, which covers their order
+			// against the locks held by the caller, and deeper levels bypass
+			// it.
+			if depth == 0 {
+				dirIdx := child.dirLockIndex(dirLockD1Child)
+				child.dirMu.NestedLock(dirIdx)
+				err = child.copyUpDescendantsAtDepthLocked(ctx, ds, depth+1)
+				child.dirMu.NestedUnlock(dirIdx)
+			} else {
+				child.dirMu.LockBypass()
+				err = child.copyUpDescendantsAtDepthLocked(ctx, ds, depth+1)
+				child.dirMu.UnlockBypass()
+			}
 			if err != nil {
 				return err
 			}
