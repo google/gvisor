@@ -1805,6 +1805,14 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	info.procArgs.StartupTimeline.Reached("exec user home resolved")
 
+	if ttyFile != nil {
+		if exposed, err := fdimport.ExposeConsole(ctx, info.procArgs.MountNamespace, info.procArgs.FDTable, ttyFile); err != nil {
+			log.Warningf("Console is not exposed in devpts: %v", err)
+		} else {
+			ttyFile = exposed
+		}
+	}
+
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
 	if err != nil {

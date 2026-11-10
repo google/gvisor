@@ -460,6 +460,32 @@ func (tg *ThreadGroup) TTY() *TTY {
 	return tg.tty
 }
 
+// ControllingTTYStat returns the device number of tg's controlling terminal
+// and the ID of its foreground process group in pidns. If tg has no
+// controlling terminal, it returns (0, -1). If the terminal has no foreground
+// process group that is visible in pidns, the returned ID is 0.
+//
+// This corresponds to the tty_nr and tpgid fields of Linux's
+// fs/proc/array.c:do_task_stat().
+//
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
+func (tg *ThreadGroup) ControllingTTYStat(pidns *PIDNamespace) (uint32, ProcessGroupID) {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+	tg.signalHandlers.mu.Lock()
+	defer tg.signalHandlers.mu.Unlock()
+
+	if tg.tty == nil {
+		return 0, -1
+	}
+	var tpgid ProcessGroupID
+	if pg := tg.processGroup; pg != nil && pg.session.foreground != nil {
+		tpgid = pidns.pgids[pg.session.foreground]
+	}
+	return tg.tty.DeviceID(), tpgid
+}
+
 // GetTTY returns the thread group's controlling terminal with a
 // reference taken on it, or nil if there is no controlling terminal. The
 // caller must DecRef the returned TTY when done with it.
