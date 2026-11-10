@@ -9,6 +9,7 @@ go_library(
     name = "net",
     srcs = [
         "netgofer.go",
+        "passt.go",
     ],
     visibility = [
         "//:__pkg__",
@@ -44,6 +45,7 @@ go_test(
     size = "small",
     srcs = [
         "netgofer_test.go",
+        "passt_test.go",
     ],
     embed = [":net"],
     pure = True,
