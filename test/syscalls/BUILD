@@ -533,6 +533,12 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    container = True,
+    test = "//test/syscalls/linux:overlay_test",
+)
+
+syscall_test(
     add_hostinet = True,
     test = "//test/syscalls/linux:packet_socket_dgram_test",
 )
