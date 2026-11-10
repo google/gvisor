@@ -246,9 +246,9 @@ func (id *instanceIdentity) forceDelete(ctx context.Context, svc *compute.Servic
 }
 
 // listAllInstances returns every instance in the project that runs as the
-// given service account.
-func listAllInstances(ctx context.Context, svc *compute.Service, project, serviceAccount string) ([]instanceIdentity, error) {
-	var ids []instanceIdentity
+// given service account, mapped to when it was created.
+func listAllInstances(ctx context.Context, svc *compute.Service, project, serviceAccount string) (map[instanceIdentity]time.Time, error) {
+	instances := make(map[instanceIdentity]time.Time)
 	err := svc.Instances.AggregatedList(project).Context(ctx).Pages(ctx, func(page *compute.InstanceAggregatedList) error {
 		for _, scoped := range page.Items {
 			for _, inst := range scoped.Instances {
@@ -257,7 +257,11 @@ func listAllInstances(ctx context.Context, svc *compute.Service, project, servic
 					continue
 				}
 
-				ids = append(ids, id)
+				created, err := time.Parse(time.RFC3339, inst.CreationTimestamp)
+				if err != nil {
+					return fmt.Errorf("%v has invalid creation timestamp %q: %w", id, inst.CreationTimestamp, err)
+				}
+				instances[id] = created
 			}
 		}
 		return nil
@@ -265,7 +269,7 @@ func listAllInstances(ctx context.Context, svc *compute.Service, project, servic
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instances in project %s: %w", project, err)
 	}
-	return ids, nil
+	return instances, nil
 }
 
 func getInstanceExpiryBulk(ctx context.Context, svc *compute.Service, ids []instanceIdentity) (map[instanceIdentity]time.Time, error) {

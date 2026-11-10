@@ -18,8 +18,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,6 +33,10 @@ const (
 	// idleTimeout is the maximum time an agent can await a job before being
 	// killed.
 	idleTimeout = 1 * time.Minute
+
+	// untimedInstanceMaxAge is how long an instance can run without a timeout
+	// before it is deleted.
+	untimedInstanceMaxAge = 10 * time.Minute
 
 	// jobTimeout is the maximum time an instance is allowed to spend per job.
 	// An instance will be killed if it exceeds the timeout.
@@ -95,11 +102,11 @@ func NewTimeoutController(ctx context.Context, computeSvc *compute.Service, proj
 		svc:           computeSvc,
 		pendingTimers: make(map[instanceIdentity]*pendingTimer),
 	}
-	ids, err := listAllInstances(ctx, computeSvc, project, agentServiceAccount)
+	instances, err := listAllInstances(ctx, computeSvc, project, agentServiceAccount)
 	if err != nil {
 		return nil, err
 	}
-	expiries, err := getInstanceExpiryBulk(ctx, computeSvc, ids)
+	expiries, err := getInstanceExpiryBulk(ctx, computeSvc, slices.Collect(maps.Keys(instances)))
 	if err != nil {
 		return nil, err
 	}
@@ -116,16 +123,29 @@ func NewTimeoutController(ctx context.Context, computeSvc *compute.Service, proj
 	return tc, nil
 }
 
+// TimeoutPolicy determines how RegisterTimeout behaves if the agent has an existing timeout.
+type TimeoutPolicy int
+
+const (
+	// ReplaceTimeout specifies to replace any existing timeout.
+	ReplaceTimeout TimeoutPolicy = iota
+
+	// ShortenTimeout specifies to replace an existing timeout only if the new timeout
+	// expires first.
+	ShortenTimeout
+
+	// IfNoTimeout specifies to apply the timeout only if there is no existing timeout.
+	IfNoTimeout
+)
+
 // RegisterTimeout schedules the instance to be deleted after the specified
-// job timeout, canceling any existing timeout.
-//
-// If extend is false, an existing timeout will not be extended. For example,
-// if there is an existing timeout 30s in the future, and RegisterTimeout is called
-// with a timeout of 45s with extend = false, the timeout will not be applied.
+// job timeout. If the instance already has a timeout, policy determines whether
+// RegisterTimeout replaces it. RegisterTimeout returns whether it applied the
+// new timeout.
 //
 // If RegisterTimeout returns an error, it is guaranteed that the previous timeout
 // was NOT cleared.
-func (tc *TimeoutController) RegisterTimeout(ctx context.Context, id instanceIdentity, timeout time.Duration, extend bool) error {
+func (tc *TimeoutController) RegisterTimeout(ctx context.Context, id instanceIdentity, timeout time.Duration, policy TimeoutPolicy) (bool, error) {
 	tc.mu.Lock()
 	pt := tc.pendingTimers[id]
 	if pt == nil {
@@ -156,20 +176,27 @@ func (tc *TimeoutController) RegisterTimeout(ctx context.Context, id instanceIde
 	currTC := tc.pendingTimers[id]
 	tc.mu.Unlock()
 	if currTC != pt {
-		return fmt.Errorf("%v was deleted by timeout expiry", id)
+		return false, fmt.Errorf("%v was deleted by timeout expiry", id)
 	}
 
 	expiry := time.Now().Add(timeout)
 
-	// If we were asked *not* to extend an existing timeout, don't do so.
-	if pt.timer != nil && !extend && pt.expiry.Before(expiry) {
-		return nil
+	if pt.timer != nil {
+		switch policy {
+		case ShortenTimeout:
+			// If we were asked *not* to extend an existing timeout, don't do so.
+			if pt.expiry.Before(expiry) {
+				return false, nil
+			}
+		case IfNoTimeout:
+			return false, nil
+		}
 	}
 
 	// Record the timeout in the instance metadata so we can restore it
 	// upon coordinator restart
 	if err := id.setExpiryTime(ctx, tc.svc, expiry); err != nil {
-		return fmt.Errorf("failed to record expiry for %v: %w", id, err)
+		return false, fmt.Errorf("failed to record expiry for %v: %w", id, err)
 	}
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
@@ -178,7 +205,44 @@ func (tc *TimeoutController) RegisterTimeout(ctx context.Context, id instanceIde
 		pt.timer.Stop()
 	}
 	tc.registerTimeoutLocked(id, expiry)
-	return nil
+	return true, nil
+}
+
+// DeleteUntimedInstances deletes every coordinator-managed instance that has
+// no timeout and has an age greater than untimedInstanceMaxAge.
+//
+// Agents get a timeout whenever they request a job, so such an instance has
+// never requested one (for example, because its startup script failed).
+func (tc *TimeoutController) DeleteUntimedInstances(ctx context.Context, project, agentServiceAccount string) error {
+	instances, err := listAllInstances(ctx, tc.svc, project, agentServiceAccount)
+	if err != nil {
+		return err
+	}
+	expiries, err := getInstanceExpiryBulk(ctx, tc.svc, slices.Collect(maps.Keys(instances)))
+	if err != nil {
+		return err
+	}
+	var errs []error
+	now := time.Now()
+	for id, created := range instances {
+		if _, ok := expiries[id]; ok {
+			continue
+		}
+		if now.Sub(created) <= untimedInstanceMaxAge {
+			// Skip brand-new agents
+			continue
+		}
+		// Delete the instance right away (unless it got a timeout since we last looked).
+		scheduled, err := tc.RegisterTimeout(ctx, id, 0, IfNoTimeout)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if scheduled {
+			log.Printf("Deleting %v, created at %v, since it has no timeout", id, created)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // registerTimeoutLocked schedules the instance to be deleted at the specified time.

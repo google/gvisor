@@ -44,6 +44,7 @@ const (
 	buildkiteCleanupJobsInterval   = 3 * time.Second
 	buildkiteReplenishJobsInterval = 10 * time.Second
 	trustedAuthorsRefreshInterval  = 10 * time.Minute
+	deleteUntimedInstancesInterval = time.Minute
 
 	// trustedAuthorsRefreshTimeout bounds refreshing the trusted authors.
 	trustedAuthorsRefreshTimeout = time.Minute
@@ -211,7 +212,7 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 		// No job currently available for this agent.
 
 		// Set an idle timeout so it doesn't sit there doing nothing when the build finishes.
-		err = s.tc.RegisterTimeout(r.Context(), id, idleTimeout, false /* extend */)
+		_, err = s.tc.RegisterTimeout(r.Context(), id, idleTimeout, ShortenTimeout)
 		if err != nil {
 			log.Printf("Failed to register idle timeout for %v: %v", id, err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -319,7 +320,7 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 
 	// Before assigning the job: register a job timeout to kill the agent if it's
 	// not done.
-	err = s.tc.RegisterTimeout(r.Context(), id, timeout, true /* extend */)
+	_, err = s.tc.RegisterTimeout(r.Context(), id, timeout, ReplaceTimeout)
 	if err != nil {
 		log.Printf("Failed to register timeout for %v: %v", id, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -416,6 +417,19 @@ func (s *server) runTrustedAuthorsTicker(ctx context.Context) {
 	}
 }
 
+func (s *server) runDeleteUntimedInstancesTicker(ctx context.Context) {
+	ticker := time.Tick(deleteUntimedInstancesInterval)
+	for {
+		<-ticker
+		ctx, cancel := context.WithTimeout(ctx, deleteUntimedInstancesInterval)
+		err := s.tc.DeleteUntimedInstances(ctx, s.cfg.project, s.cfg.agentServiceAccount)
+		cancel()
+		if err != nil {
+			log.Printf("Failed to delete instances without timeouts: %v", err)
+		}
+	}
+}
+
 func fetchMaintainers(ctx context.Context, cfg *config, gh *githubClient) (map[authorID]struct{}, error) {
 	ctx, cancel := context.WithTimeout(ctx, trustedAuthorsRefreshTimeout)
 	defer cancel()
@@ -467,6 +481,7 @@ func main() {
 	go s.runBuildkiteCleanupJobsTicker(ctx)
 	go s.runBuildkiteReplenishJobsTicker(ctx)
 	go s.runTrustedAuthorsTicker(ctx)
+	go s.runDeleteUntimedInstancesTicker(ctx)
 
 	// When the coordinator VM shuts down, SIGTERM is sent
 	notifyContext, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
