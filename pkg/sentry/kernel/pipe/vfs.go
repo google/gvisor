@@ -57,7 +57,9 @@ func (vp *VFSPipe) ReaderWriterPair(ctx context.Context, mnt *vfs.Mount, vfsd *v
 	creds := auth.CredentialsFromContext(ctx)
 	// Connected pipes share the same locks.
 	locks := &vfs.FileLocks{}
-	r, err := vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags, locks, creds)
+	// O_DIRECT selects packet mode for writes, so only the write end gets it.
+	// See fs/pipe.c:create_pipe_files().
+	r, err := vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags&^linux.O_DIRECT, locks, creds)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,6 +83,11 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	readable := vfs.MayReadFileWithOpenFlags(statusFlags)
 	writable := vfs.MayWriteFileWithOpenFlags(statusFlags)
 	if !readable && !writable {
+		return nil, linuxerr.EINVAL
+	}
+	// Linux refuses O_DIRECT at open, since a FIFO lacks FMODE_CAN_ODIRECT.
+	// Only fcntl(F_SETFL) can set it.
+	if statusFlags&linux.O_DIRECT != 0 {
 		return nil, linuxerr.EINVAL
 	}
 
@@ -153,6 +160,8 @@ func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, l
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
 		SpecialFile:       true,
+		// O_DIRECT selects packet mode. See pipe(7).
+		AllowDirectIO: true,
 	}); err != nil {
 		return nil, err
 	}
@@ -251,6 +260,9 @@ func (fd *VFSPipeFD) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.Rea
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *VFSPipeFD) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
+	if fd.vfsfd.StatusFlags()&linux.O_DIRECT != 0 {
+		return fd.pipe.WritePackets(ctx, src)
+	}
 	return fd.pipe.Write(ctx, src)
 }
 
@@ -314,6 +326,8 @@ func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescripti
 }
 
 // SpliceFromNonPipe performs a splice operation from a non-pipe file to fd.
+// The data goes into new buffers that later writes don't append to, as
+// Linux's splice_read implementations add it.
 func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescription, off, count int64) (int64, error) {
 	dst := usermem.IOSequence{
 		IO:    fd,
@@ -366,7 +380,7 @@ func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte
 		log.Traceback("Non-sequential VFSPipeFD.CopyOut: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
 		return 0, linuxerr.EINVAL
 	}
-	n, err := fd.pipe.writeLocked(int64(len(src)), func(dsts safemem.BlockSeq) (uint64, error) {
+	n, err := fd.pipe.writeUnmergeableLocked(int64(len(src)), func(dsts safemem.BlockSeq) (uint64, error) {
 		return safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
 	})
 	fd.lastAddr = addr + hostarch.Addr(n)
@@ -381,7 +395,7 @@ func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int
 		log.Traceback("Non-sequential VFSPipeFD.ZeroOut: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
 		return 0, linuxerr.EINVAL
 	}
-	n, err := fd.pipe.writeLocked(toZero, func(dsts safemem.BlockSeq) (uint64, error) {
+	n, err := fd.pipe.writeUnmergeableLocked(toZero, func(dsts safemem.BlockSeq) (uint64, error) {
 		return safemem.ZeroSeq(dsts)
 	})
 	fd.lastAddr = addr + hostarch.Addr(n)
@@ -427,7 +441,7 @@ func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq,
 			log.Traceback("Non-sequential VFSPipeFD.CopyOutFrom: lastAddr=%#x addr=%#x", fd.lastAddr, ar.Start)
 			return total, linuxerr.EINVAL
 		}
-		n, err := fd.pipe.writeLocked(int64(ar.Length()), func(dsts safemem.BlockSeq) (uint64, error) {
+		n, err := fd.pipe.writeUnmergeableLocked(int64(ar.Length()), func(dsts safemem.BlockSeq) (uint64, error) {
 			return src.ReadToBlocks(dsts)
 		})
 		fd.lastAddr = ar.Start + hostarch.Addr(n)
@@ -480,15 +494,22 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 
 	firstLocked, secondLocked := lockTwoPipes(dst.pipe, src.pipe)
 	srcs, srcErr := src.pipe.readableBlocksLocked(0, count)
-	n, err := dst.pipe.writeLocked(count, func(dsts safemem.BlockSeq) (uint64, error) {
-		// Report source errors only after writeLocked has checked the destination.
+	srcSize := src.pipe.queuedLocked()
+	srcMergeable, srcEnd := src.pipe.tailLocked()
+	n, err := dst.pipe.writeSplicedLocked(count, src.pipe.layoutLocked(), func(dsts safemem.BlockSeq) (uint64, error) {
+		// Report source errors only after writeSplicedLocked has checked
+		// the destination.
 		if srcErr != nil {
 			return 0, srcErr
 		}
 		return safemem.CopySeq(dsts, srcs)
 	})
 	if n > 0 && removeFromSrc {
+		dst.pipe.finishSpliceLocked(n, srcSize, src.pipe.boundariesLocked(), srcMergeable, srcEnd)
 		src.pipe.consumeLocked(n)
+	}
+	if n > 0 && !removeFromSrc {
+		dst.pipe.addUnmergeableLocked(n)
 	}
 	secondLocked.mu.NestedUnlock(pipeLockPipe)
 	firstLocked.mu.Unlock()

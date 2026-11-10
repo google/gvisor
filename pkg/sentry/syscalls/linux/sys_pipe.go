@@ -39,10 +39,10 @@ func Pipe2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 }
 
 func pipe2(t *kernel.Task, addr hostarch.Addr, flags int32) error {
-	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
+	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC|linux.O_DIRECT) != 0 {
 		return linuxerr.EINVAL
 	}
-	r, w, err := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&linux.O_NONBLOCK))
+	r, w, err := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&(linux.O_NONBLOCK|linux.O_DIRECT)))
 	if err != nil {
 		return err
 	}
