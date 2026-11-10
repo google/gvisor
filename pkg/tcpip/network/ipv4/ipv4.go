@@ -601,7 +601,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckOutput(pkt, r, stack.IP) {
+		if !nft.CheckOutput(pkt, r, r.OutgoingNIC(), stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -681,7 +681,7 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckPostrouting(pkt, r, stack.IP) {
+		if !nft.CheckPostrouting(pkt, r, r.OutgoingNIC(), stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -798,7 +798,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckForward(pkt, route, stack.IP) {
+		if !nft.CheckForward(pkt, route, route.OutgoingNIC(), stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -911,7 +911,7 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			if !nft.CheckForward(pkt, nil /* route */, stack.IP) {
+			if !nft.CheckForward(pkt, nil /* route */, 0 /* outNICID */, stack.IP) {
 				// nftables is telling us to drop the packet.
 				return nil
 			}
