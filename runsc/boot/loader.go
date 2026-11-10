@@ -2262,7 +2262,8 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 	return s, nil
 }
 
-// sandboxNetstackCreator implements kernel.NetworkStackCreator.
+// sandboxNetstackCreator implements inet.NetworkStackCreator and
+// inet.RestoreNetworkStackCreator.
 //
 // +stateify savable
 type sandboxNetstackCreator struct {
@@ -2272,8 +2273,37 @@ type sandboxNetstackCreator struct {
 	uid                      uniqueid.Provider
 }
 
-// CreateStack implements kernel.NetworkStackCreator.CreateStack.
+var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
+
+// CreateStack implements inet.NetworkStackCreator.CreateStack.
+//
+// Like Linux, it creates the loopback interface administratively DOWN and with
+// no addresses. The application brings it up with RTM_NEWLINK (IFF_UP), at
+// which point netstack assigns the default loopback addresses, just as the
+// Linux kernel does. The initial network namespace is configured separately in
+// Network.CreateLinksAndRoutes and keeps its addresses and UP state.
+//
+// TODO(gvisor.dev/issue/15559): Support SIOCSIFFLAGS. Until then, applications
+// that bring the loopback interface up with ioctl(2), such as nsjail, fail.
 func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
+	return c.createStack(false /* loopbackUp */)
+}
+
+// CreateStackForRestore implements
+// inet.RestoreNetworkStackCreator.CreateStackForRestore.
+//
+// TODO(gvisor.dev/issue/4595): Restore non-root network namespaces from their
+// saved state. Until then, the loopback interface of a restored namespace is
+// UP and has the default loopback addresses, which is the state that
+// applications usually leave it in.
+func (c *sandboxNetstackCreator) CreateStackForRestore() (inet.Stack, error) {
+	return c.createStack(true /* loopbackUp */)
+}
+
+// createStack creates a network stack with a loopback interface. If loopbackUp
+// is true, the loopback interface is UP and has the default loopback
+// addresses. Otherwise, it is DOWN and has no addresses.
+func (c *sandboxNetstackCreator) createStack(loopbackUp bool) (inet.Stack, error) {
 	s, err := c.newEmptySandboxNetworkStack()
 	if err != nil {
 		return nil, err
@@ -2290,9 +2320,14 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
+		Disabled:           !loopbackUp,
+	}
+	var addrs []sentryapi.IPWithPrefix
+	if loopbackUp {
+		addrs = link.Addresses
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, addrs); err != nil {
 		return nil, err
 	}
 
