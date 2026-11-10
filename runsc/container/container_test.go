@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
@@ -50,10 +51,12 @@ import (
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	fsgofer "gvisor.dev/gvisor/runsc/gofer/fs"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -1790,6 +1793,229 @@ func TestSignalUnkillablePolicyForcedSignals(t *testing.T) {
 
 // TestNoRootContainerRejectsRootArgs checks that Args describing a root
 // container process or its rootfs are refused rather than dropped.
+var (
+	procSelfFDOnce sync.Once
+	procSelfFDErr  error
+)
+
+// serveLisafs serves root over lisafs from this process, as a gofer that the
+// runsc caller runs, and returns the sandbox end of the connection.
+func serveLisafs(t *testing.T, conf *config.Config, root string) *os.File {
+	t.Helper()
+	procSelfFDOnce.Do(func() { procSelfFDErr = fsgofer.OpenProcSelfFD("/proc/self/fd") })
+	if procSelfFDErr != nil {
+		t.Fatalf("fsgofer.OpenProcSelfFD() failed: %v", procSelfFDErr)
+	}
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("unix.Socketpair() failed: %v", err)
+	}
+	sock, err := unet.NewSocket(fds[1])
+	if err != nil {
+		_ = unix.Close(fds[0])
+		_ = unix.Close(fds[1])
+		t.Fatalf("unet.NewSocket() failed: %v", err)
+	}
+	server := lisafs.NewServer()
+	conn, err := server.CreateConnection(sock, root, fsgofer.ConnectionOpts(true /* readonly */), fsgofer.NewConnectionImpl(&fsgofer.Config{DonateMountPointFD: conf.DirectFS}))
+	if err != nil {
+		_ = unix.Close(fds[0])
+		_ = sock.Close()
+		t.Fatalf("CreateConnection(%q) failed: %v", root, err)
+	}
+	server.StartConnection(conn)
+	t.Cleanup(func() {
+		_ = sock.Close()
+		server.Wait()
+		server.Destroy()
+	})
+	return os.NewFile(uintptr(fds[0]), "sandbox IO FD")
+}
+
+// TestCallerGofers checks that Args.GoferFiles, not the paths in the spec,
+// back the root container's lisafs mounts.
+func TestCallerGofers(t *testing.T) {
+	for _, directfs := range []bool{true, false} {
+		t.Run(fmt.Sprintf("directfs=%t", directfs), func(t *testing.T) {
+			specRoot := t.TempDir()
+			specMountSrc := t.TempDir()
+			markerDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(markerDir, "marker"), nil, 0644); err != nil {
+				t.Fatalf("os.WriteFile() failed: %v", err)
+			}
+
+			// The spec names empty directories, so /bin/sh and the marker exist
+			// only if the caller's gofers serve the rootfs and the bind mount.
+			const mountPoint = "/tmp"
+			spec := testutil.NewSpecWithArgs("/bin/sh", "-c", "test -f "+mountPoint+"/marker")
+			spec.Root.Path = specRoot
+			spec.Mounts = []specs.Mount{
+				{Type: "tmpfs", Destination: "/etc"},
+				{Type: "bind", Destination: mountPoint, Source: specMountSrc, Options: []string{"ro"}},
+			}
+			conf := testutil.TestConfig(t)
+			conf.DirectFS = directfs
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			// Listed in reverse spec order: the destinations, not the order,
+			// pick the mounts.
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+				Attached:  true,
+				GoferFiles: []GoferFile{
+					{Destination: mountPoint, File: serveLisafs(t, conf, markerDir)},
+					{Destination: "/", File: serveLisafs(t, conf, "/")},
+				},
+			}
+			ws, err := Run(conf, args)
+			if err != nil {
+				t.Fatalf("running container: %v", err)
+			}
+			if !ws.Exited() || ws.ExitStatus() != 0 {
+				t.Fatalf("container failed, waitStatus: %v", ws)
+			}
+		})
+	}
+}
+
+// TestCallerGofersConfSkipsDerivation checks that a caller-given conf is used
+// as is: runsc derives none for that mount, so the spec need not support one.
+func TestCallerGofersConfSkipsDerivation(t *testing.T) {
+	// A self-backed overlay needs the rootfs path to stat, and it doesn't exist.
+	spec := testutil.NewSpecWithArgs("/bin/true")
+	spec.Root.Path = filepath.Join(t.TempDir(), "missing")
+	spec.Root.Readonly = false
+	spec.Mounts = []specs.Mount{{Type: "tmpfs", Destination: "/etc"}}
+	conf := testutil.TestConfig(t)
+	if err := conf.Overlay2.Set("root:self"); err != nil {
+		t.Fatalf("Overlay2.Set() failed: %v", err)
+	}
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	none := specutils.GoferMountConf{}
+	if err := none.Set("lisafs:none"); err != nil {
+		t.Fatalf("GoferMountConf.Set() failed: %v", err)
+	}
+	args := Args{
+		ID:         testutil.RandomContainerID(),
+		Spec:       spec,
+		BundleDir:  bundleDir,
+		Attached:   true,
+		GoferFiles: []GoferFile{{Destination: "/", File: serveLisafs(t, conf, "/"), Conf: &none}},
+	}
+	ws, err := Run(conf, args)
+	if err != nil {
+		t.Fatalf("running container: %v", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Fatalf("container failed, waitStatus: %v", ws)
+	}
+}
+
+// TestCallerGofersMismatch checks that GoferFiles must name each lisafs-backed
+// mount of the root container exactly once.
+func TestCallerGofersMismatch(t *testing.T) {
+	tmp := testutil.TmpDir()
+	erofs := specutils.GoferMountConf{}
+	if err := erofs.Set("erofs:none"); err != nil {
+		t.Fatalf("GoferMountConf.Set() failed: %v", err)
+	}
+	for _, tc := range []struct {
+		name    string
+		dests   []string
+		conf    *specutils.GoferMountConf
+		mounts  []specs.Mount
+		wantErr string
+	}{
+		{
+			name:    "missing mount",
+			dests:   []string{"/"},
+			wantErr: fmt.Sprintf("no gofer FD for %q", tmp),
+		},
+		{
+			name:    "unknown destination",
+			dests:   []string{"/", tmp, "/nonexistent"},
+			wantErr: `gofer FD for "/nonexistent", which is not a gofer mount`,
+		},
+		{
+			name:    "duplicate destination",
+			dests:   []string{"/", tmp, tmp + "/"},
+			wantErr: fmt.Sprintf("more than one gofer FD for %q", tmp),
+		},
+		{
+			name:    "relative destination",
+			dests:   []string{"/", "tmp"},
+			wantErr: `gofer FD destination "tmp" is not an absolute path`,
+		},
+		{
+			name:    "not lisafs-backed",
+			dests:   []string{"/", tmp},
+			conf:    &erofs,
+			wantErr: "whose mount is not lisafs-backed",
+		},
+		{
+			name:  "ambiguous destination",
+			dests: []string{"/", "/mnt"},
+			mounts: []specs.Mount{
+				{Type: "bind", Destination: "/mnt", Source: t.TempDir()},
+				{Type: "bind", Destination: "/mnt", Source: t.TempDir()},
+			},
+			wantErr: `gofer FD for "/mnt", which is the destination of 2 gofer mounts`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := testutil.NewSpecWithArgs("/bin/true")
+			if tc.mounts != nil {
+				spec.Mounts = tc.mounts
+			}
+			conf := testutil.TestConfig(t)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			var files []GoferFile
+			for i, dest := range tc.dests {
+				r, w, err := os.Pipe()
+				if err != nil {
+					t.Fatalf("os.Pipe() failed: %v", err)
+				}
+				defer w.Close()
+				gf := GoferFile{Destination: dest, File: r}
+				if i > 0 {
+					gf.Conf = tc.conf
+				}
+				files = append(files, gf)
+			}
+			args := Args{
+				ID:         testutil.RandomContainerID(),
+				Spec:       spec,
+				BundleDir:  bundleDir,
+				GoferFiles: files,
+			}
+			c, err := New(conf, args)
+			if err == nil {
+				c.Destroy()
+				t.Fatalf("New() succeeded, want error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("New() error = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestNoRootContainerRejectsRootArgs(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -1810,6 +2036,11 @@ func TestNoRootContainerRejectsRootArgs(t *testing.T) {
 			name:    "exec file",
 			args:    Args{ExecFile: os.Stdin},
 			wantErr: "PassFiles and ExecFile cannot be set with NoRootContainer",
+		},
+		{
+			name:    "gofer files",
+			args:    Args{GoferFiles: []GoferFile{{Destination: "/", File: os.Stdin}}},
+			wantErr: "GoferFiles cannot be set with NoRootContainer",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
