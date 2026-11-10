@@ -18,7 +18,11 @@
 package aio
 
 import (
+	"errors"
+	"os"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestLinuxQueue(t *testing.T) {
@@ -26,4 +30,27 @@ func TestLinuxQueue(t *testing.T) {
 		q, err := NewLinuxQueue(cap)
 		return q, err
 	})
+}
+
+func TestLinuxQueueShortSubmit(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	q, err := NewLinuxQueue(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Destroy()
+
+	// Linux accepts the read, then rejects the write to the same read-only
+	// descriptor. Waiting for one completion lets a lost write fail the test
+	// without blocking on a completion the kernel will never produce.
+	fd := int32(f.Fd())
+	Read(q, 0, fd, 0, nil)
+	Write(q, 1, fd, 0, nil)
+	if _, err := q.Wait(nil, 1); !errors.Is(err, unix.EBADF) {
+		t.Errorf("submitting a write to a read-only descriptor: got %v, want %v", err, unix.EBADF)
+	}
 }
