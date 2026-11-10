@@ -4821,6 +4821,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:memory_util",
         "//test/util:posix_error",
         "//test/util:save_util",
         "//test/util:socket_util",
