@@ -130,6 +130,12 @@ func (m *mockMulticastGroupProtocol) isLocallyJoined(addr tcpip.Address) bool {
 	return m.mu.genericMulticastGroup.IsLocallyJoinedRLocked(addr)
 }
 
+func (m *mockMulticastGroupProtocol) joinedGroups() map[tcpip.Address]uint64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mu.genericMulticastGroup.JoinedGroupsRLocked()
+}
+
 func (m *mockMulticastGroupProtocol) makeAllNonMember() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1149,6 +1155,61 @@ func TestJoinCount(t *testing.T) {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestJoinedGroups(t *testing.T) {
+	mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr3}
+	clock := faketime.NewManualClock()
+	mgp.init(ip.GenericMulticastProtocolOptions{
+		Rand:                      rand.New(rand.NewSource(4)),
+		Clock:                     clock,
+		MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+	}, false /* v1Compatibility */)
+
+	steps := []struct {
+		name string
+		op   func()
+		want map[tcpip.Address]uint64
+	}{
+		{
+			name: "join",
+			op: func() {
+				mgp.joinGroup(addr1)
+				mgp.joinGroup(addr1)
+				mgp.joinGroup(addr2)
+				mgp.joinGroup(addr3)
+			},
+			want: map[tcpip.Address]uint64{addr1: 2, addr2: 1, addr3: 1},
+		},
+		{
+			name: "leave once of two joins",
+			op:   func() { mgp.leaveGroup(addr1) },
+			want: map[tcpip.Address]uint64{addr1: 1, addr2: 1, addr3: 1},
+		},
+		{
+			// The leave state-change report is still pending, so the group
+			// stays in the protocol state until it is sent.
+			name: "leave with pending report",
+			op:   func() { mgp.leaveGroup(addr2) },
+			want: map[tcpip.Address]uint64{addr1: 1, addr3: 1},
+		},
+		{
+			name: "rejoin with pending report",
+			op:   func() { mgp.joinGroup(addr2) },
+			want: map[tcpip.Address]uint64{addr1: 1, addr2: 1, addr3: 1},
+		},
+		{
+			name: "leave without protocol",
+			op:   func() { mgp.leaveGroup(addr3) },
+			want: map[tcpip.Address]uint64{addr1: 1, addr2: 1},
+		},
+	}
+	for _, step := range steps {
+		step.op()
+		if diff := cmp.Diff(step.want, mgp.joinedGroups()); diff != "" {
+			t.Errorf("%s: joinedGroups() mismatch (-want +got):\n%s", step.name, diff)
+		}
 	}
 }
 

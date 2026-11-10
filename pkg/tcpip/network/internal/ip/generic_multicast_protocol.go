@@ -614,6 +614,20 @@ func (g *GenericMulticastProtocolState) IsLocallyJoinedRLocked(groupAddress tcpi
 	return ok && !info.deleteScheduled
 }
 
+// JoinedGroupsRLocked returns the locally joined groups, each mapped to the
+// number of times it was joined.
+//
+// Precondition: g.protocolMU must be read locked.
+func (g *GenericMulticastProtocolState) JoinedGroupsRLocked() map[tcpip.Address]uint64 {
+	groups := make(map[tcpip.Address]uint64)
+	for groupAddress, info := range g.memberships {
+		if !info.deleteScheduled {
+			groups[groupAddress] = info.joins
+		}
+	}
+	return groups
+}
+
 func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer(
 	groupAddress tcpip.Address,
 	info *multicastGroupState,

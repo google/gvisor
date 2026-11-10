@@ -1005,6 +1005,29 @@ func (s *Stack) RouteTable() []inet.Route {
 	return routeTable
 }
 
+// MulticastGroups implements inet.Stack.MulticastGroups.
+func (s *Stack) MulticastGroups(family int) map[int32][]inet.MulticastGroup {
+	var protocol tcpip.NetworkProtocolNumber
+	switch family {
+	case linux.AF_INET:
+		protocol = ipv4.ProtocolNumber
+	case linux.AF_INET6:
+		protocol = ipv6.ProtocolNumber
+	default:
+		return nil
+	}
+	groups := make(map[int32][]inet.MulticastGroup)
+	for nicID, joined := range s.Stack.JoinedGroups(protocol) {
+		for addr, users := range joined {
+			groups[int32(nicID)] = append(groups[int32(nicID)], inet.MulticastGroup{
+				Addr:  slices.Clone(addr.AsSlice()),
+				Users: users,
+			})
+		}
+	}
+	return groups
+}
+
 // makeInetRoute converts a netstack route to the form reported by RTM_GETROUTE.
 func makeInetRoute(rt tcpip.Route) (inet.Route, bool) {
 	var family uint8

@@ -443,6 +443,11 @@ func (s *Stack) RouteTable() []inet.Route {
 	return append([]inet.Route(nil), routes...)
 }
 
+// MulticastGroups implements inet.Stack.MulticastGroups.
+func (*Stack) MulticastGroups(int) map[int32][]inet.MulticastGroup {
+	return nil
+}
+
 // NewRoute implements inet.Stack.NewRoute.
 func (*Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
 	if err := doRouteRequest(linux.RTM_NEWROUTE, msg); err != nil {

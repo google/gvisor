@@ -2566,6 +2566,25 @@ func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool,
 	return false, &tcpip.ErrUnknownNICID{}
 }
 
+// JoinedGroups returns the multicast groups of the given network protocol that
+// each NIC has joined, each mapped to the number of times it was joined.
+func (s *Stack) JoinedGroups(protocol tcpip.NetworkProtocolNumber) map[tcpip.NICID]map[tcpip.Address]uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	groups := make(map[tcpip.NICID]map[tcpip.Address]uint64)
+	for id, nic := range s.nics {
+		gep, ok := nic.getNetworkEndpoint(protocol).(GroupAddressableEndpoint)
+		if !ok {
+			continue
+		}
+		if g := gep.JoinedGroups(); len(g) != 0 {
+			groups[id] = g
+		}
+	}
+	return groups
+}
+
 // IPTables returns the stack's iptables.
 func (s *Stack) IPTables() *IPTables {
 	return s.tables
