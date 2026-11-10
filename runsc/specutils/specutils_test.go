@@ -321,11 +321,41 @@ func TestSpecInvalid(t *testing.T) {
 				},
 				Linux: &specs.Linux{
 					Namespaces: []specs.LinuxNamespace{
-						{Type: specs.UTSNamespace, Path: "/proc/1/ns/uts"},
+						{Type: specs.UTSNamespace, Path: "/proc/self/ns/uts"},
 					},
 				},
 			},
 			error: "joining UTS namespace",
+		},
+		{
+			name: "existing namespace path that is not the current uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace, Path: "/proc/self/ns/net"},
+					},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "uts namespace path does not exist",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace, Path: "/nonexistent-uts-namespace-path"},
+					},
+				},
+			},
+			error: "",
 		},
 		{
 			name: "subcontainer with sandbox uts namespace",
