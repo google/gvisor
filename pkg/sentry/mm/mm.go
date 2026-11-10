@@ -168,13 +168,12 @@ type MemoryManager struct {
 	// +checklocks:activeMu
 	hasPinned bool
 
-	// syscallPatchingDisabled indicates that the platform must not rewrite
-	// application syscall instructions, due to ptrace or application GS use.
-	// It is preserved across fork and restore because platform address spaces
-	// are not saved.
+	// gsInUse is true if the application uses the GS register. Only Systrap
+	// cares about this, but it must be defined in mm to preserve the flag
+	// across save/restores.
 	//
-	// +checklocks:activeMu
-	syscallPatchingDisabled bool
+	// gsInUse is protected by activeMu.
+	gsInUse bool
 
 	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
 	// until users becomes 0, at which point as becomes nil. Reads with a live

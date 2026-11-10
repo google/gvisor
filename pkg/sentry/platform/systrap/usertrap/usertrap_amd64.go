@@ -20,8 +20,10 @@ package usertrap
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"golang.org/x/sys/unix"
+	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -67,16 +69,15 @@ var (
 // jmpInstLen is the length of binary code for "jmp *addr".
 const jmpInstLen = len(jmpInst)
 
+// tracerWarnLimiter limits how often the warning about attaching a tracer to a
+// process with patched syscalls is logged. Without it, the warning is emitted
+// on every syscall the traced process makes.
+var tracerWarnLimiter = rate.NewLimiter(rate.Every(time.Minute), 1)
+
 type memoryManager interface {
 	usermem.IO
 	MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error)
 	FindVMAByName(ar hostarch.AddrRange, hint string) (hostarch.Addr, uint64, error)
-}
-
-// +stateify savable
-type syscallPatch struct {
-	sysno    uint32
-	trapAddr hostarch.Addr
 }
 
 // State represents the current state of the trap table.
@@ -87,17 +88,17 @@ type State struct {
 	nextTrap  uint32
 	tableAddr hostarch.Addr
 	disabled  bool
-	// patches records the original syscall and trap at each patched address.
-	// Used to revert patches when patching is disabled dynamically, and to
-	// restart instructions if a thread faults on an instruction being unpatched.
-	patches map[hostarch.Addr]syscallPatch
+	// patches is a map of the patched syscall instruction address to its original syscall number.
+	// Used to revert the patches when patching is disabled dynamically, and to restart instructions
+	// if a thread faults on an instruction being unpatched.
+	patches map[hostarch.Addr]uint32
 }
 
 // New returns the new state structure.
 func New(disabled bool) *State {
 	return &State{
 		disabled: disabled,
-		patches:  make(map[hostarch.Addr]syscallPatch),
+		patches:  make(map[hostarch.Addr]uint32),
 	}
 }
 
@@ -259,10 +260,16 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	// Skip syscall patching when the task is being ptraced, because
 	// single-stepping and other debugger features are incompatible with
 	// the "syshandler" routine used to handle patched syscalls (see
-	// syshandler_amd64.S). Existing patches are reverted when tracing is
-	// established. Recheck here in case a tracer attached while the task was
-	// executing in switchToApp.
+	// syshandler_amd64.S). This incompatibility can result in inconsistent
+	// process states and failures (e.g. SIGSEGV).
+	// TODO(gvisor.dev/issue/11649): for a full fix we'd need to roll back
+	//     existing patched syscalls, in case the traced program was patched
+	//     before being traced (e.g. PTRACE_ATTACH on an already running
+	//     process).
 	if task.Tracer() != nil {
+		if s.nextTrap > 0 && tracerWarnLimiter.Allow() {
+			ctx.Warningf("LIKELY ERROR: Attached tracer to process with patched syscalls (traps %d)! Systrap is not fully compatible with ptrace/debuggers, program may die unexpectedly soon! Use `--systrap-disable-syscall-patching` as a workaround.", s.nextTrap)
+		}
 		return nil
 	}
 
@@ -343,12 +350,9 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 
 		// s.patches is initialized in New(), but check it just in case.
 		if s.patches == nil {
-			s.patches = make(map[hostarch.Addr]syscallPatch)
+			s.patches = make(map[hostarch.Addr]uint32)
 		}
-		s.patches[hostarch.Addr(patchAddr)] = syscallPatch{
-			sysno:    uint32(sysno),
-			trapAddr: hostarch.Addr(trapAddr),
-		}
+		s.patches[hostarch.Addr(patchAddr)] = uint32(sysno)
 	}
 	return nil
 }
@@ -357,7 +361,7 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 // mapped in mm. It returns false if the trap table has not been mapped, which
 // means that no syscall has ever been patched in this address space.
 //
-// +checklocks:s.mu
+// Preconditions: s.mu must be locked.
 func (s *State) loadTableLocked(ctx context.Context, mm memoryManager) (bool, error) {
 	// The usertrap table has already been mapped and initialized.
 	if s.nextTrap != 0 {
@@ -434,7 +438,7 @@ func origSyscallCode(sysno uint32) [jmpInstLen]uint8 {
 // Each trap contains the address at which the patched syscall returns and its
 // syscall number, which is all that is needed to revert the patch.
 //
-// +checklocks:s.mu
+// Preconditions: s.mu must be locked.
 func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) error {
 	ok, err := s.loadTableLocked(ctx, mm)
 	if err != nil || !ok {
@@ -442,10 +446,10 @@ func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) erro
 	}
 
 	if s.patches == nil {
-		s.patches = make(map[hostarch.Addr]syscallPatch)
+		s.patches = make(map[hostarch.Addr]uint32)
 	}
 
-	cc := &usermem.IOCopyContext{Ctx: ctx, IO: mm, Opts: usermem.IOOpts{IgnorePermissions: true}}
+	cc := &usermem.IOCopyContext{Ctx: ctx, IO: mm}
 	var code [jmpInstLen]uint8
 	nextTrap := s.nextTrap
 	if nextTrap > trapNR {
@@ -482,7 +486,6 @@ func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) erro
 
 		// Copy the patch instruction.
 		if _, err := primitive.CopyUint8SliceIn(cc, patchAddr, code[:]); err != nil {
-			ctx.Debugf("Skipping unreadable syscall patch at %x: %v", patchAddr, err)
 			continue
 		}
 
@@ -493,10 +496,7 @@ func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) erro
 
 		sysno := binary.LittleEndian.Uint32(trapBuf[trapSysnoOffset:])
 		ctx.Debugf("Recovered binary patch addr %x trap addr %x (sysno %d)", patchAddr, trapAddr, sysno)
-		s.patches[patchAddr] = syscallPatch{
-			sysno:    sysno,
-			trapAddr: trapAddr,
-		}
+		s.patches[patchAddr] = sysno
 	}
 	return nil
 }
@@ -504,18 +504,15 @@ func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) erro
 // UnpatchSyscalls reverts all applied syscall patches to their original
 // instructions and disables future syscall patching.
 func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
-	if s.Disabled() {
-		return nil
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if ctx == nil {
 		return fmt.Errorf("no context provided")
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.disabled {
-		return nil
+	task := kernel.TaskFromContext(ctx)
+	if task == nil {
+		return fmt.Errorf("no task found")
 	}
 
 	// This address space can contain patches that were applied before this
@@ -530,24 +527,14 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 		return nil
 	}
 
-	ignorePermContext := &usermem.IOCopyContext{Ctx: ctx, IO: mm, Opts: usermem.IOOpts{IgnorePermissions: true}}
+	ignorePermContext := task.OwnCopyContext(usermem.IOOpts{IgnorePermissions: true})
 
 	// We recreate the original instruction using the sysno stored in the
 	// patch map.
-	for patchAddr, patch := range s.patches {
-		var code [jmpInstLen]uint8
-		if _, err := primitive.CopyUint8SliceIn(ignorePermContext, patchAddr, code[:]); err != nil {
-			ctx.Debugf("Skipping unreadable syscall patch at %x: %v", patchAddr, err)
-			continue
-		}
-		// The application may have unmapped and reused a former patch site.
-		if !isPatchedWith(code[:], patch.trapAddr) {
-			continue
-		}
+	for patchAddr, sysno := range s.patches {
+		origCode := origSyscallCode(sysno)
 
-		origCode := origSyscallCode(patch.sysno)
-
-		ctx.Debugf("Reverting binary patch addr %x (sysno %d)", patchAddr, patch.sysno)
+		ctx.Debugf("Reverting binary patch addr %x (sysno %d)", patchAddr, sysno)
 
 		// The patch can't be removed atomically, so we need to
 		// guarantee that in each moment other threads will read a
@@ -561,19 +548,8 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 		// other threads which attempt to execute at patchAddr fault on
 		// the invalid instruction and restart the unpatched code via HandleFault.
 		faultInstB := primitive.ByteSlice(faultInst[:])
-		if n, err := faultInstB.CopyOut(ignorePermContext, patchAddr); err != nil {
-			// The application may have unmapped or replaced the patch site
-			// after it was validated above.
-			if n == 0 {
-				if _, readErr := primitive.CopyUint8SliceIn(ignorePermContext, patchAddr, code[:]); readErr != nil {
-					ctx.Debugf("Skipping unreadable syscall patch at %x: %v", patchAddr, readErr)
-					continue
-				}
-				if !isPatchedWith(code[:], patch.trapAddr) {
-					continue
-				}
-			}
-			ctx.Warningf("Failed to write faultInst when unpatching syscall at %x (sysno %d): %v", patchAddr, patch.sysno, err)
+		if _, err := faultInstB.CopyOut(ignorePermContext, patchAddr); err != nil {
+			ctx.Warningf("Failed to write faultInst when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
 			return err
 		}
 
@@ -583,7 +559,7 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 		// During this write, the first byte remains 0x06, ensuring any
 		// racing threads fault on the invalid instruction.
 		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, hostarch.Addr(patchAddr+1), origCode[1:]); err != nil {
-			ctx.Warningf("Failed to write remaining code when unpatching syscall at %x (sysno %d): %v", patchAddr, patch.sysno, err)
+			ctx.Warningf("Failed to write remaining code when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
 			return err
 		}
 
@@ -592,7 +568,7 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 		// After this point, all threads will read the valid
 		// "mov sysno, %eax; syscall" instruction sequence.
 		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, patchAddr, origCode[0:1]); err != nil {
-			ctx.Warningf("Failed to restore first byte when unpatching syscall at %x (sysno %d): %v", patchAddr, patch.sysno, err)
+			ctx.Warningf("Failed to restore first byte when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
 			return err
 		}
 	}
@@ -603,56 +579,12 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 	return nil
 }
 
-// RewindPC returns the callsite if ip points to a trampoline entry.
-// An interrupt can arrive after the patched jump but before the trampoline
-// starts deferring interrupts. No application registers have changed yet.
-// Other instruction pointers are returned unchanged.
-func (s *State) RewindPC(ctx context.Context, ip hostarch.Addr, mm memoryManager) (hostarch.Addr, error) {
-	if !trapTableAddrRange.Contains(ip) {
-		return ip, nil
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ok, err := s.loadTableLocked(ctx, mm)
-	if err != nil || !ok {
-		return ip, err
-	}
-	if ip < s.tableAddr {
-		return ip, nil
-	}
-	offset := ip - s.tableAddr
-	if offset%trapSize != 8 {
-		return ip, nil
-	}
-	trap := uint32(offset / trapSize)
-	if trap == 0 || trap >= s.nextTrap || trap >= trapNR {
-		return ip, nil
-	}
-
-	trapAddr := s.trapAddr(trap)
-	var trapBuf [trapSize]uint8
-	cc := &usermem.IOCopyContext{Ctx: ctx, IO: mm, Opts: usermem.IOOpts{IgnorePermissions: true}}
-	if _, err := primitive.CopyUint8SliceIn(cc, trapAddr, trapBuf[:]); err != nil {
-		return ip, err
-	}
-	if binary.LittleEndian.Uint64(trapBuf[:8]) != uint64(trapAddr)+8 {
-		return ip, nil
-	}
-	retAddr := binary.LittleEndian.Uint64(trapBuf[trapRetAddrOffset:])
-	if retAddr < uint64(jmpInstLen) {
-		return ip, nil
-	}
-	// A tracer may have placed a breakpoint at the restored callsite.
-	return hostarch.Addr(retAddr - uint64(jmpInstLen)), nil
-}
-
-// isRestoredLocked reports whether a former patch site contains the restored
-// instructions, allowing debugger breakpoints at either instruction.
+// isRestoredLocked returns true if patchAddr is the address of a syscall patch
+// and contains the original pre-patch instructions.
 //
 // +checklocksread:s.mu
 func (s *State) isRestoredLocked(task *kernel.Task, patchAddr hostarch.Addr) bool {
-	patch, ok := s.patches[patchAddr]
+	sysno, ok := s.patches[patchAddr]
 	if !ok {
 		return false
 	}
@@ -660,13 +592,7 @@ func (s *State) isRestoredLocked(task *kernel.Task, patchAddr hostarch.Addr) boo
 	if _, err := primitive.CopyUint8SliceIn(task, patchAddr, code[:]); err != nil {
 		return false
 	}
-	origCode := origSyscallCode(patch.sysno)
-	for _, offset := range [...]int{0, int(faultInstOffset)} {
-		if code[offset] == arch.TrapInstruction[0] {
-			code[offset] = origCode[offset]
-		}
-	}
-	return code == origCode
+	return code == origSyscallCode(sysno)
 }
 
 // HandleFault handles a fault on a patched syscall instruction.
@@ -690,9 +616,9 @@ func (s *State) isRestoredLocked(task *kernel.Task, patchAddr hostarch.Addr) boo
 // syscall instruction. Because a thread can handle a fault arbitrarily
 // late, s.patches is never cleared. However, the application can potentially reuse
 // the memory of a former patch site afterwards. So, HandleFault only restarts
-// the thread if the original instructions (possibly with breakpoints) are still
-// there because those instructions will never raise SIGILL. It will skip restart
-// if the instructions do not match, meaning the application has reused the memory
+// the thread if the original instructions are still there because those
+// instructions will never raise SIGILL. It will skip restart if the
+// instructions do not match, meaning the application has reused the memory
 // of the former patch site.
 func (s *State) HandleFault(ctx context.Context, ac *arch.Context64, mm memoryManager) error {
 	task := kernel.TaskFromContext(ctx)

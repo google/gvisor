@@ -676,11 +676,6 @@ func (nopAddressSpace) PreFork() {}
 // PostFork implements platform.AddressSpace.PostFork.
 func (nopAddressSpace) PostFork() {}
 
-// PrepareForPtrace implements platform.AddressSpace.PrepareForPtrace.
-func (nopAddressSpace) PrepareForPtrace(pkgcontext.Context, platform.MemoryManager) error {
-	return nil
-}
-
 // UserModifiedGS implements platform.AddressSpace.UserModifiedGS.
 func (nopAddressSpace) UserModifiedGS(pkgcontext.Context, platform.MemoryManager) error {
 	return nil
