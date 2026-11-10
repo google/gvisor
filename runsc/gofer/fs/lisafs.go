@@ -44,7 +44,7 @@ import (
 // LINT.IfChange
 
 const (
-	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
+	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_NOCTTY
 
 	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
 	unixPathMax = 108
@@ -310,8 +310,11 @@ func (fd *controlFDLisa) getParentFD() (int, string, error) {
 	}
 	// As a defense-in-depth measure, do not follow symlinks in the parent's path
 	// to prevent attackers from redirecting the parent to a different location.
+	// Unlike openat(2), openat2(2) fails with EINVAL when O_PATH is combined
+	// with flags other than O_CLOEXEC, O_DIRECTORY and O_NOFOLLOW, so
+	// openFlags (which has O_NOCTTY) can't be used here.
 	parent, err := unix.Openat2(unix.AT_FDCWD, path.Dir(filePath), &unix.OpenHow{
-		Flags:   uint64(openFlags | unix.O_PATH),
+		Flags:   unix.O_PATH | unix.O_CLOEXEC | unix.O_NOFOLLOW,
 		Resolve: unix.RESOLVE_NO_SYMLINKS,
 	})
 	return parent, path.Base(filePath), err
@@ -824,7 +827,9 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
 		return nil, lisafs.Statx{}, err
 	}
 	dirFD := dir.(*controlFDLisa)
-	if err := unix.Linkat(oldDirFD, oldName, dirFD.hostFD, name, 0); err != nil {
+	err = unix.Linkat(oldDirFD, oldName, dirFD.hostFD, name, 0)
+	_ = unix.Close(oldDirFD)
+	if err != nil {
 		return nil, lisafs.Statx{}, err
 	}
 	cu := cleanup.Make(func() {
