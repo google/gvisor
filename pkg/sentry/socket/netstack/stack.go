@@ -520,7 +520,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		ifname = s.allocDeviceName("veth", dstNs)
 	}
 	// Linux's veth_setup uses ether_setup, which sets IFF_MULTICAST.
-	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.New(ep)), stack.NICOptions{
+	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.NewWithNetworkMTU(ep)), stack.NICOptions{
 		Name:      ifname,
 		Kind:      "veth",
 		Multicast: true,
@@ -548,7 +548,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerName = peerStack.allocDeviceName("veth", peerDstNs)
 	}
 
-	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.New(peerEP)), stack.NICOptions{
+	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.NewWithNetworkMTU(peerEP)), stack.NICOptions{
 		Name:      peerName,
 		Kind:      "veth",
 		Multicast: true,

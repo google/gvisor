@@ -26,11 +26,18 @@ import (
 var _ stack.NetworkDispatcher = (*Endpoint)(nil)
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 
-// New returns an ethernet link endpoint that wraps an inner link endpoint.
+// New wraps a link endpoint whose MTU includes the Ethernet header.
 func New(ep stack.LinkEndpoint) *Endpoint {
 	var e Endpoint
 	e.Endpoint.Init(ep, &e)
 	return &e
+}
+
+// NewWithNetworkMTU wraps a link endpoint whose MTU excludes the Ethernet header.
+func NewWithNetworkMTU(ep stack.LinkEndpoint) *Endpoint {
+	e := New(ep)
+	e.networkMTU = true
+	return e
 }
 
 // Endpoint is an ethernet endpoint.
@@ -42,6 +49,7 @@ func New(ep stack.LinkEndpoint) *Endpoint {
 // +stateify savable
 type Endpoint struct {
 	nested.Endpoint
+	networkMTU bool
 }
 
 // LinkAddress implements stack.LinkEndpoint.
@@ -54,8 +62,11 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 
 // MTU implements stack.LinkEndpoint.
 func (e *Endpoint) MTU() uint32 {
-	// It prevents upper-layers from sending larger than expected packets.
-	if mtu := e.Endpoint.MTU(); mtu > header.EthernetMinimumSize {
+	mtu := e.Endpoint.MTU()
+	if e.networkMTU {
+		return mtu
+	}
+	if mtu > header.EthernetMinimumSize {
 		return mtu - header.EthernetMinimumSize
 	}
 	return 0
