@@ -1257,6 +1257,20 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	return mf, loaded, nil
 }
 
+func (c *containerMounter) mountTmpfsAtTmp(ctx context.Context, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
+	tmpMount := specs.Mount{
+		Type:        tmpfs.Name,
+		Destination: "/tmp",
+		// Sticky bit is added to prevent accidental deletion of files from
+		// another user. This is normally done for /tmp.
+		Options: []string{"mode=01777"},
+	}
+	if _, err := c.mountSubmount(ctx, spec, conf, mns, creds, &mountInfo{mount: &tmpMount}); err != nil {
+		return fmt.Errorf("mountSubmount failed: %v", err)
+	}
+	return nil
+}
+
 // mountTmp mounts an internal tmpfs at '/tmp' if it's safe to do so.
 // Technically we don't have to mount tmpfs at /tmp, as we could just rely on
 // the host /tmp, but this is a nice optimization, and fixes some apps that call
@@ -1275,59 +1289,62 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 		}
 	}
 
-	root := mns.Root(ctx)
-	defer root.DecRef(ctx)
-	pop := vfs.PathOperation{
-		Root:               root,
-		Start:              root,
-		Path:               fspath.Parse("/tmp"),
-		FollowFinalSymlink: true,
-	}
-	fd, err := c.l.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
-	switch {
-	case err == nil:
-		defer fd.DecRef(ctx)
+	switch conf.TmpMount {
+	case config.TmpMountRootfs:
+		log.Warningf(`Skipping internal tmpfs mount for "/tmp" because tmp-mount is set to rootfs. File operations in "/tmp" will incur a performance penalty compared to an internal tmpfs mount.`)
+		return nil
 
-		err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
-			if dirent.Name != "." && dirent.Name != ".." {
-				return linuxerr.ENOTEMPTY
-			}
-			return nil
-		}))
+	case config.TmpMountTmpfs:
+		log.Infof(`Mounting internal tmpfs on top of "/tmp" because tmp-mount is set to tmpfs`)
+		return c.mountTmpfsAtTmp(ctx, spec, conf, creds, mns)
+
+	case config.TmpMountAuto:
+		root := mns.Root(ctx)
+		defer root.DecRef(ctx)
+		pop := vfs.PathOperation{
+			Root:               root,
+			Start:              root,
+			Path:               fspath.Parse("/tmp"),
+			FollowFinalSymlink: true,
+		}
+		fd, err := c.l.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
 		switch {
 		case err == nil:
-			log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
-		case linuxerr.Equals(linuxerr.ENOTEMPTY, err):
-			// If more than "." and ".." is found, skip internal tmpfs to prevent
-			// hiding existing files.
-			log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
+			defer fd.DecRef(ctx)
+
+			err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
+				if dirent.Name != "." && dirent.Name != ".." {
+					return linuxerr.ENOTEMPTY
+				}
+				return nil
+			}))
+			switch {
+			case err == nil:
+				log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
+			case linuxerr.Equals(linuxerr.ENOTEMPTY, err):
+				// If more than "." and ".." is found, skip internal tmpfs to prevent
+				// hiding existing files.
+				log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
+				return nil
+			default:
+				return fmt.Errorf("fd.IterDirents failed: %v", err)
+			}
+			return c.mountTmpfsAtTmp(ctx, spec, conf, creds, mns)
+
+		case linuxerr.Equals(linuxerr.ENOENT, err):
+			// No '/tmp' found. It's safe to mount internal tmpfs.
+			return c.mountTmpfsAtTmp(ctx, spec, conf, creds, mns)
+
+		case linuxerr.Equals(linuxerr.ENOTDIR, err):
+			// Not a dir?! Let it be.
 			return nil
+
 		default:
-			return fmt.Errorf("fd.IterDirents failed: %v", err)
+			return fmt.Errorf(`opening "/tmp" inside container: %w`, err)
 		}
-		fallthrough
-
-	case linuxerr.Equals(linuxerr.ENOENT, err):
-		// No '/tmp' found (or fallthrough from above). It's safe to mount internal
-		// tmpfs.
-		tmpMount := specs.Mount{
-			Type:        tmpfs.Name,
-			Destination: "/tmp",
-			// Sticky bit is added to prevent accidental deletion of files from
-			// another user. This is normally done for /tmp.
-			Options: []string{"mode=01777"},
-		}
-		if _, err := c.mountSubmount(ctx, spec, conf, mns, creds, &mountInfo{mount: &tmpMount}); err != nil {
-			return fmt.Errorf("mountSubmount failed: %v", err)
-		}
-		return nil
-
-	case linuxerr.Equals(linuxerr.ENOTDIR, err):
-		// Not a dir?! Let it be.
-		return nil
 
 	default:
-		return fmt.Errorf(`opening "/tmp" inside container: %w`, err)
+		return fmt.Errorf("unknown tmp-mount type: %v", conf.TmpMount)
 	}
 }
 
