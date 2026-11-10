@@ -412,7 +412,6 @@ func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.N
 func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, allocParams *Params, isNVOS64 bool, addObjLocked func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
 	defer runtime.KeepAlive(allocParams) // since we convert to non-pointer-typed P64
 
-	// Temporarily replace application pointers with sentry pointers.
 	origPAllocParms := ioctlParams.PAllocParms
 	origPRightsRequested := ioctlParams.PRightsRequested
 	var rightsRequested nvgpu.RS_ACCESS_MASK
@@ -420,9 +419,7 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 		if _, err := rightsRequested.CopyIn(fi.t, addrFromP64(ioctlParams.PRightsRequested)); err != nil {
 			return 0, err
 		}
-		ioctlParams.PRightsRequested = p64FromPtr(unsafe.Pointer(&rightsRequested))
 	}
-	ioctlParams.PAllocParms = p64FromPtr(unsafe.Pointer(allocParams))
 
 	var (
 		client *rootClient
@@ -431,9 +428,15 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	if !ioctlParams.HClass.IsRootClient() {
 		client, unlock = fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.HRoot)
 		if client == nil {
-			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
+			return 0, rmAllocFailWithStatus(fi, ioctlParams, isNVOS64, nvgpu.NV_ERR_INVALID_CLIENT)
 		}
 	}
+
+	// Temporarily replace application pointers with sentry pointers.
+	if ioctlParams.PRightsRequested != 0 {
+		ioctlParams.PRightsRequested = p64FromPtr(unsafe.Pointer(&rightsRequested))
+	}
+	ioctlParams.PAllocParms = p64FromPtr(unsafe.Pointer(allocParams))
 	// Invoke the driver ioctl and restore application pointers. We always pass
 	// NVOS64Parameters to the driver even if !isNVOS64, as this is handled
 	// identically to the equivalent NVOS21Parameters; compare
@@ -465,6 +468,17 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 		return n, err
 	}
 	return n, nil
+}
+
+// rmAllocFailWithStatus sets status in ioctlParams and copies the parameters
+// out to the application as the struct it passed, NVOS64_PARAMETERS if
+// isNVOS64 or NVOS21_PARAMETERS otherwise. It returns the copy-out error.
+func rmAllocFailWithStatus(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool, status uint32) error {
+	ioctlParams.Status = status
+	outIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64)
+	outIoctlParams.FromOS64(*ioctlParams)
+	_, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
+	return err
 }
 
 func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30_PARAMETERS, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {
@@ -505,18 +519,7 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		// src/nvidia/interface/deprecated/rmapi_deprecated_vidheapctrl.c:_rmVidHeapControlAllocCommon()
-		if allocSizeParams.Flags&nvgpu.NVOS32_ALLOC_FLAGS_VIRTUAL != 0 {
-			// src/nvidia/src/kernel/mem_mgr/virtual_mem.c:virtmemConstruct_IMPL() => refAddDependant()
-			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, &miscObject{}, ioctlParams.HObjectParent, ioctlParams.HVASpace)
-		} else {
-			classID := nvgpu.ClassID(nvgpu.NV01_MEMORY_SYSTEM)
-			if (allocSizeParams.Attr2>>nvgpu.NVOS32_ATTR2_USE_EGM_SHIFT)&nvgpu.NVOS32_ATTR2_USE_EGM_MASK == nvgpu.NVOS32_ATTR2_USE_EGM_TRUE {
-				classID = nvgpu.NV_MEMORY_EXTENDED_USER
-			} else if (allocSizeParams.Attr>>nvgpu.NVOS32_ATTR_LOCATION_SHIFT)&nvgpu.NVOS32_ATTR_LOCATION_MASK == nvgpu.NVOS32_ATTR_LOCATION_VIDMEM {
-				classID = nvgpu.NV01_MEMORY_LOCAL_USER
-			}
-			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, classID, &miscObject{}, ioctlParams.HObjectParent)
-		}
+		vidHeapAllocAddObject(fi, client, ioctlParams, allocSizeParams.HMemory, allocSizeParams.Flags, allocSizeParams.Attr, allocSizeParams.Attr2)
 	}
 	unlock()
 	allocSizeParams.Address = origAddress
@@ -533,6 +536,68 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 		return n, err
 	}
 
+	return n, nil
+}
+
+// vidHeapAllocAddObject records the memory object created by a successful
+// NVOS32_FUNCTION_ALLOC_SIZE or NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT. See
+// src/nvidia/interface/deprecated/rmapi_deprecated_vidheapctrl.c:_rmVidHeapControlAllocCommon().
+func vidHeapAllocAddObject(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS32_PARAMETERS, hMemory nvgpu.Handle, flags, attr, attr2 uint32) {
+	if flags&nvgpu.NVOS32_ALLOC_FLAGS_VIRTUAL != 0 {
+		// src/nvidia/src/kernel/mem_mgr/virtual_mem.c:virtmemConstruct_IMPL() => refAddDependant()
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, hMemory, nvgpu.NV50_MEMORY_VIRTUAL, &miscObject{}, ioctlParams.HObjectParent, ioctlParams.HVASpace)
+		return
+	}
+	classID := nvgpu.ClassID(nvgpu.NV01_MEMORY_SYSTEM)
+	if (attr2>>nvgpu.NVOS32_ATTR2_USE_EGM_SHIFT)&nvgpu.NVOS32_ATTR2_USE_EGM_MASK == nvgpu.NVOS32_ATTR2_USE_EGM_TRUE {
+		classID = nvgpu.NV_MEMORY_EXTENDED_USER
+	} else if (attr>>nvgpu.NVOS32_ATTR_LOCATION_SHIFT)&nvgpu.NVOS32_ATTR_LOCATION_MASK == nvgpu.NVOS32_ATTR_LOCATION_VIDMEM {
+		classID = nvgpu.NV01_MEMORY_LOCAL_USER
+	}
+	fi.fd.dev.nvp.objAdd(fi.ctx, client, hMemory, classID, &miscObject{}, ioctlParams.HObjectParent)
+}
+
+// rmVidHeapControlAllocTiledPitchHeight handles
+// NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT, which the NVIDIA X driver uses for
+// its primary surface. It is ALLOC_SIZE with the size computed from height and
+// pitch, so the address indirection is handled the same way. See
+// src/nvidia/interface/deprecated/rmapi_deprecated_vidheapctrl.c:_nvos32FunctionAllocTiledPitchHeight().
+func rmVidHeapControlAllocTiledPitchHeight(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32_PARAMETERS) (uintptr, error) {
+	tiledParams := (*nvgpu.NVOS32AllocTiledPitchHeight)(unsafe.Pointer(&ioctlParams.Data))
+	origAddress := tiledParams.Address
+	var addr uint64
+	if tiledParams.Address != 0 {
+		if _, err := primitive.CopyUint64In(fi.t, addrFromP64(tiledParams.Address), &addr); err != nil {
+			return 0, err
+		}
+		tiledParams.Address = p64FromPtr(unsafe.Pointer(&addr))
+	}
+
+	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.HRoot)
+	if client == nil {
+		// Restore the application's pointer so that the parameters copied
+		// out to the application don't hold a sentry address.
+		tiledParams.Address = origAddress
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
+	}
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
+		vidHeapAllocAddObject(fi, client, ioctlParams, tiledParams.HMemory, tiledParams.Flags, tiledParams.Attr, tiledParams.Attr2)
+	}
+	unlock()
+	tiledParams.Address = origAddress
+	if err != nil {
+		return n, err
+	}
+
+	if tiledParams.Address != 0 {
+		if _, err := primitive.CopyUint64Out(fi.t, addrFromP64(tiledParams.Address), addr); err != nil {
+			return n, err
+		}
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
 	return n, nil
 }
 

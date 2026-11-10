@@ -42,6 +42,8 @@ ignore-words-list =
   PENDIN,
   reord,
   VAs,
+  # DRM render node names, as in /dev/dri/renderD128.
+  renderD,
   # AtLeast is version.AtLeast; lowercase "atleast" stays a typo.
   AtLeast,
   # truncated words in test data and expected output.
