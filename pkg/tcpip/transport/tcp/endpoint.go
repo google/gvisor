@@ -855,10 +855,16 @@ func calculateTTL(route *stack.Route, ipv4TTL uint8, ipv6HopLimit int16) uint8 {
 // +stateify savable
 type keepalive struct {
 	keepaliveMutex `state:"nosave"`
-	idle           time.Duration
-	interval       time.Duration
-	count          int
-	unacked        int
+
+	// +checklocks:keepaliveMutex
+	idle time.Duration
+	// +checklocks:keepaliveMutex
+	interval time.Duration
+	// +checklocks:keepaliveMutex
+	count int
+	// +checklocks:keepaliveMutex
+	unacked int
+
 	// should never be a zero timer if the endpoint is not closed.
 	timer timer       `state:"nosave"`
 	waker sleep.Waker `state:"nosave"`
