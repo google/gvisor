@@ -1828,18 +1828,25 @@ func (d *dentry) DecRef(ctx context.Context) {
 	}
 }
 
-// DecRefDentries drops a reference on each of ds, which must belong to fs,
-// under one renameMu write lock, so that evicting the dentries that become
-// unreferenced does not lock renameMu once per dentry.
+// DecRefDentries drops a reference on each of ds, which must belong to fs, and
+// destroys those that become evictable as one batch, so that renameMu is not
+// locked once per dentry.
 func (fs *filesystem) DecRefDentries(ctx context.Context, ds []*vfs.Dentry) {
 	fs.renameMu.Lock()
 	defer fs.renameMu.Unlock()
+	var batch []destroyingDentry
 	for _, vd := range ds {
 		d := vd.Impl().(*dentry)
-		if d.decRefNoCaching() == 0 {
+		if d.decRefNoCaching() != 0 {
+			continue
+		}
+		if d.vfsd.IsEvictable() && !d.vfsd.IsDead() {
+			d.evictLocked(ctx, false /* keepRenameMu */, &batch) // +checklocksforce: d.inode.fs == fs.
+		} else {
 			d.checkCachingLocked(ctx, true /* renameMuWriteLocked */, false /* keepRenameMu */)
 		}
 	}
+	fs.destroyBatchLocked(ctx, false /* keepRenameMu */, batch)
 }
 
 // decRefNoCaching decrements d's reference count without calling
@@ -2087,10 +2094,23 @@ func (fs *filesystem) evictCachedDentriesLocked(ctx context.Context, keepRenameM
 		}
 		fs.evictCachedDentryLocked(ctx, keepRenameMu, &batch)
 	}
+	fs.destroyBatchLocked(ctx, keepRenameMu, batch)
+}
+
+// destroyBatchLocked finishes destroying the dentries in batch: it unlocks
+// renameMu once to release their resources, then drops their references on
+// their parents.
+//
+// Preconditions:
+//   - fs.renameMu must be locked for writing; it may be temporarily unlocked
+//     unless keepRenameMu is true.
+//   - keepRenameMu requires a per-filesystem cache.
+//
+// +checklocks:fs.renameMu
+func (fs *filesystem) destroyBatchLocked(ctx context.Context, keepRenameMu bool, batch []destroyingDentry) {
 	if len(batch) == 0 {
 		return
 	}
-
 	if keepRenameMu {
 		for _, b := range batch {
 			b.d.destroyDisconnected(ctx, b.destroyInode)
