@@ -244,6 +244,68 @@ func TestMaxGapRemoveRandom(t *testing.T) {
 	}
 }
 
+func TestGapSearchAfterRegrowth(t *testing.T) {
+	var s gapSet
+	const size = 64
+	const stride = 16
+	for _, phase := range []struct {
+		name     string
+		gapAfter []int
+		width    int
+		want     []Range
+	}{
+		{
+			name:     "wide-gaps",
+			gapAfter: []int{7, 31, 55},
+			width:    4,
+			want:     []Range{{116, 128}, {500, 512}, {884, 896}},
+		},
+		{
+			name:     "narrow-gaps",
+			gapAfter: []int{15, 39, 61},
+			width:    8,
+			want:     []Range{{248, 256}, {632, 640}, {984, 992}},
+		},
+	} {
+		if !t.Run(phase.name, func(t *testing.T) {
+			for i := 0; i < size; i++ {
+				end := (i + 1) * stride
+				if slices.Contains(phase.gapAfter, i) {
+					end = i*stride + phase.width
+				}
+				s.InsertWithoutMergingRange(Range{Start: i * stride, End: end}, i+valueOffset)
+			}
+			for _, minSize := range []int{8, 12, 13} {
+				want := phase.want
+				if minSize > stride-phase.width {
+					want = nil
+				}
+				var forward, backward []Range
+				for gap := s.FirstGap().NextLargeEnoughGap(minSize); gap.Ok() && gap.Start() < size*stride; gap = gap.NextLargeEnoughGap(minSize) {
+					forward = append(forward, gap.Range())
+				}
+				for gap := s.LastGap().PrevLargeEnoughGap(minSize); gap.Ok() && gap.End() > 0; gap = gap.PrevLargeEnoughGap(minSize) {
+					backward = append(backward, gap.Range())
+				}
+				if !slices.Equal(forward, want) {
+					t.Fatalf("NextLargeEnoughGap(%d) = %v, want %v", minSize, forward, want)
+				}
+				wantBackward := slices.Clone(want)
+				slices.Reverse(wantBackward)
+				if !slices.Equal(backward, wantBackward) {
+					t.Fatalf("PrevLargeEnoughGap(%d) = %v, want %v", minSize, backward, wantBackward)
+				}
+			}
+			s.RemoveRange(Range{Start: 0, End: size * stride})
+			if !s.IsEmpty() {
+				t.Fatal("full removal left the set nonempty")
+			}
+		}) {
+			return
+		}
+	}
+}
+
 func TestMaxGapRemoveHalfRandom(t *testing.T) {
 	var s gapSet
 	for i := 0; i < testSize; i++ {
@@ -650,6 +712,67 @@ func TestMutateRange(t *testing.T) {
 			})
 			if got := s.ExportSlice(); !slices.Equal(got, test.final) {
 				t.Errorf("Set mismatch after mutation: got %v, wanted %v", got, test.final)
+			}
+		})
+	}
+}
+
+func TestMoveFromAndRemoveAll(t *testing.T) {
+	for worker := 0; worker < 4; worker++ {
+		t.Run(fmt.Sprintf("worker-%d", worker), func(t *testing.T) {
+			t.Parallel()
+			var src, dst Set
+			const size = 256
+			for cycle := 0; cycle < 2; cycle++ {
+				want := make([]FlatSegment, size)
+				other := make([]FlatSegment, size)
+				for i := range want {
+					start := 4 * ((worker*2+cycle)*size + i)
+					want[i] = FlatSegment{Start: start, End: start + 1, Value: start + valueOffset}
+					other[i] = FlatSegment{Start: start + 2, End: start + 3, Value: -start - 1}
+				}
+				if err := src.ImportSlice(want); err != nil {
+					t.Fatal(err)
+				}
+				if err := dst.ImportSlice(other); err != nil {
+					t.Fatal(err)
+				}
+				dst.MoveFrom(&src)
+				if !src.IsEmpty() {
+					t.Fatalf("Cycle %d: MoveFrom left the source nonempty", cycle)
+				}
+				if got := dst.ExportSlice(); !slices.Equal(got, want) {
+					t.Fatalf("Cycle %d: MoveFrom destination = %v, want %v", cycle, got, want)
+				}
+				if err := src.ImportSlice(other); err != nil {
+					t.Fatal(err)
+				}
+				src.RemoveAll()
+				if !src.IsEmpty() {
+					t.Fatalf("Cycle %d: RemoveAll left the source nonempty", cycle)
+				}
+				if got := dst.ExportSlice(); !slices.Equal(got, want) {
+					t.Fatalf("Cycle %d: refilling and clearing source changed destination to %v, want %v", cycle, got, want)
+				}
+				if err := src.ImportSlice(other); err != nil {
+					t.Fatal(err)
+				}
+				dst.RemoveRange(Range{Start: want[0].Start, End: want[size-1].Start})
+				if got := dst.ExportSlice(); !slices.Equal(got, want[size-1:]) {
+					t.Fatalf("Cycle %d: partial removal = %v, want %v", cycle, got, want[size-1:])
+				}
+				dst.RemoveAll()
+				if err := dst.ImportSlice(want); err != nil {
+					t.Fatal(err)
+				}
+				dst.RemoveRange(Range{Start: want[0].Start, End: want[size-1].End})
+				if !dst.IsEmpty() {
+					t.Fatalf("Cycle %d: full removal left the destination nonempty", cycle)
+				}
+				if got := src.ExportSlice(); !slices.Equal(got, other) {
+					t.Fatalf("Cycle %d: changing destination changed source to %v, want %v", cycle, got, other)
+				}
+				src.RemoveAll()
 			}
 		})
 	}

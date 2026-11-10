@@ -22,6 +22,7 @@ go_template(
     ],
     opt_consts = [
         "minDegree",
+        "reuseNodes",
         # trackGaps must either be 0 or 1.
         "trackGaps",
     ],

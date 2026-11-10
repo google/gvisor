@@ -25,6 +25,7 @@ package segment
 import (
 	"bytes"
 	"fmt"
+	"sync"
 )
 
 // Key is a required type parameter that must be an integral type.
@@ -46,6 +47,13 @@ type Value any
 const trackGaps = 0
 
 var _ = uint8(trackGaps << 7) // Will fail if not zero or one.
+
+// reuseNodes is an optional parameter. If it is 1, nodes detached during
+// removal are pooled for reuse. Pool contents may be discarded by GC.
+// reuseNodes must be 0 or 1.
+const reuseNodes = 0
+
+var _ = uint8(reuseNodes << 7)
 
 // dynamicGap is a type that disappears if trackGaps is 0.
 type dynamicGap [trackGaps]Key
@@ -1093,6 +1101,26 @@ type node struct {
 	children [maxDegree]*node
 }
 
+var nodePool sync.Pool
+
+func newNode() *node {
+	if reuseNodes != 0 {
+		if n := nodePool.Get(); n != nil {
+			return n.(*node)
+		}
+	}
+	return new(node)
+}
+
+// recycleNode requires a detached heap node whose contents have been moved to
+// other nodes. The embedded root must not be recycled.
+func recycleNode(n *node) {
+	if reuseNodes != 0 {
+		*n = node{}
+		nodePool.Put(n)
+	}
+}
+
 // firstSegment returns the first segment in the subtree rooted by n.
 //
 // Preconditions: n.nrSegments != 0.
@@ -1141,13 +1169,15 @@ func (n *node) rebalanceBeforeInsert(gap GapIterator) GapIterator {
 		// n is root. Move all segments before and after n's median segment
 		// into new child nodes adjacent to the median segment, which is now
 		// the only segment in root.
-		left := &node{
+		left := newNode()
+		*left = node{
 			nrSegments:  minDegree - 1,
 			parent:      n,
 			parentIndex: 0,
 			hasChildren: n.hasChildren,
 		}
-		right := &node{
+		right := newNode()
+		*right = node{
 			nrSegments:  minDegree - 1,
 			parent:      n,
 			parentIndex: 1,
@@ -1200,7 +1230,8 @@ func (n *node) rebalanceBeforeInsert(gap GapIterator) GapIterator {
 	for i := n.parentIndex + 2; i < n.parent.nrSegments+2; i++ {
 		n.parent.children[i].parentIndex = i
 	}
-	sibling := &node{
+	sibling := newNode()
+	*sibling = node{
 		nrSegments:  minDegree - 1,
 		parent:      n.parent,
 		parentIndex: n.parentIndex + 1,
@@ -1367,12 +1398,14 @@ func (n *node) rebalanceAfterRemove(gap GapIterator) GapIterator {
 				p.children[1] = nil
 			}
 			// No need to update maxGap of p as its content is not changed.
-			if gap.node == left {
-				return GapIterator{p, gap.index}
+			switch gap.node {
+			case left:
+				gap = GapIterator{p, gap.index}
+			case right:
+				gap = GapIterator{p, gap.index + left.nrSegments + 1}
 			}
-			if gap.node == right {
-				return GapIterator{p, gap.index + left.nrSegments + 1}
-			}
+			recycleNode(left)
+			recycleNode(right)
 			return gap
 		}
 		// Merge n and either sibling, along with the segment separating the
@@ -1418,6 +1451,7 @@ func (n *node) rebalanceAfterRemove(gap GapIterator) GapIterator {
 		if trackGaps != 0 {
 			left.updateMaxGapLocal()
 		}
+		recycleNode(right)
 		// This process robs p of one segment, so recurse into rebalancing p.
 		n = p
 	}

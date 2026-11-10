@@ -63,6 +63,7 @@ func (f *MemoryFile) ResourceID() checkpoint.ResourceID {
 	return f.opts.ResourceID
 }
 
+// +checklocks:f.mu
 func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	pb := &pgallocpb.MemoryFileMetadataProto{
 		Version:     1,
@@ -88,22 +89,8 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 			KnownCommitted: val.knownCommitted,
 		})
 	}
-	for s := f.unfreeSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
-		val := s.Value()
-		pb.UnfreeSmall = append(pb.UnfreeSmall, &pgallocpb.UnfreeRangeProto{
-			Start: s.Start(),
-			End:   s.End(),
-			Refs:  val.refs,
-		})
-	}
-	for s := f.unfreeHuge.FirstSegment(); s.Ok(); s = s.NextSegment() {
-		val := s.Value()
-		pb.UnfreeHuge = append(pb.UnfreeHuge, &pgallocpb.UnfreeRangeProto{
-			Start: s.Start(),
-			End:   s.End(),
-			Refs:  val.refs,
-		})
-	}
+	pb.UnfreeSmall = f.appendExactRefRanges(pb.UnfreeSmall, &f.unfreeSmall)
+	pb.UnfreeHuge = f.appendExactRefRanges(pb.UnfreeHuge, &f.unfreeHuge)
 	for s := f.unwasteSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
 		pb.UnwasteSmall = append(pb.UnwasteSmall, &pgallocpb.FileRangeProto{
 			Start: s.Start(),
@@ -117,6 +104,47 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 		})
 	}
 	return pb
+}
+
+// +checklocks:f.mu
+func (f *MemoryFile) appendExactRefRanges(dst []*pgallocpb.UnfreeRangeProto, unfree *unfreeSet) []*pgallocpb.UnfreeRangeProto {
+	appendRange := func(start, end, refs uint64) {
+		dst = append(dst, &pgallocpb.UnfreeRangeProto{Start: start, End: end, Refs: refs})
+	}
+	for s := unfree.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		baseRefs := s.Value().refs
+		if baseRefs == 0 {
+			appendRange(s.Start(), s.End(), 0)
+			continue
+		}
+		if baseRefs != 1 {
+			panic(fmt.Sprintf("unexpected base reference count %d on pages %v", baseRefs, s.Range()))
+		}
+
+		pos := s.Start()
+		for extra := f.extraRefs.LowerBoundSegment(pos); pos < s.End(); {
+			if !extra.Ok() || extra.Start() >= s.End() {
+				appendRange(pos, s.End(), 1)
+				break
+			}
+			if extra.Start() > pos {
+				end := min(extra.Start(), s.End())
+				appendRange(pos, end, 1)
+				pos = end
+				continue
+			}
+
+			end := min(extra.End(), s.End())
+			count := extra.Value().extra
+			if count == 0 || count == math.MaxUint64 {
+				panic(fmt.Sprintf("invalid extra reference count %d on pages %v", count, extra.Range()))
+			}
+			appendRange(pos, end, 1+count)
+			pos = end
+			extra = extra.NextSegment()
+		}
+	}
+	return dst
 }
 
 func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) error {
@@ -143,14 +171,9 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 			knownCommitted: s.KnownCommitted,
 		})
 	}
-	f.unfreeSmall.RemoveAll()
-	for _, s := range pb.UnfreeSmall {
-		f.unfreeSmall.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unfreeInfo{refs: s.Refs})
-	}
-	f.unfreeHuge.RemoveAll()
-	for _, s := range pb.UnfreeHuge {
-		f.unfreeHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unfreeInfo{refs: s.Refs})
-	}
+	f.extraRefs.RemoveAll()
+	f.importExactRefRanges(pb.UnfreeSmall, &f.unfreeSmall)
+	f.importExactRefRanges(pb.UnfreeHuge, &f.unfreeHuge)
 	f.unwasteSmall.RemoveAll()
 	for _, s := range pb.UnwasteSmall {
 		f.unwasteSmall.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
@@ -160,6 +183,21 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 		f.unwasteHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
 	}
 	return nil
+}
+
+func (f *MemoryFile) importExactRefRanges(ranges []*pgallocpb.UnfreeRangeProto, unfree *unfreeSet) {
+	unfree.RemoveAll()
+	for _, s := range ranges {
+		fr := memmap.FileRange{Start: s.Start, End: s.End}
+		baseRefs := uint64(0)
+		if s.Refs != 0 {
+			baseRefs = 1
+		}
+		unfree.InsertRange(fr, unfreeInfo{refs: baseRefs})
+		if s.Refs > 1 {
+			f.extraRefs.InsertRange(fr, extraRefInfo{extra: s.Refs - 1})
+		}
+	}
 }
 
 // SaveOpts provides options to MemoryFile.SaveTo().
