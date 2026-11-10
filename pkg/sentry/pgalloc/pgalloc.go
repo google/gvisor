@@ -360,7 +360,11 @@ type MemoryFileOpts struct {
 
 	// DecommitOnDestroy indicates whether the entire host file should be
 	// decommitted on destruction. This is appropriate for host filesystem based
-	// files that need to be explicitly cleaned up to release disk space.
+	// files that need to be explicitly cleaned up to release disk space. If
+	// DiskBackedFile is also true, the file is truncated rather than
+	// hole-punched, since some filesystems (XFS, and ext4 on older kernels)
+	// write back dirty pages before punching a hole, while truncation discards
+	// them.
 	DecommitOnDestroy bool
 
 	// If DisableIMAWorkAround is true, NewMemoryFile will not call
@@ -505,18 +509,6 @@ func (f *MemoryFile) releaserDestroyLocked() {
 		panic("destroyed is no longer set")
 	}
 
-	if f.opts.DecommitOnDestroy {
-		if chunks := f.chunksLoad(); len(chunks) != 0 {
-			if err := f.decommitFile(memmap.FileRange{0, uint64(len(chunks)) * chunkSize}); err != nil {
-				panic(fmt.Sprintf("failed to decommit entire memory file during destruction: %v", err))
-			}
-		}
-	}
-
-	f.file.Close()
-	// Ensure that any attempts to use f.file.Fd() fail instead of getting a fd
-	// that has possibly been reassigned.
-	f.file = nil
 	chunks := f.chunksLoad()
 	for i := range chunks {
 		chunk := &chunks[i]
@@ -526,6 +518,21 @@ func (f *MemoryFile) releaserDestroyLocked() {
 		}
 		chunk.mapping = 0
 	}
+
+	if f.opts.DecommitOnDestroy && len(chunks) != 0 {
+		if f.opts.DiskBackedFile {
+			if err := f.file.Truncate(0); err != nil {
+				log.Warningf("Failed to truncate memory file during destruction: %v", err)
+			}
+		} else if err := f.decommitFile(memmap.FileRange{0, uint64(len(chunks)) * chunkSize}); err != nil {
+			panic(fmt.Sprintf("failed to decommit entire memory file during destruction: %v", err))
+		}
+	}
+
+	f.file.Close()
+	// Ensure that any attempts to use f.file.Fd() fail instead of getting a fd
+	// that has possibly been reassigned.
+	f.file = nil
 }
 
 // AllocOpts are options used in MemoryFile.Allocate.
