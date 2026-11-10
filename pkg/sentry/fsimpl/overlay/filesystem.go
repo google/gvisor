@@ -253,6 +253,12 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			return false
 		}
 		isDir := stat.Mode&linux.S_IFMT == linux.S_IFDIR
+		if _, isLayerRoot := fs.layerRoots[childVD.Dentry()]; isDir && isLayerRoot {
+			// The layers overlap. Linux fails such lookups with ELOOP too.
+			ctx.Debugf("overlay.filesystem.lookupLocked: overlapping layers at %q", name)
+			lookupErr = linuxerr.ELOOP
+			return false
+		}
 		if topLookupLayer != lookupLayerNone && !isDir {
 			// Directories are not merged with non-directory files from lower
 			// layers; instead, layers including and below the first

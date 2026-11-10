@@ -1543,6 +1543,59 @@ TEST_F(OverlayRenameTest, RenameFromDeletedDirFails) {
 }
 
 // ============================================================================
+// Overlapping layer tests
+// ============================================================================
+
+// Overlay layers must not overlap. On Linux, a lookup through the overlay
+// that reaches the root of a layer fails with ELOOP, and so does mounting a
+// lower layer below the root of another layer.
+class OverlayOverlappingLayersTest : public OverlayOnTmpfsTest {
+ protected:
+  PosixErrorOr<Cleanup> MountOverlayWithOpts(const std::string& opts) {
+    return Mount("overlay", o_.merged, "overlay", 0,
+                 absl::StrCat(opts, OverlayXattrOpt(o_.upper)), MNT_DETACH);
+  }
+};
+
+// The lower layer contains the upper layer. Looking up the upper layer root
+// through the overlay fails, so copying up and renaming the directory that
+// holds the upper layer cannot recurse into its own copy.
+TEST_F(OverlayOverlappingLayersTest, UpperInsideLower) {
+  const std::string base = o_.base.path();
+  const Cleanup overlay_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(MountOverlayWithOpts(absl::StrCat(
+          "lowerdir=", base, ",upperdir=", o_.upper, ",workdir=", o_.work)));
+
+  struct stat st;
+  EXPECT_THAT(stat(MergedPath("lower").c_str(), &st), SyscallSucceeds());
+  EXPECT_THAT(stat(MergedPath("upper").c_str(), &st),
+              SyscallFailsWithErrno(ELOOP));
+  ASSERT_THAT(mkdir(MergedPath("newdir").c_str(), 0755), SyscallSucceeds());
+  EXPECT_THAT(
+      rename(MergedPath("upper").c_str(), MergedPath("newdir/upper").c_str()),
+      SyscallFailsWithErrno(ELOOP));
+}
+
+// A lower layer below the upper layer is rejected at mount.
+TEST_F(OverlayOverlappingLayersTest, LowerInsideUpperFailsMount) {
+  const std::string lower = UpperPath("sub");
+  ASSERT_NO_ERRNO(Mkdir(lower));
+  EXPECT_THAT(
+      MountOverlayWithOpts(absl::StrCat(
+          "lowerdir=", lower, ",upperdir=", o_.upper, ",workdir=", o_.work)),
+      PosixErrorIs(ELOOP));
+}
+
+// A lower layer below another lower layer is rejected at mount.
+TEST_F(OverlayOverlappingLayersTest, LowerInsideLowerFailsMount) {
+  const std::string inner = LowerPath("sub");
+  ASSERT_NO_ERRNO(Mkdir(inner));
+  EXPECT_THAT(
+      MountOverlayWithOpts(absl::StrCat("lowerdir=", o_.lower, ":", inner)),
+      PosixErrorIs(ELOOP));
+}
+
+// ============================================================================
 // Whiteout tests
 // ============================================================================
 

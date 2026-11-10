@@ -154,6 +154,43 @@ type filesystem struct {
 	// stackDepth is the 1-based overlay stacking depth of this filesystem,
 	// analogous to Linux's super_block.s_stack_depth. stackDepth is immutable.
 	stackDepth int
+
+	// layerRoots is the set of layer root dentries: those of opts.UpperRoot
+	// and opts.LowerRoots. Looking up a directory in a layer and finding a
+	// layer root means that the layers overlap. Comparing dentries identifies
+	// the directory reliably, since a directory has a single dentry per
+	// filesystem. layerRoots is immutable. It holds no references of its own;
+	// the references held through opts keep its dentries alive for the
+	// lifetime of fs.
+	layerRoots map[*vfs.Dentry]struct{}
+}
+
+// checkOverlappingLayers returns ELOOP if a lower layer root is below the
+// upper layer root or another lower layer root, as Linux does. As in Linux,
+// an upper layer below a lower layer is not rejected at mount, but found on
+// lookup instead; see filesystem.lookupLocked.
+func checkOverlappingLayers(fsopts *FilesystemOptions) error {
+	for _, lower := range fsopts.LowerRoots {
+		if fsopts.UpperRoot.Ok() && isStrictlyInside(lower, fsopts.UpperRoot) {
+			return linuxerr.ELOOP
+		}
+		for _, otherLower := range fsopts.LowerRoots {
+			if isStrictlyInside(lower, otherLower) {
+				return linuxerr.ELOOP
+			}
+		}
+	}
+	return nil
+}
+
+// isStrictlyInside returns true if d is below dir. d and dir must be distinct
+// directories for this to be true.
+func isStrictlyInside(d, dir vfs.VirtualDentry) bool {
+	if d.Dentry() == dir.Dentry() {
+		return false
+	}
+	// IsDescendant(dir, d) returns true if d is dir or below it.
+	return d.Mount().Filesystem().Impl().IsDescendant(dir, d)
 }
 
 func layerStackDepth(vd vfs.VirtualDentry) int {
@@ -401,6 +438,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: %d lower layers specified, maximum %d", len(fsopts.LowerRoots), maxLowerLayers)
 		return nil, nil, linuxerr.EINVAL
 	}
+	if err := checkOverlappingLayers(&fsopts); err != nil {
+		ctx.Infof("overlay.FilesystemType.GetFilesystem: overlapping lowerdir path")
+		return nil, nil, err
+	}
 
 	// Allocate dirDevMinor. lowerDevMinors are allocated dynamically.
 	dirDevMinor, err := vfsObj.GetAnonBlockDevMinor()
@@ -434,6 +475,13 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
 		maxFilenameLen: linux.NAME_MAX,
 		stackDepth:     computeStackDepth(fsopts),
+	}
+	fs.layerRoots = make(map[*vfs.Dentry]struct{}, len(fsopts.LowerRoots)+1)
+	if fsopts.UpperRoot.Ok() {
+		fs.layerRoots[fsopts.UpperRoot.Dentry()] = struct{}{}
+	}
+	for _, lowerRoot := range fsopts.LowerRoots {
+		fs.layerRoots[lowerRoot.Dentry()] = struct{}{}
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
