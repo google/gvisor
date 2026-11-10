@@ -1,0 +1,104 @@
+# DPDK uses glibc's port-I/O delay helpers, which musl does not provide.
+# Use the undelayed forms on musl, as in the upstream correction:
+# https://github.com/DPDK/dpdk/commit/204a7f44b
+
+diff --git a/drivers/bus/pci/linux/pci_uio.c b/drivers/bus/pci/linux/pci_uio.c
+--- a/drivers/bus/pci/linux/pci_uio.c
++++ b/drivers/bus/pci/linux/pci_uio.c
+@@ -14,6 +14,11 @@
+ 
+ #if defined(RTE_ARCH_X86)
+ #include <sys/io.h>
++#ifndef __GLIBC__
++#define outb_p outb
++#define outw_p outw
++#define outl_p outl
++#endif
+ #endif
+ 
+ #include <rte_log.h>
+
+# Declare the positioned-I/O functions used by the VFIO implementation.
+# https://github.com/DPDK/dpdk/commit/c41a103c9
+
+diff --git a/drivers/bus/pci/linux/pci_vfio.c b/drivers/bus/pci/linux/pci_vfio.c
+--- a/drivers/bus/pci/linux/pci_vfio.c
++++ b/drivers/bus/pci/linux/pci_vfio.c
+@@ -2,6 +2,7 @@
+  * Copyright(c) 2010-2014 Intel Corporation
+  */
+ 
++#include <unistd.h>
+ #include <string.h>
+ #include <fcntl.h>
+ #include <linux/pci_regs.h>
+
+# musl has no execinfo.h, and the static plugin has no loader symbols.
+# Print frame addresses from the compiler unwinder; keep glibc's stack dump.
+
+diff --git a/lib/librte_eal/linuxapp/eal/eal_debug.c b/lib/librte_eal/linuxapp/eal/eal_debug.c
+--- a/lib/librte_eal/linuxapp/eal/eal_debug.c
++++ b/lib/librte_eal/linuxapp/eal/eal_debug.c
+@@ -3,7 +3,12 @@
+  */
+ 
+ #ifdef RTE_BACKTRACE
++#if __has_include(<execinfo.h>)
++#define HAVE_EXECINFO
+ #include <execinfo.h>
++#else
++#include <unwind.h>
++#endif
+ #endif
+ #include <stdarg.h>
+ #include <signal.h>
+@@ -18,10 +23,32 @@
+ 
+ #define BACKTRACE_SIZE 256
+ 
++#if defined(RTE_BACKTRACE) && !defined(HAVE_EXECINFO)
++struct stack_trace {
++	uintptr_t pc[BACKTRACE_SIZE];
++	unsigned int size;
++};
++
++static _Unwind_Reason_Code
++collect_frame(struct _Unwind_Context *ctx, void *data)
++{
++	struct stack_trace *trace = data;
++	int before_instruction;
++	uintptr_t ip = _Unwind_GetIPInfo(ctx, &before_instruction);
++
++	if (ip == 0)
++		return _URC_END_OF_STACK;
++	/* A return address points just past its call instruction. */
++	trace->pc[trace->size++] = before_instruction ? ip : ip - 1;
++	return trace->size == BACKTRACE_SIZE ? _URC_END_OF_STACK : _URC_NO_REASON;
++}
++#endif
++
+ /* dump the stack of the calling core */
+ void rte_dump_stack(void)
+ {
+ #ifdef RTE_BACKTRACE
++#ifdef HAVE_EXECINFO
+ 	void *func[BACKTRACE_SIZE];
+ 	char **symb = NULL;
+ 	int size;
+@@ -39,6 +66,16 @@
+ 	}
+ 
+ 	free(symb);
++#else
++	struct stack_trace trace = {0};
++
++	_Unwind_Backtrace(collect_frame, &trace);
++	while (trace.size != 0) {
++		rte_log(RTE_LOG_ERR, RTE_LOGTYPE_EAL, "%u: [%p]\n",
++			trace.size, (void *)trace.pc[trace.size - 1]);
++		--trace.size;
++	}
++#endif
+ #endif /* RTE_BACKTRACE */
+ }
+ 
