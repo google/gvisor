@@ -98,6 +98,27 @@ func TestRust(t *testing.T) {
 	}
 }
 
+func TestGDBAttach(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		t.Skip("test requires x86-64 syscall instructions")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), defaultWait)
+	defer cancel()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(t.Context())
+
+	out, err := d.Run(ctx, dockerutil.RunOpts{
+		Image:  "basic/gdb",
+		CapAdd: []string{"SYS_PTRACE"},
+	}, "/bin/sh", "/test/test.sh")
+	if err != nil {
+		t.Fatalf("debugger attach failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "debugger attach and single-step succeeded") {
+		t.Fatalf("debugger did not finish single-stepping:\n%s", out)
+	}
+}
+
 func runHTTPRequest(ip string, port int) error {
 	url := fmt.Sprintf("http://%s:%d/not-found", ip, port)
 	resp, err := http.Get(url)
