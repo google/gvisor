@@ -165,10 +165,16 @@ func (fs FeatureSet) AllowedHWCap1() uint64 {
 // AllowedHWCap2 returns the HWCAP2 bits that the guest is allowed to depend
 // on.
 func (fs FeatureSet) AllowedHWCap2() uint64 {
-	// We don't expose anything here yet, but this could be expanded to
-	// include features do not rely on cpu state that is not restored after
-	// a context switch.
-	allowed := 0
+	// Pick a set of safe HWCAP2s to expose. Their instructions keep no state
+	// outside the general-purpose and FP/SIMD registers and the flags, which
+	// gvisor restores after a context switch. SVE and MTE are not safe: they
+	// have registers or tags of their own.
+	allowed := HWCAP2_BF16 |
+		HWCAP2_DCPODP |
+		HWCAP2_DGH |
+		HWCAP2_FLAGM2 |
+		HWCAP2_FRINT |
+		HWCAP2_I8MM
 	return fs.hwCap.hwCap2 & uint64(allowed)
 }
 
