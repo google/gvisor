@@ -211,3 +211,102 @@ func TestChunkReadAndMMap(t *testing.T) {
 		}
 	}
 }
+
+func TestMountFailureClosesImageFD(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	defer mf.Destroy()
+
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer vfsObj.Release(ctx)
+	vfsObj.MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{AllowUserMount: true})
+
+	rootImage := newTestImage(0, erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatInline << erofs.InodeDataLayoutBit})
+	rootFile, err := os.CreateTemp(t.TempDir(), "root-image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rootFile.Write(rootImage); err != nil {
+		rootFile.Close()
+		t.Fatal(err)
+	}
+	rootImageFD, err := unix.Dup(int(rootFile.Fd()))
+	rootFile.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mntns, err := vfsObj.NewMountNamespace(ctx, auth.CredentialsFromContext(ctx), "", Name, &vfs.MountOptions{GetFilesystemOptions: vfs.GetFilesystemOptions{Data: fmt.Sprintf("ifd=%d", rootImageFD)}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mntns.DecRef(ctx)
+	rootVD := mntns.Root(ctx)
+	defer rootVD.DecRef(ctx)
+
+	t.Run("MountAtNonexistentTarget", func(t *testing.T) {
+		f, err := os.CreateTemp(t.TempDir(), "image")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(rootImage); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		imageFD, err := unix.Dup(int(f.Fd()))
+		f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		pop := vfs.PathOperation{
+			Root:  rootVD,
+			Start: rootVD,
+			Path:  fspath.Parse("nonexistent"),
+		}
+		opts := vfs.MountOptions{
+			ReadOnly: true,
+			GetFilesystemOptions: vfs.GetFilesystemOptions{
+				InternalMount: true,
+				Data:          fmt.Sprintf("ifd=%d", imageFD),
+			},
+		}
+		if _, err := vfsObj.MountAt(ctx, auth.CredentialsFromContext(ctx), "", &pop, Name, &opts); err == nil {
+			t.Fatal("MountAt succeeded on nonexistent target, want error")
+		}
+		if _, err := unix.FcntlInt(uintptr(imageFD), unix.F_GETFD, 0); err != unix.EBADF {
+			t.Errorf("FcntlInt(imageFD, F_GETFD) got err = %v, want %v (closed FD)", err, unix.EBADF)
+		}
+	})
+
+	t.Run("GetFilesystemRootInodeFailure", func(t *testing.T) {
+		badRootImage := make([]byte, len(rootImage))
+		copy(badRootImage, rootImage)
+		const rootNid = 96
+		badRoot := erofs.InodeCompact{Format: 7 << erofs.InodeDataLayoutBit, Mode: linux.S_IFDIR | 0755, Size: 16, Nlink: 2}
+		badRoot.MarshalUnsafe(badRootImage[rootNid<<erofs.InodeSlotBits:])
+
+		f, err := os.CreateTemp(t.TempDir(), "bad-root-image")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(badRootImage); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		imageFD, err := unix.Dup(int(f.Fd()))
+		f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := vfsObj.NewMountNamespace(ctx, auth.CredentialsFromContext(ctx), "", Name, &vfs.MountOptions{GetFilesystemOptions: vfs.GetFilesystemOptions{Data: fmt.Sprintf("ifd=%d", imageFD)}}, nil); err == nil {
+			t.Fatal("NewMountNamespace succeeded with invalid root inode format, want error")
+		}
+		if _, err := unix.FcntlInt(uintptr(imageFD), unix.F_GETFD, 0); err != unix.EBADF {
+			t.Errorf("FcntlInt(imageFD, F_GETFD) got err = %v, want %v (closed FD)", err, unix.EBADF)
+		}
+	})
+}
