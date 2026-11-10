@@ -2569,6 +2569,50 @@ TEST(PtraceTest, SeizeSetOptions) {
       << " status " << status;
 }
 
+TEST(PtraceTest, SeizeGroupStopped) {
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    for (int i = 0; i < 100; i++) {
+      syscall(SYS_getpid);
+    }
+    raise(SIGSTOP);
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, WSTOPPED),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  // Seizing an already group-stopped child transitions it into a ptrace
+  // group-stop.
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, child_pid, 0, PTRACE_O_TRACESYSGOOD),
+              SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_EQ(SIGSTOP | (kPtraceEventStop << 8), status >> 8);
+
+  ASSERT_THAT(ptrace(PTRACE_LISTEN, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(kill(child_pid, SIGCONT), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_EQ(SIGTRAP | (kPtraceEventStop << 8), status >> 8);
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGCONT)
+      << " status " << status;
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+
 TEST(PtraceTest, SetYAMAPtraceScope) {
   // Do not modify the ptrace scope on the host.
   SKIP_IF(GvisorPlatform() == Platform::kNative);
