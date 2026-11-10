@@ -53,6 +53,7 @@
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
@@ -532,6 +533,25 @@ TEST_P(TcpSocketTest, BlockingLargeSend) {
 
   // We should have read the whole thing.
   EXPECT_EQ(read_bytes, size);
+}
+
+// Test that send and recv work on a buffer split across more than UIO_MAXIOV
+// mappings.
+TEST_P(TcpSocketTest, FragmentedSendRecv) {
+  const int size = (UIO_MAXIOV + 1) * kPageSize;
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(size, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  // Alternate protections so that each page is its own mapping.
+  for (int i = 0; i < size; i += 2 * kPageSize) {
+    ASSERT_THAT(mprotect(static_cast<char*>(m.ptr()) + i, kPageSize,
+                         PROT_READ | PROT_WRITE | PROT_EXEC),
+                SyscallSucceeds());
+  }
+
+  ASSERT_THAT(RetryEINTR(send)(connected_.get(), m.ptr(), size, MSG_DONTWAIT),
+              SyscallSucceeds());
+  EXPECT_THAT(RetryEINTR(recv)(accepted_.get(), m.ptr(), size, 0),
+              SyscallSucceeds());
 }
 
 // Test that polling on a socket with a full send buffer will block.

@@ -322,8 +322,14 @@ func ZeroSeq(dsts BlockSeq) (uint64, error) {
 
 // IovecsFromBlockSeq returns a []unix.Iovec representing seq.
 func IovecsFromBlockSeq(bs BlockSeq) []unix.Iovec {
-	iovs := make([]unix.Iovec, 0, bs.NumBlocks())
-	for ; !bs.IsEmpty(); bs = bs.Tail() {
+	return IovecsFromBlockSeqN(bs, bs.NumBlocks())
+}
+
+// IovecsFromBlockSeqN returns a []unix.Iovec representing at most the first n
+// Blocks in bs.
+func IovecsFromBlockSeqN(bs BlockSeq, n int) []unix.Iovec {
+	iovs := make([]unix.Iovec, 0, n)
+	for ; !bs.IsEmpty() && len(iovs) < n; bs = bs.Tail() {
 		b := bs.Head()
 		iovs = append(iovs, unix.Iovec{
 			Base: &b.ToSlice()[0],
