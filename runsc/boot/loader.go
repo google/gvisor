@@ -2182,16 +2182,17 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		if conf.EnableRaw && !specutils.HasCapabilities(capability.CAP_NET_RAW) {
 			return nil, fmt.Errorf("configuring network=host with raw sockets requires CAP_NET_RAW capability")
 		}
-		// No network namespacing support for hostinet yet, hence creator is nil.
-		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
+		// The root namespace is backed by the host network stack. A child
+		// network namespace (unshare(CLONE_NEWNET)) cannot share it, and with a
+		// nil creator it gets no stack at all: no loopback device and
+		// EAFNOSUPPORT from socket(AF_INET). Give children the same
+		// loopback-only netstack that network=none uses instead: a working
+		// 127.0.0.1, and no device that reaches the host network.
+		creator := newSandboxNetstackCreator(conf, clock, uid)
+		return inet.NewRootNamespace(hostinet.NewStack(), creator, userns), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
-		creator := &sandboxNetstackCreator{
-			clock:                    clock,
-			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
-			allowLiveTCPMigration:    conf.AllowLiveTCPMigration,
-			uid:                      uid,
-		}
+		creator := newSandboxNetstackCreator(conf, clock, uid)
 		s, err := creator.newEmptySandboxNetworkStack()
 		if err != nil {
 			return nil, err
@@ -2274,6 +2275,15 @@ type sandboxNetstackCreator struct {
 }
 
 var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
+
+func newSandboxNetstackCreator(conf *config.Config, clock tcpip.Clock, uid uniqueid.Provider) *sandboxNetstackCreator {
+	return &sandboxNetstackCreator{
+		clock:                    clock,
+		allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
+		allowLiveTCPMigration:    conf.AllowLiveTCPMigration,
+		uid:                      uid,
+	}
+}
 
 // CreateStack implements inet.NetworkStackCreator.CreateStack.
 //
