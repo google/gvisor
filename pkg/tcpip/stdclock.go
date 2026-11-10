@@ -57,7 +57,7 @@ type stdClock struct {
 	//
 	// monotonicOffset is assigned after restore so that the monotonic time
 	// will continue from where it "left off" before saving as part of S/R.
-	monotonicOffset MonotonicTime
+	monotonicOffset MonotonicTime `state:".(MonotonicTime)"`
 }
 
 // NewStdClock returns an instance of a clock that uses the time package.
