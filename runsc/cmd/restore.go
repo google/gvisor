@@ -132,6 +132,10 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	if conf.Rootless {
 		return util.Errorf("Rootless mode not supported with %q", r.Name())
 	}
+	if r.productName != "" {
+		// The checkpointed sysfs keeps the product name it was saved with.
+		return util.Errorf("product-name is not supported with %q", r.Name())
+	}
 
 	bundleDir := r.bundleDir
 	if bundleDir == "" {

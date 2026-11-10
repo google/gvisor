@@ -218,6 +218,10 @@ type Args struct {
 	// neither Process nor Root, and no gofer is started. Only valid when ID is
 	// the sandbox ID.
 	NoRootContainer bool
+
+	// ProductName, if set, is shown in
+	// /sys/devices/virtual/dmi/id/product_name instead of the host's value.
+	ProductName string
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -491,6 +495,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			FSRestoreImagePaths: args.FSRestoreImagePaths,
 			FSRestoreDirect:     args.FSRestoreDirect,
 			NoRootContainer:     args.NoRootContainer,
+			ProductName:         args.ProductName,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {
