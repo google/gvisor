@@ -178,10 +178,17 @@ func (s *CommonServer) handshake(client client) error {
 	return nil
 }
 
+// maxMessageSize is the largest message that the server accepts. Larger
+// messages are dropped.
+const maxMessageSize = 1024 * 1024
+
 func (s *CommonServer) handleClient(client client) {
 	defer s.closeClient(client)
 
-	var buf = make([]byte, 1024*1024)
+	// Messages come from the sandbox, so they must not be able to crash the
+	// server. Malformed messages are dropped and the connection is kept, so that
+	// later messages from the same client are still processed.
+	var buf = make([]byte, maxMessageSize)
 	for {
 		read, err := client.socket.Read(buf)
 		if err != nil {
@@ -189,18 +196,28 @@ func (s *CommonServer) handleClient(client client) {
 				// Both errors indicate that the socket has been closed.
 				return
 			}
-			panic(err)
+			if read == len(buf) {
+				// The message didn't fit in buf. unet returns an error after filling
+				// buf, and the kernel discards the rest of the (SOCK_SEQPACKET)
+				// message, so the connection is still in sync.
+				log.Warningf("Dropping message larger than %d bytes: %v", len(buf), err)
+				continue
+			}
+			log.Warningf("Failed to read message from client, closing connection: %v", err)
+			return
 		}
 		if read < wire.HeaderStructSize {
-			panic("message too small")
+			log.Warningf("Dropping message too small for the header: %d bytes", read)
+			continue
 		}
 		hdr := wire.Header{}
 		hdr.UnmarshalUnsafe(buf[0:wire.HeaderStructSize])
 		if read < int(hdr.HeaderSize) {
-			panic(fmt.Sprintf("message truncated, header size: %d, read: %d", hdr.HeaderSize, read))
+			log.Warningf("Dropping truncated message, header size: %d, read: %d", hdr.HeaderSize, read)
+			continue
 		}
 		if err := client.handler.Message(buf[:read], hdr, buf[hdr.HeaderSize:read]); err != nil {
-			panic(err)
+			log.Warningf("Failed to process message, dropping it: %v", err)
 		}
 	}
 }
