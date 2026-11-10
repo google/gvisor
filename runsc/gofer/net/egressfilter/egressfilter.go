@@ -92,7 +92,17 @@ func recordLocalIP(m map[tcpip.Address]struct{}, ip net.IP) {
 
 // Allows reports whether the destination (addr, port) is permitted.
 func (f *Filter) Allows(addr tcpip.Address, port uint16) bool {
-	if f == nil || port == 0 {
+	if port == 0 {
+		return false
+	}
+	return f.AllowsAddr(addr)
+}
+
+// AllowsAddr reports whether the destination address is permitted. It applies
+// the same address rules as Allows, but no port rule. Use it for traffic that
+// has no port, for example ICMP or IP fragments after the first.
+func (f *Filter) AllowsAddr(addr tcpip.Address) bool {
+	if f == nil {
 		return false
 	}
 	if addr.BitLen() != header.IPv4AddressSizeBits && addr.BitLen() != header.IPv6AddressSizeBits {
