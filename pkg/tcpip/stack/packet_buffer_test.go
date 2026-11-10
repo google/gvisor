@@ -904,6 +904,76 @@ func TestPacketDataReadToPreservesHeaders(t *testing.T) {
 	}
 }
 
+// TestDeepCopyForForwardingPreservesSourceHeader verifies that
+// DeepCopyForForwarding does not move the source packet's backing storage.
+// Header slices taken before the copy (for example, by the network-layer
+// forwarder) must remain valid after the copy, and the forwarded packet's
+// headers must be independently writable copies.
+func TestDeepCopyForForwardingPreservesSourceHeader(t *testing.T) {
+	t.Run("with transport header", func(t *testing.T) { testDeepCopyForForwardingPreservesSourceHeader(t, true) })
+	t.Run("without transport header", func(t *testing.T) { testDeepCopyForForwardingPreservesSourceHeader(t, false) })
+}
+
+func testDeepCopyForForwardingPreservesSourceHeader(t *testing.T, withTransport bool) {
+	t.Helper()
+
+	network := makeView(20)
+	transport := makeView(30)
+	data := makeView(40)
+
+	payload := concatViews(network, data)
+	if withTransport {
+		payload = concatViews(network, transport, data)
+	}
+	pk := NewPacketBuffer(PacketBufferOptions{
+		Payload: buffer.MakeWithData(payload),
+	})
+	defer pk.DecRef()
+	if _, ok := pk.NetworkHeader().Consume(len(network)); !ok {
+		t.Fatal("failed to consume network header")
+	}
+	if withTransport {
+		if _, ok := pk.TransportHeader().Consume(len(transport)); !ok {
+			t.Fatal("failed to consume transport header")
+		}
+	}
+
+	networkSlice := pk.NetworkHeader().Slice()
+	var transportSlice []byte
+	if withTransport {
+		transportSlice = pk.TransportHeader().Slice()
+	}
+
+	newPk := pk.DeepCopyForForwarding(60 /* reservedHeaderBytes */)
+	defer newPk.DecRef()
+
+	// The source packet's backing storage must not move during the copy.
+	if got := pk.NetworkHeader().Slice(); &got[0] != &networkSlice[0] {
+		t.Error("network header backing moved during DeepCopyForForwarding")
+	}
+	if withTransport {
+		if got := pk.TransportHeader().Slice(); &got[0] != &transportSlice[0] {
+			t.Error("transport header backing moved during DeepCopyForForwarding")
+		}
+	}
+
+	// The new packet must carry the same header bytes, on independent storage.
+	if got := newPk.NetworkHeader().Slice(); !bytes.Equal(got, network) {
+		t.Errorf("new packet network header = %d bytes, want %d", len(got), len(network))
+	} else if &got[0] == &networkSlice[0] {
+		t.Error("new packet network header aliases the source backing storage")
+	}
+	if withTransport {
+		if got := newPk.TransportHeader().Slice(); !bytes.Equal(got, transport) {
+			t.Errorf("new packet transport header = %d bytes, want %d", len(got), len(transport))
+		} else if &got[0] == &transportSlice[0] {
+			t.Error("new packet transport header aliases the source backing storage")
+		}
+	} else if got := newPk.TransportHeader().Slice(); len(got) != 0 {
+		t.Errorf("new packet transport header = %d bytes, want 0", len(got))
+	}
+}
+
 func BenchmarkPacketDataReadTo(b *testing.B) {
 	for _, headerSize := range []int{0, 4} {
 		for _, fragments := range []int{1, 16} {
