@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -333,7 +334,13 @@ func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) map
 	// Set up /sys/kernel/debug/kcov. Technically, debugfs should be
 	// mounted at debug/, but for our purposes, it is sufficient to keep it
 	// in sys.
-	children := make(map[string]kernfs.Inode)
+	children := map[string]kernfs.Inode{
+		"mm": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"transparent_hugepage": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+				"hpage_pmd_size": fs.newStaticFile(ctx, creds, defaultSysMode, fmt.Sprintf("%d\n", hostarch.HugePageSize)),
+			}),
+		}),
+	}
 	if coverage.KcovSupported() {
 		log.Debugf("Set up /sys/kernel/debug/kcov")
 		children["debug"] = fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{
