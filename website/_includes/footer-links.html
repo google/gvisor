@@ -40,7 +40,7 @@
       </ul>
     </div>
     <div class="col-sm-3 col-md-3"></div>
-    <div class="hidden-xs hidden-sm col-md-3">
+    <div class="col-md-3">
       <a href="https://cloud.google.com/run">
         <img
           style="float: right; max-width: 93px; height: auto"
@@ -48,10 +48,23 @@
           alt="Powered by gVisor"
         />
       </a>
+      <p class="small text-muted text-right" style="clear: both; display: block;">gVisor was originally created by Google.</p>
     </div>
   </div>
-  <div class="row">
-    <div class="col-lg-12">
+  <div class="row row-valign-middle">
+    <!-- CNCF -->
+    <div class="col-sm-4 col-md-3 text-left">
+      <a href="https://cncf.io" target="_blank" rel="noopener noreferrer">
+        <img src="/assets/logos/cncf_logo.svg" alt="Cloud Native Computing Foundation Logo" class="img-responsive cncf-logo" style="opacity:0.7;"/>
+      </a>
+    </div>
+    <div class="col-sm-8 col-md-9" style="margin-top:20px">
+      <p class="project-statement text-muted">
+      gVisor is a <a href="https://cncf.io" target="_blank" rel="noopener noreferrer">Cloud Native Computing Foundation</a> sandbox project.
+      </p>
+    </div>
+    <!-- END CNCF -->
+    <div class="col-md-12 col-lg-12">
       <p>&copy; {{ 'now' | date: "%Y" }} The gVisor Authors</p>
     </div>
   </div>
