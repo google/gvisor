@@ -53,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -173,6 +174,10 @@ type Kernel struct {
 
 	// mf provides application memory.
 	mf *pgalloc.MemoryFile `state:"nosave"`
+
+	// mmOpts applies to all MemoryManagers running in this Kernel.
+	haveMMOpts bool
+	mmOpts     mm.MemoryManagerOpts
 
 	// See InitKernelArgs for the meaning of these fields.
 	featureSet           cpuid.FeatureSet
@@ -645,6 +650,11 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		}
 	}
 
+	if !k.haveMMOpts {
+		// These are consistent with legacy behavior.
+		k.mmOpts.FaultAllocAlignShift = hostarch.HugePageShift
+		k.mmOpts.FaultCopyAlignShift = hostarch.HugePageShift
+	}
 	k.extraAuxv = args.ExtraAuxv
 	k.vdso = args.Vdso
 	k.vdsoParams = args.VdsoParams
@@ -2323,6 +2333,13 @@ func (k *Kernel) SetMemoryFile(mf *pgalloc.MemoryFile) {
 // MemoryFile returns the MemoryFile that provides application memory.
 func (k *Kernel) MemoryFile() *pgalloc.MemoryFile {
 	return k.mf
+}
+
+// SetMemoryManagerOpts sets Kernel.mmOpts. SetMemoryManagerOpts can only be
+// called before Init.
+func (k *Kernel) SetMemoryManagerOpts(opts mm.MemoryManagerOpts) {
+	k.haveMMOpts = true
+	k.mmOpts = opts
 }
 
 // SupervisorContext returns a Context with maximum privileges in k. It should

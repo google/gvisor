@@ -18,5 +18,5 @@ import (
 	"unsafe"
 )
 
-// This is used in addr.go:Addr.AddLength().
-const addrAtLeast64b = unsafe.Sizeof(Addr(0)) >= 8
+// AddrBits is the number of bits in an Addr.
+const AddrBits = unsafe.Sizeof(Addr(0)) * 8

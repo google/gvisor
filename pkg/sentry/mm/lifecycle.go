@@ -31,21 +31,51 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
+// MemoryManagerOpts holds options to NewMemoryManager.
+//
+// +stateify savable
+type MemoryManagerOpts struct {
+	// FaultAllocAlignShift is the binary logarithm of the allocation size for
+	// app page faults on private anonymous mappings. Larger values for
+	// FaultAllocAlignShift may improve performance by reducing the frequency
+	// of sandbox-handled page faults, and may reduce host VMA fragmentation on
+	// some platforms, but may increase application memory usage.
+	FaultAllocAlignShift uint
+
+	// FaultCopyAlignShift is the binary logarithm of the allocation size for
+	// app write page faults on copy-on-write mappings. Larger values for
+	// FaultCopyAlignShift may improve performance by reducing the frequency of
+	// sandbox-handled page faults in some workloads, and may reduce host VMA
+	// fragmentation on some platforms, but may increase application memory
+	// usage.
+	FaultCopyAlignShift uint
+}
+
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
-func NewMemoryManager(p platform.Platform, mf *pgalloc.MemoryFile) (*MemoryManager, error) {
+func NewMemoryManager(p platform.Platform, mf *pgalloc.MemoryFile, opts MemoryManagerOpts) (*MemoryManager, error) {
+	if opts.FaultAllocAlignShift >= uint(hostarch.AddrBits) {
+		return nil, fmt.Errorf("invalid FaultAllocAlignShift: %d", opts.FaultAllocAlignShift)
+	}
+	if opts.FaultCopyAlignShift >= uint(hostarch.AddrBits) {
+		return nil, fmt.Errorf("invalid FaultCopyAlignShift: %d", opts.FaultCopyAlignShift)
+	}
 	as, err := p.NewAddressSpace(platform.AddressSpaceOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return &MemoryManager{
-		p:           p,
-		mf:          mf,
-		haveASIO:    p.SupportsAddressSpaceIO(),
-		users:       atomicbitops.FromInt32(1),
-		as:          as,
-		auxv:        arch.Auxv{},
-		dumpability: atomicbitops.FromInt32(int32(UserDumpable)),
-		aioManager:  aioManager{contexts: make(map[uint64]*AIOContext)},
+		p:                    p,
+		mf:                   mf,
+		allocSmallAlignShift: uint8(max(hostarch.PageShift, opts.FaultAllocAlignShift)),
+		allocHugeAlignShift:  uint8(max(hostarch.HugePageShift, opts.FaultAllocAlignShift)),
+		copySmallAlignShift:  uint8(max(hostarch.PageShift, opts.FaultCopyAlignShift)),
+		copyHugeAlignShift:   uint8(max(hostarch.HugePageShift, opts.FaultCopyAlignShift)),
+		haveASIO:             p.SupportsAddressSpaceIO(),
+		users:                atomicbitops.FromInt32(1),
+		as:                   as,
+		auxv:                 arch.Auxv{},
+		dumpability:          atomicbitops.FromInt32(int32(UserDumpable)),
+		aioManager:           aioManager{contexts: make(map[uint64]*AIOContext)},
 	}, nil
 }
 
@@ -143,15 +173,19 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	mm2 := &MemoryManager{
-		p:        mm.p,
-		mf:       mm.mf,
-		haveASIO: mm.haveASIO,
-		layout:   mm.layout,
-		users:    atomicbitops.FromInt32(1),
-		as:       as,
-		brk:      mm.brk,
-		usageAS:  mm.usageAS,
-		dataAS:   mm.dataAS,
+		p:                    mm.p,
+		mf:                   mm.mf,
+		allocSmallAlignShift: mm.allocSmallAlignShift,
+		allocHugeAlignShift:  mm.allocHugeAlignShift,
+		copySmallAlignShift:  mm.copySmallAlignShift,
+		copyHugeAlignShift:   mm.copyHugeAlignShift,
+		haveASIO:             mm.haveASIO,
+		layout:               mm.layout,
+		users:                atomicbitops.FromInt32(1),
+		as:                   as,
+		brk:                  mm.brk,
+		usageAS:              mm.usageAS,
+		dataAS:               mm.dataAS,
 		// "The child does not inherit its parent's memory locks (mlock(2),
 		// mlockall(2))." - fork(2). So lockedAS is 0 and defMLockMode is
 		// MLockNone, both of which are zero values. vma.mlockMode is reset

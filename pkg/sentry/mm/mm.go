@@ -72,6 +72,16 @@ type MemoryManager struct {
 	// haveASIO is immutable.
 	haveASIO bool `state:"nosave"`
 
+	// These control MemoryFile allocation granularity for MAP_PRIVATE
+	// mappings, and are immutable.
+	//
+	// Invariants: allocSmallAlignShift <= allocHugeAlignShift;
+	// copySmallAlignShift <= copyHugeAlignShift.
+	allocSmallAlignShift uint8
+	allocHugeAlignShift  uint8
+	copySmallAlignShift  uint8
+	copyHugeAlignShift   uint8
+
 	// layout is the memory layout.
 	//
 	// layout is set by the binary loader before the MemoryManager can be used.

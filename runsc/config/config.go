@@ -396,6 +396,14 @@ type Config struct {
 	// AppHugePages enables support for application huge pages.
 	AppHugePages bool `flag:"app-huge-pages"`
 
+	// FaultAllocAlignShift is mm.MemoryManagerOpts.FaultAllocAlignShift, or -1
+	// for unspecified default behavior.
+	FaultAllocAlignShift int `flag:"fault-alloc-align-shift"`
+
+	// FaultCopyAlignShift is mm.MemoryManagerOpts.FaultCopyAlignShift, or -1
+	// for unspecified default behavior.
+	FaultCopyAlignShift int `flag:"fault-copy-align-shift"`
+
 	// NVProxy enables support for Nvidia GPUs.
 	NVProxy bool `flag:"nvproxy"`
 
