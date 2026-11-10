@@ -15,6 +15,7 @@ func (e *Endpoint) StateTypeName() string {
 func (e *Endpoint) StateFields() []string {
 	return []string{
 		"Endpoint",
+		"networkMTU",
 	}
 }
 
@@ -24,6 +25,7 @@ func (e *Endpoint) beforeSave() {}
 func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Endpoint)
+	stateSinkObject.SaveBool(1, &e.networkMTU)
 }
 
 func (e *Endpoint) afterLoad(context.Context) {}
@@ -31,6 +33,7 @@ func (e *Endpoint) afterLoad(context.Context) {}
 // +checklocksignore
 func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Endpoint)
+	stateSourceObject.LoadBool(1, &e.networkMTU)
 }
 
 func init() {

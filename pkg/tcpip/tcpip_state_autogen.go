@@ -1255,16 +1255,28 @@ func (s *stdClock) StateFields() []string {
 	}
 }
 
+func (s *stdClock) beforeSave() {}
+
 // +checklocksignore
 func (s *stdClock) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.monotonicOffset)
+	monotonicOffsetValue := s.saveMonotonicOffset()
+	_ = (MonotonicTime)(monotonicOffsetValue)
+	stateSinkObject.SaveValue(0, monotonicOffsetValue)
 }
 
 // +checklocksignore
 func (s *stdClock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.monotonicOffset)
+	stateSourceObject.LoadValueTo(0, (*MonotonicTime)(nil), s)
 	stateSourceObject.AfterLoadTo(s)
+}
+
+// +checklocksignore
+func (s *stdClock) StateLoadValue(ctx context.Context, stateSlot int, stateValue any) {
+	switch stateSlot {
+	case 0:
+		s.loadMonotonicOffset(ctx, stateValue.(MonotonicTime))
+	}
 }
 
 // +checklocksignore
