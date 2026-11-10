@@ -97,6 +97,9 @@ their parent directory. For example:
     (e.g. "Used by", "Useful for"). If this is not already clear from the
     function name or context, then the function name and/or context is the
     problem, and the comment is a band-aid.
+-   References to Linux source code must be limited to ABI only. The only
+    documentation of Linux behavior that matters is actual behavior as exercised
+    by C++ syscall tests.
 -   Prose (such as comments, documentation, other markdown files) should mostly
     follow ASD-STE100 Simplified Technical English. Some liberties are expected
     (and welcome in some contexts, such as website/blog post contents), but
@@ -111,6 +114,10 @@ their parent directory. For example:
 #### Modifying gVisor kernel behavior
 
 Use the `gvisor-kernel-development` skill.
+
+NOTE: Do not rely on Linux kernel source code or training knowledge when
+implementing syscall behavior. Instead, test your assumptions by writing syscall
+tests to verify Linux behavior from a black-box perspective.
 
 #### Security first
 
@@ -128,14 +135,14 @@ popular real-world application that runs into the compatibility problem that a
 PR is addressing, the PR review will be de-prioritized against those that do
 have popular real-world applications.
 
-The pecking order, from most important to least, with compatibility code:
+The pecking order, from most important to least, with compatibility tag:
 
 -   `COMPATIBILITY:REGRESSION-GVISOR`: Regressions in real-world application
     compatibility of a previously-supported application, due to past changes in
-    gVisor
+    gVisor.
 -   `COMPATIBILITY:REGRESSION-APP`: Regressions in real-world application
     compatibility of a previously-supported application, due to changes/updates
-    by the application
+    by the application.
 -   `COMPATIBILITY:UPCOMING-KERNEL`: Incompatibilities not yet encountered, but
     known to later be encountered due to an upcoming change in the Linux kernel.
 -   `COMPATIBILITY:NEW-APP`: Incompatibilities encountered in real-world
@@ -152,6 +159,13 @@ The pecking order, from most important to least, with compatibility code:
     that currently works in gVisor.
 -   `COMPATIBILITY:SYNTHETIC`: Incompatibilities exercisable only via syscall
     tests, which no known real-world application encounters.
+
+Note that only applications that are publicly usable count in the above rating
+scale. In other words, if the only known application of a specific Linux-like
+behavior is something a gVisor reviewer can't test, then that application does
+not exist for the purpose of the compatibility tag.
+
+Compatibility changes without a compatibility tag will be rejected.
 
 #### Performance sensitivity
 
@@ -184,16 +198,76 @@ not have performance implications.
 
 Before sending PRs, check the following:
 
--   Compatibility fixes must come with a compatibility code (see "Compatibility
-    in practice" section), along with an explanation for this code.
+-   Compatibility fixes must come with a compatibility tag (see "Compatibility
+    in practice" section), along with an explanation for this tag.
 -   Syscall behavior must be verified to match Linux behavior by way of syscall
     tests, not Go tests.
 -   Everything must build; use `make build TARGETS=...` building affected paths.
 -   Relevant tests must pass; use `make test TARGETS=...` or `make syscall-tests
     TARGETS=...` as appropriate.
 -   All PRs must pass `make lint` and `make lint-cc`.
--   When benchmarks are required, they must come with statistically-significant
-    figures. See section on performance changes.
+-   Performance-sensitive changes must come with benchmark data, with
+    statistically-significant figures. See section on performance changes.
 -   Website changes should come with before/after screenshots (use `make
     website-server` to start an HTTP server serving the site locally).
 -   Test-only changes that improve stability/flakiness are very much welcome.
+
+### Adversarial review
+
+Before sending a PR, it is often useful to run a few rounds of adversarial
+review on your own code. This ensures a smooth PR review experience. While the
+specific set of sub-agents to run adversarial review with varies depending on
+the type of change, here are some suggestions to consider:
+
+-   Run a **security agent** looking for ways to break the security or bypass
+    the checks you may have added: bad permission checks, race conditions, user
+    namespace considerations, ability for a compromised Sentry to do more than
+    it used to be able to do before the change, etc.
+-   Run a **security hardening agent** looking for ways to increase the security
+    of your change further: usages of less-error-prone Linux system calls (e.g.
+    FD-based over path-based file syscalls), specific flags in syscall that
+    reduce the likelihood of the syscall being used for something it's not
+    intended to do (e.g. `O_NOFOLLOW`, `O_PATH`, `O_CLOEXEC`, `O_NOCTTY`,
+    `RESOLVE_*`, etc), tighter seccomp filter rules on the Sentry, etc.
+-   Run a **performance regression agent** looking for potential performance
+    regressions, e.g. new dependency bloating the binary or adding `init()`
+    functions, or adding a system call in the startup hot path causing an RCU
+    stall, etc.
+-   Run a **performance optimization agent** looking for ways to optimize your
+    change's performance, such as by avoiding allocations, adding `+checkescape`
+    annotations, shortening functions where possible to make them inlineable,
+    using newer higher-performance Go runtime features, using more efficient
+    syscall patterns, etc.
+-   Run a **testing exhaustivity agent** looking for missing test cases, e.g.
+    adding more cases for black-box C++ syscall tests to more exhaustively cover
+    expected behavior, or more ways to invoke `runsc` or gVisor in new ways that
+    your change adds complexity for, etc.
+-   Run a **correctness agent** looking for ways in which this change is
+    incorrect: logic bugs, code not matching comments, not all scenarios
+    handled, etc.
+-   Run a **stylistic agent** looking for ways in which the change violates the
+    project's code conventions: comments, lint, code references, commit message
+    description, etc.
+-   Run a **documentation-fixing agent** looking for any existing documentation
+    that your change invalidates, and update it. Note however that documentation
+    agents tend to be very prone to adding documentation that does not need to
+    exist; ensure any agent-suggested documentation changes are scoped to
+    strictly fixing actively-invalid documentation, not to add a litany of
+    caveats to existing still-generally-correct documentation. If in doubt, ask
+    a human if it is worth it.
+-   Run a **free-range agent** which is given the task to find what other
+    sub-agents to spawn beyond the ones from the set above that are worth
+    considering for the change at hand.
+-   Run a **catch-all agent** that is given no particular objective in mind
+    other than to review the change in general.
+
+Adversarial review works best when sub-agents are initially given the
+absolute-minimum context or no context at all, such that they do not anchor on
+assumptions you or your human operator may have implicitly made along the way.
+It is your role as the coordinator to only later push back on any subagent
+findings if you find that they run against one of the initial objectives,
+intentions, or stated goals/constraints of the change.
+
+You should stop adversarial review once sub-agents stop finding new issues, and
+are only nitpicking or rehashing previous findings that have already been
+rejected.

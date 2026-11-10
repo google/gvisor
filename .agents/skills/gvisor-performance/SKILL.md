@@ -81,6 +81,19 @@ run `//test/benchmarks/base:startup_test` and
 `//test/kubernetes/benchmarks:startup_test`, as well as some one-off Gofer-only
 benchmarks you may design on your own.
 
+NOTE: You **must** select at least one already-existing benchmark.
+Performance-impacting changes that only come with change-specific benchmarks may
+hide broader performance implications. Thus, you must select at least one broad
+benchmark as well, even if the benchmark data shows no difference.
+
+In general, selecting broad benchmarks should be done on a category basis; do
+not cherrypick benchmarks. For example, if you are modifying networking code,
+then you should include **all** networking benchmarks (`iperf`, `nginx`,
+`redis`, etc.) and run them at **all** relevant variants (e.g. all concurrency
+levels of `nginx`). If the resulting benchmark dump is too long, you may
+summarize it, but do not elide it completely, as this may be perceived as an
+attempt to cherrypick benchmarks.
+
 Benchmark data must be presented as the raw output of
 [Go's `benchstat` tool](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat).
 This output contains the following critical pieces of information:
@@ -93,7 +106,7 @@ This output contains the following critical pieces of information:
 -   The statistical significance of the results (the `p` value, resulting from
     the Mann-Whitney U-test)
 
-As a rule of thumb, you should run benchmarks until `n≥16` on each side or
+As a rule of thumb, you should run benchmarks until `n≥24` on each side or
 `p<0.01`, whichever happens first. Signs to push `n` further include a standard
 deviation larger than 5% on microbenchmarks. Seeing `~` (indicating no
 statistically-significant change) is normal and expected for benchmark metrics
@@ -111,3 +124,27 @@ impacts, you should add a benchmark that does.
 
 After providing the `benchstat` table, the PR description should also explain
 any surprising/non-obvious result.
+
+## Help gVisor performance not regress
+
+### Add new benchmarks
+
+If a performance change improves an area of gVisor that isn't already
+well-captured by the existing set of benchmarks, and that you had to write a
+one-off benchmark to show the effect of a performance change, then chances are
+that this means gVisor needs a new benchmark added to its permanent set in order
+to ensure this aspect of gVisor performance does not regress into the future. If
+this is the case, you should submit a separate PR **before** the performance
+change that adds this benchmark to the permanent set. Permanent benchmarks
+should be broad and generally-useful, not overly-specific to one particular
+case.
+
+For example, a benchmark measuring number of allocations in a specific tiny
+codepath is **not** appropriate, but a benchmark measuring number of allocations
+and GC load in gVisor while a specific workload runs in the sandbox is.
+
+### Add `+checkescape` annotations
+
+If your change reduces the number of allocations inside a certain codepath to
+zero, then you should add the `+checkescape` annotation to ensure this does not
+regress.
