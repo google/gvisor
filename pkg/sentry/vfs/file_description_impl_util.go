@@ -193,11 +193,15 @@ func (FileDescriptionDefaultImpl) SetPosixACL(ctx context.Context, t ACLType, ac
 }
 
 // RegisterFileAsyncHandler implements FileDescriptionImpl.RegisterFileAsyncHandler.
+//
+// +checklocks:fd.flagsMu
 func (FileDescriptionDefaultImpl) RegisterFileAsyncHandler(fd *FileDescription) error {
 	return fd.asyncHandler.Register(fd)
 }
 
 // UnregisterFileAsyncHandler implements FileDescriptionImpl.UnregisterFileAsyncHandler.
+//
+// +checklocks:fd.flagsMu
 func (FileDescriptionDefaultImpl) UnregisterFileAsyncHandler(fd *FileDescription) {
 	fd.asyncHandler.Unregister(fd)
 }

@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // fileDescription is the common fd struct which a filesystem implementation
@@ -93,6 +94,42 @@ func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint3
 
 // Release implements FileDescriptionImpl.Release.
 func (fd *testFD) Release(context.Context) {
+}
+
+type rejectedAsyncHandler struct {
+	t *testing.T
+}
+
+func (rejectedAsyncHandler) Register(waiter.Waitable) error {
+	return linuxerr.ENOSPC
+}
+
+func (h rejectedAsyncHandler) Unregister(waiter.Waitable) {
+	h.t.Error("Unregister called after Register failed")
+}
+
+func TestFailedAsyncRegistrationCleanup(t *testing.T) {
+	ctx := contexttest.Context(t)
+	var vfsObj VirtualFilesystem
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
+	defer vfsObj.Release(ctx)
+
+	for _, cleanup := range []string{"disable", "close"} {
+		t.Run(cleanup, func(t *testing.T) {
+			fd := newTestFD(ctx, &vfsObj, linux.O_ASYNC, nil)
+			defer fd.DecRef(ctx)
+			if _, err := fd.SetAsyncHandler(func() FileAsync { return rejectedAsyncHandler{t} }); !linuxerr.Equals(linuxerr.ENOSPC, err) {
+				t.Fatalf("SetAsyncHandler: got %v, want ENOSPC", err)
+			}
+			if cleanup == "disable" {
+				if err := fd.SetStatusFlags(ctx, auth.CredentialsFromContext(ctx), 0); err != nil {
+					t.Errorf("clearing O_ASYNC: %v", err)
+				}
+			}
+		})
+	}
 }
 
 func TestGenCountFD(t *testing.T) {
