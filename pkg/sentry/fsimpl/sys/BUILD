@@ -36,6 +36,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/fsutil",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/rdma",
         "//pkg/refs",
