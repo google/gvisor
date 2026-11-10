@@ -856,6 +856,16 @@ const (
 	NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ                  = 0x20800407
 )
 
+// NV2080_CTRL_TIMER_GET_TIME_PARAMS is the param type for
+// NV2080_CTRL_CMD_TIMER_GET_TIME, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080tmr.h.
+//
+// +marshal
+type NV2080_CTRL_TIMER_GET_TIME_PARAMS struct {
+	_        structs.HostLayout
+	TimeNsec uint64
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080thermal.h:
 const (
 	NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2 = 0x20800513
@@ -924,6 +934,47 @@ const (
 	NV906F_CTRL_CMD_RESET_CHANNEL      = 0x906f0102
 	NV906F_CTRL_CMD_GET_MMU_FAULT_INFO = 0x906f0106
 )
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl9074.h:
+const (
+	NV9074_CTRL_CMD_FLUSH    = 0x90740101
+	NV9074_CTRL_CMD_GET_TIME = 0x90740102
+	NV9074_CTRL_CMD_RELEASE  = 0x90740103
+)
+
+// NV9074_CTRL_CMD_FLUSH_PARAMS is the param type for NV9074_CTRL_CMD_FLUSH,
+// from src/common/sdk/nvidia/inc/ctrl/ctrl9074.h.
+//
+// +marshal
+type NV9074_CTRL_CMD_FLUSH_PARAMS struct {
+	_            structs.HostLayout
+	IsFlushing   uint32
+	Pad0         [4]byte
+	MaxFlushTime uint64
+}
+
+// NV9074_CTRL_CMD_GET_TIME_PARAMS is the param type for
+// NV9074_CTRL_CMD_GET_TIME, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl9074.h.
+//
+// +marshal
+type NV9074_CTRL_CMD_GET_TIME_PARAMS struct {
+	_           structs.HostLayout
+	CurrentTime uint64
+}
+
+// NV9074_CTRL_CMD_RELEASE_PARAMS is the param type for
+// NV9074_CTRL_CMD_RELEASE, from src/common/sdk/nvidia/inc/ctrl/ctrl9074.h.
+//
+// +marshal
+type NV9074_CTRL_CMD_RELEASE_PARAMS struct {
+	_              structs.HostLayout
+	NotifierGPUVA  uint64
+	SemaphoreGPUVA uint64
+	WaitTimestamp  uint64
+	ReleaseValue   uint32
+	ReleaseFlags   uint32
+}
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl9096.h:
 const (

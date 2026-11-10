@@ -59,6 +59,10 @@ go_library(
         "save_restore.go",
         "save_restore_unsafe.go",
         "seccomp_filters.go",
+        "timed_semaphore.go",
+        "timed_semaphore_amd64.go",
+        "timed_semaphore_arm64.go",
+        "timed_semaphore_unsafe.go",
         "uvm.go",
         "uvm_mmap.go",
         "uvm_tools.go",
@@ -83,6 +87,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
+        "//pkg/safecopy",
         "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
@@ -103,10 +108,14 @@ go_library(
 
 go_test(
     name = "nvproxy_test",
-    srcs = ["nvproxy_test.go"],
+    srcs = [
+        "nvproxy_test.go",
+        "timed_semaphore_test.go",
+    ],
     embed = [":nvproxy"],
     deps = [
         "//pkg/abi/nvgpu",
+        "//pkg/context",
         "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "@org_golang_x_sys//unix:go_default_library",

@@ -70,6 +70,8 @@ type frontendFDMemmapFile struct {
 	mmapLength   uint64              `state:"nosave"`
 	mmapInternal uintptr             `state:"nosave"`
 	memType      hostarch.MemoryType `state:"nosave"`
+	// closed is true once Close has unmapped mmapInternal and closed hostFD.
+	closed bool `state:"nosave"`
 }
 
 // SetFD implements fsutil.MmapFile.SetFD.
@@ -80,6 +82,23 @@ func (mf *frontendFDMemmapFile) SetFD(fd int) {
 // Close implements io.Closer.Close for mf.MmapFileRefs.Closer.
 func (mf *frontendFDMemmapFile) Close() error {
 	var munmapErr, closeErr error
+	// src/nvidia/arch/nvalloc/unix/src/osapi.c:rm_cleanup_file_private() =>
+	// RmFreeUnusedClients() frees the clients when hostFD is closed. Mark
+	// them freed first, so that no GF100_TIMED_SEMAPHORE_SW timer writes
+	// memory that the close frees. Their deferred releases, which unpin
+	// memory the GPU may still use, run after the close.
+	ctx := context.Background()
+	var deferReleases []func()
+	for client := range mf.clients {
+		client.objsMu.Lock()
+		deferReleases = append(deferReleases, mf.nvp.objFree(ctx, client, client.handle)...)
+		client.objsMu.Unlock()
+	}
+	mf.clients = nil
+	// mmapMu excludes storeUint32s, which writes through mmapInternal from
+	// timers that hold no reference on mf.
+	mf.mmapMu.Lock()
+	mf.closed = true
 	if mf.mmapInternal != 0 {
 		if _, _, errno := unix.RawSyscall(unix.SYS_MUNMAP, mf.mmapInternal, uintptr(mf.mmapLength), 0); errno != 0 {
 			munmapErr = fmt.Errorf("munmap failed: %w", errno)
@@ -92,18 +111,10 @@ func (mf *frontendFDMemmapFile) Close() error {
 		}
 		mf.hostFD = -1
 	}
-	// src/nvidia/arch/nvalloc/unix/src/osapi.c:rm_cleanup_file_private() =>
-	// RmFreeUnusedClients()
-	ctx := context.Background()
-	for client := range mf.clients {
-		client.objsMu.Lock()
-		deferReleases := mf.nvp.objFree(ctx, client, client.handle)
-		client.objsMu.Unlock()
-		for _, release := range deferReleases {
-			release()
-		}
+	mf.mmapMu.Unlock()
+	for _, release := range deferReleases {
+		release()
 	}
-	mf.clients = nil
 	return errors.Join(munmapErr, closeErr)
 }
 

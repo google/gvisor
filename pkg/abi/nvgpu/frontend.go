@@ -808,6 +808,13 @@ func (n *NVOS46_PARAMETERS_V580) SetStatus(status uint32) {
 	n.Status = status
 }
 
+// Bitfields in NVOS46_PARAMETERS.Flags.
+const (
+	// NVOS46_FLAGS_KERNEL_MAPPING_ENABLE asks RM for a kernel mapping of the
+	// memory as well, which RM writes some notifiers and semaphores through.
+	NVOS46_FLAGS_KERNEL_MAPPING_ENABLE = 1 << 5
+)
+
 // NVOS47_PARAMETERS is the parameter type for NV_ESC_RM_UNMAP_MEMORY_DMA.
 //
 // +marshal

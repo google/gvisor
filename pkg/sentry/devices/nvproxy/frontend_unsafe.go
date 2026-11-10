@@ -439,10 +439,19 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	// identically to the equivalent NVOS21Parameters; compare
 	// src/nvidia/src/kernel/rmapi/entry_points.c:_nv04AllocWithSecInfo() and
 	// _nv04AllocWithAccessSecInfo().
-	origParamsSize := fi.ioctlParamsSize
-	fi.ioctlParamsSize = nvgpu.SizeofNVOS64Parameters
-	n, err := frontendIoctlInvoke(fi, ioctlParams)
-	fi.ioctlParamsSize = origParamsSize
+	var (
+		n   uintptr
+		err error
+	)
+	if client != nil && client.usedOnlyByNvproxyLocked(ioctlParams.HObjectNew) {
+		// RM would refuse the duplicate handle if it knew it.
+		ioctlParams.Status = nvgpu.NV_ERR_INSERT_DUPLICATE_NAME
+	} else {
+		origParamsSize := fi.ioctlParamsSize
+		fi.ioctlParamsSize = nvgpu.SizeofNVOS64Parameters
+		n, err = frontendIoctlInvoke(fi, ioctlParams)
+		fi.ioctlParamsSize = origParamsSize
+	}
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		addObjLocked(fi, client, ioctlParams, rightsRequested, allocParams)
 	}
@@ -507,7 +516,7 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 		// src/nvidia/interface/deprecated/rmapi_deprecated_vidheapctrl.c:_rmVidHeapControlAllocCommon()
 		if allocSizeParams.Flags&nvgpu.NVOS32_ALLOC_FLAGS_VIRTUAL != 0 {
 			// src/nvidia/src/kernel/mem_mgr/virtual_mem.c:virtmemConstruct_IMPL() => refAddDependant()
-			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, &miscObject{}, ioctlParams.HObjectParent, ioctlParams.HVASpace)
+			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, &miscObject{object: object{vaSpace: ioctlParams.HVASpace}}, ioctlParams.HObjectParent, ioctlParams.HVASpace)
 		} else {
 			classID := nvgpu.ClassID(nvgpu.NV01_MEMORY_SYSTEM)
 			if (allocSizeParams.Attr2>>nvgpu.NVOS32_ATTR2_USE_EGM_SHIFT)&nvgpu.NVOS32_ATTR2_USE_EGM_MASK == nvgpu.NVOS32_ATTR2_USE_EGM_TRUE {
