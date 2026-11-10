@@ -55,6 +55,7 @@ java/nio/channels/DatagramChannel/Loopback.java,,
 java/nio/channels/DatagramChannel/MulticastSendReceiveTests.java,,
 java/nio/channels/DatagramChannel/Promiscuous.java,,
 java/nio/channels/DatagramChannel/SocketOptionTests.java,,java.net.SocketException: Invalid argument
+java/nio/channels/DatagramChannel/Unref.java,https://bugs.openjdk.org/browse/JDK-8233437,OpenJDK excludes this descriptor-count test on all platforms
 java/nio/channels/FileChannel/directio/DirectIOTest.java,,Broken test
 java/nio/channels/Selector/OutOfBand.java#id0,,
 java/nio/channels/etc/PrintSupportedOptions.java,,
