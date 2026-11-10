@@ -45,6 +45,14 @@ func (k *KVM) archSyscallFilters() seccomp.SyscallRules {
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(KVM_GET_REGS),
 			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(KVM_GET_VCPU_EVENTS),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
+			},
 		},
 	})
 }
