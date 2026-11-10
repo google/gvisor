@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <ifaddrs.h>
 #include <linux/capability.h>
 #include <linux/netlink.h>
 #include <net/if.h>
@@ -116,20 +117,25 @@ TEST(NetworkNamespaceTest, LoopbackAddressesAddedOnUp) {
     addr6.sin6_family = AF_INET6;
     addr6.sin6_addr = in6addr_loopback;
 
-    // Before the loopback interface is brought up it has no addresses, so
-    // binding to a loopback address fails.
+    Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
     {
-      FileDescriptor s4 =
-          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
-      EXPECT_THAT(bind(s4.get(), AsSockAddr(&addr4), sizeof(addr4)),
-                  SyscallFailsWithErrno(EADDRNOTAVAIL));
+      // Linux can bind an unassigned IPv4 address before loopback first comes
+      // up. Check the addresses assigned to the interface directly.
+      struct ifaddrs* addrs;
+      ASSERT_THAT(getifaddrs(&addrs), SyscallSucceeds());
+      for (const auto* addr = addrs; addr; addr = addr->ifa_next) {
+        if (addr->ifa_addr && lo.name == addr->ifa_name) {
+          EXPECT_NE(addr->ifa_addr->sa_family, AF_INET);
+        }
+      }
+      freeifaddrs(addrs);
+
       FileDescriptor s6 =
           ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
       EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
                   SyscallFailsWithErrno(EADDRNOTAVAIL));
     }
 
-    Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
     ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
 
     // Bringing it up assigns the default loopback addresses, just like Linux,
