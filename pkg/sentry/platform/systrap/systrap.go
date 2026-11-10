@@ -188,6 +188,14 @@ restart:
 	if err != nil {
 		return nil, hostarch.NoAccess, err
 	}
+	// Expose the application PC before the Sentry can report a ptrace stop.
+	ip, rewindErr := s.usertrap.RewindPC(ctx, hostarch.Addr(ac.IP()), mm)
+	if rewindErr != nil {
+		ctx.Warningf("Killing subprocess after failing to rewind a syscall trampoline PC: %v", rewindErr)
+		s.kill()
+		return nil, hostarch.NoAccess, rewindErr
+	}
+	ac.SetIP(uintptr(ip))
 	if needPatch {
 		s.usertrap.PatchSyscall(ctx, ac, mm)
 	}
@@ -383,8 +391,8 @@ func (*Systrap) MaxUserAddress() hostarch.Addr {
 //
 // In mm.Fork, the child process's AddressSpace and MemoryManager must be
 // synchronized to ensure a consistent view of syscall patching. Even though a
-// concurrent ARCH_SET_GS may set mm.gsInUse just after reading it for
-// opts.DisableSyscallPatching, that is ok. The flag is only set once the
+// concurrent ARCH_SET_GS may set mm.syscallPatchingDisabled just after reading
+// it for opts.DisableSyscallPatching, that is ok. The flag is only set once the
 // parent process's syscalls have already been unpatched, so the child process
 // will either:
 //   - see the flag before and inherit an unpatched address space.
