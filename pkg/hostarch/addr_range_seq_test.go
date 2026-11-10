@@ -195,3 +195,29 @@ func TestAddrRangeSeqTakeFirst(t *testing.T) {
 	}
 	testAddrRangeSeqEqualityWithTailIteration(t, ars, want)
 }
+
+func TestAddrRangeSeqTakeFirstDropFirstIteration(t *testing.T) {
+	// Tests AddrRangeSeq iteration using Head/DropFirst after TakeFirst, which
+	// can truncate any AddrRange to a length of 0.
+	ranges := []AddrRange{
+		{0x10, 0x14},
+		{0x20, 0x24},
+		{0x30, 0x34},
+	}
+	for n := 0; n <= 12; n++ {
+		ars := AddrRangeSeqFromSlice(ranges).TakeFirst(n)
+		var done int64
+		for !ars.IsEmpty() {
+			head := ars.Head()
+			next := ars.DropFirst(int(head.Length()))
+			if head.Length() == 0 && next.NumRanges() >= ars.NumRanges() {
+				t.Fatalf("TakeFirst(%d): %v.DropFirst(0): got %v, wanted at least %s omitted", n, ars, next, head)
+			}
+			done += int64(head.Length())
+			ars = next
+		}
+		if done != int64(n) {
+			t.Errorf("TakeFirst(%d): iterated over %d bytes, wanted %d", n, done, n)
+		}
+	}
+}
