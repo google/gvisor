@@ -95,13 +95,21 @@ performance trade-off.
 
 ## Inode numbers
 
-Files on gofer mounts (the rootfs and bind mounts) report their host inode
+Files on gofer mounts without an overlay report their host inode
 numbers. Host device numbers are mapped to sandbox-private device numbers, so
 files on different host filesystems under one mount report different `st_dev`
 values, as with Linux overlayfs. With `--inode-numbers=virtual`, the sandbox
 instead assigns sequential inode numbers and a single device number per mount,
 which costs memory for every file the sandbox has ever seen and a `stat(2)` call
 for every entry returned by `getdents(2)`.
+
+Overlay mounts derive inode numbers from the layer device and inode numbers.
+Files use the overlay's device number when the layer identity fits in the
+encoding. Otherwise, files keep their layer device and inode numbers. Copy-up
+preserves identity for a file with one lower link. Copy-up that breaks a lower
+hard link gives the independent upper file a different identity. With the default
+inode-number mode, unchanged backing files keep their identities across
+checkpoint/restore even when no file descriptor keeps them open.
 
 ## Shared root filesystem
 

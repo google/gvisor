@@ -1182,7 +1182,30 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 // TestCheckpointRestoreInodeNumbers checks that files on a bind mount keep
 // their device and inode numbers across checkpoint/restore.
 func TestCheckpointRestoreInodeNumbers(t *testing.T) {
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	testCheckpointRestoreInodeNumbers(t, false /* rootOverlay */, true /* directfs */)
+}
+
+// TestCheckpointRestoreOverlayUnopenedInodeNumbers checks identities of lower
+// rootfs files that have no open file description at checkpoint.
+func TestCheckpointRestoreOverlayUnopenedInodeNumbers(t *testing.T) {
+	for _, directfs := range []bool{false, true} {
+		t.Run(fmt.Sprintf("directfs=%t", directfs), func(t *testing.T) {
+			testCheckpointRestoreInodeNumbers(t, true /* rootOverlay */, directfs)
+		})
+	}
+}
+
+func testCheckpointRestoreInodeNumbers(t *testing.T, rootOverlay, directfs bool) {
+	t.Helper()
+	base := testutil.TmpDir()
+	if rootOverlay {
+		var err error
+		base, err = os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir, err := os.MkdirTemp(base, "checkpoint-test")
 	if err != nil {
 		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
@@ -1199,11 +1222,39 @@ func TestCheckpointRestoreInodeNumbers(t *testing.T) {
 	}
 	dst := filepath.Join(dir, "mnt")
 	file := filepath.Join(dst, "file")
+	files := []string{file}
 
 	spec, conf := sleepSpecConf(t)
+	conf.DirectFS = directfs
 	// Keep the file open so that its dentry is checkpointed.
 	spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + file + "; exec sleep 1000"}
-	spec.Mounts = append(spec.Mounts, specs.Mount{Destination: dst, Source: src, Type: "bind"})
+	if rootOverlay {
+		if err := conf.Overlay2.Set("all:memory"); err != nil {
+			t.Fatal(err)
+		}
+		spec.Root.Readonly = false
+		file = filepath.Join(src, "file")
+		files = []string{file}
+		for i := 0; i < 3001; i++ {
+			path := filepath.Join(src, fmt.Sprint(i))
+			if err := os.WriteFile(path, nil, 0644); err != nil {
+				t.Fatal(err)
+			}
+			files = append(files, path)
+		}
+		// Two files survive through FDs; the other 3000 must be stable without
+		// their overlay dentries being retained. This directory is outside tmp.
+		spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + file + "; exec 4<" + files[1] + "; exec sleep 1000"}
+	} else {
+		spec.Mounts = append(spec.Mounts, specs.Mount{Destination: dst, Source: src, Type: "bind"})
+	}
+	statArgs := append([]string{"/usr/bin/stat", "-c", "%n %d %i"}, files...)
+	if rootOverlay {
+		// Hash the complete manifest in the guest so it cannot fill the exec
+		// output pipe while the caller waits for the process to finish.
+		statArgs = append([]string{"/bin/bash", "-o", "pipefail", "-c",
+			`/usr/bin/stat -c '%n %d %i' "$@" | /usr/bin/sha256sum`, "stat"}, files...)
+	}
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -1224,10 +1275,10 @@ func TestCheckpointRestoreInodeNumbers(t *testing.T) {
 	if err := cont.Start(conf); err != nil {
 		t.Fatalf("error starting container: %v", err)
 	}
-	if err := waitForProcessCount(cont, 1); err != nil {
+	if err := waitForProcess(cont, newProcessBuilder().Cmd("sleep").Process()); err != nil {
 		t.Fatal(err)
 	}
-	before, err := executeCombinedOutput(conf, cont, nil, "/usr/bin/stat", "-c", "%d %i", file)
+	before, err := executeCombinedOutput(conf, cont, nil, statArgs[0], statArgs[1:]...)
 	if err != nil {
 		t.Fatalf("stat failed: %v", err)
 	}
@@ -1249,12 +1300,264 @@ func TestCheckpointRestoreInodeNumbers(t *testing.T) {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
-	after, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", file)
+	after, err := executeCombinedOutput(conf, cont2, nil, statArgs[0], statArgs[1:]...)
 	if err != nil {
 		t.Fatalf("stat failed: %v", err)
 	}
 	if !bytes.Equal(before, after) {
 		t.Errorf("device and inode numbers changed across restore: before %q, after %q", before, after)
+	}
+}
+
+// hostRecreateWithRecycledIno removes aPath and bPath, then creates bPath so
+// that it receives the device and inode in want. aPath is created afterwards.
+// It reports whether the host filesystem reused that inode.
+func hostRecreateWithRecycledIno(t *testing.T, aPath, bPath string, want unix.Stat_t) bool {
+	t.Helper()
+	const tries = 32
+	for i := 0; i < tries; i++ {
+		if err := os.Remove(aPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove %s: %v", aPath, err)
+		}
+		if err := os.Remove(bPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove %s: %v", bPath, err)
+		}
+		if err := os.WriteFile(bPath, []byte("b\n"), 0644); err != nil {
+			t.Fatalf("write %s: %v", bPath, err)
+		}
+		var st unix.Stat_t
+		if err := unix.Stat(bPath, &st); err != nil {
+			t.Fatal(err)
+		}
+		if st.Ino == want.Ino && st.Dev == want.Dev {
+			if err := os.WriteFile(aPath, []byte("a\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// TestCheckpointRestoreRecycledOverlayInode checks that two overlay files keep
+// distinct device and inode numbers when the host reuses an inode number
+// between checkpoint and restore.
+func TestCheckpointRestoreRecycledOverlayInode(t *testing.T) {
+	testCheckpointRestoreOverlayCollision(t, false /* linkOrigin */, true /* directfs */)
+}
+
+// TestCheckpointRestoreOverlayOriginHardLink checks that an independent upper
+// file is not identified as a lower hard link added between save and restore.
+func TestCheckpointRestoreOverlayOriginHardLink(t *testing.T) {
+	for _, directfs := range []bool{false, true} {
+		t.Run(fmt.Sprintf("directfs=%t", directfs), func(t *testing.T) {
+			testCheckpointRestoreOverlayCollision(t, true /* linkOrigin */, directfs)
+		})
+	}
+}
+
+func testCheckpointRestoreOverlayCollision(t *testing.T, linkOrigin, directfs bool) {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir() failed: %v", err)
+	}
+	base, err := os.MkdirTemp(home, "gvisor-overlay-ino")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(base)
+	if err := os.Chmod(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	aPath := filepath.Join(base, "a")
+	bPath := filepath.Join(base, "b")
+	if err := os.WriteFile(aPath, []byte("a\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bPath, []byte("b\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var want unix.Stat_t
+	if err := unix.Stat(aPath, &want); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, conf := sleepSpecConf(t)
+	conf.DirectFS = directfs
+	if err := conf.Overlay2.Set("all:memory"); err != nil {
+		t.Fatal(err)
+	}
+	// A read-only root is not wrapped in an overlay. The files live on the
+	// root overlay, outside the writable tmp bind mount.
+	spec.Root.Readonly = false
+	// Keep a open so its dentry is checkpointed.
+	spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + aPath + "; exec sleep 1000"}
+	if linkOrigin {
+		spec.Process.Args = []string{"/bin/sh", "-c", "echo upper > " + aPath + "; exec 3<" + aPath + "; exec sleep 1000"}
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if err := waitForProcess(cont, newProcessBuilder().Cmd("sleep").Process()); err != nil {
+		t.Fatal(err)
+	}
+
+	imageDir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-overlay-ino")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(imageDir)
+	if err := cont.Checkpoint(conf, imageDir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+		t.Fatalf("error checkpointing container to file: %v", err)
+	}
+
+	// Close the held file so the host can reuse its inode, then give that
+	// inode to b before restore.
+	cont.Destroy()
+	cont = nil
+	if linkOrigin {
+		if err := os.Remove(bPath); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Link(aPath, bPath); err != nil {
+			t.Fatal(err)
+		}
+	} else if !hostRecreateWithRecycledIno(t, aPath, bPath, want) {
+		t.Skip("host filesystem did not reuse the inode number")
+	}
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Restore(conf, imageDir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	statA, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", aPath)
+	if err != nil {
+		t.Fatalf("stat %s failed: %v\n%s", aPath, err, statA)
+	}
+	statB, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", bPath)
+	if err != nil {
+		t.Fatalf("stat %s failed: %v\n%s", bPath, err, statB)
+	}
+	if bytes.Equal(statA, statB) {
+		t.Errorf("overlay files share one device and inode after restore: %q", statA)
+	}
+}
+
+// TestCheckpointRestoreOverlayLink checks that a hard link created after
+// restore shares the overlay inode of an upper file that stayed open across
+// checkpoint.
+func TestCheckpointRestoreOverlayLink(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir() failed: %v", err)
+	}
+	base, err := os.MkdirTemp(home, "gvisor-overlay-link")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(base)
+	if err := os.Chmod(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	aPath := filepath.Join(base, "a")
+	bPath := filepath.Join(base, "b")
+
+	spec, conf := sleepSpecConf(t)
+	if err := conf.Overlay2.Set("all:memory"); err != nil {
+		t.Fatal(err)
+	}
+	// A read-only root is not wrapped in an overlay. The shell creates a on
+	// the upper layer and keeps it open so its dentry is checkpointed.
+	spec.Root.Readonly = false
+	spec.Process.Args = []string{"/bin/sh", "-c", "echo upper > " + aPath + "; exec 3<" + aPath + "; exec sleep 1000"}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if err := waitForProcess(cont, newProcessBuilder().Cmd("sleep").Process()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := executeCombinedOutput(conf, cont, nil, "/usr/bin/stat", "-c", "%d %i", aPath)
+	if err != nil {
+		t.Fatalf("stat failed: %v\n%s", err, before)
+	}
+
+	imageDir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-overlay-link")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(imageDir)
+	if err := cont.Checkpoint(conf, imageDir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+		t.Fatalf("error checkpointing container to file: %v", err)
+	}
+
+	cont.Destroy()
+	cont = nil
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Restore(conf, imageDir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	if out, err := executeCombinedOutput(conf, cont2, nil, "/bin/ln", aPath, bPath); err != nil {
+		t.Fatalf("ln failed: %v\n%s", err, out)
+	}
+	statA, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", aPath)
+	if err != nil {
+		t.Fatalf("stat %s failed: %v\n%s", aPath, err, statA)
+	}
+	statB, err := executeCombinedOutput(conf, cont2, nil, "/usr/bin/stat", "-c", "%d %i", bPath)
+	if err != nil {
+		t.Fatalf("stat %s failed: %v\n%s", bPath, err, statB)
+	}
+	if !bytes.Equal(before, statA) {
+		t.Errorf("overlay inode changed across restore: before %q, after %q", before, statA)
+	}
+	if !bytes.Equal(statA, statB) {
+		t.Errorf("hard link does not share the overlay inode after restore: %q and %q", statA, statB)
 	}
 }
 

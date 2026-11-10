@@ -200,6 +200,9 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 //   - fs.renameMu must be locked.
 //   - parent.dirMu must be locked.
 func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name string) (*dentry, lookupLayer, error) {
+	if err := fs.ensureDirInoCache(ctx); err != nil {
+		return nil, lookupLayerNone, err
+	}
 	childPath := fspath.Parse(name)
 	child := fs.newDentry()
 	topLookupLayer := lookupLayerNone
@@ -333,29 +336,14 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		return nil, topLookupLayer, linuxerr.ENOENT
 	}
 
-	// Device and inode numbers were copied from the topmost layer above for
-	// non-directories. They were copied from the bottommost layer for
-	// directories. Override them if necessary. We can use RacyLoad() because
-	// child is still being initialized.
-	if child.isDir() {
-		orig := layerDevNoAndIno{
-			layerDevNumber: layerDevNumber{child.devMajor.RacyLoad(), child.devMinor.RacyLoad()},
-			ino:            child.ino.RacyLoad(),
-		}
-		child.ino.Store(fs.newDirIno(orig))
-		child.dirInoHash = orig
-		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		child.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
-	} else if !child.upperVD.Ok() {
-		childDevMinor, err := fs.getLowerDevMinor(child.devMajor.RacyLoad(), child.devMinor.RacyLoad())
-		if err != nil {
-			ctx.Infof("overlay.filesystem.lookupLocked: failed to map lower layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), err)
-			child.destroyLocked(ctx)
-			return nil, topLookupLayer, err
-		}
-		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		child.devMinor = atomicbitops.FromUint32(childDevMinor)
-	}
+	// devMajor, devMinor, and ino currently hold the layer identity: the
+	// bottom layer for a directory, the top layer for any other file.
+	// Derive the overlay identity from this layer identity.
+	// RacyLoad is safe because child is still being initialized.
+	child.assignOverlayIdentity(ctx, layerDevNoAndIno{
+		layerDevNumber: layerDevNumber{child.devMajor.RacyLoad(), child.devMinor.RacyLoad()},
+		ino:            child.ino.RacyLoad(),
+	})
 
 	parent.IncRef()
 	child.parent.Store(parent)
@@ -1604,7 +1592,6 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	delete(parent.children, name)
-	fs.releaseDirIno(child.dirInoHash)
 	ds = appendDentry(ds, child)
 	parent.dirents = nil
 	nctx := withDropList(ctx, &ds)
@@ -1695,6 +1682,9 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
+	if err := fs.ensureDirInoCache(ctx); err != nil {
+		return linux.Statx{}, err
+	}
 	var d *dentry
 	if rp.Done() {
 		d = rp.Start().Impl().(*dentry)

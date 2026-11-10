@@ -882,6 +882,10 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 	}
 	if !i.cachedMetadataAuthoritative() {
 		i.updateMetadataFromStatxLocked(&stat)
+	} else if !d.isDir() && !d.isDeleted() && stat.Mask&unix.STATX_NLINK != 0 {
+		// Deleted files are recreated temporarily; their saved link count
+		// describes the final object after restore removes the temporary name.
+		i.nlink.Store(stat.Nlink)
 	}
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {

@@ -149,6 +149,9 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *regularFileFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+	if err := fd.dentry().fs.ensureDirInoCache(ctx); err != nil {
+		return linux.Statx{}, err
+	}
 	var stat linux.Statx
 	if layerMask := opts.Mask &^ statInternalMask; layerMask != 0 {
 		wrappedFD, err := fd.getCurrentFD(ctx)
