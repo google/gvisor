@@ -115,6 +115,29 @@ func bluepillStopGuest(c *vCPU) {
 //
 //go:nosplit
 func bluepillSigBus(c *vCPU) {
+	// If the faulting instruction follows MOV SS or POP SS, the vCPU is in
+	// an interrupt shadow that blocks NMI delivery until that instruction
+	// completes. The instruction faults again on every retry, so clear the
+	// shadow to deliver the NMI at the faulting instruction.
+	var events kvmVcpuEvents
+	if errno := hostsyscall.RawSyscallErrno( // escapes: no.
+		unix.SYS_IOCTL,
+		uintptr(c.fd),
+		KVM_GET_VCPU_EVENTS,
+		uintptr(unsafe.Pointer(&events))); errno != 0 {
+		throw("getting vCPU events failed")
+	}
+	if events.interrupt.shadow != 0 {
+		events.interrupt.shadow = 0
+		events.flags |= _KVM_VCPUEVENT_VALID_SHADOW
+		if errno := hostsyscall.RawSyscallErrno( // escapes: no.
+			unix.SYS_IOCTL,
+			uintptr(c.fd),
+			KVM_SET_VCPU_EVENTS,
+			uintptr(unsafe.Pointer(&events))); errno != 0 {
+			throw("setting vCPU events failed")
+		}
+	}
 	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
