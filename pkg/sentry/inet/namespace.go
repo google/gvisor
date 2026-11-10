@@ -65,7 +65,7 @@ func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.Use
 	if eventPublishingStack, ok := stack.(InterfaceEventPublisher); ok {
 		eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
 	}
-	n.abstractSockets.init()
+	n.abstractSockets = newAbstractSocketNamespace()
 	return n
 }
 
@@ -161,7 +161,7 @@ func (n *Namespace) init() {
 			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
 		}
 	}
-	n.abstractSockets.init()
+	n.abstractSockets = newAbstractSocketNamespace()
 }
 
 // afterLoad is invoked by stateify.
