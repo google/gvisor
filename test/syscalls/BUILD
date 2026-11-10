@@ -862,6 +862,13 @@ syscall_test(
 )
 
 syscall_test(
+    size = "large",
+    add_hostinet = True,
+    save = False,
+    test = "//test/syscalls/linux:socket_data_transfer_stress_test",
+)
+
+syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_domain_non_blocking_test",
 )
@@ -1108,6 +1115,7 @@ syscall_test(
 syscall_test(
     size = "large",
     add_hostinet = True,
+    limit_ephemeral_ports = True,
     # Takes too long to run with S/R.
     save = False,
     shard_count = most_shards,
