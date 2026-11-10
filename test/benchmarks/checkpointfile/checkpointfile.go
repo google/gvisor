@@ -94,6 +94,7 @@ func BenchmarkCheckpointFile(b *testing.B) {
 			b.Fatalf("failed to read checkpoint directory: %v", err)
 		}
 	} else {
+		dockerutil.EnsureSupportedDockerVersion()
 		if !testutil.IsCheckpointSupported() {
 			b.Skip("Checkpoint is not supported on this runtime.")
 		}
@@ -696,7 +697,7 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 var _ = boot.VersionKey
 
 func TestMain(m *testing.M) {
-	harness.Init()
+	harness.ParseFlags()
 	// Loading tasks' floating point state uses the host's CPUID,
 	// expected by the kernel load machinery.
 	cpuid.Initialize()
