@@ -219,6 +219,9 @@ struct thread_context* switch_context_amd64(
       ctx->signo = SIGCHLD;
       ctx->siginfo.si_signo = SIGCHLD;
       ctx->ptregs.orig_rax = -1;
+      // This thread didn't load the context's FPU state, so it has to be
+      // restored from ctx->fpstate even if this thread resumes it next.
+      atomic_store(&ctx->fpstate_changed, 1);
     } else {
       break;
     }
@@ -300,6 +303,11 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
     gregs_to_ptregs(ucontext, &ctx->ptregs);
     memcpy(ctx->fpstate, (uint8_t*)ucontext->uc_mcontext.fpregs,
            __export_arch_state.fp_len);
+    atomic_store(&ctx->fpstate_changed, 0);
+  } else {
+    // ctx->fpstate may not have been loaded into the FPU yet, so it has to be
+    // restored when the context is resumed.
+    atomic_store(&ctx->fpstate_changed, 1);
   }
 
   switch (signo) {
@@ -389,8 +397,6 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
     default:
       return;
   }
-
-  atomic_store(&ctx->fpstate_changed, 0);
 
 init:
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
