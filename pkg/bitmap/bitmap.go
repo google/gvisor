@@ -227,9 +227,9 @@ func (b *Bitmap) ClearRange(begin, end uint32) {
 		b.clearRange(begin, end)
 		b.numOnes = uint32(b.countOnesForAllBlocks())
 	} else {
-		oldRangeOnes := b.countOnesForBlocks(begin, end)
+		oldRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.clearRange(begin, end)
-		newRangeOnes := b.countOnesForBlocks(begin, end)
+		newRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.numOnes += uint32(newRangeOnes - oldRangeOnes)
 	}
 }
@@ -243,9 +243,9 @@ func (b *Bitmap) FlipRange(begin, end uint32) {
 		b.flipRange(begin, end)
 		b.numOnes = uint32(b.countOnesForAllBlocks())
 	} else {
-		oldRangeOnes := b.countOnesForBlocks(begin, end)
+		oldRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.flipRange(begin, end)
-		newRangeOnes := b.countOnesForBlocks(begin, end)
+		newRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.numOnes += uint32(newRangeOnes - oldRangeOnes)
 	}
 }

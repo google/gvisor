@@ -413,3 +413,36 @@ func TestGrow(t *testing.T) {
 		t.Errorf("Grow() got: %v, want: %v", bitmap.ToSlice(), want)
 	}
 }
+
+// Verify FlipRange and ClearRange for ranges that end at the last bit of the
+// bitmap.
+func TestRangeToBitmapEnd(t *testing.T) {
+	const size = 256
+	check := func(t *testing.T, bitmap *Bitmap, begin, end uint32) {
+		t.Helper()
+		want := make([]uint32, 0)
+		for i := begin; i < end; i++ {
+			want = append(want, i)
+		}
+		if got := bitmap.ToSlice(); !slices.Equal(got, want) {
+			t.Errorf("ToSlice() got: %v, wanted: %v", got, want)
+		}
+		if got := bitmap.GetNumOnes(); got != uint32(len(want)) {
+			t.Errorf("GetNumOnes() got: %v, wanted: %v", got, len(want))
+		}
+	}
+
+	t.Run("FlipRange", func(t *testing.T) {
+		bitmap := New(size)
+		bitmap.FlipRange(192, size)
+		check(t, &bitmap, 192, size)
+	})
+	t.Run("ClearRange", func(t *testing.T) {
+		bitmap := New(size)
+		for i := uint32(192); i < size; i++ {
+			bitmap.Add(i)
+		}
+		bitmap.ClearRange(200, size)
+		check(t, &bitmap, 192, 200)
+	})
+}
