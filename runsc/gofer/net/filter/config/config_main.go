@@ -150,6 +150,11 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.PerArg{
 			seccomp.AnyValue{}, // fd
 			seccomp.EqualTo(unix.SOL_SOCKET),
+			seccomp.EqualTo(unix.SO_BROADCAST),
+		},
+		seccomp.PerArg{
+			seccomp.AnyValue{}, // fd
+			seccomp.EqualTo(unix.SOL_SOCKET),
 			seccomp.EqualTo(unix.SO_KEEPALIVE),
 		},
 		seccomp.PerArg{
@@ -192,6 +197,16 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.IPPROTO_TCP),
 		},
 		seccomp.PerArg{
+			seccomp.EqualTo(unix.AF_INET),
+			seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
+			seccomp.EqualTo(0),
+		},
+		seccomp.PerArg{
+			seccomp.EqualTo(unix.AF_INET),
+			seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
+			seccomp.EqualTo(unix.IPPROTO_UDP),
+		},
+		seccomp.PerArg{
 			seccomp.EqualTo(unix.AF_INET6),
 			seccomp.EqualTo(unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
 			seccomp.EqualTo(0),
@@ -200,6 +215,16 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.AF_INET6),
 			seccomp.EqualTo(unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
 			seccomp.EqualTo(unix.IPPROTO_TCP),
+		},
+		seccomp.PerArg{
+			seccomp.EqualTo(unix.AF_INET6),
+			seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
+			seccomp.EqualTo(0),
+		},
+		seccomp.PerArg{
+			seccomp.EqualTo(unix.AF_INET6),
+			seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
+			seccomp.EqualTo(unix.IPPROTO_UDP),
 		},
 	},
 	unix.SYS_WRITE:  seccomp.MatchAll{},

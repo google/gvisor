@@ -1287,6 +1287,7 @@ func (n *nic) StateFields() []string {
 		"duplicateAddressDetectors",
 		"disabledNetworkProtocols",
 		"enabled",
+		"adminDown",
 		"spoofing",
 		"promiscuous",
 		"linkResQueue",
@@ -1318,14 +1319,15 @@ func (n *nic) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &n.duplicateAddressDetectors)
 	stateSinkObject.Save(13, &n.disabledNetworkProtocols)
 	stateSinkObject.Save(14, &n.enabled)
-	stateSinkObject.Save(15, &n.spoofing)
-	stateSinkObject.Save(16, &n.promiscuous)
-	stateSinkObject.Save(17, &n.linkResQueue)
-	stateSinkObject.Save(18, &n.packetEPs)
-	stateSinkObject.Save(19, &n.qDisc)
-	stateSinkObject.SaveBool(20, &n.deliverLinkPackets)
-	stateSinkObject.Save(21, &n.Primary)
-	stateSinkObject.SaveBool(22, &n.experimentIPOptionEnabled)
+	stateSinkObject.Save(15, &n.adminDown)
+	stateSinkObject.Save(16, &n.spoofing)
+	stateSinkObject.Save(17, &n.promiscuous)
+	stateSinkObject.Save(18, &n.linkResQueue)
+	stateSinkObject.Save(19, &n.packetEPs)
+	stateSinkObject.Save(20, &n.qDisc)
+	stateSinkObject.SaveBool(21, &n.deliverLinkPackets)
+	stateSinkObject.Save(22, &n.Primary)
+	stateSinkObject.SaveBool(23, &n.experimentIPOptionEnabled)
 }
 
 func (n *nic) afterLoad(context.Context) {}
@@ -1347,14 +1349,15 @@ func (n *nic) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &n.duplicateAddressDetectors)
 	stateSourceObject.Load(13, &n.disabledNetworkProtocols)
 	stateSourceObject.Load(14, &n.enabled)
-	stateSourceObject.Load(15, &n.spoofing)
-	stateSourceObject.Load(16, &n.promiscuous)
-	stateSourceObject.Load(17, &n.linkResQueue)
-	stateSourceObject.Load(18, &n.packetEPs)
-	stateSourceObject.Load(19, &n.qDisc)
-	stateSourceObject.LoadBool(20, &n.deliverLinkPackets)
-	stateSourceObject.Load(21, &n.Primary)
-	stateSourceObject.LoadBool(22, &n.experimentIPOptionEnabled)
+	stateSourceObject.Load(15, &n.adminDown)
+	stateSourceObject.Load(16, &n.spoofing)
+	stateSourceObject.Load(17, &n.promiscuous)
+	stateSourceObject.Load(18, &n.linkResQueue)
+	stateSourceObject.Load(19, &n.packetEPs)
+	stateSourceObject.Load(20, &n.qDisc)
+	stateSourceObject.LoadBool(21, &n.deliverLinkPackets)
+	stateSourceObject.Load(22, &n.Primary)
+	stateSourceObject.LoadBool(23, &n.experimentIPOptionEnabled)
 }
 
 func (p *packetEndpointList) StateTypeName() string {

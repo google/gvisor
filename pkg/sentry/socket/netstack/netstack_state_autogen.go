@@ -85,6 +85,7 @@ func (s *Stack) StateFields() []string {
 		"Stack",
 		"eventSubscriber",
 		"id",
+		"ipv6KeepAddrOnDown",
 	}
 }
 
@@ -97,6 +98,7 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	_ = (*stack.Stack)(StackValue)
 	stateSinkObject.Save(1, &s.eventSubscriber)
 	stateSinkObject.SaveUint64(2, &s.id)
+	stateSinkObject.Save(3, &s.ipv6KeepAddrOnDown)
 	stateSinkObject.SaveValue(0, StackValue)
 }
 
@@ -106,6 +108,7 @@ func (s *Stack) afterLoad(context.Context) {}
 func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.eventSubscriber)
 	stateSourceObject.LoadUint64(2, &s.id)
+	stateSourceObject.Load(3, &s.ipv6KeepAddrOnDown)
 	stateSourceObject.LoadValueTo(0, (**stack.Stack)(nil), s)
 }
 

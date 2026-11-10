@@ -3011,6 +3011,34 @@ func (m *maxUserNamespacesData) StateLoad(ctx context.Context, stateSourceObject
 	stateSourceObject.Load(0, &m.DynamicBytesFile)
 }
 
+func (d *ipv6KeepAddrOnDown) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.ipv6KeepAddrOnDown"
+}
+
+func (d *ipv6KeepAddrOnDown) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"stack",
+	}
+}
+
+func (d *ipv6KeepAddrOnDown) beforeSave() {}
+
+// +checklocksignore
+func (d *ipv6KeepAddrOnDown) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.DynamicBytesFile)
+	stateSinkObject.Save(1, &d.stack)
+}
+
+func (d *ipv6KeepAddrOnDown) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *ipv6KeepAddrOnDown) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.DynamicBytesFile)
+	stateSourceObject.LoadWait(1, &d.stack)
+}
+
 func (d *tcpSackData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.tcpSackData"
 }
@@ -3368,6 +3396,7 @@ func init() {
 	state.RegisterNoHooks((*domainnameData)(nil))
 	state.RegisterNoHooks((*uuidData)(nil))
 	state.RegisterNoHooks((*maxUserNamespacesData)(nil))
+	state.RegisterNoHooks((*ipv6KeepAddrOnDown)(nil))
 	state.RegisterNoHooks((*tcpSackData)(nil))
 	state.RegisterNoHooks((*tcpRecoveryData)(nil))
 	state.RegisterNoHooks((*tcpMemData)(nil))
