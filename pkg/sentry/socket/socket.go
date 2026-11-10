@@ -415,33 +415,35 @@ func (to *SendReceiveTimeout) SendTimeout() int64 {
 // UnmarshalSockAddr unmarshals memory representing a struct sockaddr to one of
 // the ABI socket address types.
 //
-// Precondition: data must be long enough to represent a socket address of the
-// given family.
+// data may be shorter than the address type: the host kernel can return a
+// shorter address than the full struct (for example, older kernels return an
+// 18-byte sockaddr_ll for a 6-byte hardware address instead of the 20-byte
+// struct). The missing trailing bytes are treated as zero, as if the address
+// had been copied into a zeroed struct. Bytes beyond the address type are
+// ignored.
 func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
+	var addr linux.SockAddr
 	switch family {
 	case unix.AF_INET:
-		var addr linux.SockAddrInet
-		addr.UnmarshalUnsafe(data)
-		return &addr
+		addr = &linux.SockAddrInet{}
 	case unix.AF_INET6:
-		var addr linux.SockAddrInet6
-		addr.UnmarshalUnsafe(data)
-		return &addr
+		addr = &linux.SockAddrInet6{}
 	case unix.AF_UNIX:
-		var addr linux.SockAddrUnix
-		addr.UnmarshalUnsafe(data)
-		return &addr
+		addr = &linux.SockAddrUnix{}
 	case unix.AF_NETLINK:
-		var addr linux.SockAddrNetlink
-		addr.UnmarshalUnsafe(data)
-		return &addr
+		addr = &linux.SockAddrNetlink{}
 	case unix.AF_PACKET:
-		var addr linux.SockAddrLink
-		addr.UnmarshalUnsafe(data)
-		return &addr
+		addr = &linux.SockAddrLink{}
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
 	}
+	if size := addr.SizeBytes(); len(data) < size {
+		padded := make([]byte, size)
+		copy(padded, data)
+		data = padded
+	}
+	addr.UnmarshalUnsafe(data)
+	return addr
 }
 
 var sockAddrLinkSize = (&linux.SockAddrLink{}).SizeBytes()
