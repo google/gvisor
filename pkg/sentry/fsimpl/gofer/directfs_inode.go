@@ -521,6 +521,19 @@ func fchown(fd int, uid auth.KUID, gid auth.KGID) error {
 	return unix.Fchownat(fd, "", u, g, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
+func fchownCreated(fd int, uid auth.KUID, gid auth.KGID) error {
+	err := fchown(fd, uid, gid)
+	if (err == unix.EINVAL || err == unix.EPERM) && gid.Ok() {
+		// When a child is created in a setgid directory whose GID is
+		// unmapped in the user namespace (EINVAL) or outside the caller's
+		// supplementary groups without CAP_CHOWN (EPERM), the host kernel
+		// already assigned the inherited GID on creation; retry setting
+		// only the UID.
+		return fchown(fd, uid, auth.NoID)
+	}
+	return err
+}
+
 // Precondition: i.handleMu must be locked.
 func (i *directfsInode) destroy(ctx context.Context) {
 	if i.controlFD >= 0 {
@@ -659,7 +672,7 @@ func (i *directfsInode) getCreatedChild(name string, uid auth.KUID, gid auth.KGI
 		return nil, err
 	}
 
-	if err := fchown(childFD, uid, gid); err != nil {
+	if err := fchownCreated(childFD, uid, gid); err != nil {
 		deleteChild()
 		_ = unix.Close(childFD)
 		return nil, err
@@ -715,7 +728,7 @@ func (i *directfsInode) bindAt(ctx context.Context, name string, creds *auth.Cre
 		return nil, err
 	}
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := i.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID))
+	childInode, boundSocketFD, err := i.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(i.childGID(creds)))
 	if err != nil {
 		return nil, err
 	}
