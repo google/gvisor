@@ -42,6 +42,7 @@
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/rlimit_util.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -717,6 +718,35 @@ TEST_F(OpenTest, TruncateSizeChangeUpdatesTimestamps) {
   EXPECT_EQ(after3.st_size, 0);
   EXPECT_TRUE(ts_gt(after3.st_mtim, before3.st_mtim));
   EXPECT_TRUE(ts_gt(after3.st_ctim, before3.st_ctim));
+}
+
+// When no FD is available, open fails with EMFILE before it looks up, creates,
+// or truncates the file.
+TEST_F(OpenTest, FullFDTable) {
+  const std::string new_path = NewTempAbsPath();
+
+  // Lower the limit to the lowest free FD, so that no FD is available.
+  int lowest_free_fd;
+  {
+    const FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY));
+    lowest_free_fd = fd.get();
+  }
+  {
+    const Cleanup restore_limit = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSetSoftRlimit(RLIMIT_NOFILE, lowest_free_fd));
+    EXPECT_THAT(open(new_path.c_str(), O_WRONLY | O_CREAT, 0644),
+                SyscallFailsWithErrno(EMFILE));
+    EXPECT_THAT(open(test_file_name_.c_str(), O_WRONLY | O_TRUNC),
+                SyscallFailsWithErrno(EMFILE));
+    EXPECT_THAT(openat(-1, "nonexistent", O_RDONLY),
+                SyscallFailsWithErrno(EMFILE));
+  }
+
+  struct stat stat;
+  EXPECT_THAT(::stat(new_path.c_str(), &stat), SyscallFailsWithErrno(ENOENT));
+  ASSERT_THAT(::stat(test_file_name_.c_str(), &stat), SyscallSucceeds());
+  EXPECT_EQ(stat.st_size, test_data_.length());
 }
 
 #if defined(__aarch64__)
