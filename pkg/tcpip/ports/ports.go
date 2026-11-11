@@ -280,8 +280,11 @@ func (pm *PortManager) PickEphemeralPort(rng rand.RNG, testPort PortTester) (por
 // when a port is found or an error occurs.
 func pickEphemeralPort(offset uint32, first, count uint16, testPort PortTester) (port uint16, err tcpip.Error) {
 	// This implements Algorithm 1 as per RFC 6056 Section 3.3.1.
-	for i := uint32(0); i < uint32(count); i++ {
-		port := uint16(uint32(first) + (offset+i)%uint32(count))
+	for range count {
+		// Reduce the offset before advancing it so a uint32 wrap cannot
+		// skip part of the port range.
+		offset %= uint32(count)
+		port := first + uint16(offset)
 		ok, err := testPort(port)
 		if err != nil {
 			return 0, err
@@ -290,6 +293,7 @@ func pickEphemeralPort(offset uint32, first, count uint16, testPort PortTester) 
 		if ok {
 			return port, nil
 		}
+		offset++
 	}
 
 	return 0, &tcpip.ErrNoPortAvailable{}
