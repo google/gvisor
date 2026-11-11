@@ -1363,8 +1363,12 @@ func UnlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 
 		fd.node.childrenMu.Lock()
 		childNode := fd.node.LookupChildLocked(name)
+		if childNode != nil {
+			childNode.IncRef()
+		}
 		fd.node.childrenMu.Unlock()
 		if childNode != nil {
+			defer childNode.DecRef(nil)
 			// Before we do the unlink itself, we need to ensure that there
 			// are no operations in flight on associated path node.
 			//
@@ -1376,14 +1380,16 @@ func UnlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		if err := fd.impl.Unlink(name, uint32(req.Flags)); err != nil {
 			return err
 		}
-		// Since fd.node.opMu is locked for writing, there will not be a concurrent
-		// creation of a node at that position if childNode == nil. So only remove
-		// node if one existed.
+		fd.node.childrenMu.Lock()
+		removed := fd.node.removeChildLocked(name)
+		fd.node.childrenMu.Unlock()
 		if childNode != nil {
-			fd.node.childrenMu.Lock()
-			fd.node.removeChildLocked(name)
-			fd.node.childrenMu.Unlock()
 			childNode.markDeletedRecursive()
+		}
+		if removed != nil && removed != childNode {
+			removed.opMu.Lock()
+			removed.markDeletedRecursive()
+			removed.opMu.Unlock()
 		}
 		return nil
 	})
