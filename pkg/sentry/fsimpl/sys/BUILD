@@ -31,6 +31,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/abi/tpu",
         "//pkg/atomicbitops",
+        "//pkg/bitmap",
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/errors/linuxerr",
