@@ -65,6 +65,7 @@ namespace testing {
 
 namespace {
 
+using ::testing::Contains;
 using ::testing::UnorderedElementsAreArray;
 
 constexpr char kTmpfs[] = "tmpfs";
@@ -707,6 +708,37 @@ TEST(OverlayTest, NestedDeviceInodeNumberUniqueness) {
       << "files " << kLowerFile1 << " and " << kLowerFile2
       << " both have device number " << ovl_lower1_stat.st_dev
       << " and inode number " << ovl_lower2_stat.st_ino;
+}
+
+// Overlays may stack two deep, with one overlay as a lower layer of another,
+// but not three deep. Linux fails the mount with EINVAL beyond two levels.
+TEST(OverlayTest, StackingDepthLimit) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  OverlayOnTmpfs inner = ASSERT_NO_ERRNO_AND_VALUE(CreateOverlayOnTmpfs());
+  SKIP_IF(!SupportsOverlayUpperXattrs(inner.upper));
+  const std::string base = inner.base.path();
+  const std::string extra1 = JoinPath(base, "extra1");
+  const std::string extra2 = JoinPath(base, "extra2");
+  const std::string middle = JoinPath(base, "middle");
+  const std::string outer = JoinPath(base, "outer");
+  for (const std::string& dir : {extra1, extra2, middle, outer}) {
+    ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  }
+  ASSERT_NO_ERRNO(CreateWithContents(inner.LowerPath("file"), "data"));
+  ASSERT_NO_ERRNO(inner.MountOverlay());
+
+  // Depth 2: the inner overlay is a lower layer of the middle overlay.
+  const Cleanup middle_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", middle, "overlay", 0,
+            absl::StrCat("lowerdir=", inner.merged, ":", extra1), MNT_DETACH));
+  EXPECT_THAT(ListDir(middle, /*skipdots=*/true),
+              IsPosixErrorOkAndHolds(Contains("file")));
+
+  // Depth 3: the middle overlay is a lower layer of the outer overlay.
+  EXPECT_THAT(Mount("overlay", outer, "overlay", 0,
+                    absl::StrCat("lowerdir=", middle, ":", extra2), MNT_DETACH),
+              PosixErrorIs(EINVAL));
 }
 
 // Linux resolves relative pathnames in overlayfs mount options against the
