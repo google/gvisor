@@ -599,11 +599,23 @@ func getRestoreReadersForCheckpointGofer(o *sentryapi.RestoreOpts) (io.ReadClose
 func (cm *containerManager) onRestoreFailed(err error) {
 	cm.l.lifecycleCPUs.releaseForRestore()
 	cm.l.mu.Lock()
+	prevState := cm.l.state
 	cm.l.state = restoreFailed
 	cm.l.restoreErr = err
+	for eid := range cm.l.processes {
+		cm.l.failedToStart[eid.cid] = struct{}{}
+	}
 	cm.l.mu.Unlock()
 	cm.l.restoreDone.Broadcast()
 	cm.restorer = nil
+	if prevState == created || prevState == restoringUnstarted {
+		// Unblock WaitForStartSignal so the sandbox process can exit instead of
+		// hanging forever waiting for a start signal that will never arrive.
+		go func() {
+			cm.startChan <- struct{}{}
+			<-cm.startResultChan
+		}()
+	}
 }
 
 func (cm *containerManager) onRestoreDone(s sentryapi.Savings) {
