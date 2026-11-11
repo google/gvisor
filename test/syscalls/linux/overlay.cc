@@ -1435,15 +1435,17 @@ TEST_F(OverlayRenameTest, FileReplaceDirWhiteout) {
 }
 
 // A directory on the lower layer is recursively copied up and renamed in
-// gVisor.
+// gVisor. Nesting two directories below the renamed one makes copy-up lock a
+// child and a grandchild directory at the same time.
 TEST_F(OverlayRenameTest, DirCopyUp) {
   // Linux overlayfs returns EXDEV when renaming a lower or merged directory
   // unless redirect_dir=on is enabled; gVisor copies up the directory subtree.
   SKIP_IF(!IsRunningOnGvisor());
 
   ASSERT_NO_ERRNO(Mkdir(LowerPath("src_dir")));
-  ASSERT_NO_ERRNO(Mkdir(LowerPath("src_dir/subdir")));
-  const std::string src_file_lower = LowerPath("src_dir/subdir/file");
+  ASSERT_NO_ERRNO(Mkdir(LowerPath("src_dir/a")));
+  ASSERT_NO_ERRNO(Mkdir(LowerPath("src_dir/a/b")));
+  const std::string src_file_lower = LowerPath("src_dir/a/b/file");
   ASSERT_NO_ERRNO(CreateWithContents(src_file_lower, "hello"));
   ASSERT_NO_ERRNO(MountOverlay());
 
@@ -1451,10 +1453,31 @@ TEST_F(OverlayRenameTest, DirCopyUp) {
   const std::string dst_dir_path = MergedPath("dst_dir");
   ASSERT_THAT(rename(src_dir_path.c_str(), dst_dir_path.c_str()),
               SyscallSucceeds());
-  EXPECT_THAT(Exists(JoinPath(dst_dir_path, "subdir/file")),
-              IsPosixErrorOkAndHolds(true));
+  EXPECT_THAT(GetContents(JoinPath(dst_dir_path, "a/b/file")),
+              IsPosixErrorOkAndHolds("hello"));
   EXPECT_THAT(Exists(src_file_lower), IsPosixErrorOkAndHolds(true));
   EXPECT_THAT(Exists(src_dir_path), IsPosixErrorOkAndHolds(false));
+}
+
+// Exchanging two lower directories copies up both subtrees in gVisor.
+TEST_F(OverlayRenameTest, DirExchangeCopyUp) {
+  // As in DirCopyUp, Linux returns EXDEV here without redirect_dir=on.
+  SKIP_IF(!IsRunningOnGvisor());
+
+  for (const char* dir : {"x", "x/a", "x/a/b", "y", "y/c", "y/c/d"}) {
+    ASSERT_NO_ERRNO(Mkdir(LowerPath(dir)));
+  }
+  ASSERT_NO_ERRNO(CreateWithContents(LowerPath("x/a/b/file"), "from x"));
+  ASSERT_NO_ERRNO(CreateWithContents(LowerPath("y/c/d/file"), "from y"));
+  ASSERT_NO_ERRNO(MountOverlay());
+
+  ASSERT_THAT(renameat2(AT_FDCWD, MergedPath("x").c_str(), AT_FDCWD,
+                        MergedPath("y").c_str(), RENAME_EXCHANGE),
+              SyscallSucceeds());
+  EXPECT_THAT(GetContents(MergedPath("x/c/d/file")),
+              IsPosixErrorOkAndHolds("from y"));
+  EXPECT_THAT(GetContents(MergedPath("y/a/b/file")),
+              IsPosixErrorOkAndHolds("from x"));
 }
 
 // An upper directory may replace an empty directory on the lower layer.
