@@ -38,6 +38,6 @@ func (phpRunner) ListTests() ([]string, error) {
 
 // TestCmds implements TestRunner.TestCmds.
 func (phpRunner) TestCmds(tests []string) []*exec.Cmd {
-	args := []string{"test", "TESTS=" + strings.Join(tests, " ")}
+	args := []string{"test", "TESTS=--show-diff " + strings.Join(tests, " ")}
 	return []*exec.Cmd{exec.Command("make", args...)}
 }
