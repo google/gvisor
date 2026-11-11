@@ -53,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
@@ -234,6 +235,9 @@ type Loader struct {
 	// the sandbox, right before the result is reported to the controller (and
 	// thus before `runsc start` returns).
 	PostStartCallback func()
+
+	// procSelfFD is Args.ProcSelfFD.
+	procSelfFD int
 
 	// restoreDone is used to wait for restore to complete. Note that this may be
 	// much after the sandbox has started because under some configurations, the
@@ -507,6 +511,9 @@ type Args struct {
 	PassFDs []sentryapi.FDMapping
 	// ExecFD is the host file descriptor used for program execution.
 	ExecFD int
+	// ProcSelfFD is a directory FD to procfs' self/fd. Required with directfs,
+	// -1 otherwise. It must stay open for the lifetime of the sandbox.
+	ProcSelfFD int
 	// GoferFilestoreFDs are FDs to the regular files that will back the tmpfs or
 	// overlayfs mount for certain gofer mounts.
 	GoferFilestoreFDs []int
@@ -797,6 +804,13 @@ func New(args Args) (*Loader, error) {
 	if args.ExecFD >= 0 {
 		l.root.execFD = fd.New(args.ExecFD)
 	}
+	if args.Conf.DirectFS {
+		if args.ProcSelfFD < 0 {
+			return nil, fmt.Errorf("directfs requires ProcSelfFD")
+		}
+		gofer.SetProcSelfFD(args.ProcSelfFD)
+	}
+	l.procSelfFD = args.ProcSelfFD
 
 	for _, customFD := range args.PassFDs {
 		l.root.passFDs = append(l.root.passFDs, fdMapping{
@@ -1349,6 +1363,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
+			ProcSelfFD:            uint32(l.procSelfFD),
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
@@ -1804,6 +1819,14 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 		return nil, nil, err
 	}
 	info.procArgs.StartupTimeline.Reached("exec user home resolved")
+
+	if ttyFile != nil {
+		if exposed, err := fdimport.ExposeConsole(ctx, info.procArgs.MountNamespace, info.procArgs.FDTable, ttyFile); err != nil {
+			log.Warningf("Console is not exposed in devpts: %v", err)
+		} else {
+			ttyFile = exposed
+		}
+	}
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
@@ -2262,7 +2285,8 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 	return s, nil
 }
 
-// sandboxNetstackCreator implements kernel.NetworkStackCreator.
+// sandboxNetstackCreator implements inet.NetworkStackCreator and
+// inet.RestoreNetworkStackCreator.
 //
 // +stateify savable
 type sandboxNetstackCreator struct {
@@ -2272,8 +2296,37 @@ type sandboxNetstackCreator struct {
 	uid                      uniqueid.Provider
 }
 
-// CreateStack implements kernel.NetworkStackCreator.CreateStack.
+var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
+
+// CreateStack implements inet.NetworkStackCreator.CreateStack.
+//
+// Like Linux, it creates the loopback interface administratively DOWN and with
+// no addresses. The application brings it up with RTM_NEWLINK (IFF_UP), at
+// which point netstack assigns the default loopback addresses, just as the
+// Linux kernel does. The initial network namespace is configured separately in
+// Network.CreateLinksAndRoutes and keeps its addresses and UP state.
+//
+// TODO(gvisor.dev/issue/15559): Support SIOCSIFFLAGS. Until then, applications
+// that bring the loopback interface up with ioctl(2), such as nsjail, fail.
 func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
+	return c.createStack(false /* loopbackUp */)
+}
+
+// CreateStackForRestore implements
+// inet.RestoreNetworkStackCreator.CreateStackForRestore.
+//
+// TODO(gvisor.dev/issue/4595): Restore non-root network namespaces from their
+// saved state. Until then, the loopback interface of a restored namespace is
+// UP and has the default loopback addresses, which is the state that
+// applications usually leave it in.
+func (c *sandboxNetstackCreator) CreateStackForRestore() (inet.Stack, error) {
+	return c.createStack(true /* loopbackUp */)
+}
+
+// createStack creates a network stack with a loopback interface. If loopbackUp
+// is true, the loopback interface is UP and has the default loopback
+// addresses. Otherwise, it is DOWN and has no addresses.
+func (c *sandboxNetstackCreator) createStack(loopbackUp bool) (inet.Stack, error) {
 	s, err := c.newEmptySandboxNetworkStack()
 	if err != nil {
 		return nil, err
@@ -2286,13 +2339,18 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 		return nil, fmt.Errorf("loopback device should always have index %d, got %d", linux.LOOPBACK_IFINDEX, nicID)
 	}
 	link := sentryapi.DefaultLoopbackLink
-	linkEP := ethernet.New(loopback.New())
+	linkEP := ethernet.NewWithNetworkMTU(loopback.New())
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
+		Disabled:           !loopbackUp,
+	}
+	var addrs []sentryapi.IPWithPrefix
+	if loopbackUp {
+		addrs = link.Addresses
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, addrs); err != nil {
 		return nil, err
 	}
 

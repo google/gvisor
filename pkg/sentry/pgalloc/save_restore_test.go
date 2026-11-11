@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -193,6 +195,36 @@ func TestSaveToPreservesContents(t *testing.T) {
 	}
 }
 
+func saveTestPageFiles(t *testing.T, f *MemoryFile, exclude bool) ([]byte, []byte) {
+	t.Helper()
+	var metadata bytes.Buffer
+	var pages bytes.Buffer
+	saveDone := make(chan error, 1)
+	apfs, err := StartAsyncPagesFileSave(
+		stateio.NewIOWriter(&pages, uint64(hostarch.PageSize), 1 /* maxRanges */, 2 /* maxParallel */),
+		func(err error) { saveDone <- err },
+	)
+	if err != nil {
+		t.Fatalf("StartAsyncPagesFileSave: %v", err)
+	}
+	saveErr := f.SaveTo(context.Background(), &metadata, &SaveOpts{
+		ExcludeCommittedZeroPages: exclude,
+		PagesFile:                 apfs,
+	})
+	apfs.MemoryFilesDone()
+	asyncErr := <-saveDone
+	if saveErr != nil {
+		t.Fatalf("SaveTo: %v", saveErr)
+	}
+	if asyncErr != nil {
+		t.Fatalf("asynchronous page save: %v", asyncErr)
+	}
+	if got, want := uint64(pages.Len()), f.knownCommittedBytes; got != want {
+		t.Fatalf("pages file length is %d, want %d", got, want)
+	}
+	return metadata.Bytes(), pages.Bytes()
+}
+
 func TestAsyncSaveToPreservesContents(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -214,41 +246,12 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 			pwritePage(t, f, fr, 2, 1)
 			pwritePage(t, f, fr, 13, 2)
 
-			save := func(exclude bool) ([]byte, []byte) {
-				var metadata bytes.Buffer
-				var pages bytes.Buffer
-				saveDone := make(chan error, 1)
-				apfs, err := StartAsyncPagesFileSave(
-					stateio.NewIOWriter(&pages, uint64(hostarch.PageSize), 1 /* maxRanges */, 2 /* maxParallel */),
-					func(err error) { saveDone <- err },
-				)
-				if err != nil {
-					t.Fatalf("StartAsyncPagesFileSave: %v", err)
-				}
-				saveErr := f.SaveTo(context.Background(), &metadata, &SaveOpts{
-					ExcludeCommittedZeroPages: exclude,
-					PagesFile:                 apfs,
-				})
-				apfs.MemoryFilesDone()
-				asyncErr := <-saveDone
-				if saveErr != nil {
-					t.Fatalf("SaveTo: %v", saveErr)
-				}
-				if asyncErr != nil {
-					t.Fatalf("asynchronous page save: %v", asyncErr)
-				}
-				if got, want := uint64(pages.Len()), f.knownCommittedBytes; got != want {
-					t.Fatalf("pages file length is %d, want %d", got, want)
-				}
-				return metadata.Bytes(), pages.Bytes()
-			}
-
-			save(false)
+			saveTestPageFiles(t, f, false)
 			pwritePage(t, f, fr, 9, 0)
 			pwritePage(t, f, fr, 13, 0)
 			want := make([]byte, fr.Length())
 			want[2*hostarch.PageSize+17] = 1
-			metadata, pages := save(tc.exclude)
+			metadata, pages := saveTestPageFiles(t, f, tc.exclude)
 			if got := f.knownCommittedBytes; got != tc.wantCommitted {
 				t.Errorf("knownCommittedBytes: got %d, want %d", got, tc.wantCommitted)
 			}
@@ -349,7 +352,7 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 				}
 				page := 0
 				f.forEachMappingSlice(fr, func(bs []byte) {
-					for off := 0; off < len(bs); off += hostarch.PageSize {
+					for off := 0; off < len(bs); off += int(hostarch.PageSize) {
 						if page%16 == 0 {
 							bs[off] = 1
 						} else {
@@ -374,7 +377,7 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 // MemoryFile with 1% or all of its pages written through its mapping.
 func BenchmarkSaveToDiskBacked(b *testing.B) {
 	const size = 256 << 20
-	pages := size / hostarch.PageSize
+	pages := size / int(hostarch.PageSize)
 	dir := b.TempDir()
 	for _, bc := range []struct {
 		file    string
@@ -415,5 +418,71 @@ func BenchmarkSaveToDiskBacked(b *testing.B) {
 				f.Destroy()
 			}
 		})
+	}
+}
+
+// shortPageBatch returns each set of queued reads together. If one is short,
+// put it between the successful reads so that they straddle the error.
+type shortPageBatch struct {
+	stateio.AsyncReader
+	queued int
+	sizes  []uint64
+}
+
+func (r *shortPageBatch) AddRead(id int, off int64, file stateio.DestinationFile, fr memmap.FileRange, dst []byte) {
+	r.queued++
+	r.AsyncReader.AddRead(id, off, file, fr, dst)
+}
+
+func (r *shortPageBatch) AddReadv(id int, off int64, size uint64, file stateio.DestinationFile, frs []memmap.FileRange, dst []unix.Iovec) {
+	r.queued++
+	r.AsyncReader.AddReadv(id, off, size, file, frs, dst)
+}
+
+func (r *shortPageBatch) Wait(cs []stateio.Completion, _ int) ([]stateio.Completion, error) {
+	cs, err := r.AsyncReader.Wait(cs, r.queued)
+	r.queued = 0
+	if len(cs) == 3 {
+		for i, c := range cs {
+			if c.Err != nil {
+				cs[1], cs[i] = cs[i], cs[1]
+				break
+			}
+		}
+		r.sizes = []uint64{cs[0].N, cs[1].N, cs[2].N}
+	}
+	return cs, err
+}
+
+func TestAsyncLoadShortRead(t *testing.T) {
+	const page = uint64(hostarch.PageSize)
+	src := newSaveTestMemoryFile(t, "", false)
+	fr := allocateSaveTestPages(t, src)
+	for i := range 3 {
+		pwritePage(t, src, fr, i, 1)
+	}
+	meta, pages := saveTestPageFiles(t, src, false)
+	reader := &shortPageBatch{AsyncReader: stateio.NewIOReader(bytes.NewReader(pages[:2*page+1]), page, 1, 3)}
+	done := make(chan error, 1)
+	loader, err := StartAsyncPagesFileLoad(reader, func(err error) { done <- err }, nil, AsyncPagesFileLoadOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := newSaveTestMemoryFile(t, "", false)
+	err = dst.LoadFrom(t.Context(), bytes.NewReader(meta), &LoadOpts{PagesFile: loader})
+	loader.MemoryFilesDone()
+	loadErr := <-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { dst.DecRef(fr) })
+	if got, want := loadErr, linuxerr.EIO; got != want {
+		t.Fatalf("page loader: got %v, want %v", got, want)
+	}
+	if got, want := reader.sizes, []uint64{page, 1, page}; !slices.Equal(got, want) {
+		t.Fatalf("page reads: got %v, want %v", got, want)
+	}
+	if !dst.HasUniqueRef(fr) {
+		t.Error("page loader still holds a reference after reporting EIO")
 	}
 }

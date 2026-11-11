@@ -36,3 +36,38 @@ func TestEndianString(t *testing.T) {
 		t.Logf("GOARCH %v is %s-endian", runtime.GOARCH, got)
 	}
 }
+
+func TestCheckHostPageSize(t *testing.T) {
+	if err := CheckHostPageSize(); err != nil {
+		t.Errorf("CheckHostPageSize() = %v, want nil", err)
+	}
+}
+
+func TestCheckPageSize(t *testing.T) {
+	const (
+		size4K  = 4 << 10
+		size16K = 16 << 10
+		size64K = 64 << 10
+	)
+	// arm64 supports 4K and 64K pages, and x86 only 4K pages.
+	supports64K := runtime.GOARCH == "arm64"
+	for _, test := range []struct {
+		hostPageSize int
+		pageSize     int
+		wantErr      bool
+	}{
+		{hostPageSize: size4K, pageSize: size4K, wantErr: false},
+		{hostPageSize: size64K, pageSize: size64K, wantErr: !supports64K},
+		// The host page size differs from the page size in use.
+		{hostPageSize: size4K, pageSize: size64K, wantErr: true},
+		{hostPageSize: size64K, pageSize: size4K, wantErr: true},
+		// Unsupported page sizes.
+		{hostPageSize: size16K, pageSize: size16K, wantErr: true},
+		{hostPageSize: 0, pageSize: 0, wantErr: true},
+		{hostPageSize: size4K + 1, pageSize: size4K + 1, wantErr: true},
+	} {
+		if err := checkPageSize(test.hostPageSize, test.pageSize); (err != nil) != test.wantErr {
+			t.Errorf("checkPageSize(%d, %d) = %v, want error: %t", test.hostPageSize, test.pageSize, err, test.wantErr)
+		}
+	}
+}

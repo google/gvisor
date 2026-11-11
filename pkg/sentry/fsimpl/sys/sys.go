@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -276,54 +277,45 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 	return fs.newLazyCPURootDir(ctx, creds, cores)
 }
 
-// fullCPUMask returns a "hex format ASCII string", consistent with Linux's
-// include/linux/cpumask.h:cpumap_print_to_pagebuf(list=false) =>
-// lib/bitmap.c:bitmap_print_to_pagebuf(list=false), representing a CPU bitmask
-// in which all `cores` CPUs are set.
+// fullCPUMask returns the cpuMask in which all `cores` CPUs are set.
 func fullCPUMask(cores uint) string {
-	var (
-		b   strings.Builder
-		sep string
-	)
-	if rem := cores % 32; rem != 0 {
-		cores -= rem
-		fmt.Fprintf(&b, "%x", (uint32(1)<<rem)-1)
-		sep = ","
-	}
-	for cores != 0 {
-		cores -= 32
-		fmt.Fprintf(&b, "%sffffffff", sep)
-		sep = ","
-	}
-	return b.String()
+	return cpuMask(0, cores, cores)
 }
 
-// oneCPUMask returns a "hex format ASCII string", consistent with Linux's
-// include/linux/cpumask.h:cpumap_print_to_pagebuf(list=false) =>
-// lib/bitmap.c:bitmap_print_to_pagebuf(list=false), representing a CPU bitmask
-// for `cores` CPUs in which only CPU `i` is set.
+// oneCPUMask returns the cpuMask for `cores` CPUs in which only CPU `i` is set.
 //
 // Preconditions: i < cores.
 func oneCPUMask(i, cores uint) string {
+	return cpuMask(i, i+1, cores)
+}
+
+// cpuMask returns a "hex format ASCII string", consistent with Linux's
+// include/linux/cpumask.h:cpumap_print_to_pagebuf(list=false) =>
+// lib/bitmap.c:bitmap_print_to_pagebuf(list=false), representing a CPU bitmask
+// for `cores` CPUs in which CPUs [first, end) are set.
+//
+// Preconditions: first < end <= cores.
+func cpuMask(first, end, cores uint) string {
 	var (
 		b   strings.Builder
 		sep string
 	)
-	word := func() (w uint32) {
-		if cores <= i {
-			w = uint32(1) << (i - cores)
+	// word returns the bits of CPUs [base, base+32).
+	word := func(base uint) (w uint32) {
+		for i := max(first, base); i < min(end, base+32); i++ {
+			w |= uint32(1) << (i - base)
 		}
 		return
 	}
 	if rem := cores % 32; rem != 0 {
 		cores -= rem
 		chars := (rem + 3) / 4 // 4 bits per hex character
-		fmt.Fprintf(&b, "%0*x", chars, word())
+		fmt.Fprintf(&b, "%0*x", chars, word(cores))
 		sep = ","
 	}
 	for cores != 0 {
 		cores -= 32
-		fmt.Fprintf(&b, "%s%08x", sep, word())
+		fmt.Fprintf(&b, "%s%08x", sep, word(cores))
 		sep = ","
 	}
 	return b.String()
@@ -333,7 +325,13 @@ func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) map
 	// Set up /sys/kernel/debug/kcov. Technically, debugfs should be
 	// mounted at debug/, but for our purposes, it is sufficient to keep it
 	// in sys.
-	children := make(map[string]kernfs.Inode)
+	children := map[string]kernfs.Inode{
+		"mm": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"transparent_hugepage": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+				"hpage_pmd_size": fs.newStaticFile(ctx, creds, defaultSysMode, fmt.Sprintf("%d\n", hostarch.HugePageSize)),
+			}),
+		}),
+	}
 	if coverage.KcovSupported() {
 		log.Debugf("Set up /sys/kernel/debug/kcov")
 		children["debug"] = fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{

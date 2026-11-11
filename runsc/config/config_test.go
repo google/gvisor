@@ -125,6 +125,20 @@ func TestFromFlags(t *testing.T) {
 	if want := "/run/netproxy.sock"; c.NetworkProxyPath != want || !c.UseNetworkProxy() {
 		t.Errorf("NetworkProxyPath=%q UseNetworkProxy()=%v, want %q and true", c.NetworkProxyPath, c.UseNetworkProxy(), want)
 	}
+
+	if err := testFlags.Lookup("network-proxy-path").Value.Set(""); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	if err := testFlags.Lookup("netgofer").Value.Set("proxy"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := NetgoferModeProxy; c.Netgofer != want || !c.UseNetworkProxy() {
+		t.Errorf("Netgofer=%v UseNetworkProxy()=%v, want %v and true", c.Netgofer, c.UseNetworkProxy(), want)
+	}
 }
 
 func TestToFlagsFromFlags(t *testing.T) {
@@ -306,6 +320,11 @@ func TestInvalidFlags(t *testing.T) {
 			value: "LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK",
 			error: "the embedded sidecar fallback has been removed",
 		},
+		{
+			name:  "netgofer",
+			value: "invalid",
+			error: "invalid netgofer mode",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -460,6 +479,38 @@ func TestValidationFail(t *testing.T) {
 				"platform_device_path": "/dev/kvm2",
 			},
 			error: "--platform=auto accepts only --platform_device_path={platform}={path}",
+		},
+		{
+			name: "netgofer+network:none",
+			flags: map[string]string{
+				"netgofer": "proxy",
+				"network":  "none",
+			},
+			error: "netgofer flag is only supported with sandbox networking",
+		},
+		{
+			name: "netgofer+network:host",
+			flags: map[string]string{
+				"netgofer": "proxy",
+				"network":  "host",
+			},
+			error: "netgofer flag is only supported with sandbox networking",
+		},
+		{
+			name: "netgofer+xdp",
+			flags: map[string]string{
+				"netgofer":         "proxy",
+				"EXPERIMENTAL-xdp": "ns",
+			},
+			error: "netgofer flag is incompatible with XDP",
+		},
+		{
+			name: "netgofer+network-proxy-path",
+			flags: map[string]string{
+				"netgofer":           "proxy",
+				"network-proxy-path": "/run/netproxy.sock",
+			},
+			error: "netgofer and network-proxy-path flags cannot both be set",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

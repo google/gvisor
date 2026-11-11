@@ -358,6 +358,28 @@ class SandboxTest(unittest.TestCase):
       sandbox.Sandbox(network=123)
     self.assertIn("network must be a NetworkMode or str", str(ctx.exception))
 
+  @mock.patch("subprocess.run")
+  def test_default_gofer_namespace(self, mock_run):
+    with sandbox.Sandbox():
+      args = mock_run.call_args.args[0]
+      self.assertIn("--gofer-network-namespace=new", args)
+      self.assertNotIn("--shared-root", args)
+
+  @mock.patch("subprocess.run")
+  def test_shared_root(self, mock_run):
+    with tempfile.TemporaryDirectory() as shared_root:
+      with sandbox.Sandbox(shared_root=os.path.relpath(shared_root)):
+        args = mock_run.call_args.args[0]
+        self.assertIn("--shared-root", args)
+        self.assertEqual(args[args.index("--shared-root") + 1], shared_root)
+        self.assertNotIn("--gofer-network-namespace=new", args)
+
+  @mock.patch("subprocess.run")
+  def test_empty_shared_root(self, mock_run):
+    with self.assertRaisesRegex(ValueError, "shared_root must not be empty"):
+      sandbox.Sandbox(shared_root="")
+    mock_run.assert_not_called()
+
   @mock.patch("os.geteuid", return_value=0)
   @mock.patch("subprocess.run")
   def test_network_modes(self, mock_run, mock_geteuid):  # pylint: disable=unused-argument

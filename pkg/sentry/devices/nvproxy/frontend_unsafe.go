@@ -38,7 +38,7 @@ func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *fronten
 }
 
 func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams *Params) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
+	n, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno != 0 {
 		return n, errno
 	}
@@ -431,7 +431,9 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	if !ioctlParams.HClass.IsRootClient() {
 		client, unlock = fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.HRoot)
 		if client == nil {
-			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
+			ioctlParams.PAllocParms = origPAllocParms
+			ioctlParams.PRightsRequested = origPRightsRequested
+			return 0, rmAllocFailWithStatus(fi, ioctlParams, isNVOS64, nvgpu.NV_ERR_INVALID_CLIENT)
 		}
 	}
 	// Invoke the driver ioctl and restore application pointers. We always pass
@@ -500,6 +502,7 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 
 	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.HRoot)
 	if client == nil {
+		allocSizeParams.Address = origAddress
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
 	}
 	n, err := frontendIoctlInvoke(fi, ioctlParams)

@@ -398,7 +398,7 @@ type Endpoint struct {
 	// compute the window and the actual available buffer space. This is distinct
 	// from rcvBufUsed above which is the actual number of payload bytes held in
 	// the buffer not including any segment overheads.
-	rcvMemUsed atomicbitops.Int32
+	rcvMemUsed atomicbitops.Int64
 
 	// mu protects all endpoint fields unless documented otherwise. mu must
 	// be acquired before interacting with the endpoint fields.
@@ -855,10 +855,16 @@ func calculateTTL(route *stack.Route, ipv4TTL uint8, ipv6HopLimit int16) uint8 {
 // +stateify savable
 type keepalive struct {
 	keepaliveMutex `state:"nosave"`
-	idle           time.Duration
-	interval       time.Duration
-	count          int
-	unacked        int
+
+	// +checklocks:keepaliveMutex
+	idle time.Duration
+	// +checklocks:keepaliveMutex
+	interval time.Duration
+	// +checklocks:keepaliveMutex
+	count int
+	// +checklocks:keepaliveMutex
+	unacked int
+
 	// should never be a zero timer if the endpoint is not closed.
 	timer timer       `state:"nosave"`
 	waker sleep.Waker `state:"nosave"`
@@ -1170,14 +1176,20 @@ func (e *Endpoint) closeNoShutdownLocked() {
 		// Notify that the endpoint is closed.
 		eventMask |= waiter.EventHUp
 	case StateFinWait2:
-		// The socket has been closed and we are in FIN-WAIT-2 so start
-		// the FIN-WAIT-2 timer.
-		if e.finWait2Timer == nil {
-			e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
-		}
+		e.maybeStartFinWait2TimerLocked()
 	}
 
 	e.waiterQueue.Notify(eventMask)
+}
+
+// maybeStartFinWait2TimerLocked starts the orphan timeout for a closed
+// endpoint in FIN-WAIT-2. A half-closed socket can still receive data.
+//
+// +checklocks:e.mu
+func (e *Endpoint) maybeStartFinWait2TimerLocked() {
+	if e.closed && e.finWait2Timer == nil {
+		e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
+	}
 }
 
 // closePendingAcceptableConnections closes all connections that have completed
@@ -2238,6 +2250,7 @@ func (e *Endpoint) getTCPInfo() tcpip.TCPInfoOption {
 	info := tcpip.TCPInfoOption{
 		Timestamps:    e.SendTSOk,
 		SACKPermitted: e.SACKPermitted,
+		TotalRetrans:  uint32(e.stats.SendErrors.Retransmits.Value()),
 	}
 	if state := e.EndpointState(); state.internal() {
 		info.State = tcpip.EndpointState(StateClose)
@@ -3176,11 +3189,11 @@ func (e *Endpoint) receiveBufferAvailableLocked(rcvBufSize int) int {
 	// We may use more bytes than the buffer size when the receive buffer
 	// shrinks.
 	memUsed := e.receiveMemUsed()
-	if memUsed >= rcvBufSize {
+	if memUsed >= int64(rcvBufSize) {
 		return 0
 	}
 
-	return rcvBufSize - memUsed
+	return rcvBufSize - int(memUsed)
 }
 
 // receiveBufferAvailable calculates how many bytes are still available in the
@@ -3203,13 +3216,13 @@ func (e *Endpoint) receiveBufferUsed() int {
 
 // receiveMemUsed returns the total memory in use by segments held by this
 // endpoint.
-func (e *Endpoint) receiveMemUsed() int {
-	return int(e.rcvMemUsed.Load())
+func (e *Endpoint) receiveMemUsed() int64 {
+	return e.rcvMemUsed.Load()
 }
 
 // updateReceiveMemUsed adds the provided delta to e.rcvMemUsed.
 func (e *Endpoint) updateReceiveMemUsed(delta int) {
-	e.rcvMemUsed.Add(int32(delta))
+	e.rcvMemUsed.Add(int64(delta))
 }
 
 // maxReceiveBufferSize returns the stack wide maximum receive buffer size for

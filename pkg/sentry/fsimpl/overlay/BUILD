@@ -6,6 +6,14 @@ package(default_applicable_licenses = ["//:license"])
 
 licenses(["notice"])
 
+# Overlay locks that may be held across VFS calls into lower/upper layers use
+# per-depth lockdep subclasses: "d1" is the bottommost (inner) overlay
+# (stackDepth == 1) and "d2" is an outer overlay stacked on top of a d1 overlay
+# (stackDepth == 2), so outer locks ("d2") precede inner locks ("d1"). Within a
+# single overlay mount, dir_mutex further distinguishes multiple directory
+# dentries locked simultaneously during rename and directory copy-up
+# ("dK" -> "dKnew" -> "dKreplaced" -> "dKchild").
+
 declare_rwmutex(
     name = "ancestry_rwmutex",
     out = "ancestry_rwmutex.go",
@@ -17,9 +25,14 @@ declare_mutex(
     name = "dir_mutex",
     out = "dir_mutex.go",
     nested_lock_names = [
-        "new",
-        "replaced",
-        "child",
+        "d1",
+        "d1new",
+        "d1replaced",
+        "d1child",
+        "d2",
+        "d2new",
+        "d2replaced",
+        "d2child",
     ],
     package = "overlay",
     prefix = "dir",
@@ -42,6 +55,10 @@ declare_mutex(
 declare_mutex(
     name = "reg_file_fd_mutex",
     out = "req_file_fd_mutex.go",
+    nested_lock_names = [
+        "d1",
+        "d2",
+    ],
     package = "overlay",
     prefix = "regularFileFD",
 )
@@ -49,6 +66,10 @@ declare_mutex(
 declare_mutex(
     name = "dir_fd_mutex",
     out = "dir_fd_mutex.go",
+    nested_lock_names = [
+        "d1",
+        "d2",
+    ],
     package = "overlay",
     prefix = "directoryFD",
 )
@@ -63,6 +84,10 @@ declare_mutex(
 declare_rwmutex(
     name = "rename_rwmutex",
     out = "rename_rwmutex.go",
+    nested_lock_names = [
+        "d1",
+        "d2",
+    ],
     package = "overlay",
     prefix = "rename",
 )
@@ -70,6 +95,10 @@ declare_rwmutex(
 declare_rwmutex(
     name = "data_rwmutex",
     out = "data_rwmutex.go",
+    nested_lock_names = [
+        "d1",
+        "d2",
+    ],
     package = "overlay",
     prefix = "data",
 )
@@ -77,6 +106,10 @@ declare_rwmutex(
 declare_mutex(
     name = "maps_mutex",
     out = "maps_mutex.go",
+    nested_lock_names = [
+        "d1",
+        "d2",
+    ],
     package = "overlay",
     prefix = "maps",
 )

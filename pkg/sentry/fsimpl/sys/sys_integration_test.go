@@ -603,6 +603,7 @@ func newRDMATestSnapshot() *rdma.Snapshot {
 					StaticAttrs:  map[string]string{"link_layer": "Ethernet\n"},
 					LiveAttrs:    []string{"state"},
 					GIDNames:     []string{"0", "1"},
+					PKeyNames:    []string{"0"},
 					CounterNames: []string{"port_rcv_data"},
 				},
 			},
@@ -613,9 +614,13 @@ func newRDMATestSnapshot() *rdma.Snapshot {
 			}},
 		}},
 		NUMA: &rdma.NUMA{
-			// Two-node host (aggregate ranges "0-1"): the sandbox must
+			// Two CPU nodes and a memory-only node: the sandbox must
 			// advertise a single node covering the sandbox's CPUs.
-			Aggregate: map[string]string{"online": "0-1\n", "possible": "0-1\n"},
+			Aggregate: map[string]string{
+				"online":   "0-2\n",
+				"possible": "0-2\n",
+				"has_cpu":  "0-1\n",
+			},
 		},
 	}
 }
@@ -669,11 +674,15 @@ func TestRDMASysfs(t *testing.T) {
 			"state":      linux.DT_REG,
 			"gids":       linux.DT_DIR,
 			"gid_attrs":  linux.DT_DIR,
+			"pkeys":      linux.DT_DIR,
 			"counters":   linux.DT_DIR,
 		},
 		nicLeaf + "/infiniband/mlx5_0/ports/1/gids": {
 			"0": linux.DT_REG,
 			"1": linux.DT_REG,
+		},
+		nicLeaf + "/infiniband/mlx5_0/ports/1/pkeys": {
+			"0": linux.DT_REG,
 		},
 		nicLeaf + "/infiniband_verbs/uverbs0": {
 			"ibdev":       linux.DT_REG,
@@ -706,8 +715,13 @@ func TestRDMASysfs(t *testing.T) {
 		},
 		"/bus/pci/drivers":           {"mlx5_core": linux.DT_DIR},
 		"/bus/pci/drivers/mlx5_core": {"0000:0c:00.0": linux.DT_LNK},
-		// The two host nodes collapse into a single sandbox node.
-		"/devices/system/node": {"online": linux.DT_REG, "possible": linux.DT_REG, "node0": linux.DT_DIR},
+		// The three host nodes collapse into a single sandbox node.
+		"/devices/system/node": {
+			"online":   linux.DT_REG,
+			"possible": linux.DT_REG,
+			"has_cpu":  linux.DT_REG,
+			"node0":    linux.DT_DIR,
+		},
 		"/devices/system/node/node0": {
 			"cpumap":   linux.DT_REG,
 			"cpulist":  linux.DT_REG,
@@ -719,9 +733,15 @@ func TestRDMASysfs(t *testing.T) {
 	}
 
 	// The advertised NUMA view is a single node covering the sandbox's CPUs.
-	wantCPUList := "0\n"
+	// The NIC, on the second of two host nodes with CPUs, is local to the
+	// second half of them.
+	wantCPUList, wantNICCPUList := "0\n", "0\n"
 	if cores := kernel.KernelFromContext(s.Ctx).ApplicationCores(); cores > 1 {
 		wantCPUList = fmt.Sprintf("0-%d\n", cores-1)
+		wantNICCPUList = fmt.Sprintf("%d-%d\n", cores/2, cores-1)
+		if cores == 2 {
+			wantNICCPUList = "1\n"
+		}
 	}
 
 	// Attribute contents, including via a /sys/class symlink (the path
@@ -735,7 +755,7 @@ func TestRDMASysfs(t *testing.T) {
 		"/devices/system/node/node0/cpulist":                   wantCPUList,
 		"/devices/system/node/node0/distance":                  "10\n",
 		nicLeaf + "/numa_node":                                 "0\n",
-		nicLeaf + "/local_cpulist":                             wantCPUList,
+		nicLeaf + "/local_cpulist":                             wantNICCPUList,
 		"/devices/pci10000:e0/10000:e0:06.0/numa_node":         "-1\n",
 		// Raw PCI config space is mirrored byte-faithfully.
 		"/devices/pci0000:07/0000:07:01.0/config": string(rdmaTestPCIConfig),

@@ -26,6 +26,7 @@ java/lang/invoke/lambda/LambdaFileEncodingSerialization.java,,Broken test
 java/lang/management/ThreadMXBean/ThreadMXBeanStateTest.java,,Broken test
 java/lang/reflect/exeCallerAccessTest/CallerAccessTest.java,,Broken test
 java/net/DatagramSocket/AddressNotSet.java,,
+java/net/DatagramSocket/DatagramSocketMulticasting.java,,
 java/net/DatagramSocket/SetGetReceiveBufferSize.java,b/180507650,
 java/net/MulticastSocket/B6425815.java,b/446951345,Need support for IPV6_MULTICAST_HOPS
 java/net/MulticastSocket/MulticastTTL.java,,
@@ -48,7 +49,11 @@ java/net/SocketPermission/SocketPermissionTest.java,,
 java/net/vthread/BlockingSocketOps.java#default,,
 java/net/vthread/BlockingSocketOps.java#direct-register,,
 java/net/vthread/BlockingSocketOps.java#no-vmcontinuations,,
+java/nio/channels/DatagramChannel/AdaptorMulticasting.java,,
 java/nio/channels/DatagramChannel/AfterDisconnect.java,,
+java/nio/channels/DatagramChannel/Loopback.java,,
+java/nio/channels/DatagramChannel/MulticastSendReceiveTests.java,,
+java/nio/channels/DatagramChannel/Promiscuous.java,,
 java/nio/channels/DatagramChannel/SocketOptionTests.java,,java.net.SocketException: Invalid argument
 java/nio/channels/FileChannel/directio/DirectIOTest.java,,Broken test
 java/nio/channels/Selector/OutOfBand.java#id0,,

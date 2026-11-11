@@ -112,6 +112,10 @@ type directoryFD struct {
 	dirents []vfs.Dirent
 }
 
+func (fd *directoryFD) lockIndex() directoryFDlockNameIndex {
+	return directoryFDlockNameIndex(fd.filesystem().depthIndex())
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *directoryFD) Release(ctx context.Context) {
 }
@@ -119,8 +123,9 @@ func (fd *directoryFD) Release(ctx context.Context) {
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	d := fd.dentry()
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+	fdIdx := fd.lockIndex()
+	fd.mu.NestedLock(fdIdx)
+	defer fd.mu.NestedUnlock(fdIdx)
 
 	if fd.dirents == nil {
 		ds, err := d.getDirents(ctx)
@@ -141,10 +146,12 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 
 // Preconditions: d.isDir().
 func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
-	d.fs.renameMu.RLock()
-	defer d.fs.renameMu.RUnlock()
-	d.dirMu.Lock()
-	defer d.dirMu.Unlock()
+	renameIdx := d.fs.renameLockIndex()
+	d.fs.renameMu.NestedRLock(renameIdx)
+	defer d.fs.renameMu.NestedRUnlock(renameIdx)
+	dirIdx := d.dirLockIndex(dirLockD1)
+	d.dirMu.NestedLock(dirIdx)
+	defer d.dirMu.NestedUnlock(dirIdx)
 	return d.getDirentsLocked(ctx)
 }
 
@@ -249,8 +256,9 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+	fdIdx := fd.lockIndex()
+	fd.mu.NestedLock(fdIdx)
+	defer fd.mu.NestedUnlock(fdIdx)
 
 	switch whence {
 	case linux.SEEK_SET:

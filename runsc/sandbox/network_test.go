@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -42,6 +43,9 @@ func fdbasedLinkEqual(a, b sentryapi.FDBasedLink) bool {
 		return false
 	}
 	if a.MTU != b.MTU {
+		return false
+	}
+	if a.Multicast != b.Multicast {
 		return false
 	}
 	if a.QDisc != b.QDisc {
@@ -118,6 +122,9 @@ func loopbackLinksEqual(a, b []sentryapi.LoopbackLink) bool {
 	}
 	for i := range a {
 		if a[i].Name != b[i].Name {
+			return false
+		}
+		if a[i].Multicast != b[i].Multicast {
 			return false
 		}
 		if len(a[i].Addresses) != len(b[i].Addresses) {
@@ -313,6 +320,62 @@ func defaultLoopbackLinks() []sentryapi.LoopbackLink {
 	}
 }
 
+func TestCollectLinksAndRoutes_Multicast(t *testing.T) {
+	requireRoot(t)
+	for _, test := range []struct {
+		name      string
+		multicast bool
+	}{
+		{name: "disabled", multicast: false},
+		{name: "enabled", multicast: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			veth := setupVethInterface(t, "testveth0", "10.0.0.1", 24, 32)
+			setupLoopback(t)
+			lo, err := netlink.LinkByName("lo")
+			if err != nil {
+				t.Fatalf("LinkByName(lo): %v", err)
+			}
+			for _, link := range []netlink.Link{veth, lo} {
+				setMulticast := netlink.LinkSetMulticastOff
+				if test.multicast {
+					setMulticast = netlink.LinkSetMulticastOn
+				}
+				if err := setMulticast(link); err != nil {
+					t.Fatalf("setting multicast=%t on %s: %v", test.multicast, link.Attrs().Name, err)
+				}
+			}
+			for _, xdp := range []config.XDP{{Mode: config.XDPModeOff}, {Mode: config.XDPModeNS}} {
+				args, err := collectLinksAndRoutes(&config.Config{XDP: xdp}, false)
+				if err != nil {
+					t.Fatalf("collectLinksAndRoutes(%+v): %v", xdp, err)
+				}
+				if got, want := len(args.LoopbackLinks), 1; got != want {
+					t.Fatalf("len(LoopbackLinks) = %d, want %d; links = %+v", got, want, args.LoopbackLinks)
+				}
+				if got := args.LoopbackLinks[0].Multicast; got != test.multicast {
+					t.Errorf("loopback Multicast = %t, want %t", got, test.multicast)
+				}
+				if xdp.Mode == config.XDPModeOff {
+					if got, want := len(args.FDBasedLinks), 1; got != want {
+						t.Fatalf("len(FDBasedLinks) = %d, want %d; links = %+v", got, want, args.FDBasedLinks)
+					}
+					if got := args.FDBasedLinks[0].Multicast; got != test.multicast {
+						t.Errorf("FD-based Multicast = %t, want %t", got, test.multicast)
+					}
+				} else {
+					if got, want := len(args.XDPLinks), 1; got != want {
+						t.Fatalf("len(XDPLinks) = %d, want %d; links = %+v", got, want, args.XDPLinks)
+					}
+					if got := args.XDPLinks[0].Multicast; got != test.multicast {
+						t.Errorf("XDP Multicast = %t, want %t", got, test.multicast)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 	requireRoot(t)
 	link := setupVethInterface(t, "testveth0", "10.0.0.1", 24, 32)
@@ -333,6 +396,7 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -472,6 +536,7 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: veth0Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -489,6 +554,7 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 		},
 		{
 			Name:        "testveth1",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: veth1Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -563,6 +629,7 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: veth0Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -739,6 +806,7 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
+			Multicast:   true,
 			MTU:         1500,
 			LinkAddress: vethLink.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
@@ -757,6 +825,101 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 	}
 	if !fdbasedLinksEqual(args.FDBasedLinks, wantFDLinks) {
 		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
+	}
+}
+
+func TestStopNetgoferNonChildRecycledPID(t *testing.T) {
+	s := &Sandbox{
+		ID:              "test-sandbox-id",
+		netgoferIsChild: false,
+	}
+	// Set NetgoferPid to the current test process's PID (simulating a recycled PID
+	// from a deserialized state.json whose process is not runsc-netgofer).
+	s.NetgoferPid.Store(os.Getpid())
+
+	s.stopNetgofer()
+
+	if got := s.NetgoferPid.Load(); got != 0 {
+		t.Errorf("s.NetgoferPid.Load() = %d, want 0", got)
+	}
+}
+
+// startFakeNetgofer starts a child process standing in for netgofer and wires
+// up the Sandbox bookkeeping exactly as startProxy() does.
+func startFakeNetgofer(t *testing.T, s *Sandbox, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(args[0], args[1:]...)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting fake netgofer %v: %v", args, err)
+	}
+	stopped := make(chan struct{})
+	s.netgoferMu.Lock()
+	s.NetgoferPid.Store(cmd.Process.Pid)
+	s.netgoferIsChild = true
+	s.netgoferStopped = stopped
+	s.netgoferMu.Unlock()
+	s.reapNetgoferBackground(cmd.Process.Pid, stopped)
+	return cmd
+}
+
+func TestStopNetgoferChildExitsWithinGracePeriod(t *testing.T) {
+	s := &Sandbox{ID: "test-sandbox-id"}
+	// Hold stdin open so the child stays alive until stopNetgofer() is
+	// waiting on <-stopped, then close stdin to simulate netgofer observing its
+	// UDS peer closing and exiting on its own.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe(): %v", err)
+	}
+	defer r.Close()
+	defer w.Close()
+
+	cmd := exec.Command("/bin/cat")
+	cmd.Stdin = r
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting fake netgofer: %v", err)
+	}
+	_ = r.Close()
+	pid := cmd.Process.Pid
+
+	stopped := make(chan struct{})
+	s.netgoferMu.Lock()
+	s.NetgoferPid.Store(pid)
+	s.netgoferIsChild = true
+	s.netgoferStopped = stopped
+	s.netgoferMu.Unlock()
+	s.reapNetgoferBackground(pid, stopped)
+
+	// Close the pipe shortly after stopNetgofer() starts waiting, well within
+	// netgoferGracePeriod (100ms), so stopNetgofer() deterministically enters
+	// the `select { case <-stopped: ... }` block while NetgoferPid != 0.
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		_ = w.Close()
+	}()
+	s.stopNetgofer()
+
+	if got := s.NetgoferPid.Load(); got != 0 {
+		t.Errorf("s.NetgoferPid.Load() = %d, want 0", got)
+	}
+	if err := unix.Kill(pid, 0); err != unix.ESRCH {
+		t.Errorf("unix.Kill(%d, 0) = %v, want ESRCH (process should be reaped)", pid, err)
+	}
+}
+
+func TestStopNetgoferChildKilledAfterGracePeriod(t *testing.T) {
+	s := &Sandbox{ID: "test-sandbox-id"}
+	// A netgofer that never exits on its own must be SIGKILLed.
+	cmd := startFakeNetgofer(t, s, "/bin/sleep", "600")
+	pid := cmd.Process.Pid
+
+	s.stopNetgofer()
+
+	if got := s.NetgoferPid.Load(); got != 0 {
+		t.Errorf("s.NetgoferPid.Load() = %d, want 0", got)
+	}
+	if err := unix.Kill(pid, 0); err != unix.ESRCH {
+		t.Errorf("unix.Kill(%d, 0) = %v, want ESRCH (process should have been killed and reaped)", pid, err)
 	}
 }
 

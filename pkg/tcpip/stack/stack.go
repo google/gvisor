@@ -1054,6 +1054,10 @@ type NICOptions struct {
 	// LinkEndpoint.
 	Disabled bool
 
+	// Multicast specifies whether the interface reports multicast support.
+	// It does not control reception of multicast packets.
+	Multicast bool
+
 	// Context specifies user-defined data that will be returned in stack.NICInfo
 	// for the NIC. Clients of this library can use it to add metadata that
 	// should be tracked alongside a NIC, to avoid having to keep a
@@ -1178,6 +1182,9 @@ func (s *Stack) GetLinkEndpointByName(name string) LinkEndpoint {
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
 // delivering packets to it.
+//
+// EnableNIC also brings the NIC administratively up. While external networking
+// is paused, a non-loopback NIC stays disabled until EnableAllNonLoopbackNICs.
 func (s *Stack) EnableNIC(id tcpip.NICID) tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1187,10 +1194,13 @@ func (s *Stack) EnableNIC(id tcpip.NICID) tcpip.Error {
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.enable()
+	return nic.setAdminState(true /* up */, s.externalNetworkingDisabled && !nic.IsLoopback())
 }
 
 // DisableNIC disables the given NIC.
+//
+// DisableNIC also brings the NIC administratively down, so
+// EnableAllNonLoopbackNICs leaves it disabled.
 func (s *Stack) DisableNIC(id tcpip.NICID) tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1200,8 +1210,7 @@ func (s *Stack) DisableNIC(id tcpip.NICID) tcpip.Error {
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	nic.disable()
-	return nil
+	return nic.setAdminState(false /* up */, false /* paused */)
 }
 
 // CheckNIC checks if a NIC is usable.
@@ -1413,10 +1422,11 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 // precondition: s.mu is held.
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
-		Up:          true, // Netstack interfaces are always up.
+		Up:          !nic.adminDown.Load(),
 		Running:     nic.Enabled(),
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
+		Multicast:   nic.multicast,
 	}
 
 	netStats := make(map[tcpip.NetworkProtocolNumber]NetworkEndpointStats)
@@ -1493,6 +1503,9 @@ type NICStateFlags struct {
 
 	// Loopback indicates whether the interface is a loopback.
 	Loopback bool
+
+	// Multicast indicates whether the interface reports multicast support.
+	Multicast bool
 }
 
 // AddProtocolAddress adds an address to the specified NIC, possibly with extra
@@ -1544,6 +1557,18 @@ func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 	nics := make(map[tcpip.NICID][]tcpip.ProtocolAddress)
 	for id, nic := range s.nics {
 		nics[id] = nic.allPermanentAddresses()
+	}
+	return nics
+}
+
+// AllAddressInfo returns a map of NICIDs to their protocol address information.
+func (s *Stack) AllAddressInfo() map[tcpip.NICID][]ProtocolAddressInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := make(map[tcpip.NICID][]ProtocolAddressInfo)
+	for id, nic := range s.nics {
+		nics[id] = nic.allAddressInfo()
 	}
 	return nics
 }
@@ -2825,10 +2850,11 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
 	opts := NICOptions{
-		Name:   nic.Name(),
-		Kind:   nic.kind,
-		MinMTU: nic.minMTU,
-		MaxMTU: nic.maxMTU,
+		Name:      nic.Name(),
+		Kind:      nic.kind,
+		Multicast: nic.multicast,
+		MinMTU:    nic.minMTU,
+		MaxMTU:    nic.maxMTU,
 	}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
@@ -2887,6 +2913,8 @@ func (s *Stack) SetAllowLiveTCPMigration(allow bool) {
 }
 
 // DisableAllNonLoopbackNICs disables all non-loopback NICs in the stack.
+//
+// It leaves the administrative state of each NIC unchanged.
 func (s *Stack) DisableAllNonLoopbackNICs() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2898,13 +2926,14 @@ func (s *Stack) DisableAllNonLoopbackNICs() {
 	}
 }
 
-// EnableAllNonLoopbackNICs enables all non-loopback NICs in the stack.
+// EnableAllNonLoopbackNICs enables all non-loopback NICs in the stack that are
+// administratively up.
 func (s *Stack) EnableAllNonLoopbackNICs() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.externalNetworkingDisabled = false
 	for _, nic := range s.nics {
-		if !nic.IsLoopback() {
+		if !nic.IsLoopback() && !nic.adminDown.Load() {
 			nic.enable()
 		}
 	}

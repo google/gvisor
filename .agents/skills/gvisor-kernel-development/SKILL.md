@@ -36,9 +36,12 @@ this approach:
 6.  Make code changes, running your representative command or script or syscall
     tests as often as necessary.
 
-While Linux `man` pages are the ABI spec, they are also often wrong or
-out-of-date, hence gVisor's use of black-box syscall tests to assert Linux
-behavior.
+NOTE: None of the above involves reading Linux source code. You **must not**
+read nor refer to Linux source code or Linux `man` pages, as they are often
+wrong or out-of-date. Therefore, gVisor exclusively uses black-box C++ syscall
+tests to assert Linux behavior, and you should use this approach exclusively in
+order to build up your understanding of the behavior of the syscall. When
+reviewing compatibility code, you should also follow this approach.
 
 ### Running gVisor development workflows
 

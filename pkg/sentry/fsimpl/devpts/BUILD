@@ -20,6 +20,7 @@ go_library(
     name = "devpts",
     srcs = [
         "devpts.go",
+        "external.go",
         "line_discipline.go",
         "master.go",
         "queue.go",

@@ -21,6 +21,8 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 // socketPath creates a path inside bundleDir and ensures that the returned
@@ -595,6 +598,15 @@ func TestMultiContainerTerminal(t *testing.T) {
 					t.Fatalf("echo didn't execute: %v", err)
 				}
 
+				// Each container has its own devpts instance, which
+				// holds only its own console.
+				if _, err := tc.master.Write([]byte("echo \"pts-$(tty)-$(echo $(ls /dev/pts))-end\"\n")); err != nil {
+					t.Fatalf("master.Write(): %v", err)
+				}
+				if err := testutil.WaitUntilRead(ptyBuf, "pts-/dev/pts/0-0 ptmx-end", 5*time.Second); err != nil {
+					t.Fatalf("console devpts: %v", err)
+				}
+
 				// Make sure we can open /dev/tty. We do this
 				// by asking `head` to to read 0 bytes, which
 				// causes it to simply open & close the file.
@@ -673,4 +685,192 @@ func (bb *blockingBuffer) Reset() {
 	case <-bb.readCh:
 	default:
 	}
+}
+
+// Test that console TTYs are exposed in /dev/pts, so that applications can
+// find their names, and that each node goes away with its console.
+func TestConsoleInDevpts(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/sh", "-c", `echo "name=$(tty) ttynr=$(cut -d' ' -f7 /proc/self/stat) devtty=$(stat -c %t:%T - </dev/tty)"; sleep 10000`)
+	spec.Process.Terminal = true
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	sock, err := socketPath(bundleDir)
+	if err != nil {
+		t.Fatalf("error getting socket path: %v", err)
+	}
+	srv, cleanup := createConsoleSocket(t, sock)
+	defer cleanup()
+
+	args := Args{
+		ID:            testutil.RandomContainerID(),
+		Spec:          spec,
+		BundleDir:     bundleDir,
+		ConsoleSocket: sock,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	ptyMaster, err := receiveConsolePTY(srv)
+	if err != nil {
+		t.Fatalf("error receiving console FD: %v", err)
+	}
+	defer ptyMaster.Close()
+	ptyBuf := newBlockingBuffer()
+	go func() {
+		_, _ = io.Copy(ptyBuf, ptyMaster)
+	}()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Linux encodes tty_nr as new_encode_dev(MKDEV(136, 0)).
+	// A file opened through /dev/tty has the metadata of /dev/tty (5:0), as
+	// on Linux.
+	if err := testutil.WaitUntilRead(ptyBuf, "name=/dev/pts/0 ttynr=34816 devtty=5:0", 10*time.Second); err != nil {
+		t.Fatalf("root container console: %v", err)
+	}
+
+	// Each exec console gets its own node, which is removed after the exec
+	// process exits. Each exec therefore sees exactly two nodes: the root
+	// container console and its own.
+	for i := 0; i < 2; i++ {
+		pid, out, finish := startPTYExec(t, conf, c, `echo "name=$(tty) nodes=$(ls /dev/pts | grep -c '^[0-9]') end"`)
+		m := regexp.MustCompile(`name=/dev/pts/([0-9]+) nodes=([0-9]+) end`).FindStringSubmatch(out)
+		if m == nil {
+			t.Fatalf("exec %d: unexpected output %q", i, out)
+		}
+		if m[2] != "2" {
+			t.Errorf("exec %d: got %s nodes in /dev/pts, want 2", i, m[2])
+		}
+		if got, want := processTTY(t, c, pid), "pts/"+m[1]; got != want {
+			t.Errorf("exec %d: runsc ps TTY: got %q, want %q", i, got, want)
+		}
+		finish()
+	}
+}
+
+// Test that a console that cannot be exposed in /dev/pts still works, but
+// has no name.
+func TestConsoleNotExposed(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	c, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// /dev/pts is no longer a devpts filesystem.
+	if out, err := executeCombinedOutput(conf, c, nil, "/bin/mount", "-t", "tmpfs", "none", "/dev/pts"); err != nil {
+		t.Fatalf("mounting tmpfs over /dev/pts: %v: %s", err, out)
+	}
+
+	pid, out, finish := startPTYExec(t, conf, c, `echo "name=$(tty) ttynr=$(cut -d' ' -f7 /proc/self/stat) end"`)
+	defer finish()
+	if want := "name=not a tty ttynr=0 end"; !strings.Contains(out, want) {
+		t.Errorf("exec output: got %q, want %q", out, want)
+	}
+	if got := processTTY(t, c, pid); got != "?" {
+		t.Errorf("runsc ps TTY: got %q, want %q", got, "?")
+	}
+}
+
+// startPTYExec runs script with a new pty as stdio in c. script must print
+// "end" last. startPTYExec returns the exec's PID and its output up to "end".
+// The exec process then waits until finish is called.
+func startPTYExec(t *testing.T, conf *config.Config, c *Container, script string) (int32, string, func()) {
+	t.Helper()
+	master, replica, err := pty.Open()
+	if err != nil {
+		t.Fatalf("error opening pty: %v", err)
+	}
+	buf := newBlockingBuffer()
+	var out lockedBuffer
+	go func() {
+		// Write out first, so that it has the bytes when buf wakes a reader.
+		_, _ = io.Copy(io.MultiWriter(&out, buf), master)
+	}()
+	pid, err := c.Execute(conf, &controlapi.ExecArgs{
+		Filename: "/bin/sh",
+		Argv:     []string{"/bin/sh", "-c", script + "; read x"},
+		FilePayload: controlapi.NewFilePayload(map[int]*os.File{
+			0: replica, 1: replica, 2: replica,
+		}, nil),
+		StdioIsPty: true,
+	})
+	replica.Close()
+	if err != nil {
+		master.Close()
+		t.Fatalf("error executing: %v", err)
+	}
+	if err := testutil.WaitUntilRead(buf, "end", 10*time.Second); err != nil {
+		master.Close()
+		t.Fatalf("exec output: %v; got %q", err, out.String())
+	}
+	finish := func() {
+		defer master.Close()
+		if _, err := master.Write([]byte("\n")); err != nil {
+			t.Fatalf("master.Write(): %v", err)
+		}
+		if _, err := c.WaitPID(pid); err != nil {
+			t.Fatalf("error waiting for exec: %v", err)
+		}
+	}
+	return pid, out.String(), finish
+}
+
+// processTTY returns the TTY field of process pid in c, as runsc ps reports
+// it.
+func processTTY(t *testing.T, c *Container, pid int32) string {
+	t.Helper()
+	procs, err := c.Processes()
+	if err != nil {
+		t.Fatalf("error listing processes: %v", err)
+	}
+	for _, p := range procs {
+		if p.PID == pid {
+			return p.TTY
+		}
+	}
+	t.Fatalf("process %d not found in %+v", pid, procs)
+	return ""
+}
+
+// lockedBuffer is a thread-safe bytes.Buffer.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+// Write implements io.Writer.Write.
+func (lb *lockedBuffer) Write(p []byte) (int, error) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buf.Write(p)
+}
+
+// String returns the contents of the buffer.
+func (lb *lockedBuffer) String() string {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buf.String()
 }

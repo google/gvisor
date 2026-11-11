@@ -1179,6 +1179,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
+        "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:posix_error",
@@ -1189,7 +1190,7 @@ cc_binary(
         "//test/util:thread_util",
         "//test/util:time_util",
         "//test/util:timer_util",
-        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
     ],
 )
@@ -1710,6 +1711,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:signal_util",
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -1951,6 +1953,30 @@ cc_binary(
         "//test/util:test_util",
         "//test/util:thread_util",
         "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_binary(
+    name = "overlay_test",
+    testonly = 1,
+    srcs = ["overlay.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:memory_util",
+        "//test/util:mount_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -3257,7 +3283,6 @@ cc_library(
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:thread_util",
-        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/time",
     ],
     alwayslink = 1,
@@ -5206,11 +5231,15 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
+        ":socket_netlink_route_util",
+        ":socket_netlink_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:socket_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -5435,7 +5464,6 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:logging",
-        "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:save_util",
         "//test/util:test_main",

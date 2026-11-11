@@ -81,7 +81,7 @@ func (op *compatMASQTarget) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	}
 
 	// Configure NAT Masq.
-	if !pkt.ConfigureMasquerade(portsOrIdents, evalCtx.route, evalCtx.nftState.stack, true /* changePort */) {
+	if !pkt.ConfigureMasquerade(portsOrIdents, evalCtx.route, evalCtx.outNICID, evalCtx.nftState.stack, true /* changePort */) {
 		regs.verdict.Code = VC(linux.NF_DROP)
 		return
 	}

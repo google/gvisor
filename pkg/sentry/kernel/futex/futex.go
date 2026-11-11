@@ -239,7 +239,7 @@ type Waiter struct {
 	// This is used the case of a FUTEX_WAKE_BITSET.
 	bitmask uint32
 
-	// tid is the thread ID for the waiter in case this is a PI mutex.
+	// tid is the thread ID of a PI waiter, or zero for an ordinary waiter.
 	tid uint32
 }
 
@@ -256,6 +256,10 @@ func (w *Waiter) woken() bool {
 	return len(w.C) != 0
 }
 
+func (w *Waiter) isPI() bool {
+	return w.tid != 0
+}
+
 // bucket holds a list of waiters for a given address hash.
 //
 // +stateify savable
@@ -267,26 +271,41 @@ type bucket struct {
 	waiters waiterList `state:"zerovalue"`
 }
 
+// firstMatchingLocked returns the first waiter for key at or after w.
+//
+// +checklocks:b.mu
+func (b *bucket) firstMatchingLocked(w *Waiter, key *Key) *Waiter {
+	for ; w != nil; w = w.Next() {
+		if w.key.matches(key) {
+			return w
+		}
+	}
+	return nil
+}
+
 // wakeLocked wakes up to n waiters matching the bitmask at the addr for this
 // bucket and returns the number of waiters woken.
 //
 // +checklocks:b.mu
-func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
+func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) (int, error) {
 	done := 0
-	for w := b.waiters.Front(); done < n && w != nil; {
-		if !w.key.matches(key) || w.bitmask&bitmask == 0 {
-			// Not matching.
-			w = w.Next()
+	var next *Waiter
+	for w := b.waiters.Front(); done < n && w != nil; w = next {
+		next = w.Next()
+		if !w.key.matches(key) {
 			continue
 		}
-
-		// Remove from the bucket and wake the waiter.
-		woke := w
-		w = w.Next() // Next iteration.
-		b.wakeWaiterLocked(woke)
-		done++
+		// A PI waiter can only be woken after transferring ownership.
+		// Its bitmask has no meaning, including for FUTEX_WAKE_BITSET.
+		if w.isPI() {
+			return 0, linuxerr.EINVAL
+		}
+		if w.bitmask&bitmask != 0 {
+			b.wakeWaiterLocked(w)
+			done++
+		}
 	}
-	return done
+	return done, nil
 }
 
 // wakeWaiterLocked removes w from b and wakes it.
@@ -311,13 +330,16 @@ func (b *bucket) wakeWaiterLocked(w *Waiter) {
 //
 // +checklocks:b.mu
 // +checklocks:to.mu
-func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) int {
+func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) error {
 	done := 0
 	for w := b.waiters.Front(); done < n && w != nil; {
 		if !w.key.matches(key) {
 			// Not matching.
 			w = w.Next()
 			continue
+		}
+		if w.isPI() {
+			return linuxerr.EINVAL
 		}
 
 		requeued := w
@@ -329,7 +351,7 @@ func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) int 
 		requeued.bucket.Store(to)
 		done++
 	}
-	return done
+	return nil
 }
 
 const (
@@ -511,11 +533,11 @@ func (m *Manager) Wake(t Target, addr hostarch.Addr, private bool, bitmask uint3
 	}
 
 	b := m.lockBucket(&k)
-	r := b.wakeLocked(&k, bitmask, n)
+	r, err := b.wakeLocked(&k, bitmask, n)
 
 	b.mu.Unlock()
 	k.release(t)
-	return r, nil
+	return r, err
 }
 
 // +checklocksexclude:m.sharedBucket.mu
@@ -543,12 +565,14 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 	// Wake the number required. lockBuckets holds b1.mu and b2.mu through
 	// the ordered handles until unlockBuckets; checklocks cannot relate
 	// those handles to the logical buckets.
-	done := b1.wakeLocked(&k1, ^uint32(0), nwake) // +checklocksignore
+	done, err := b1.wakeLocked(&k1, ^uint32(0), nwake) // +checklocksignore
+	if err != nil {
+		return 0, err
+	}
 
 	// Requeue the number required.
-	b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
-
-	return done, nil
+	err = b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
+	return done, err
 }
 
 // Requeue wakes up to nwake waiters on the given addr, and unconditionally
@@ -589,7 +613,6 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 	b1, b2, lockedFirst, lockedSecond := m.lockBuckets(&k1, &k2)
 	defer m.unlockBuckets(lockedFirst, lockedSecond)
 
-	done := 0
 	cond, err := atomicOp(t, addr2, op)
 	if err != nil {
 		return 0, err
@@ -598,12 +621,19 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 	// Wake up to nwake1 entries from the first bucket. lockBuckets holds
 	// both logical buckets through the ordered handles until unlockBuckets;
 	// checklocks cannot relate those handles to b1 and b2.
-	done = b1.wakeLocked(&k1, ^uint32(0), nwake1) // +checklocksignore
+	done, err := b1.wakeLocked(&k1, ^uint32(0), nwake1) // +checklocksignore
+	if err != nil {
+		return 0, err
+	}
 
 	// Wake up up to nwake2 entries from the second bucket if the
 	// operation yielded true.
 	if cond {
-		done += b2.wakeLocked(&k2, ^uint32(0), nwake2) // +checklocksignore
+		n, err := b2.wakeLocked(&k2, ^uint32(0), nwake2) // +checklocksignore
+		if err != nil {
+			return 0, err
+		}
+		done += n
 	}
 
 	return done, nil
@@ -629,6 +659,7 @@ func (m *Manager) WaitPrepare(w *Waiter, t Target, addr hostarch.Addr, private b
 	}
 	w.key = k
 	w.bitmask = bitmask
+	w.tid = 0
 
 	b := m.lockBucket(&k)
 	// This function is very hot; avoid defer.
@@ -740,6 +771,9 @@ func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint
 		if (cur & linux.FUTEX_TID_MASK) == tid {
 			return false, linuxerr.EDEADLK
 		}
+		if top := b.firstMatchingLocked(b.waiters.Front(), &w.key); top != nil && !top.isPI() {
+			return false, linuxerr.EINVAL
+		}
 
 		if (cur & linux.FUTEX_TID_MASK) == 0 {
 			// No owner and no waiters, try to acquire the futex.
@@ -819,21 +853,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 		return linuxerr.EPERM
 	}
 
-	var next *Waiter  // Who's the next owner?
-	var next2 *Waiter // Who's the one after that?
-	for w := b.waiters.Front(); w != nil; w = w.Next() {
-		if !w.key.matches(key) {
-			continue
-		}
-
-		if next == nil {
-			next = w
-		} else {
-			next2 = w
-			break
-		}
-	}
-
+	next := b.firstMatchingLocked(b.waiters.Front(), key)
 	if next == nil {
 		// It's safe to set 0 because there are no waiters, no new owner, and the
 		// executing task is the current owner (no owner died bit).
@@ -848,11 +868,15 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 		}
 		return nil
 	}
+	if !next.isPI() {
+		// Only a waiter blocked in LockPI can become the new owner.
+		return linuxerr.EINVAL
+	}
 
 	// Set next owner's TID, waiters if there are any. Resets owner died bit, if
 	// set, because the executing task takes over as the owner.
 	val := next.tid
-	if next2 != nil {
+	if b.firstMatchingLocked(next.Next(), key) != nil {
 		val |= linux.FUTEX_WAITERS
 	}
 

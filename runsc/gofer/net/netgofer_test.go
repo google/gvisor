@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	egressfilter "gvisor.dev/gvisor/runsc/gofer/net/egressfilter"
@@ -176,6 +178,9 @@ func dialLoopback(ctx context.Context, network, addr string) (net.Conn, error) {
 		Timeout:   defaultDialTimeout,
 		KeepAlive: keepAlivePeriod,
 	}
+	if strings.HasPrefix(network, "udp") {
+		dialer.Control = disableUDPBroadcastControl
+	}
 	return dialer.DialContext(ctx, network, net.JoinHostPort(loopbackHost, port))
 }
 
@@ -215,11 +220,50 @@ func startEchoServer(t *testing.T, wantReq, wantResp []byte) (targetAddr tcpip.F
 	}, errCh
 }
 
+func startUDPEchoServer(t *testing.T, wantReq, wantResp []byte) (targetAddr tcpip.FullAddress, serverErr <-chan error) {
+	t.Helper()
+	return startUDPEchoServerOn(t, "udp", "127.0.0.1:0", testServerAddr4, wantReq, wantResp)
+}
+
+func startUDPEchoServerOn(t *testing.T, network, listenAddr string, targetIP tcpip.Address, wantReq, wantResp []byte) (targetAddr tcpip.FullAddress, serverErr <-chan error) {
+	t.Helper()
+	pc, err := net.ListenPacket(network, listenAddr)
+	if err != nil {
+		t.Fatalf("net.ListenPacket(%q, %q) failed: %v", network, listenAddr, err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	errCh := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 2048)
+		nr, peer, err := pc.ReadFrom(buf)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if !bytes.Equal(buf[:nr], wantReq) {
+			errCh <- fmt.Errorf("UDP server received %q, want %q", buf[:nr], wantReq)
+			return
+		}
+		_, err = pc.WriteTo(wantResp, peer)
+		errCh <- err
+	}()
+
+	return tcpip.FullAddress{
+		NIC:  1,
+		Addr: targetIP,
+		Port: uint16(pc.LocalAddr().(*net.UDPAddr).Port),
+	}, errCh
+}
+
 func newTestClientStack(t *testing.T, clientFD int) *stack.Stack {
 	t.Helper()
 	st := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{
+			tcp.NewProtocol,
+			udp.NewProtocol,
+		},
 	})
 	linkEP, err := fdbased.New(&fdbased.Options{
 		FDs:                []int{clientFD},
@@ -326,10 +370,42 @@ func verifyEchoRoundTrip(t *testing.T, clientStack *stack.Stack, targetAddr tcpi
 	}
 }
 
+func verifyUDPEchoRoundTrip(t *testing.T, clientStack *stack.Stack, targetAddr tcpip.FullAddress, wantReq, wantResp []byte, serverErr <-chan error) {
+	t.Helper()
+	verifyUDPEchoRoundTripProto(t, clientStack, targetAddr, ipv4.ProtocolNumber, wantReq, wantResp, serverErr)
+}
+
+func verifyUDPEchoRoundTripProto(t *testing.T, clientStack *stack.Stack, targetAddr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber, wantReq, wantResp []byte, serverErr <-chan error) {
+	t.Helper()
+	clientConn, err := gonet.DialUDP(clientStack, nil, &targetAddr, netProto)
+	if err != nil {
+		t.Fatalf("gonet.DialUDP(%+v) failed: %v", targetAddr, err)
+	}
+	defer clientConn.Close()
+	if err := clientConn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("clientConn.SetDeadline() failed: %v", err)
+	}
+	if _, err := clientConn.Write(wantReq); err != nil {
+		t.Fatalf("clientConn.Write() failed: %v", err)
+	}
+	buf := make([]byte, 2048)
+	nr, err := clientConn.Read(buf)
+	if err != nil || !bytes.Equal(buf[:nr], wantResp) {
+		t.Fatalf("UDP client received %q, %v; want %q", buf[:nr], err, wantResp)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("UDP server error: %v", err)
+	}
+}
+
 func TestRunProxyModeEndToEnd(t *testing.T) {
 	wantReq := []byte("ping from sandbox over UDS proxy")
 	wantResp := []byte("pong from host TCP server")
 	targetAddr, serverErr := startEchoServer(t, wantReq, wantResp)
+
+	wantUDPReq := []byte("udp dns query from sandbox")
+	wantUDPResp := []byte("udp dns response from host")
+	udpTargetAddr, udpServerErr := startUDPEchoServer(t, wantUDPReq, wantUDPResp)
 
 	// Also start a server that keeps accepted connections open and idle until
 	// test cleanup to verify runProxyMode shuts down without hanging on active
@@ -358,6 +434,7 @@ func TestRunProxyModeEndToEnd(t *testing.T) {
 
 	clientStack := startInProcessProxy(t, &Netgofer{dialContext: dialLoopback})
 	verifyEchoRoundTrip(t, clientStack, targetAddr, wantReq, wantResp, serverErr)
+	verifyUDPEchoRoundTrip(t, clientStack, udpTargetAddr, wantUDPReq, wantUDPResp, udpServerErr)
 
 	idleAddr := tcpip.FullAddress{
 		NIC:  1,
@@ -386,6 +463,14 @@ func TestRunProxyModeWithSeccomp(t *testing.T) {
 	wantReq := []byte("ping from seccomp-hardened netgofer")
 	wantResp := []byte("pong from host TCP server")
 	targetAddr4, serverErr := startEchoServer(t, wantReq, wantResp)
+
+	wantUDPReq := []byte("udp ping from seccomp-hardened netgofer")
+	wantUDPResp := []byte("udp pong from host UDP server")
+	udpTargetAddr4, udpServerErr := startUDPEchoServer(t, wantUDPReq, wantUDPResp)
+
+	wantUDPReq6 := []byte("ipv6 udp ping from seccomp-hardened netgofer")
+	wantUDPResp6 := []byte("ipv6 udp pong from host UDP server")
+	udpTargetAddr6, udpServerErr6 := startUDPEchoServerOn(t, "udp6", "[::1]:0", testServerAddr6, wantUDPReq6, wantUDPResp6)
 
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
@@ -430,7 +515,7 @@ func TestRunProxyModeWithSeccomp(t *testing.T) {
 			childOut.WriteString(line)
 			childOut.WriteByte('\n')
 			outputMu.Unlock()
-			if !readySent && strings.Contains(line, "TCP forwarder registered") {
+			if !readySent && strings.Contains(line, "TCP and UDP forwarders registered") {
 				readySent = true
 				childReady <- true
 			}
@@ -462,9 +547,11 @@ func TestRunProxyModeWithSeccomp(t *testing.T) {
 	case ok := <-childReady:
 		if !ok {
 			<-readerDone
-			t.Fatalf("child netgofer exited before becoming ready; output:\n%s", getChildOutput())
+			waitErr := cmd.Wait()
+			cmdWaited = true
+			t.Fatalf("child netgofer exited before becoming ready (%v); output:\n%s", waitErr, getChildOutput())
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("timed out waiting for child netgofer ready log; output:\n%s", getChildOutput())
 	}
 
@@ -472,7 +559,7 @@ func TestRunProxyModeWithSeccomp(t *testing.T) {
 	destroyClientStack := sync.OnceFunc(clientStack.Destroy)
 	t.Cleanup(destroyClientStack)
 
-	// Exercise outbound IPv6 socket creation + setsockopt under seccomp.
+	// Exercise outbound IPv6 TCP socket creation + setsockopt under seccomp.
 	dialCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	targetAddr6 := tcpip.FullAddress{NIC: 1, Addr: testServerAddr6, Port: 12345}
@@ -481,6 +568,8 @@ func TestRunProxyModeWithSeccomp(t *testing.T) {
 	}
 
 	verifyEchoRoundTrip(t, clientStack, targetAddr4, wantReq, wantResp, serverErr)
+	verifyUDPEchoRoundTrip(t, clientStack, udpTargetAddr4, wantUDPReq, wantUDPResp, udpServerErr)
+	verifyUDPEchoRoundTripProto(t, clientStack, udpTargetAddr6, ipv6.ProtocolNumber, wantUDPReq6, wantUDPResp6, udpServerErr6)
 
 	destroyClientStack()
 	closeClientFD()
@@ -564,6 +653,38 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 		}
 	}()
 
+	udpPC4, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.ListenPacket(udp4) failed: %v", err)
+	}
+	defer udpPC4.Close()
+
+	udpPC6, err := net.ListenPacket("udp6", "[::1]:0")
+	if err != nil {
+		t.Fatalf("net.ListenPacket(udp6) failed: %v", err)
+	}
+	defer udpPC6.Close()
+
+	udpReceived := make(chan string, 1)
+	watchUDP := func(name string, pc net.PacketConn) {
+		go func() {
+			buf := make([]byte, 256)
+			if _, _, err := pc.ReadFrom(buf); err == nil {
+				select {
+				case udpReceived <- name:
+				default:
+				}
+			}
+		}()
+	}
+	watchUDP("udp4", udpPC4)
+	watchUDP("udp6", udpPC6)
+
+	wantAllowedUDPReq := []byte("allowed udp ping")
+	wantAllowedUDPResp := []byte("allowed udp pong")
+	allowedUDPAddr, allowedUDPErr := startUDPEchoServer(t, wantAllowedUDPReq, wantAllowedUDPResp)
+	allowedAddrStr := net.JoinHostPort(allowedUDPAddr.Addr.String(), fmt.Sprintf("%d", allowedUDPAddr.Port))
+
 	localInterfaceAddr := tcpip.AddrFrom4([4]byte{198, 51, 100, 99})
 	ef, err := egressfilter.New(egressfilter.Options{
 		LocalAddrs: []net.IP{net.IPv4(198, 51, 100, 99)},
@@ -576,49 +697,59 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 		dialed   []string
 	)
 	recordingDial := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		dialedMu.Lock()
-		dialed = append(dialed, addr)
-		dialedMu.Unlock()
+		if addr != allowedAddrStr {
+			dialedMu.Lock()
+			dialed = append(dialed, addr)
+			dialedMu.Unlock()
+		}
 		return dialLoopback(ctx, network, addr)
 	}
 	clientStack := startInProcessProxy(t, &Netgofer{
 		egressFilter: ef,
 		dialContext:  recordingDial,
 	})
-	port := uint16(ln.Addr().(*net.TCPAddr).Port)
-	for _, tc := range []struct {
+	tcpPort := uint16(ln.Addr().(*net.TCPAddr).Port)
+	udpPort4 := uint16(udpPC4.LocalAddr().(*net.UDPAddr).Port)
+	udpPort6 := uint16(udpPC6.LocalAddr().(*net.UDPAddr).Port)
+	cases := []struct {
 		name     string
 		netProto tcpip.NetworkProtocolNumber
 		addr     tcpip.Address
+		udpPort  uint16
 	}{
 		{
 			name:     "ipv4_current_network_subnet",
 			netProto: ipv4.ProtocolNumber,
 			addr:     tcpip.AddrFrom4([4]byte{0, 0, 0, 1}),
+			udpPort:  udpPort4,
 		},
 		{
 			name:     "ipv4_link_local_unicast",
 			netProto: ipv4.ProtocolNumber,
 			addr:     tcpip.AddrFrom4([4]byte{169, 254, 169, 254}),
+			udpPort:  udpPort4,
 		},
 		{
 			name:     "ipv4_local_interface_ip",
 			netProto: ipv4.ProtocolNumber,
 			addr:     localInterfaceAddr,
+			udpPort:  udpPort4,
 		},
 		{
 			name:     "ipv6_link_local_unicast",
 			netProto: ipv6.ProtocolNumber,
 			addr:     tcpip.AddrFrom16([16]byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+			udpPort:  udpPort6,
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	}
+	for _, tc := range cases {
+		t.Run("tcp/"+tc.name, func(t *testing.T) {
 			dialCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
 			conn, err := gonet.DialContextTCP(dialCtx, clientStack, tcpip.FullAddress{
 				NIC:  1,
 				Addr: tc.addr,
-				Port: port,
+				Port: tcpPort,
 			}, tc.netProto)
 			if err == nil {
 				_ = conn.Close()
@@ -629,7 +760,26 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 				t.Fatalf("DialContextTCP(%s) = %v, want connection refused by netgofer", tc.addr, err)
 			}
 		})
+		t.Run("udp/"+tc.name, func(t *testing.T) {
+			conn, err := gonet.DialUDP(clientStack, nil, &tcpip.FullAddress{
+				NIC:  1,
+				Addr: tc.addr,
+				Port: tc.udpPort,
+			}, tc.netProto)
+			if err != nil {
+				t.Fatalf("gonet.DialUDP(%s) failed: %v", tc.addr, err)
+			}
+			defer conn.Close()
+			if _, err := conn.Write([]byte("disallowed udp payload")); err != nil {
+				t.Fatalf("conn.Write(%s) failed: %v", tc.addr, err)
+			}
+		})
 	}
+
+	// Because netgofer's UDP forwarder runs inline in the ordered UDS packet
+	// dispatcher, completing a subsequent allowed UDP round trip ensures all
+	// preceding disallowed UDP datagrams were processed.
+	verifyUDPEchoRoundTrip(t, clientStack, allowedUDPAddr, wantAllowedUDPReq, wantAllowedUDPResp, allowedUDPErr)
 
 	dialedMu.Lock()
 	defer dialedMu.Unlock()
@@ -641,6 +791,303 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 	case <-accepted:
 		t.Fatal("host loopback listener accepted a connection from a disallowed destination")
 	default:
+	}
+
+	select {
+	case proto := <-udpReceived:
+		t.Fatalf("host %s loopback listener received a UDP datagram to a disallowed destination", proto)
+	default:
+	}
+}
+
+func TestProxyLimitsUDPConnections(t *testing.T) {
+	udpPC, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.ListenPacket() failed: %v", err)
+	}
+	defer udpPC.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			nr, peer, err := udpPC.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if _, err := udpPC.WriteTo(buf[:nr], peer); err != nil {
+				return
+			}
+		}
+	}()
+
+	tcpLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() failed: %v", err)
+	}
+	defer tcpLn.Close()
+	go func() {
+		for {
+			conn, err := tcpLn.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	udpDialed := make(chan struct{}, 10)
+	countingDial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if strings.HasPrefix(network, "udp") {
+			udpDialed <- struct{}{}
+		}
+		return dialLoopback(ctx, network, addr)
+	}
+
+	clientStack := startInProcessProxy(t, &Netgofer{
+		maxActiveConns: 2,
+		dialContext:    countingDial,
+	})
+
+	udpTarget := tcpip.FullAddress{
+		NIC:  1,
+		Addr: testServerAddr4,
+		Port: uint16(udpPC.LocalAddr().(*net.UDPAddr).Port),
+	}
+	dialAndEcho := func(payload string) *gonet.UDPConn {
+		t.Helper()
+		conn, err := gonet.DialUDP(clientStack, nil, &udpTarget, ipv4.ProtocolNumber)
+		if err != nil {
+			t.Fatalf("gonet.DialUDP() failed: %v", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatalf("SetDeadline() failed: %v", err)
+		}
+		if _, err := conn.Write([]byte(payload)); err != nil {
+			t.Fatalf("Write(%q) failed: %v", payload, err)
+		}
+		buf := make([]byte, 256)
+		nr, err := conn.Read(buf)
+		if err != nil || string(buf[:nr]) != payload {
+			t.Fatalf("Read() = %q, %v; want %q", buf[:nr], err, payload)
+		}
+		return conn
+	}
+
+	_ = dialAndEcho("udp-flow-1")
+	_ = dialAndEcho("udp-flow-2")
+	for i := 0; i < 2; i++ {
+		select {
+		case <-udpDialed:
+		default:
+			t.Fatalf("expected 2 UDP outbound dials, got %d", i)
+		}
+	}
+
+	// With maxActiveConns=2 occupied by the 2 active UDP flows, a 3rd UDP flow
+	// should not be dialed.
+	conn3, err := gonet.DialUDP(clientStack, nil, &udpTarget, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatalf("third gonet.DialUDP() failed: %v", err)
+	}
+	defer conn3.Close()
+	if _, err := conn3.Write([]byte("udp-flow-3")); err != nil {
+		t.Fatalf("third conn.Write() failed: %v", err)
+	}
+
+	// Shared activeConns limit also rejects a subsequent TCP dial; completing the
+	// TCP dial attempt acts as a dispatcher fence after conn3's UDP packet.
+	tcpTarget := tcpip.FullAddress{
+		NIC:  1,
+		Addr: testServerAddr4,
+		Port: uint16(tcpLn.Addr().(*net.TCPAddr).Port),
+	}
+	if tcpConn, err := gonet.DialTCP(clientStack, tcpTarget, ipv4.ProtocolNumber); err == nil {
+		_ = tcpConn.Close()
+		t.Fatalf("DialTCP succeeded while 2 UDP flows occupied maxActiveConns=2")
+	}
+
+	select {
+	case <-udpDialed:
+		t.Fatal("third UDP flow was dialed while maxActiveConns=2 was full")
+	default:
+	}
+
+	if err := conn3.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		t.Fatalf("SetReadDeadline() failed: %v", err)
+	}
+	buf := make([]byte, 256)
+	if nr, err := conn3.Read(buf); err == nil {
+		t.Fatalf("third UDP flow unexpectedly received %q while maxActiveConns=2 was full", buf[:nr])
+	}
+}
+
+type closeNotifyingConn struct {
+	net.Conn
+	closeOnce sync.Once
+	closed    chan struct{}
+}
+
+func (c *closeNotifyingConn) Close() error {
+	c.closeOnce.Do(func() { close(c.closed) })
+	return c.Conn.Close()
+}
+
+func TestProxyUDPIdleTimeout(t *testing.T) {
+	udpPC, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.ListenPacket() failed: %v", err)
+	}
+	defer udpPC.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			nr, peer, err := udpPC.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if _, err := udpPC.WriteTo(buf[:nr], peer); err != nil {
+				return
+			}
+		}
+	}()
+
+	closedChs := make(chan chan struct{}, 8)
+	trackingDial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dialLoopback(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(network, "udp") {
+			ch := make(chan struct{})
+			closedChs <- ch
+			return &closeNotifyingConn{Conn: conn, closed: ch}, nil
+		}
+		return conn, nil
+	}
+
+	clientStack := startInProcessProxy(t, &Netgofer{
+		maxActiveConns: 1,
+		udpIdleTimeout: 150 * time.Millisecond,
+		dialContext:    trackingDial,
+	})
+
+	udpTarget := tcpip.FullAddress{
+		NIC:  1,
+		Addr: testServerAddr4,
+		Port: uint16(udpPC.LocalAddr().(*net.UDPAddr).Port),
+	}
+
+	conn1, err := gonet.DialUDP(clientStack, nil, &udpTarget, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatalf("first gonet.DialUDP() failed: %v", err)
+	}
+	defer conn1.Close()
+	if err := conn1.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("conn1.SetDeadline() failed: %v", err)
+	}
+	if _, err := conn1.Write([]byte("idle-timeout-1")); err != nil {
+		t.Fatalf("conn1.Write() failed: %v", err)
+	}
+	buf := make([]byte, 256)
+	nr, err := conn1.Read(buf)
+	if err != nil || string(buf[:nr]) != "idle-timeout-1" {
+		t.Fatalf("conn1.Read() = %q, %v; want %q", buf[:nr], err, "idle-timeout-1")
+	}
+
+	var closed1 chan struct{}
+	select {
+	case closed1 = <-closedChs:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first UDP outbound dial")
+	}
+
+	// Leave conn1 open on the client; the proxy must close hostConn and release
+	// the maxActiveConns=1 slot after udpIdleTimeout.
+	select {
+	case <-closed1:
+	case <-time.After(5 * time.Second):
+		t.Fatal("host UDP connection did not close after udpIdleTimeout")
+	}
+
+	conn2, err := gonet.DialUDP(clientStack, nil, &udpTarget, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatalf("second gonet.DialUDP() failed: %v", err)
+	}
+	defer conn2.Close()
+	for i := 0; i < 40; i++ {
+		_ = conn2.SetDeadline(time.Now().Add(50 * time.Millisecond))
+		if _, err := conn2.Write([]byte("idle-timeout-2")); err != nil {
+			t.Fatalf("conn2.Write() failed: %v", err)
+		}
+		nr, err := conn2.Read(buf)
+		if err == nil && string(buf[:nr]) == "idle-timeout-2" {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("second UDP flow failed to acquire activeConns slot after udpIdleTimeout")
+}
+
+func getSocketBroadcastOption(t *testing.T, conn net.Conn) int {
+	t.Helper()
+	sc, ok := conn.(syscall.Conn)
+	if !ok {
+		t.Fatalf("%T does not implement syscall.Conn", conn)
+	}
+	rawConn, err := sc.SyscallConn()
+	if err != nil {
+		t.Fatalf("SyscallConn() failed: %v", err)
+	}
+	var (
+		val     int
+		sockErr error
+	)
+	if err := rawConn.Control(func(fd uintptr) {
+		val, sockErr = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_BROADCAST)
+	}); err != nil {
+		t.Fatalf("rawConn.Control() failed: %v", err)
+	}
+	if sockErr != nil {
+		t.Fatalf("GetsockoptInt(SO_BROADCAST) failed: %v", sockErr)
+	}
+	return val
+}
+
+func TestOutboundUDPDialerDisablesBroadcast(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		network    string
+		listenAddr string
+	}{
+		{name: "udp4", network: "udp4", listenAddr: "127.0.0.1:0"},
+		{name: "udp6", network: "udp6", listenAddr: "[::1]:0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pc, err := net.ListenPacket(tc.network, tc.listenAddr)
+			if err != nil {
+				t.Fatalf("net.ListenPacket(%q, %q) failed: %v", tc.network, tc.listenAddr, err)
+			}
+			defer pc.Close()
+
+			defaultConn, err := (&net.Dialer{Timeout: defaultDialTimeout}).DialContext(t.Context(), tc.network, pc.LocalAddr().String())
+			if err != nil {
+				t.Fatalf("default dialer failed: %v", err)
+			}
+			defer defaultConn.Close()
+			if got := getSocketBroadcastOption(t, defaultConn); got == 0 {
+				t.Fatalf("baseline Go UDP dialer SO_BROADCAST = %d, want non-zero", got)
+			}
+
+			dialer := newOutboundUDPDialer()
+			conn, err := dialer.DialContext(t.Context(), tc.network, pc.LocalAddr().String())
+			if err != nil {
+				t.Fatalf("newOutboundUDPDialer().DialContext() failed: %v", err)
+			}
+			defer conn.Close()
+			if got := getSocketBroadcastOption(t, conn); got != 0 {
+				t.Errorf("SO_BROADCAST = %d, want 0", got)
+			}
+		})
 	}
 }
 

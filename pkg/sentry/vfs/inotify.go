@@ -531,11 +531,6 @@ type Watch struct {
 	expired atomicbitops.Int32
 }
 
-// OwnerID returns the id of the inotify instance that owns this watch.
-func (w *Watch) OwnerID() uint64 {
-	return w.owner.id
-}
-
 // ExcludeUnlinked indicates whether the watched object should continue to be
 // notified of events originating from a path that has been unlinked.
 //

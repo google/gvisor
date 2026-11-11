@@ -117,7 +117,7 @@ maintainers:
     github_id: 59618317
     affiliation: Google
     started: 2020-01-09
-    status: ACTIVE
+    status: HIATUS_SINCE:2026-11-09
     areas: [networking]
   - name: Etienne Perot
     github: etienneperot

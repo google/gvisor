@@ -213,6 +213,7 @@ go_test(
     ],
     embed = [":pgalloc"],
     deps = [
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/sentry/memmap",

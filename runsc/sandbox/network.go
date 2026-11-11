@@ -22,7 +22,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
+	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
@@ -31,7 +33,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/donation"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
+	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -51,9 +57,28 @@ import (
 // Run the following container to test it:
 //
 //	docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
-func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 bool, isRestore bool) error {
+func (s *Sandbox) setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *config.Config, disableIPv6 bool, isRestore bool) error {
 	log.Infof("Setting up network")
 
+	var (
+		udsHost    *os.File
+		udsSandbox *os.File
+	)
+	if conf.Netgofer.Enabled() && conf.Network == config.NetworkSandbox {
+		fds, sockErr := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+		if sockErr != nil {
+			return fmt.Errorf("creating socket pair: %w", sockErr)
+		}
+		for _, fd := range fds {
+			setUDSBufSizes(fd)
+		}
+		udsHost = os.NewFile(uintptr(fds[0]), "uds-host")
+		udsSandbox = os.NewFile(uintptr(fds[1]), "uds-sandbox")
+		defer udsHost.Close()
+		defer udsSandbox.Close()
+	}
+
+	var primaryMTU int
 	switch conf.Network {
 	case config.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")
@@ -64,7 +89,9 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf, disableIPv6, isRestore); err != nil {
+		var err error
+		primaryMTU, err = createInterfacesAndRoutesFromNS(conn, nsPath, conf, disableIPv6, isRestore, udsSandbox)
+		if err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case config.NetworkHost:
@@ -76,12 +103,25 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 	default:
 		return fmt.Errorf("invalid network type: %v", conf.Network)
 	}
+
+	if conf.Netgofer.Enabled() && conf.Network == config.NetworkSandbox {
+		if err := s.startProxy(conf, spec, udsHost, pid, primaryMTU); err != nil {
+			return fmt.Errorf("starting proxy: %w", err)
+		}
+	}
+
 	return nil
 }
 
-// defaultPrimaryInterfaceName is the default fallback primary interface used
-// when the network-proxy-path is set.
-const defaultPrimaryInterfaceName = "eth0"
+const (
+	// defaultPrimaryInterfaceName is the default fallback primary interface used
+	// when the network-proxy-path is set.
+	defaultPrimaryInterfaceName = "eth0"
+
+	// defaultMTU is the MTU assumed for a network link when none is otherwise
+	// known. It matches the conventional Ethernet MTU.
+	defaultMTU = 1500
+)
 
 // hasFDBasedLink reports whether args.FDBasedLinks contains a link with the
 // given interface name.
@@ -391,6 +431,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 		if conf.XDP.Mode == config.XDPModeNS {
 			args.XDPLinks = append(args.XDPLinks, sentryapi.XDPLink{
 				Name:              iface.Name,
+				Multicast:         iface.Flags&net.FlagMulticast != 0,
 				InterfaceIndex:    iface.Index,
 				Routes:            routes,
 				TXChecksumOffload: conf.TXChecksumOffload,
@@ -407,6 +448,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 		} else {
 			link := sentryapi.FDBasedLink{
 				Name:                 iface.Name,
+				Multicast:            iface.Flags&net.FlagMulticast != 0,
 				MTU:                  iface.MTU,
 				Routes:               routes,
 				TXChecksumOffload:    conf.TXChecksumOffload,
@@ -431,64 +473,66 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool, isRestore bool) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool, isRestore bool, udsFile *os.File) (int, error) {
 	switch conf.XDP.Mode {
 	case config.XDPModeOff:
 	case config.XDPModeNS:
 	case config.XDPModeRedirect:
 		if err := createRedirectInterfacesAndRoutes(conn, conf, disableIPv6); err != nil {
-			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
+			return 0, fmt.Errorf("failed to create XDP redirect interface: %w", err)
 		}
-		return nil
+		return 0, nil
 	case config.XDPModeTunnel:
 		if err := createXDPTunnel(conn, nsPath, conf, disableIPv6); err != nil {
-			return fmt.Errorf("failed to create XDP tunnel: %w", err)
+			return 0, fmt.Errorf("failed to create XDP tunnel: %w", err)
 		}
-		return nil
+		return 0, nil
 	default:
-		return fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
+		return 0, fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
 	}
 
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer restore()
 
 	isRoot, err := isRootNetNS()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if isRoot {
-		return fmt.Errorf("cannot run with network enabled in root network namespace")
+		return 0, fmt.Errorf("cannot run with network enabled in root network namespace")
 	}
 
 	// Collect addresses and routes from the interfaces.
 	args, err := collectLinksAndRoutes(conf, disableIPv6)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	var (
-		primaryIface string
-		udsFile      *os.File
-	)
+	var primaryIface string
 	if conf.UseNetworkProxy() {
 		primaryIface, err = primaryInterface(&args)
 		if err != nil {
-			return fmt.Errorf("UDS enabled: %w", err)
+			return 0, fmt.Errorf("finding primary interface for network proxy: %w", err)
 		}
-		udsFile, err = dialExternalUDS(conf.NetworkProxyPath)
-		if err != nil {
-			return fmt.Errorf("dialing external UDS: %w", err)
+		if udsFile == nil {
+			// An external peer owns the other end of the link, so there is no
+			// netgofer to spawn and no host-side FD for us to retain. The
+			// external proxy is responsible for enforcing any egress policy.
+			udsFile, err = dialExternalUDS(conf.NetworkProxyPath)
+			if err != nil {
+				return 0, fmt.Errorf("dialing external UDS: %w", err)
+			}
+			defer udsFile.Close()
 		}
-		defer udsFile.Close()
 	}
 
 	for i := range args.XDPLinks {
 		if err := removeLinkAddresses(args.XDPLinks[i].Name, args.XDPLinks[i].Addresses); err != nil {
-			return fmt.Errorf("removing link addresses for interface %q: %w", args.XDPLinks[i].Name, err)
+			return 0, fmt.Errorf("removing link addresses for interface %q: %w", args.XDPLinks[i].Name, err)
 		}
 	}
 	for i := range args.FDBasedLinks {
@@ -498,7 +542,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			continue
 		}
 		if err := removeLinkAddresses(args.FDBasedLinks[i].Name, args.FDBasedLinks[i].Addresses); err != nil {
-			return fmt.Errorf("removing link addresses for interface %q: %w", args.FDBasedLinks[i].Name, err)
+			return 0, fmt.Errorf("removing link addresses for interface %q: %w", args.FDBasedLinks[i].Name, err)
 		}
 	}
 
@@ -506,28 +550,30 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		link := &args.XDPLinks[i]
 		iface, err := net.InterfaceByName(link.Name)
 		if err != nil {
-			return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
+			return 0, fmt.Errorf("getting interface by name %q: %w", link.Name, err)
 		}
 		xdpSockFDs, err := createSocketXDP(*iface)
 		if err != nil {
-			return fmt.Errorf("failed to create XDP socket: %v", err)
+			return 0, fmt.Errorf("failed to create XDP socket: %v", err)
 		}
 		args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
 	}
 
+	var primaryMTU int
 	for i := range args.FDBasedLinks {
 		link := &args.FDBasedLinks[i]
 		if conf.UseNetworkProxy() && link.Name == primaryIface {
 			configureProxyLink(link)
+			primaryMTU = link.MTU
 			args.FilePayload.Files = append(args.FilePayload.Files, udsFile)
 		} else {
 			iface, err := net.InterfaceByName(link.Name)
 			if err != nil {
-				return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
+				return 0, fmt.Errorf("getting interface by name %q: %w", link.Name, err)
 			}
 			ifaceLink, err := netlink.LinkByName(link.Name)
 			if err != nil {
-				return fmt.Errorf("getting link for interface %q: %w", link.Name, err)
+				return 0, fmt.Errorf("getting link for interface %q: %w", link.Name, err)
 			}
 
 			log.Debugf("Setting up network channels")
@@ -536,13 +582,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				log.Debugf("Creating Channel %d", j)
 				socketEntry, err := createSocket(*iface, ifaceLink, conf.HostGSO)
 				if err != nil {
-					return fmt.Errorf("failed to createSocket for %s : %w", link.Name, err)
+					return 0, fmt.Errorf("failed to createSocket for %s : %w", link.Name, err)
 				}
 				if j == 0 {
 					link.GSOMaxSize = socketEntry.gsoMaxSize
 				} else {
 					if link.GSOMaxSize != socketEntry.gsoMaxSize {
-						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+						return 0, fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
 							link.GSOMaxSize, socketEntry.gsoMaxSize, link.Name)
 					}
 				}
@@ -556,16 +602,127 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			link.GVisorGSOEnabled = true
 		}
 	}
-
 	if err := pcapAndNAT(&args, conf); err != nil {
-		return err
+		return 0, err
 	}
 
 	args.IsRestore = isRestore
 	log.Debugf("Setting up network, config: %+v", args)
 	if err := conn.Call(sentryapi.ContMgrSetNetworkArgs, &args, nil); err != nil {
-		return fmt.Errorf("creating links and routes: %w", err)
+		return 0, fmt.Errorf("creating links and routes: %w", err)
 	}
+
+	return primaryMTU, nil
+}
+
+// startProxy spawns the netgofer proxy subprocess if netgofer is enabled.
+func (s *Sandbox) startProxy(conf *config.Config, spec *specs.Spec, udsHost *os.File, pid int, mtu int) error {
+	if udsHost == nil {
+		return fmt.Errorf("UDS proxy enabled but udsHost is nil")
+	}
+	if s.ID == "" {
+		return fmt.Errorf("UDS proxy enabled but sandbox ID is empty")
+	}
+	if pid <= 0 {
+		return fmt.Errorf("invalid sandbox PID %d for UDS proxy", pid)
+	}
+	if mtu <= 0 {
+		mtu = defaultMTU
+	}
+	log.Infof("Starting UDS proxy (netgofer), sandbox PID: %d, sandbox ID: %q, MTU: %d", pid, s.ID, mtu)
+
+	// Tear down any netgofer recorded from a previous incarnation before
+	// overwriting the bookkeeping below. Sandbox.Restore() re-enters
+	// setupNetwork() on a live Sandbox, so this can run with a netgofer already
+	// started. Without this, the old process is neither killed nor reaped, and
+	// its abandoned reaper goroutine later clears NetgoferPid out from under the
+	// new process, permanently defeating stopNetgofer(). No-op when no netgofer
+	// has been started yet.
+	s.stopNetgofer()
+
+	netNS := fmt.Sprintf("/proc/%d/ns/net", pid)
+	if _, err := os.Stat(netNS); err != nil {
+		return fmt.Errorf("sandbox network namespace %q not found: %w", netNS, err)
+	}
+	nss := []specs.LinuxNamespace{{
+		Type: specs.NetworkNamespace,
+		Path: netNS,
+	}}
+
+	// Ensure we don't leak FDs to the netgofer process.
+	if err := SetCloExeOnAllFDs(); err != nil {
+		return fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
+	}
+
+	donations := donation.Agency{}
+	defer donations.Close()
+
+	if err := donations.DonateLogFile("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, &log.DefaultFileOpts{}); err != nil {
+		return fmt.Errorf("failed to open or donate log file %q: %w", conf.LogFilename, err)
+	}
+	lfOpts := &specutils.LogFileOpts{
+		SandboxID: s.ID,
+		CID:       s.ID,
+		Command:   "netgofer",
+		Timestamp: s.StartTime,
+	}
+	if spec != nil {
+		lfOpts.Test = specutils.TestName(conf, spec)
+	}
+	if specutils.IsDebugCommand(conf, "netgofer") {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, lfOpts); err != nil {
+			return fmt.Errorf("donating debug log file: %w", err)
+		}
+	}
+
+	binPath, err := gvisorbinaries.Netgofer.Path()
+	if err != nil {
+		return fmt.Errorf("locating netgofer binary: %w", err)
+	}
+
+	cmd := exec.Command(binPath, conf.ToFlags()...)
+	cmd.Env = gvisorbinaries.WithEnforceRelease(slices.DeleteFunc(os.Environ(), func(env string) bool { return strings.HasPrefix(env, "GOMAXPROCS=") }))
+	cmd.SysProcAttr = &unix.SysProcAttr{
+		Setsid: true,
+	}
+	cmd.Args[0] = gvisorbinaries.Netgofer.Name
+
+	nextFD := donations.Transfer(cmd, 3)
+
+	cmd.Args = append(cmd.Args, "netgofer", fmt.Sprintf("--mtu=%d", mtu))
+	donations.Donate("uds-fd", udsHost)
+	if err := profile.DonateProfileFDs(conf, &donations, true /* isGofer */, lfOpts); err != nil {
+		return fmt.Errorf("donating netgofer profile fds: %w", err)
+	}
+	_ = donations.Transfer(cmd, nextFD)
+	cmd.Args = append(cmd.Args, s.ID)
+
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	donation.LogDonations(cmd)
+	log.Debugf("Starting netgofer: %s %v", cmd.Path, cmd.Args)
+
+	if err := cgroup.RunInCgroup(s.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
+		if cloneIntoCgroupFD != nil {
+			cmd.SysProcAttr.UseCgroupFD = true
+			cmd.SysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
+		}
+		return specutils.StartInNS(cmd, nss)
+	}); err != nil {
+		return fmt.Errorf("failed to start UDS proxy %q: %w", binPath, err)
+	}
+	netgoferPid := cmd.Process.Pid
+	log.Infof("Netgofer proxy started, PID: %d", netgoferPid)
+
+	stopped := make(chan struct{})
+	s.netgoferMu.Lock()
+	s.NetgoferPid.Store(netgoferPid)
+	s.netgoferIsChild = true
+	s.netgoferStopped = stopped
+	s.netgoferMu.Unlock()
+	s.reapNetgoferBackground(netgoferPid, stopped)
 
 	return nil
 }
@@ -696,6 +853,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (sentryapi.LoopbackLink, error) {
 	link := sentryapi.LoopbackLink{
 		Name:      iface.Name,
+		Multicast: iface.Flags&net.FlagMulticast != 0,
 		GVisorGRO: conf.GVisorGRO,
 	}
 	for _, addr := range addrs {

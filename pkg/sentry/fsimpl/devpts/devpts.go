@@ -201,8 +201,9 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 
 	// Construct the root directory. This is always inode id 1.
 	root := &rootInode{
-		opts:     opts,
-		replicas: make(map[uint32]*replicaInode),
+		opts:      opts,
+		replicas:  make(map[uint32]*replicaInode),
+		externals: make(map[uint32]*ExternalReplica),
 	}
 	// Linux fixes the root mode and ownership independently of mount options.
 	// See fs/devpts/inode.c:devpts_fill_super() and fs/inode.c:inode_init_always().
@@ -271,6 +272,13 @@ type rootInode struct {
 	// +checklocks:mu
 	replicas map[uint32]*replicaInode
 
+	// externals maps pty ids to replica inodes of terminals that are not
+	// implemented by devpts. Their ids do not overlap with the ids in
+	// replicas.
+	//
+	// +checklocks:mu
+	externals map[uint32]*ExternalReplica
+
 	// nextIdx is the next pty index to use.
 	//
 	// +checklocks:mu
@@ -285,15 +293,9 @@ var _ kernfs.Inode = (*rootInode)(nil)
 func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credentials) (*Terminal, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.nextIdx == math.MaxUint32 {
-		return nil, linuxerr.ENOMEM
-	}
-	idx := i.nextIdx
-	i.nextIdx++
-
-	// Sanity check that replica with idx does not exist.
-	if _, ok := i.replicas[idx]; ok {
-		panic(fmt.Sprintf("pty index collision; index %d already exists", idx))
+	idx, err := i.allocateIndexLocked()
+	if err != nil {
+		return nil, err
 	}
 
 	// Create the new terminal and replica.
@@ -303,11 +305,44 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 	}
 	t.masterKTTY = kernel.NewTTY(idx, t)
 	t.replicaKTTY = kernel.NewTTY(idx, t)
+	// Linux applies job control ioctls on the master to the replica (see
+	// drivers/tty/tty_io.c:tty_pair_get_tty()), so the controlling terminal
+	// is the replica in both cases.
+	t.masterKTTY.SetDeviceID(linux.UNIX98_PTY_REPLICA_MAJOR, idx)
+	t.replicaKTTY.SetDeviceID(linux.UNIX98_PTY_REPLICA_MAJOR, idx)
 	t.ld = newLineDiscipline(linux.DefaultReplicaTermios, t)
 	replica := &replicaInode{
 		root: i,
 		t:    t,
 	}
+	i.initReplicaAttrs(ctx, &replica.InodeAttrs, creds, idx)
+	i.replicas[idx] = replica
+
+	return t, nil
+}
+
+// allocateIndexLocked returns an unused pty index.
+//
+// +checklocks:i.mu
+func (i *rootInode) allocateIndexLocked() (uint32, error) {
+	if i.nextIdx == math.MaxUint32 {
+		return 0, linuxerr.ENOMEM
+	}
+	idx := i.nextIdx
+	i.nextIdx++
+
+	// Sanity check that a replica with idx does not exist.
+	_, ok := i.replicas[idx]
+	_, extOK := i.externals[idx]
+	if ok || extOK {
+		panic(fmt.Sprintf("pty index collision; index %d already exists", idx))
+	}
+	return idx, nil
+}
+
+// initReplicaAttrs initializes the attributes of the replica inode with index
+// idx.
+func (i *rootInode) initReplicaAttrs(ctx context.Context, attrs *kernfs.InodeAttrs, creds *auth.Credentials, idx uint32) {
 	// The uid and gid options name the owner of a replica. Without them it is
 	// owned by whoever created it. See fs/devpts/inode.c:devpts_pty_new().
 	uid, gid := creds.FilesystemKUID, creds.FilesystemKGID
@@ -319,10 +354,7 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 	}
 	// Linux always uses pty index + 3 as the inode id. See
 	// fs/devpts/inode.c:devpts_pty_new().
-	replica.InodeAttrs.InitWithIDs(ctx, uid, gid, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|i.opts.mode)
-	i.replicas[idx] = replica
-
-	return t, nil
+	attrs.InitWithIDs(ctx, uid, gid, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|i.opts.mode)
 }
 
 // masterClose is called when the master end of t is closed.
@@ -379,7 +411,10 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 	if ri, ok := i.replicas[uint32(idx)]; ok {
 		ri.IncRef() // This ref is passed to the dentry upon creation via Init.
 		return ri, nil
-
+	}
+	if er, ok := i.externals[uint32(idx)]; ok {
+		er.IncRef() // This ref is passed to the dentry upon creation via Init.
+		return er, nil
 	}
 	return nil, linuxerr.ENOENT
 }
@@ -394,11 +429,18 @@ func (i *rootInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Iter
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.InodeAttrs.TouchAtime(ctx, mnt)
-	if relOffset >= int64(len(i.replicas)) {
+	if relOffset >= int64(len(i.replicas)+len(i.externals)) {
 		return offset, nil
 	}
-	ids := make([]int, 0, len(i.replicas))
-	for id := range i.replicas {
+	inos := make(map[uint32]uint64, len(i.replicas)+len(i.externals))
+	for id, ri := range i.replicas {
+		inos[id] = ri.InodeAttrs.Ino()
+	}
+	for id, er := range i.externals {
+		inos[id] = er.InodeAttrs.Ino()
+	}
+	ids := make([]int, 0, len(inos))
+	for id := range inos {
 		ids = append(ids, int(id))
 	}
 	sort.Ints(ids)
@@ -406,7 +448,7 @@ func (i *rootInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Iter
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(id), 10),
 			Type:    linux.DT_CHR,
-			Ino:     i.replicas[uint32(id)].InodeAttrs.Ino(),
+			Ino:     inos[uint32(id)],
 			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {

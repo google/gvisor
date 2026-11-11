@@ -484,7 +484,6 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
-    save = False,
     test = "//test/syscalls/linux:mount_fd_test",
 )
 
@@ -531,6 +530,12 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:openat2_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    container = True,
+    test = "//test/syscalls/linux:overlay_test",
 )
 
 syscall_test(

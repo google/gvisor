@@ -18,6 +18,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -474,21 +475,27 @@ MtuRequest GetMtuRequest(const Link& link, uint16_t nlmsg_type, uint32_t mtu) {
 
 TEST_P(NetlinkSetLinkTest, ChangeMTU) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  SKIP_IF(!IsRunningOnGvisor());
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   // Change the MTU.
-  uint16_t nlmsg_type = GetParam();
-  MtuRequest req =
-      GetMtuRequest(loopback_link, nlmsg_type, loopback_link.mtu + 10);
-  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+  MtuRequest req = GetMtuRequest(loopback_link, GetParam(), 1234);
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
 
   // Update the local loopback_link's MTU to the requested value.
-  loopback_link.mtu = req.mtu - ETH_HLEN;
+  loopback_link.mtu = req.mtu;
   // Verify the new MTU.
   struct searchrequest {
     struct nlmsghdr hdr;
@@ -4047,6 +4054,87 @@ TEST(NetlinkRouteTest, VethAddUnnamedPeer) {
   EXPECT_EQ(link_kinds["veth0"], "veth");
 }
 
+// Returns whether a socket can bind to addr. Linux allows that only once addr
+// is assigned and has completed duplicate address detection.
+PosixErrorOr<bool> Bindable(const struct sockaddr_in6& addr) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor s, Socket(AF_INET6, SOCK_DGRAM, 0));
+  if (bind(s.get(), AsSockAddr(&addr), sizeof(addr)) == 0) {
+    return true;
+  }
+  if (errno == EADDRNOTAVAIL) {
+    return false;
+  }
+  return PosixError(errno, "bind");
+}
+
+// Waits until a socket can bind to addr. On Linux, duplicate address detection
+// takes a few seconds. gVisor does not run it.
+PosixError WaitBindable(const struct sockaddr_in6& addr) {
+  for (int i = 0; i < 100; ++i) {
+    ASSIGN_OR_RETURN_ERRNO(bool bindable, Bindable(addr));
+    if (bindable) {
+      return NoError();
+    }
+    absl::SleepFor(absl::Milliseconds(100));
+  }
+  return PosixError(ETIMEDOUT, "address did not become bindable");
+}
+
+// Like Linux, bringing a veth interface up assigns it an EUI-64 IPv6 link-local
+// address, and bringing it down removes the address.
+TEST(NetlinkRouteTest, VethLinkLocalAddrOnUpDown) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  // Linux derives veth1's link-local address, fe80::ff:fe00:1, from this MAC
+  // address.
+  constexpr uint8_t kMac[ETH_ALEN] = {0x02, 0, 0, 0, 0, 0x01};
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
+  addattr(&req.hdr, sizeof(req), IFLA_ADDRESS, kMac, sizeof(kMac));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+  const int veth1 = if_nametoindex("veth1");
+  ASSERT_NE(veth1, 0);
+  const int veth2 = if_nametoindex("veth2");
+  ASSERT_NE(veth2, 0);
+
+  struct sockaddr_in6 addr = {};
+  addr.sin6_family = AF_INET6;
+  addr.sin6_scope_id = veth1;
+  ASSERT_EQ(inet_pton(AF_INET6, "fe80::ff:fe00:1", &addr.sin6_addr), 1);
+
+  // Linux creates veth interfaces down, but gVisor creates them up. Take veth1
+  // down so it starts down on both.
+  // TODO(gvisor.dev/issue/16069): Remove this once gVisor creates veth
+  // interfaces down.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, 0, IFF_UP));
+  // Linux configures veth1 only once it has a carrier, which needs veth2 up.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth2, IFF_UP, IFF_UP));
+
+  // Bringing veth1 up assigns the address.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(WaitBindable(addr));
+
+  // Taking it down removes the address.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, 0, IFF_UP));
+  EXPECT_THAT(Bindable(addr), IsPosixErrorOkAndHolds(false));
+
+  // Bringing it back up assigns the address again.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, IFF_UP, IFF_UP));
+  EXPECT_NO_ERRNO(WaitBindable(addr));
+}
+
 TEST(NetlinkRouteTest, BridgeAddUnnamed) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
@@ -4079,6 +4167,7 @@ TEST(NetlinkRouteTest, BridgeAddUnnamed) {
 TEST(NetlinkRouteTest, LinkInfoKind) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
 
   const FileDescriptor curr_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
@@ -4101,16 +4190,27 @@ TEST(NetlinkRouteTest, LinkInfoKind) {
   SKIP_IF(!IsRunningOnGvisor() && err.errno_value() == EOPNOTSUPP);
   ASSERT_NO_ERRNO(err);
 
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
   std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(fd));
-  std::map<std::string, std::string> link_kinds;
-  for (const Link& link : links) {
-    link_kinds[link.name] = link.kind;
-  }
+  for (const auto& [name, kind] :
+       {std::pair{"veth1", "veth"}, std::pair{"veth2", "veth"},
+        std::pair{"br0", "bridge"}, std::pair{"lo", ""}}) {
+    SCOPED_TRACE(name);
+    auto link = std::find_if(links.begin(), links.end(), [&](const Link& link) {
+      return link.name == name;
+    });
+    ASSERT_NE(link, links.end());
+    EXPECT_EQ(link->kind, kind);
 
-  EXPECT_EQ(link_kinds["veth1"], "veth");
-  EXPECT_EQ(link_kinds["veth2"], "veth");
-  EXPECT_EQ(link_kinds["br0"], "bridge");
-  EXPECT_EQ(link_kinds["lo"], "");
+    // Both the netlink dump and SIOCGIFFLAGS report multicast support.
+    const unsigned int multicast = link->name == "lo" ? 0 : IFF_MULTICAST;
+    EXPECT_EQ(link->flags & IFF_MULTICAST, multicast);
+    struct ifreq ifr = {};
+    strncpy(ifr.ifr_name, name, IFNAMSIZ);
+    ASSERT_THAT(ioctl(sock.get(), SIOCGIFFLAGS, &ifr), SyscallSucceeds());
+    EXPECT_EQ(ifr.ifr_flags & IFF_MULTICAST, multicast);
+  }
 }
 
 struct RouteRequest {
@@ -4194,6 +4294,8 @@ TEST(NetlinkRouteTest, NewRouteGatewayNotOnLink) {
 TEST(NetlinkRouteTest, NewRouteGatewayOnLink) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
 
   const FileDescriptor curr_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
@@ -5175,6 +5277,54 @@ TEST_P(NetlinkRouteIpInvariantTest, RouteMulticastGroup) {
   for (const FileDescriptor* fd : obs.NotJoined()) {
     EXPECT_THAT(DrainNetlinkMessages(*fd), IsEmpty());
   }
+}
+
+// Like Linux's addrconf_ifdown, taking an interface down announces the IPv6
+// routes and addresses that it removes. The kernel removes them rather than
+// the request, so the notifications carry port ID 0 and sequence number 0.
+TEST(NetlinkRouteTest, LinkDownIPv6MulticastGroups) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  // Bringing the loopback interface up assigns ::1/128 and adds its route.
+  const Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+  struct sockaddr_nl sa = {};
+  sa.nl_family = AF_NETLINK;
+  sa.nl_groups = RTMGRP_IPV6_IFADDR | RTMGRP_IPV6_ROUTE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &sa));
+
+  // keep_addr_on_down is off in a new network namespace, so taking the
+  // interface down removes ::1/128 and flushes its route.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_UP));
+
+  const std::string loopback(reinterpret_cast<const char*>(&in6addr_loopback),
+                             sizeof(in6addr_loopback));
+  auto msgs = DrainNetlinkMessages(fd);
+
+  const struct nlmsghdr* route = FindRouteMessage(
+      msgs, RTM_DELROUTE, AF_INET6, lo.index, /*prefixlen=*/128, loopback);
+  ASSERT_NE(route, nullptr) << "no RTM_DELROUTE for ::1/128";
+  EXPECT_EQ(route->nlmsg_pid, 0u);
+  EXPECT_EQ(route->nlmsg_seq, 0u);
+
+  const struct nlmsghdr* addr = FindAddrMessage(
+      msgs, RTM_DELADDR, AF_INET6, lo.index, /*prefixlen=*/128, loopback);
+  ASSERT_NE(addr, nullptr) << "no RTM_DELADDR for ::1/128";
+  EXPECT_EQ(addr->nlmsg_pid, 0u);
+  EXPECT_EQ(addr->nlmsg_seq, 0u);
 }
 
 // Creates a veth pair in the current network namespace, brings both ends up,

@@ -52,6 +52,10 @@ const (
 	// $(RUNTIME)-net-uds target in the Makefile.
 	externalUDSRuntimeSuffix = "-net-uds"
 
+	// netgoferProxyRuntimeSuffix names the runtime installed by the
+	// $(RUNTIME)-netgofer-proxy target in the Makefile (--netgofer=proxy).
+	netgoferProxyRuntimeSuffix = "-netgofer-proxy"
+
 	// externalUDSSocketPath must match the --network-proxy-path value baked into
 	// that runtime. It is a fixed path rather than a temporary one because the
 	// runtime is installed once, before any test runs, and cannot learn a path
@@ -410,5 +414,88 @@ func TestExternalUDSProxyInbound(t *testing.T) {
 	}
 	if strings.TrimSpace(gotReq) != strings.TrimSpace(wantReq) {
 		t.Errorf("container TCP server received %q, want %q", gotReq, wantReq)
+	}
+}
+
+// TestNetgoferProxyOutbound tests that a container running under the
+// --netgofer=proxy runtime can establish an outbound TCP connection to a server
+// running in another container.
+func TestNetgoferProxyOutbound(t *testing.T) {
+	if !testutil.ShouldRun(t.Name()) {
+		t.Skipf("Skipping test %q for shard %d of %d", t.Name(), testutil.Partition(), testutil.TotalPartitions())
+	}
+	if testutil.IsRunningWithHostNet() {
+		t.Skip("Netgofer proxy (--netgofer) is only supported with sandbox networking.")
+	}
+
+	ctx := context.Background()
+	server := dockerutil.MakeContainer(ctx, t)
+	t.Cleanup(func() { server.CleanUp(ctx) })
+
+	client := dockerutil.MakeContainerWithRuntime(ctx, t, netgoferProxyRuntimeSuffix)
+	t.Cleanup(func() { client.CleanUp(ctx) })
+
+	if err := server.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run server failed: %v", err)
+	}
+
+	if err := client.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run client under %s failed: %v", netgoferProxyRuntimeSuffix, err)
+	}
+
+	const (
+		port     = 8080
+		wantReq  = "netgofer-ping\n"
+		wantResp = "netgofer-pong\n"
+	)
+
+	serverDone := make(chan error, 1)
+	go func() {
+		cmd := fmt.Sprintf(
+			"mkfifo /tmp/uds_fifo && (head -n 1 < /tmp/uds_fifo > /tmp/uds_req.txt && printf %q) | nc -l -p %d > /tmp/uds_fifo",
+			wantResp, port,
+		)
+		if out, err := server.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", cmd); err != nil {
+			serverDone <- fmt.Errorf("server container failed: %w (output: %q)", err, out)
+			return
+		}
+		serverDone <- nil
+	}()
+
+	waitForContainerListener(ctx, t, server, port, serverDone)
+
+	serverIP, err := server.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("server.FindIP() failed: %v", err)
+	}
+
+	got, err := client.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c",
+		fmt.Sprintf("printf %q | nc -w 10 %s %d", wantReq, serverIP, port))
+	if err != nil {
+		t.Fatalf("nc inside client container failed: %v (output: %q)", err, got)
+	}
+	if strings.TrimSpace(got) != strings.TrimSpace(wantResp) {
+		t.Errorf("client received %q, want %q", got, wantResp)
+	}
+
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatalf("server container failed: %v", err)
+		}
+	case <-time.After(externalUDSWait):
+		t.Fatal("timed out waiting for server container to exit")
+	}
+
+	gotReq, err := server.Exec(ctx, dockerutil.ExecOpts{}, "cat", "/tmp/uds_req.txt")
+	if err != nil {
+		t.Fatalf("reading /tmp/uds_req.txt inside server container failed: %v", err)
+	}
+	if strings.TrimSpace(gotReq) != strings.TrimSpace(wantReq) {
+		t.Errorf("server container received %q, want %q", gotReq, wantReq)
 	}
 }

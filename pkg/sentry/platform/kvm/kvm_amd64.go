@@ -183,6 +183,47 @@ type cpuidEntries struct {
 	entries [_KVM_NR_CPUID_ENTRIES]cpuidEntry
 }
 
+// _KVM_VCPUEVENT_VALID_SHADOW indicates that kvmVcpuEvents.interrupt.shadow
+// is valid for KVM_SET_VCPU_EVENTS.
+const _KVM_VCPUEVENT_VALID_SHADOW = 0x00000004
+
+// kvmVcpuEvents mirrors struct kvm_vcpu_events on x86.
+type kvmVcpuEvents struct {
+	exception struct {
+		injected     uint8
+		nr           uint8
+		hasErrorCode uint8
+		pending      uint8
+		errorCode    uint32
+	}
+	interrupt struct {
+		injected uint8
+		nr       uint8
+		soft     uint8
+		shadow   uint8
+	}
+	nmi struct {
+		injected uint8
+		pending  uint8
+		masked   uint8
+		pad      uint8
+	}
+	sipiVector uint32
+	flags      uint32
+	smi        struct {
+		smm          uint8
+		pending      uint8
+		smmInsideNmi uint8
+		latchedInit  uint8
+	}
+	tripleFault struct {
+		pending uint8
+	}
+	reserved            [26]uint8
+	exceptionHasPayload uint8
+	exceptionPayload    uint64
+}
+
 // Query implements cpuid.Function.Query.
 func (c *cpuidEntries) Query(in cpuid.In) (out cpuid.Out) {
 	for i := 0; i < int(c.nr); i++ {
