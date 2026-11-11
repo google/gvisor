@@ -81,13 +81,14 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		log.Warningf("nvproxy: NVIDIA driver capability set is empty; all GPU operations will fail")
 	}
 	nvp := &nvproxy{
-		abi:                    abiEntry.cons(),
-		version:                opts.DriverVersion,
-		capsEnabled:            opts.DriverCaps,
-		useDevGofer:            opts.UseDevGofer,
-		procDriverNvidiaParams: opts.HostSettings.ProcDriverNvidiaParams,
-		frontendFDs:            make(map[*frontendFD]struct{}),
-		clients:                make(map[nvgpu.Handle]*rootClient),
+		abi:                     abiEntry.cons(),
+		version:                 opts.DriverVersion,
+		capsEnabled:             opts.DriverCaps,
+		useDevGofer:             opts.UseDevGofer,
+		procDriverNvidiaParams:  opts.HostSettings.ProcDriverNvidiaParams,
+		procDriverNvidiaVersion: opts.HostSettings.ProcDriverNvidiaVersion,
+		frontendFDs:             make(map[*frontendFD]struct{}),
+		clients:                 make(map[nvgpu.Handle]*rootClient),
 	}
 	// Force ModifyDeviceFiles in /proc/driver/nvidia/params to 0. This is
 	// consistent with libnvidia-container's src/nvc_mount.c:mount_procfs().
@@ -237,13 +238,14 @@ func DeviceInfoFromVFS(vfsObj *vfs.VirtualFilesystem) *DeviceInfo {
 
 // +stateify savable
 type nvproxy struct {
-	abi                    *driverABI `state:"nosave"`
-	version                nvconf.DriverVersion
-	capsEnabled            nvconf.DriverCaps
-	useDevGofer            bool
-	procDriverNvidiaParams string
-	devInfo                DeviceInfo
-	regularDevs            [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
+	abi                     *driverABI `state:"nosave"`
+	version                 nvconf.DriverVersion
+	capsEnabled             nvconf.DriverCaps
+	useDevGofer             bool
+	procDriverNvidiaParams  string
+	procDriverNvidiaVersion string
+	devInfo                 DeviceInfo
+	regularDevs             [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
 
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}

@@ -20,6 +20,20 @@ go_test(
 )
 
 go_test(
+    name = "procfs_test",
+    srcs = ["procfs_test.go"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = ["//pkg/test/dockerutil"],
+)
+
+go_test(
     name = "pytorch_test",
     srcs = ["pytorch_test.go"],
     # Needed to invalidate the bazel cache in case of any code changes.
