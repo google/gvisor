@@ -262,10 +262,8 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 	},
 	unix.SYS_PREAD64:  seccomp.MatchAll{},
-	unix.SYS_PREADV:   seccomp.MatchAll{},
 	unix.SYS_PREADV2:  seccomp.MatchAll{},
 	unix.SYS_PWRITE64: seccomp.MatchAll{},
-	unix.SYS_PWRITEV:  seccomp.MatchAll{},
 	unix.SYS_PWRITEV2: seccomp.MatchAll{},
 	unix.SYS_READ:     seccomp.MatchAll{},
 	unix.SYS_READV:    seccomp.MatchAll{}, // Used by TAP/TUN fdbased links.
@@ -318,7 +316,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.MaskedEqual(unix.AT_EMPTY_PATH, unix.AT_EMPTY_PATH),
 	},
-	unix.SYS_SYNC_FILE_RANGE: seccomp.MatchAll{},
 	unix.SYS_TEE: seccomp.PerArg{
 		seccomp.AnyValue{},
 		seccomp.AnyValue{},
