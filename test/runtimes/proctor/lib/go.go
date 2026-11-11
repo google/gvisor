@@ -38,7 +38,7 @@ const goTestDir = "/usr/local/go/test"
 // There are two types of Go tests: "Go tool tests" and "Go tests on disk".
 // "Go tool tests" are found and executed using `go tool dist test`. "Go tests
 // on disk" are found in the /usr/local/go/test directory and are executed
-// using `go run run.go`.
+// using `go test cmd/internal/testdir`.
 type goRunner struct{}
 
 var _ TestRunner = goRunner{}
@@ -77,7 +77,13 @@ func (goRunner) TestCmds(tests []string) []*exec.Cmd {
 	var toolTests, onDiskTests []string
 	for _, test := range tests {
 		if strings.HasSuffix(test, ".go") {
-			onDiskTests = append(onDiskTests, test)
+			// Go matches each slash-separated component of a subtest name.
+			// Join complete, literal paths with top-level alternatives.
+			parts := strings.Split("Test/"+test, "/")
+			for i, part := range parts {
+				parts[i] = "^" + regexp.QuoteMeta(part) + "$"
+			}
+			onDiskTests = append(onDiskTests, strings.Join(parts, "/"))
 		} else {
 			toolTests = append(toolTests, "^"+test+"$")
 		}
@@ -93,7 +99,7 @@ func (goRunner) TestCmds(tests []string) []*exec.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	if len(onDiskTests) > 0 {
-		cmd := exec.Command("go", []string{"test", "cmd/internal/testdir", fmt.Sprintf("-run='Test/(%s)'", strings.Join(onDiskTests, "|"))}...)
+		cmd := exec.Command("go", "test", "cmd/internal/testdir", "-run", strings.Join(onDiskTests, "|"))
 		cmds = append(cmds, cmd)
 	}
 
