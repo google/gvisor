@@ -151,7 +151,37 @@ var allowedRestoreFlagAnnotations = []string{
 	annotationFlagPrefix + "log-packets",
 }
 
-const annotationMountPrefix = "dev.gvisor.spec.mount."
+const (
+	annotationMountPrefix = "dev.gvisor.spec.mount."
+
+	// AnnotationRestoreSkipSpecValidationFields is an internal OCI annotation
+	// containing a comma-separated list of OCI spec field names (e.g. "Args")
+	// whose restore spec validation should be skipped for the container.
+	AnnotationRestoreSkipSpecValidationFields = "dev.gvisor.internal.restore.skip-spec-validation-fields"
+)
+
+func parseSkipSpecValidationFields(annotations map[string]string) map[string]bool {
+	raw := annotations[AnnotationRestoreSkipSpecValidationFields]
+	if raw == "" {
+		return nil
+	}
+	skipped := make(map[string]bool)
+	for _, field := range strings.Split(raw, ",") {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			skipped[strings.ToLower(field)] = true
+		}
+	}
+	return skipped
+}
+
+func shouldSkipFieldValidation(skipFields map[string]bool, cName, field string) bool {
+	if !skipFields[strings.ToLower(field)] {
+		return false
+	}
+	log.Warningf("Skipping restore spec validation for field %q in container %q as requested by annotation %q", field, cName, AnnotationRestoreSkipSpecValidationFields)
+	return true
+}
 
 func shouldValidateAnnotation(key string) bool {
 	const (
@@ -421,9 +451,10 @@ func validateArgs(oldArgs, newArgs []string, cName string) error {
 func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	oldSpec := *oSpec
 	newSpec := *nSpec
+	skipFields := parseSkipSpecValidationFields(newSpec.Annotations)
 
 	// Validate OCI version.
-	if oldSpec.Version != newSpec.Version {
+	if !shouldSkipFieldValidation(skipFields, cName, "OCI Version") && oldSpec.Version != newSpec.Version {
 		return validateError("OCI Version", cName, oldSpec.Version, newSpec.Version)
 	}
 	oldSpec.Version, newSpec.Version = "", ""
@@ -431,80 +462,110 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	// Validate specs.Spec.Root. Note that Root.Path can change during restore.
 	oldSpec.Root, newSpec.Root = ifNil(oldSpec.Root), ifNil(newSpec.Root)
 	oldRoot, newRoot := *oldSpec.Root, *newSpec.Root
-	if oldRoot.Readonly != newRoot.Readonly {
+	if !shouldSkipFieldValidation(skipFields, cName, "Root.Readonly") && oldRoot.Readonly != newRoot.Readonly {
 		return validateError("Root.Readonly", cName, oldRoot.Readonly, newRoot.Readonly)
 	}
-	oldSpec.Root.Path, newSpec.Root.Path = "", ""
+	oldRoot.Readonly, newRoot.Readonly = false, false
+	oldRoot.Path, newRoot.Path = "", ""
+	oldSpec.Root, newSpec.Root = &oldRoot, &newRoot
 
 	// Validate specs.Spec.Mounts.
-	if err := validateMounts("Mounts", cName, oldSpec.Mounts, newSpec.Mounts); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Mounts") {
+		if err := validateMounts("Mounts", cName, oldSpec.Mounts, newSpec.Mounts); err != nil {
+			return err
+		}
 	}
 	oldSpec.Mounts, newSpec.Mounts = nil, nil
 
 	// Validate specs.Annotations.
-	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Annotations") {
+		if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+			return err
+		}
 	}
 	oldSpec.Annotations, newSpec.Annotations = nil, nil
 
 	// Validate specs.Process.
 	oldSpec.Process, newSpec.Process = ifNil(oldSpec.Process), ifNil(newSpec.Process)
 	oldProcess, newProcess := *oldSpec.Process, *newSpec.Process
-	if oldProcess.Terminal != newProcess.Terminal {
+	if !shouldSkipFieldValidation(skipFields, cName, "Terminal") && oldProcess.Terminal != newProcess.Terminal {
 		return validateError("Terminal", cName, oldProcess.Terminal, newProcess.Terminal)
 	}
-	if oldProcess.Cwd != newProcess.Cwd {
+	oldProcess.Terminal, newProcess.Terminal = false, false
+	if !shouldSkipFieldValidation(skipFields, cName, "Cwd") && oldProcess.Cwd != newProcess.Cwd {
 		return validateError("Cwd", cName, oldProcess.Cwd, newProcess.Cwd)
 	}
-	if err := validateStruct("User", cName, oldProcess.User, newProcess.User); err != nil {
-		return err
+	oldProcess.Cwd, newProcess.Cwd = "", ""
+	if !shouldSkipFieldValidation(skipFields, cName, "User") {
+		if err := validateStruct("User", cName, oldProcess.User, newProcess.User); err != nil {
+			return err
+		}
 	}
 	oldProcess.User, newProcess.User = specs.User{}, specs.User{}
-	if err := validateArray("Rlimits", cName, oldProcess.Rlimits, newProcess.Rlimits); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Rlimits") {
+		if err := validateArray("Rlimits", cName, oldProcess.Rlimits, newProcess.Rlimits); err != nil {
+			return err
+		}
 	}
 	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
-	if err := validateArgs(oldProcess.Args, newProcess.Args, cName); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Args") {
+		if err := validateArgs(oldProcess.Args, newProcess.Args, cName); err != nil {
+			return err
+		}
 	}
 	oldProcess.Args, newProcess.Args = nil, nil
-	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Capabilities") {
+		if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
+			return err
+		}
 	}
 	oldProcess.Capabilities, newProcess.Capabilities = nil, nil
 
 	// Validate specs.Linux.
 	oldSpec.Linux, newSpec.Linux = ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
 	oldLinux, newLinux := *oldSpec.Linux, *newSpec.Linux
-	if err := validateMap("Sysctl", cName, oldLinux.Sysctl, newLinux.Sysctl); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Sysctl") {
+		if err := validateMap("Sysctl", cName, oldLinux.Sysctl, newLinux.Sysctl); err != nil {
+			return err
+		}
 	}
 	oldLinux.Sysctl, newLinux.Sysctl = nil, nil
-	if err := validateStruct("Seccomp", cName, oldLinux.Seccomp, newLinux.Seccomp); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Seccomp") {
+		if err := validateStruct("Seccomp", cName, oldLinux.Seccomp, newLinux.Seccomp); err != nil {
+			return err
+		}
 	}
 	oldLinux.Seccomp, newLinux.Seccomp = nil, nil
-	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Devices") {
+		if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
+			return err
+		}
 	}
 	oldLinux.Devices, newLinux.Devices = nil, nil
-	if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
-		// Resource limits can be changed during restore, log a warning and do not
-		// return error.
-		log.Warningf("specs.Linux.Resources has been changed during restore, err %v", err)
+	if !shouldSkipFieldValidation(skipFields, cName, "Resources") {
+		if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
+			// Resource limits can be changed during restore, log a warning and do not
+			// return error.
+			log.Warningf("specs.Linux.Resources has been changed during restore, err %v", err)
+		}
 	}
 	oldLinux.Resources, newLinux.Resources = nil, nil
-	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "UIDMappings") {
+		if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
+			return err
+		}
 	}
 	oldLinux.UIDMappings, newLinux.UIDMappings = nil, nil
-	if err := validateArray("GIDMappings", cName, oldLinux.GIDMappings, newLinux.GIDMappings); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "GIDMappings") {
+		if err := validateArray("GIDMappings", cName, oldLinux.GIDMappings, newLinux.GIDMappings); err != nil {
+			return err
+		}
 	}
 	oldLinux.GIDMappings, newLinux.GIDMappings = nil, nil
-	if err := validateNamespaces("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Namespace") {
+		if err := validateNamespaces("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
+			return err
+		}
 	}
 	oldLinux.Namespaces, newLinux.Namespaces = nil, nil
 

@@ -1339,3 +1339,59 @@ func TestValidateSpecForContainerMountAnnotationOptionsSize(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSpecForContainerSkipSpecValidationFields(t *testing.T) {
+	newSpec := func(args []string, cwd string, annotations map[string]string) *specs.Spec {
+		return &specs.Spec{
+			Process: &specs.Process{
+				Args: args,
+				Cwd:  cwd,
+			},
+			Annotations: annotations,
+		}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		old, new *specs.Spec
+		wantErr  bool
+	}{
+		{
+			name:    "args_differ_without_skip_annotation_fails",
+			old:     newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/", nil),
+			new:     newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/", nil),
+			wantErr: true,
+		},
+		{
+			name: "args_differ_with_skip_args_annotation_succeeds",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/", nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/", map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "Args",
+			}),
+			wantErr: false,
+		},
+		{
+			name: "args_differ_with_multiple_skip_fields_succeeds",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/old", nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/new", map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: " Args , Cwd ",
+			}),
+			wantErr: false,
+		},
+		{
+			name: "unskipped_field_still_validated_when_args_skipped",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/old", nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/new", map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "Args",
+			}),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSpecForContainer(tc.old, tc.new, "test")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("validateSpecForContainer() = %v, wantErr %t", err, tc.wantErr)
+			}
+		})
+	}
+}
