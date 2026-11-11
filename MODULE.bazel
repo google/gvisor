@@ -276,6 +276,20 @@ http_archive(
 # uses declared layers and does not require a Docker daemon.
 img_pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")
 
+img_pull(
+    name = "cri_pause",
+    dev_dependency = True,
+    digest = "sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = ["registry.k8s.io"],
+    repository = "pause",
+    tag = "3.10.1",
+)
+
 # CI workers share a Docker Hub pull quota. Try the mirror first.
 DOCKER_HUB_REGISTRIES = [
     "mirror.gcr.io",
