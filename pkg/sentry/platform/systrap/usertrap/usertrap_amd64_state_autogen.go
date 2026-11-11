@@ -11,34 +11,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *syscallPatch) StateTypeName() string {
-	return "pkg/sentry/platform/systrap/usertrap.syscallPatch"
-}
-
-func (s *syscallPatch) StateFields() []string {
-	return []string{
-		"sysno",
-		"trapAddr",
-	}
-}
-
-func (s *syscallPatch) beforeSave() {}
-
-// +checklocksignore
-func (s *syscallPatch) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.SaveUint32(0, &s.sysno)
-	stateSinkObject.Save(1, &s.trapAddr)
-}
-
-func (s *syscallPatch) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (s *syscallPatch) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadUint32(0, &s.sysno)
-	stateSourceObject.Load(1, &s.trapAddr)
-}
-
 func (s *State) StateTypeName() string {
 	return "pkg/sentry/platform/systrap/usertrap.State"
 }
@@ -74,6 +46,5 @@ func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {
-	state.RegisterNoHooks((*syscallPatch)(nil))
 	state.RegisterNoHooks((*State)(nil))
 }

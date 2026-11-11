@@ -619,6 +619,7 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	ioctlParams.FD = mapFile.hostFD
 	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.Params.HRoot)
 	if client == nil {
+		ioctlParams.FD = origFD
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
 	}
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
@@ -646,6 +647,7 @@ func rmAllocMemorySimple(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	ioctlParams.FD = -1
 	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.Params.HRoot)
 	if client == nil {
+		ioctlParams.FD = origFD
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
 	}
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
@@ -1870,6 +1872,17 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	}
 
 	return n, nil
+}
+
+func rmAllocFailWithStatus(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool, status uint32) error {
+	if log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC internally failed: status=%#x", status)
+	}
+	ioctlParams.SetStatus(status)
+	outIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64)
+	outIoctlParams.FromOS64(*ioctlParams)
+	_, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
+	return err
 }
 
 func frontendFailWithStatus[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState, ioctlParams PtrParams, status uint32) error {

@@ -239,7 +239,7 @@ func (mm *MemoryManager) StateFields() []string {
 		"curRSS",
 		"maxRSS",
 		"hasPinned",
-		"syscallPatchingDisabled",
+		"gsInUse",
 		"dumpability",
 		"userNS",
 		"argv",
@@ -274,7 +274,7 @@ func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveUint64(10, &mm.curRSS)
 	stateSinkObject.SaveUint64(11, &mm.maxRSS)
 	stateSinkObject.SaveBool(12, &mm.hasPinned)
-	stateSinkObject.SaveBool(13, &mm.syscallPatchingDisabled)
+	stateSinkObject.SaveBool(13, &mm.gsInUse)
 	stateSinkObject.Save(14, &mm.dumpability)
 	stateSinkObject.Save(15, &mm.userNS)
 	stateSinkObject.Save(16, &mm.argv)
@@ -302,7 +302,7 @@ func (mm *MemoryManager) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.LoadUint64(10, &mm.curRSS)
 	stateSourceObject.LoadUint64(11, &mm.maxRSS)
 	stateSourceObject.LoadBool(12, &mm.hasPinned)
-	stateSourceObject.LoadBool(13, &mm.syscallPatchingDisabled)
+	stateSourceObject.LoadBool(13, &mm.gsInUse)
 	stateSourceObject.Load(14, &mm.dumpability)
 	stateSourceObject.Load(15, &mm.userNS)
 	stateSourceObject.Load(16, &mm.argv)

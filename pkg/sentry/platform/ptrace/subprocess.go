@@ -694,11 +694,6 @@ func (s *subprocess) PreFork() {}
 // PostFork implements platform.AddressSpace.PostFork.
 func (s *subprocess) PostFork() {}
 
-// PrepareForPtrace implements platform.AddressSpace.PrepareForPtrace.
-func (s *subprocess) PrepareForPtrace(ctx pkgcontext.Context, mm platform.MemoryManager) error {
-	return nil
-}
-
 // UserModifiedGS implements platform.AddressSpace.UserModifiedGS.
 func (s *subprocess) UserModifiedGS(ctx pkgcontext.Context, mm platform.MemoryManager) error {
 	return nil

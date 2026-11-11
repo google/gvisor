@@ -44,12 +44,16 @@ func memcpy(dst, src uintptr, n uintptr) (fault uintptr, sig int32)
 // fault and the number of the signal that was received. Otherwise, it returns
 // an unspecified address and a signal number of 0.
 //
-// Data is written in order, such that if a fault happens at address p, it is
-// safe to assume that all data before p-maxRegisterSize has already been
-// successfully written.
+// Faults are reported as if data were written in order, such that if a fault
+// happens at address p, it is safe to assume that all data before
+// p-maxRegisterSize has already been successfully written.
+//
+// If fast is true, memclr may use instructions that write a block of memory at
+// once (REP STOSB on amd64, DC ZVA on arm64). If one of them faults, memclr
+// continues from where it stopped with fast set to false.
 //
 //go:noescape
-func memclr(ptr uintptr, n uintptr) (fault uintptr, sig int32)
+func memclr(ptr uintptr, n uintptr, fast bool) (fault uintptr, sig int32)
 
 // swapUint32 atomically stores new into *ptr and returns (the previous *ptr
 // value, 0). If a SIGSEGV or SIGBUS signal is received during the swap, the
@@ -250,7 +254,7 @@ func zeroOut(dst uintptr, toZero uintptr) (uintptr, error) {
 		return 0, nil
 	}
 
-	fault, sig := memclr(dst, toZero)
+	fault, sig := memclr(dst, toZero, true)
 	if sig == 0 {
 		return toZero, nil
 	}
