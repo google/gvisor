@@ -70,6 +70,7 @@ func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernf
 		DenyPWrite:  true,
 		SpecialFile: true,
 	}); err != nil {
+		mi.root.masterClose(ctx, t)
 		return nil, err
 	}
 	return &fd.vfsfd, nil

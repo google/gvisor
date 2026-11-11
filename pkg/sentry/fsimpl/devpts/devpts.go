@@ -17,6 +17,7 @@
 package devpts
 
 import (
+	stdcontext "context"
 	"fmt"
 	"math"
 	"sort"
@@ -279,7 +280,19 @@ type rootInode struct {
 	// +checklocks:mu
 	externals map[uint32]*ExternalReplica
 
-	// nextIdx is the next pty index to use.
+	// allocated counts live master and replica file descriptions, opens in
+	// progress, and external-node reservations.
+	//
+	// +checklocks:mu
+	allocated map[uint32]uint64
+
+	// freeIndices is a min-heap of unallocated indices below nextIdx. It is
+	// rebuilt from allocated after restore.
+	//
+	// +checklocks:mu
+	freeIndices []uint32 `state:"nosave"`
+
+	// nextIdx is the first index that has never been allocated.
 	//
 	// +checklocks:mu
 	nextIdx uint32
@@ -325,19 +338,74 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 //
 // +checklocks:i.mu
 func (i *rootInode) allocateIndexLocked() (uint32, error) {
-	if i.nextIdx == math.MaxUint32 {
-		return 0, linuxerr.ENOMEM
+	if i.allocated == nil {
+		i.allocated = make(map[uint32]uint64)
 	}
-	idx := i.nextIdx
-	i.nextIdx++
+	var idx uint32
+	if len(i.freeIndices) != 0 {
+		idx = i.popFreeIndexLocked()
+	} else {
+		if i.nextIdx == math.MaxUint32 {
+			return 0, linuxerr.ENOMEM
+		}
+		idx = i.nextIdx
+		i.nextIdx++
+	}
 
-	// Sanity check that a replica with idx does not exist.
+	// Internal terminals and external nodes use the same index namespace.
 	_, ok := i.replicas[idx]
 	_, extOK := i.externals[idx]
-	if ok || extOK {
+	_, reserved := i.allocated[idx]
+	if ok || extOK || reserved {
 		panic(fmt.Sprintf("pty index collision; index %d already exists", idx))
 	}
+	i.allocated[idx] = 1
 	return idx, nil
+}
+
+// popFreeIndexLocked removes the smallest free index.
+//
+// Preconditions: freeIndices is nonempty.
+//
+// +checklocks:i.mu
+func (i *rootInode) popFreeIndexLocked() uint32 {
+	idx := i.freeIndices[0]
+	last := i.freeIndices[len(i.freeIndices)-1]
+	i.freeIndices = i.freeIndices[:len(i.freeIndices)-1]
+	if len(i.freeIndices) != 0 {
+		parent := 0
+		for {
+			child := 2*parent + 1
+			if child >= len(i.freeIndices) {
+				break
+			}
+			if child+1 < len(i.freeIndices) && i.freeIndices[child+1] < i.freeIndices[child] {
+				child++
+			}
+			if last <= i.freeIndices[child] {
+				break
+			}
+			i.freeIndices[parent] = i.freeIndices[child]
+			parent = child
+		}
+		i.freeIndices[parent] = last
+	}
+	return idx
+}
+
+// afterLoad rebuilds the free-index heap.
+//
+// +checklocksexclude:i.mu
+func (i *rootInode) afterLoad(stdcontext.Context) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.freeIndices = make([]uint32, 0, int(i.nextIdx)-len(i.allocated))
+	// Ascending order is also a valid min-heap.
+	for idx := uint32(0); idx < i.nextIdx; idx++ {
+		if _, used := i.allocated[idx]; !used {
+			i.freeIndices = append(i.freeIndices, idx)
+		}
+	}
 }
 
 // initReplicaAttrs initializes the attributes of the replica inode with index
@@ -370,13 +438,49 @@ func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
 
 	// Sanity check that replica with idx exists.
 	ri, ok := i.replicas[t.n]
-	if !ok {
-		panic(fmt.Sprintf("pty with index %d does not exist", t.n))
+	if !ok || ri.t != t {
+		panic(fmt.Sprintf("pty index %d no longer belongs to terminal", t.n))
 	}
 
 	// Drop the ref on replica inode taken during rootInode.allocateTerminal.
 	ri.DecRef(ctx)
 	delete(i.replicas, t.n)
+	i.releaseTerminalRefLocked(t.n)
+}
+
+// releaseTerminalRef drops a file description or a failed-open reservation.
+//
+// +checklocksexclude:i.mu
+func (i *rootInode) releaseTerminalRef(index uint32) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.releaseTerminalRefLocked(index)
+}
+
+// releaseTerminalRefLocked returns an index to the heap after its last reference.
+//
+// +checklocks:i.mu
+func (i *rootInode) releaseTerminalRefLocked(index uint32) {
+	refs := i.allocated[index]
+	if refs == 0 {
+		panic(fmt.Sprintf("unallocated pty index %d released", index))
+	}
+	if refs > 1 {
+		i.allocated[index] = refs - 1
+		return
+	}
+	delete(i.allocated, index)
+	pos := len(i.freeIndices)
+	i.freeIndices = append(i.freeIndices, index)
+	for pos > 0 {
+		parent := (pos - 1) / 2
+		if i.freeIndices[parent] <= index {
+			break
+		}
+		i.freeIndices[pos] = i.freeIndices[parent]
+		pos = parent
+	}
+	i.freeIndices[pos] = index
 }
 
 // Open implements kernfs.Inode.Open.
