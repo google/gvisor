@@ -72,6 +72,7 @@ var _ marshal.Marshallable = (*NV503C_CTRL_REGISTER_VA_SPACE_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV77CC_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV83DE_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS)(nil)
+var _ marshal.Marshallable = (*NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV9072_ALLOCATION_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVA0BC_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVB0B5_ALLOCATION_PARAMETERS)(nil)
@@ -85,6 +86,7 @@ var _ marshal.Marshallable = (*NVOS32_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVOS33_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVOS34_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVOS39_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS41_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVOS46_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVOS46_PARAMETERS_V580)(nil)
 var _ marshal.Marshallable = (*NVOS47_PARAMETERS)(nil)
@@ -123,6 +125,7 @@ var _ marshal.Marshallable = (*NV_SEMAPHORE_SURFACE_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV_VASPACE_ALLOCATION_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV_VASPACE_ALLOCATION_PARAMETERS_V580)(nil)
 var _ marshal.Marshallable = (*NvUUID)(nil)
+var _ marshal.Marshallable = (*NvUnixEvent)(nil)
 var _ marshal.Marshallable = (*NvxxxCtrlXxxGetInfoParams)(nil)
 var _ marshal.Marshallable = (*P64)(nil)
 var _ marshal.Marshallable = (*PCIInfo)(nil)
@@ -9880,6 +9883,132 @@ func (n *NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS) WriteTo(writer io.Writer) (int64,
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) SizeBytes() int {
+    return 16 +
+        (*P64)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.HMemory))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Length))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(n.Offset))
+    dst = dst[8:]
+    dst = n.Buffer.MarshalUnsafe(dst)
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byte {
+    n.HMemory = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.Length = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.Offset = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    src = n.Buffer.UnmarshalUnsafe(src)
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) Packed() bool {
+    return n.Buffer.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) MarshalUnsafe(dst []byte) []byte {
+    if n.Buffer.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+        return dst[size:]
+    }
+    // Type NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return n.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) UnmarshalUnsafe(src []byte) []byte {
+    if n.Buffer.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return n.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.Buffer.Packed() {
+        // Type NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        n.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.Buffer.Packed() {
+        // Type NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        n.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS) WriteTo(writer io.Writer) (int64, error) {
+    if !n.Buffer.Packed() {
+        // Type NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, n.SizeBytes())
+        n.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (n *NVXXXX_CTRL_XXX_INFO) SizeBytes() int {
     return 8
 }
@@ -12885,6 +13014,128 @@ func (n *NVOS39_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NVOS41_PARAMETERS) SizeBytes() int {
+    return 8 +
+        (*P64)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NVOS41_PARAMETERS) MarshalBytes(dst []byte) []byte {
+    dst = n.PEvent.MarshalUnsafe(dst)
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.MoreEvents))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Status))
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NVOS41_PARAMETERS) UnmarshalBytes(src []byte) []byte {
+    src = n.PEvent.UnmarshalUnsafe(src)
+    n.MoreEvents = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.Status = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NVOS41_PARAMETERS) Packed() bool {
+    return n.PEvent.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NVOS41_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
+    if n.PEvent.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+        return dst[size:]
+    }
+    // Type NVOS41_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return n.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NVOS41_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
+    if n.PEvent.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type NVOS41_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return n.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NVOS41_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.PEvent.Packed() {
+        // Type NVOS41_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        n.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NVOS41_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NVOS41_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.PEvent.Packed() {
+        // Type NVOS41_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        n.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NVOS41_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NVOS41_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
+    if !n.PEvent.Packed() {
+        // Type NVOS41_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, n.SizeBytes())
+        n.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (n *NVOS46_PARAMETERS) SizeBytes() int {
     return 32 +
         (*Handle)(nil).SizeBytes() +
@@ -14196,6 +14447,141 @@ func (n *NVOS64_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (
 func (n *NVOS64_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed() {
         // Type NVOS64_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, n.SizeBytes())
+        n.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NvUnixEvent) SizeBytes() int {
+    return 10 +
+        (*Handle)(nil).SizeBytes() +
+        1*2
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NvUnixEvent) MarshalBytes(dst []byte) []byte {
+    dst = n.HObject.MarshalUnsafe(dst)
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.NotifyIndex))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Info32))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(n.Info16))
+    dst = dst[2:]
+    for idx := 0; idx < 2; idx++ {
+        dst[0] = byte(n.Pad0[idx])
+        dst = dst[1:]
+    }
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NvUnixEvent) UnmarshalBytes(src []byte) []byte {
+    src = n.HObject.UnmarshalUnsafe(src)
+    n.NotifyIndex = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.Info32 = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.Info16 = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    for idx := 0; idx < 2; idx++ {
+        n.Pad0[idx] = src[0]
+        src = src[1:]
+    }
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NvUnixEvent) Packed() bool {
+    return n.HObject.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NvUnixEvent) MarshalUnsafe(dst []byte) []byte {
+    if n.HObject.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+        return dst[size:]
+    }
+    // Type NvUnixEvent doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return n.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NvUnixEvent) UnmarshalUnsafe(src []byte) []byte {
+    if n.HObject.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type NvUnixEvent doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return n.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NvUnixEvent) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.HObject.Packed() {
+        // Type NvUnixEvent doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        n.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NvUnixEvent) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NvUnixEvent) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.HObject.Packed() {
+        // Type NvUnixEvent doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        n.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NvUnixEvent) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NvUnixEvent) WriteTo(writer io.Writer) (int64, error) {
+    if !n.HObject.Packed() {
+        // Type NvUnixEvent doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)

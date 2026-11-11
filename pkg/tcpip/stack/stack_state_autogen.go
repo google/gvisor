@@ -1296,6 +1296,7 @@ func (n *nic) StateFields() []string {
 		"deliverLinkPackets",
 		"Primary",
 		"experimentIPOptionEnabled",
+		"allowExternalIPv4LoopbackTraffic",
 	}
 }
 
@@ -1328,6 +1329,7 @@ func (n *nic) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveBool(21, &n.deliverLinkPackets)
 	stateSinkObject.Save(22, &n.Primary)
 	stateSinkObject.SaveBool(23, &n.experimentIPOptionEnabled)
+	stateSinkObject.SaveBool(24, &n.allowExternalIPv4LoopbackTraffic)
 }
 
 func (n *nic) afterLoad(context.Context) {}
@@ -1358,6 +1360,7 @@ func (n *nic) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadBool(21, &n.deliverLinkPackets)
 	stateSourceObject.Load(22, &n.Primary)
 	stateSourceObject.LoadBool(23, &n.experimentIPOptionEnabled)
+	stateSourceObject.LoadBool(24, &n.allowExternalIPv4LoopbackTraffic)
 }
 
 func (p *packetEndpointList) StateTypeName() string {

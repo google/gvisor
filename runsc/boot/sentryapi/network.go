@@ -186,6 +186,11 @@ type CreateLinksAndRoutesArgs struct {
 	// remain connected during save.
 	AllowConnectedOnSave bool
 
+	// AllowExternalLoopbackTraffic indicates whether IPv4 loopback packets
+	// (e.g. replies from 127.0.0.11 over a UDS proxy link) should be accepted on
+	// the UDS proxy link.
+	AllowExternalLoopbackTraffic bool
+
 	// IsRestore indicates whether this is part of a restore flow.
 	IsRestore bool
 }

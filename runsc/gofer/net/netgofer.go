@@ -92,6 +92,7 @@ type Netgofer struct {
 	udsFD          int
 	mtu            int
 	applyCaps      bool
+	allowLoopback  bool
 	disableSeccomp bool
 	maxActiveConns int
 	udpIdleTimeout time.Duration
@@ -125,6 +126,7 @@ func (n *Netgofer) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&n.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the netgofer process can do")
 	f.IntVar(&n.maxActiveConns, "max-active-conns", defaultMaxActiveConns, "maximum number of concurrent active connections")
 	n.profileFDs.SetFromFlags(f)
+	f.BoolVar(&n.allowLoopback, "allow-loopback", false, "if true, allow forwarding traffic destined to loopback addresses in the netgofer network namespace")
 }
 
 // Execute implements subcommands.Command.
@@ -187,7 +189,10 @@ func (n *Netgofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 }
 
 func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
-	log.Infof("Running in proxy mode")
+	if conf.Netgofer.AllowLoopback() {
+		n.allowLoopback = true
+	}
+	log.Infof("Running in proxy mode (allowLoopback=%v)", n.allowLoopback)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var (
@@ -197,8 +202,16 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 		linkEP     stack.LinkEndpoint
 		linkEPDone bool
 	)
+	allowLoopback := n.allowLoopback
 	st := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		NetworkProtocols: []stack.NetworkProtocolFactory{
+			ipv4.NewProtocolWithOptions(ipv4.Options{
+				AllowExternalLoopbackTraffic: allowLoopback,
+			}),
+			ipv6.NewProtocolWithOptions(ipv6.Options{
+				AllowExternalLoopbackTraffic: allowLoopback,
+			}),
+		},
 		TransportProtocols: []stack.TransportProtocolFactory{
 			tcp.NewProtocol,
 			udp.NewProtocol,
@@ -241,7 +254,9 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 	// proxyOutboundRequest can reject connections targeting netgofer's own
 	// network namespace IPs.
 	if n.egressFilter == nil {
-		f, err := egressfilter.New(egressfilter.Options{})
+		f, err := egressfilter.New(egressfilter.Options{
+			AllowLoopback: n.allowLoopback,
+		})
 		if err != nil {
 			log.Warningf("Failed to initialize egress filter: %v", err)
 			return subcommands.ExitFailure

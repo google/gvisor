@@ -1075,6 +1075,11 @@ type NICOptions struct {
 	// passing the experiment IP option.
 	EnableExperimentIPOption bool
 
+	// AllowExternalIPv4LoopbackTraffic indicates whether IPv4 loopback packets
+	// (source or destination in 127.0.0.0/8) should be accepted from external
+	// networks on this NIC.
+	AllowExternalIPv4LoopbackTraffic bool
+
 	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
 	Kind string
 

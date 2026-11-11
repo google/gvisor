@@ -333,8 +333,9 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.Cre
 	}
 
 	args := sentryapi.CreateLinksAndRoutesArgs{
-		PauseExternalNetworking: conf.PauseExternalNetworking,
-		AllowConnectedOnSave:    conf.AllowConnectedOnSave,
+		PauseExternalNetworking:      conf.PauseExternalNetworking,
+		AllowConnectedOnSave:         conf.AllowConnectedOnSave,
+		AllowExternalLoopbackTraffic: conf.Netgofer.AllowLoopback(),
 	}
 
 	for _, iface := range ifaces {
@@ -690,6 +691,9 @@ func (s *Sandbox) startProxy(conf *config.Config, spec *specs.Spec, udsHost *os.
 	nextFD := donations.Transfer(cmd, 3)
 
 	cmd.Args = append(cmd.Args, "netgofer", fmt.Sprintf("--mtu=%d", mtu))
+	if conf.Netgofer.AllowLoopback() {
+		cmd.Args = append(cmd.Args, "--allow-loopback")
+	}
 	donations.Donate("uds-fd", udsHost)
 	if err := profile.DonateProfileFDs(conf, &donations, true /* isGofer */, lfOpts); err != nil {
 		return fmt.Errorf("donating netgofer profile fds: %w", err)
@@ -866,6 +870,17 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 			continue
 		}
 		prefix, _ := ipNet.Mask.Size()
+		dst := *ipNet
+		if conf.Netgofer.AllowLoopback() && ipNet.IP.To4() != nil && ipNet.IP.IsLoopback() {
+			// Narrow the in-sandbox loopback address to a /32 host route (e.g.
+			// 127.0.0.1/32) so that other loopback addresses in 127.0.0.0/8 (such
+			// as Docker Compose's embedded DNS server at 127.0.0.11 or
+			// systemd-resolved at 127.0.0.53) are not claimed by the sentry's
+			// internal loopback NIC and instead route over the UDS proxy link to
+			// netgofer.
+			prefix = net.IPv4len * 8
+			dst.Mask = net.CIDRMask(prefix, net.IPv4len*8)
+		}
 		link.Addresses = append(link.Addresses, sentryapi.IPWithPrefix{
 			Address:   ipNet.IP,
 			PrefixLen: prefix,
@@ -875,7 +890,6 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 		// (e.g. 127.0.0.0/8) are in the kernel's "local" routing table
 		// and won't be returned by routesForIface which queries the
 		// main routing table.
-		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
 		link.Routes = append(link.Routes, sentryapi.Route{
 			Destination: dst,
