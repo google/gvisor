@@ -2427,6 +2427,8 @@ func (ctx *supervisorContext) Value(key any) any {
 		// supervisorContext's users are expected to invoke ptrace, but ptrace
 		// permissions are required for certain file accesses.)
 		return func(*Task, bool) bool { return true }
+	case CtxCanTraceFSCreds:
+		return func(*Task) bool { return true }
 	case CtxKernel:
 		return ctx.Kernel
 	case CtxPIDNamespace:

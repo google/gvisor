@@ -115,6 +115,26 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	return t.canTraceWithMM(target, attach, targetMM, targetUserDumpable)
 }
 
+// CanTraceFSCreds is the equivalent of CanTrace(target, false) for read
+// checks that Linux performs with PTRACE_MODE_READ_FSCREDS (filesystem
+// accesses such as /proc/[pid]/fdinfo): the caller's filesystem UID/GID and
+// effective capability set are compared instead of the real IDs and
+// permitted set. ptrace(2) itself always uses PTRACE_MODE_REALCREDS, so
+// existing ptrace callers keep CanTrace.
+//
+// +checklocksexclude:target.mu
+func (t *Task) CanTraceFSCreds(target *Task) bool {
+	// See canTraceWithMM: any security check is pointless when the tasks
+	// share the same mm.
+	if t.tg == target.tg {
+		return true
+	}
+	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
+	// YAMA only restricts PTRACE_MODE_ATTACH, so the standard check is the
+	// whole check for read mode.
+	return t.canTraceStandardCreds(target, false /* attach */, targetMM, targetUserDumpable, true /* fsCreds */)
+}
+
 // memoryManagerAndUserDumpable returns t's MemoryManager and, for use when it
 // is nil, the dumpability it had when it was released.
 func (t *Task) memoryManagerAndUserDumpable() (*mm.MemoryManager, bool) {
@@ -263,14 +283,28 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 // dumpability check against the given targetMM and targetUserDumpable rather
 // than fetching them from target.
 func (t *Task) canTraceStandardWithMM(target *Task, attach bool, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
+	return t.canTraceStandardCreds(target, attach, targetMM, targetUserDumpable, false /* fsCreds */)
+}
+
+// canTraceStandardCreds is the same as canTraceStandardWithMM, but when
+// fsCreds is true it performs the check with the caller's filesystem
+// credentials per Linux's PTRACE_MODE_FSCREDS: the caller's fsuid/fsgid are
+// compared instead of the real IDs (kernel/ptrace.c:__ptrace_may_access),
+// and the commoncap step uses the caller's effective capability set instead
+// of the permitted set (security/commoncap.c:cap_ptrace_access_check).
+func (t *Task) canTraceStandardCreds(target *Task, attach bool, targetMM *mm.MemoryManager, targetUserDumpable bool, fsCreds bool) bool {
 	callerCreds := t.Credentials()
 	targetCreds := target.Credentials()
+	callerKUID, callerKGID, callerCaps := callerCreds.RealKUID, callerCreds.RealKGID, callerCreds.PermittedCaps
+	if fsCreds {
+		callerKUID, callerKGID, callerCaps = callerCreds.FilesystemKUID, callerCreds.FilesystemKGID, callerCreds.EffectiveCaps
+	}
 	hasPtraceCapInTargetNS := callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace)
 	if !hasPtraceCapInTargetNS {
-		if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
+		if cuid := callerKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
 			return false
 		}
-		if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
+		if cgid := callerKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
 			return false
 		}
 	}
@@ -292,7 +326,7 @@ func (t *Task) canTraceStandardWithMM(target *Task, attach bool, targetMM *mm.Me
 		if callerCreds.UserNamespace != targetCreds.UserNamespace {
 			return false
 		}
-		if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
+		if targetCreds.PermittedCaps&^callerCaps != 0 {
 			return false
 		}
 	}

@@ -327,11 +327,11 @@ func (i *fdInfoDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 //
 // This is to match Linux, which gates both the /proc/[pid]/fdinfo directory
-// and its files behind a ptrace read-mode access check, since fdinfo leaks
-// the task's file offsets, open flags and mount IDs. See
+// and its files behind a PTRACE_MODE_READ_FSCREDS access check, since fdinfo
+// leaks the task's file offsets, open flags and mount IDs. See
 // fs/proc/fd.c:proc_fdinfo_permission.
 func (i *fdInfoDirInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	if !kernel.ContextCanTrace(ctx, i.task, false) {
+	if !kernel.ContextCanTraceFSCreds(ctx, i.task) {
 		return linuxerr.EACCES
 	}
 	return i.InodeAttrs.CheckPermissions(ctx, creds, ats)
@@ -383,7 +383,7 @@ var _ kernfs.Inode = (*fdInfoInode)(nil)
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *fdInfoInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	if !kernel.ContextCanTrace(ctx, i.task, false) {
+	if !kernel.ContextCanTraceFSCreds(ctx, i.task) {
 		return linuxerr.EACCES
 	}
 	return i.Inode.CheckPermissions(ctx, creds, ats)

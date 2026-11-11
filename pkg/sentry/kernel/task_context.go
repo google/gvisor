@@ -65,6 +65,8 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 	switch key {
 	case CtxCanTrace:
 		return t.CanTrace
+	case CtxCanTraceFSCreds:
+		return t.CanTraceFSCreds
 	case CtxKernel:
 		return t.k
 	case CtxPIDNamespace:
