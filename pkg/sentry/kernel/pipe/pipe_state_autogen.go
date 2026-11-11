@@ -19,12 +19,11 @@ func (p *Pipe) StateFields() []string {
 		"readers",
 		"totalReaders",
 		"writers",
-		"totalWriters",
+		"writerGeneration",
 		"buf",
 		"off",
 		"size",
 		"max",
-		"hadWriter",
 	}
 }
 
@@ -38,12 +37,11 @@ func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &p.readers)
 	stateSinkObject.Save(3, &p.totalReaders)
 	stateSinkObject.Save(4, &p.writers)
-	stateSinkObject.Save(5, &p.totalWriters)
+	stateSinkObject.Save(5, &p.writerGeneration)
 	stateSinkObject.Save(6, &p.buf)
 	stateSinkObject.SaveInt64(7, &p.off)
 	stateSinkObject.SaveInt64(8, &p.size)
 	stateSinkObject.SaveInt64(9, &p.max)
-	stateSinkObject.SaveBool(10, &p.hadWriter)
 }
 
 // +checklocksignore
@@ -53,12 +51,11 @@ func (p *Pipe) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &p.readers)
 	stateSourceObject.Load(3, &p.totalReaders)
 	stateSourceObject.Load(4, &p.writers)
-	stateSourceObject.Load(5, &p.totalWriters)
+	stateSourceObject.Load(5, &p.writerGeneration)
 	stateSourceObject.Load(6, &p.buf)
 	stateSourceObject.LoadInt64(7, &p.off)
 	stateSourceObject.LoadInt64(8, &p.size)
 	stateSourceObject.LoadInt64(9, &p.max)
-	stateSourceObject.LoadBool(10, &p.hadWriter)
 	stateSourceObject.AfterLoadTo(p)
 }
 
@@ -103,6 +100,7 @@ func (fd *VFSPipeFD) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"LockFD",
 		"pipe",
+		"initialWriters",
 		"lastAddr",
 	}
 }
@@ -117,7 +115,8 @@ func (fd *VFSPipeFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.LockFD)
 	stateSinkObject.Save(4, &fd.pipe)
-	stateSinkObject.Save(5, &fd.lastAddr)
+	stateSinkObject.SaveInt32(5, &fd.initialWriters)
+	stateSinkObject.Save(6, &fd.lastAddr)
 }
 
 func (fd *VFSPipeFD) afterLoad(context.Context) {}
@@ -129,7 +128,8 @@ func (fd *VFSPipeFD) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.LockFD)
 	stateSourceObject.Load(4, &fd.pipe)
-	stateSourceObject.Load(5, &fd.lastAddr)
+	stateSourceObject.LoadInt32(5, &fd.initialWriters)
+	stateSourceObject.Load(6, &fd.lastAddr)
 }
 
 func init() {
