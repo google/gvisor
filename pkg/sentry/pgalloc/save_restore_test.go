@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !pagesize_64k
-
 package pgalloc
 
 import (
@@ -455,7 +453,7 @@ func (r *shortPageBatch) Wait(cs []stateio.Completion, _ int) ([]stateio.Complet
 }
 
 func TestAsyncLoadShortRead(t *testing.T) {
-	const page = uint64(hostarch.PageSize)
+	page := uint64(hostarch.PageSize)
 	src := newSaveTestMemoryFile(t, "", false)
 	fr := allocateSaveTestPages(t, src)
 	for i := range 3 {
