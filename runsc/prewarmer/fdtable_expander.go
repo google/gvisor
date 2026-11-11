@@ -25,15 +25,32 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
 func main() {
+	status, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fdtable_expander: %v\n", err)
+		os.Exit(1)
+	}
+	start := time.Now()
 	for _, target := range []int{63, 127, 255} {
 		if err := unix.Dup3(0, target, unix.O_CLOEXEC); err != nil {
 			fmt.Fprintf(os.Stderr, "fdtable_expander: dup3(0, %d) failed: %v\n", target, err)
 			os.Exit(1)
 		}
 	}
+	elapsed := time.Since(start)
+	for line := range strings.Lines(string(status)) {
+		if slots, ok := strings.CutPrefix(line, "FDSize:"); ok {
+			fmt.Printf("%s %d\n", strings.TrimSpace(slots), elapsed.Nanoseconds())
+			return
+		}
+	}
+	fmt.Fprintln(os.Stderr, "fdtable_expander: missing FDSize in /proc/self/status")
+	os.Exit(1)
 }
