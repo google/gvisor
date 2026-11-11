@@ -272,7 +272,7 @@ func (pm *pidsMax) Write(ctx context.Context, fd *vfs.FileDescription, src userm
 	}
 
 	val, err := strconv.ParseInt(str, 10, 64)
-	if err != nil || val < 0 {
+	if err != nil || val < 0 || val > pidMaxLimit {
 		return 0, linuxerr.EINVAL
 	}
 

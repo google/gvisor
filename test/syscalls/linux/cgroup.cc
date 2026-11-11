@@ -20,6 +20,7 @@
 #include <linux/capability.h>
 #include <linux/magic.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sys/inotify.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -118,6 +119,8 @@ class NoopThreads {
   absl::Notification exit_;
   bool joined_ = false;
 };
+
+void* DummyThreadBody(void* unused) { return nullptr; }
 
 TEST(Cgroup, MountsForAllControllers) {
   SKIP_IF(!CgroupsAvailable());
@@ -1052,13 +1055,21 @@ TEST(PIDsCgroup, SetInvalidLimit) {
               PosixErrorIs(EINVAL, _));
   EXPECT_THAT(child.WriteControlFile("pids.max", "-3894732"),
               PosixErrorIs(EINVAL, _));
-  // This value is much larger than the maximum allowed value of ~ 1<<22.
+  // PID_MAX_LIMIT + 1 (PIDS_MAX = 4 * 1024 * 1024 + 1) and larger values are
+  // rejected with EINVAL.
+  EXPECT_THAT(child.WriteIntegerControlFile("pids.max", (4 * 1024 * 1024) + 1),
+              PosixErrorIs(EINVAL, _));
   EXPECT_THAT(child.WriteIntegerControlFile("pids.max", LLONG_MAX - 1),
               PosixErrorIs(EINVAL, _));
 
   // The initial valid limit should remain unchanged.
   EXPECT_THAT(child.ReadIntegerControlFile("pids.max"),
               IsPosixErrorOkAndHolds(1234));
+
+  // PID_MAX_LIMIT (4 * 1024 * 1024) is the maximum valid numeric limit.
+  EXPECT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", 4 * 1024 * 1024));
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.max"),
+              IsPosixErrorOkAndHolds(4 * 1024 * 1024));
 }
 
 TEST(PIDsCgroup, CanLowerLimitBelowCurrentCharge) {
@@ -1072,6 +1083,59 @@ TEST(PIDsCgroup, CanLowerLimitBelowCurrentCharge) {
               IsPosixErrorOkAndHolds(Gt(0)));
   // Try set limit to zero.
   EXPECT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", 0));
+}
+
+TEST(PIDsCgroup, LimitEnforced) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/pids");
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+
+  // Set limit so we have room for one more task.
+  const int64_t baseline =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("pids.current"));
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", baseline + 1));
+
+  // Spawning a thread should succeed.
+  NoopThreads t1(1);
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 1));
+
+  // Attempting to spawn another thread should fail.
+  for (int i = 0; i < 3; ++i) {
+    pthread_t pt;
+    int res = pthread_create(&pt, nullptr, &DummyThreadBody, nullptr);
+    if (res == 0) {
+      pthread_join(pt, nullptr);
+    }
+    ASSERT_EQ(res, EAGAIN);
+  }
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 1));
+
+  // Exit the first thread and try create a thread again, which should succeed.
+  ASSERT_NO_ERRNO(child.PollControlFileForChangeAfter(
+      "pids.current", absl::Seconds(30), [&t1]() { t1.Join(); }));
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline));
+  NoopThreads t2(1);
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 1));
+
+  // Increase the limit and try again.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", baseline + 2));
+  NoopThreads t3(1);
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 2));
+
+  // Reset the limit to "max" and verify we can spawn another thread.
+  ASSERT_NO_ERRNO(child.WriteControlFile("pids.max", "max"));
+  EXPECT_THAT(child.ReadControlFile("pids.max"),
+              IsPosixErrorOkAndHolds("max\n"));
+  NoopThreads t4(1);
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 3));
 }
 
 TEST(DevicesCgroup, ControlFilesExist) {
