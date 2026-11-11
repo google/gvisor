@@ -22,47 +22,26 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
-// highestOpenFD returns the highest FD number currently open in this
-// process.
-func highestOpenFD(t *testing.T) int {
+// measureExpansion returns the starting FD table size and the time spent in dup3.
+func measureExpansion(t *testing.T, cmd *exec.Cmd) (int, time.Duration) {
 	t.Helper()
-	entries, err := os.ReadDir("/proc/self/fd")
-	if err != nil {
-		t.Fatalf("cannot list /proc/self/fd: %v", err)
-	}
-	highest := -1
-	for _, e := range entries {
-		fd, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		if fd > highest {
-			highest = fd
-		}
-	}
-	if highest == -1 {
-		t.Fatalf("cannot determine highest open FD")
-	}
-	return highest
-}
-
-// timedRun runs cmd and returns its wall time.
-func timedRun(t *testing.T, cmd *exec.Cmd) time.Duration {
-	t.Helper()
-	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	start := time.Now()
-	if err := cmd.Run(); err != nil {
+	out, err := cmd.Output()
+	if err != nil {
 		t.Fatalf("%v failed: %v", cmd.Args, err)
 	}
-	return time.Since(start)
+	var slots int
+	var nanos int64
+	if _, err := fmt.Sscan(string(out), &slots, &nanos); err != nil {
+		t.Fatalf("%v reported invalid FD table measurement %q: %v", cmd.Args, out, err)
+	}
+	return slots, time.Duration(nanos)
 }
 
 func p50(durations []time.Duration) time.Duration {
@@ -86,37 +65,36 @@ func TestPrewarmerSpeedsUpFDTableExpansion(t *testing.T) {
 		t.Fatalf("cannot find fdtable_expander binary: %v", err)
 	}
 
-	// The children we'll spawn inherit their FD table size from the test
-	// process, so if we already have an FD table large enough, the prewarmer
-	// will be a no-op. We cannot ask the kernel to shrink the FD table, so
-	// all we can do is skip the test in such a case.
-	if fd := highestOpenFD(t); fd >= 64 {
-		t.Skipf("test process has FD %d open, so child processes inherit a pre-expanded FD table; this environment cannot exercise the expansion the prewarmer exists to avoid", fd)
-	}
-
 	expanderFile, err := os.Open(expander)
 	if err != nil {
 		t.Fatalf("cannot open fdtable_expander binary: %v", err)
 	}
 	defer expanderFile.Close()
-	prewarmedCommand := func() *exec.Cmd {
+	const slotsNeeded = 256 // The helper's last dup3 targets FD 255.
+	prewarmedTime := func() time.Duration {
 		cmd := exec.Command(prewarmer)
 		cmd.Args[0] = "fdtable_expander"
 		cmd.ExtraFiles = []*os.File{expanderFile}
-		return cmd
+		slots, elapsed := measureExpansion(t, cmd)
+		if slots < slotsNeeded {
+			t.Fatalf("prewarmed helper started with %d FD slots, want at least %d", slots, slotsNeeded)
+		}
+		return elapsed
 	}
 
-	// One untimed run with both binaries involved just to warm the page cache:
-	timedRun(t, prewarmedCommand())
+	// Warm the page cache for both binaries before collecting samples.
+	prewarmedTime()
 
 	const runs = 32 // Number of runs to do.
 
 	var alone, prewarmed []time.Duration
-	for i := 0; i < runs; i++ {
-		alone = append(alone, timedRun(t, exec.Command(expander)))
-	}
-	for i := 0; i < runs; i++ {
-		prewarmed = append(prewarmed, timedRun(t, prewarmedCommand()))
+	for range runs {
+		coldSlots, coldTime := measureExpansion(t, exec.Command(expander))
+		if coldSlots >= slotsNeeded {
+			t.Skipf("standalone helper already has %d FD slots and cannot exercise expansion to %d", coldSlots, slotsNeeded)
+		}
+		alone = append(alone, coldTime)
+		prewarmed = append(prewarmed, prewarmedTime())
 	}
 
 	p50Alone, p50Prewarmed := p50(alone), p50(prewarmed)
