@@ -167,7 +167,9 @@ func (n *Namespace) init(restore bool) {
 			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
 		}
 	}
-	n.abstractSockets.init()
+	if !restore {
+		n.abstractSockets.init()
+	}
 }
 
 // afterLoad is invoked by stateify.
