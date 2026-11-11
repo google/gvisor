@@ -116,6 +116,17 @@ go_test(
 )
 
 go_test(
+    name = "destroy_test",
+    srcs = ["destroy_test.go"],
+    embed = [":container"],
+    deps = [
+        "//runsc/boot/sentryapi",
+        "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+go_test(
     name = "gofer_env_test",
     srcs = ["gofer_env_test.go"],
     embed = [":container"],
