@@ -191,11 +191,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(linux.TIOCGWINSZ),
 			seccomp.AnyValue{}, /* winsize struct */
 		},
-		seccomp.PerArg{
-			seccomp.NonNegativeFD{}, /* fd */
-			seccomp.EqualTo(linux.SIOCGIFTXQLEN),
-			seccomp.AnyValue{}, /* ifreq struct */
-		},
 	},
 	unix.SYS_IO_SETUP:     seccomp.MatchAll{},
 	unix.SYS_IO_DESTROY:   seccomp.MatchAll{},
