@@ -15,6 +15,8 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_RSEQ_SYSCALLS_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_RSEQ_SYSCALLS_H_
 
+#include <asm/errno.h>
+
 #include "test/syscalls/linux/rseq/types.h"
 
 // Syscall numbers.
@@ -45,13 +47,12 @@ namespace testing {
 // Maximum Linux error number.
 constexpr int kMaxErrno = 4095;
 
-// Errno values.
-#define EPERM 1
-#define EINTR 4
-#define EAGAIN 11
-#define EFAULT 14
-#define EBUSY 16
-#define EINVAL 22
+// Linux error values returned by the raw system calls.
+constexpr int kOperationNotPermitted = EPERM;
+constexpr int kInterrupted = EINTR;
+constexpr int kTryAgain = EAGAIN;
+constexpr int kBusy = EBUSY;
+constexpr int kInvalidArgument = EINVAL;
 
 // Get the error number from a raw system call return value.
 // Returns a positive error number or 0 if there was no error.
