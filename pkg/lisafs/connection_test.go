@@ -342,6 +342,158 @@ func TestWalkMultipleResponseValidation(t *testing.T) {
 	}
 }
 
+// unlinkRaceFD implements lisafs.ControlFDImpl for TestUnlinkCloseRace.
+type unlinkRaceFD struct {
+	testControlFD
+	onWalk   func(parent *unlinkRaceFD, name string) (*unlinkRaceFD, bool)
+	onUnlink func(parent *unlinkRaceFD, name string) error
+}
+
+// Walk implements lisafs.ControlFDImpl.Walk.
+func (fd *unlinkRaceFD) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, error) {
+	if fd.onWalk != nil {
+		if childFD, ok := fd.onWalk(fd, name); ok {
+			return childFD.FD(), lisafs.Statx{Mode: uint16(linux.S_IFDIR)}, nil
+		}
+	}
+	childFD := fd.allocateChild(name)
+	return childFD.FD(), lisafs.Statx{Mode: uint16(linux.S_IFDIR)}, nil
+}
+
+func (fd *unlinkRaceFD) allocateChild(name string) *unlinkRaceFD {
+	parentNode := fd.Node()
+	var childNode *lisafs.Node
+	parentNode.WithChildrenMu(func() {
+		childNode = parentNode.LookupChildLocked(name)
+		if childNode != nil {
+			childNode.IncRef()
+			return
+		}
+		childNode = &lisafs.Node{}
+		childNode.InitLocked(name, parentNode)
+	})
+	childFD := &unlinkRaceFD{onWalk: fd.onWalk, onUnlink: fd.onUnlink}
+	childFD.Init(fd.Conn(), childNode, linux.ModeDirectory, childFD) // +checklocksignore
+	return childFD
+}
+
+// Open implements lisafs.ControlFDImpl.Open.
+func (fd *unlinkRaceFD) Open(flags uint32) (*lisafs.OpenFD, int, error) {
+	return nil, -1, unix.EPERM
+}
+
+// Unlink implements lisafs.ControlFDImpl.Unlink.
+func (fd *unlinkRaceFD) Unlink(name string, flags uint32) error {
+	if fd.onUnlink != nil {
+		return fd.onUnlink(fd, name)
+	}
+	return nil
+}
+
+type unlinkRaceConnImpl struct {
+	testConnImpl
+	onWalk   func(parent *unlinkRaceFD, name string) (*unlinkRaceFD, bool)
+	onUnlink func(parent *unlinkRaceFD, name string) error
+}
+
+// Mount implements lisafs.ConnectionImpl.Mount.
+//
+// +checklocksread:c.server.renameMu
+// +checklocksexclude:c.fdsMu
+func (u *unlinkRaceConnImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
+	root := &unlinkRaceFD{onWalk: u.onWalk, onUnlink: u.onUnlink}
+	mountNode.IncRef()
+	root.Init(c, mountNode, linux.ModeDirectory, root)
+	return root.FD(), lisafs.Statx{Mode: uint16(linux.S_IFDIR)}, -1, nil
+}
+
+// SupportedMessages implements lisafs.ConnectionImpl.SupportedMessages.
+func (*unlinkRaceConnImpl) SupportedMessages() []lisafs.MID {
+	return []lisafs.MID{
+		lisafs.Mount,
+		lisafs.Channel,
+		lisafs.Walk,
+		lisafs.OpenAt,
+		lisafs.Close,
+		lisafs.UnlinkAt,
+	}
+}
+
+// TestUnlinkCloseRace tests that UnlinkAtHandler holds a reference on the
+// unlinked child Node across Unlink and marks any Node at the unlinked name as
+// deleted even when CloseHandler runs concurrently.
+func TestUnlinkCloseRace(t *testing.T) {
+	unlinkHandlers := make([]lisafs.RPCHandler, lisafs.UnlinkAt+1)
+	unlinkHandlers[lisafs.Error] = lisafs.ErrorHandler
+	unlinkHandlers[lisafs.Mount] = lisafs.MountHandler
+	unlinkHandlers[lisafs.Channel] = lisafs.ChannelHandler
+	unlinkHandlers[lisafs.Walk] = lisafs.WalkHandler
+	unlinkHandlers[lisafs.OpenAt] = lisafs.OpenAtHandler
+	unlinkHandlers[lisafs.Close] = lisafs.CloseHandler
+	unlinkHandlers[lisafs.UnlinkAt] = lisafs.UnlinkAtHandler
+
+	unlinkEntered := make(chan struct{})
+	closeDone := make(chan struct{})
+	var retainedSubFD *unlinkRaceFD
+
+	impl := &unlinkRaceConnImpl{
+		onWalk: func(_ *unlinkRaceFD, name string) (*unlinkRaceFD, bool) {
+			if name == "retained_sub" && retainedSubFD != nil {
+				return retainedSubFD, true
+			}
+			return nil, false
+		},
+		onUnlink: func(parent *unlinkRaceFD, name string) error {
+			close(unlinkEntered)
+			<-closeDone
+			// Simulate an Unlink implementation that looks up or allocates the child
+			// node while the original ControlFD on name was just closed.
+			tempChildFD := parent.allocateChild(name)
+			retainedSubFD = tempChildFD.allocateChild("sub")
+			tempChildFD.RemoveFromConn() // +checklocksignore
+			return nil
+		},
+	}
+
+	runServerClientWithImpl(t, unlinkHandlers, impl, func(c *lisafs.Client, root lisafs.Inode) {
+		ctx := context.Background()
+		rootFD := c.NewFD(root.ControlFD)
+
+		status, inodes, err := rootFD.WalkMultiple(ctx, []string{"dir"})
+		if err != nil || status != lisafs.WalkSuccess || len(inodes) != 1 {
+			t.Fatalf("WalkMultiple([\"dir\"]) = (%v, %v, %v), want WalkSuccess with 1 inode", status, inodes, err)
+		}
+		dirFDID := inodes[0].ControlFD
+
+		var unlinkWg sync.WaitGroup
+		unlinkWg.Add(1)
+		go func() {
+			defer unlinkWg.Done()
+			if err := rootFD.UnlinkAt(ctx, "dir", unix.AT_REMOVEDIR); err != nil {
+				t.Errorf("UnlinkAt(\"dir\") failed: %v", err)
+			}
+		}()
+
+		<-unlinkEntered
+		c.CloseFD(ctx, dirFDID, true /* flush */)
+		close(closeDone)
+		unlinkWg.Wait()
+
+		status, subInodes, err := rootFD.WalkMultiple(ctx, []string{"retained_sub"})
+		if err != nil || status != lisafs.WalkSuccess || len(subInodes) != 1 {
+			t.Fatalf("WalkMultiple([\"retained_sub\"]) = (%v, %v, %v), want WalkSuccess with 1 inode", status, subInodes, err)
+		}
+		retainedClientFD := c.NewFD(subInodes[0].ControlFD)
+		defer c.CloseFD(ctx, subInodes[0].ControlFD, true /* flush */)
+
+		// retainedSubFD's node must have been marked deleted by UnlinkAtHandler, so
+		// OpenAt on it must return EINVAL rather than reaching unlinkRaceFD.Open (EPERM).
+		if _, _, err := retainedClientFD.OpenAt(ctx, unix.O_RDONLY); err != unix.EINVAL {
+			t.Errorf("OpenAt on child under unlinked node got err = %v, want %v (EINVAL)", err, unix.EINVAL)
+		}
+	})
+}
+
 // BenchmarkSendRecv exists to compete against p9's BenchmarkSendRecvChannel.
 func BenchmarkSendRecv(b *testing.B) {
 	b.ReportAllocs()
