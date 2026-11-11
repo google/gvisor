@@ -220,6 +220,9 @@ func (b *Bitmap) clearRange(begin, end uint32) {
 
 // ClearRange clear bits within range (begin and end) for the Bitmap. begin is inclusive and end is exclusive.
 func (b *Bitmap) ClearRange(begin, end uint32) {
+	if begin >= end {
+		return
+	}
 	blockRange := end/64 - begin/64
 	// When the number of cleared blocks is larger than half of the length of b.bitBlock,
 	// counting 1s for the entire bitmap has better performance.
@@ -236,6 +239,9 @@ func (b *Bitmap) ClearRange(begin, end uint32) {
 
 // FlipRange flip bits within range (begin and end) for the Bitmap. begin is inclusive and end is exclusive.
 func (b *Bitmap) FlipRange(begin, end uint32) {
+	if begin >= end {
+		return
+	}
 	blockRange := end/64 - begin/64
 	// When the number of flipped blocks is larger than half of the length of b.bitBlock,
 	// counting 1s for the entire bitmap has better performance.
