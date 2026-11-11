@@ -90,6 +90,12 @@
   commit: 3de43ed45e1c7923d53c4db56ca3de3e46601580
   sha256: 37cdfbc6faefea94f7b37760a305c98c08981116c2bc9e821e3b423221fad8c8
   license: Apache-2.0
+- dependency: buildifier_prebuilt
+  version: https://github.com/keith/buildifier-prebuilt/releases/download/8.5.1.4/buildifier-prebuilt.8.5.1.4.tar.gz
+  retrieved: "2026-10-29"
+  commit: 2d23069a6f2111875011df0e776942b2ca3c1a8d
+  sha256: bc0a95ad65808ce60dda3bf9e30865568021842fbef95191599fb0325347f90b
+  license: MIT
 - dependency: buildkite_pipeline_schema
   version: https://raw.githubusercontent.com/buildkite/pipeline-schema/3413455899dadd5f721f481ca247bc55e78bf5b9/schema.json
   retrieved: "2026-10-26"
@@ -174,6 +180,12 @@
   commit: f4b10eef3a7b114033d52c8d83ad43b105a150b3
   sha256: 2c8a2520ef58c3d2a6e9e0392ec2cea37adb17db4e00c903d48415fd809397f8
   license: Apache-2.0
+- dependency: cpplint
+  version: https://github.com/cpplint/cpplint/archive/refs/tags/2.0.2.tar.gz
+  retrieved: "2026-10-29"
+  commit: 350702a4d39395571bd118c9a3cff0a573488d61
+  sha256: fc6d0cd40f934b58e8e0bb5eb5f1f2b651880b5fbc0e93a54e6fb6503f733b3d
+  license: BSD-3-Clause
 - dependency: envoy_api
   version: https://github.com/envoyproxy/data-plane-api/archive/84e84367f2560cdb47b9bb78fd3e615feb80c3e4.tar.gz
   retrieved: "2026-10-06"
