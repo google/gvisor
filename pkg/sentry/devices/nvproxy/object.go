@@ -403,6 +403,9 @@ func (c *rootClient) getObject(ctx context.Context, h nvgpu.Handle) *object {
 type osDescMem struct {
 	object
 	appMirror
+
+	// pinnedWritable records whether the backing pages were pinned for writing.
+	pinnedWritable bool
 }
 
 // Release implements objectImpl.Release.
