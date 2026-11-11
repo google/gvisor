@@ -111,6 +111,12 @@ image_outputs(
     image_name = "basic/redis",
 )
 
+image_outputs(
+    name = "benchmark_redis",
+    image = ":redis",
+    image_name = "benchmarks/redis",
+)
+
 # Exercise containerd's resolver mounts through a symlink in the image.
 image_layer(
     name = "symlink_resolv_layer",
