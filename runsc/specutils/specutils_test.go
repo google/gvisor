@@ -1339,3 +1339,92 @@ func TestValidateSpecForContainerMountAnnotationOptionsSize(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSpecForContainerSkipSpecValidationFields(t *testing.T) {
+	newSpec := func(args []string, cwd string, seccomp *specs.LinuxSeccomp, annotations map[string]string) *specs.Spec {
+		var linuxSpec *specs.Linux
+		if seccomp != nil {
+			linuxSpec = &specs.Linux{Seccomp: seccomp}
+		}
+		return &specs.Spec{
+			Process: &specs.Process{
+				Args: args,
+				Cwd:  cwd,
+			},
+			Linux:       linuxSpec,
+			Annotations: annotations,
+		}
+	}
+
+	restrictiveSeccomp := &specs.LinuxSeccomp{
+		DefaultAction: specs.ActErrno,
+	}
+
+	for _, tc := range []struct {
+		name     string
+		old, new *specs.Spec
+		wantErr  bool
+	}{
+		{
+			name:    "args_differ_without_skip_annotation_fails",
+			old:     newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/", nil, nil),
+			new:     newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/", nil, nil),
+			wantErr: true,
+		},
+		{
+			name: "args_differ_with_skip_args_annotation_succeeds",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/", nil, nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/", nil, map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "Args",
+			}),
+			wantErr: false,
+		},
+		{
+			name: "args_differ_with_case_insensitive_skip_args_succeeds",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/", nil, nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/", nil, map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: " args ",
+			}),
+			wantErr: false,
+		},
+		{
+			name: "unsupported_or_typo_fields_warn_without_failing_when_unchanged",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/", restrictiveSeccomp, nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/", restrictiveSeccomp, map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "Args, foo, Seccomp",
+			}),
+			wantErr: false,
+		},
+		{
+			name: "disallowed_seccomp_field_not_skipped_when_seccomp_differs",
+			old:  newSpec([]string{"/app/server"}, "/", nil, nil),
+			new: newSpec([]string{"/app/server"}, "/", restrictiveSeccomp, map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "Seccomp",
+			}),
+			wantErr: true,
+		},
+		{
+			name: "disallowed_cwd_field_not_skipped_when_cwd_differs",
+			old:  newSpec([]string{"/app/server", "--ip=10.0.0.1"}, "/old", nil, nil),
+			new: newSpec([]string{"/app/server", "--ip=10.0.0.2"}, "/new", nil, map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "Args, Cwd",
+			}),
+			wantErr: true,
+		},
+		{
+			name: "typo_field_alone_warns_without_failing_when_specs_match",
+			old:  newSpec([]string{"/app/server"}, "/", nil, nil),
+			new: newSpec([]string{"/app/server"}, "/", nil, map[string]string{
+				AnnotationRestoreSkipSpecValidationFields: "foo",
+			}),
+			wantErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSpecForContainer(tc.old, tc.new, "test")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("validateSpecForContainer() = %v, wantErr %t", err, tc.wantErr)
+			}
+		})
+	}
+}

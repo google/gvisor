@@ -151,7 +151,49 @@ var allowedRestoreFlagAnnotations = []string{
 	annotationFlagPrefix + "log-packets",
 }
 
-const annotationMountPrefix = "dev.gvisor.spec.mount."
+const (
+	annotationMountPrefix = "dev.gvisor.spec.mount."
+
+	// AnnotationRestoreSkipSpecValidationFields is an internal OCI annotation
+	// containing a comma-separated list of OCI spec field names (currently only
+	// "Args" is supported) whose restore spec validation should be skipped for
+	// the container. Unsupported or disallowed field names log a warning and
+	// are not skipped.
+	AnnotationRestoreSkipSpecValidationFields = "dev.gvisor.internal.restore.skip-spec-validation-fields"
+)
+
+var allowedSkipSpecValidationFields = map[string]bool{
+	"args": true,
+}
+
+func parseSkipSpecValidationFields(annotations map[string]string, cName string) map[string]bool {
+	raw := annotations[AnnotationRestoreSkipSpecValidationFields]
+	if raw == "" {
+		return nil
+	}
+	skipped := make(map[string]bool)
+	for _, field := range strings.Split(raw, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		lower := strings.ToLower(field)
+		if !allowedSkipSpecValidationFields[lower] {
+			log.Warningf("Ignoring unsupported field %q in annotation %q for container %q; restore spec validation will not be skipped for this field", field, AnnotationRestoreSkipSpecValidationFields, cName)
+			continue
+		}
+		skipped[lower] = true
+	}
+	return skipped
+}
+
+func shouldSkipFieldValidation(skipFields map[string]bool, cName, field string) bool {
+	if !skipFields[strings.ToLower(field)] {
+		return false
+	}
+	log.Warningf("Skipping restore spec validation for field %q in container %q as requested by annotation %q", field, cName, AnnotationRestoreSkipSpecValidationFields)
+	return true
+}
 
 func shouldValidateAnnotation(key string) bool {
 	const (
@@ -421,6 +463,7 @@ func validateArgs(oldArgs, newArgs []string, cName string) error {
 func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	oldSpec := *oSpec
 	newSpec := *nSpec
+	skipFields := parseSkipSpecValidationFields(newSpec.Annotations, cName)
 
 	// Validate OCI version.
 	if oldSpec.Version != newSpec.Version {
@@ -465,8 +508,10 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 		return err
 	}
 	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
-	if err := validateArgs(oldProcess.Args, newProcess.Args, cName); err != nil {
-		return err
+	if !shouldSkipFieldValidation(skipFields, cName, "Args") {
+		if err := validateArgs(oldProcess.Args, newProcess.Args, cName); err != nil {
+			return err
+		}
 	}
 	oldProcess.Args, newProcess.Args = nil, nil
 	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
