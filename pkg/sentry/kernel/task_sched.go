@@ -18,6 +18,7 @@ package kernel
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"time"
 
@@ -229,6 +230,8 @@ func (tg *ThreadGroup) JoinedChildCPUStats() usage.CPUStats {
 	return tg.childCPUStats
 }
 
+// +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.loadavgMu
 func (k *Kernel) runCPUClockTicker() {
 	// Storage reused between iterations of the main loop:
 	var (
@@ -257,12 +260,16 @@ func (k *Kernel) runCPUClockTicker() {
 		select {
 		case <-k.cpuClockTickTimer.C:
 			k.cpuClockTickTimer.Reset(linux.ClockTick)
-		case <-k.cpuClockTickerWakeCh:
+		case _, ok := <-k.cpuClockTickerWakeCh:
+			if !ok {
+				return
+			}
 			continue
 		}
 
 		// Advance the "kernel CPU clock".
 		k.cpuClock.Add(linux.ClockTick.Nanoseconds())
+		k.updateLoadavg(k.MonotonicClock().Now(), float64(k.RunningTasks()+k.BlockedTasks()))
 
 		// Advance CPU clocks. gVisor generally has no knowledge of when sentry
 		// or application code is actually running on a CPU (due to Go and/or
@@ -553,4 +560,34 @@ func (t *Task) SetNumaPolicy(policy linux.NumaPolicy, nodeMask uint64) {
 	defer t.mu.Unlock()
 	t.numaPolicy = policy
 	t.numaNodeMask = nodeMask
+}
+
+const loadavgSampleInterval = 5 * time.Second
+
+// Loadavg returns the 1-, 5-, and 15-minute system load averages.
+//
+// +checklocksexclude:k.loadavgMu
+func (k *Kernel) Loadavg() [3]float64 {
+	return k.updateLoadavg(k.MonotonicClock().Now(), float64(k.RunningTasks()+k.BlockedTasks()))
+}
+
+// +checklocksexclude:k.loadavgMu
+func (k *Kernel) updateLoadavg(now ktime.Time, active float64) [3]float64 {
+	k.loadavgMu.Lock()
+	defer k.loadavgMu.Unlock()
+
+	elapsed := now.Sub(k.lastLoadavgSample)
+	if elapsed < loadavgSampleInterval {
+		return k.loadavg
+	}
+	periods := elapsed / loadavgSampleInterval
+	sampleSpan := periods * loadavgSampleInterval
+	k.lastLoadavgSample = k.lastLoadavgSample.Add(sampleSpan)
+	decay1 := math.Exp(-float64(sampleSpan) / float64(time.Minute))
+	decay5 := math.Exp(-float64(sampleSpan) / float64(5*time.Minute))
+	decay15 := math.Exp(-float64(sampleSpan) / float64(15*time.Minute))
+	k.loadavg[0] = k.loadavg[0]*decay1 + active*(1-decay1)
+	k.loadavg[1] = k.loadavg[1]*decay5 + active*(1-decay5)
+	k.loadavg[2] = k.loadavg[2]*decay15 + active*(1-decay15)
+	return k.loadavg
 }

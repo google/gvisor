@@ -28,6 +28,7 @@
 //	            FSContext.mu
 //	      runningTasksMu
 //	        Timekeeper.updateMu
+//	        loadavgMu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking
 // TaskSet.mu exclusively first. Locking Task.mu in multiple Tasks at the same
@@ -302,6 +303,20 @@ type Kernel struct {
 
 	// +checkatomic
 	userSysCPUClock atomicbitops.Int64
+
+	loadavgMu sync.Mutex `state:"nosave"`
+
+	// lastLoadavgSample is the CLOCK_MONOTONIC time of the most recent
+	// load average sample window.
+	//
+	// +checklocks:loadavgMu
+	lastLoadavgSample ktime.Time
+
+	// loadavg holds the 1-, 5-, and 15-minute exponentially weighted
+	// moving load averages.
+	//
+	// +checklocks:loadavgMu
+	loadavg [3]float64
 
 	// uniqueID is used to generate unique identifiers.
 	//
@@ -1774,6 +1789,7 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 }
 
 // +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.loadavgMu
 func (k *Kernel) incRunningTasks() {
 	for {
 		tasks := k.runningTasks.Load()
@@ -1797,6 +1813,7 @@ func (k *Kernel) incRunningTasks() {
 			return
 		}
 		if !k.cpuClockTickerRunning {
+			k.updateLoadavg(k.MonotonicClock().Now(), float64(k.BlockedTasks()))
 			select {
 			case tickTime := <-k.cpuClockTickTimer.C:
 				// Rearm the timer since we consumed the wakeup. Estimate how much time
