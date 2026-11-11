@@ -122,3 +122,51 @@ func TestNumMemoryTypes(t *testing.T) {
 		t.Errorf("PTE.Set() and PTE.Opts() must be altered to handle %d MemoryTypes", hostarch.NumMemoryTypes)
 	}
 }
+
+// TestMapLarge checks that MapLarge produces the same translations as Map.
+func TestMapLarge(t *testing.T) {
+	cpuid.Initialize()
+	type rng struct {
+		addr, length, physical uintptr
+		opts                   MapOpts
+	}
+	rw := MapOpts{AccessType: hostarch.ReadWrite}
+	ro := MapOpts{AccessType: hostarch.Read, Global: true}
+	for _, tc := range [][]rng{
+		// Like the KVM physical map: unaligned head, huge interior.
+		{{0x1000, 0x79fbf8a2b000 - 0x1000, 0x200001000, rw}, {0x79fbf8a2d000, 0x7ffffffff000 - 0x79fbf8a2d000, 0x79fdf8a2d000, rw}},
+		// Exactly aligned, crossing a 512GiB boundary.
+		{{0x7f00000000, 0x200 * pudSize, 0x40000000, ro}},
+		// Smaller than 1GiB: falls back to Map.
+		{{0x400000, 0x200000, 0x1000000, rw}},
+		// Physical not congruent modulo 1GiB: falls back to Map.
+		{{0x40000000, 2 * pudSize, 0x200000, rw}},
+		// Overlapping an existing mapping.
+		{{0x80000000, pudSize + pteSize, 0x80000000, rw}, {0x40000000, 4 * pudSize, 0x40000000, ro}},
+	} {
+		want := New(NewRuntimeAllocator())
+		want.InitArch(NewRuntimeAllocator())
+		got := New(NewRuntimeAllocator())
+		got.InitArch(NewRuntimeAllocator())
+		for _, r := range tc {
+			wp := want.Map(hostarch.Addr(r.addr), r.length, r.opts, r.physical)
+			gp := got.MapLarge(hostarch.Addr(r.addr), r.length, r.opts, r.physical)
+			if wp != gp {
+				t.Errorf("Map(%#x, %#x) returned %v, MapLarge returned %v", r.addr, r.length, wp, gp)
+			}
+		}
+		for _, r := range tc {
+			for _, off := range []uintptr{0, pteSize, pmdSize, pudSize - pteSize, pudSize, 3*pudSize + 5*pteSize, r.length / 2, r.length - pteSize} {
+				if off >= r.length {
+					continue
+				}
+				a := hostarch.Addr(r.addr + off)
+				wv, wphys, wsize, wopts := want.Lookup(a, false)
+				gv, gphys, gsize, gopts := got.Lookup(a, false)
+				if wv != gv || wphys != gphys || wsize != gsize || wopts != gopts {
+					t.Errorf("Lookup(%#x): Map gave (%#x, %#x, %#x, %+v), MapLarge gave (%#x, %#x, %#x, %+v)", a, wv, wphys, wsize, wopts, gv, gphys, gsize, gopts)
+				}
+			}
+		}
+	}
+}

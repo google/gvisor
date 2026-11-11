@@ -16,6 +16,8 @@
 
 package pagetables
 
+import "gvisor.dev/gvisor/pkg/hostarch"
+
 // Address space layout constants shared by all ARM64 page sizes.
 const (
 	lowerTop    = 0x0001000000000000
@@ -49,4 +51,9 @@ func (p *PageTables) cloneUpperShared() {
 
 	p.archPageTables.root = p.upperSharedPageTables.archPageTables.root
 	p.archPageTables.rootPhysical = p.upperSharedPageTables.archPageTables.rootPhysical
+}
+
+// MapLarge is equivalent to Map. See the amd64 version.
+func (p *PageTables) MapLarge(addr hostarch.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
+	return p.Map(addr, length, opts, physical)
 }
