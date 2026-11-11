@@ -722,7 +722,10 @@ func (s *Sandbox) startProxy(conf *config.Config, spec *specs.Spec, udsHost *os.
 	s.netgoferIsChild = true
 	s.netgoferStopped = stopped
 	s.netgoferMu.Unlock()
-	s.reapNetgoferBackground(netgoferPid, stopped)
+	go func() {
+		defer close(stopped)
+		s.reapNetgofer(netgoferPid)
+	}()
 
 	return nil
 }
