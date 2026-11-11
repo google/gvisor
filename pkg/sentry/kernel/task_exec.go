@@ -344,6 +344,8 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	t.rseqSignature = 0
 	t.oldRSeqCPUAddr = 0
 	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
+	// Syscall user dispatch is turned off, as in Linux's begin_new_exec().
+	t.sud = syscallUserDispatch{}
 	t.tg.pidns.owner.mu.Unlock()
 
 	oldFDTable := t.fdTable

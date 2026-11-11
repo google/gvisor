@@ -233,6 +233,15 @@ func (t *Task) doSyscall() taskRunState {
 	tmp := uintptr(unix.ENOSYS)
 	t.Arch().SetReturn(-tmp)
 
+	// Syscall user dispatch comes before seccomp and ptrace, as in Linux's
+	// syscall_trace_enter(). A dispatched syscall also skips syscall exit
+	// tracing, since its arguments may not follow the Linux ABI.
+	if t.sud.enabled {
+		if next := t.dispatchSyscall(sysno, args); next != nil {
+			return next
+		}
+	}
+
 	// Check seccomp filters. The nil check is for performance (as seccomp use
 	// is rare), not needed for correctness.
 	if t.seccomp.Load() != nil && !t.consumeSeccompRestartSyscallBypass(sysno) {

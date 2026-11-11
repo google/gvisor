@@ -271,6 +271,10 @@ const (
 const (
 	// SYS_SECCOMP indicates that a signal originates from seccomp.
 	SYS_SECCOMP = 1
+
+	// SYS_USER_DISPATCH indicates that a signal originates from syscall user
+	// dispatch.
+	SYS_USER_DISPATCH = 2
 )
 
 // Possible values for Sigevent.Notify, aka struct sigevent::sigev_notify.
