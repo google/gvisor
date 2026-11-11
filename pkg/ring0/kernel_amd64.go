@@ -67,8 +67,17 @@ func (k *Kernel) init(maxCPUs int) {
 			dpl = 3
 		}
 		// Note that we set all traps to use the interrupt stack, this
-		// is defined below when setting up the TSS.
-		k.globalIDT[v].setInterrupt(Kcode, uint64(kernelFunc(handler)), dpl, 1 /* ist */)
+		// is defined below when setting up the TSS. NMIs and debug
+		// exceptions have dedicated stacks; see paranoidException in
+		// entry_amd64.s.
+		ist := istDefault
+		switch v {
+		case NMI:
+			ist = istNMI
+		case Debug:
+			ist = istDebug
+		}
+		k.globalIDT[v].setInterrupt(Kcode, uint64(kernelFunc(handler)), dpl, ist)
 	}
 }
 
@@ -122,6 +131,16 @@ func (c *CPU) init(cpuID int) {
 	c.tss.rsp0Hi = uint32(stackAddr >> 32)
 	c.tss.ist1Lo = uint32(stackAddr)
 	c.tss.ist1Hi = uint32(stackAddr >> 32)
+
+	// Set the NMI and debug exception stacks. The expected kernel GS base
+	// is stored right above the top of each of them.
+	gsBase := kernelAddr(c.kernelEntry)
+	nmiStackAddr := paranoidStackTop(c.nmiStack[:], gsBase)
+	c.tss.ist2Lo = uint32(nmiStackAddr)
+	c.tss.ist2Hi = uint32(nmiStackAddr >> 32)
+	debugStackAddr := paranoidStackTop(c.debugStack[:], gsBase)
+	c.tss.ist3Lo = uint32(debugStackAddr)
+	c.tss.ist3Hi = uint32(debugStackAddr >> 32)
 
 	// Set the I/O bitmap base address beyond the last byte in the TSS
 	// to block access to the entire I/O address range.

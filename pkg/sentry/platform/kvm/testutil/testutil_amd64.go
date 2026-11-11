@@ -28,6 +28,16 @@ import (
 func AddrOfTwiddleSegments() uintptr
 func twiddleSegments()
 
+// AddrOfLoadSSSyscall returns the address of a function that loads SS from
+// (AX) immediately before executing SYSCALL.
+func AddrOfLoadSSSyscall() uintptr
+func loadSSSyscall()
+
+// AddrOfLoadSSInt3 returns the address of a function that loads SS from
+// (AX) immediately before executing INT3.
+func AddrOfLoadSSInt3() uintptr
+func loadSSInt3()
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn uintptr) {
 	regs.Rip = uint64(fn)

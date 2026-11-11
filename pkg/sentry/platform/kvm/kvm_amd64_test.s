@@ -31,3 +31,13 @@ TEXT ·vmmcall(SB),NOSPLIT,$0-16
 	BYTE $0x0F; BYTE $0x01; BYTE $0xD9; // vmmcall
 	MOVQ AX, ret+8(FP)
 	RET
+
+TEXT ·wrDR0(SB),NOSPLIT,$0-8
+	MOVQ val+0(FP), AX
+	MOVQ AX, DR0
+	RET
+
+TEXT ·wrDR7(SB),NOSPLIT,$0-8
+	MOVQ val+0(FP), AX
+	MOVQ AX, DR7
+	RET

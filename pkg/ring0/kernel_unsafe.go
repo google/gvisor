@@ -32,6 +32,20 @@ func kernelAddr(obj any) uintptr {
 	return KernelStartAddress | uintptr(e.data)
 }
 
+// paranoidStackTop returns the kernel address to use as the interrupt stack
+// pointer for the given stack and stores gsBase in the 8 bytes right above it.
+// See paranoidException in entry_amd64.s.
+func paranoidStackTop(stack []byte, gsBase uintptr) uint64 {
+	// The CPU aligns the stack pointer to 16 bytes when it switches to an
+	// interrupt stack, so align it here to make the location of the slot
+	// deterministic.
+	base := uintptr(unsafe.Pointer(&stack[0]))
+	top := (base + uintptr(len(stack)) - 8) &^ 15
+	slot := (*uintptr)(unsafe.Pointer(&stack[top-base]))
+	*slot = gsBase
+	return uint64(kernelAddr(slot))
+}
+
 // kernelFunc returns the address of the given function.
 //
 //go:nosplit

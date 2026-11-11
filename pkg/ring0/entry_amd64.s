@@ -36,6 +36,9 @@
 #define ENTRY_KERNEL_CR3 280 // +checkoffset . kernelEntry.kernelCR3
 #define ENTRY_ENABLE_VMCALL 288 // +checkoffset . kernelEntry.enableVMCALL
 
+// MSRs.
+#define MSR_GS_BASE 0xc0000101
+
 // Bits.
 #define _RFLAGS_IF    512  // +checkconst . _RFLAGS_IF
 #define _RFLAGS_IOPL0 4096 // +checkconst . _RFLAGS_IOPL0
@@ -622,7 +625,9 @@ ADDR_OF_FUNC(·addrOfSysenter(SB), ·sysenter(SB));
 // See below for the stubs that call exception.
 TEXT ·exception(SB),NOSPLIT|NOFRAME,$0
 	// Determine whether the exception occurred in kernel mode or user
-	// mode, based on the flags. We expect the following stack:
+	// mode, based on the RPL of the saved CS selector. Unlike sysenter
+	// (where SYSCALL does not push CS), exception always has a hardware
+	// interrupt frame with CS at 24(SP). We expect the following stack:
 	//
 	//	SS          (sp+48)
 	//	SP          (sp+40)
@@ -632,7 +637,7 @@ TEXT ·exception(SB),NOSPLIT|NOFRAME,$0
 	//	ERROR_CODE  (sp+8)
 	//	VECTOR      (sp+0)
 	//
-	TESTL $_RFLAGS_IOPL0, 32(SP)
+	TESTQ $3, 24(SP)
 	JZ kernel
 
 user:
@@ -742,6 +747,90 @@ fpsave_done:
 	// loaded on resuming from halt.
 	JMP ·resume(SB)
 
+// paranoidException is the entry point for NMIs and debug exceptions.
+//
+// NMIs (injected by the Sentry on KVM_RUN EFAULT) and debug traps can be
+// deferred by a MOV SS/POP SS interrupt shadow past an instruction that enters
+// ring 0 (SYSCALL, INT n, or a faulting instruction), and then be delivered on
+// the first instruction of the ring 0 entry point, i.e. before SWAP_GS and the
+// CR3 switch, with the application's GS base still active. Such events can't
+// be classified by RFLAGS and must not trust GS.
+//
+// These events use dedicated interrupt stacks, so they never overwrite an
+// exception frame on the default interrupt stack, and are handled as follows:
+//
+// - From user mode (CS.RPL == 3), they are handled by exception, which will
+//   take the user path.
+// - From ring 0 with lower-half RIP and RSP and the kernel GS base, i.e. from
+//   regular Sentry code, they are handled by exception, which will take the
+//   kernel path.
+// - Otherwise, the vCPU is in ring 0 entry/exit code or on the kernelEntry
+//   stack. The event is dropped and the interrupted code is resumed. This is
+//   safe for NMIs, which are only used to bounce the vCPU to host mode on
+//   EFAULT: the faulting access will be retried and generate a new NMI. Debug
+//   traps can be generated here only by single-stepping or hitting a watchpoint
+//   across a ring 0 entry.
+//
+// Note two subtleties of these checks:
+// 1) Comparing MSR_GS_BASE against the expected kernelEntry address validates
+//    that GS dereferences in exception access this vCPU's kernelEntry, rather
+//    than proving SWAP_GS has executed (user mode may load any canonical
+//    address into GS_BASE via WRGSBASE or SwitchToUser).
+// 2) Parts of the ring 0 transition code (doSwitchToUser/sysret/iret between
+//    SWAP_GS and jumpToKernel, and the return tails of sysenter and exception
+//    after jumpToUser and stack restore) execute in ring 0 with lower-half RIP
+//    and RSP while FS_BASE, BP, or GS_BASE are in transition. User-deferred
+//    events cannot land there because a MOV SS/POP SS interrupt shadow spans
+//    only a single instruction, so any event deferred from user mode fires on
+//    the first (upper-half) instruction of sysenter or the IDT stub.
+//
+// We expect the following stack:
+//
+//	GS base     (sp+56) - the expected kernel GS base, see CPU.init.
+//	SS          (sp+48)
+//	SP          (sp+40)
+//	FLAGS       (sp+32)
+//	CS          (sp+24)
+//	IP          (sp+16)
+//	ERROR_CODE  (sp+8)
+//	VECTOR      (sp+0)
+//
+TEXT ·paranoidException(SB),NOSPLIT|NOFRAME,$0
+	TESTQ $3, 24(SP)
+	JNZ paranoid_handle  // User mode.
+
+	CMPQ 16(SP), $0
+	JLT paranoid_drop    // Upper-half RIP.
+	CMPQ 40(SP), $0
+	JLT paranoid_drop    // Upper-half RSP.
+
+	PUSHQ AX
+	PUSHQ CX
+	PUSHQ DX
+	MOVL $MSR_GS_BASE, CX
+	BYTE $0x0f; BYTE $0x32 // RDMSR
+	SHLQ $32, DX
+	ORQ DX, AX
+	CMPQ AX, 80(SP)      // Expected GS base (sp+56 before the pushes).
+	POPQ DX
+	POPQ CX
+	POPQ AX
+	JNE paranoid_drop    // Not the kernel GS base.
+
+paranoid_handle:
+	JMP ·exception(SB)
+
+paranoid_drop:
+	ADDQ $16, SP         // Drop the vector and the error code.
+	IRET()
+
+#define PARANOID_EXCEPTION_WITHOUT_ERROR(value, symbol, addr) \
+ADDR_OF_FUNC(addr, symbol); \
+TEXT symbol,NOSPLIT|NOFRAME,$0; \
+	PUSHQ $0x0; \
+	PUSHQ $value; \
+	JMP ·paranoidException(SB);
+
 #define EXCEPTION_WITH_ERROR(value, symbol, addr) \
 ADDR_OF_FUNC(addr, symbol); \
 TEXT symbol,NOSPLIT|NOFRAME,$0; \
@@ -756,8 +845,8 @@ TEXT symbol,NOSPLIT|NOFRAME,$0; \
 	JMP ·exception(SB);
 
 EXCEPTION_WITHOUT_ERROR(DivideByZero, ·divideByZero(SB), ·addrOfDivideByZero(SB))
-EXCEPTION_WITHOUT_ERROR(Debug, ·debug(SB), ·addrOfDebug(SB))
-EXCEPTION_WITHOUT_ERROR(NMI, ·nmi(SB), ·addrOfNMI(SB))
+PARANOID_EXCEPTION_WITHOUT_ERROR(Debug, ·debug(SB), ·addrOfDebug(SB))
+PARANOID_EXCEPTION_WITHOUT_ERROR(NMI, ·nmi(SB), ·addrOfNMI(SB))
 EXCEPTION_WITHOUT_ERROR(Breakpoint, ·breakpoint(SB), ·addrOfBreakpoint(SB))
 EXCEPTION_WITHOUT_ERROR(Overflow, ·overflow(SB), ·addrOfOverflow(SB))
 EXCEPTION_WITHOUT_ERROR(BoundRangeExceeded, ·boundRangeExceeded(SB), ·addrOfBoundRangeExceeded(SB))

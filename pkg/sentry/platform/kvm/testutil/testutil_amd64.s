@@ -133,3 +133,25 @@ TEXT ·AddrOfTwiddleSegments(SB), $0-8
 	MOVQ $·twiddleSegments(SB), AX
 	MOVQ AX, ret+0(FP)
 	RET
+
+TEXT ·loadSSSyscall(SB),NOSPLIT|NOFRAME,$0
+	MOVW 0(AX), SS
+	SYSCALL
+	RET
+
+// func AddrOfLoadSSSyscall() uintptr
+TEXT ·AddrOfLoadSSSyscall(SB), $0-8
+	MOVQ $·loadSSSyscall(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET
+
+TEXT ·loadSSInt3(SB),NOSPLIT|NOFRAME,$0
+	MOVW 0(AX), SS
+	INT $3
+	RET
+
+// func AddrOfLoadSSInt3() uintptr
+TEXT ·AddrOfLoadSSInt3(SB), $0-8
+	MOVQ $·loadSSInt3(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET
