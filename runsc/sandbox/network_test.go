@@ -1174,3 +1174,47 @@ func TestPrimaryInterface(t *testing.T) {
 		})
 	}
 }
+
+func TestLoopbackLinkNetgoferProxyLoopback(t *testing.T) {
+	loIface, err := net.InterfaceByName("lo")
+	if err != nil {
+		t.Fatalf("net.InterfaceByName(\"lo\") failed: %v", err)
+	}
+	addrs := []net.Addr{
+		&net.IPNet{
+			IP:   net.ParseIP("127.0.0.1"),
+			Mask: net.CIDRMask(8, 32),
+		},
+		&net.IPNet{
+			IP:   net.IPv6loopback,
+			Mask: net.CIDRMask(128, 128),
+		},
+	}
+
+	baseLink, err := loopbackLink(&config.Config{Netgofer: config.NetgoferModeProxy}, *loIface, addrs, false)
+	if err != nil {
+		t.Fatalf("loopbackLink(NetgoferModeProxy) failed: %v", err)
+	}
+	got, err := loopbackLink(&config.Config{Netgofer: config.NetgoferModeProxyLoopback}, *loIface, addrs, false)
+	if err != nil {
+		t.Fatalf("loopbackLink(NetgoferModeProxyLoopback) failed: %v", err)
+	}
+
+	want := baseLink
+	want.Addresses = []sentryapi.IPWithPrefix{
+		{Address: net.ParseIP("127.0.0.1"), PrefixLen: 32},
+		{Address: net.IPv6loopback, PrefixLen: 128},
+	}
+	want.Routes = append([]sentryapi.Route{
+		{
+			Destination: net.IPNet{
+				IP:   net.IP{127, 0, 0, 1},
+				Mask: net.IPMask{255, 255, 255, 255},
+			},
+		},
+	}, baseLink.Routes[1:]...)
+
+	if !loopbackLinksEqual([]sentryapi.LoopbackLink{got}, []sentryapi.LoopbackLink{want}) {
+		t.Errorf("loopbackLink(NetgoferModeProxyLoopback) =\n%+v\nwant\n%+v", got, want)
+	}
+}

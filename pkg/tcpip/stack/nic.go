@@ -117,6 +117,10 @@ type nic struct {
 	// experimentIPOptionEnabled indicates whether the NIC supports the
 	// experiment IP option.
 	experimentIPOptionEnabled bool
+
+	// allowExternalIPv4LoopbackTraffic indicates whether IPv4 loopback packets
+	// should be accepted from external networks on this NIC.
+	allowExternalIPv4LoopbackTraffic bool
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -204,24 +208,25 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 	// observe an MTU of at least 1280 bytes. Ensure that this requirement
 	// of IPv6 is supported on this endpoint's LinkEndpoint.
 	nic := &nic{
-		NetworkLinkEndpoint:       ep,
-		stack:                     stack,
-		id:                        id,
-		name:                      opts.Name,
-		context:                   opts.Context,
-		stats:                     makeNICStats(stack.Stats().NICs),
-		networkEndpoints:          make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
-		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
-		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
-		packetEPs:                 make(map[tcpip.NetworkProtocolNumber]*packetEndpointList),
-		qDisc:                     qDisc,
-		deliverLinkPackets:        opts.DeliverLinkPackets,
-		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
-		kind:                      opts.Kind,
-		minMTU:                    opts.MinMTU,
-		maxMTU:                    opts.MaxMTU,
-		multicast:                 opts.Multicast,
-		adminDown:                 atomicbitops.FromBool(opts.Disabled),
+		NetworkLinkEndpoint:              ep,
+		stack:                            stack,
+		id:                               id,
+		name:                             opts.Name,
+		context:                          opts.Context,
+		stats:                            makeNICStats(stack.Stats().NICs),
+		networkEndpoints:                 make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
+		linkAddrResolvers:                make(map[tcpip.NetworkProtocolNumber]*linkResolver),
+		duplicateAddressDetectors:        make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
+		packetEPs:                        make(map[tcpip.NetworkProtocolNumber]*packetEndpointList),
+		qDisc:                            qDisc,
+		deliverLinkPackets:               opts.DeliverLinkPackets,
+		experimentIPOptionEnabled:        opts.EnableExperimentIPOption,
+		allowExternalIPv4LoopbackTraffic: opts.AllowExternalIPv4LoopbackTraffic,
+		kind:                             opts.Kind,
+		minMTU:                           opts.MinMTU,
+		maxMTU:                           opts.MaxMTU,
+		multicast:                        opts.Multicast,
+		adminDown:                        atomicbitops.FromBool(opts.Disabled),
 	}
 	nic.linkResQueue.init(nic)
 
@@ -460,6 +465,11 @@ func (n *nic) Promiscuous() bool {
 // IsLoopback implements NetworkInterface.
 func (n *nic) IsLoopback() bool {
 	return n.NetworkLinkEndpoint.Capabilities()&CapabilityLoopback != 0
+}
+
+// AllowExternalIPv4LoopbackTraffic implements NetworkInterface.
+func (n *nic) AllowExternalIPv4LoopbackTraffic() bool {
+	return n.allowExternalIPv4LoopbackTraffic
 }
 
 // WritePacket implements NetworkEndpoint.

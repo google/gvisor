@@ -360,6 +360,10 @@ func (*testInterface) Spoofing() bool {
 	return false
 }
 
+func (*testInterface) AllowExternalIPv4LoopbackTraffic() bool {
+	return false
+}
+
 func (t *testInterface) setEnabled(v bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

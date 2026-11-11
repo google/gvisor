@@ -141,6 +141,10 @@ func (*testInterface) Spoofing() bool {
 	return false
 }
 
+func (*testInterface) AllowExternalIPv4LoopbackTraffic() bool {
+	return false
+}
+
 func (t *testInterface) WritePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
 	pkt.EgressRoute = r.Fields()
 	var pkts stack.PacketBufferList

@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file tests --network-proxy-path. A userspace netstack acts as the
-// external network proxy on the other side of the unix domain socket, and
-// a container talks to it in both directions.
+// This file tests UDS network proxying (--network-proxy-path and --netgofer).
 package integration
 
 import (
@@ -24,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,6 +54,10 @@ const (
 	// netgoferProxyRuntimeSuffix names the runtime installed by the
 	// $(RUNTIME)-netgofer-proxy target in the Makefile (--netgofer=proxy).
 	netgoferProxyRuntimeSuffix = "-netgofer-proxy"
+
+	// netgoferProxyLoopbackRuntimeSuffix names the runtime installed by the
+	// $(RUNTIME)-netgofer-proxy-loopback target in the Makefile (--netgofer=proxy-loopback).
+	netgoferProxyLoopbackRuntimeSuffix = "-netgofer-proxy-loopback"
 
 	// externalUDSSocketPath must match the --network-proxy-path value baked into
 	// that runtime. It is a fixed path rather than a temporary one because the
@@ -497,5 +500,234 @@ func TestNetgoferProxyOutbound(t *testing.T) {
 	}
 	if strings.TrimSpace(gotReq) != strings.TrimSpace(wantReq) {
 		t.Errorf("server container received %q, want %q", gotReq, wantReq)
+	}
+}
+
+func runCompose(ctx context.Context, composeFile, projectName string, args ...string) (string, error) {
+	cmdArgs := append([]string{"compose", "-f", composeFile, "-p", projectName}, args...)
+	out, err := exec.CommandContext(ctx, "docker", cmdArgs...).CombinedOutput()
+	return string(out), err
+}
+
+func waitForComposeServiceListener(ctx context.Context, t *testing.T, composeFile, projectName, service, proto string, port int) {
+	t.Helper()
+	hexPort := fmt.Sprintf(":%04X ", port)
+	procNetPath := "/proc/net/" + proto
+	for deadline := time.Now().Add(externalUDSWait); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if _, err := runCompose(ctx, composeFile, projectName, "exec", "-T", service, "grep", "-i", hexPort, procNetPath); err == nil {
+			return
+		}
+	}
+	sockets, _ := runCompose(ctx, composeFile, projectName, "exec", "-T", service, "cat", procNetPath)
+	procs, _ := runCompose(ctx, composeFile, projectName, "exec", "-T", service, "ps")
+	t.Fatalf("timed out waiting for %s listener on port %d in service %q.\nSockets:\n%s\nProcesses:\n%s", proto, port, service, sockets, procs)
+}
+
+// TestNetgoferProxyDockerCompose tests containers running under --netgofer=proxy-loopback
+// and --netgofer=proxy in a Docker Compose project. It verifies that with
+// --netgofer=proxy-loopback:
+//   - Docker Compose's embedded DNS server at 127.0.0.11:53 is reachable over
+//     netgofer to resolve peer service names.
+//   - Outbound TCP and UDP connections to peer services by Compose service name
+//     succeed over netgofer.
+//   - Sandbox-local loopback (127.0.0.1) remains isolated inside the container.
+//
+// It also contrasts this with --netgofer=proxy, where 127.0.0.0/8 remains
+// sandbox-local (blocking 127.0.0.11 DNS) while direct IP TCP and UDP traffic
+// to peer containers still succeeds over netgofer.
+func TestNetgoferProxyDockerCompose(t *testing.T) {
+	if !testutil.ShouldRun(t.Name()) {
+		t.Skipf("Skipping test %q for shard %d of %d", t.Name(), testutil.Partition(), testutil.TotalPartitions())
+	}
+	if testutil.IsRunningWithHostNet() {
+		t.Skip("Netgofer proxy (--netgofer) is only supported with sandbox networking.")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	if out, err := exec.CommandContext(ctx, "docker", "compose", "version").CombinedOutput(); err != nil {
+		t.Fatalf("docker compose is required for this test: %v (output: %q)", err, out)
+	}
+
+	const (
+		tcpPort = 8080
+		udpPort = 8081
+	)
+	alpineImage := testutil.ImageByName("basic/alpine")
+	baseRuntime := dockerutil.Runtime()
+	proxyLoopbackRuntime := baseRuntime + netgoferProxyLoopbackRuntimeSuffix
+	proxyRuntime := baseRuntime + netgoferProxyRuntimeSuffix
+
+	composeDir := t.TempDir()
+	composeFile := filepath.Join(composeDir, "docker-compose.yml")
+	projectName := strings.ToLower(testutil.RandomID("netgofer-compose"))
+	projectName = strings.ReplaceAll(projectName, "/", "-")
+	projectName = strings.ReplaceAll(projectName, "+", "p")
+
+	composeYAML := fmt.Sprintf(`services:
+  echo-server:
+    image: %q
+    runtime: %q
+    environment:
+      - RUNSC_TEST_NAME=%s
+    command:
+      - sh
+      - -c
+      - "nc -lk -s 0.0.0.0 -p %d -e /bin/cat & (while true; do nc -u -l -s 0.0.0.0 -p %d -e /usr/bin/head -n 1; done) & wait"
+  client-loopback:
+    image: %q
+    runtime: %q
+    environment:
+      - RUNSC_TEST_NAME=%s
+    depends_on:
+      - echo-server
+    command:
+      - sleep
+      - infinity
+  client-noloopback:
+    image: %q
+    runtime: %q
+    environment:
+      - RUNSC_TEST_NAME=%s
+    depends_on:
+      - echo-server
+    command:
+      - sleep
+      - infinity
+`,
+		alpineImage, baseRuntime, t.Name(), tcpPort, udpPort,
+		alpineImage, proxyLoopbackRuntime, t.Name(),
+		alpineImage, proxyRuntime, t.Name(),
+	)
+	if err := os.WriteFile(composeFile, []byte(composeYAML), 0644); err != nil {
+		t.Fatalf("os.WriteFile(%q) failed: %v", composeFile, err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cleanupCancel()
+		if out, err := runCompose(cleanupCtx, composeFile, projectName, "down", "-v", "--remove-orphans", "--timeout", "5"); err != nil {
+			t.Logf("docker compose down failed: %v (output: %s)", err, out)
+		}
+	})
+
+	if out, err := runCompose(ctx, composeFile, projectName, "up", "-d"); err != nil {
+		t.Fatalf("docker compose up failed: %v\nOutput:\n%s", err, out)
+	}
+
+	waitForComposeServiceListener(ctx, t, composeFile, projectName, "echo-server", "tcp", tcpPort)
+	waitForComposeServiceListener(ctx, t, composeFile, projectName, "echo-server", "udp", udpPort)
+
+	// Verify /etc/resolv.conf in the compose container points to Docker's
+	// embedded DNS server at 127.0.0.11.
+	resolvConf, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "cat", "/etc/resolv.conf")
+	if err != nil {
+		t.Fatalf("reading /etc/resolv.conf in client-loopback failed: %v (output: %q)", err, resolvConf)
+	}
+	if !strings.Contains(resolvConf, "127.0.0.11") {
+		t.Fatalf("client-loopback /etc/resolv.conf = %q, want nameserver 127.0.0.11", resolvConf)
+	}
+
+	// Verify that --netgofer=proxy-loopback narrows lo to 127.0.0.1/32 so 127.0.0.11
+	// routes to netgofer while 127.0.0.1 stays sandbox-local.
+	loAddrLoopback, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "ip", "addr", "show", "dev", "lo")
+	if err != nil {
+		t.Fatalf("ip addr show dev lo in client-loopback failed: %v (output: %q)", err, loAddrLoopback)
+	}
+	if !strings.Contains(loAddrLoopback, "127.0.0.1/32") {
+		t.Errorf("client-loopback lo addr = %q, want 127.0.0.1/32", loAddrLoopback)
+	}
+
+	// Verify sandbox-local loopback (127.0.0.1) still works inside client-loopback.
+	// Wait for nc to listen on port 9090 (0x2382 in /proc/net/tcp) before connecting.
+	const wantLocalLoopback = "sandbox-loopback-ok"
+	localOut, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "sh", "-c",
+		`nc -l -s 127.0.0.1 -p 9090 -e /bin/cat & for _ in $(seq 1 100); do grep -qi ':2382 ' /proc/net/tcp && break; sleep 0.05; done; printf '%s\n' "$1" | nc -w 5 127.0.0.1 9090`,
+		"sh", wantLocalLoopback)
+	if err != nil {
+		t.Fatalf("sandbox-local 127.0.0.1 loopback in client-loopback failed: %v (output: %q)", err, localOut)
+	}
+	if strings.TrimSpace(localOut) != wantLocalLoopback {
+		t.Errorf("sandbox-local loopback output = %q, want %q", strings.TrimSpace(localOut), wantLocalLoopback)
+	}
+
+	// Resolve the "echo-server" service via Docker Compose's embedded DNS (127.0.0.11:53).
+	// Note: BusyBox nslookup ignores Docker's `options ndots:0` in /etc/resolv.conf,
+	// so pass a trailing dot to query the unqualified Compose service name directly.
+	if out, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "nslookup", "echo-server."); err != nil {
+		t.Fatalf("nslookup echo-server. in client-loopback failed: %v (output: %q)", err, out)
+	}
+	getentOut, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "getent", "hosts", "echo-server")
+	if err != nil {
+		t.Fatalf("getent hosts echo-server in client-loopback failed: %v (output: %q)", err, getentOut)
+	}
+	fields := strings.Fields(getentOut)
+	if len(fields) == 0 || net.ParseIP(fields[0]) == nil {
+		t.Fatalf("getent hosts echo-server returned unexpected output %q", getentOut)
+	}
+	serverIP := fields[0]
+
+	// Verify outbound TCP communication by Compose service name ("echo-server").
+	const wantComposeTCP = "compose-tcp-ping"
+	tcpOut, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "sh", "-c",
+		`printf '%s\n' "$1" | nc -w 10 echo-server "$2"`,
+		"sh", wantComposeTCP, fmt.Sprint(tcpPort))
+	if err != nil {
+		t.Fatalf("TCP nc to echo-server:%d in client-loopback failed: %v (output: %q)", tcpPort, err, tcpOut)
+	}
+	if strings.TrimSpace(tcpOut) != wantComposeTCP {
+		t.Errorf("client-loopback TCP response = %q, want %q", strings.TrimSpace(tcpOut), wantComposeTCP)
+	}
+
+	// Verify outbound UDP communication by Compose service name ("echo-server").
+	const wantComposeUDP = "compose-udp-ping"
+	udpOut, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-loopback", "sh", "-c",
+		`printf '%s\n' "$1" | nc -u -w 5 echo-server "$2"`,
+		"sh", wantComposeUDP, fmt.Sprint(udpPort))
+	if err != nil {
+		t.Fatalf("UDP nc to echo-server:%d in client-loopback failed: %v (output: %q)", udpPort, err, udpOut)
+	}
+	if strings.TrimSpace(udpOut) != wantComposeUDP {
+		t.Errorf("client-loopback UDP response = %q, want %q", strings.TrimSpace(udpOut), wantComposeUDP)
+	}
+
+	// Contrast with client-noloopback (--netgofer=proxy): lo keeps 127.0.0.1/8 so
+	// 127.0.0.11 stays inside the sandbox and embedded DNS is unreachable, while
+	// direct IP TCP/UDP traffic to serverIP still works over netgofer.
+	loAddrNoLoopback, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-noloopback", "ip", "addr", "show", "dev", "lo")
+	if err != nil {
+		t.Fatalf("ip addr show dev lo in client-noloopback failed: %v (output: %q)", err, loAddrNoLoopback)
+	}
+	if !strings.Contains(loAddrNoLoopback, "127.0.0.1/8") {
+		t.Errorf("client-noloopback lo addr = %q, want 127.0.0.1/8", loAddrNoLoopback)
+	}
+	if out, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-noloopback", "nslookup", "echo-server."); err == nil {
+		t.Errorf("nslookup echo-server. in client-noloopback (--netgofer=proxy) succeeded unexpectedly with output: %q", out)
+	}
+	if out, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-noloopback", "getent", "hosts", "echo-server"); err == nil {
+		t.Errorf("getent hosts echo-server in client-noloopback (--netgofer=proxy) succeeded unexpectedly with output: %q", out)
+	}
+
+	const wantDirectTCP = "direct-tcp-ping"
+	directTCPOut, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-noloopback", "sh", "-c",
+		`printf '%s\n' "$1" | nc -w 10 "$2" "$3"`,
+		"sh", wantDirectTCP, serverIP, fmt.Sprint(tcpPort))
+	if err != nil {
+		t.Fatalf("direct IP TCP nc to %s:%d in client-noloopback failed: %v (output: %q)", serverIP, tcpPort, err, directTCPOut)
+	}
+	if strings.TrimSpace(directTCPOut) != wantDirectTCP {
+		t.Errorf("client-noloopback direct TCP response = %q, want %q", strings.TrimSpace(directTCPOut), wantDirectTCP)
+	}
+
+	const wantDirectUDP = "direct-udp-ping"
+	directUDPOut, err := runCompose(ctx, composeFile, projectName, "exec", "-T", "client-noloopback", "sh", "-c",
+		`printf '%s\n' "$1" | nc -u -w 5 "$2" "$3"`,
+		"sh", wantDirectUDP, serverIP, fmt.Sprint(udpPort))
+	if err != nil {
+		t.Fatalf("direct IP UDP nc to %s:%d in client-noloopback failed: %v (output: %q)", serverIP, udpPort, err, directUDPOut)
+	}
+	if strings.TrimSpace(directUDPOut) != wantDirectUDP {
+		t.Errorf("client-noloopback direct UDP response = %q, want %q", strings.TrimSpace(directUDPOut), wantDirectUDP)
 	}
 }

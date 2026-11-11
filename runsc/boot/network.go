@@ -243,10 +243,11 @@ func (n *Network) CreateLinksAndRoutes(args *sentryapi.CreateLinksAndRoutesArgs,
 
 			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
 			opts := stack.NICOptions{
-				Name:               link.Name,
-				Multicast:          link.Multicast,
-				QDisc:              qDisc,
-				DeliverLinkPackets: true,
+				Name:                             link.Name,
+				Multicast:                        link.Multicast,
+				QDisc:                            qDisc,
+				DeliverLinkPackets:               true,
+				AllowExternalIPv4LoopbackTraffic: link.IsProxy && args.AllowExternalLoopbackTraffic,
 			}
 			if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 				return err

@@ -258,8 +258,20 @@ func startUDPEchoServerOn(t *testing.T, network, listenAddr string, targetIP tcp
 
 func newTestClientStack(t *testing.T, clientFD int) *stack.Stack {
 	t.Helper()
+	return newTestClientStackWithOptions(t, clientFD, false)
+}
+
+func newTestClientStackWithOptions(t *testing.T, clientFD int, allowExternalLoopback bool) *stack.Stack {
+	t.Helper()
 	st := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		NetworkProtocols: []stack.NetworkProtocolFactory{
+			ipv4.NewProtocolWithOptions(ipv4.Options{
+				AllowExternalLoopbackTraffic: allowExternalLoopback,
+			}),
+			ipv6.NewProtocolWithOptions(ipv6.Options{
+				AllowExternalLoopbackTraffic: allowExternalLoopback,
+			}),
+		},
 		TransportProtocols: []stack.TransportProtocolFactory{
 			tcp.NewProtocol,
 			udp.NewProtocol,
@@ -328,7 +340,7 @@ func startInProcessProxy(t *testing.T, n *Netgofer) *stack.Stack {
 		t.Fatal("timed out waiting for runProxyMode() to become ready")
 	}
 
-	clientStack := newTestClientStack(t, clientFD)
+	clientStack := newTestClientStackWithOptions(t, clientFD, n.allowLoopback)
 	t.Cleanup(func() {
 		clientStack.Destroy()
 		_ = unix.Close(clientFD)
@@ -445,6 +457,94 @@ func TestRunProxyModeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gonet.DialTCP(idleAddr) failed: %v", err)
 	}
+}
+
+func TestRunProxyModeAllowLoopback(t *testing.T) {
+	loopbackDNSAddr := tcpip.AddrFrom4([4]byte{127, 0, 0, 11})
+
+	t.Run("disallowed_by_default", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("net.Listen() failed: %v", err)
+		}
+		defer ln.Close()
+		port := uint16(ln.Addr().(*net.TCPAddr).Port)
+
+		udpPC, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("net.ListenPacket() failed: %v", err)
+		}
+		defer udpPC.Close()
+		udpPort := uint16(udpPC.LocalAddr().(*net.UDPAddr).Port)
+		udpReceived := make(chan struct{}, 1)
+		go func() {
+			buf := make([]byte, 64)
+			if _, _, err := udpPC.ReadFrom(buf); err == nil {
+				udpReceived <- struct{}{}
+			}
+		}()
+
+		clientStack := startInProcessProxy(t, &Netgofer{
+			allowLoopback: false,
+			dialContext:   dialLoopback,
+		})
+		// Enable external loopback on the client stack so it will transmit the
+		// packet over the UDS link; netgofer must still reject it.
+		opt := tcpip.AllowExternalLoopbackTrafficOption(true)
+		if err := clientStack.SetNetworkProtocolOption(ipv4.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetNetworkProtocolOption() failed: %v", err)
+		}
+
+		dialCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		if conn, err := gonet.DialContextTCP(dialCtx, clientStack, tcpip.FullAddress{
+			NIC:  1,
+			Addr: loopbackDNSAddr,
+			Port: port,
+		}, ipv4.ProtocolNumber); err == nil {
+			_ = conn.Close()
+			t.Fatal("DialContextTCP(127.0.0.11) succeeded with allowLoopback=false, want rejection")
+		}
+
+		udpConn, err := gonet.DialUDP(clientStack, nil, &tcpip.FullAddress{
+			NIC:  1,
+			Addr: loopbackDNSAddr,
+			Port: udpPort,
+		}, ipv4.ProtocolNumber)
+		if err != nil {
+			t.Fatalf("gonet.DialUDP() failed: %v", err)
+		}
+		defer udpConn.Close()
+		if _, err := udpConn.Write([]byte("blocked udp loopback")); err != nil {
+			t.Fatalf("udpConn.Write() failed: %v", err)
+		}
+		select {
+		case <-udpReceived:
+			t.Fatal("UDP server received loopback datagram with allowLoopback=false, want rejection")
+		case <-time.After(150 * time.Millisecond):
+		}
+	})
+
+	t.Run("allowed_when_enabled", func(t *testing.T) {
+		wantTCPReq := []byte("tcp dns query to 127.0.0.11")
+		wantTCPResp := []byte("tcp dns response from 127.0.0.11")
+		tcpTarget, tcpErr := startEchoServer(t, wantTCPReq, wantTCPResp)
+		tcpTarget.Addr = loopbackDNSAddr
+
+		wantUDPReq := []byte("udp dns query to 127.0.0.11")
+		wantUDPResp := []byte("udp dns response from 127.0.0.11")
+		udpTarget, udpErr := startUDPEchoServer(t, wantUDPReq, wantUDPResp)
+		udpTarget.Addr = loopbackDNSAddr
+
+		clientStack := startInProcessProxy(t, &Netgofer{
+			allowLoopback:  true,
+			udpIdleTimeout: 100 * time.Millisecond,
+			dialContext:    dialLoopback,
+		})
+
+		verifyEchoRoundTrip(t, clientStack, tcpTarget, wantTCPReq, wantTCPResp, tcpErr)
+		verifyUDPEchoRoundTrip(t, clientStack, udpTarget, wantUDPReq, wantUDPResp, udpErr)
+	})
 }
 
 func TestRunProxyModeWithSeccomp(t *testing.T) {

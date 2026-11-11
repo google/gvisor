@@ -136,8 +136,19 @@ func TestFromFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := NetgoferModeProxy; c.Netgofer != want || !c.UseNetworkProxy() {
-		t.Errorf("Netgofer=%v UseNetworkProxy()=%v, want %v and true", c.Netgofer, c.UseNetworkProxy(), want)
+	if want := NetgoferModeProxy; c.Netgofer != want || !c.UseNetworkProxy() || c.Netgofer.AllowLoopback() {
+		t.Errorf("Netgofer=%v UseNetworkProxy()=%v AllowLoopback()=%v, want %v, true, false", c.Netgofer, c.UseNetworkProxy(), c.Netgofer.AllowLoopback(), want)
+	}
+
+	if err := testFlags.Lookup("netgofer").Value.Set("proxy-loopback"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Netgofer != NetgoferModeProxyLoopback || !c.Netgofer.Enabled() || !c.Netgofer.AllowLoopback() {
+		t.Errorf("Netgofer=%v Enabled()=%v AllowLoopback()=%v, want NetgoferModeProxyLoopback, true, true", c.Netgofer, c.Netgofer.Enabled(), c.Netgofer.AllowLoopback())
 	}
 }
 
