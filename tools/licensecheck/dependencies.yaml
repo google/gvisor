@@ -1387,6 +1387,12 @@
     - Apache-2.0
     - BSD-3-Clause
     - MIT
+- dependency: tar.bzl
+  version: https://github.com/bazel-contrib/tar.bzl/releases/download/v0.10.9/tar.bzl-v0.10.9.tar.gz
+  retrieved: "2026-11-07"
+  commit: 00abfca5723f527a2651c36d059188f702bbd392
+  sha256: 8a3b78120510962fc74b577aaaf52412537cfbc25c88a596a375bd409e66b98a
+  license: Apache-2.0
 - dependency: xds
   version: https://github.com/cncf/xds/archive/ee656c7534f5d7dc23d44dd611689568f72017a6.tar.gz
   retrieved: "2026-08-27"
