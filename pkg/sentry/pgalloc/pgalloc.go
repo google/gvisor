@@ -24,6 +24,7 @@ package pgalloc
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"slices"
@@ -551,6 +552,12 @@ type AllocOpts struct {
 	// returned. It returns the allocated memory, truncated down to the nearest
 	// page. If this is shorter than length bytes due to an error returned by
 	// ReaderFunc, it returns the partially filled fr and error.
+	//
+	// ReaderFunc initializes private storage whose contents are unspecified.
+	// It must write every byte in the prefix it reports, must not read the
+	// destination as input, and must not expose or retain the supplied blocks.
+	// It must return an error if it cannot make progress. Only complete pages
+	// of the initialized prefix are returned to the caller of Allocate.
 	ReaderFunc safemem.ReaderFunc
 }
 
@@ -610,10 +617,12 @@ type allocState struct {
 	huge       bool
 }
 
-// Allocate returns a range of initially-zeroed pages of the given length, with
+// Allocate returns a range of initialized pages of the given length, with
 // a single reference on each page held by the caller. When the last reference
 // on an allocated page is released, ownership of the page is returned to the
 // MemoryFile, allowing it to be returned by a future call to Allocate.
+// If opts.ReaderFunc is nil, all returned bytes are zero. Otherwise, they are
+// initialized by opts.ReaderFunc before Allocate returns.
 //
 // Preconditions:
 //   - length > 0.
@@ -641,7 +650,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 		needHugeTouch := false
 		if alloc.recycled {
 			// We will need writable page table entries in our address space to
-			// zero these pages.
+			// initialize these pages.
 			alloc.opts.Mode = AllocateAndWritePopulate
 		} else if alloc.opts.Mode != AllocateAndWritePopulate && ((alloc.huge && f.opts.AdviseHugepage) || (!alloc.huge && f.opts.AdviseNoHugepage)) {
 			// If Mode is AllocateCallerIndirectCommit and we do nothing, the
@@ -702,11 +711,11 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 					}
 				}
 			}
-			if alloc.recycled {
-				// The contents of recycled waste pages are initially unknown, so we
-				// need to zero them. Zeroing also commits them unless it skips pages
-				// of a disk-backed file; commit those if the caller asked for
-				// AllocateAndCommit.
+			if alloc.recycled && alloc.opts.ReaderFunc == nil {
+				// Recycled bytes must be cleared unless a private initializer
+				// writes the complete returned prefix before publication.
+				// Zeroing also commits them unless it skips disk-backed pages;
+				// commit those if the caller asked for AllocateAndCommit.
 				if !f.manuallyZero(fr) && opts.Mode == AllocateAndCommit {
 					if err := f.commitFile(fr); err != nil {
 						f.DecRef(fr)
@@ -733,7 +742,24 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 				return memmap.FileRange{}, err
 			}
 		}
-		n, err := safemem.ReadFullToBlocks(alloc.opts.ReaderFunc, dsts)
+		var n uint64
+		for !dsts.IsEmpty() {
+			rn, rerr := alloc.opts.ReaderFunc(dsts)
+			if rn > dsts.NumBytes() {
+				err = fmt.Errorf("allocation initializer returned %d bytes for %d-byte destination", rn, dsts.NumBytes())
+				break
+			}
+			n += rn
+			dsts = dsts.DropFirst64(rn)
+			if rerr != nil {
+				err = rerr
+				break
+			}
+			if rn == 0 {
+				err = io.ErrNoProgress
+				break
+			}
+		}
 		un := uint64(hostarch.Addr(n).RoundDown())
 		if un < length {
 			// Free unused memory and update fr to contain only the memory that is

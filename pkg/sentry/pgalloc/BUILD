@@ -216,8 +216,10 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/memutil",
+        "//pkg/safemem",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
+        "//pkg/test/testutil",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
