@@ -41,8 +41,22 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_EVENTFD2: seccomp.PerArg{
-		seccomp.EqualTo(0),
+	// eventfd2(2) must create an empty counter, with one of these flag values:
+	// 0 or EFD_NONBLOCK from gVisor code, or EFD_CLOEXEC|EFD_NONBLOCK from the
+	// Go runtime network poller.
+	unix.SYS_EVENTFD2: seccomp.Or{
+		seccomp.PerArg{
+			seccomp.EqualTo(0), /* initval */
+			seccomp.EqualTo(0), /* flags */
+		},
+		seccomp.PerArg{
+			seccomp.EqualTo(0),                 /* initval */
+			seccomp.EqualTo(unix.EFD_NONBLOCK), /* flags */
+		},
+		seccomp.PerArg{
+			seccomp.EqualTo(0), /* initval */
+			seccomp.EqualTo(unix.EFD_CLOEXEC | unix.EFD_NONBLOCK), /* flags */
+		},
 	},
 	unix.SYS_EXIT:       seccomp.MatchAll{},
 	unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
