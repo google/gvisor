@@ -859,26 +859,15 @@ TEST_F(PtyTest, PacketModeWriteReplicaToMaster) {
   int mode = 1;
   ASSERT_THAT(ioctl(master_.get(), TIOCPKT, &mode), SyscallSucceeds());
 
-  // N.B. by default, the master reads nothing until the replica writes a
-  // newline, and the master gets a carriage return.
-  constexpr char kInput[] = "hello\n";
+  // TIOCPKT(2const) prefixes each data read with a zero byte. One byte of
+  // payload lets us check its header without depending on how the tty splits
+  // a longer write between reads.
+  constexpr char kData = 'x';
+  ASSERT_THAT(WriteFd(replica_.get(), &kData, 1), SyscallSucceedsWithValue(1));
 
-  // This is the interesting case. When in packet mode, the master should expect
-  // the read buffer to have a leading 0 (TIOCPKT_DATA) byte.
-  constexpr char kExpected[] = "\0hello\r\n";
-
-  EXPECT_THAT(WriteFd(replica_.get(), kInput, sizeof(kInput) - 1),
-              SyscallSucceedsWithValue(sizeof(kInput) - 1));
-
-  // Linux moves data from the master to the replica via async work scheduled
-  // via tty_flip_buffer_push. Since it is asynchronous, the data may not be
-  // available for reading immediately. Instead we must poll and assert that it
-  // becomes available "soon".
-
-  char buf[sizeof(kExpected)] = {};
-  ExpectReadable(master_, sizeof(buf) - 1, buf);
-
-  EXPECT_EQ(memcmp(buf, kExpected, sizeof(kExpected)), 0);
+  char packet[2] = {};
+  ExpectReadable(master_, sizeof(packet), packet);
+  EXPECT_THAT(packet, ::testing::ElementsAre(TIOCPKT_DATA, kData));
 }
 
 // Verifies that data enqueued into the replica is still readable by the master
