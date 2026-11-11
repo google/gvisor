@@ -2306,8 +2306,9 @@ var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
 // Linux kernel does. The initial network namespace is configured separately in
 // Network.CreateLinksAndRoutes and keeps its addresses and UP state.
 //
-// TODO(gvisor.dev/issue/15559): Support SIOCSIFFLAGS. Until then, applications
-// that bring the loopback interface up with ioctl(2), such as nsjail, fail.
+// Without SIOCSIFFLAGS support, applications such as nsjail fail to bring
+// the loopback interface up with ioctl(2). See
+// https://github.com/google/gvisor/pull/15559.
 func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	return c.createStack(false /* loopbackUp */)
 }
