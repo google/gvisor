@@ -10,18 +10,30 @@ package(
     # These files are tagged with relevant build architectures. We can always
     # build all the input files, which will be included only in the relevant
     # architecture builds.
+    #
+    # On arm64, the walker supports both the 4K and the 64K translation
+    # granules, selected at runtime.
     go_template(
         name = "generic_walker_%s" % arch,
-        srcs = [
-            "walker_generic.go",
-            "walker_%s.go" % arch,
-        ],
+        srcs = ["walker_generic.go"] + arch_srcs,
         opt_types = [
             "Visitor",
         ],
         visibility = [":__pkg__"],
     )
-    for arch in ("amd64", "arm64", "arm64_64k")
+    for arch, arch_srcs in (
+        (
+            "amd64",
+            ["walker_amd64.go"],
+        ),
+        (
+            "arm64",
+            [
+                "walker_arm64.go",
+                "walker_arm64_64k.go",
+            ],
+        ),
+    )
 ]
 
 [
@@ -37,7 +49,7 @@ package(
         },
     )
     for op in ("map", "unmap", "lookup", "empty", "check")
-    for arch in ("amd64", "arm64", "arm64_64k")
+    for arch in ("amd64", "arm64")
 ]
 
 go_library(
@@ -51,6 +63,7 @@ go_library(
         "pagetables_arm64.go",
         "pagetables_arm64_4k.go",
         "pagetables_arm64_64k.go",
+        "pagetables_arm64_unsafe.go",
         "pagetables_x86.go",
         "pcids.go",
         "pcids_aarch64.go",
@@ -62,16 +75,12 @@ go_library(
         "walker_generic.go",
         ":walker_empty_amd64",
         ":walker_empty_arm64",
-        ":walker_empty_arm64_64k",
         ":walker_lookup_amd64",
         ":walker_lookup_arm64",
-        ":walker_lookup_arm64_64k",
         ":walker_map_amd64",
         ":walker_map_arm64",
-        ":walker_map_arm64_64k",
         ":walker_unmap_amd64",
         ":walker_unmap_arm64",
-        ":walker_unmap_arm64_64k",
     ],
     visibility = [
         "//pkg/ring0:__subpackages__",
@@ -96,7 +105,6 @@ go_test(
         "pagetables_test.go",
         ":walker_check_amd64",
         ":walker_check_arm64",
-        ":walker_check_arm64_64k",
     ],
     embed = [":pagetables"],
     deps = [
