@@ -222,6 +222,30 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 	conn.stateMu.Unlock()
 	conn.checkReplySeq(t, seqRepl+1)
 
+	// Send an ACK from the responder to the originator to update the window with
+	// scaling, simulating the Prerouting hook.
+	// Since the SYN-ACK's window is not scaled per RFC 7323 Section 2.2, we need
+	// a normal packet to apply the window scale to the receive window.
+	responderWndUpdateFlags := header.TCPFlags(header.TCPFlagAck)
+	responderNextSeq := seqRepl + 1
+	winUpdatePkt := genTCPPacket(genTCPOpts{
+		windowSize: &windowSize,
+		seqNum:     &responderNextSeq,
+		ackNum:     &seqOrig,
+		flags:      &responderWndUpdateFlags,
+		srcAddr:    &responderAddr,
+		dstAddr:    &originatorAddr,
+		srcPort:    &responderPort,
+		dstPort:    &originatorPort,
+	})
+	winUpdatePkt.tuple = ct.getConnAndUpdate(winUpdatePkt, true /* skipChecksumValidation */)
+	if IPTHandlePacket(winUpdatePkt, Prerouting, &rt) {
+		t.Fatal("IPTHandlePacket() shouldn't perform any NAT")
+	}
+	winUpdatePkt.tuple.conn.finalize()
+	winUpdatePkt.tuple = nil
+	ct.checkNumTuples(t, 2)
+
 	// Send ACK with a payload, simulating the Output hook.
 	seqRepl++
 	flags = header.TCPFlagAck
