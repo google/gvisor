@@ -48,4 +48,14 @@ message MemoryFileMetadataProto {
   repeated FileRangeProto unwaste_small = 6;
   repeated FileRangeProto unwaste_huge = 7;
   map<uint64, uint64> subreleased = 8;
+
+  // In version 2, the pages file contains only the saved runs of the
+  // MemoryFile, in order of offset, followed by padding to a page boundary.
+  // All other bytes in known-committed pages are zero. saved_runs holds two
+  // numbers per run, in units of saved_block_size bytes: the distance from the
+  // end of the previous run (or from offset 0, for the first run) to the start
+  // of the run, and the length of the run. Both are usually small, so their
+  // packed varint encoding takes about two bytes per run.
+  repeated uint64 saved_runs = 9;
+  uint64 saved_block_size = 10;
 }

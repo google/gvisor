@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !pagesize_64k
-
 package pgalloc
 
 import (
@@ -21,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"slices"
 	"testing"
@@ -219,10 +218,119 @@ func saveTestPageFiles(t *testing.T, f *MemoryFile, exclude bool) ([]byte, []byt
 	if asyncErr != nil {
 		t.Fatalf("asynchronous page save: %v", asyncErr)
 	}
-	if got, want := uint64(pages.Len()), f.knownCommittedBytes; got != want {
+	subpages := f.opts.DiskBackedFile && subpageSize < hostarch.PageSize
+	if got, want := uint64(pages.Len()), f.knownCommittedBytes; got != want && !subpages {
 		t.Fatalf("pages file length is %d, want %d", got, want)
 	}
 	return metadata.Bytes(), pages.Bytes()
+}
+
+// TestSavedRuns checks that decodeSavedRuns returns the ranges that
+// appendSavedRun encoded, and rejects encodings that do not describe ranges.
+func TestSavedRuns(t *testing.T) {
+	const block = 1024
+	want := []memmap.FileRange{
+		{0, block},
+		{3 * block, 5 * block},
+		{5 * block, 6 * block},
+		{2 * hostarch.PageSize, 2*hostarch.PageSize + block},
+		{1 << 40, 1<<40 + 3*block},
+	}
+	var runs []uint64
+	var end uint64
+	for _, fr := range want {
+		runs = appendSavedRun(runs, end, fr, block)
+		end = fr.End
+	}
+	got, err := decodeSavedRuns(runs, block)
+	if err != nil {
+		t.Fatalf("decodeSavedRuns(%v): %v", runs, err)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("decodeSavedRuns(%v) = %v, want %v", runs, got, want)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		runs      []uint64
+		blockSize uint64
+	}{
+		{"zero block size", []uint64{0, 1}, 0},
+		{"block size larger than a page", []uint64{0, 1}, 2 * hostarch.PageSize},
+		{"block size that does not divide a page", []uint64{0, 1}, 3000},
+		{"odd length", []uint64{0, 1, 2}, block},
+		{"empty run", []uint64{0, 1, 2, 0}, block},
+		{"overflowing gap", []uint64{0, 1, math.MaxUint64 / block, 1}, block},
+		{"overflowing length", []uint64{1, math.MaxUint64 / block}, block},
+	} {
+		if frs, err := decodeSavedRuns(tc.runs, tc.blockSize); err == nil {
+			t.Errorf("%s: decodeSavedRuns(%v, %d) = %v, want error", tc.name, tc.runs, tc.blockSize, frs)
+		}
+	}
+}
+
+// TestAsyncSaveToSubpages checks that SaveTo saves only the non-zero blocks of
+// a disk-backed MemoryFile to a pages file, and that LoadFrom restores them.
+func TestAsyncSaveToSubpages(t *testing.T) {
+	const page = uint64(hostarch.PageSize)
+	defer func(old uint64) { subpageSize = old }(subpageSize)
+	subpageSize = page / 4
+
+	dir := t.TempDir()
+	f := newSaveTestMemoryFile(t, dir, true /* diskBacked */)
+	fr := allocateSaveTestPages(t, f)
+	// Blocks that contain non-zero bytes: the first block of page 1, all of
+	// page 2, two discontiguous blocks of page 3, and a run from the last
+	// block of page 5 to the first block of page 8. That run is longer than
+	// the largest read, so a read ends in the middle of a page.
+	want := make([]byte, fr.Length())
+	blocks := []uint64{4, 8, 9, 10, 11, 12, 14}
+	for block := uint64(23); block <= 32; block++ {
+		blocks = append(blocks, block)
+	}
+	for _, block := range blocks {
+		want[block*subpageSize+17] = byte(block)
+	}
+	if _, err := unix.Pwrite(f.FD(), want, int64(fr.Start)); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	metadata, pages := saveTestPageFiles(t, f, false)
+	// 17 blocks, padded to a page boundary.
+	if got, want := uint64(len(pages)), 5*page; got != want {
+		t.Fatalf("pages file length is %d, want %d", got, want)
+	}
+
+	for _, maxRanges := range []int{1, 8} {
+		restored := newSaveTestMemoryFile(t, dir, true /* diskBacked */)
+		loadDone := make(chan error, 1)
+		apfl, err := StartAsyncPagesFileLoad(
+			stateio.NewIOReader(bytes.NewReader(pages), 2*page, maxRanges, 2 /* maxParallel */),
+			func(err error) { loadDone <- err },
+			nil,
+			AsyncPagesFileLoadOpts{},
+		)
+		if err != nil {
+			t.Fatalf("StartAsyncPagesFileLoad: %v", err)
+		}
+		opts := LoadOpts{PagesFile: apfl}
+		loadErr := restored.LoadFrom(context.Background(), bytes.NewReader(metadata), &opts)
+		apfl.MemoryFilesDone()
+		if asyncErr := <-loadDone; loadErr != nil || asyncErr != nil {
+			t.Fatalf("maxRanges=%d: LoadFrom: %v, asynchronous page load: %v", maxRanges, loadErr, asyncErr)
+		}
+		t.Cleanup(func() { restored.DecRef(fr) })
+		if got, want := opts.PagesFileOffset, uint64(len(pages)); got != want {
+			t.Errorf("maxRanges=%d: PagesFileOffset after LoadFrom is %d, want %d", maxRanges, got, want)
+		}
+		restored.forEachMappingSlice(fr, func(bs []byte) {
+			if !bytes.Equal(bs, want) {
+				t.Errorf("maxRanges=%d: restored contents differ from saved contents", maxRanges)
+			}
+		})
+		if !restored.HasUniqueRef(fr) {
+			t.Errorf("maxRanges=%d: page loader still holds a reference", maxRanges)
+		}
+	}
 }
 
 func TestAsyncSaveToPreservesContents(t *testing.T) {
