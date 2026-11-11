@@ -12,3 +12,4 @@ RUN wget -q \
     && rm /tmp/fastlane.tar.gz \
     && for i in 1 2 3; do if bundle install; then break; fi; done
 COPY . /files/
+RUN cd /fastlane && patch -p1 < /files/token-time.patch
