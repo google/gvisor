@@ -116,7 +116,22 @@ type kernelEntry struct {
 
 	// tss is the CPU's task state.
 	tss TaskState64
+
+	// nmiStack and debugStack are dedicated interrupt stacks for NMIs and
+	// debug exceptions. See paranoidException in entry_amd64.s.
+	nmiStack   [paranoidStackSize]byte
+	debugStack [paranoidStackSize]byte
 }
+
+const (
+	// paranoidStackSize is the size of the NMI and debug exception stacks.
+	paranoidStackSize = 256
+
+	// Interrupt stack table indexes.
+	istDefault = 1
+	istNMI     = 2
+	istDebug   = 3
+)
 
 // CPUArchState contains CPU-specific arch state.
 type CPUArchState struct {
