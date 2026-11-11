@@ -15,6 +15,8 @@
 // Package kvm provides a kvm-based implementation of the platform interface.
 package kvm
 
+// Dummy comment to force kvm_test bypass caching
+
 import (
 	"fmt"
 
