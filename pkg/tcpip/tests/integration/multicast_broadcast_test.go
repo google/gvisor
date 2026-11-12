@@ -594,6 +594,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 		localAddr     tcpip.AddressWithPrefix
 		rxUDP         func(*channel.Endpoint, tcpip.Address, tcpip.Address, []byte)
 		multicastAddr tcpip.Address
+		withoutRoute  bool
 	}{
 		{
 			name:          "IPv4 unicast binding to unicast",
@@ -610,6 +611,15 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 			remoteAddr:    utils.RemoteIPv6Addr,
 			localAddr:     utils.Ipv6Addr,
 			rxUDP:         rxIPv6UDP,
+		},
+		{
+			name:          "IPv6 without route",
+			multicastAddr: testutil.MustParse6("ff02::1234"),
+			proto:         header.IPv6ProtocolNumber,
+			remoteAddr:    testutil.MustParse6("fe80::2"),
+			localAddr:     tcpip.AddressWithPrefix{Address: testutil.MustParse6("fe80::1"), PrefixLen: 64},
+			rxUDP:         rxIPv6UDP,
+			withoutRoute:  true,
 		},
 	}
 
@@ -660,7 +670,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 
 					// Set the route table so that UDP can find a NIC that is
 					// routable to the multicast address when the NIC isn't specified.
-					if !subTest.specifyNICID && !subTest.specifyNICAddr {
+					if !test.withoutRoute && !subTest.specifyNICID && !subTest.specifyNICAddr {
 						s.SetRouteTable([]tcpip.Route{
 							{
 								Destination: header.IPv6EmptySubnet,
@@ -722,6 +732,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					if err := ep.SetSockOpt(&removeOpt); err != nil {
 						t.Fatalf("ep.SetSockOpt(&%#v): %s", removeOpt, err)
 					}
+					test.rxUDP(e, test.remoteAddr, test.multicastAddr, data)
 					{
 						_, err := ep.Read(&buf, tcpip.ReadOptions{})
 						if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
@@ -729,6 +740,52 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 						}
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestFindNICForMulticast(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		nicCount tcpip.NICID
+		want     tcpip.NICID
+	}{
+		{name: "eligible NICs", nicCount: 4, want: 3},
+		{name: "no eligible NIC", nicCount: 2, want: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+			})
+			defer s.Close()
+
+			// The lowest IDs belong to loopback and a disabled interface.
+			for nicID := tcpip.NICID(1); nicID <= test.nicCount; nicID++ {
+				var ep stack.LinkEndpoint
+				addr := tcpip.AddressWithPrefix{Address: utils.Ipv6Addr.Address, PrefixLen: 64}
+				if nicID == 1 {
+					ep = loopback.New()
+					addr = tcpip.AddressWithPrefix{Address: header.IPv6Loopback, PrefixLen: 128}
+				} else {
+					channelEP := channel.New(0, defaultMTU, "")
+					defer channelEP.Close()
+					ep = channelEP
+				}
+				if err := s.CreateNIC(nicID, ep); err != nil {
+					t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+				}
+				protoAddr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: addr}
+				if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
+				}
+			}
+			if err := s.DisableNIC(2); err != nil {
+				t.Fatalf("DisableNIC(2): %s", err)
+			}
+
+			if got := s.FindNICForMulticast(header.IPv6ProtocolNumber); got != test.want {
+				t.Errorf("FindNICForMulticast(IPv6) = %d, want %d", got, test.want)
 			}
 		})
 	}
