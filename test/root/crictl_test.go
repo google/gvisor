@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 // Tests for crictl have to be run as root (rather than in a user namespace)
@@ -1245,7 +1246,7 @@ func findSandboxUnder(root int) (int, error) {
 		if err != nil {
 			continue
 		}
-		if argv0, _, _ := strings.Cut(string(cmdline), "\x00"); argv0 != "runsc-sandbox" {
+		if argv0, _, _ := strings.Cut(string(cmdline), "\x00"); argv0 != gvisorbinaries.SandboxProcessName {
 			continue
 		}
 		if descendsFrom(pid, root) {

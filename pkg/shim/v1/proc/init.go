@@ -235,7 +235,7 @@ func (p *Init) pinSandboxPidfd(ctx context.Context) {
 	matchingExe := p.sandboxExecutableMatches()
 	poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 	n, pollErr := unix.Poll(poll, 0)
-	if err != nil || pollErr != nil || n != 0 || filepath.Base(args[0]) != "runsc-sandbox" || !matchingBundle || !matchingExe {
+	if err != nil || pollErr != nil || n != 0 || filepath.Base(args[0]) != gvisorbinaries.SandboxProcessName || !matchingBundle || !matchingExe {
 		_ = unix.Close(fd)
 		log.G(ctx).Warnf("Cannot verify sandbox process %d for container %q; timed-out sandbox termination will fail closed", p.pid, p.id)
 		return
@@ -306,7 +306,11 @@ func (m *runtimeMutex) Lock() {
 }
 
 func (m *runtimeMutex) Unlock() {
-	<-m.token
+	select {
+	case <-m.token:
+	default:
+		panic("runtimeMutex: unlock of unlocked mutex")
+	}
 }
 
 func lockRuntimeFor(mu *runtimeMutex, parent context.Context, timeout time.Duration) (context.Context, func(), error) {
