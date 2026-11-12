@@ -41,6 +41,32 @@ constexpr int kDefaultTtl = 64;
 using ::testing::ValuesIn;
 using IPv6UnboundSocketTest = SimpleSocketTest;
 
+// TCP checks membership length before rejecting JOIN and LEAVE with EPROTO.
+TEST(IPv6TCPSocketTest, MulticastMembershipRejected) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+  ipv6_mreq group = {};
+  group.ipv6mr_multiaddr.s6_addr[0] = 0xff;
+  group.ipv6mr_multiaddr.s6_addr[1] = 0x02;
+  group.ipv6mr_multiaddr.s6_addr[15] = 1;
+
+  for (int option : {IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP}) {
+    SCOPED_TRACE(option);
+    EXPECT_THAT(setsockopt(socket.get(), IPPROTO_IPV6, option, &group,
+                           sizeof(group) - 1),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(
+        setsockopt(socket.get(), IPPROTO_IPV6, option, &group, sizeof(group)),
+        SyscallFailsWithErrno(EPROTO));
+
+    auto invalid_group = group;
+    invalid_group.ipv6mr_multiaddr = in6addr_loopback;
+    invalid_group.ipv6mr_interface = 0x7fffffff;
+    EXPECT_THAT(setsockopt(socket.get(), IPPROTO_IPV6, option, &invalid_group,
+                           sizeof(invalid_group)),
+                SyscallFailsWithErrno(EPROTO));
+  }
+}
+
 TEST_P(IPv6UnboundSocketTest, HopLimitDefault) {
   std::unique_ptr<FileDescriptor> socket =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocket());

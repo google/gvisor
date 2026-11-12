@@ -1947,6 +1947,39 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	return nil, &tcpip.ErrNetworkUnreachable{}
 }
 
+// FindNICForMulticast returns the lowest NICID of an enabled, non-loopback NIC
+// that has an address for the given network protocol, or 0 if no NIC
+// qualifies. It selects the NIC for an IPv6 multicast join with
+// interface_index=0 when no route covers the group.
+//
+// This is a deterministic approximation of Linux, which adds an ff00::/8
+// route for each non-loopback IPv6 interface and joins on the device of the
+// route that the lookup selects. With more than one such interface, that
+// device is not necessarily the one with the lowest index. Linux also does
+// not require an address.
+//
+// See Linux kernel net/ipv6/addrconf.c addrconf_add_mroute().
+func (s *Stack) FindNICForMulticast(netProto tcpip.NetworkProtocolNumber) tcpip.NICID {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var selected tcpip.NICID
+	for id, nic := range s.nics {
+		if !nic.Enabled() || nic.IsLoopback() {
+			continue
+		}
+		ep := nic.primaryEndpoint(netProto, tcpip.Address{} /* remoteAddr */, tcpip.Address{} /* srcHint */)
+		if ep == nil {
+			continue
+		}
+		ep.DecRef()
+		if selected == 0 || id < selected {
+			selected = id
+		}
+	}
+	return selected
+}
+
 // CheckNetworkProtocol checks if a given network protocol is enabled in the
 // stack.
 func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool {
