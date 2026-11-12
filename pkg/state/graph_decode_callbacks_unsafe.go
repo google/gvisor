@@ -197,8 +197,10 @@ func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
 
 // runCallbacks runs the callbacks of objects as they become complete.
 func (ds *graphDecodeState) runCallbacks() {
-	leaves := ds.leaves[:0]
-	defer func() { ds.leaves = leaves }()
+	// All target references have been decoded. Reuse their object ID storage
+	// for the queue of objects whose callbacks can run.
+	leaves := ds.targetObjs[:0]
+	defer func() { ds.targetObjs = leaves[:0] }()
 	for i := range ds.ods {
 		o := &ds.ods[i]
 		if o.waitHead >= 0 {
