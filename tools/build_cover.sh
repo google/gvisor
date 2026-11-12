@@ -21,7 +21,7 @@ gopath_zip="$2"
 go_mod="$3"
 go_sum="$4"
 main_go="$5" # Path of the main package Go file, relative to the repository root.
-golang_patch=$(realpath "$6")
+go_toolchain=$(realpath "$6") # Tarball built by build_go_cover_toolchain.sh.
 race="$7"
 
 mkdir .gocache
@@ -29,31 +29,7 @@ GOMODCACHE="$(pwd)/.gocache"
 GOCACHE="$(pwd)/.gocache"
 export GOMODCACHE GOCACHE
 
-(
-  # The gVisor code coverage implementation uses internal packages. More details
-  # can be found here: https://github.com/golang/go/issues/76098.
-
-  go_version=1.27.3
-
-  go_base_url="https://dl.google.com/go/go${go_version}"
-  arch="$(uname -m)"
-  case "$arch" in
-      x86_64) go_arch="amd64" ;;
-      aarch64) go_arch="arm64" ;;
-      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
-  esac
-
-  mkdir go-bootstrap
-  curl -fsSL "${go_base_url}.linux-${go_arch}.tar.gz" | tar -xz -C go-bootstrap
-  GOROOT_BOOTSTRAP="$(pwd)/go-bootstrap/go"
-  export GOROOT_BOOTSTRAP
-
-  curl -fsSL "${go_base_url}.src.tar.gz" | tar -xz
-  cd go
-  patch -p1 < "$golang_patch"
-  cd src
-  ./make.bash
-)
+tar -xzf "$go_toolchain"
 
 goroot_dir="$(pwd)/go"
 go_tool="$goroot_dir/bin/go"

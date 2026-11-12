@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_setting")
 load("@rules_python//python:py_test.bzl", "py_test")
-load("//tools:defs.bzl", "bzl_library", "gotsan_flag_values", "gotsan_values")
+load("//tools:defs.bzl", "bzl_library", "gotsan_flag_values", "gotsan_values", "select_arch")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -85,6 +85,28 @@ exports_files([
     "go-allow-internal.patch",
     "llvm-linux-header-default.patch",
 ])
+
+# The patched Go toolchain used by build_cover.sh.
+genrule(
+    name = "go_cover_toolchain",
+    srcs = [
+        "build_go_cover_toolchain.sh",
+        "go-allow-internal.patch",
+    ],
+    outs = ["go_cover_toolchain.tar.gz"],
+    cmd = "\"$(execpath build_go_cover_toolchain.sh)\" \"$@\" " +
+          "\"$(execpath go-allow-internal.patch)\" " +
+          select_arch(
+              amd64 = "amd64",
+              arm64 = "arm64",
+          ),
+    # Only needed for coverage builds.
+    tags = ["manual"],
+    visibility = [
+        "//runsc:__pkg__",
+        "//runsc/cmd/sentry:__pkg__",
+    ],
+)
 
 py_test(
     name = "lint_test",
