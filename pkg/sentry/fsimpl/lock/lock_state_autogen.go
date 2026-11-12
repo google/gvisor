@@ -15,7 +15,6 @@ func (o *OwnerInfo) StateTypeName() string {
 func (o *OwnerInfo) StateFields() []string {
 	return []string{
 		"PID",
-		"OFD",
 	}
 }
 
@@ -25,7 +24,6 @@ func (o *OwnerInfo) beforeSave() {}
 func (o *OwnerInfo) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 	stateSinkObject.SaveInt32(0, &o.PID)
-	stateSinkObject.SaveBool(1, &o.OFD)
 }
 
 func (o *OwnerInfo) afterLoad(context.Context) {}
@@ -33,7 +31,6 @@ func (o *OwnerInfo) afterLoad(context.Context) {}
 // +checklocksignore
 func (o *OwnerInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadInt32(0, &o.PID)
-	stateSourceObject.LoadBool(1, &o.OFD)
 }
 
 func (l *Lock) StateTypeName() string {
