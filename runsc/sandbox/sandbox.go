@@ -1238,7 +1238,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	}
 
 	// Set Args[0] to make easier to spot the sandbox process.
-	cmd.Args[0] = "runsc-sandbox"
+	cmd.Args[0] = gvisorbinaries.SandboxProcessName
 
 	// Transfer FDs that need to be present before the "boot" command.
 	nextFD := donations.Transfer(cmd, sentryExeFD+1)
