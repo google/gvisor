@@ -225,6 +225,27 @@ can be configured in two ways:
     ]
 ```
 
+### Batched dentry eviction
+
+The optional `dcache-eviction-batch=N` bind-mount option enables bounded batches
+when a per-mount dentry cache exceeds its capacity. For example, combine
+`dcache=1000` with `dcache-eviction-batch=64`. The default is zero, which preserves
+ordinary eviction. A nonzero batch is incompatible with a global `--dcache`
+cache. It has no effect when the mount's cache capacity is zero.
+
+A batch holds the filesystem's rename lock for writing across eviction and
+resource cleanup. This can improve concurrent directory traversal on backing
+filesystems with slow metadata lookups by reducing writer lock acquisitions.
+Each batch considers at most `min(N, cache capacity)` candidates and stops early
+if it creates sufficient headroom. The limit bounds candidate attempts, not
+elapsed time or the number of resources released. Live references remain valid;
+releasing a child can make its parent cacheable.
+
+Enable this option only when resource cleanup is inexpensive. Writeback or slow
+host handle release under the writer lock can delay unrelated path lookups on
+the same filesystem. The mount's configured batch size is preserved across
+checkpoint and restore.
+
 ## EROFS Support
 
 gVisor supports EROFS (Enhanced Read-Only File System) rootfs and mounts. It is

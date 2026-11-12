@@ -86,6 +86,7 @@ const (
 	moptDfltGID                  = "dfltgid"
 	moptCache                    = "cache"
 	moptDcache                   = "dcache"
+	moptDcacheEvictionBatch      = "dcache-eviction-batch"
 	moptForcePageCache           = "force_page_cache"
 	moptLimitHostFDTranslation   = "limit_host_fd_translation"
 	moptOverlayfsStaleRead       = "overlayfs_stale_read"
@@ -113,7 +114,7 @@ const (
 )
 
 // SupportedMountOptions is the set of mount options that can be set externally.
-var SupportedMountOptions = []string{moptOverlayfsStaleRead, moptDisableFileHandleSharing, moptDcache}
+var SupportedMountOptions = []string{moptOverlayfsStaleRead, moptDisableFileHandleSharing, moptDcache, moptDcacheEvictionBatch}
 
 const (
 	defaultMaxCachedDentries  = 1000
@@ -233,6 +234,11 @@ type filesystem struct {
 	//		it is reachable from its parent).
 	renameMu sync.RWMutex `state:"nosave"`
 
+	// batchEvicting suppresses recursive capacity eviction when destroying a
+	// child makes its parent cacheable. Cleanup retains renameMu for the batch.
+	// +checklocks:renameMu
+	batchEvicting bool `state:"nosave"`
+
 	// ancestryMu additionally protects dentry.parent and dentry.name as
 	// required by genericfstree.
 	ancestryMu sync.RWMutex `state:"nosave"`
@@ -321,6 +327,11 @@ type filesystemOptions struct {
 	// dcache is the maximum number of dentries that can be cached. This is
 	// effective only if globalDentryCache is not being used.
 	dcache uint64
+
+	// dcacheEvictionBatch bounds the number of candidate evictions per capacity
+	// batch. Zero uses ordinary eviction. Batching retains renameMu across
+	// resource cleanup and is only supported with per-filesystem caches.
+	dcacheEvictionBatch uint64
 
 	// If forcePageCache is true, host FDs may not be used for application
 	// memory mappings even if available; instead, the client must perform its
@@ -558,6 +569,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if dcache >= 0 {
 			fsopts.dcache = uint64(dcache)
 		}
+	}
+
+	if batchStr, ok := mopts[moptDcacheEvictionBatch]; ok {
+		delete(mopts, moptDcacheEvictionBatch)
+		batch, err := strconv.ParseUint(batchStr, 10, 64)
+		if err != nil || (batch != 0 && globalDentryCache != nil) {
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid per-filesystem eviction batch: %s=%s", moptDcacheEvictionBatch, batchStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		fsopts.dcacheEvictionBatch = batch
 	}
 
 	// Parse the default UID and GID.
@@ -2032,7 +2053,44 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			d.inode.fs.renameMu.Lock()
 			defer d.inode.fs.renameMu.Unlock()
 		}
-		d.inode.fs.evictCachedDentryLocked(ctx) // +checklocksforce: see above.
+		d.inode.fs.evictForCapacityLocked(ctx) // +checklocksforce: see above.
+	}
+}
+
+// evictForCapacityLocked creates headroom in an overfull cache. Batching bounds
+// candidate attempts, not destructions or elapsed time: candidates may have live
+// references, and resource cleanup may block or release ancestors into the cache.
+//
+// +checklocks:fs.renameMu
+func (fs *filesystem) evictForCapacityLocked(ctx context.Context) {
+	batch := fs.opts.dcacheEvictionBatch
+	limit := fs.dentryCache.maxCachedDentries
+	if batch == 0 || limit == 0 {
+		fs.evictCachedDentryLocked(ctx)
+		return
+	}
+	if fs.batchEvicting {
+		return
+	}
+	fs.dentryCache.mu.Lock()
+	length := fs.dentryCache.dentriesLen
+	fs.dentryCache.mu.Unlock()
+	// A preceding writer may have made space while this caller waited.
+	if length <= limit {
+		return
+	}
+	batch = min(batch, limit)
+	target := limit - batch + 1
+	fs.batchEvicting = true
+	defer func() { fs.batchEvicting = false }()
+	for n := uint64(0); n < batch; n++ {
+		fs.evictCachedDentryLocked(ctx)
+		fs.dentryCache.mu.Lock()
+		length = fs.dentryCache.dentriesLen
+		fs.dentryCache.mu.Unlock()
+		if length <= target {
+			return
+		}
 	}
 }
 
@@ -2192,14 +2250,14 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	})
 	d.inode.fs.inodeMu.Unlock()
 
-	// Allow the following to proceed without renameMu locked to improve
-	// scalability.
-	d.inode.fs.renameMu.Unlock()
-
-	// No locks need to be held during destoryDisconnected.
-	d.destroyDisconnected(ctx, destroyInode)
-
-	d.inode.fs.renameMu.Lock()
+	if d.inode.fs.batchEvicting {
+		d.destroyDisconnected(ctx, destroyInode)
+	} else {
+		// Resource cleanup can block on writeback and host handle release.
+		d.inode.fs.renameMu.Unlock()
+		d.destroyDisconnected(ctx, destroyInode)
+		d.inode.fs.renameMu.Lock()
+	}
 
 	// Drop the reference held by d on its parent without recursively locking
 	// d.inode.fs.renameMu.
