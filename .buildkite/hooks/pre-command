@@ -36,24 +36,21 @@ buildkite-agent artifact download 'tools/bazeldefs/*' . || true
 
 # Install packages we need. Docker must be installed and configured,
 # as should Go itself. We just install some extra bits and pieces.
-function install_pkgs() {
-  export DEBIAN_FRONTEND=noninteractive
-  while true; do
-    if sudo -E apt-get update -q && sudo -E apt-get install -qy "$@"; then
-      break
-    fi
-  done
-}
-install_pkgs make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent \
-  gcc pkg-config apt-transport-https ca-certificates \
+export DEBIAN_FRONTEND=noninteractive
+sudo -E apt-get update -q
+packages=(
+  make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent
+  gcc pkg-config apt-transport-https ca-certificates
   software-properties-common rsync kmod systemd unzip
+)
 
 # Install headers, only if available.
 if test -n "$(apt-cache search --names-only "^linux-headers-$(uname -r)$")"; then
-  install_pkgs "linux-headers-$(uname -r)"
+  packages+=("linux-headers-$(uname -r)")
 elif test -n "$(apt-cache search --names-only "^linux-gcp-headers-$(uname -r | cut -d- -f1-2)$")"; then
-  install_pkgs "linux-gcp-headers-$(uname -r | cut -d- -f1-2)"
+  packages+=("linux-gcp-headers-$(uname -r | cut -d- -f1-2)")
 fi
+sudo -E apt-get -o DPkg::Lock::Timeout=120 install -qy "${packages[@]}"
 
 set -x
 
