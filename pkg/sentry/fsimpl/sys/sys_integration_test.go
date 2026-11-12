@@ -79,26 +79,57 @@ func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 }
 
 func TestReadCPUFile(t *testing.T) {
+	for _, tc := range []struct {
+		cores int
+		want  string
+	}{
+		{cores: 1, want: "0\n"},
+		{cores: 2, want: "0-1\n"},
+		{cores: 5, want: "0-4\n"},
+	} {
+		t.Run(fmt.Sprintf("cores=%d", tc.cores), func(t *testing.T) {
+			defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(tc.cores))
+			s := newTestSystem(t, "" /*pciTestDir*/)
+			defer s.Destroy()
+			if got := kernel.KernelFromContext(s.Ctx).ApplicationCores(); got != uint(tc.cores) {
+				t.Fatalf("ApplicationCores() = %d, want %d", got, tc.cores)
+			}
+
+			for _, fname := range []string{"online", "possible", "present"} {
+				p := fmt.Sprintf("devices/system/cpu/%s", fname)
+				got, err := readTestFile(s, p)
+				if err != nil {
+					t.Fatalf("reading %q: %v", p, err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("%q returned unexpected data:\n--- want\n+++ got\n%v", p, diff)
+				}
+			}
+		})
+	}
+}
+
+// TestCPUTopologyOneCPU checks the cpu0 topology lists with one CPU, where
+// Linux prints "0" rather than "0-0".
+func TestCPUTopologyOneCPU(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	s := newTestSystem(t, "" /*pciTestDir*/)
 	defer s.Destroy()
-	k := kernel.KernelFromContext(s.Ctx)
-	maxCPUCores := k.ApplicationCores()
-
-	expected := fmt.Sprintf("0-%d\n", maxCPUCores-1)
-
-	for _, fname := range []string{"online", "possible", "present"} {
-		pop := s.PathOpAtRoot(fmt.Sprintf("devices/system/cpu/%s", fname))
-		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
+	if got := kernel.KernelFromContext(s.Ctx).ApplicationCores(); got != 1 {
+		t.Fatalf("ApplicationCores() = %d, want 1", got)
+	}
+	names := []string{"cluster_cpus_list", "core_cpus_list", "core_siblings_list", "package_cpus_list", "thread_siblings_list"}
+	if runtime.GOARCH == "amd64" {
+		names = append(names, "die_cpus_list")
+	}
+	for _, name := range names {
+		p := path.Join("devices/system/cpu/cpu0/topology", name)
+		got, err := readTestFile(s, p)
 		if err != nil {
-			t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
+			t.Fatalf("reading %q: %v", p, err)
 		}
-		defer fd.DecRef(s.Ctx)
-		content, err := s.ReadToEnd(fd)
-		if err != nil {
-			t.Fatalf("Read failed: %v", err)
-		}
-		if diff := cmp.Diff(expected, content); diff != "" {
-			t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
+		if got != "0\n" {
+			t.Errorf("%q contains %q, want %q", p, got, "0\n")
 		}
 	}
 }
@@ -173,18 +204,40 @@ func TestCPUDir(t *testing.T) {
 		return strings.Join(words, ",") + "\n"
 	}
 	fullMask := mask(func(uint) bool { return true })
+	fullList := fmt.Sprintf("0-%d\n", cores-1)
 	for i := uint(0); i < cores; i++ {
 		dir := fmt.Sprintf("devices/system/cpu/cpu%d", i)
 		s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot(dir)), map[string]testutil.DirentType{
 			"topology": linux.DT_DIR,
 		})
 		oneMask := mask(func(cpu uint) bool { return cpu == i })
-		for name, want := range map[string]string{
-			"core_cpus":       oneMask,
-			"core_siblings":   fullMask,
-			"package_cpus":    fullMask,
-			"thread_siblings": oneMask,
-		} {
+		oneList := fmt.Sprintf("%d\n", i)
+		files := map[string]string{
+			"cluster_cpus":         oneMask,
+			"cluster_cpus_list":    oneList,
+			"cluster_id":           fmt.Sprintf("%d\n", i),
+			"core_cpus":            oneMask,
+			"core_cpus_list":       oneList,
+			"core_id":              fmt.Sprintf("%d\n", i),
+			"core_siblings":        fullMask,
+			"core_siblings_list":   fullList,
+			"package_cpus":         fullMask,
+			"package_cpus_list":    fullList,
+			"physical_package_id":  "0\n",
+			"thread_siblings":      oneMask,
+			"thread_siblings_list": oneList,
+		}
+		if runtime.GOARCH == "amd64" {
+			files["die_cpus"] = fullMask
+			files["die_cpus_list"] = fullList
+			files["die_id"] = "0\n"
+		}
+		types := make(map[string]testutil.DirentType)
+		for name := range files {
+			types[name] = linux.DT_REG
+		}
+		s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot(path.Join(dir, "topology"))), types)
+		for name, want := range files {
 			p := path.Join(dir, "topology", name)
 			got, err := readTestFile(s, p)
 			if err != nil {
