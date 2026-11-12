@@ -154,6 +154,7 @@ go_template_instance(
 go_library(
     name = "pgalloc",
     srcs = [
+        "adopt.go",
         "amfl_list.go",
         "amfls_mutex.go",
         "apfl_mutex.go",
@@ -207,6 +208,7 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = [
+        "adopt_test.go",
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
         "save_restore_test.go",
@@ -217,6 +219,7 @@ go_test(
         "//pkg/memutil",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
+        "//pkg/sentry/usage",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
