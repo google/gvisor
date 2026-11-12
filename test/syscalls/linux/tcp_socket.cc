@@ -26,6 +26,7 @@
 #include <poll.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <time.h>
@@ -51,6 +52,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
@@ -532,6 +534,28 @@ TEST_P(TcpSocketTest, BlockingLargeSend) {
 
   // We should have read the whole thing.
   EXPECT_EQ(read_bytes, size);
+}
+
+// Test that send and recv work on a buffer split across more than UIO_MAXIOV
+// mappings.
+TEST_P(TcpSocketTest, FragmentedSendRecv) {
+  const int size = (UIO_MAXIOV + 1) * kPageSize;
+  void* addr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  auto cleanup = Cleanup(
+      [addr, size]() { EXPECT_THAT(munmap(addr, size), SyscallSucceeds()); });
+  // Alternate protections so that each page is its own mapping.
+  for (int i = 0; i < size; i += 2 * kPageSize) {
+    ASSERT_THAT(mprotect(static_cast<char*>(addr) + i, kPageSize,
+                         PROT_READ | PROT_WRITE | PROT_EXEC),
+                SyscallSucceeds());
+  }
+
+  ASSERT_THAT(RetryEINTR(send)(connected_.get(), addr, size, MSG_DONTWAIT),
+              SyscallSucceeds());
+  EXPECT_THAT(RetryEINTR(recv)(accepted_.get(), addr, size, 0),
+              SyscallSucceeds());
 }
 
 // Test that polling on a socket with a full send buffer will block.
