@@ -204,7 +204,7 @@ doc(
 
 doc(
     name = "checkpoint_restore",
-    src = "2026-10-14-checkpoint-restore.md",
+    src = "2026-11-12-checkpoint-restore.md",
     authors = [
         "chjing",
         "ayushranjan",
@@ -212,7 +212,7 @@ doc(
         "shayonj",
     ],
     layout = "post",
-    permalink = "/blog/2026/10/14/checkpoint-restore/",
+    permalink = "/blog/2026/11/12/checkpoint-restore/",
 )
 
 docs(
