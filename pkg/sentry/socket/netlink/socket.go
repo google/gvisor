@@ -510,7 +510,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 }
 
 // Connect implements socket.Socket.Connect.
-func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking, _ bool, _ ktime.Time) *syserr.Error {
 	a, err := ExtractSockAddr(sockaddr)
 	if err != nil {
 		return err

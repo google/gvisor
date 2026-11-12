@@ -171,7 +171,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 // Connect implements socket.Socket.Connect.
 //
 // +checklocksexclude:s.eventInfo.Wq.mu
-func (s *socketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+func (s *socketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking, _ bool, _ ktime.Time) *syserr.Error {
 	var ret int64
 
 	if !blocking {
