@@ -2515,8 +2515,11 @@ func runAdjustedTSCTest(t *testing.T, conf *config.Config, count int, offsetCycl
 		t.Fatalf("error restoring second container: %v", err)
 	}
 
-	// Wait until the restored container has written at least one reading with the adjusted TSC.
-	if err := waitForFileLineCount(outputFile, len(preReadings1)+1); err != nil {
+	// The guest may have sampled the clock before checkpoint and written that
+	// reading after restore. It takes the next sample only after that write,
+	// so the second new reading is guaranteed to have been sampled after restore.
+	postRestoreIndex1 := len(preReadings1) + 1
+	if err := waitForFileLineCount(outputFile, postRestoreIndex1+1); err != nil {
 		t.Fatalf("failed to wait for post-first-restore output: %v", err)
 	}
 
@@ -2537,8 +2540,8 @@ func runAdjustedTSCTest(t *testing.T, conf *config.Config, count int, offsetCycl
 		t.Fatalf("error reading pre-second-checkpoint output: %v", err)
 	}
 	preReadings2 := parseClockReadings(t, preData2)
-	if len(preReadings2) <= len(preReadings1) {
-		t.Fatalf("expected readings after first restore, got total=%d pre1=%d", len(preReadings2), len(preReadings1))
+	if len(preReadings2) <= postRestoreIndex1 {
+		t.Fatalf("expected two readings after first restore, got total=%d pre1=%d", len(preReadings2), len(preReadings1))
 	}
 	lastPreReading2 := preReadings2[len(preReadings2)-1]
 
@@ -2578,23 +2581,24 @@ func runAdjustedTSCTest(t *testing.T, conf *config.Config, count int, offsetCycl
 	}
 
 	readings := parseClockReadings(t, data)
-	if len(readings) <= len(preReadings2) {
-		t.Fatalf("expected post-second-restore readings, got none (total %d, pre2 %d)", len(readings), len(preReadings2))
+	postRestoreIndex2 := len(preReadings2) + 1
+	if len(readings) <= postRestoreIndex2 {
+		t.Fatalf("expected two post-second-restore readings (total %d, pre2 %d)", len(readings), len(preReadings2))
 	}
 	assertMonotonicReadings(t, readings)
 
 	if offsetCycles > 0 {
-		firstPostReading1 := readings[len(preReadings1)]
+		postReading1 := readings[postRestoreIndex1]
 		wantMinTSC1 := lastPreReading1.tsc + offsetCycles
-		if firstPostReading1.tsc < wantMinTSC1 {
+		if postReading1.tsc < wantMinTSC1 {
 			t.Fatalf("RDTSC went backwards across first restore from host with higher TSC: pre+offset=%d, post=%d (delta=%d)",
-				wantMinTSC1, firstPostReading1.tsc, int64(firstPostReading1.tsc)-int64(wantMinTSC1))
+				wantMinTSC1, postReading1.tsc, int64(postReading1.tsc)-int64(wantMinTSC1))
 		}
 
-		firstPostReading2 := readings[len(preReadings2)]
-		if firstPostReading2.tsc < lastPreReading2.tsc {
+		postReading2 := readings[postRestoreIndex2]
+		if postReading2.tsc < lastPreReading2.tsc {
 			t.Fatalf("RDTSC went backwards across second restore: pre2=%d, post2=%d (delta=%d)",
-				lastPreReading2.tsc, firstPostReading2.tsc, int64(firstPostReading2.tsc)-int64(lastPreReading2.tsc))
+				lastPreReading2.tsc, postReading2.tsc, int64(postReading2.tsc)-int64(lastPreReading2.tsc))
 		}
 	}
 }
