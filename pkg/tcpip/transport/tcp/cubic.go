@@ -310,13 +310,17 @@ func (c *cubicState) HandleLossDetected() {
 	c.reduceSlowStartThreshold()
 }
 
-// HandleRTOExpired implements congestionContrl.HandleRTOExpired.
+// HandleRTOExpired implements congestionControl.HandleRTOExpired.
 //
 // +checklocks:c.s.ep.mu
-func (c *cubicState) HandleRTOExpired() {
-	// See: https://tools.ietf.org/html/rfc8312#section-4.6
+func (c *cubicState) HandleRTOExpired(reduceThreshold bool) {
+	// Linux cubictcp_state() resets the epoch on every TCP_CA_Loss, but
+	// tcp_enter_loss() calls cubictcp_recalc_ssthresh() only for a new loss.
 	c.T = c.s.ep.stack.Clock().NowMonotonic()
 	c.numCongestionEvents = 0
+	if !reduceThreshold {
+		return
+	}
 	c.WLastMax = c.WMax
 	c.WMax = float64(c.s.SndCwnd)
 
@@ -324,11 +328,6 @@ func (c *cubicState) HandleRTOExpired() {
 
 	// We lost a packet, so reduce ssthresh.
 	c.reduceSlowStartThreshold()
-
-	// Reduce the congestion window to 1, i.e., enter slow-start. Per
-	// RFC 5681, page 7, we must use 1 regardless of the value of the
-	// initial congestion window.
-	c.s.SndCwnd = 1
 }
 
 // fastConvergence implements the logic for Fast Convergence algorithm as

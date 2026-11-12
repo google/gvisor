@@ -69,7 +69,10 @@ type congestionControl interface {
 	HandleLossDetected()
 
 	// HandleRTOExpired is invoked when the retransmit timer expires.
-	HandleRTOExpired()
+	// Keep ssthresh when fast recovery already reduced it for this flight,
+	// or the timeout repeats without cumulative ACK progress (RFC 5681
+	// section 3.1). In both cases reduceThreshold is false.
+	HandleRTOExpired(reduceThreshold bool)
 
 	// HandleWindowRestart is invoked when the sender reduces its window
 	// after an idle period (RFC 5681 section 4.1). Linux tcp_cwnd_restart()
@@ -128,6 +131,10 @@ type sender struct {
 	// firstRetransmittedSegXmitTime is the original transmit time of
 	// the first segment that was retransmitted due to RTO expiration.
 	firstRetransmittedSegXmitTime tcpip.MonotonicTime
+
+	// rtoRepeat is true if the retransmit timer has retransmitted data
+	// since the last cumulative ACK that advanced SND.UNA.
+	rtoRepeat bool
 
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
@@ -640,6 +647,11 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		return nil
 	}
 
+	// Fast recovery already reduced ssthresh for this flight. A SACK alone
+	// can move the sender to Disorder, but leaves rtoRepeat set until the
+	// cumulative ACK advances.
+	reduceThreshold := !s.rtoRepeat && !s.FastRecovery.Active
+
 	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
 	//
 	// Retransmit timeouts:
@@ -649,9 +661,6 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	s.FastRecovery.Last = s.SndNxt - 1
 
 	if s.FastRecovery.Active {
-		// We were attempting fast recovery but were not successful.
-		// Leave the state. We don't need to update ssthresh because it
-		// has already been updated when entered fast-recovery.
 		s.leaveRecovery()
 	}
 
@@ -660,7 +669,9 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	s.recordRetransmitTS()
 
 	s.state = tcpip.RTORecovery
-	s.cc.HandleRTOExpired()
+	s.cc.HandleRTOExpired(reduceThreshold)
+	// RFC 5681 section 3.1: the loss window is one segment regardless of IW.
+	s.SndCwnd = 1
 
 	// Mark the next segment to be sent as the first unacknowledged one and
 	// start sending again. Set the number of outstanding packets to 0 so
@@ -706,6 +717,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		return &tcpip.ErrTimeout{}
 	}
 
+	s.rtoRepeat = true
 	s.sendData()
 
 	return nil
@@ -1711,6 +1723,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// Remove all acknowledged data from the write list.
 		acked := s.SndUna.Size(ack)
 		s.SndUna = ack
+		s.rtoRepeat = false
 		ackLeft := acked
 		originalOutstanding := s.Outstanding
 		for ackLeft > 0 {
