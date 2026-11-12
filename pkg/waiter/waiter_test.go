@@ -15,6 +15,7 @@
 package waiter
 
 import (
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -77,6 +78,25 @@ func TestMask(t *testing.T) {
 	q.Notify(EventOut | EventHUp)
 	if cnt != 0 {
 		t.Errorf("Callback was called when it shouldn't have been")
+	}
+}
+
+func TestNotifyOne(t *testing.T) {
+	var q Queue
+	var got []int
+	skipped := NewFunctionEntry(EventOut, func(EventMask) { got = append(got, 0) })
+	q.EventRegister(&skipped)
+	for i := 1; i <= 2; i++ {
+		e := NewFunctionEntry(EventIn, func(EventMask) { got = append(got, i) })
+		q.EventRegister(&e)
+	}
+
+	// Each call notifies the next matching waiter, in turn.
+	for range 3 {
+		q.NotifyOne(EventIn)
+	}
+	if want := []int{1, 2, 1}; !slices.Equal(got, want) {
+		t.Errorf("NotifyOne notified %v, want %v", got, want)
 	}
 }
 

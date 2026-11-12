@@ -83,6 +83,11 @@ func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce Co
 	return syserr.ErrConnectionRefused
 }
 
+// ConnectWaiters implements BoundEndpoint.ConnectWaiters.
+func (e *connectionlessEndpoint) ConnectWaiters() *waiter.Queue {
+	return nil
+}
+
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
 func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context) (Sender, *syserr.Error) {
 	e.Lock()
@@ -136,7 +141,7 @@ func (e *connectionlessEndpoint) Type() linux.SockType {
 }
 
 // Connect attempts to connect directly to server.
-func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
+func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint, _ CredentialsControlMessage) *syserr.Error {
 	peer, err := server.UnidirectionalConnect(ctx)
 	if err != nil {
 		return err
