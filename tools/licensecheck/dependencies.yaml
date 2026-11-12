@@ -1119,19 +1119,22 @@
     - BSD-3-Clause
     - CC0-1.0
 - dependency: llvm
-  version: https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.24/hermetic-llvm-v0.8.24.tar.gz
-  retrieved: "2026-10-02"
-  commit: 39e71f9391895169b05ccd62cbb1956ae5322ff3
-  sha256: 64d421959bba30cb3bcdd1e57a01b8ef2f12b93db3d1ab4a34fe5f4d2ca78aa4
+  version: https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.26/hermetic-llvm-v0.8.26.tar.gz
+  retrieved: "2026-11-12"
+  commit: 53ff474eae0a3e617ce615dec635c4b38db495c8
+  sha256: b00dbcf7fdfa111ee9ea763b76b775e627696c27bc552cf63e74e0ea8e2ddfb7
   license: MIT
-- dependency: llvm-raw
-  version: https://github.com/llvm/llvm-project/archive/cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f.tar.gz
-  retrieved: "2026-08-27"
-  commit: cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f
-  sha256: e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69
+- dependency: llvm-project
+  version: https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst
+  retrieved: "2026-11-05"
+  commit: 85ac560262434c9ccfc0c183ec22d4138ed647fb
+  sha256: 271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56
   license:
     - Apache-2.0 WITH LLVM-exception
-    - MIT
+    - BSD-3-Clause
+    - CC0-1.0
+    - NCSA
+    - Spencer-94
 - dependency: ltp
   version: https://github.com/linux-test-project/ltp/releases/download/20260930/ltp-full-20260930.tar.xz
   retrieved: "2026-10-22"
