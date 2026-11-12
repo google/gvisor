@@ -15,11 +15,21 @@
 package kernel
 
 import (
+	"math"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestTaskCPU(t *testing.T) {
@@ -130,5 +140,122 @@ func TestPIDNamespaceLastTID(t *testing.T) {
 	}
 	if got := ns.LastTID(); got != tid {
 		t.Errorf("ns.LastTID() = %d, want %d", got, tid)
+	}
+}
+
+func TestIovecImportValidatesCopiedPrefixBeforeFault(t *testing.T) {
+	task := &Task{image: TaskImage{
+		Arch:          &arch.Context64{},
+		MemoryManager: &mm.MemoryManager{},
+	}}
+	for _, tc := range []struct {
+		name   string
+		length uint64
+		want   error
+	}{
+		{"invalid-prefix", math.MaxUint64, linuxerr.EINVAL},
+		{"valid-prefix", 0, linuxerr.EFAULT},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Only the first descriptor and half of the second are readable.
+			metadata := make([]byte, 24)
+			hostarch.ByteOrder.PutUint64(metadata[8:16], tc.length)
+			ctx := &usermem.IOCopyContext{
+				Ctx: context.Background(),
+				IO:  &usermem.BytesIO{Bytes: metadata},
+			}
+			got, err := copyInIovecs(ctx, task, 0, 2)
+			if err != tc.want || len(got) != 0 {
+				t.Fatalf("iovec import = (%v, %v), want empty result and %v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+type iovecCopyErrorContext struct {
+	usermem.IOCopyContext
+	errorAboveSize int
+}
+
+func (ctx *iovecCopyErrorContext) CopyInBytes(addr hostarch.Addr, dst []byte) (int, error) {
+	n, err := ctx.IOCopyContext.CopyInBytes(addr, dst)
+	if err != nil {
+		return n, err
+	}
+	if len(dst) > ctx.errorAboveSize {
+		return n, linuxerr.EFAULT
+	}
+	return n, nil
+}
+
+func TestIovecImportCopyErrorPrecedesLengthValidation(t *testing.T) {
+	task := &Task{image: TaskImage{Arch: &arch.Context64{}}}
+	for _, tc := range []struct {
+		name  string
+		addr  hostarch.Addr
+		count int
+	}{
+		{"single-entry", 0, 1},
+		{"multiple-entries", 0, 2},
+		{"straddling-entry", hostarch.PageSize - 8, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metadata := make([]byte, int(tc.addr)+tc.count*16)
+			hostarch.ByteOrder.PutUint64(metadata[int(tc.addr)+8:], math.MaxUint64)
+			ctx := &iovecCopyErrorContext{IOCopyContext: usermem.IOCopyContext{
+				Ctx: context.Background(),
+				IO:  &usermem.BytesIO{Bytes: metadata},
+			}}
+			got, err := copyInIovecs(ctx, task, tc.addr, tc.count)
+			if err != linuxerr.EFAULT || len(got) != 0 {
+				t.Fatalf("iovec import = (%v, %v), want empty result and EFAULT", got, err)
+			}
+		})
+	}
+}
+
+func TestIovecImportSucceedsAfterBatchCopyError(t *testing.T) {
+	testCtx := contexttest.Context(t)
+	memoryManager, err := mm.NewMemoryManager(
+		platform.FromContext(testCtx), pgalloc.MemoryFileFromContext(testCtx))
+	if err != nil {
+		t.Fatalf("mm.NewMemoryManager failed: %v", err)
+	}
+	defer memoryManager.DecUsers(testCtx)
+	archContext := &arch.Context64{}
+	if _, err := memoryManager.SetMmapLayout(archContext, limits.NewLimitSet()); err != nil {
+		t.Fatalf("MemoryManager.SetMmapLayout failed: %v", err)
+	}
+	task := &Task{image: TaskImage{
+		Arch:          archContext,
+		MemoryManager: memoryManager,
+	}}
+	metadata := make([]byte, 32)
+	hostarch.ByteOrder.PutUint64(metadata[0:8], 0x1000)
+	hostarch.ByteOrder.PutUint64(metadata[8:16], 0x100)
+	hostarch.ByteOrder.PutUint64(metadata[16:24], 0x3000)
+	hostarch.ByteOrder.PutUint64(metadata[24:32], 0x200)
+	ctx := &iovecCopyErrorContext{
+		IOCopyContext: usermem.IOCopyContext{
+			Ctx: testCtx,
+			IO:  &usermem.BytesIO{Bytes: metadata},
+		},
+		errorAboveSize: 16,
+	}
+	got, err := copyInIovecs(ctx, task, 0, 2)
+	if err != nil {
+		t.Fatalf("copyInIovecs failed: %v", err)
+	}
+	want := []hostarch.AddrRange{
+		{Start: 0x1000, End: 0x1100},
+		{Start: 0x3000, End: 0x3200},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("copyInIovecs returned %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("iovec range %d = %v, want %v", i, got[i], want[i])
+		}
 	}
 }

@@ -463,7 +463,9 @@ go_test(
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/ktime",
         "//pkg/sentry/limits",
+        "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/state/stateio",
@@ -473,6 +475,7 @@ go_test(
         "//pkg/state",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/usermem",
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
