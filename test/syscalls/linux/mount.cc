@@ -606,6 +606,23 @@ TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfCharDevice) {
               SyscallSucceedsWithValue(sizeof(msg)));
 }
 
+// A bind mount of a file has a file as its root, which O_DIRECTORY and a
+// trailing slash refuse like any other file.
+TEST(MountTest, OpenDirectoryOnFileBindMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto const target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(file.path(), target.path(), "", MS_BIND, "", 0));
+
+  EXPECT_THAT(open(target.path().c_str(), O_RDONLY | O_DIRECTORY),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(open((target.path() + "/").c_str(), O_RDONLY),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_NO_ERRNO(Open(target.path(), O_RDONLY));
+}
+
 TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfFIFO) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
