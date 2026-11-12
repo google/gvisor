@@ -30,20 +30,6 @@ import (
 )
 
 // +checklocksexclude:t.mu
-func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) {
-	var (
-		file  *vfs.FileDescription
-		flags kernel.FDFlags
-	)
-	t.WithMuLocked(func(t *kernel.Task) {
-		if fdt := t.FDTable(); fdt != nil {
-			file, flags = fdt.Get(fd)
-		}
-	})
-	return file, flags
-}
-
-// +checklocksexclude:t.mu
 func taskFDExists(ctx context.Context, fs *filesystem, t *kernel.Task, fd int32) bool {
 	var exists bool
 	t.WithMuLocked(func(task *kernel.Task) {
@@ -231,7 +217,7 @@ func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) 
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return "", linuxerr.EACCES
 	}
-	file, _ := getTaskFD(s.task, s.fd)
+	file, _ := s.task.GetFileAndFlags(s.fd)
 	if file == nil {
 		return "", linuxerr.ENOENT
 	}
@@ -248,7 +234,7 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
-	file, _ := getTaskFD(s.task, s.fd)
+	file, _ := s.task.GetFileAndFlags(s.fd)
 	if file == nil {
 		return vfs.VirtualDentry{}, "", linuxerr.ENOENT
 	}
@@ -354,7 +340,7 @@ var _ dynamicInode = (*fdInfoData)(nil)
 //
 // +checklocksexclude:d.task.mu
 func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	file, descriptorFlags := getTaskFD(d.task, d.fd)
+	file, descriptorFlags := d.task.GetFileAndFlags(d.fd)
 	if file == nil {
 		return linuxerr.ENOENT
 	}
