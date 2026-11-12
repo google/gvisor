@@ -147,11 +147,11 @@ func (ds *graphDecodeState) release() {
 	if cap(ds.objs) > maxPooledBytes/64 || cap(ds.targets) > maxPooledBytes/8 || cap(ds.cbs) > maxPooledBytes/64 {
 		return
 	}
-	clear(ds.types[:cap(ds.types)])
-	clear(ds.typeNames[:cap(ds.typeNames)])
-	clear(ds.objs[:cap(ds.objs)])
-	clear(ds.cbs[:cap(ds.cbs)])
-	clear(ds.targets[:cap(ds.targets)])
+	clear(ds.types)
+	clear(ds.typeNames)
+	clear(ds.objs)
+	clear(ds.cbs)
+	clear(ds.targets)
 	*ds = graphDecodeState{
 		types:      ds.types[:0],
 		typeNames:  ds.typeNames[:0],
