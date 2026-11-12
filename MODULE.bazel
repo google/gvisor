@@ -940,60 +940,69 @@ go_deps.module(
     sum = "h1:H2TDz8ibqkAF6YGhCdN3jS9O0/s90v0rJh3X/OLHEUk=",
     version = "v0.0.0-20220907171357-04be3eba64a2",
 )
-go_deps.module_override(
+
+# Gazelle allows only the root to override the shared Go repositories.
+# Fabian Meumertzheim's example keeps the module declarations on go_deps
+# and puts only the overrides on the development-only use.
+# https://github.com/bazel-contrib/bazel-gazelle/issues/1768#issuecomment-2027776185
+#
+# A consuming root must opt in to these proto rules and protobuf startup patch.
+# Bazel also omits these overrides when the root passes --ignore_dev_dependency.
+root_go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
+root_go_deps.module_override(
     patch_strip = 1,
     patches = ["//tools:protobuf.disable-binary-reading-on-init.patch"],
     path = "google.golang.org/protobuf",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
     path = "google.golang.org/grpc",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
     path = "github.com/containerd/containerd/v2",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
     path = "github.com/containerd/cgroups/v3",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
     path = "github.com/containerd/errdefs",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
     path = "github.com/containerd/log",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable_global",
     ],
     path = "github.com/googleapis/gax-go/v2",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable_global",
     ],
     path = "github.com/googleapis/gnostic",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable_global",
     ],
     path = "k8s.io/api",
 )
-go_deps.gazelle_override(
+root_go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable_global",
     ],
