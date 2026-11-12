@@ -227,6 +227,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 
 	args.FSRestoreImagePaths = slices.DeleteFunc(slices.Clone(args.FSRestoreImagePaths), func(p string) bool { return p == "" })
+	if conf.FilestoreAdoptDir != "" && (args.CheckpointDirPath == "" || len(args.FSRestoreImagePaths) != 0 || sandbox.HasFSCheckpointManifest(args.CheckpointDirPath)) {
+		return nil, fmt.Errorf("external filestores require a full checkpoint restore without split filesystem images")
+	}
 	if specutils.IsRootContainer(args.Spec) && len(args.FSRestoreImagePaths) == 0 && args.CheckpointDirPath != "" {
 		if sandbox.HasFSCheckpointManifest(args.CheckpointDirPath) {
 			args.FSRestoreImagePaths = []string{args.CheckpointDirPath}
@@ -1049,11 +1052,51 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 // Checkpoint sends the checkpoint call to the container.
 // The statefile will be written to f, the file at the specified image-path.
 func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandbox.CheckpointOpts) error {
+	return c.checkpoint(conf, imagePath, opts, c.Sandbox.Checkpoint)
+}
+
+// checkpoint owns the prepared filestore descriptors through capture and
+// persistence. save reports when responsibility passes to a potentially
+// destructive RPC, including the case where its response is lost.
+func (c *Container) checkpoint(conf *config.Config, imagePath string, opts sandbox.CheckpointOpts, save func(*config.Config, string, string, sandbox.CheckpointOpts) error) error {
 	log.Debugf("Checkpoint container, cid: %s", c.ID)
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
-	return c.Sandbox.Checkpoint(conf, c.ID, imagePath, opts)
+	if opts.FilestoreSnapshotDir != "" {
+		if len(opts.SplitFSCheckpointPaths) != 0 {
+			return fmt.Errorf("external filestores do not support split filesystem checkpoint")
+		}
+		if !c.Sandbox.FilestoreReflink {
+			return fmt.Errorf("filestore snapshots require creating the sandbox with --filestore-reflink=enabled")
+		}
+		files, err := c.prepareFilestoreSnapshot(opts.FilestoreSnapshotDir)
+		if err != nil {
+			return err
+		}
+		opts.FilestoreSnapshotFiles = files
+		// Before the RPC, files are disposable. Once the RPC is attempted,
+		// the source may be gone even if the response is lost: retain every
+		// artifact, close all FDs, and report unconfirmed completion on error.
+		attempted := false
+		opts.SaveStarted = func() { attempted = true }
+		defer func() {
+			for _, file := range files {
+				file.Close()
+				if !attempted {
+					os.Remove(file.Name())
+				}
+			}
+		}()
+		if err := save(conf, c.ID, imagePath, opts); err != nil {
+			if attempted {
+				return fmt.Errorf("checkpoint completion/durability unconfirmed; artifacts retained in %q and %q: %w", imagePath, opts.FilestoreSnapshotDir, err)
+			}
+			return err
+		}
+		return nil
+	}
+	return save(conf, c.ID, imagePath, opts)
 }
 
 // FSSave sends the filesystem checkpointing call to the container.
@@ -1345,8 +1388,22 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryap
 // tmpfs/overlayfs mounts that will overlay some gofer mounts.
 //
 // Precondition: gofer process must be running.
-func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints) ([]*os.File, error) {
+func (c *Container) createGoferFilestores(conf *config.Config, ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints) ([]*os.File, error) {
+	var adopter *filestoreAdopter
+	if conf.FilestoreAdoptDir != "" {
+		var err error
+		adopter, err = c.newFilestoreAdopter(conf)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var goferFilestores []*os.File
+	clean := cleanup.Make(func() {
+		for _, file := range goferFilestores {
+			file.Close()
+		}
+	})
+	defer clean.Clean()
 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
 	// namespace, so that they don't prevent the host mount points from being
 	// unmounted from the host's mount namespace. We will use /proc/pid/root
@@ -1355,7 +1412,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 
 	// Handle rootfs first.
 	rootfsConf := c.GoferMountConfs[0]
-	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
+	filestore, err := c.createOrAdoptGoferFilestore(adopter, goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
 	if err != nil {
 		return nil, err
 	}
@@ -1371,7 +1428,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 		}
 		mountConf := c.GoferMountConfs[mountIdx]
 		mountIdx++
-		filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, mountConf, m.Source, mountHints)
+		filestore, err := c.createOrAdoptGoferFilestore(adopter, goferRootfs, ovlConf, mountConf, m.Source, mountHints)
 		if err != nil {
 			return nil, err
 		}
@@ -1384,7 +1441,18 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 		// running with seccomp filters that do not allow this.
 		hostmm.IMAWorkAroundForMemFile(filestore.Fd())
 	}
+	clean.Release()
 	return goferFilestores, nil
+}
+
+func (c *Container) createOrAdoptGoferFilestore(adopter *filestoreAdopter, goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
+	if adopter == nil || !goferConf.IsFilestorePresent() {
+		return c.createGoferFilestore(goferRootfs, ovlConf, goferConf, mountSrc, mountHints)
+	}
+	if goferConf.IsSelfBacked() {
+		return nil, fmt.Errorf("filestore adoption does not support self-backed mounts")
+	}
+	return adopter.clone(goferRootfs, ovlConf.Medium().HostFileDir())
 }
 
 func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
@@ -2081,7 +2149,7 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 
 	// Create gofer filestore files with the Gofer's mount namespaces while
 	// chrootSyncSandEnd is still open.
-	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
+	goferFilestores, err := c.createGoferFilestores(conf, conf.GetOverlay2(), mountHints)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("creating gofer filestore files: %w", err)
 	}

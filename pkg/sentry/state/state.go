@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -65,6 +66,10 @@ type SaveOpts struct {
 	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
 	// file.
 	AppMFExcludeCommittedZeroPages bool
+
+	// FilestoreSnapshots contains private filestore destinations in donated FD
+	// order. Capture occurs while paused; the host persists them after resume.
+	FilestoreSnapshots []*os.File
 
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
@@ -114,6 +119,10 @@ func (opts *SaveOpts) Close() error {
 	if opts.FSSaveOpts != nil {
 		err = errors.Join(err, opts.FSSaveOpts.Close())
 	}
+	for _, snapshot := range opts.FilestoreSnapshots {
+		err = errors.Join(err, snapshot.Close())
+	}
+	opts.FilestoreSnapshots = nil
 	return err
 }
 
@@ -177,10 +186,13 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	} else {
 		opts.Destination = nil
 		// Save the kernel.
-		vfsOpts := vfs.PrepareSaveOptions{
-			ValidateMetadata: opts.ValidateMetadata,
-		}
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume, opts.FSSaveOpts, vfsOpts, opts.GraphEngine) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile, opts.FSSaveOpts
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, &kernel.SaveOpts{
+			AppMFExcludeCommittedZeroPages: opts.AppMFExcludeCommittedZeroPages,
+			VFSOptions:                     vfs.PrepareSaveOptions{ValidateMetadata: opts.ValidateMetadata},
+			GraphEngine:                    opts.GraphEngine,
+			FilestoreSnapshots:             opts.FilestoreSnapshots,
+			Resume:                         opts.Resume,
+		}, opts.FSSaveOpts) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile, opts.FSSaveOpts
 		opts.PagesMetadata = nil
 		opts.PagesFile = nil
 		opts.FSSaveOpts = nil

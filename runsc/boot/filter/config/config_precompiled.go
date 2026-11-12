@@ -98,6 +98,15 @@ func optionsToPrecompile() ([]Options, error) {
 			return []Options{directfs, noDirectfs}, nil
 		},
 
+		// Precompile options with filestore reflink enabled and disabled.
+		func(opt Options) ([]Options, error) {
+			reflink := opt
+			reflink.FilestoreReflink = true
+			noReflink := opt
+			noReflink.FilestoreReflink = false
+			return []Options{reflink, noReflink}, nil
+		},
+
 		// Expand NVProxy and its possible configurations.
 		func(opt Options) ([]Options, error) {
 			// Add the "NVProxy disabled" configuration.

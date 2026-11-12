@@ -30,6 +30,39 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 )
 
+func TestOptionsToPrecompileFilestoreReflink(t *testing.T) {
+	opts, err := optionsToPrecompile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts) == 0 {
+		t.Fatal("no options to precompile")
+	}
+	keys := make(map[string]bool, len(opts))
+	for _, opt := range opts {
+		key := opt.ConfigKey()
+		if keys[key] {
+			t.Fatalf("duplicate configuration: %s", key)
+		}
+		keys[key] = true
+	}
+	var missing int
+	var firstMissing string
+	for _, opt := range opts {
+		opt.FilestoreReflink = !opt.FilestoreReflink
+		if key := opt.ConfigKey(); !keys[key] {
+			missing++
+			if firstMissing == "" {
+				firstMissing = key
+			}
+		}
+	}
+	if missing != 0 {
+		t.Fatalf("%d of %d configurations lack the opposite FilestoreReflink setting; first missing: %s", missing, len(opts), firstMissing)
+	}
+	t.Logf("all %d configurations include both FilestoreReflink settings", len(opts))
+}
+
 func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 	for name, options := range map[string]Options{
 		"default systrap": {
@@ -112,6 +145,7 @@ func TestOptionsConfigKey(t *testing.T) {
 		"HostNetwork":           func(opt *Options) { opt.HostNetwork = !opt.HostNetwork },
 		"HostNetworkRawSockets": func(opt *Options) { opt.HostNetworkRawSockets = !opt.HostNetworkRawSockets },
 		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
+		"FilestoreReflink":      func(opt *Options) { opt.FilestoreReflink = !opt.FilestoreReflink },
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
 		"NVProxyCaps":           func(opt *Options) { opt.NVProxyCaps = ^opt.NVProxyCaps },

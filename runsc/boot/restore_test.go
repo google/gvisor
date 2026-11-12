@@ -16,7 +16,13 @@ package boot
 
 import (
 	"math"
+	"os"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func TestTSCOffsetFromSnapshot(t *testing.T) {
@@ -104,5 +110,21 @@ func TestTSCOffsetFromSnapshot(t *testing.T) {
 				t.Errorf("tscOffsetFromSnapshot() = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// Rejected preflight checks are completed checkpoint attempts even though no
+// tasks have been paused and no kernel state has been serialized.
+func TestFilestorePreflightNotifiesCheckpointAttempt(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		k := &kernel.Kernel{}
+		l := &Loader{k: k, root: containerInfo{conf: &config.Config{}}}
+		opts := &state.SaveOpts{Resume: resume, FilestoreSnapshots: []*os.File{nil}}
+		if err := l.saveWithOpts(opts, &controlapi.SaveRestoreExecOpts{}); err == nil {
+			t.Fatalf("resume=%t: accepted filestore capture without opt-in", resume)
+		}
+		if got := k.CheckpointGen(); got.Count != 1 || got.Restore {
+			t.Errorf("resume=%t: checkpoint generation = %+v, want one failed attempt", resume, got)
+		}
 	}
 }

@@ -274,6 +274,9 @@ type Sandbox struct {
 	// Checkpointed will be true when the sandbox has been checkpointed.
 	Checkpointed bool `json:"checkpointed"`
 
+	// FilestoreReflink records whether the Sentry permits reflink ioctls.
+	FilestoreReflink bool `json:"filestoreReflink"`
+
 	// Restored will be true when the sandbox has been restored.
 	Restored bool `json:"restored"`
 
@@ -387,7 +390,8 @@ type Args struct {
 // sandbox.
 func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	s := &Sandbox{
-		ID: args.ID,
+		FilestoreReflink: conf.FilestoreReflink == config.FilestoreReflinkEnabled,
+		ID:               args.ID,
 		CgroupJSON: cgroup.CgroupJSON{
 			Cgroup: args.Cgroup,
 		},
@@ -2169,6 +2173,12 @@ func (s *Sandbox) SignalProcessGroup(cid string, pgid int32, sig unix.Signal) er
 
 // CheckpointOpts contains the options for checkpointing a sandbox.
 type CheckpointOpts struct {
+	// FilestoreSnapshotFiles are borrowed destinations, in donated FD order.
+	FilestoreSnapshotDir   string
+	FilestoreSnapshotFiles []*os.File
+	// SaveStarted is called immediately before the save RPC is attempted.
+	SaveStarted func()
+
 	Compression               statefile.CompressionLevel
 	Resume                    bool
 	Direct                    bool
@@ -2231,24 +2241,90 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return err
 	}
 
+	if opts.FilestoreSnapshotDir != "" {
+		if opt.UseCheckpointGofer || len(bundles) != 0 {
+			return fmt.Errorf("external filestores require a local, full checkpoint")
+		}
+		opt.NumFilestoreSnapshots = len(opts.FilestoreSnapshotFiles)
+		// Duplicate borrowed descriptors so FilePayload owns exactly its FDs.
+		for _, file := range opts.FilestoreSnapshotFiles {
+			dup, err := unix.FcntlInt(file.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+			if err != nil {
+				return err
+			}
+			opt.FilePayload.Files = append(opt.FilePayload.Files, os.NewFile(uintptr(dup), file.Name()))
+		}
+	}
+
 	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
 		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
 	}
-	if err := s.call(sentryapi.ContMgrCheckpoint, &opt, nil); err != nil {
-		// The application may still be running.
-		if err := s.applyAppCPULimit(cpuPhaseLifecycle); err != nil {
-			log.Warningf("[Lifecycle CPU] Cannot restore the application CPU limit after failed checkpoint: %v", err)
+	if opts.SaveStarted != nil {
+		opts.SaveStarted()
+	}
+	saveErr := s.call(sentryapi.ContMgrCheckpoint, &opt, nil)
+	// Resume normal CPU limits before persistence, including when the RPC
+	// fails and the application might still be running.
+	var limitErr error
+	if opts.Resume || saveErr != nil {
+		limitErr = s.applyAppCPULimit(cpuPhaseLifecycle)
+		if limitErr != nil {
+			log.Warningf("Cannot restore application CPU limit after checkpoint: %v", limitErr)
 		}
+	}
+	if saveErr != nil {
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
-				return fmt.Errorf("checkpointing container %q to %s: %w", cid, target, err)
+				return fmt.Errorf("checkpointing container %q to %s: %w", cid, target, saveErr)
 			}
 		}
-		return fmt.Errorf("checkpointing container %q: %w", cid, err)
+		return fmt.Errorf("checkpointing container %q: %w", cid, saveErr)
+	}
+	if opts.FilestoreSnapshotDir != "" {
+		// The RPC has finished capture and resumed leave-running tasks. Sync
+		// all restore inputs before reporting success, including state/pages.
+		start := time.Now()
+		if err := persistCheckpoint(opt.FilePayload.Files, []string{imagePath, opts.FilestoreSnapshotDir}); err != nil {
+			return err
+		}
+		log.Debugf("Checkpoint post-resume persistence: %d ns", time.Since(start).Nanoseconds())
 	}
 	s.Checkpointed = true
-	if opts.Resume {
-		return s.applyAppCPULimit(cpuPhaseLifecycle)
+	return limitErr
+}
+
+// persistCheckpoint waits for the checkpoint's data and directory entries to
+// become durable. It borrows files and never removes recovery artifacts.
+func persistCheckpoint(files []*os.File, dirs []string) error {
+	for _, file := range files {
+		start := time.Now()
+		err := file.Sync()
+		log.Debugf("Checkpoint file fsync: name=%q duration_ns=%d", file.Name(), time.Since(start).Nanoseconds())
+		if err != nil {
+			return fmt.Errorf("sync checkpoint file %q: %w", file.Name(), err)
+		}
+	}
+	seen := make(map[string]bool)
+	for _, dir := range dirs {
+		dir, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		for ; !seen[dir]; dir = filepath.Dir(dir) {
+			seen[dir] = true
+			f, err := os.Open(dir)
+			if err != nil {
+				return err
+			}
+			err = f.Sync()
+			closeErr := f.Close()
+			if err != nil {
+				return fmt.Errorf("sync checkpoint directory %q: %w", dir, err)
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		}
 	}
 	return nil
 }

@@ -39,6 +39,7 @@ type Checkpoint struct {
 	leaveRunning              bool
 	compression               CheckpointCompression
 	excludeCommittedZeroPages bool
+	filestoreSnapshotDir      string
 	cudaCheckpointPath        string
 	cudaCheckpointSequential  bool
 	saveRestoreExecArgv       string
@@ -75,6 +76,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
 	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
 	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", true, "exclude committed zero-filled pages from checkpoint")
+	f.StringVar(&c.filestoreSnapshotDir, "filestore-snapshot-dir", "", "Save writable layers as independent reflink snapshots in an empty directory on the filestore filesystem. Requires --filestore-reflink=enabled at sandbox creation and anonymous disk-backed layers. Supports --leave-running; excludes split filesystem checkpoints.")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint pages file")
 	f.StringVar(&c.cudaCheckpointPath, "cuda-checkpoint-path", "", "path to the cuda-checkpoint binary in the container")
 	f.BoolVar(&c.cudaCheckpointSequential, "cuda-checkpoint-sequential", false, "run cuda-checkpoint sequentially in the container")
@@ -126,6 +128,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		Resume:                     c.leaveRunning,
 		Direct:                     c.direct,
 		ExcludeCommittedZeroPages:  c.excludeCommittedZeroPages,
+		FilestoreSnapshotDir:       c.filestoreSnapshotDir,
 		CudaCheckpointPath:         c.cudaCheckpointPath,
 		CudaCheckpointSequential:   c.cudaCheckpointSequential,
 		SaveRestoreExecArgv:        c.saveRestoreExecArgv,

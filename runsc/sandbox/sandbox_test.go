@@ -686,3 +686,46 @@ func TestSentryGODEBUG(t *testing.T) {
 		})
 	}
 }
+
+func TestPersistCheckpointRetainsArtifactsOnFailure(t *testing.T) {
+	for _, stage := range []string{"file-sync", "directory-open", "directory-sync"} {
+		t.Run(stage, func(t *testing.T) {
+			dir := t.TempDir()
+			file, err := os.Create(filepath.Join(dir, "snapshot"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			if _, err := file.WriteString("recovery data"); err != nil {
+				t.Fatal(err)
+			}
+			dirs := []string{dir}
+			switch stage {
+			case "file-sync":
+				file.Close()
+			case "directory-open":
+				dirs = []string{filepath.Join(dir, "missing")}
+			case "directory-sync":
+				dirs = []string{"/proc"}
+			}
+			before, err := os.ReadDir("/proc/self/fd")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := persistCheckpoint([]*os.File{file}, dirs); err == nil {
+				t.Fatal("persistence unexpectedly succeeded")
+			}
+			after, err := os.ReadDir("/proc/self/fd")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != len(before) {
+				t.Errorf("FD count changed: %d -> %d", len(before), len(after))
+			}
+			data, err := os.ReadFile(file.Name())
+			if err != nil || string(data) != "recovery data" {
+				t.Fatalf("recovery artifact lost: %q, %v", data, err)
+			}
+		})
+	}
+}
