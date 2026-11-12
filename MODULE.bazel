@@ -13,7 +13,7 @@ bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "tar.bzl", version = "0.10.9")
 bazel_dep(name = "rules_img", version = "0.3.23")
 bazel_dep(name = "rules_cc", version = "0.2.25")
-bazel_dep(name = "llvm", version = "0.8.24")
+bazel_dep(name = "llvm", version = "0.8.26")
 bazel_dep(name = "libbpf", version = "1.7.0.bcr.1")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_qemu", version = "0.3.0")
@@ -56,37 +56,23 @@ single_version_override(
     patches = ["//tools:benchmark-umbrella-exports.patch"],
 )
 
-# Drop the backport when the llvm module includes kernel_headers.configure.
+# Drop these backports when the llvm module includes the header default and
+# requests only AArch64 and X86 for downstream builds.
 single_version_override(
     module_name = "llvm",
     patch_strip = 1,
-    patches = ["//tools:llvm-linux-header-default.patch"],
+    patches = [
+        "//tools:llvm-linux-header-default.patch",
+        "//tools:llvm-dev-backends.patch",
+    ],
 )
 
 ### LLVM
-# TODO: try using "llvm-raw" from BCR
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
-    name = "llvm-raw",
-    build_file_content = "# empty",
-    patch_args = ["-p1"],
-    patches = ["//tools:llvm-bazel9.patch"],
-    sha256 = "e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69",
-    strip_prefix = "llvm-project-cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f",
-    urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = "cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f")],
-)
-
-llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
-
 # The NVIDIA ABI parser only inspects gVisor's supported CPU architectures.
-llvm_configure(
-    name = "llvm-project",
-    targets = [
-        "AArch64",
-        "X86",
-    ],
-)
+llvm_source = use_extension("@llvm//extensions:llvm.bzl", "llvm")
+use_repo(llvm_source, "llvm-project")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "kythe_release",
@@ -114,11 +100,6 @@ use_repo(crosstool, "crosstool")
 kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers")
 kernel_headers.configure(default_version = "6.18")
 use_repo(kernel_headers, "kernel_headers")
-
-### zlib-ng
-# TODO: try using "zlib-ng" from BCR
-llvm_zlib = use_extension("//tools/bazeldefs:extensions/llvm_zlib.bzl", "llvm_zlib_extension")
-use_repo(llvm_zlib, "llvm_zlib")
 
 ### Repo rules
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
