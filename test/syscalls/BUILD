@@ -62,6 +62,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:bridge_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:brk_test",
 )
 
