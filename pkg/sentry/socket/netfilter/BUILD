@@ -71,6 +71,7 @@ go_test(
         "mark_target_test.go",
         "masquerade_test.go",
         "netfilter_test.go",
+        "tcp_matcher_test.go",
     ],
     embed = [":netfilter"],
     deps = [
