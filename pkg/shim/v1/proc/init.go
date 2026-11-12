@@ -171,6 +171,15 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		// UserLog is only useful for sandbox.
 		opts.UserLog = p.UserLog
 	}
+	if !p.Sandbox && !r.Terminal && hasNoIO(r) {
+		createIO, err := runc.NewNullIO()
+		if err != nil {
+			return fmt.Errorf("creating new NULL IO for runtime create: %w", err)
+		}
+		defer createIO.Close()
+		opts.IO = createIO
+	}
+
 	if err := p.runtime.Create(ctx, r.ID, r.Bundle, opts); err != nil {
 		return p.runtimeError(err, "OCI runtime create failed")
 	}
