@@ -102,10 +102,20 @@ func (m *masqOp) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 		}
 	} else {
 		// Fallback to default port range handling if not specified.
+		// TCP/UDP packets with a truncated transport header are dropped as
+		// their source port cannot be read.
 		switch pkt.TransportProtocolNumber {
 		case header.UDPProtocolNumber:
+			if len(pkt.TransportHeader().Slice()) < header.UDPMinimumSize {
+				regs.verdict.Code = VC(linux.NF_DROP)
+				return
+			}
 			ports = targetPortRangeForTCPAndUDP(header.UDP(pkt.TransportHeader().Slice()).SourcePort())
 		case header.TCPProtocolNumber:
+			if len(pkt.TransportHeader().Slice()) < header.TCPMinimumSize {
+				regs.verdict.Code = VC(linux.NF_DROP)
+				return
+			}
 			ports = targetPortRangeForTCPAndUDP(header.TCP(pkt.TransportHeader().Slice()).SourcePort())
 		case header.ICMPv4ProtocolNumber, header.ICMPv6ProtocolNumber:
 			ports = stack.PortOrIdentRange{Start: 0, Size: math.MaxUint16 + 1}
