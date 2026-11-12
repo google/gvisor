@@ -35,6 +35,35 @@ func TestLoadOfADestroyedContainerLeavesNoLockFile(t *testing.T) {
 	}
 }
 
+// TestLoadOfAStateFileWithoutALockFile checks that a container whose state
+// file has no lock file loads, and that destroying it leaves no lock file.
+func TestLoadOfAStateFileWithoutALockFile(t *testing.T) {
+	s := StateFile{RootDir: t.TempDir(), ID: FullID{SandboxID: "sb", ContainerID: "sb"}}
+	if err := os.WriteFile(s.statePath(), []byte(`{"id":"sb"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var c Container
+	if err := s.load(&c, LoadOpts{}); err != nil {
+		t.Fatalf("load() = %v, want nil", err)
+	}
+	if c.ID != "sb" {
+		t.Errorf("load() read container ID %q, want %q", c.ID, "sb")
+	}
+	if err := s.lockExisting(); err != nil {
+		t.Fatalf("lockExisting() = %v, want nil", err)
+	}
+	if err := s.Destroy(); err != nil {
+		t.Fatalf("Destroy() = %v, want nil", err)
+	}
+	s.UnlockOrDie()
+	if _, err := os.Stat(s.lockPath()); !os.IsNotExist(err) {
+		t.Errorf("Destroy() left lock file %q: %v", s.lockPath(), err)
+	}
+	if err := s.lockExisting(); !os.IsNotExist(err) {
+		t.Errorf("lockExisting() after Destroy() = %v, want an error for which os.IsNotExist is true", err)
+	}
+}
+
 // TestLockOfARemovedLockFile checks that a command waiting for the lock of a
 // lock file that Destroy removes ends up with the lock on the lock file that
 // is at the lock path, or with none for a container that must exist.

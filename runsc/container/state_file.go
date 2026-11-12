@@ -291,11 +291,33 @@ func (s *StateFile) lock() error {
 }
 
 // lockExisting is lock for a container that must still exist. LockForNew
-// makes the lock file and Destroy removes it, so once it's gone, so is the
-// container: lockExisting then returns an error for which os.IsNotExist is
-// true, rather than make the file again, which nothing would remove.
+// makes the lock file, and Destroy removes the state file and then the lock
+// file, so once both are gone, so is the container: lockExisting then returns
+// an error for which os.IsNotExist is true, rather than make the lock file
+// again, which nothing would remove.
+//
+// A state file with no lock file is still a container, such as one whose
+// state file something other than a runsc command wrote. That one gets its
+// lock file, which its Destroy removes.
 func (s *StateFile) lockExisting() error {
-	return s.lockFlags(0)
+	err := s.lockFlags(0)
+	if !os.IsNotExist(err) {
+		return err
+	}
+	if _, statErr := os.Stat(s.statePath()); statErr != nil {
+		return err
+	}
+	if lockErr := s.lock(); lockErr != nil {
+		return lockErr
+	}
+	if _, statErr := os.Stat(s.statePath()); os.IsNotExist(statErr) {
+		// Destroyed while this waited for the lock. Don't leave the lock
+		// file this may have made.
+		_ = os.Remove(s.lockPath())
+		s.UnlockOrDie()
+		return err
+	}
+	return nil
 }
 
 // lockFlags opens the lock file, with flags added to O_RDWR, and locks it.
