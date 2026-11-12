@@ -15,6 +15,7 @@
 package rdmaproxy
 
 import (
+	"maps"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/ib"
@@ -125,24 +126,25 @@ type MethodSchema struct {
 	Attrs map[uint16]AttrType
 }
 
-// schemas is the allowlist of supported (object, method) pairs, keyed by
-// (object<<16 | method). Requests outside this set are rejected with EINVAL.
-// Built on first use so that a runsc without RDMA never allocates it.
-var (
-	schemasOnce sync.Once
-	schemas     map[uint32]*MethodSchema
-)
+// schemas maps a driver name to its allowlist of supported (object, method)
+// pairs, keyed by (object<<16 | method). Requests outside the set are rejected
+// with EINVAL. Built on first use so that a runsc without RDMA never allocates
+// it.
+var schemas sync.Map
 
 func SchemaKey(object, method uint16) uint32 {
 	return uint32(object)<<16 | uint32(method)
 }
 
-func lookupSchema(object, method uint16) *MethodSchema {
-	schemasOnce.Do(func() { schemas = buildSchemas() })
-	return schemas[SchemaKey(object, method)]
+func lookupSchema(d Driver, object, method uint16) *MethodSchema {
+	m, ok := schemas.Load(d.Name())
+	if !ok {
+		m, _ = schemas.LoadOrStore(d.Name(), buildSchemas(d))
+	}
+	return m.(map[uint32]*MethodSchema)[SchemaKey(object, method)]
 }
 
-func buildSchemas() map[uint32]*MethodSchema {
+func buildSchemas(d Driver) map[uint32]*MethodSchema {
 	m := map[uint32]*MethodSchema{
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_INVOKE_WRITE): {
 			// Wrapper for the legacy write ABI. The generic loop validates attr
@@ -241,7 +243,6 @@ func buildSchemas() map[uint32]*MethodSchema {
 				ib.UVERBS_ATTR_REG_DMABUF_MR_ACCESS_FLAGS: AttrPtrIn,
 				ib.UVERBS_ATTR_REG_DMABUF_MR_RESP_LKEY:    AttrPtrOut,
 				ib.UVERBS_ATTR_REG_DMABUF_MR_RESP_RKEY:    AttrPtrOut,
-				ib.MLX5_IB_ATTR_REG_DMABUF_MR_ACCESS_FLAGS: AttrInline,
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_MR_DESTROY): {
@@ -351,13 +352,15 @@ func buildSchemas() map[uint32]*MethodSchema {
 			},
 		},
 	}
-	// Merge the driver-namespace (object, method) pairs each registered vendor
-	// plug-in models (e.g. the mlx5 UAR); these carry no core DMA semantics.
-	rangeDrivers(func(d Driver) {
-		for k, s := range d.Schemas() {
+	// Add the driver's own methods (e.g. the mlx5 UAR), which carry no core
+	// DMA semantics, and its attributes on core methods.
+	for k, s := range d.Schemas() {
+		if core, ok := m[k]; ok {
+			maps.Copy(core.Attrs, s.Attrs)
+		} else {
 			m[k] = s
 		}
-	})
+	}
 	return m
 }
 

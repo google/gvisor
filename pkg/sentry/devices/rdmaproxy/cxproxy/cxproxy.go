@@ -89,12 +89,18 @@ func (cxDriver) PrepareCreateDMA(t *kernel.Task, uhwIn []byte) (*rdmaproxy.Pinne
 	return &bufs, nil
 }
 
-// Schemas implements rdmaproxy.Driver.Schemas. It models the data-direct sysfs
-// path query and the mlx5 UAR (User Access Region) object. UAR alloc returns an mmap
+// Schemas implements rdmaproxy.Driver.Schemas. It models the mlx5 UAR (User
+// Access Region — the CQ/QP doorbell page) object: alloc returns an mmap
 // offset that the app maps through the uverbs FD via the generic passthrough,
-// so no address translation is needed here.
+// so no address translation is needed here. It also models the Data Direct
+// sysfs path query and access flag of DMA-BUF MR registration.
 func (cxDriver) Schemas() map[uint32]*rdmaproxy.MethodSchema {
 	return map[uint32]*rdmaproxy.MethodSchema{
+		rdmaproxy.SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_REG_DMABUF_MR): {
+			Attrs: map[uint16]rdmaproxy.AttrType{
+				ib.MLX5_IB_ATTR_REG_DMABUF_MR_ACCESS_FLAGS: rdmaproxy.AttrInline,
+			},
+		},
 		rdmaproxy.SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.MLX5_IB_METHOD_GET_DATA_DIRECT_SYSFS_PATH): {
 			Attrs: map[uint16]rdmaproxy.AttrType{
 				ib.MLX5_IB_ATTR_GET_DATA_DIRECT_SYSFS_PATH: rdmaproxy.AttrPtrOut,
