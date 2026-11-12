@@ -173,6 +173,7 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 	}
 	if opt.ProfileEnable {
 		s.Merge(profileFilters())
+		s.Merge(cpuProfilerFilters())
 	}
 	if opt.HostFilesystem {
 		s.Merge(hostFilesystemFilters(vars))
