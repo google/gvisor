@@ -9,6 +9,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "devices.go",
         "gofer_to_host_rpc.go",
         "null_netns.go",
         "state_file.go",
@@ -20,10 +21,12 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/nvgpu",
         "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/hostmm",
+        "//pkg/sentry/platform/platformdesc",
         "//pkg/sighandling",
         "//pkg/sync",
         "//pkg/unet",
@@ -50,6 +53,7 @@ go_test(
         "console_test.go",
         "container_save_restore_test.go",
         "container_test.go",
+        "devices_test.go",
         "metric_server_test.go",
         "multi_container_save_restore_test.go",
         "multi_container_test.go",

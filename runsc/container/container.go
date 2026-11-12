@@ -402,6 +402,10 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 	if args.Spec.Linux == nil {
 		args.Spec.Linux = &specs.Linux{}
 	}
+	// The sandbox cgroup's device rules depend on the modules this loads.
+	if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
+		return nil, err
+	}
 	// Don't force the use of cgroups in tests because they lack permission to do so.
 	if args.Spec.Linux.CgroupsPath == "" && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		args.Spec.Linux.CgroupsPath = "/" + args.ID
@@ -443,10 +447,23 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 	if err != nil {
 		return parentCgroup, fmt.Errorf("error creating pod mount hints: %w", err)
 	}
-	if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
-		return parentCgroup, err
+	var nvidiaDriverVersion string
+	if specutils.NVProxyEnabled(args.Spec, conf) {
+		// runsc may join the sandbox cgroup below, which denies the NVIDIA
+		// devices to a container without GPUs.
+		if nvidiaDriverVersion, err = sandbox.NVProxyDriverVersion(conf); err != nil {
+			return parentCgroup, fmt.Errorf("failed to get Nvidia driver version: %w", err)
+		}
 	}
 	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
+		// setupCgroupForRoot confined a cgroup v1 sandbox cgroup; a systemd one
+		// exists only now that it is joined.
+		if cgroup.IsOnlyV2() {
+			if err := allowDevices(conf, containerCgroup, args.Spec); err != nil {
+				return err
+			}
+		}
+
 		specFile, err := specutils.CopySpec(args.Spec)
 		if err != nil {
 			return fmt.Errorf("cannot copy spec file: %w", err)
@@ -491,6 +508,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			FSRestoreImagePaths: args.FSRestoreImagePaths,
 			FSRestoreDirect:     args.FSRestoreDirect,
 			NoRootContainer:     args.NoRootContainer,
+			NvidiaDriverVersion: nvidiaDriverVersion,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {
@@ -631,6 +649,10 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 			cpuLimits = root.Sandbox.CPULimits
 		}
 		err = cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
+			if err := allowDevices(conf, c.Sandbox.CgroupJSON.Cgroup, c.Spec); err != nil {
+				return err
+			}
+
 			// Create the gofer process.
 			specFile, err := specutils.CopySpec(c.Spec)
 			if err != nil {
@@ -2513,6 +2535,15 @@ func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec, cp
 	if parentCgroup == nil || err != nil {
 		return nil, nil, err
 	}
+	if !cgroup.IsOnlyV2() {
+		// A cgroup v1 devices controller cannot stop allowing all devices once
+		// it has children, so confine the sandbox cgroup before the root
+		// container's cgroup is created under it.
+		if err := allowDevices(conf, parentCgroup, spec); err != nil {
+			_ = parentCgroup.Uninstall()
+			return nil, nil, err
+		}
+	}
 
 	subCgroup, err := c.setupCgroupForSubcontainer(conf, spec)
 	if err != nil {
@@ -2554,11 +2585,11 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 }
 
 // handleCgroupInstallErr maps an error from a cgroup install operation. In
-// rootless mode, EACCES/EROFS mean we lack permission to configure cgroups,
-// which is non-fatal: it logs and returns nil so the caller proceeds without a
-// cgroup. All other errors are wrapped with what.
+// rootless mode, permission errors and EROFS mean we lack permission to
+// configure cgroups, which is non-fatal: it logs and returns nil so the caller
+// proceeds without a cgroup. All other errors are wrapped with what.
 func handleCgroupInstallErr(conf *config.Config, what string, err error) error {
-	if (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS)) && conf.Rootless {
+	if (errors.Is(err, os.ErrPermission) || errors.Is(err, unix.EROFS)) && conf.Rootless {
 		log.Warningf("Skipping %s configuration in rootless mode: %v", what, err)
 		return nil
 	}
@@ -2817,7 +2848,7 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		"--load-kmods",
 		"configure",
 		fmt.Sprintf("--ldconfig=@%s", ldconfigPath),
-		"--no-cgroups", // runsc doesn't configure device cgroups yet
+		"--no-cgroups", // runsc configures the sandbox's device cgroup itself.
 		fmt.Sprintf("--pid=%d", goferPid),
 		fmt.Sprintf("--device=%s", devices),
 	}
