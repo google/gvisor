@@ -1259,4 +1259,7 @@ type CoordinatorNIC interface {
 	AddNIC(n *nic) tcpip.Error
 	// DelNIC deletes the specified NIC device.
 	DelNIC(n *nic) tcpip.Error
+	// NICAddressChanged is called after the link address of the specified
+	// NIC device changed.
+	NICAddressChanged(n *nic)
 }
