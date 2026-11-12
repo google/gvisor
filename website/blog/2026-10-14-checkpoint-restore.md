@@ -353,13 +353,15 @@ serving, and those apps get a large benefit.
 Speed is not the only thing that improved. Some steps save memory or disk space
 instead. Here is a summary of what we measured, with 2 GiB of app memory:
 
-| Optimization              | What it saves           | Without   | With    |
-| ------------------------- | ----------------------- | --------- | ------- |
-| No compression            | sandbox memory after    | 277 MiB   | 8 MiB   |
-:                           : restore                 :           :         :
-| Zero pages, monitored app | snapshot size           | 2,566 MiB | 518 MiB |
-| Zero pages, monitored app | host memory of restored | 2,600 MiB | 551 MiB |
-:                           : sandbox                 :           :         :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Optimization              | What it saves                   | Without   | With    |
+| ------------------------- | ------------------------------- | --------- | ------- |
+| No compression            | sandbox memory after restore    | 277 MiB   | 8 MiB   |
+| Zero pages, monitored app | snapshot size                   | 2,566 MiB | 518 MiB |
+| Zero pages, monitored app | host memory of restored sandbox | 2,600 MiB | 551 MiB |
+
+<!-- mdformat on -->
 
 **Test setup:**
 
