@@ -394,17 +394,6 @@ func (fs *filesystem) buildNUMA(ctx context.Context, creds *auth.Credentials, nu
 	return fs.newDir(ctx, creds, defaultSysDirMode, entries)
 }
 
-// cpuListString formats CPUs [first, end) in the kernel's cpulist format
-// (lib/bitmap.c:bitmap_print_to_pagebuf(list=true)).
-//
-// Preconditions: first < end.
-func cpuListString(first, end uint) string {
-	if end-first == 1 {
-		return fmt.Sprintf("%d\n", first)
-	}
-	return fmt.Sprintf("%d-%d\n", first, end-1)
-}
-
 // hostCPUNodes returns the host's NUMA nodes with CPUs in ascending order.
 // Memory-only nodes (e.g. CXL or HBM) have no CPUs to share.
 func hostCPUNodes(numa *rdma.NUMA) []uint32 {
