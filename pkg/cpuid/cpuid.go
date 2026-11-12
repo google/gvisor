@@ -252,10 +252,17 @@ func (e *ErrIncompatible) Error() string {
 
 // CheckHostCompatible returns nil if fs is a subset of the host feature set.
 func (fs FeatureSet) CheckHostCompatible() error {
-	hfs := HostFeatureSet()
+	return fs.checkCompatible(HostFeatureSet())
+}
 
-	// Check that hfs is a superset of fs.
-	if diff := fs.Subtract(hfs); len(diff) > 0 {
+func (fs FeatureSet) checkCompatible(hfs FeatureSet) error {
+	// Check that hfs is a superset of fs, ignoring architecture-specific
+	// features that do not affect user-mode execution.
+	diff := fs.Subtract(hfs)
+	for _, f := range archIgnoredFeatures {
+		delete(diff, f)
+	}
+	if len(diff) > 0 {
 		return &ErrIncompatible{
 			reason: fmt.Sprintf("missing features: %v", diff),
 		}
