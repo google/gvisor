@@ -359,6 +359,9 @@ func (app *runApp) execute(t *Task) taskRunState {
 				sig = linux.SIGBUS
 				info.Signo = int32(linux.SIGBUS)
 			}
+			t.Arch().RecordPageFault(at)
+		} else if sig == linux.SIGSEGV {
+			t.Arch().RecordGeneralProtectionFault()
 		}
 
 		switch sig {
