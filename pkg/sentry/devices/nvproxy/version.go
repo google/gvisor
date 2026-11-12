@@ -1271,11 +1271,12 @@ func Init() {
 		// Drivers only handle the application-provided flags and attributes of
 		// NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR safely starting with 580.178.04 in
 		// the 580 branch and 610.57.04 in the 610 branch.
-		_ = addDriverABI(580, 178, 04, "5975a86ee45bffcb626f51ae33d1169b108186a2ea47ad651e72f13fa4b6d6f9", "ef59ec5d24850e12d6f7550ec1f7cf84db53a84ce9c63eb3ba55ef5ed0c4f049", func() *driverABI {
+		v580_178_04 := addDriverABI(580, 178, 04, "5975a86ee45bffcb626f51ae33d1169b108186a2ea47ad651e72f13fa4b6d6f9", "ef59ec5d24850e12d6f7550ec1f7cf84db53a84ce9c63eb3ba55ef5ed0c4f049", func() *driverABI {
 			abi := v580_173_10()
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_VID_HEAP_CONTROL] = feHandler(rmVidHeapControlWithOSDescriptor, compUtil)
 			return abi
 		})
+		_ = addDriverABI(580, 196, 07, "0aab0518db53cf73c412dc7f32bbc850ca95e839d8923d0de4bff42c1c9169ce", "5b7d2319a1e5228cb47a67e07733a5abfb614cd8d4350a750211022343d27eed", v580_178_04)
 
 		v590_44_01 := addUnsupportedDriverABI(590, 44, 01, func() *driverABI {
 			abi := v580_105_08()
