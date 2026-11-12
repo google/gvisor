@@ -353,13 +353,11 @@ serving, and those apps get a large benefit.
 Speed is not the only thing that improved. Some steps save memory or disk space
 instead. Here is a summary of what we measured, with 2 GiB of app memory:
 
-| Optimization              | What it saves           | Without   | With    |
-| ------------------------- | ----------------------- | --------- | ------- |
-| No compression            | sandbox memory after    | 277 MiB   | 8 MiB   |
-:                           : restore                 :           :         :
-| Zero pages, monitored app | snapshot size           | 2,566 MiB | 518 MiB |
-| Zero pages, monitored app | host memory of restored | 2,600 MiB | 551 MiB |
-:                           : sandbox                 :           :         :
+Optimization              | What it saves             | Without   | With
+------------------------- | ------------------------- | --------- | -------
+No compression            | memory after restore      | 277 MiB   | 8 MiB
+Zero pages, monitored app | snapshot size             | 2,566 MiB | 518 MiB
+Zero pages, monitored app | host memory after restore | 2,600 MiB | 551 MiB
 
 **Test setup:**
 
