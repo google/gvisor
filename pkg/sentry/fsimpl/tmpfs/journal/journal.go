@@ -51,7 +51,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -181,23 +180,6 @@ func (r region) valid(fileSize uint64) bool {
 	return r.off >= headerSize && hostarch.IsPageAligned(r.off) &&
 		r.size >= minRegionSize && r.size <= maxRegionSize && hostarch.IsPageAligned(r.size) &&
 		r.off <= fileSize && r.size <= fileSize-r.off
-}
-
-// State is the filesystem state held by a journal.
-type State struct {
-	Root    uint64
-	NextIno uint64
-	used    []memmap.FileRange
-}
-
-// Empty returns true if s holds no filesystem.
-func (s *State) Empty() bool { return s.Root == 0 }
-
-// UsedRanges returns the filestore ranges referenced by s, sorted and merged.
-func (s *State) UsedRanges() []memmap.FileRange { return s.used }
-
-func castagnoli() *crc32.Table {
-	return crc32.MakeTable(crc32.Castagnoli)
 }
 
 // Create initializes a new journal in file, replacing any existing contents.
@@ -537,4 +519,37 @@ func (j *Journal) Close() {
 	if err := j.file.Close(); err != nil {
 		log.Warningf("tmpfs journal: failed to close journal file: %v", err)
 	}
+}
+
+func direntAddLen(name string) uint64 {
+	return 8 + 8 + 2 + uint64(len(name))
+}
+
+// SnapshotSizer computes the size of snapshot records for BeginSnapshot. It
+// has the same record methods as Snapshot.
+type SnapshotSizer struct {
+	size uint64
+}
+
+// Size returns the total size of the records.
+func (z *SnapshotSizer) Size() uint64 {
+	return z.size
+}
+
+// Inode adds the size of the records that Snapshot.Inode writes.
+func (z *SnapshotSizer) Inode(r *InodeRecord) {
+	z.size += recordSize(r.payloadLen())
+	if r.Mode&modeTypeMask == modeRegular {
+		z.size += recordSize(24)
+	}
+}
+
+// DirentAdd adds the size of a RecordDirentAdd record.
+func (z *SnapshotSizer) DirentAdd(parent uint64, name string, child uint64) {
+	z.size += recordSize(direntAddLen(name))
+}
+
+// ExtentSet adds the size of a RecordExtentSet record.
+func (z *SnapshotSizer) ExtentSet(ino, off, length, mfOff uint64) {
+	z.size += recordSize(32)
 }
