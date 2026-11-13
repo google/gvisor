@@ -41,7 +41,9 @@
 package journal
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"golang.org/x/sys/unix"
@@ -49,6 +51,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -173,6 +176,27 @@ func (r region) end() uint64 {
 	return r.off + r.size
 }
 
+// valid returns true if r is a well-formed region in a file of size
+// fileSize.
+func (r region) valid(fileSize uint64) bool {
+	return r.off >= headerSize && hostarch.IsPageAligned(r.off) &&
+		r.size >= minRegionSize && r.size <= maxRegionSize && hostarch.IsPageAligned(r.size) &&
+		r.off <= fileSize && r.size <= fileSize-r.off
+}
+
+// State is the filesystem state held by a journal.
+type State struct {
+	Root    uint64
+	NextIno uint64
+	used    []memmap.FileRange
+}
+
+// Empty returns true if s holds no filesystem.
+func (s *State) Empty() bool { return s.Root == 0 }
+
+// UsedRanges returns the filestore ranges referenced by s, sorted and merged.
+func (s *State) UsedRanges() []memmap.FileRange { return s.used }
+
 func castagnoli() *crc32.Table {
 	return crc32.MakeTable(crc32.Castagnoli)
 }
@@ -183,6 +207,128 @@ func Create(mf *pgalloc.MemoryFile, opts Options) (*Journal, error) {
 	return create(mf, opts, false /* incomplete */)
 }
 
+
+// Open replays an existing journal in mf and adopts the regular-file pages that
+// it references into mf (which must have been created with KeepFileContents).
+//
+// If keepJournal is true, Open also returns an open Journal that continues
+// journaling into mf. If keepJournal is false, Open frees the journal's pages
+// in mf after replay and returns a nil *Journal.
+//
+// Open refuses an empty or uninitialized file (ErrIncomplete), a journal marked
+// incomplete (ErrIncomplete) or broken, a journal with a mismatched format
+// version or build ID, a journal whose image ID differs from a non-empty
+// opts.ImageID, or one whose contents are invalid.
+func Open(mf *pgalloc.MemoryFile, opts Options, keepJournal bool) (*Journal, *State, error) {
+	if len(opts.BuildID) > maxIDLen || len(opts.ImageID) > maxIDLen {
+		return nil, nil, fmt.Errorf("build ID or image ID longer than %d bytes", maxIDLen)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(mf.FD(), &stat); err != nil {
+		return nil, nil, fmt.Errorf("failed to stat journal: %w", err)
+	}
+	if stat.Size == 0 {
+		return nil, nil, ErrIncomplete
+	}
+	if stat.Size < headerSize {
+		return nil, nil, fmt.Errorf("journal size %d is smaller than its header", stat.Size)
+	}
+	var hdr [headerSize]byte
+	if _, err := unix.Pread(mf.FD(), hdr[:], 0); err != nil {
+		return nil, nil, fmt.Errorf("failed to read journal header: %w", err)
+	}
+	// Initialization writes the magic last. A header without a magic was
+	// never completely written.
+	var zeroMagic [len(headerMagic)]byte
+	if bytes.Equal(hdr[:len(headerMagic)], zeroMagic[:]) {
+		return nil, nil, ErrIncomplete
+	}
+
+	_, err := checkHeader(hdr[:], opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	active := binary.LittleEndian.Uint64(hdr[activeOff:])
+	if active&incompleteBit != 0 {
+		return nil, nil, ErrIncomplete
+	}
+	if active&brokenBit != 0 {
+		return nil, nil, fmt.Errorf("journal overflowed before the previous sandbox stopped; its state is incomplete")
+	}
+
+	fileSize := uint64(stat.Size)
+	filestoreLimit := fileSize
+	if opts.FilestoreSize != 0 && opts.FilestoreSize < filestoreLimit {
+		filestoreLimit = opts.FilestoreSize
+	}
+	filestoreEnd := binary.LittleEndian.Uint64(hdr[filestoreEndOff:])
+	limit := min(filestoreLimit, filestoreEnd)
+
+	gen := active
+	activeSlot := int(gen & 1)
+	regions := [2]region{loadRegionFromHeader(hdr[:], 0), loadRegionFromHeader(hdr[:], 1)}
+	r := regions[activeSlot]
+	if !r.valid(fileSize) {
+		return nil, nil, fmt.Errorf("active journal region [%#x, +%#x) is not valid in a %#x-byte file", r.off, r.size, fileSize)
+	}
+	if r.end() > limit {
+		if filestoreEnd < filestoreLimit {
+			return nil, nil, fmt.Errorf("active journal region [%#x, +%#x) exceeds filestore end mark %#x", r.off, r.size, filestoreEnd)
+		}
+		return nil, nil, fmt.Errorf("active journal region [%#x, +%#x) exceeds filestore size %#x", r.off, r.size, filestoreLimit)
+	}
+
+	activeMap, err := mmapRange(mf.FD(), r.off, r.size)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := checkRegionHeader(activeMap, gen); err != nil {
+		unmapRange(activeMap)
+		return nil, nil, err
+	}
+	st := &State{}
+
+	used := st.UsedRanges()
+	hdrRange := memmap.FileRange{Start: 0, End: headerSize}
+	regRange := memmap.FileRange{Start: r.off, End: r.end()}
+	for _, fr := range used {
+		if fr.Overlaps(hdrRange) || fr.Overlaps(regRange) {
+			unmapRange(activeMap)
+			return nil, nil, fmt.Errorf("replayed extent %v overlaps journal metadata", fr)
+		}
+	}
+
+	unsaved := []memmap.FileRange{hdrRange, regRange}
+	if err := mf.AdoptExisting(used, unsaved, usage.Tmpfs); err != nil {
+		unmapRange(activeMap)
+		return nil, nil, fmt.Errorf("failed to adopt filestore pages: %w", err)
+	}
+
+	if !keepJournal {
+		unmapRange(activeMap)
+		mf.FreeUnsaved(hdrRange)
+		mf.FreeUnsaved(regRange)
+		return nil, st, nil
+	}
+
+	headerMap, err := mmapRange(mf.FD(), 0, headerSize)
+	if err != nil {
+		unmapRange(activeMap)
+		return nil, nil, err
+	}
+	// AdoptExisting punched a hole over the inactive region, so clear its
+	// descriptor until the next compaction allocates a new inactive region.
+	inactiveSlot := 1 - activeSlot
+	regions[inactiveSlot] = region{}
+	j := &Journal{
+		header: headerMap,
+	}
+	j.storeRegion(inactiveSlot, region{})
+	j.mu.Lock()
+	j.regionMaps[activeSlot] = activeMap
+	j.mu.Unlock()
+	return j, st, nil
+}
 
 // create initializes a new journal in mf.
 func create(mf *pgalloc.MemoryFile, opts Options, incomplete bool) (*Journal, error) {
@@ -297,6 +443,14 @@ func putID(b []byte, id string) {
 	copy(b[2:2+maxIDLen], id)
 }
 
+func getID(b []byte) (string, error) {
+	n := int(binary.LittleEndian.Uint16(b))
+	if n > maxIDLen {
+		return "", fmt.Errorf("ID length %d exceeds %d", n, maxIDLen)
+	}
+	return string(b[2 : 2+n]), nil
+}
+
 // headerCRC returns the checksum of the immutable fields of header h, with
 // the given magic.
 func headerCRC(h []byte, magic [8]byte) uint32 {
@@ -306,8 +460,79 @@ func headerCRC(h []byte, magic [8]byte) uint32 {
 	return crc32.Update(c, tab, h[buildIDOff:regionDescOff])
 }
 
+// checkHeader validates header h against opts and returns the region size.
+func checkHeader(h []byte, opts Options) (uint64, error) {
+	regionSize, err := checkHeaderFormat(h)
+	if err != nil {
+		return 0, err
+	}
+	if binary.LittleEndian.Uint64(h[activeOff:])&incompleteBit != 0 {
+		return 0, ErrIncomplete
+	}
+	buildID, err := getID(h[buildIDOff:])
+	if err != nil {
+		return 0, err
+	}
+	if buildID != opts.BuildID {
+		return 0, fmt.Errorf("journal was written by build %q, but this is build %q", buildID, opts.BuildID)
+	}
+	imageID, err := getID(h[imageIDOff:])
+	if err != nil {
+		return 0, err
+	}
+	if opts.ImageID != "" && imageID != opts.ImageID {
+		return 0, &ImageMismatchError{Journal: imageID, Want: opts.ImageID}
+	}
+	return regionSize, nil
+}
+
+// checkHeaderFormat validates the magic, checksum, format version and region
+// size of header h, and returns the region size.
+func checkHeaderFormat(h []byte) (uint64, error) {
+	var magic [8]byte
+	copy(magic[:], h)
+	if magic != headerMagic {
+		return 0, fmt.Errorf("journal has bad magic %q", magic[:])
+	}
+	if got, want := binary.LittleEndian.Uint32(h[headerCRCOff:]), headerCRC(h, headerMagic); got != want {
+		return 0, fmt.Errorf("journal header checksum is %#x, want %#x", got, want)
+	}
+	if v := binary.LittleEndian.Uint32(h[8:]); v != formatVersion {
+		return 0, fmt.Errorf("journal format version is %d, want %d", v, formatVersion)
+	}
+	regionSize := binary.LittleEndian.Uint64(h[16:])
+	if regionSize < minRegionSize || regionSize > maxRegionSize || !hostarch.IsPageAligned(regionSize) {
+		return 0, fmt.Errorf("journal has invalid region size %d", regionSize)
+	}
+	return regionSize, nil
+}
+
+// ErrIncomplete is returned by Open if the journal is incomplete or was never
+// initialized. See CreateIncomplete.
+var ErrIncomplete = errors.New("journal is incomplete")
+
+// ImageMismatchError is returned by Open when the journal was created for a
+// different image.
+type ImageMismatchError struct {
+	Journal string
+	Want    string
+}
+
+// Error implements error.Error.
+func (e *ImageMismatchError) Error() string {
+	return fmt.Sprintf("journal was created for image %q, but the image is %q", e.Journal, e.Want)
+}
+
 func (j *Journal) storeActive(v uint64) {
 	atomicStore64(j.header[activeOff:activeOff+8], v)
+}
+
+func loadRegionFromHeader(hdr []byte, i int) region {
+	off := regionDescOff + 16*i
+	return region{
+		off:  binary.LittleEndian.Uint64(hdr[off:]),
+		size: binary.LittleEndian.Uint64(hdr[off+8:]),
+	}
 }
 
 // storeRegion writes the descriptor of region slot i to the header. The
@@ -325,6 +550,22 @@ func writeRegionHeader(regionMap []byte, gen, startSeq uint64) {
 	binary.LittleEndian.PutUint64(h[8:], gen)
 	binary.LittleEndian.PutUint64(h[16:], startSeq)
 	binary.LittleEndian.PutUint32(h[24:], crc32.Checksum(h[:24], castagnoli()))
+}
+
+// checkRegionHeader validates the header of regionMap and returns the sequence
+// number of its first record.
+func checkRegionHeader(regionMap []byte, gen uint64) (uint64, error) {
+	h := regionMap[:regionHeaderSize]
+	if m := binary.LittleEndian.Uint32(h[0:]); m != regionMagic {
+		return 0, fmt.Errorf("active journal region has bad magic %#x", m)
+	}
+	if got, want := binary.LittleEndian.Uint32(h[24:]), crc32.Checksum(h[:24], castagnoli()); got != want {
+		return 0, fmt.Errorf("active journal region header checksum is %#x, want %#x", got, want)
+	}
+	if g := binary.LittleEndian.Uint64(h[8:]); g != gen {
+		return 0, fmt.Errorf("active journal region has generation %d, want %d", g, gen)
+	}
+	return binary.LittleEndian.Uint64(h[16:]), nil
 }
 
 // Close stops appends and unmaps the journal's mappings. Records appended
