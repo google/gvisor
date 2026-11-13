@@ -362,13 +362,17 @@ const addressPACKeys = unix.PR_PAC_APIAKEY | unix.PR_PAC_APIBKEY |
 // EINVAL is ignored because it is returned on kernels older than 5.13 (which
 // lack PR_PAC_SET_ENABLED_KEYS) and on hardware without address
 // authentication, both of which imply the crash cannot occur.
+//
+// ENOTSUP is ignored because syscall.AllThreadsSyscall6 is unsupported when
+// built with cgo; in cgo builds, host PAC is disabled before any threads are
+// created by the C constructor in runsc/cgoextras.
 func disableHostPAC() error {
 	if _, _, errno := syscall.AllThreadsSyscall6(
 		unix.SYS_PRCTL,
 		unix.PR_PAC_SET_ENABLED_KEYS,
 		addressPACKeys, // keys to modify
 		0,              // 0 = disable, 1 = enable
-		0, 0, 0); errno != 0 && errno != unix.EINVAL {
+		0, 0, 0); errno != 0 && errno != unix.EINVAL && errno != unix.ENOTSUP {
 		return fmt.Errorf("disabling host PAC: %w", errno)
 	}
 	return nil
