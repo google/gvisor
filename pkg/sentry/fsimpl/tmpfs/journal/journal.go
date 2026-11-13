@@ -330,7 +330,14 @@ func Open(mf *pgalloc.MemoryFile, opts Options, keepJournal bool) (*Journal, *St
 		unmapRange(activeMap)
 		return nil, nil, err
 	}
-	st, tail, nextSeq := &State{}, uint64(regionHeaderSize), startSeq
+	st, tail, nextSeq, err := replayRegion(activeMap, startSeq, limit)
+	if err != nil {
+		unmapRange(activeMap)
+		if filestoreEnd < filestoreLimit {
+			return nil, nil, fmt.Errorf("failed to replay journal with filestore end mark %#x: %w", filestoreEnd, err)
+		}
+		return nil, nil, fmt.Errorf("failed to replay journal: %w", err)
+	}
 
 	used := st.UsedRanges()
 	hdrRange := memmap.FileRange{Start: 0, End: headerSize}
