@@ -18,6 +18,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/usage",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
