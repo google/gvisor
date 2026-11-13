@@ -284,7 +284,7 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 			fs.inodeMu.Lock()
 			child.inode.refs.DecRef(func() {
 				destroyInode = true
-				if !child.isDir() {
+				if !child.isDir() && fs.inodeByKey[child.inode.inoKey] == child.inode {
 					// Only non-directory inodes are cached in inodeByKey.
 					delete(fs.inodeByKey, child.inode.inoKey)
 				}
