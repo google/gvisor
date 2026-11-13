@@ -873,8 +873,7 @@ func (t *Task) FSContext() *FSContext {
 	return t.fsContext.Load()
 }
 
-// FDTable returns t's FDTable. FDMTable does not take an additional reference
-// on the returned FDMap.
+// FDTable returns t's file descriptor table without taking a reference.
 //
 // Precondition: The caller must be running on the task goroutine, or t.mu must
 // be locked.
@@ -883,11 +882,22 @@ func (t *Task) FDTable() *FDTable {
 }
 
 // GetFile is a convenience wrapper for t.FDTable().Get.
-//
-// Precondition: same as FDTable.Get.
 func (t *Task) GetFile(fd int32) *vfs.FileDescription {
 	f, _ := t.fdTable.Get(fd)
 	return f
+}
+
+// GetFileAndFlags looks up fd in t's current table. It can be called from
+// another task's goroutine. The caller owns a reference to any returned file.
+//
+// +checklocksexclude:t.mu
+func (t *Task) GetFileAndFlags(fd int32) (*vfs.FileDescription, FDFlags) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.fdTable == nil {
+		return nil, FDFlags{}
+	}
+	return t.fdTable.Get(fd)
 }
 
 // NewFDs is a convenience wrapper for t.FDTable().NewFDs.
