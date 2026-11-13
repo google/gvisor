@@ -1967,7 +1967,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			// links to the inode, so the list may contain dentries other than d.
 			d.inode.watches.HandleDeletion(withCheckCachingList(ctx, &ds))
 		}
-		d.destroyLocked(ctx) // +checklocksforce: renameMu must be acquired at this point.
+		d.destroyLocked(ctx, nil /* batch */) // +checklocksforce: renameMu must be acquired at this point.
 		if ds != nil {
 			// d is destroyed now, so checkCachingLocked is a no-op for it.
 			for _, td := range *ds {
@@ -1981,7 +1981,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		d.cachingMu.Unlock()
 		// Attempt to evict.
 		if renameMuWriteLocked {
-			d.evictLocked(ctx) // +checklocksforce: renameMu is locked in this case.
+			d.evictLocked(ctx, nil /* batch */) // +checklocksforce: renameMu is locked in this case.
 			return
 		}
 		d.evict(ctx)
@@ -2012,7 +2012,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			delete(parent.children, d.name)
 			parent.childrenMu.Unlock()
 		}
-		d.destroyLocked(ctx) // +checklocksforce: see above.
+		d.destroyLocked(ctx, nil /* batch */) // +checklocksforce: see above.
 		return
 	}
 
@@ -2025,7 +2025,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		d.cachingMu.Unlock()
 		return
 	}
-	// Cache the dentry, then evict the least recently used cached dentry if
+	// Cache the dentry, then evict the least recently used cached dentries if
 	// the cache becomes over-full.
 	d.inode.fs.dentryCache.dentries.PushFront(&d.cacheEntry)
 	d.inode.fs.dentryCache.dentriesLen++
@@ -2037,12 +2037,56 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 	if shouldEvict {
 		if !renameMuWriteLocked {
 			// Need to lock d.inode.fs.renameMu for writing as needed by
-			// d.evictCachedDentryLocked().
+			// d.evictCachedDentriesLocked().
 			d.inode.fs.renameMu.Lock()
 			defer d.inode.fs.renameMu.Unlock()
 		}
-		d.inode.fs.evictCachedDentryLocked(ctx) // +checklocksforce: see above.
+		d.inode.fs.evictCachedDentriesLocked(ctx) // +checklocksforce: see above.
 	}
+}
+
+// evictCachedDentriesLocked evicts least recently used cached dentries until
+// the cache is well below its capacity. An overflow has to lock renameMu for
+// writing, which stalls path resolution, so it makes room for many dentries
+// rather than one, and unlocks renameMu once to destroy them all.
+//
+// Precondition: fs.renameMu must be locked for writing; it may be temporarily
+// unlocked.
+// +checklocks:fs.renameMu
+func (fs *filesystem) evictCachedDentriesLocked(ctx context.Context) {
+	cache := fs.dentryCache
+	keep := cache.maxCachedDentries - cache.maxCachedDentries/4
+	var batch []destroyingDentry
+	for {
+		cache.mu.Lock()
+		n := cache.dentriesLen
+		cache.mu.Unlock()
+		if n <= keep {
+			break
+		}
+		fs.evictCachedDentryLocked(ctx, &batch)
+	}
+	if len(batch) == 0 {
+		return
+	}
+
+	fs.renameMu.Unlock()
+	for _, b := range batch {
+		b.d.destroyDisconnected(ctx, b.destroyInode)
+	}
+	fs.renameMu.Lock()
+	for _, b := range batch {
+		if parent := b.d.parent.Load(); parent != nil && parent.decRefNoCaching() == 0 {
+			parent.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+		}
+	}
+}
+
+// destroyingDentry is a dentry that destroyLocked has marked destroyed, but
+// whose resources and reference on its parent are yet to be released.
+type destroyingDentry struct {
+	d            *dentry
+	destroyInode bool
 }
 
 // Preconditions: d.cachingMu must be locked.
@@ -2061,15 +2105,18 @@ func (d *dentry) removeFromCacheLocked() {
 // +checklocks:fs.renameMu
 func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 	for fs.dentryCache.dentriesLen != 0 {
-		fs.evictCachedDentryLocked(ctx)
+		fs.evictCachedDentryLocked(ctx, nil /* batch */)
 	}
 }
 
+// evictCachedDentryLocked evicts the least recently used cached dentry,
+// passing batch to destroyLocked.
+//
 // Preconditions:
 //   - fs.renameMu must be locked for writing; it may be temporarily unlocked.
 //
 // +checklocks:fs.renameMu
-func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
+func (fs *filesystem) evictCachedDentryLocked(ctx context.Context, batch *[]destroyingDentry) {
 	fs.dentryCache.mu.Lock()
 	victim := fs.dentryCache.dentries.Back()
 	fs.dentryCache.mu.Unlock()
@@ -2080,7 +2127,7 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	}
 
 	if victim.d.inode.fs == fs {
-		victim.d.evictLocked(ctx) // +checklocksforce: owned as precondition, victim.fs == fs
+		victim.d.evictLocked(ctx, batch) // +checklocksforce: owned as precondition, victim.fs == fs
 		return
 	}
 
@@ -2098,14 +2145,17 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 func (d *dentry) evict(ctx context.Context) {
 	d.inode.fs.renameMu.Lock()
 	defer d.inode.fs.renameMu.Unlock()
-	d.evictLocked(ctx)
+	d.evictLocked(ctx, nil /* batch */)
 }
 
+// evictLocked evicts d unless it is referenced or watched, passing batch to
+// destroyLocked.
+//
 // Preconditions:
 //   - d.inode.fs.renameMu must be locked for writing; it may be temporarily unlocked.
 //
 // +checklocks:d.inode.fs.renameMu
-func (d *dentry) evictLocked(ctx context.Context) {
+func (d *dentry) evictLocked(ctx context.Context, batch *[]destroyingDentry) {
 	d.cachingMu.Lock()
 	d.removeFromCacheLocked()
 	// d.refs or d.inode.watches.Size() may have become non-zero from an earlier path
@@ -2139,7 +2189,7 @@ func (d *dentry) evictLocked(ctx context.Context) {
 	// try to acquire fs.renameMu (which we have already acquiredd). Hence,
 	// fs.renameMu will synchronize the destroy attempts.
 	d.cachingMu.Unlock()
-	d.destroyLocked(ctx) // +checklocksforce: owned as precondition.
+	d.destroyLocked(ctx, batch) // +checklocksforce: owned as precondition.
 }
 
 // destroyDisconnected destroys an uncached, unparented dentry. There are no
@@ -2169,7 +2219,9 @@ func (d *dentry) destroyDisconnected(ctx context.Context, destroyInode bool) {
 	refs.Unregister(d)
 }
 
-// destroyLocked destroys the dentry.
+// destroyLocked destroys the dentry. If batch is not nil, renameMu stays
+// locked: d is appended to batch, and the caller must release d's resources
+// and its reference on its parent.
 //
 // Preconditions:
 //   - d.inode.fs.renameMu must be locked for writing; it may be temporarily unlocked.
@@ -2178,7 +2230,7 @@ func (d *dentry) destroyDisconnected(ctx context.Context, destroyInode bool) {
 //     from its former parent dentry.
 //
 // +checklocks:d.inode.fs.renameMu
-func (d *dentry) destroyLocked(ctx context.Context) {
+func (d *dentry) destroyLocked(ctx context.Context, batch *[]destroyingDentry) {
 	switch d.refs.Load() {
 	case 0:
 		// Mark the dentry destroyed.
@@ -2202,6 +2254,11 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		}
 	})
 	d.inode.fs.inodeMu.Unlock()
+
+	if batch != nil {
+		*batch = append(*batch, destroyingDentry{d, destroyInode})
+		return
+	}
 
 	// Allow the following to proceed without renameMu locked to improve
 	// scalability.
