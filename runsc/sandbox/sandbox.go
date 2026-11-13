@@ -1115,6 +1115,8 @@ func sentryGODEBUG(conf *config.Config) []string {
 	// initializers, before main runs.
 	if !conf.ProfileEnable {
 		godebug = append(godebug, "memprofilerate=0")
+	} else if conf.ProfileHeapRate != 0 {
+		godebug = append(godebug, "memprofilerate="+strconv.Itoa(conf.ProfileHeapRate))
 	}
 	return godebug
 }
