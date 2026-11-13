@@ -187,7 +187,7 @@ TEST(PivotRootTest, ChangesCwdForAllProcesses) {
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(new_root.path()));
   const std::string put_old_path =
       absl::StrCat(new_root_path, "/", Basename(put_old.path()));
-  const std::string old_root_new_path =
+  [[maybe_unused]] const std::string old_root_new_path =
       absl::StrCat("/", Basename(put_old_path));
 
   struct stat statbuf_newroot;

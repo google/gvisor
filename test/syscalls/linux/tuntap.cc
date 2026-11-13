@@ -639,7 +639,7 @@ TEST_F(TuntapTest, LargeWritesFailWithEMSGSIZE) {
 
   ping_pkt ping_req =
       CreatePingPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
-  std::string arp_rep =
+  [[maybe_unused]] std::string arp_rep =
       CreateArpPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
 
   constexpr int kBufSize = 4096;
