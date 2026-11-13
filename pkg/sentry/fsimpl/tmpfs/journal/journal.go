@@ -594,6 +594,34 @@ func checkHeaderFormat(h []byte) (uint64, error) {
 	return regionSize, nil
 }
 
+// FilestoreEnd returns the filestoreEnd header field of the journal in file.
+// Neither the active journal region nor any extent that Open accepts ends
+// beyond it, so the backing file can be shrunk to it before the journal is
+// opened. ok is false if file does not hold a valid journal header, or if the
+// journal is marked as broken or incomplete; the caller must then not use end.
+// FilestoreEnd does not check the build and image IDs, since the mark does not
+// depend on them. FilestoreEnd does not take ownership of file.
+func FilestoreEnd(file *os.File) (end uint64, ok bool, err error) {
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(file.Fd()), &stat); err != nil {
+		return 0, false, fmt.Errorf("failed to stat journal: %w", err)
+	}
+	if stat.Size < headerSize {
+		return 0, false, nil
+	}
+	var hdr [headerSize]byte
+	if _, err := unix.Pread(int(file.Fd()), hdr[:], 0); err != nil {
+		return 0, false, fmt.Errorf("failed to read journal header: %w", err)
+	}
+	if _, err := checkHeaderFormat(hdr[:]); err != nil {
+		return 0, false, nil
+	}
+	if binary.LittleEndian.Uint64(hdr[activeOff:])&activeFlags != 0 {
+		return 0, false, nil
+	}
+	return binary.LittleEndian.Uint64(hdr[filestoreEndOff:]), true, nil
+}
+
 // ErrIncomplete is returned by Open if the journal is incomplete or was never
 // initialized. See CreateIncomplete.
 var ErrIncomplete = errors.New("journal is incomplete")
