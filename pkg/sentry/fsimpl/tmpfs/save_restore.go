@@ -83,6 +83,7 @@ func (i *inode) loadDefaultACL(_ goContext.Context, defaultACL *vfs.PosixACL) {
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context, _ vfs.PrepareSaveOptions) error {
+	fs.stopJournalCompactor()
 	resourceID := fs.mf.ResourceID()
 	if !resourceID.Ok() {
 		return nil
@@ -99,10 +100,14 @@ func (fs *filesystem) PrepareSave(ctx context.Context, _ vfs.PrepareSaveOptions)
 }
 
 // BeforeResume implements vfs.FilesystemImplSaveRestoreExtension.BeforeResume.
-func (fs *filesystem) BeforeResume(ctx context.Context) {}
+func (fs *filesystem) BeforeResume(ctx context.Context) {
+	fs.startJournalCompactor()
+}
 
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
 	return nil
 }
+
+// afterLoad is invoked by stateify.
