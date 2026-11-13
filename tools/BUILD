@@ -82,8 +82,6 @@ bzl_library(
 exports_files([
     "benchmark-umbrella-exports.patch",
     "build_cover.sh",
-    "llvm-dev-backends.patch",
-    "llvm-linux-header-default.patch",
 ])
 
 # Go toolchain patched to allow imports of internal packages for coverage
