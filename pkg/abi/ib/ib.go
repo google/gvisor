@@ -90,12 +90,14 @@ const (
 // Method IDs within each object namespace.
 const (
 	// enum uverbs_methods_device.
-	UVERBS_METHOD_INVOKE_WRITE    = 0
-	UVERBS_METHOD_QUERY_PORT      = 2
-	UVERBS_METHOD_GET_CONTEXT     = 3
-	UVERBS_METHOD_QUERY_CONTEXT   = 4
-	UVERBS_METHOD_QUERY_GID_TABLE = 5
-	UVERBS_METHOD_QUERY_GID_ENTRY = 6
+	UVERBS_METHOD_INVOKE_WRITE         = 0
+	UVERBS_METHOD_QUERY_PORT           = 2
+	UVERBS_METHOD_GET_CONTEXT          = 3
+	UVERBS_METHOD_QUERY_CONTEXT        = 4
+	UVERBS_METHOD_QUERY_GID_TABLE      = 5
+	UVERBS_METHOD_QUERY_GID_ENTRY      = 6
+	UVERBS_METHOD_QUERY_PORT_SPEED     = 7
+	UVERBS_METHOD_QUERY_COMP_CNTR_CAPS = 8
 
 	// enum uverbs_methods_pd.
 	UVERBS_METHOD_PD_DESTROY = 0
@@ -119,6 +121,7 @@ const (
 
 	// enum uverbs_methods_mr.
 	UVERBS_METHOD_MR_DESTROY    = 1
+	UVERBS_METHOD_QUERY_MR      = 3
 	UVERBS_METHOD_REG_DMABUF_MR = 4
 	UVERBS_METHOD_REG_MR        = 5
 
@@ -150,6 +153,19 @@ const (
 const (
 	UVERBS_ATTR_QUERY_PORT_PORT_NUM = 0
 	UVERBS_ATTR_QUERY_PORT_RESP     = 1
+)
+
+// enum uverbs_attrs_query_port_speed_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_PORT_SPEED_PORT_NUM = 0
+	UVERBS_ATTR_QUERY_PORT_SPEED_RESP     = 1
+)
+
+// enum uverbs_attrs_query_comp_cntr_caps_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_COMP_CNTR_CAPS_MAX_COUNTERS            = 0
+	UVERBS_ATTR_QUERY_COMP_CNTR_CAPS_MAX_VALUE               = 1
+	UVERBS_ATTR_QUERY_COMP_CNTR_CAPS_SUPPORTED_QP_ATTACH_OPS = 2
 )
 
 // enum uverbs_attrs_query_gid_table_cmd_attr_ids.
@@ -204,6 +220,15 @@ const (
 
 // UVERBS_ATTR_DESTROY_MR_HANDLE is the handle attribute ID for uverbs_attrs_destroy_mr_cmd_attr_ids.
 const UVERBS_ATTR_DESTROY_MR_HANDLE = 0
+
+// enum uverbs_attrs_query_mr_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_MR_HANDLE      = 0
+	UVERBS_ATTR_QUERY_MR_RESP_LKEY   = 1
+	UVERBS_ATTR_QUERY_MR_RESP_RKEY   = 2
+	UVERBS_ATTR_QUERY_MR_RESP_LENGTH = 3
+	UVERBS_ATTR_QUERY_MR_RESP_IOVA   = 4
+)
 
 // enum uverbs_attrs_create_cq_cmd_attr_ids.
 const (
@@ -299,6 +324,13 @@ const (
 // include/uapi/rdma/mlx5_user_ioctl_cmds.h. The UAR (User Access Region) is
 // the CQ/QP doorbell page.
 const (
+	// enum mlx5_ib_pd_methods.
+	MLX5_IB_METHOD_PD_QUERY = 0x1000
+
+	// enum mlx5_ib_query_pd_attrs.
+	MLX5_IB_ATTR_QUERY_PD_HANDLE   = 0x1000
+	MLX5_IB_ATTR_QUERY_PD_RESP_PDN = 0x1001
+
 	MLX5_IB_OBJECT_UAR = 0x1008
 
 	// enum mlx5_ib_uar_obj_methods.

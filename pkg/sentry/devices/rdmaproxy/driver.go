@@ -53,9 +53,9 @@ type Driver interface {
 	// the payload referenced no buffers. A non-nil error aborts the ioctl.
 	PrepareCreateDMA(t *kernel.Task, uhwIn []byte) (*PinnedDMABufs, error)
 
-	// Schemas returns the driver-namespace (object, method) pairs this driver
-	// models (IDs >= UVERBS_ID_DRIVER_NS), keyed by SchemaKey, which the core
-	// merges into its allowlist.
+	// Schemas returns the (object, method) pairs this driver models, keyed by
+	// SchemaKey. The object or method ID is in the driver namespace. These
+	// schemas are available only on FDs opened for this driver.
 	Schemas() map[uint32]*MethodSchema
 }
 
@@ -119,16 +119,6 @@ func LookupDriver(name string) Driver {
 		return reg.drivers[GenericDriverName]
 	}
 	return nil
-}
-
-// rangeDrivers calls f for each registered driver.
-func rangeDrivers(f func(Driver)) {
-	reg := driverReg()
-	reg.mu.RLock()
-	defer reg.mu.RUnlock()
-	for _, drv := range reg.drivers {
-		f(drv)
-	}
 }
 
 // RegisteredDrivers returns the names of all registered drivers.

@@ -90,11 +90,18 @@ func (cxDriver) PrepareCreateDMA(t *kernel.Task, uhwIn []byte) (*rdmaproxy.Pinne
 }
 
 // Schemas implements rdmaproxy.Driver.Schemas. It models the mlx5 UAR (User
-// Access Region — the CQ/QP doorbell page) object: alloc returns an mmap
-// offset that the app maps through the uverbs FD via the generic passthrough,
-// so no address translation is needed here.
+// Access Region — the CQ/QP doorbell page) object and PD_QUERY method. UAR
+// alloc returns an mmap offset that the app maps through the uverbs FD via the
+// generic passthrough, and PD_QUERY returns the protection domain number, so
+// no address translation is needed here.
 func (cxDriver) Schemas() map[uint32]*rdmaproxy.MethodSchema {
 	return map[uint32]*rdmaproxy.MethodSchema{
+		rdmaproxy.SchemaKey(ib.UVERBS_OBJECT_PD, ib.MLX5_IB_METHOD_PD_QUERY): {
+			Attrs: map[uint16]rdmaproxy.AttrType{
+				ib.MLX5_IB_ATTR_QUERY_PD_HANDLE:   rdmaproxy.AttrIdr,
+				ib.MLX5_IB_ATTR_QUERY_PD_RESP_PDN: rdmaproxy.AttrPtrOut,
+			},
+		},
 		rdmaproxy.SchemaKey(ib.MLX5_IB_OBJECT_UAR, ib.MLX5_IB_METHOD_UAR_OBJ_ALLOC): {
 			Attrs: map[uint16]rdmaproxy.AttrType{
 				ib.MLX5_IB_ATTR_UAR_OBJ_ALLOC_HANDLE:      rdmaproxy.AttrIdr,

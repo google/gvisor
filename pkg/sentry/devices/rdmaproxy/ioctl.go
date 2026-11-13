@@ -90,7 +90,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		return 0, linuxerr.EINVAL
 	}
 
-	schema := lookupSchema(hdr.ObjectID, hdr.MethodID)
+	schema := fd.lookupSchema(hdr.ObjectID, hdr.MethodID)
 	if schema == nil {
 		log.Warningf("rdmaproxy: unsupported ioctl object=%d method=%d", hdr.ObjectID, hdr.MethodID)
 		return 0, linuxerr.EINVAL

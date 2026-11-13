@@ -83,6 +83,8 @@ type uverbsDevice struct {
 	// name at Register time. Always non-nil: Register refuses to register a
 	// device whose host PCI driver has no plug-in.
 	driver Driver
+	// vendorSchemas is immutable after device registration.
+	vendorSchemas map[uint32]*MethodSchema
 }
 
 // Open implements vfs.Device.Open.
@@ -99,8 +101,9 @@ func (dev *uverbsDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Den
 		return nil, err
 	}
 	fd := &uverbsFD{
-		hostFD: int32(hostFD),
-		driver: dev.driver,
+		hostFD:        int32(hostFD),
+		driver:        dev.driver,
+		vendorSchemas: dev.vendorSchemas,
 	}
 	if err := fdnotifier.AddFD(fd.hostFD, &fd.queue); err != nil {
 		unix.Close(hostFD)
@@ -250,6 +253,10 @@ type uverbsFD struct {
 	// uverbsDevice at Open time. Always non-nil; see uverbsDevice.driver.
 	driver Driver
 
+	// vendorSchemas contains only the schemas for this FD's driver. Driver
+	// method and object IDs can overlap between vendors.
+	vendorSchemas map[uint32]*MethodSchema
+
 	// pinned tracks app memory mirrored on behalf of MRs, CQs, and QPs
 	// registered or created through this uverbs FD.
 	pinned pinnedResources
@@ -326,7 +333,11 @@ func Register(vfsObj *vfs.VirtualFilesystem, devName string, minor uint32, drive
 		return fmt.Errorf("rdmaproxy: no vendor plug-in for driver %q — refusing to register %s (supported: %v)", driverName, devName, RegisteredDrivers())
 	}
 	log.Infof("rdmaproxy: registering %s with major=%d minor=%d driver=%s (requested=%q)", devName, ib.IB_UVERBS_MAJOR, minor, driver.Name(), driverName)
-	return vfsObj.RegisterDevice(vfs.CharDevice, ib.IB_UVERBS_MAJOR, minor, &uverbsDevice{devName: devName, driver: driver}, &vfs.RegisterDeviceOptions{
+	return vfsObj.RegisterDevice(vfs.CharDevice, ib.IB_UVERBS_MAJOR, minor, &uverbsDevice{
+		devName:       devName,
+		driver:        driver,
+		vendorSchemas: driver.Schemas(),
+	}, &vfs.RegisterDeviceOptions{
 		GroupName: "infiniband",
 		Pathname:  filepath.Join("infiniband", devName),
 		FilePerms: 0666,

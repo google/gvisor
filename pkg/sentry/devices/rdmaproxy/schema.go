@@ -125,8 +125,8 @@ type MethodSchema struct {
 	Attrs map[uint16]AttrType
 }
 
-// schemas is the allowlist of supported (object, method) pairs, keyed by
-// (object<<16 | method). Requests outside this set are rejected with EINVAL.
+// schemas is the shared allowlist of core (object, method) pairs, keyed by
+// (object<<16 | method). Vendor schemas are selected per device.
 // Built on first use so that a runsc without RDMA never allocates it.
 var (
 	schemasOnce sync.Once
@@ -140,6 +140,13 @@ func SchemaKey(object, method uint16) uint32 {
 func lookupSchema(object, method uint16) *MethodSchema {
 	schemasOnce.Do(func() { schemas = buildSchemas() })
 	return schemas[SchemaKey(object, method)]
+}
+
+func (fd *uverbsFD) lookupSchema(object, method uint16) *MethodSchema {
+	if schema := lookupSchema(object, method); schema != nil {
+		return schema
+	}
+	return fd.vendorSchemas[SchemaKey(object, method)]
 }
 
 func buildSchemas() map[uint32]*MethodSchema {
@@ -183,6 +190,19 @@ func buildSchemas() map[uint32]*MethodSchema {
 				ib.UVERBS_ATTR_QUERY_PORT_RESP:     AttrPtrOut,
 			},
 		},
+		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_QUERY_PORT_SPEED): {
+			Attrs: map[uint16]AttrType{
+				ib.UVERBS_ATTR_QUERY_PORT_SPEED_PORT_NUM: AttrPtrIn,
+				ib.UVERBS_ATTR_QUERY_PORT_SPEED_RESP:     AttrPtrOut,
+			},
+		},
+		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_QUERY_COMP_CNTR_CAPS): {
+			Attrs: map[uint16]AttrType{
+				ib.UVERBS_ATTR_QUERY_COMP_CNTR_CAPS_MAX_COUNTERS:            AttrPtrOut,
+				ib.UVERBS_ATTR_QUERY_COMP_CNTR_CAPS_MAX_VALUE:               AttrPtrOut,
+				ib.UVERBS_ATTR_QUERY_COMP_CNTR_CAPS_SUPPORTED_QP_ATTACH_OPS: AttrPtrOut,
+			},
+		},
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_QUERY_GID_TABLE): {
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_QUERY_GID_TABLE_ENTRY_SIZE:       AttrPtrIn,
@@ -209,6 +229,15 @@ func buildSchemas() map[uint32]*MethodSchema {
 		SchemaKey(ib.UVERBS_OBJECT_AH, ib.UVERBS_METHOD_AH_DESTROY): {
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_AH_HANDLE: AttrIdr,
+			},
+		},
+		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_QUERY_MR): {
+			Attrs: map[uint16]AttrType{
+				ib.UVERBS_ATTR_QUERY_MR_HANDLE:      AttrIdr,
+				ib.UVERBS_ATTR_QUERY_MR_RESP_LKEY:   AttrPtrOut,
+				ib.UVERBS_ATTR_QUERY_MR_RESP_RKEY:   AttrPtrOut,
+				ib.UVERBS_ATTR_QUERY_MR_RESP_LENGTH: AttrPtrOut,
+				ib.UVERBS_ATTR_QUERY_MR_RESP_IOVA:   AttrPtrOut,
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_REG_MR): {
@@ -350,13 +379,6 @@ func buildSchemas() map[uint32]*MethodSchema {
 			},
 		},
 	}
-	// Merge the driver-namespace (object, method) pairs each registered vendor
-	// plug-in models (e.g. the mlx5 UAR); these carry no core DMA semantics.
-	rangeDrivers(func(d Driver) {
-		for k, s := range d.Schemas() {
-			m[k] = s
-		}
-	})
 	return m
 }
 
