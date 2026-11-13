@@ -20,6 +20,7 @@ import (
 	"os"
 	"slices"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -97,7 +98,7 @@ func (c *containerMounter) configureOverlayFilestore(conf *config.Config, dst st
 		return nil, nil
 	}
 
-	mf, _, err := createPrivateMemoryFile(filestore, resourceID, c.containerID, c.l.fsRestore, jcfg.Enabled)
+	mf, loaded, err := createPrivateMemoryFile(filestore, resourceID, c.containerID, c.l.fsRestore, jcfg.Enabled)
 	if err != nil {
 		journalFile.Close()
 		return nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
@@ -117,8 +118,20 @@ func (c *containerMounter) configureOverlayFilestore(conf *config.Config, dst st
 	if !jcfg.Enabled {
 		return nil, nil
 	}
-	journalFile.Close()
-	return nil, fmt.Errorf("populated journaling rootfs upper is not yet supported")
+	l, cid, imageID := c.l, c.containerID, jcfg.ImageID
+	if loaded {
+		fsr := l.fsRestore
+		return func(ctx context.Context, upper *vfs.Filesystem) error {
+			l.activateJournalingUpperAsync(ctx, conf, cid, upper, imageID, journalFile, func() error { return fsr.wait(cid) })
+			return nil
+		}, nil
+	}
+	return func(ctx context.Context, upper *vfs.Filesystem) error {
+		if err := l.activateJournalingUpper(ctx, conf, cid, upper, imageID, journalFile, false /* pause */); err != nil {
+			return fmt.Errorf("failed to activate the journaling rootfs upper journal: %w", err)
+		}
+		return nil
+	}, nil
 }
 
 // createJournalingUpper initializes a fresh MemoryFile on filestore and a
@@ -180,6 +193,39 @@ func journalingMemoryFileOpts(resourceID checkpoint.ResourceID, keepContents boo
 	}
 }
 
+// activateJournalingUpper creates a journal in journalFile and starts
+// journaling on upper after a restore, filesystem restore, or tar archive
+// populated it. It takes ownership of journalFile.
+func (l *Loader) activateJournalingUpper(ctx context.Context, conf *config.Config, cid string, upper *vfs.Filesystem, imageID string, journalFile *os.File, pause bool) error {
+	mf := tmpfs.MemoryFileOf(upper)
+	if mf == nil {
+		journalFile.Close()
+		return fmt.Errorf("journaling rootfs upper is not a tmpfs filesystem")
+	}
+	if err := mf.AwaitLoadAll(); err != nil {
+		journalFile.Close()
+		return fmt.Errorf("failed to load journaling rootfs upper pages: %w", err)
+	}
+	if pause {
+		l.k.Pause()
+		defer l.k.Unpause()
+	}
+	j, err := journal.CreateIncomplete(journalFile, journalingUpperOpts(conf, imageID))
+	if err != nil {
+		journalFile.Close()
+		return err
+	}
+	if conf.TestOnlyJournalingRootfsUpperFault == "activation" {
+		j.Close()
+		return fmt.Errorf("activation failure injected by --TESTONLY-journaling-rootfs-upper-fault")
+	}
+	if err := tmpfs.ActivateJournal(upper, j); err != nil {
+		return err
+	}
+	log.Infof("Activated journaling rootfs upper journal for container %q", cid)
+	return nil
+}
+
 // syncSelfFilestoreWhiteout hides this sandbox's self-backed filestore (and,
 // if journaled is true, its journal file) in upperFS without altering
 // upperFS's root directory timestamps, and removes any imported self-filestore
@@ -210,4 +256,74 @@ func syncSelfFilestoreWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesyste
 		}
 	}
 	return tmpfs.SyncSelfFilestoreWhiteouts(ctx, upperFS, selfNames, remove)
+}
+
+// activateJournalingUpperAsync runs activateJournalingUpper for upper after the
+// kernel starts and waitFn returns. It takes ownership of journalFile.
+func (l *Loader) activateJournalingUpperAsync(ctx context.Context, conf *config.Config, cid string, upper *vfs.Filesystem, imageID string, journalFile *os.File, waitFn func() error) {
+	upper.IncRef()
+	l.journalingUpperWG.Add(1)
+	run := func(cancel bool) {
+		defer l.journalingUpperWG.Done()
+		defer upper.DecRef(ctx)
+		if cancel {
+			journalFile.Close()
+			return
+		}
+		if err := waitFn(); err != nil {
+			journalFile.Close()
+			l.killForJournalingUpper(fmt.Errorf("container %q: populating the upper failed: %w", cid, err))
+			return
+		}
+		if err := l.activateJournalingUpper(ctx, conf, cid, upper, imageID, journalFile, true /* pause */); err != nil {
+			l.killForJournalingUpper(fmt.Errorf("container %q: %w", cid, err))
+		}
+	}
+	l.journalingUpperMu.Lock()
+	defer l.journalingUpperMu.Unlock()
+	if l.journalingUpperKernelStarted {
+		go run(false)
+		return
+	}
+	l.journalingUpperActivations = append(l.journalingUpperActivations, run)
+}
+
+// startJournalingUpperActivations starts activations scheduled before the
+// kernel started.
+func (l *Loader) startJournalingUpperActivations() {
+	l.journalingUpperMu.Lock()
+	fns := l.journalingUpperActivations
+	l.journalingUpperActivations = nil
+	l.journalingUpperKernelStarted = true
+	l.journalingUpperMu.Unlock()
+	for _, fn := range fns {
+		go fn(false)
+	}
+}
+
+func (l *Loader) cancelJournalingUpperActivations() {
+	l.journalingUpperMu.Lock()
+	fns := l.journalingUpperActivations
+	l.journalingUpperActivations = nil
+	l.journalingUpperMu.Unlock()
+	for _, fn := range fns {
+		fn(true)
+	}
+}
+
+func (l *Loader) awaitJournalingUppersOnCleanExit(ws uint32) uint32 {
+	if linux.WaitStatus(ws) == 0 {
+		l.journalingUpperWG.Wait()
+		if l.journalingUpperFailed.Load() {
+			return uint32(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+		}
+	}
+	return ws
+}
+
+func (l *Loader) killForJournalingUpper(err error) {
+	log.Warningf("Killing the sandbox: failed to activate a journaling rootfs upper journal: %v.", err)
+	l.journalingUpperFailed.Store(true)
+	l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+	l.stopIfKilled()
 }
