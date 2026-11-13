@@ -291,6 +291,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:fpstate_stop_test",
+)
+
+syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:fsync_test",
