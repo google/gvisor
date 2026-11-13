@@ -17,6 +17,7 @@ package container
 import (
 	"bufio"
 	"bytes"
+	"debug/elf"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -5427,7 +5428,7 @@ func createRootfsEROFS(dir string, options ...string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("busybox is not available: %v", err)
 	}
-	if err := testutil.Copy(busybox, filepath.Join(rootfsDir, "busybox")); err != nil {
+	if err := copyLoadedELF(busybox, filepath.Join(rootfsDir, "busybox")); err != nil {
 		return "", "", fmt.Errorf("failed to copy busybox: %v", err)
 	}
 
@@ -5442,11 +5443,31 @@ func createRootfsEROFS(dir string, options ...string) (string, string, error) {
 
 	// Build the EROFS rootfs image.
 	rootfsImage := filepath.Join(dir, "rootfs.img")
-	if err := createImageEROFS(rootfsImage, rootfsDir, append([]string{"-E noinline_data"}, options...)...); err != nil {
+	if err := createImageEROFS(rootfsImage, rootfsDir, options...); err != nil {
 		return "", "", fmt.Errorf("error creating EROFS image: %v", err)
 	}
 
 	return rootfsDir, rootfsImage, nil
+}
+
+// copyLoadedELF copies src to dst up to the end of its last loaded segment.
+func copyLoadedELF(src, dst string) error {
+	f, err := elf.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var end uint64
+	for _, prog := range f.Progs {
+		if prog.Type == elf.PT_LOAD {
+			end = max(end, prog.Off+prog.Filesz)
+		}
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data[:end], 0755)
 }
 
 // TestRootfsEROFS starts a container using an EROFS image as the rootfs and checks that
