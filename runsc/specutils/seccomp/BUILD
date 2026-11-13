@@ -16,6 +16,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/sentry",
         "//pkg/bpf",
         "//pkg/log",
         "//pkg/seccomp",
@@ -33,6 +34,7 @@ go_test(
     embed = [":seccomp"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/sentry",
         "//pkg/bpf",
         "//pkg/seccomp",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",

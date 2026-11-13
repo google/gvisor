@@ -43,7 +43,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/abi/nvgpu",
         "//pkg/atomicbitops",
-        "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/control/server",
@@ -191,7 +190,6 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
-        "//pkg/bpf",
         "//pkg/control/server",
         "//pkg/cpuid",
         "//pkg/fd",

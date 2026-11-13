@@ -22,8 +22,8 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -37,42 +37,42 @@ func allowOnlySpec(syscall string) *specs.Spec {
 	}}}
 }
 
-func runFilter(t *testing.T, p *bpf.Program, sysno uintptr) uint32 {
+func runFilter(t *testing.T, f *kernel.SyscallFilter, sysno uintptr) uint32 {
 	t.Helper()
 	d := linux.SeccompData{Nr: int32(sysno), Arch: seccomp.LINUX_AUDIT_ARCH}
-	ret, err := bpf.Exec[bpf.NativeEndian](*p, seccomp.DataAsBPFInput(&d, make([]byte, d.SizeBytes())))
+	ret, err := f.Evaluate(seccomp.DataAsBPFInput(&d, make([]byte, d.SizeBytes())))
 	if err != nil {
-		t.Fatalf("bpf.Exec: %v", err)
+		t.Fatalf("Evaluate: %v", err)
 	}
 	return ret
 }
 
-func TestOCISeccompProgramCache(t *testing.T) {
+func TestOCISeccompFilterCache(t *testing.T) {
 	conf := &config.Config{OCISeccomp: true}
 	const (
 		allow = uint32(linux.SECCOMP_RET_ALLOW)
 		eperm = uint32(linux.SECCOMP_RET_ERRNO) | uint32(unix.EPERM)
 	)
 
-	getpid1, err := buildOCISeccompProgram(conf, allowOnlySpec("getpid"))
+	getpid1, err := buildOCISeccompFilter(conf, allowOnlySpec("getpid"))
 	if err != nil {
 		t.Fatalf("building getpid profile: %v", err)
 	}
-	getpid2, err := buildOCISeccompProgram(conf, allowOnlySpec("getpid"))
+	getpid2, err := buildOCISeccompFilter(conf, allowOnlySpec("getpid"))
 	if err != nil {
 		t.Fatalf("building getpid profile again: %v", err)
 	}
 	if getpid1 != getpid2 {
-		t.Errorf("same profile built twice: got programs %p and %p, want one cached program", getpid1, getpid2)
+		t.Errorf("same profile built twice: got filters %p and %p, want one cached filter", getpid1, getpid2)
 	}
 
-	getppid, err := buildOCISeccompProgram(conf, allowOnlySpec("getppid"))
+	getppid, err := buildOCISeccompFilter(conf, allowOnlySpec("getppid"))
 	if err != nil {
 		t.Fatalf("building getppid profile: %v", err)
 	}
 	for _, tc := range []struct {
 		name  string
-		p     *bpf.Program
+		f     *kernel.SyscallFilter
 		sysno uintptr
 		want  uint32
 	}{
@@ -81,23 +81,23 @@ func TestOCISeccompProgramCache(t *testing.T) {
 		{"getppid profile, getpid", getppid, unix.SYS_GETPID, eperm},
 		{"getppid profile, getppid", getppid, unix.SYS_GETPPID, allow},
 	} {
-		if got := runFilter(t, tc.p, tc.sysno); got != tc.want {
+		if got := runFilter(t, tc.f, tc.sysno); got != tc.want {
 			t.Errorf("%s: got %#x, want %#x", tc.name, got, tc.want)
 		}
 	}
 }
 
-func TestOCISeccompProgramCacheSkipsErrors(t *testing.T) {
+func TestOCISeccompFilterCacheSkipsErrors(t *testing.T) {
 	conf := &config.Config{OCISeccomp: true}
 	bad := allowOnlySpec("getpid")
 	bad.Linux.Seccomp.DefaultAction = "SCMP_ACT_BOGUS"
 	for i := 0; i < 2; i++ {
-		if p, err := buildOCISeccompProgram(conf, bad); err == nil {
-			t.Errorf("call %d with invalid profile: got program %p, want error", i, p)
+		if f, err := buildOCISeccompFilter(conf, bad); err == nil {
+			t.Errorf("call %d with invalid profile: got filter %p, want error", i, f)
 		}
 	}
 	profile, _ := json.Marshal(bad.Linux.Seccomp)
-	if _, ok := ociSeccompCache.programs[sha256.Sum256(profile)]; ok {
+	if _, ok := ociSeccompCache.filters[sha256.Sum256(profile)]; ok {
 		t.Errorf("invalid profile was cached")
 	}
 }
