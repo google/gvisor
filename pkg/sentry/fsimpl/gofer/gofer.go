@@ -262,10 +262,12 @@ type filesystem struct {
 	inoMu    sync.Mutex        `state:"nosave"`
 	inoByKey map[inoKey]uint64 `state:"nosave"`
 	// inodeByKey maps inoKey to non-directory inodes. inodeByKey is protected by
-	// inodeMu. inodeByKey is similar to inoByKey, except that is not an
+	// inodeMu. inodeByKey is similar to inoByKey, except that it is not an
 	// ever-growing map. This is to allow for the sharing of inodes across
-	// dentries. As non-directory dentries are destroyed, their associated inode
-	// entry in this map is cleared.
+	// dentries. An entry may be replaced by a newer inode if the host reuses
+	// inoKey for a different file type; as non-directory inodes are destroyed,
+	// their entry in this map is cleared if it still points to the destroyed
+	// inode.
 	inodeMu    sync.Mutex        `state:"nosave"`
 	inodeByKey map[inoKey]*inode `state:"nosave"`
 
@@ -284,15 +286,22 @@ type filesystem struct {
 	released atomicbitops.Int32
 }
 
-// getOrCreateInode returns an inode for the given inoKey, to avoid creating
-// multiple inodes objects for the same inoKey. This is useful for sharing
-// inodes across dentries.
+// getOrCreateInode returns an inode for the given inoKey and fileType, to
+// avoid creating multiple inode objects for the same file. This is useful for
+// sharing inodes across dentries.
+//
+// A cached inode with a different fileType is treated as a miss (for example,
+// when the host filesystem unlinks a file and recycles its inode number for a
+// new file of a different type while the old gofer.inode is still referenced
+// in the sentry). Sharing here is best-effort under concurrent walks across an
+// inode-number reuse race (last writer takes the slot, degrading a later walk
+// to another miss rather than panicking).
 //
 // If a miss, `createInode` is called and the result is cached. If a hit,
 // `onCacheHit` is called. This path locks fs.inodeMu.
 //
 // The caller is responsible for decrementing the inode's reference count when done.
-func (fs *filesystem) getOrCreateInode(inoKey inoKey, dontCache bool, onCacheHit func(), createInode func() *inode) *inode {
+func (fs *filesystem) getOrCreateInode(inoKey inoKey, fileType uint32, dontCache bool, onCacheHit func(), createInode func() *inode) *inode {
 	if dontCache {
 		// Create a new inode and return it bypassing the cache. This is used for
 		// creating inodes that are not meant to be shared across dentries.
@@ -300,7 +309,7 @@ func (fs *filesystem) getOrCreateInode(inoKey inoKey, dontCache bool, onCacheHit
 	}
 	fs.inodeMu.Lock()
 	defer fs.inodeMu.Unlock()
-	if cachedInode, ok := fs.inodeByKey[inoKey]; ok {
+	if cachedInode, ok := fs.inodeByKey[inoKey]; ok && cachedInode.fileType() == fileType {
 		onCacheHit()
 		cachedInode.incRef()
 		return cachedInode
@@ -2185,8 +2194,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.inode.fs.inodeMu.Lock()
 	d.inode.refs.DecRef(func() {
 		destroyInode = true
-		if !d.isDir() {
+		if !d.isDir() && d.inode.fs.inodeByKey[d.inode.inoKey] == d.inode {
 			// Only non-directory inodes are cached in inodeByKey.
+			// Check pointer identity so a stale inode whose inoKey
+			// was superseded doesn't evict the newer inode.
 			delete(d.inode.fs.inodeByKey, d.inode.inoKey)
 		}
 	})
