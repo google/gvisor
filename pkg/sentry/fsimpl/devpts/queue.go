@@ -127,7 +127,7 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	defer q.mu.Unlock()
 
 	if !q.readable {
-		if l.numReplicas == 0 {
+		if l.replicaHungUp() {
 			return 0, false, false, linuxerr.EIO
 		}
 		return 0, false, false, linuxerr.ErrWouldBlock

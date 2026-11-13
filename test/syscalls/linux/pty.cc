@@ -277,6 +277,39 @@ TEST(BasicPtyTest, OpenMasterReplica) {
   FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
 }
 
+// The master only hangs up after its replica has been opened and closed.
+// Before that, it behaves like any master with nothing to read.
+TEST(BasicPtyTest, MasterNotHungUpBeforeReplicaOpen) {
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/dev/ptmx", O_RDWR | O_NONBLOCK | O_NOCTTY));
+
+  struct pollfd pfd = {};
+  pfd.fd = master.get();
+  pfd.events = POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM;
+  EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(pfd.revents, POLLOUT | POLLWRNORM);
+
+  char c;
+  EXPECT_THAT(ReadFd(master.get(), &c, 1), SyscallFailsWithErrno(EAGAIN));
+
+  // N.B. by default, the master reads nothing until the replica writes a
+  // newline, and the master gets a carriage return.
+  constexpr char kInput[] = "hello\n";
+  constexpr char kExpected[] = "hello\r\n";
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  ASSERT_THAT(WriteFd(replica.get(), kInput, sizeof(kInput) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput) - 1));
+  char buf[sizeof(kExpected)] = {};
+  ExpectReadable(master, sizeof(buf) - 1, buf);
+  EXPECT_EQ(memcmp(buf, kExpected, sizeof(kExpected)), 0);
+
+  replica.reset();
+  pfd.revents = 0;
+  EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(pfd.revents, POLLHUP | POLLOUT | POLLWRNORM);
+  EXPECT_THAT(ReadFd(master.get(), &c, 1), SyscallFailsWithErrno(EIO));
+}
+
 TEST(BasicPtyTest, OpenSetsControllingTTY) {
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
