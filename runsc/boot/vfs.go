@@ -502,6 +502,9 @@ type containerMounter struct {
 	// rootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	rootfsUpperTarFD *fd.FD
+
+	spec *specs.Spec
+	conf *config.Config
 }
 
 // +checklocks:l.mu
@@ -518,6 +521,8 @@ func (l *Loader) newContainerMounter(info *containerInfo) *containerMounter {
 		containerID:       info.cid,
 		containerName:     info.containerName,
 		rootfsUpperTarFD:  info.rootfsUpperTarFD,
+		spec:              info.spec,
+		conf:              info.conf,
 	}
 }
 
@@ -745,23 +750,11 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		DisableDefaultSizeLimit: true,
 		TarNanosecondTimestamps: conf.TarTimestampResolution == config.TarTimestampNanoseconds,
 	}
+	var activateJournal func(context.Context, *vfs.Filesystem) error
 	if filestoreFD != nil {
-		// Create memory file for disk-backed overlays.
-		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
-		mf, _, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
+		activateJournal, err = c.configureOverlayFilestore(conf, dst, filestoreFD.ReleaseToFile("overlay-filestore"), rootfsUpperTarFD != nil, &tmpfsOpts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
-		}
-		tmpfsOpts.MemoryFile = mf
-		sourceTar, err := c.l.fsRestore.tmpfsSourceTar(resourceID, c.containerID)
-		if err != nil {
-			mf.Destroy()
-			return nil, nil, fmt.Errorf("failed to get tar archive from filesystem checkpoint: %w", err)
-		}
-		if sourceTar != nil {
-			log.Infof("Loading filesystem checkpoint tree for %q", resourceID)
-			tmpfsOpts.SourceTar = sourceTar
-			tmpfsOpts.SourceTarFSCheckpoint = true
+			return nil, nil, err
 		}
 	}
 	// If the rootfs upper tar file is provided, it will be applied to the
@@ -806,32 +799,38 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		}
 	}
 
-	// We need to hide the filestore from the containerized application.
+	// We need to hide the filestore from the containerized application without
+	// clobbering root directory timestamps restored from an imported journal.
 	if mountConf.IsSelfBacked() {
-		if err := overlay.CreateWhiteout(ctx, c.l.k.VFS(), creds, &vfs.PathOperation{
-			Root:  upperRootVD,
-			Start: upperRootVD,
-			Path:  fspath.Parse(sentryapi.SelfFilestoreName(c.l.sandboxID)),
-		}); err != nil {
+		if err := syncSelfFilestoreWhiteout(ctx, c.l.k.VFS(), creds, upper.Filesystem(), lowerRootVD, c.l.sandboxID); err != nil {
 			return nil, nil, fmt.Errorf("failed to create whiteout to hide self overlay filestore: %w", err)
 		}
 	}
 
 	// Propagate the lower layer's root's owner, group, and mode to the upper
-	// layer's root for consistency with VFS1.
-	err = c.l.k.VFS().SetStatAt(ctx, creds, &vfs.PathOperation{
-		Root:  upperRootVD,
-		Start: upperRootVD,
-	}, &vfs.SetStatOptions{
-		Stat: linux.Statx{
-			Mask: (linux.STATX_UID | linux.STATX_GID | linux.STATX_MODE) & stat.Mask,
-			UID:  stat.UID,
-			GID:  stat.GID,
-			Mode: stat.Mode,
-		},
-	})
-	if err != nil {
-		return nil, nil, err
+	// layer's root for consistency with VFS1, unless an imported journal
+	// already restored the upper root's attributes.
+	if tmpfsOpts.JournalState == nil || tmpfsOpts.JournalState.Empty() {
+		err = c.l.k.VFS().SetStatAt(ctx, creds, &vfs.PathOperation{
+			Root:  upperRootVD,
+			Start: upperRootVD,
+		}, &vfs.SetStatOptions{
+			Stat: linux.Statx{
+				Mask: (linux.STATX_UID | linux.STATX_GID | linux.STATX_MODE) & stat.Mask,
+				UID:  stat.UID,
+				GID:  stat.GID,
+				Mode: stat.Mode,
+			},
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if activateJournal != nil {
+		if err := activateJournal(ctx, upper.Filesystem()); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Configure overlay with both layers.
@@ -1090,7 +1089,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		if m.filestoreFD != nil {
 			resourceID := checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination}
-			mf, _, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr)
+			mf, _, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr, false /* journaling */)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %w", err)
 			}
@@ -1206,13 +1205,15 @@ func parseKeyValue(s string) (string, string, bool) {
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
 }
 
-// createPrivateMemoryFile creates or loads a private memory file.
+// createPrivateMemoryFile creates or loads a private memory file. If
+// journaling is true, the memory file backs a journaled rootfs upper and its
+// backing file is preserved on destruction.
 // It returns:
 //   - The created pgalloc.MemoryFile.
 //   - A boolean indicating if the memory file was successfully loaded
 //     (restored) from the checkpoint.
 //   - An error if creation or restoration failed.
-func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, bool, error) {
+func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore, journaling bool) (*pgalloc.MemoryFile, bool, error) {
 	cleanFile := cleanup.Make(func() { file.Close() })
 	defer cleanFile.Clean()
 
@@ -1224,8 +1225,9 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	mfOpts := pgalloc.MemoryFileOpts{
 		// Private memory files are usually backed by files on disk.
 		DiskBackedFile: true,
-		// Disk backed files need to be decommited on destroy to release disk space.
-		DecommitOnDestroy: true,
+		// Disk backed files need to be decommited on destroy to release disk space,
+		// unless journaling preserves the filestore across sandbox exit.
+		DecommitOnDestroy: !journaling,
 		// Pages of a disk backed file are host page cache for that file, which
 		// the host may drop at any time, not memory held by the sandbox.
 		DisableMemoryAccounting: true,
@@ -1774,7 +1776,14 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 	restoreMnts.fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
-		mf, loaded, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
+		jcfg, err := specutils.JournalingRootfsUpper(c.spec, c.conf)
+		if err != nil {
+			return err
+		}
+		if jcfg.ImportPath != "" {
+			return fmt.Errorf("journaling rootfs upper import cannot be used during restore")
+		}
+		mf, loaded, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore, jcfg.Enabled)
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
@@ -1812,7 +1821,7 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 			restoreMnts.fdmap[key] = submount.goferFD.Release()
 		}
 		if submount.filestoreFD != nil {
-			mf, loaded, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore)
+			mf, loaded, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore, false /* journaling */)
 			if err != nil {
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
