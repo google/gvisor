@@ -196,6 +196,29 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		}
 	}()
 
+	// Reserve cgroup PIDs controller charge. This is either committed when the
+	// new task enters the cgroup below, or rolled back on failure.
+	// Register the defer before cu.Clean() so rollback and DecRef run after
+	// locks in cu are released.
+	var (
+		t                  *Task
+		cg                 Cgroup
+		charged, committed bool
+	)
+	defer func() {
+		if !charged {
+			return
+		}
+		if !committed {
+			if err := cg.Charge(t, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
+				panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
+			}
+		}
+		// Ref from ChargeFor. Note that we need to drop this outside of
+		// TaskSet.mu critical sections.
+		cg.DecRef(ctx)
+	}()
+
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
@@ -228,7 +251,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cachedKillSeq = cgroup2.KillSeq()
 	}
 
-	t := &Task{
+	t = &Task{
 		taskNode: taskNode{
 			tg:       tg,
 			parent:   cfg.Parent,
@@ -275,35 +298,6 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		t.pid.t.Store(t)
 	}
 
-	// Reserve cgroup PIDs controller charge. This is either committed when the
-	// new task enters the cgroup below, or rolled back on failure.
-	// We may also get here from a non-task context (for example, when
-	// creating the init task, or from the exec control command). In these cases
-	// we skip charging the pids controller, as non-userspace task creation
-	// bypasses pid limits.
-	var (
-		cg                 Cgroup
-		charged, committed bool
-	)
-	if srcT != nil {
-		var err error
-		if charged, cg, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
-			return nil, err
-		}
-		if charged {
-			defer func() {
-				if !committed {
-					if err := cg.Charge(t, cg.Dentry, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
-						panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
-					}
-				}
-				// Ref from ChargeFor. Note that we need to drop this outside of
-				// TaskSet.mu critical sections.
-				cg.DecRef(ctx)
-			}()
-		}
-	}
-
 	// If the task was the first to be added to the thread group, check if
 	// it needs to be notified of CPU limits being exceeded.
 	// We use a defer here because we need to do this without holding the
@@ -319,6 +313,20 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// the system atomically.
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+
+	// We may also get here from a non-task context (for example, when
+	// creating the init task, or from the exec control command). In these cases
+	// we skip charging the pids controller, as non-userspace task creation
+	// bypasses pid limits.
+	//
+	// Charge under TaskSet.mu so srcT cannot migrate between cgroups or have
+	// its cgroup hierarchy modified before t enters srcT's cgroups below.
+	if srcT != nil {
+		var err error
+		if charged, cg, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
+			return nil, err
+		}
+	}
 
 	// GetTTY takes the bond reference under srcT's signal mutex, so
 	// the IncRef cannot race with a final DecRef.

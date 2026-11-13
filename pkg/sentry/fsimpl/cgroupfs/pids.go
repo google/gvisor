@@ -223,7 +223,7 @@ func (c *pidsController) AbortMigrate(t *kernel.Task, src controller) {}
 // charges. Negative charges that cause an underflow result in a panic.
 //
 // +checklocksexclude:c.mu
-func (c *pidsController) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.CgroupResourceType, value int64) error {
+func (c *pidsController) Charge(t *kernel.Task, res kernel.CgroupResourceType, value int64) error {
 	if res != kernel.CgroupResourcePID {
 		panic(fmt.Sprintf("cgroupfs: pids controller invalid resource type %v", res))
 	}
@@ -234,19 +234,21 @@ func (c *pidsController) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.Cgr
 	// Negative charge.
 	if value < 0 {
 		if c.pendingTotal+value < 0 {
-			panic(fmt.Sprintf("cgroupfs: pids controller pending pool would be negative if charge was allowed: current pool: %d, proposed charge: %d, path: %q, task: %p", c.pendingTotal, value, d.FSLocalPath(), t))
+			panic(fmt.Sprintf("cgroupfs: pids controller pending pool would be negative if charge was allowed: current pool: %d, proposed charge: %d, task: %p", c.pendingTotal, value, t))
 		}
 
 		pending, ok := c.pendingPool[t]
 		if !ok {
-			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for Task %p, but task didn't have pending charges, path: %q", t, d.FSLocalPath()))
+			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for Task %p, but task didn't have pending charges", t))
 		}
 		if pending+value < 0 {
-			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for Task %p, but task didn't have enough pending charges; current charges: %d, proposed charge: %d, path: %q", t, pending, value, d.FSLocalPath()))
-
+			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for Task %p, but task didn't have enough pending charges; current charges: %d, proposed charge: %d", t, pending, value))
 		}
 
 		c.pendingPool[t] += value
+		if c.pendingPool[t] == 0 {
+			delete(c.pendingPool, t)
+		}
 		c.pendingTotal += value
 		return nil
 	}
@@ -254,8 +256,8 @@ func (c *pidsController) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.Cgr
 	// Positive charge.
 	new := c.committed + c.pendingTotal + value
 	if new > c.max {
-		log.Debugf("cgroupfs: pids controller charge denied due to limit: path: %q, requested: %d, current: %d (pending: %v, committed: %v), max: %v",
-			d.FSLocalPath(), value, c.committed+c.pendingTotal, c.pendingTotal, c.committed, c.max)
+		log.Debugf("cgroupfs: pids controller charge denied due to limit: requested: %d, current: %d (pending: %v, committed: %v), max: %v",
+			value, c.committed+c.pendingTotal, c.pendingTotal, c.committed, c.max)
 		return linuxerr.EAGAIN
 	}
 
@@ -316,7 +318,7 @@ func (d *pidsMaxData) WriteBackground(ctx context.Context, src usermem.IOSequenc
 	if err != nil {
 		return 0, err
 	}
-	if strings.TrimSpace(string(buf)) == "max" {
+	if strings.TrimSpace(string(buf[:ncpy])) == "max" {
 		d.c.mu.Lock()
 		defer d.c.mu.Unlock()
 		d.c.max = pidLimitUnlimited
