@@ -1789,12 +1789,12 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
 		if jcfg.Enabled {
-			// The journal file follows the filestore. A restored upper is
-			// not journaled.
+			// The journal file follows the filestore. Its journal is
+			// activated after restore; see prepareJournalingUppersForRestore.
 			if c.goferFilestoreFDs.empty() {
 				return fmt.Errorf("no journal file for the journaling rootfs upper")
 			}
-			c.goferFilestoreFDs.removeAsFD().Close()
+			c.l.stashRestoredJournalFile(c.containerID, c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-journal"))
 		}
 		restoreMnts.mfmap[rootKey] = mf
 		if loaded {
