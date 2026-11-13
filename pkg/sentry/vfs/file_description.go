@@ -1124,7 +1124,7 @@ func (fd *FileDescription) GetFilePrivileges(ctx context.Context) (auth.FilePriv
 		}
 	}
 
-	fileCaps, err := fd.GetXattr(ctx, &GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3})
+	fileCaps, err := fd.GetXattr(ctx, &GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3, RawCapability: true})
 	switch {
 	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.EOPNOTSUPP, err):
 		return filePrivs, nil

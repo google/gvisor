@@ -231,6 +231,9 @@ type GetXattrOptions struct {
 	// free to ignore the hint entirely (i.e. the value returned may be larger
 	// than size). All size checking is done independently at the syscall layer.
 	Size uint64
+
+	// RawCapability skips memxattr's root ID conversion of security.capability.
+	RawCapability bool
 }
 
 // SetXattrOptions contains options to VirtualFilesystem.SetXattrAt(),
