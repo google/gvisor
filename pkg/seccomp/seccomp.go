@@ -137,9 +137,9 @@ func (a Action) String() string {
 	return string(a)
 }
 
-// bpf returns the corresponding BPF action for the given seccomp action.
+// BPF returns the corresponding BPF action for the given seccomp action.
 // If the action is `Default`, `defaultAction` is returned.
-func (a Action) bpf(defaultAction linux.BPFAction) linux.BPFAction {
+func (a Action) BPF(defaultAction linux.BPFAction) linux.BPFAction {
 	switch a {
 	case Default:
 		return defaultAction
@@ -169,7 +169,7 @@ func (a Action) bpf(defaultAction linux.BPFAction) linux.BPFAction {
 		if err != nil {
 			panic(fmt.Sprintf("failed to parse seccomp action: %v", err))
 		}
-		return ins.bpf(defaultAction).WithReturnCode(uint16(code))
+		return ins.BPF(defaultAction).WithReturnCode(uint16(code))
 	}
 }
 
@@ -410,7 +410,7 @@ type ProgramOptions struct {
 // defaultBPFAction returns the BPF action that `Default` actions resolve to:
 // `o.DefaultAction`, or SECCOMP_RET_KILL_PROCESS if that is `Default` too.
 func (o ProgramOptions) defaultBPFAction() linux.BPFAction {
-	return o.DefaultAction.bpf(linux.SECCOMP_RET_KILL_PROCESS)
+	return o.DefaultAction.BPF(linux.SECCOMP_RET_KILL_PROCESS)
 }
 
 // BuildStats contains information about seccomp program generation.
@@ -445,7 +445,7 @@ func (p *Program) Build() ([]bpf.Instruction, BuildStats, error) {
 	defaultAction := p.Options.defaultBPFAction()
 	possibleActions := make(map[linux.BPFAction]struct{})
 	for _, ruleSet := range p.RuleSets {
-		possibleActions[ruleSet.Action.bpf(defaultAction)] = struct{}{}
+		possibleActions[ruleSet.Action.BPF(defaultAction)] = struct{}{}
 	}
 
 	program := &syscallProgram{
@@ -471,7 +471,7 @@ func (p *Program) Build() ([]bpf.Instruction, BuildStats, error) {
 
 	// Label if the architecture didn't match:
 	program.Label(badArchLabel)
-	program.Ret(p.Options.BadArchAction.bpf(defaultAction))
+	program.Ret(p.Options.BadArchAction.BPF(defaultAction))
 
 	insns, err := program.program.Instructions()
 	if err != nil {
@@ -643,7 +643,7 @@ func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, ti
 	allSyscallRuleActions := make(map[uintptr][]syscallRuleAction)
 	defaultAction := options.defaultBPFAction()
 	for _, rs := range rules {
-		action := rs.Action.bpf(defaultAction)
+		action := rs.Action.BPF(defaultAction)
 		for sysno, rule := range rs.Rules.rules {
 			existing, found := allSyscallRuleActions[sysno]
 			if !found {

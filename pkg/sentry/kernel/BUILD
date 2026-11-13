@@ -451,6 +451,7 @@ go_test(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/abi/sentry",
         "//pkg/bpf",
         "//pkg/context",
         "//pkg/errors/linuxerr",

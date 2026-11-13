@@ -1837,14 +1837,14 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	info.procArgs.FDTable.DecRef(ctx)
 
 	// Install seccomp filters with the new task if there are any.
-	program, err := buildOCISeccompProgram(info.conf, info.spec)
+	filter, err := buildOCISeccompFilter(info.conf, info.spec)
 	if err != nil {
 		return nil, nil, err
 	}
-	if program != nil {
+	if filter != nil {
 		task := tg.Leader()
 		// NOTE: It seems Flags are ignored by runc so we ignore them too.
-		if err := task.AppendSyscallFilter(*program, true); err != nil {
+		if err := task.AppendSyscallFilter(*filter, true); err != nil {
 			return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 		}
 		info.procArgs.StartupTimeline.Reached("OCI seccomp filters applied")
@@ -2012,11 +2012,11 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, fmt.Errorf("creating limits: %w", err)
 	}
 
-	seccompProgram, err := buildOCISeccompProgram(l.root.conf, spec)
+	seccompFilter, err := buildOCISeccompFilter(l.root.conf, spec)
 	if err != nil {
 		return 0, err
 	}
-	args.SeccompProgram = seccompProgram
+	args.SeccompFilter = seccompFilter
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
