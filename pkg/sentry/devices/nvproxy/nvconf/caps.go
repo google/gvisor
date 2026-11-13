@@ -104,10 +104,16 @@ func (c DriverCaps) individualString() string {
 // exists. Privileged capabilities (e.g. CapProfiling, CapFabricIMEXManagement)
 // are handled internally by nvproxy and have no nvidia-container-cli flag, so
 // they return ok=false.
+//
+// CapDisplay also returns ok=false. Beyond what --graphics adds,
+// nvidia-container-cli --display only mounts the host's /dev/nvidia-modeset
+// into the container, and nvproxy never exposes the host device to the
+// sandbox.
+//
 // See nvidia-container-toolkit/blob/main/cmd/nvidia-container-runtime-hook/capabilities.go:capabilityToCLI
 func (c DriverCaps) individualNVIDIAFlag() (string, bool) {
 	switch c {
-	case CapCompute, CapDisplay, CapGraphics, CapNGX, CapUtility, CapVideo, CapCompat32:
+	case CapCompute, CapGraphics, CapNGX, CapUtility, CapVideo, CapCompat32:
 		return fmt.Sprintf("--%s", c.individualString()), true
 	default:
 		return "", false
@@ -174,9 +180,8 @@ func (c DriverCaps) String() string {
 }
 
 // NVIDIAFlags returns the nvidia-container-cli flags that can be passed to
-// enable the capabilities in the set. Privileged capabilities that nvproxy
-// handles internally (e.g. CapProfiling, CapFabricIMEXManagement) have no
-// nvidia-container-cli flag and are skipped.
+// enable the capabilities in the set. Capabilities without a flag (see
+// individualNVIDIAFlag) are skipped.
 func (c DriverCaps) NVIDIAFlags() []string {
 	if c == 0 {
 		return nil
