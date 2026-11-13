@@ -109,6 +109,34 @@ type Config struct {
 	// archives of overlay upper layers and filesystem checkpoints.
 	TarTimestampResolution TarTimestampResolution `flag:"tar-timestamp-resolution"`
 
+	// JournalingRootfsUpper controls metadata journaling in the root
+	// container's rootfs overlay upper layer tmpfs. The journal and upper-layer
+	// file data are stored together in the rootfs overlay's host-backed
+	// filestore file (with --overlay2=root:self,
+	// Spec.Root.Path/.gvisor.filestore.<sandbox-id>, which Destroy preserves
+	// when journaling is enabled). Each container can instead set the
+	// specutils.AnnotationRootfsUpperJournal annotation when
+	// JournalingRootfsUpperAnnotations is on. Experimental.
+	JournalingRootfsUpper JournalingRootfsUpperPolicy `flag:"journaling-rootfs-upper"`
+
+	// JournalingRootfsUpperImport, if not empty, is an absolute path (or numeric
+	// /proc/self/fd/N path) to an existing journaled rootfs upper filestore file
+	// to replay and adopt in place when starting the root container. It can be
+	// used with or without JournalingRootfsUpper enabled. Each container can
+	// instead set an absolute host file path via
+	// specutils.AnnotationRootfsUpperJournalImport when
+	// JournalingRootfsUpperAnnotations is on (procfs/devfd paths are only
+	// accepted via this flag). Experimental.
+	JournalingRootfsUpperImport string `flag:"journaling-rootfs-upper-import"`
+
+	// JournalingRootfsUpperImageID optionally identifies the lower layer of the
+	// root container's rootfs overlay. When set, it is recorded when a journaling
+	// upper layer is created and verified when importing one; when empty, image
+	// ID verification is skipped on import. The
+	// specutils.AnnotationRootfsUpperJournalImageID annotation sets it for each
+	// container when JournalingRootfsUpperAnnotations is on.
+	JournalingRootfsUpperImageID string `flag:"journaling-rootfs-upper-image-id"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
@@ -441,6 +469,17 @@ type Config struct {
 	// called. This is useful for tests exercising gVisor panic-reporting.
 	TestOnlyAFSSyscallPanic bool `flag:"TESTONLY-afs-syscall-panic"`
 
+	// TestOnlyJournalingRootfsUpperFault should only be used in tests. It
+	// injects a fault in the journaling rootfs upper. The only value is
+	// "activation", which makes the activation of the journal fail after an
+	// image populates the upper.
+	TestOnlyJournalingRootfsUpperFault string `flag:"TESTONLY-journaling-rootfs-upper-fault"`
+
+	// TestOnlyJournalingRootfsUpperRegionSize should only be used in tests.
+	// If not 0, it is the minimum size of the regions of a new journaling
+	// rootfs upper journal.
+	TestOnlyJournalingRootfsUpperRegionSize uint64 `flag:"TESTONLY-journaling-rootfs-upper-region-size"`
+
 	// explicitlySet contains whether a flag was explicitly set on the command-line from which this
 	// Config was constructed. Nil when the Config was not initialized from a FlagSet.
 	explicitlySet map[string]struct{}
@@ -510,6 +549,10 @@ type Config struct {
 	// AllowRootfsTarAnnotation indicates whether the rootfs tar annotation
 	// should be allowed.
 	AllowRootfsTarAnnotation bool `flag:"allow-rootfs-tar-annotation"`
+
+	// JournalingRootfsUpperAnnotations controls whether OCI annotations
+	// (dev.gvisor.journal.rootfs.upper*) may configure journaling rootfs uppers.
+	JournalingRootfsUpperAnnotations JournalingRootfsUpperAnnotationsPolicy `flag:"journaling-rootfs-upper-annotations"`
 
 	// ControlRPCStopTimeout is the grace period given to in-flight RPCs on
 	// the sandbox control (urpc) socket when the sandbox is shutting down.
@@ -599,6 +642,12 @@ func (c *Config) Validate() error {
 	}
 	if overlay2 := c.GetOverlay2(); c.FileAccess == FileAccessShared && overlay2.Enabled() {
 		return fmt.Errorf("overlay flag is incompatible with shared file access for rootfs")
+	}
+	if c.JournalingRootfsUpperImport != "" && !filepath.IsAbs(c.JournalingRootfsUpperImport) {
+		return fmt.Errorf("journaling-rootfs-upper-import must be an absolute path, got %q", c.JournalingRootfsUpperImport)
+	}
+	if c.JournalingRootfsUpperImageID != "" && c.JournalingRootfsUpper != JournalingRootfsUpperOn && c.JournalingRootfsUpperImport == "" {
+		return fmt.Errorf("journaling-rootfs-upper-image-id requires journaling-rootfs-upper=on or journaling-rootfs-upper-import")
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
@@ -1535,6 +1584,112 @@ func (o *Overlay2) SubMountOverlaySize() string {
 // Medium returns the overlay medium config.
 func (o Overlay2) Medium() OverlayMedium {
 	return o.medium
+}
+
+// JournalingRootfsUpperPolicy controls metadata journaling in the root
+// container's rootfs overlay upper layer tmpfs.
+type JournalingRootfsUpperPolicy int
+
+// JournalingRootfsUpperPolicy values.
+const (
+	// JournalingRootfsUpperUnset leaves journaling disabled unless enabled per
+	// container via OCI annotation (with --journaling-rootfs-upper-annotations=on).
+	JournalingRootfsUpperUnset JournalingRootfsUpperPolicy = iota
+
+	// JournalingRootfsUpperOff disables journaling for the root container.
+	JournalingRootfsUpperOff
+
+	// JournalingRootfsUpperOn enables journaling for the root container.
+	JournalingRootfsUpperOn
+)
+
+// Set implements flag.Value. Set(String()) is idempotent.
+func (p *JournalingRootfsUpperPolicy) Set(v string) error {
+	switch v {
+	case "", "unset":
+		*p = JournalingRootfsUpperUnset
+	case "off", "false":
+		*p = JournalingRootfsUpperOff
+	case "on", "true":
+		*p = JournalingRootfsUpperOn
+	default:
+		return fmt.Errorf("invalid journaling-rootfs-upper policy %q (want unset, off, or on)", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to p.
+func (p JournalingRootfsUpperPolicy) Ptr() *JournalingRootfsUpperPolicy {
+	return &p
+}
+
+// Get implements flag.Getter.
+func (p *JournalingRootfsUpperPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p JournalingRootfsUpperPolicy) String() string {
+	switch p {
+	case JournalingRootfsUpperUnset:
+		return "unset"
+	case JournalingRootfsUpperOff:
+		return "off"
+	case JournalingRootfsUpperOn:
+		return "on"
+	default:
+		panic(fmt.Sprintf("invalid journaling-rootfs-upper policy %d", p))
+	}
+}
+
+// JournalingRootfsUpperAnnotationsPolicy controls whether OCI annotations may
+// configure journaling rootfs uppers.
+type JournalingRootfsUpperAnnotationsPolicy int
+
+// JournalingRootfsUpperAnnotationsPolicy values.
+const (
+	// JournalingRootfsUpperAnnotationsOff rejects dev.gvisor.journal.rootfs.upper*
+	// annotations.
+	JournalingRootfsUpperAnnotationsOff JournalingRootfsUpperAnnotationsPolicy = iota
+
+	// JournalingRootfsUpperAnnotationsOn allows dev.gvisor.journal.rootfs.upper*
+	// annotations.
+	JournalingRootfsUpperAnnotationsOn
+)
+
+// Set implements flag.Value. Set(String()) is idempotent.
+func (p *JournalingRootfsUpperAnnotationsPolicy) Set(v string) error {
+	switch v {
+	case "", "off", "false":
+		*p = JournalingRootfsUpperAnnotationsOff
+	case "on", "true":
+		*p = JournalingRootfsUpperAnnotationsOn
+	default:
+		return fmt.Errorf("invalid journaling-rootfs-upper-annotations policy %q (want off or on)", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to p.
+func (p JournalingRootfsUpperAnnotationsPolicy) Ptr() *JournalingRootfsUpperAnnotationsPolicy {
+	return &p
+}
+
+// Get implements flag.Getter.
+func (p *JournalingRootfsUpperAnnotationsPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p JournalingRootfsUpperAnnotationsPolicy) String() string {
+	switch p {
+	case JournalingRootfsUpperAnnotationsOff:
+		return "off"
+	case JournalingRootfsUpperAnnotationsOn:
+		return "on"
+	default:
+		panic(fmt.Sprintf("invalid journaling-rootfs-upper-annotations policy %d", p))
+	}
 }
 
 // HostSettingsPolicy dictates how host settings should be handled.
