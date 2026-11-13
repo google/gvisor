@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -203,17 +204,16 @@ func (e *endpoint) closeLocked() {
 		return
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
 		id := e.net.Info().ID
-		id.LocalPort = e.localPort
-		id.RemotePort = e.remotePort
+		id.Local = netip.AddrPortFrom(id.Local.Addr(), e.localPort)
+		id.Remote = netip.AddrPortFrom(id.Remote.Addr(), e.remotePort)
 		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, id, e, e.boundPortFlags, e.boundBindToDevice)
 		portRes := ports.Reservation{
 			Networks:     e.effectiveNetProtos,
 			Transport:    ProtocolNumber,
-			Addr:         id.LocalAddress,
-			Port:         id.LocalPort,
+			Local:        id.Local,
 			Flags:        e.boundPortFlags,
 			BindToDevice: e.boundBindToDevice,
-			Dest:         tcpip.FullAddress{},
+			Dest:         netip.AddrPort{},
 		}
 		e.stack.ReleasePort(portRes)
 		e.boundBindToDevice = 0
@@ -658,30 +658,26 @@ func (e *endpoint) Disconnect() tcpip.Error {
 
 	// Exclude ephemerally bound endpoints.
 	info := e.net.Info()
-	info.ID.LocalPort = e.localPort
-	info.ID.RemotePort = e.remotePort
+	info.ID.Local = netip.AddrPortFrom(info.ID.Local.Addr(), e.localPort)
+	info.ID.Remote = netip.AddrPortFrom(info.ID.Remote.Addr(), e.remotePort)
 	if e.net.WasBound() {
 		var err tcpip.Error
-		id = stack.TransportEndpointID{
-			LocalPort:    info.ID.LocalPort,
-			LocalAddress: info.ID.LocalAddress,
-		}
+		id = stack.TransportEndpointID{Local: info.ID.Local}
 		id, btd, err = e.registerWithStack(e.effectiveNetProtos, id)
 		if err != nil {
 			return err
 		}
 		boundPortFlags = e.boundPortFlags
 	} else {
-		if info.ID.LocalPort != 0 {
+		if info.ID.Local.Port() != 0 {
 			// Release the ephemeral port.
 			portRes := ports.Reservation{
 				Networks:     e.effectiveNetProtos,
 				Transport:    ProtocolNumber,
-				Addr:         info.ID.LocalAddress,
-				Port:         info.ID.LocalPort,
+				Local:        info.ID.Local,
 				Flags:        boundPortFlags,
 				BindToDevice: e.boundBindToDevice,
-				Dest:         tcpip.FullAddress{},
+				Dest:         netip.AddrPort{},
 			}
 			e.stack.ReleasePort(portRes)
 			e.boundPortFlags = ports.Flags{}
@@ -690,8 +686,8 @@ func (e *endpoint) Disconnect() tcpip.Error {
 
 	e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, info.ID, e, boundPortFlags, e.boundBindToDevice)
 	e.boundBindToDevice = btd
-	e.localPort = id.LocalPort
-	e.remotePort = id.RemotePort
+	e.localPort = id.Local.Port()
+	e.remotePort = id.Remote.Port()
 
 	e.net.Disconnect()
 
@@ -710,8 +706,8 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 		// ConnectAndThen invokes this callback synchronously while Connect
 		// holds e.mu. checklocks cannot propagate the captured lock into
 		// a passed callback, so only the guarded accesses and call are ignored.
-		nextID.LocalPort = e.localPort // +checklocksignore
-		nextID.RemotePort = addr.Port
+		nextID.Local = netip.AddrPortFrom(nextID.Local.Addr(), e.localPort) // +checklocksignore
+		nextID.Remote = netip.AddrPortFrom(nextID.Remote.Addr(), addr.Port)
 
 		// Even if we're connected, this endpoint can still be used to send
 		// packets on a different network protocol, so we register both even if
@@ -728,8 +724,8 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 
 		// Remove the old registration.
 		if e.localPort != 0 { // +checklocksignore
-			previousID.LocalPort = e.localPort                                                                                          // +checklocksignore
-			previousID.RemotePort = e.remotePort                                                                                        // +checklocksignore
+			previousID.Local = netip.AddrPortFrom(previousID.Local.Addr(), e.localPort)                                                 // +checklocksignore
+			previousID.Remote = netip.AddrPortFrom(previousID.Remote.Addr(), e.remotePort)                                              // +checklocksignore
 			e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, previousID, e, oldPortFlags, e.boundBindToDevice) // +checklocksignore
 		}
 
@@ -738,10 +734,10 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 			return err
 		}
 
-		e.localPort = nextID.LocalPort   // +checklocksignore
-		e.remotePort = nextID.RemotePort // +checklocksignore
-		e.boundBindToDevice = btd        // +checklocksignore
-		e.effectiveNetProtos = netProtos // +checklocksignore
+		e.localPort = nextID.Local.Port()   // +checklocksignore
+		e.remotePort = nextID.Remote.Port() // +checklocksignore
+		e.boundBindToDevice = btd           // +checklocksignore
+		e.effectiveNetProtos = netProtos    // +checklocksignore
 		return nil
 	})
 	if err != nil {
@@ -820,17 +816,16 @@ func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id
 		portRes := ports.Reservation{
 			Networks:     netProtos,
 			Transport:    ProtocolNumber,
-			Addr:         id.LocalAddress,
-			Port:         id.LocalPort,
+			Local:        id.Local,
 			Flags:        e.portFlags,
 			BindToDevice: bindToDevice,
-			Dest:         tcpip.FullAddress{},
+			Dest:         netip.AddrPort{},
 		}
 		port, err := e.stack.ReservePort(e.stack.SecureRNG(), portRes, nil /* testPort */)
 		if err != nil {
 			return id, bindToDevice, err
 		}
-		id.LocalPort = port
+		id.Local = netip.AddrPortFrom(id.Local.Addr(), port)
 	}
 	e.boundPortFlags = e.portFlags
 
@@ -839,11 +834,10 @@ func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id
 		portRes := ports.Reservation{
 			Networks:     netProtos,
 			Transport:    ProtocolNumber,
-			Addr:         id.LocalAddress,
-			Port:         id.LocalPort,
+			Local:        id.Local,
 			Flags:        e.boundPortFlags,
 			BindToDevice: bindToDevice,
-			Dest:         tcpip.FullAddress{},
+			Dest:         netip.AddrPort{},
 		}
 		e.stack.ReleasePort(portRes)
 		e.boundPortFlags = ports.Flags{}
@@ -862,7 +856,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address) tcpip.Error {
+	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr netip.Addr) tcpip.Error {
 		// BindAndThen invokes this callback synchronously while bindLocked
 		// holds e.mu. checklocks cannot propagate the captured lock into
 		// a passed callback, so only the guarded accesses and call are ignored.
@@ -871,23 +865,20 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 		// wildcard (empty) address, and this is an IPv6 endpoint with v6only
 		// set to false.
 		netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
-		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (tcpip.Address{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
+		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (netip.Addr{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
 			netProtos = []tcpip.NetworkProtocolNumber{
 				header.IPv6ProtocolNumber,
 				header.IPv4ProtocolNumber,
 			}
 		}
 
-		id := stack.TransportEndpointID{
-			LocalPort:    addr.Port,
-			LocalAddress: boundAddr,
-		}
+		id := stack.TransportEndpointID{Local: netip.AddrPortFrom(boundAddr, addr.Port)}
 		id, btd, err := e.registerWithStack(netProtos, id) // +checklocksignore
 		if err != nil {
 			return err
 		}
 
-		e.localPort = id.LocalPort       // +checklocksignore
+		e.localPort = id.Local.Port()    // +checklocksignore
 		e.boundBindToDevice = btd        // +checklocksignore
 		e.effectiveNetProtos = netProtos // +checklocksignore
 		return nil
@@ -1034,12 +1025,12 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		netProto: pkt.NetworkProtocolNumber,
 		senderAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
-			Addr: id.RemoteAddress,
+			Addr: id.Remote.Addr(),
 			Port: hdr.SourcePort(),
 		},
 		destinationAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
-			Addr: id.LocalAddress,
+			Addr: id.Local.Addr(),
 			Port: hdr.DestinationPort(),
 		},
 		// We need to clone the packet because ReadTo modifies the write index of
@@ -1109,12 +1100,12 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 			Payload: payload,
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.RemoteAddress,
+				Addr: id.Remote.Addr(),
 				Port: e.remotePort,
 			},
 			Offender: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.LocalAddress,
+				Addr: id.Local.Addr(),
 				Port: e.localPort,
 			},
 			NetProto: pkt.NetworkProtocolNumber,
@@ -1152,8 +1143,8 @@ func (e *endpoint) Info() tcpip.EndpointInfo {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	info := e.net.Info()
-	info.ID.LocalPort = e.localPort
-	info.ID.RemotePort = e.remotePort
+	info.ID.Local = netip.AddrPortFrom(info.ID.Local.Addr(), e.localPort)
+	info.ID.Remote = netip.AddrPortFrom(info.ID.Remote.Addr(), e.remotePort)
 	return &info
 }
 

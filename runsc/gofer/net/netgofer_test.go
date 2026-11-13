@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"strings"
@@ -49,10 +50,10 @@ import (
 )
 
 var (
-	testServerAddr4 = tcpip.AddrFrom4([4]byte{198, 51, 100, 1})
-	testClientAddr4 = tcpip.AddrFrom4([4]byte{198, 51, 100, 2})
-	testServerAddr6 = tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
-	testClientAddr6 = tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	testServerAddr4 = netip.AddrFrom4([4]byte{198, 51, 100, 1})
+	testClientAddr4 = netip.AddrFrom4([4]byte{198, 51, 100, 2})
+	testServerAddr6 = netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	testClientAddr6 = netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
 )
 
 type halfClosePipeConn struct {
@@ -225,7 +226,7 @@ func startUDPEchoServer(t *testing.T, wantReq, wantResp []byte) (targetAddr tcpi
 	return startUDPEchoServerOn(t, "udp", "127.0.0.1:0", testServerAddr4, wantReq, wantResp)
 }
 
-func startUDPEchoServerOn(t *testing.T, network, listenAddr string, targetIP tcpip.Address, wantReq, wantResp []byte) (targetAddr tcpip.FullAddress, serverErr <-chan error) {
+func startUDPEchoServerOn(t *testing.T, network, listenAddr string, targetIP netip.Addr, wantReq, wantResp []byte) (targetAddr tcpip.FullAddress, serverErr <-chan error) {
 	t.Helper()
 	pc, err := net.ListenPacket(network, listenAddr)
 	if err != nil {
@@ -293,11 +294,11 @@ func newTestClientStackWithOptions(t *testing.T, clientFD int, allowExternalLoop
 	for _, pa := range []tcpip.ProtocolAddress{
 		{
 			Protocol:          ipv4.ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{Address: testClientAddr4, PrefixLen: 24},
+			AddressWithPrefix: netip.PrefixFrom(testClientAddr4, 24),
 		},
 		{
 			Protocol:          ipv6.ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{Address: testClientAddr6, PrefixLen: 64},
+			AddressWithPrefix: netip.PrefixFrom(testClientAddr6, 64),
 		},
 	} {
 		if err := st.AddProtocolAddress(1, pa, stack.AddressProperties{}); err != nil {
@@ -460,7 +461,7 @@ func TestRunProxyModeEndToEnd(t *testing.T) {
 }
 
 func TestRunProxyModeAllowLoopback(t *testing.T) {
-	loopbackDNSAddr := tcpip.AddrFrom4([4]byte{127, 0, 0, 11})
+	loopbackDNSAddr := netip.AddrFrom4([4]byte{127, 0, 0, 11})
 
 	t.Run("disallowed_by_default", func(t *testing.T) {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -785,7 +786,7 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 	allowedUDPAddr, allowedUDPErr := startUDPEchoServer(t, wantAllowedUDPReq, wantAllowedUDPResp)
 	allowedAddrStr := net.JoinHostPort(allowedUDPAddr.Addr.String(), fmt.Sprintf("%d", allowedUDPAddr.Port))
 
-	localInterfaceAddr := tcpip.AddrFrom4([4]byte{198, 51, 100, 99})
+	localInterfaceAddr := netip.AddrFrom4([4]byte{198, 51, 100, 99})
 	ef, err := egressfilter.New(egressfilter.Options{
 		LocalAddrs: []net.IP{net.IPv4(198, 51, 100, 99)},
 	})
@@ -814,19 +815,19 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 	cases := []struct {
 		name     string
 		netProto tcpip.NetworkProtocolNumber
-		addr     tcpip.Address
+		addr     netip.Addr
 		udpPort  uint16
 	}{
 		{
 			name:     "ipv4_current_network_subnet",
 			netProto: ipv4.ProtocolNumber,
-			addr:     tcpip.AddrFrom4([4]byte{0, 0, 0, 1}),
+			addr:     netip.AddrFrom4([4]byte{0, 0, 0, 1}),
 			udpPort:  udpPort4,
 		},
 		{
 			name:     "ipv4_link_local_unicast",
 			netProto: ipv4.ProtocolNumber,
-			addr:     tcpip.AddrFrom4([4]byte{169, 254, 169, 254}),
+			addr:     netip.AddrFrom4([4]byte{169, 254, 169, 254}),
 			udpPort:  udpPort4,
 		},
 		{
@@ -838,7 +839,7 @@ func TestProxyRejectsDisallowedDestinations(t *testing.T) {
 		{
 			name:     "ipv6_link_local_unicast",
 			netProto: ipv6.ProtocolNumber,
-			addr:     tcpip.AddrFrom16([16]byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+			addr:     netip.AddrFrom16([16]byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
 			udpPort:  udpPort6,
 		},
 	}

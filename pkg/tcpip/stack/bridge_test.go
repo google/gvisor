@@ -15,6 +15,7 @@
 package bridge_test
 
 import (
+	"net/netip"
 	"os"
 	"testing"
 	"time"
@@ -392,8 +393,8 @@ const (
 )
 
 var (
-	dispatchBridgeIP = tcpip.AddrFrom4([4]byte{192, 0, 2, 1})
-	dispatchSrcIP    = tcpip.AddrFrom4([4]byte{192, 0, 2, 2})
+	dispatchBridgeIP = netip.AddrFrom4([4]byte{192, 0, 2, 1})
+	dispatchSrcIP    = netip.AddrFrom4([4]byte{192, 0, 2, 2})
 )
 
 // dispatchTestContext is a bridge with two ports. It records the packet type
@@ -455,7 +456,7 @@ func newDispatchTestContext(t *testing.T, classifying bool) *dispatchTestContext
 	}
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: dispatchBridgeIP, PrefixLen: 24},
+		AddressWithPrefix: netip.PrefixFrom(dispatchBridgeIP, 24),
 	}
 	if err := c.s.AddProtocolAddress(dispatchBridgeID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", dispatchBridgeID, protocolAddr, err)
