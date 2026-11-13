@@ -25,11 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -227,6 +230,124 @@ func syncSelfFilestoreWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesyste
 		}
 	}
 	return tmpfs.SyncSelfFilestoreWhiteouts(ctx, upperFS, selfName, remove)
+}
+
+type restoredJournalingUpper struct {
+	conf    *config.Config
+	cid     string
+	upper   *vfs.Filesystem
+	imageID string
+}
+
+type restoredJournalingUppers struct {
+	l       *Loader
+	targets []restoredJournalingUpper
+	once    sync.Once
+}
+
+func (r *restoredJournalingUppers) release(ctx context.Context) {
+	if r == nil {
+		return
+	}
+	r.once.Do(func() {
+		for _, t := range r.targets {
+			t.upper.DecRef(ctx)
+			r.l.journalingUpperWG.Done()
+		}
+	})
+}
+
+func (r *restoredJournalingUppers) activate(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	defer r.release(ctx)
+	for _, t := range r.targets {
+		if err := r.l.activateJournalingUpper(ctx, t.conf, t.cid, t.upper, t.imageID, true /* pause */); err != nil {
+			return fmt.Errorf("container %q: %w", t.cid, err)
+		}
+	}
+	return nil
+}
+
+// prepareJournalingUppersForRestore validates journaling settings and hides
+// self-backed filestores before restored tasks start running, returning a
+// handle whose activate method completes journal creation once background page
+// loading finishes.
+func (l *Loader) prepareJournalingUppersForRestore(ctx context.Context, containers []*containerInfo) (*restoredJournalingUppers, error) {
+	res := &restoredJournalingUppers{l: l}
+	for _, cont := range containers {
+		if l.noRootContainer.enabled && cont.cid == l.root.cid {
+			continue
+		}
+		if len(cont.goferMountConfs) == 0 || !cont.goferMountConfs[0].IsFilestorePresent() {
+			continue
+		}
+		jcfg, err := specutils.JournalingRootfsUpper(cont.spec, cont.conf)
+		if err != nil {
+			res.release(ctx)
+			return nil, fmt.Errorf("container %q: %w", cont.cid, err)
+		}
+		if !jcfg.Enabled {
+			continue
+		}
+
+		upperVD, err := l.containerRootUpperVD(ctx, cont.cid)
+		if err != nil {
+			res.release(ctx)
+			return nil, err
+		}
+		upperFS := upperVD.Mount().Filesystem()
+		if cont.goferMountConfs[0].IsSelfBacked() {
+			creds := auth.NewRootCredentials(l.k.RootUserNamespace())
+			if err := syncSelfFilestoreWhiteout(ctx, l.k.VFS(), creds, upperFS, vfs.VirtualDentry{}, l.sandboxID); err != nil {
+				upperVD.DecRef(ctx)
+				res.release(ctx)
+				return nil, fmt.Errorf("container %q: failed to create self-filestore whiteout: %w", cont.cid, err)
+			}
+		}
+		upperFS.IncRef()
+		upperVD.DecRef(ctx)
+		l.journalingUpperWG.Add(1)
+		res.targets = append(res.targets, restoredJournalingUpper{
+			conf:    cont.conf,
+			cid:     cont.cid,
+			upper:   upperFS,
+			imageID: jcfg.ImageID,
+		})
+	}
+	if len(res.targets) == 0 {
+		return nil, nil
+	}
+	return res, nil
+}
+
+// containerRootUpperVD returns a VirtualDentry for the root of the upper layer
+// of container cid's root overlay, with a reference.
+func (l *Loader) containerRootUpperVD(ctx context.Context, cid string) (vfs.VirtualDentry, error) {
+	l.mu.Lock()
+	ep := l.processes[execID{cid: cid}]
+	var tg *kernel.ThreadGroup
+	if ep != nil {
+		tg = ep.tg
+	}
+	l.mu.Unlock()
+	if tg == nil {
+		return vfs.VirtualDentry{}, fmt.Errorf("container %q has no init process", cid)
+	}
+	mntns := tg.Leader().GetMountNamespace()
+	if mntns == nil {
+		return vfs.VirtualDentry{}, fmt.Errorf("container %q has no mount namespace", cid)
+	}
+	defer mntns.DecRef(ctx)
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+	upperVD := overlay.UpperRoot(root.Mount().Filesystem())
+	if !upperVD.Ok() {
+		return vfs.VirtualDentry{}, fmt.Errorf("rootfs of container %q is not an overlay with an upper layer", cid)
+	}
+	upperVD.IncRef()
+	return upperVD, nil
 }
 
 // activateJournalingUpperAsync runs activateJournalingUpper for upper after the

@@ -15,6 +15,7 @@
 package container
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -448,6 +449,141 @@ rm /journaled/big
 	cleanup3()
 }
 
+type fileState struct {
+	size int64
+	data []byte
+}
+
+func snapshotFileState(t *testing.T, path string) fileState {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %q: %v", path, err)
+	}
+	end, ok, err := func() (uint64, bool, error) {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, false, err
+		}
+		defer f.Close()
+		return journal.FilestoreEnd(f)
+	}()
+	if err != nil || !ok {
+		end = uint64(fi.Size())
+	}
+	buf := make([]byte, end)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open %q: %v", path, err)
+	}
+	defer f.Close()
+	n, err := unix.Pread(int(f.Fd()), buf, 0)
+	if err != nil {
+		t.Fatalf("pread %q: %v", path, err)
+	}
+	return fileState{size: fi.Size(), data: buf[:n]}
+}
+
+// TestJournalingRootfsUpperCheckpointPlainRestore checks both directions of
+// checkpoint compatibility:
+//  1. Checkpointing a journaled sandbox and restoring WITHOUT journaling.
+//  2. Checkpointing a NON-journaled sandbox (where regular-file data occupies
+//     page 0 of the filestore!) and restoring WITH journaling enabled, then
+//     crashing and importing the newly journaled filestore!
+func TestJournalingRootfsUpperCheckpointPlainRestore(t *testing.T) {
+	p := newJournalingUpperTest(t)
+	conf := p.conf("image-1", "")
+	ckptDir := t.TempDir()
+	fsDir := t.TempDir()
+
+	c1, fs1, cleanup1 := p.start(conf)
+	p.sh(conf, c1, "mkdir -p /journaled && echo A > /journaled/a && rm /lower-file")
+	if err := c1.FSSave(conf, fsDir, sandbox.FSSaveOpts{Paths: []string{"/"}}); err != nil {
+		t.Fatalf("FSSave: %v", err)
+	}
+	p.sh(conf, c1, "echo B > /journaled/b")
+	if err := c1.Checkpoint(conf, ckptDir, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("Checkpoint: %v", err)
+	}
+	_, _ = c1.Wait()
+	cleanup1()
+	before := snapshotFileState(t, fs1)
+
+	script := "cat /journaled/a /journaled/b 2>/dev/null; test -e /lower-file && echo lower present; echo C > /journaled/c"
+
+	// 1a. Restore checkpoint WITHOUT journaling.
+	plain := p.plainConf()
+	root2, sysMounts2 := makeWritableRootfs(t)
+	c2, cleanup2, err := p.createOnRoot(plain, root2, sysMounts2, nil, func(args *Args) { args.CheckpointDirPath = ckptDir }, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("creating c2: %v", err)
+	}
+	if err := c2.Restore(plain, ckptDir, sandbox.DirectIOOff, false, nil); err != nil {
+		cleanup2()
+		t.Fatalf("Restore c2: %v", err)
+	}
+	if got, want := p.sh(plain, c2, script), "A\nB\n"; got != want {
+		t.Errorf("after unjournaled restore: got %q, want %q", got, want)
+	}
+	// Now checkpoint the UNJOURNALED container c2 (whose first page 0 holds
+	// regular-file data!) and restore into a JOURNALED container c2j!
+	plainCkptDir := t.TempDir()
+	if err := c2.Checkpoint(plain, plainCkptDir, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("Checkpoint unjournaled c2: %v", err)
+	}
+	_, _ = c2.Wait()
+	cleanup2()
+
+	// Verify fs1 was never touched by c2.
+	if got := snapshotFileState(t, fs1); got.size != before.size || !bytes.Equal(got.data, before.data) {
+		t.Errorf("fs1 modified by plain restore")
+	}
+
+	// 1b. Start from filesystem checkpoint WITHOUT journaling.
+	root3, sysMounts3 := makeWritableRootfs(t)
+	c3, cleanup3, err := p.createOnRoot(plain, root3, sysMounts3, nil, func(args *Args) { args.FSRestoreImagePaths = []string{fsDir} }, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("creating c3: %v", err)
+	}
+	if err := c3.Start(plain); err != nil {
+		cleanup3()
+		t.Fatalf("Start c3: %v", err)
+	}
+	if err := c3.WaitFSRestore(); err != nil {
+		t.Fatalf("WaitFSRestore: %v", err)
+	}
+	if got, want := p.sh(plain, c3, script), "A\n"; got != want {
+		t.Errorf("after plain fs-restore: got %q, want %q", got, want)
+	}
+	cleanup3()
+
+	// 2. Restore the checkpoint taken from UNJOURNALED c2 WITH journaling
+	// enabled, mutate, SIGKILL, and import!
+	rootJ, sysMountsJ := makeWritableRootfs(t)
+	cJ, cleanupJ, err := p.createOnRoot(conf, rootJ, sysMountsJ, nil, func(args *Args) { args.CheckpointDirPath = plainCkptDir }, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("creating journaled restore container: %v", err)
+	}
+	fsJ := selfFilestoreOf(cJ)
+	if err := cJ.Restore(conf, plainCkptDir, sandbox.DirectIOOff, false, nil); err != nil {
+		cleanupJ()
+		t.Fatalf("Restore into journaled container: %v", err)
+	}
+	waitActivePath(t, fsJ)
+	if got, want := p.files(conf, cJ, "a", "b", "c"), "A\nB\nC\n"; got != want {
+		t.Errorf("after journaled restore of unjournaled checkpoint: got %q, want %q", got, want)
+	}
+	p.sh(conf, cJ, "echo D > /journaled/d")
+	p.kill(cJ, cleanupJ)
+
+	confImp := p.importOnlyConf("image-1", fsJ)
+	cImp, _, cleanupImp := p.start(confImp)
+	if got, want := p.files(confImp, cImp, "a", "b", "c", "d"), "A\nB\nC\nD\n"; got != want {
+		t.Errorf("after crash and import of journaled restore: got %q, want %q", got, want)
+	}
+	cleanupImp()
+}
+
 type journalingUpperImages struct {
 	checkpoint   string
 	fsCheckpoint string
@@ -481,6 +617,198 @@ func (p *journalingUpperTest) makeImages() journalingUpperImages {
 	_, _ = c.Wait()
 	cleanup()
 	return imgs
+}
+
+var populateMethods = []string{"restore", "fs-restore", "tar"}
+
+func (p *journalingUpperTest) populate(conf *config.Config, method string, imgs journalingUpperImages) (*Container, string, func(), error) {
+	p.t.Helper()
+	conf.AllowRootfsTarAnnotation = true
+	var (
+		mutateSpec func(*specs.Spec)
+		mutateArgs func(*Args)
+	)
+	switch method {
+	case "restore":
+		mutateArgs = func(args *Args) { args.CheckpointDirPath = imgs.checkpoint }
+	case "fs-restore":
+		mutateArgs = func(args *Args) { args.FSRestoreImagePaths = []string{imgs.fsCheckpoint} }
+	case "tar":
+		mutateSpec = func(spec *specs.Spec) {
+			if spec.Annotations == nil {
+				spec.Annotations = make(map[string]string)
+			}
+			spec.Annotations[specutils.AnnotationRootfsUpperTar] = imgs.tar
+		}
+	default:
+		p.t.Fatalf("unknown method %q", method)
+	}
+	rootPath, sysMounts := makeWritableRootfs(p.t)
+	c, cleanup, err := p.createOnRoot(conf, rootPath, sysMounts, mutateSpec, mutateArgs, "sleep", "1000")
+	if err != nil {
+		return nil, "", nil, err
+	}
+	fsPath := selfFilestoreOf(c)
+	if method == "restore" {
+		err = c.Restore(conf, imgs.checkpoint, sandbox.DirectIOOff, false, nil)
+	} else {
+		err = c.Start(conf)
+	}
+	if err != nil {
+		cleanup()
+		return nil, fsPath, nil, err
+	}
+	return c, fsPath, cleanup, nil
+}
+
+func waitActivePath(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("opening %q: %v", path, err)
+	}
+	defer f.Close()
+	deadline := time.Now().Add(pollTimeout)
+	for {
+		_, ok, err := journal.FilestoreEnd(f)
+		if err != nil {
+			t.Fatalf("journal.FilestoreEnd: %v", err)
+		}
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("journal in %q is still incomplete after %v", path, pollTimeout)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestJournalingRootfsUpperPopulateAndImportRefusal(t *testing.T) {
+	src := newJournalingUpperTest(t)
+	imgs := src.makeImages()
+
+	// Create a valid exported filestore to verify that --journaling-rootfs-upper-import
+	// is rejected when combined with restore, fs-restore, or tar.
+	_, baseFS, cleanupBase := src.start(src.conf("image-1", ""))
+	cleanupBase()
+
+	for _, method := range populateMethods {
+		t.Run(method, func(t *testing.T) {
+			p := newJournalingUpperTest(t)
+			// Combining import with populate is rejected.
+			if _, _, cleanupBad, err := p.populate(p.conf("image-1", baseFS), method, imgs); err == nil {
+				cleanupBad()
+				t.Fatalf("%s combined with --journaling-rootfs-upper-import succeeded", method)
+			}
+
+			// Populating a new journaled container works, and after SIGKILL its
+			// self filestore can be imported!
+			conf := p.conf("image-1", "")
+			c1, fs1, cleanup1, err := p.populate(conf, method, imgs)
+			if err != nil {
+				t.Fatalf("%s: %v", method, err)
+			}
+			waitActivePath(t, fs1)
+			if hidden := p.sh(conf, c1, "ls -A / | grep '^\\.gvisor\\.filestore' || true"); hidden != "" {
+				t.Errorf("after %s: self filestore visible inside container: %q", method, hidden)
+			}
+			if got, want := p.files(conf, c1, "a"), "A\n"; got != want {
+				t.Errorf("after %s: got %q, want %q", method, got, want)
+			}
+			p.sh(conf, c1, "echo B > /journaled/b")
+			p.kill(c1, cleanup1)
+
+			impConf := p.importOnlyConf("image-1", fs1)
+			c2, _, cleanup2 := p.start(impConf)
+			if got, want := p.files(impConf, c2, "a", "b"), "A\nB\n"; got != want {
+				t.Errorf("after crash and import: got %q, want %q", got, want)
+			}
+			cleanup2()
+		})
+	}
+}
+
+func (p *journalingUpperTest) expectKilled(c *Container) {
+	p.t.Helper()
+	ws, err := c.Wait()
+	if err != nil {
+		p.t.Fatalf("Wait: %v", err)
+	}
+	if !ws.Signaled() && ws.ExitStatus() == 0 {
+		p.t.Fatalf("sandbox exited with status %v, want a failure", ws)
+	}
+}
+
+func TestJournalingRootfsUpperActivationFailure(t *testing.T) {
+	src := newJournalingUpperTest(t)
+	imgs := src.makeImages()
+
+	for _, method := range populateMethods {
+		t.Run(method, func(t *testing.T) {
+			p := newJournalingUpperTest(t)
+			failConf := p.conf("image-1", "")
+			failConf.TestOnlyJournalingRootfsUpperFault = "activation"
+			c, fsPath, cleanup, err := p.populate(failConf, method, imgs)
+			if method == "tar" {
+				if err == nil || !strings.Contains(err.Error(), "journaling rootfs upper") {
+					if err == nil {
+						cleanup()
+					}
+					t.Fatalf("tar import with failing activation: got %v, want journaling rootfs upper error", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("%s: %v", method, err)
+				}
+				p.expectKilled(c)
+				cleanup()
+			}
+
+			// The preserved filestore must be marked incomplete, and importing it
+			// must fail with ErrIncomplete!
+			f, openErr := os.Open(fsPath)
+			if openErr != nil {
+				t.Fatalf("Open(%q): %v", fsPath, openErr)
+			}
+			incomplete, incErr := journal.Incomplete(f)
+			f.Close()
+			if incErr != nil || !incomplete {
+				t.Fatalf("journal.Incomplete(%q) = %t, %v; want true, nil", fsPath, incomplete, incErr)
+			}
+
+			impConf := p.importOnlyConf("image-1", fsPath)
+			cImp, _, cleanupImp, impErr := p.create(impConf, "sleep", "1000")
+			if impErr == nil {
+				impErr = cImp.Start(impConf)
+				cleanupImp()
+			}
+			if impErr == nil || !strings.Contains(impErr.Error(), "is incomplete") {
+				t.Fatalf("importing incomplete filestore: got %v, want incomplete error", impErr)
+			}
+		})
+	}
+}
+
+func TestJournalingRootfsUpperSaveResume(t *testing.T) {
+	p := newJournalingUpperTest(t)
+	conf := p.conf("image-1", "")
+	ckptDir := t.TempDir()
+
+	c1, fs1, cleanup1 := p.start(conf)
+	p.sh(conf, c1, "mkdir -p /journaled && echo A > /journaled/a && echo B > /journaled/b")
+	if err := c1.Checkpoint(conf, ckptDir, sandbox.CheckpointOpts{Resume: true}); err != nil {
+		t.Fatalf("Checkpoint: %v", err)
+	}
+	p.sh(conf, c1, "echo C > /journaled/c && rm /journaled/b")
+	p.kill(c1, cleanup1)
+
+	impConf := p.importOnlyConf("image-1", fs1)
+	c2, _, cleanup2 := p.start(impConf)
+	if got, want := p.files(impConf, c2, "a", "b", "c"), "A\n-\nC\n"; got != want {
+		t.Errorf("after save-resume, crash, and import: got %q, want %q", got, want)
+	}
+	cleanup2()
 }
 
 func TestJournalingRootfsUpperLargeSnapshot(t *testing.T) {
@@ -705,6 +1033,54 @@ func TestJournalingRootfsUpperSubcontainerImageMismatch(t *testing.T) {
 	cs, _, cleanup, conf = m.start()
 	if got, want := m.files(conf, cs[1], "sub"), "S\n"; got != want {
 		t.Errorf("subcontainer files after failed mismatch attempt: got %q, want %q", got, want)
+	}
+	cleanup()
+}
+
+func TestJournalingRootfsUpperMultiContainerCheckpoint(t *testing.T) {
+	src := newMultiUpperTest(t)
+	ckptDir := t.TempDir()
+	cs, _, cleanup, conf := src.start()
+	src.sh(conf, cs[0], "mkdir -p /journaled && echo R > /journaled/root")
+	src.sh(conf, cs[1], "mkdir -p /journaled && echo S > /journaled/sub")
+	if err := cs[0].Checkpoint(conf, ckptDir, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("Checkpoint: %v", err)
+	}
+	_, _ = cs[0].Wait()
+	cleanup()
+
+	// Restore with runtime journaling enabled on both containers.
+	m := newMultiUpperTest(t)
+	specs, ids, conf := m.specs()
+	cs, cleanupRestore, err := restoreContainers(conf, specs, ids, ckptDir)
+	if err != nil {
+		t.Fatalf("restoring containers: %v", err)
+	}
+	fsPaths := [2]string{selfFilestoreOf(cs[0]), selfFilestoreOf(cs[1])}
+	cleanup = func() {
+		cleanupRestore()
+		waitUnlockedPath(t, fsPaths[0])
+		waitUnlockedPath(t, fsPaths[1])
+	}
+	for i := range cs {
+		waitActivePath(t, fsPaths[i])
+		if got, want := m.files(conf, cs[i], "root", "sub"), [2]string{"R\n-\n", "-\nS\n"}[i]; got != want {
+			t.Errorf("container %d files after restore: got %q, want %q", i, got, want)
+		}
+	}
+	m.sh(conf, cs[0], "echo R2 > /journaled/root2")
+	m.sh(conf, cs[1], "echo S2 > /journaled/sub2")
+	m.kill(cs, cleanup)
+
+	mImp := newMultiUpperTest(t)
+	mImp.enabled = [2]bool{false, false}
+	mImp.imports = fsPaths
+	cs, _, cleanup, conf = mImp.start()
+	if got, want := mImp.files(conf, cs[0], "root", "root2", "sub", "sub2"), "R\nR2\n-\n-\n"; got != want {
+		t.Errorf("root container files after crash and import: got %q, want %q", got, want)
+	}
+	if got, want := mImp.files(conf, cs[1], "root", "root2", "sub", "sub2"), "-\n-\nS\nS2\n"; got != want {
+		t.Errorf("subcontainer files after crash and import: got %q, want %q", got, want)
 	}
 	cleanup()
 }
