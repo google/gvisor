@@ -15,9 +15,11 @@
 package devpts
 
 import (
+	"bytes"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -199,4 +201,216 @@ func TestReplicaModeAndOwner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOutputQueueEchoRespectsWaitBufMaxBytes(t *testing.T) {
+	ctx := contexttest.Context(t)
+	termios := linux.DefaultReplicaTermios
+	termios.LocalFlags |= linux.ECHO
+	ld := newLineDiscipline(termios, nil)
+
+	// Fill outQueue.readBuf to nonCanonMaxBytes, then fill outQueue.waitBuf to
+	// waitBufMaxBytes.
+	readBufFill := bytes.Repeat([]byte("a"), nonCanonMaxBytes)
+	if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(readBufFill)); err != nil || n != int64(len(readBufFill)) {
+		t.Fatalf("outputQueueWrite(readBufFill): got (%d, %v), want (%d, nil)", n, err, len(readBufFill))
+	}
+	waitBufFill := bytes.Repeat([]byte("b"), waitBufMaxBytes)
+	if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(waitBufFill)); err != nil || n != int64(len(waitBufFill)) {
+		t.Fatalf("outputQueueWrite(waitBufFill): got (%d, %v), want (%d, nil)", n, err, len(waitBufFill))
+	}
+
+	ld.outQueue.mu.Lock()
+	gotWaitLen := ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen != waitBufMaxBytes {
+		t.Fatalf("outQueue.waitBufLen before echo: got %d, want %d", gotWaitLen, waitBufMaxBytes)
+	}
+
+	// Echoing master input onto a full output queue must not push waitBufLen
+	// past waitBufMaxBytes.
+	if _, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence([]byte("exit\r"))); err != nil {
+		t.Fatalf("inputQueueWrite: %v", err)
+	}
+
+	ld.outQueue.mu.Lock()
+	gotWaitLen = ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen > waitBufMaxBytes {
+		t.Errorf("outQueue.waitBufLen after echo: got %d, want <= %d", gotWaitLen, waitBufMaxBytes)
+	}
+
+	// Subsequent replica writes must block instead of underflowing room.
+	n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(bytes.Repeat([]byte("c"), 4096)))
+	if !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || n != 0 {
+		t.Errorf("outputQueueWrite on full queue after echo: got (%d, %v), want (0, ErrWouldBlock)", n, err)
+	}
+	ld.outQueue.mu.Lock()
+	gotWaitLen = ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen > waitBufMaxBytes {
+		t.Errorf("outQueue.waitBufLen after blocked write: got %d, want <= %d", gotWaitLen, waitBufMaxBytes)
+	}
+}
+
+func TestQueueWriteWaitBufOverflowGuard(t *testing.T) {
+	ctx := contexttest.Context(t)
+	ld := newLineDiscipline(linux.DefaultReplicaTermios, nil)
+
+	ld.outQueue.mu.Lock()
+	ld.outQueue.waitBufLen = waitBufMaxBytes + 5
+	ld.outQueue.mu.Unlock()
+
+	n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence([]byte("hello")))
+	if !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || n != 0 {
+		t.Errorf("outputQueueWrite with waitBufLen > waitBufMaxBytes: got (%d, %v), want (0, ErrWouldBlock)", n, err)
+	}
+
+	ld.outQueue.mu.Lock()
+	gotWaitLen := ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen != waitBufMaxBytes+5 {
+		t.Errorf("outQueue.waitBufLen changed on ErrWouldBlock: got %d, want %d", gotWaitLen, waitBufMaxBytes+5)
+	}
+
+	// Zero-length writes return (0, nil) even when waitBuf is full.
+	if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(nil)); err != nil || n != 0 {
+		t.Errorf("zero-length outputQueueWrite: got (%d, %v), want (0, nil)", n, err)
+	}
+}
+
+func TestWriteBytesAtomicMultiByteBoundary(t *testing.T) {
+	t.Run("erase sequence dropped atomically when room < 3", func(t *testing.T) {
+		ctx := contexttest.Context(t)
+		termios := linux.DefaultReplicaTermios
+		termios.LocalFlags |= linux.ICANON | linux.ECHO | linux.ECHOE
+		ld := newLineDiscipline(termios, nil)
+
+		// Put one character in inQueue.readBuf so VERASE attempts to echo
+		// []byte{'\b', ' ', '\b'}. Echoing "x" adds 1 byte to outQueue.readBuf.
+		if n, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence([]byte("x"))); err != nil || n != 1 {
+			t.Fatalf("inputQueueWrite(\"x\"): got (%d, %v), want (1, nil)", n, err)
+		}
+
+		// Fill outQueue.readBuf and leave 2 bytes of room in outQueue.waitBuf.
+		readBufFill := bytes.Repeat([]byte("a"), nonCanonMaxBytes-1)
+		if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(readBufFill)); err != nil || n != int64(len(readBufFill)) {
+			t.Fatalf("outputQueueWrite(readBufFill): got (%d, %v), want (%d, nil)", n, err, len(readBufFill))
+		}
+		const wantWaitLen = waitBufMaxBytes - 2
+		waitBufFill := bytes.Repeat([]byte("b"), wantWaitLen)
+		if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(waitBufFill)); err != nil || n != int64(len(waitBufFill)) {
+			t.Fatalf("outputQueueWrite(waitBufFill): got (%d, %v), want (%d, nil)", n, err, len(waitBufFill))
+		}
+
+		notified := false
+		entry := waiter.NewFunctionEntry(waiter.ReadableEvents, func(waiter.EventMask) {
+			notified = true
+		})
+		ld.masterWaiter.EventRegister(&entry)
+		defer ld.masterWaiter.EventUnregister(&entry)
+
+		erase := []byte{termios.ControlCharacters[linux.VERASE]}
+		if n, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence(erase)); err != nil || n != 1 {
+			t.Fatalf("inputQueueWrite(VERASE): got (%d, %v), want (1, nil)", n, err)
+		}
+
+		ld.outQueue.mu.Lock()
+		gotWaitLen := ld.outQueue.waitBufLen
+		ld.outQueue.mu.Unlock()
+		if gotWaitLen != wantWaitLen {
+			t.Errorf("outQueue.waitBufLen after dropped erase echo: got %d, want %d", gotWaitLen, wantWaitLen)
+		}
+		if gotWaitLen > waitBufMaxBytes {
+			t.Errorf("outQueue.waitBufLen exceeded limit: got %d, want <= %d", gotWaitLen, waitBufMaxBytes)
+		}
+		if notified {
+			t.Errorf("masterWaiter notified on dropped erase echo: got true, want false")
+		}
+	})
+
+	t.Run("multibyte UTF-8 rune dropped atomically when room < len(rune)", func(t *testing.T) {
+		ctx := contexttest.Context(t)
+		termios := linux.DefaultReplicaTermios
+		termios.InputFlags |= linux.IUTF8
+		termios.LocalFlags |= linux.ECHO
+		ld := newLineDiscipline(termios, nil)
+
+		// Fill outQueue.readBuf and leave 2 bytes of room in outQueue.waitBuf.
+		readBufFill := bytes.Repeat([]byte("a"), nonCanonMaxBytes)
+		if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(readBufFill)); err != nil || n != int64(len(readBufFill)) {
+			t.Fatalf("outputQueueWrite(readBufFill): got (%d, %v), want (%d, nil)", n, err, len(readBufFill))
+		}
+		const wantWaitLen = waitBufMaxBytes - 2
+		waitBufFill := bytes.Repeat([]byte("b"), wantWaitLen)
+		if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(waitBufFill)); err != nil || n != int64(len(waitBufFill)) {
+			t.Fatalf("outputQueueWrite(waitBufFill): got (%d, %v), want (%d, nil)", n, err, len(waitBufFill))
+		}
+
+		notified := false
+		entry := waiter.NewFunctionEntry(waiter.ReadableEvents, func(waiter.EventMask) {
+			notified = true
+		})
+		ld.masterWaiter.EventRegister(&entry)
+		defer ld.masterWaiter.EventUnregister(&entry)
+
+		// "€" is a 3-byte UTF-8 rune, which exceeds the 2 bytes of room.
+		euro := []byte("€")
+		if n, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence(euro)); err != nil || n != int64(len(euro)) {
+			t.Fatalf("inputQueueWrite(\"€\"): got (%d, %v), want (%d, nil)", n, err, len(euro))
+		}
+
+		ld.outQueue.mu.Lock()
+		gotWaitLen := ld.outQueue.waitBufLen
+		ld.outQueue.mu.Unlock()
+		if gotWaitLen != wantWaitLen {
+			t.Errorf("outQueue.waitBufLen after dropped UTF-8 echo: got %d, want %d", gotWaitLen, wantWaitLen)
+		}
+		if gotWaitLen > waitBufMaxBytes {
+			t.Errorf("outQueue.waitBufLen exceeded limit: got %d, want <= %d", gotWaitLen, waitBufMaxBytes)
+		}
+		if notified {
+			t.Errorf("masterWaiter notified on dropped UTF-8 echo: got true, want false")
+		}
+	})
+
+	t.Run("multibyte UTF-8 rune written atomically on exact fit", func(t *testing.T) {
+		ctx := contexttest.Context(t)
+		termios := linux.DefaultReplicaTermios
+		termios.InputFlags |= linux.IUTF8
+		termios.LocalFlags |= linux.ECHO
+		ld := newLineDiscipline(termios, nil)
+
+		// Fill outQueue.readBuf and leave exactly 3 bytes of room in waitBuf.
+		readBufFill := bytes.Repeat([]byte("a"), nonCanonMaxBytes)
+		if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(readBufFill)); err != nil || n != int64(len(readBufFill)) {
+			t.Fatalf("outputQueueWrite(readBufFill): got (%d, %v), want (%d, nil)", n, err, len(readBufFill))
+		}
+		waitBufFill := bytes.Repeat([]byte("b"), waitBufMaxBytes-3)
+		if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(waitBufFill)); err != nil || n != int64(len(waitBufFill)) {
+			t.Fatalf("outputQueueWrite(waitBufFill): got (%d, %v), want (%d, nil)", n, err, len(waitBufFill))
+		}
+
+		notified := false
+		entry := waiter.NewFunctionEntry(waiter.ReadableEvents, func(waiter.EventMask) {
+			notified = true
+		})
+		ld.masterWaiter.EventRegister(&entry)
+		defer ld.masterWaiter.EventUnregister(&entry)
+
+		euro := []byte("€")
+		if n, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence(euro)); err != nil || n != int64(len(euro)) {
+			t.Fatalf("inputQueueWrite(\"€\"): got (%d, %v), want (%d, nil)", n, err, len(euro))
+		}
+
+		ld.outQueue.mu.Lock()
+		gotWaitLen := ld.outQueue.waitBufLen
+		ld.outQueue.mu.Unlock()
+		if gotWaitLen != waitBufMaxBytes {
+			t.Errorf("outQueue.waitBufLen after exact-fit UTF-8 echo: got %d, want %d", gotWaitLen, waitBufMaxBytes)
+		}
+		if !notified {
+			t.Errorf("masterWaiter notified on exact-fit UTF-8 echo: got false, want true")
+		}
+	})
 }

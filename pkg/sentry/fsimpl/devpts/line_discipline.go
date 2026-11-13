@@ -704,7 +704,9 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 							// of bytes, presumably because some older terminals don't erase
 							// characters with \b, so we need to "erase" the old character
 							// by writing a space over it.
-							l.outQueue.writeBytes([]byte{'\b', ' ', '\b'}, l)
+							if l.outQueue.writeBytes([]byte{'\b', ' ', '\b'}, l) {
+								notifyEcho = true
+							}
 						}
 					}
 				}
@@ -717,7 +719,6 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 
 			buf = buf[1:]
 			ret += 1
-			notifyEcho = true
 			continue
 		}
 
@@ -746,8 +747,9 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 
 		// Anything written to the readBuf will have to be echoed.
 		if l.termios.LEnabled(linux.ECHO) {
-			l.outQueue.writeBytes(cBytes, l)
-			notifyEcho = true
+			if l.outQueue.writeBytes(cBytes, l) {
+				notifyEcho = true
+			}
 		}
 
 		// If we finish a line, make it available for reading.
