@@ -90,6 +90,9 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	}
 	for s := f.unfreeSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
 		val := s.Value()
+		if val.unsaved {
+			continue
+		}
 		pb.UnfreeSmall = append(pb.UnfreeSmall, &pgallocpb.UnfreeRangeProto{
 			Start: s.Start(),
 			End:   s.End(),

@@ -198,6 +198,10 @@ type MemoryFile struct {
 	// release all MemoryFile resources and exit. destroyed is protected by mu.
 	destroyed bool
 
+	// unadopted is true if KeepFileContents was set and AdoptExisting has not
+	// yet completed. unadopted is protected by mu.
+	unadopted bool
+
 	// stopNotifyPressure stops memory cgroup pressure level
 	// notifications used to drive eviction. stopNotifyPressure is
 	// immutable.
@@ -278,6 +282,12 @@ type unfreeInfo struct {
 	// and zero for void, waste, releasing, and sub-released pages, as well as
 	// pages backed by a different page size.
 	refs uint64
+
+	// unsaved is true for pages reserved outside MemoryFile's normal
+	// allocation, usage.MemoryAccounting, and checkpoint lifecycle. Unsaved
+	// pages have refs == 1 while reserved (or refs == 0 while being released by
+	// FreeUnsaved), no memAcct entry, and are omitted from SaveTo metadata.
+	unsaved bool
 }
 
 // memAcctInfo is the value type of MemoryFile.memAcct.
@@ -392,6 +402,11 @@ type MemoryFileOpts struct {
 	// If DisableMemoryAccounting is true, memory usage observed by the
 	// MemoryFile will not be reported in usage.MemoryAccounting.
 	DisableMemoryAccounting bool
+
+	// If KeepFileContents is true, NewMemoryFile does not truncate the
+	// backing file. The caller must then call MemoryFile.AdoptExisting before
+	// it allocates from the MemoryFile.
+	KeepFileContents bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -440,9 +455,12 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		return nil, fmt.Errorf("invalid MemoryFileOpts.DelayedEviction: %v", opts.DelayedEviction)
 	}
 
-	// Truncate the file to 0 bytes first to ensure that it's empty.
-	if err := file.Truncate(0); err != nil {
-		return nil, err
+	// Unless the caller keeps the file's contents, truncate the file to 0
+	// bytes first to ensure that it's empty.
+	if !opts.KeepFileContents {
+		if err := file.Truncate(0); err != nil {
+			return nil, err
+		}
 	}
 	f := &MemoryFile{
 		opts: opts,
@@ -483,6 +501,7 @@ func (f *MemoryFile) initFields() {
 	f.unfreeHuge.InsertRange(fullFR, unfreeInfo{})
 	f.subreleased = make(map[uint64]uint64)
 	f.evictable = make(map[EvictableMemoryUser]*evictableMemoryUserInfo)
+	f.unadopted = f.opts.KeepFileContents
 	chunks := []chunkInfo(nil)
 	f.chunks.Store(&chunks)
 }
@@ -771,8 +790,8 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 			// Update reference count for these pages from 0 to 1.
 			unfree.MutateFullRange(fr, func(ufseg unfreeIterator) bool {
 				uf := ufseg.ValuePtr()
-				if uf.refs != 0 {
-					panic(fmt.Sprintf("waste pages %v have unexpected refcount %d during recycling of %v\n%s", ufseg.Range(), uf.refs, fr, f.stringLocked()))
+				if uf.refs != 0 || uf.unsaved {
+					panic(fmt.Sprintf("waste pages %v have unexpected state %+v during recycling of %v\n%s", ufseg.Range(), *uf, fr, f.stringLocked()))
 				}
 				uf.refs = 1
 				return true
@@ -911,6 +930,9 @@ func recycleRange(uwgap unwasteGapIterator, alloc *allocState) (memmap.FileRange
 
 // Preconditions: f.mu must be locked.
 func (f *MemoryFile) extendChunksLocked(alloc *allocState) error {
+	if f.unadopted {
+		panic("MemoryFile created with KeepFileContents must call AdoptExisting before allocating")
+	}
 	unfree := &f.unfreeSmall
 	if alloc.huge {
 		unfree = &f.unfreeHuge
@@ -1293,6 +1315,9 @@ func (f *MemoryFile) incRefLocked(fr memmap.FileRange) {
 			if uf.refs <= 0 {
 				panic(fmt.Sprintf("IncRef(%v) called with %d references on pages %v", fr, uf.refs, ufseg.Range()))
 			}
+			if uf.unsaved {
+				panic(fmt.Sprintf("IncRef(%v) called on unsaved pages %v", fr, ufseg.Range()))
+			}
 			uf.refs++
 			return true
 		})
@@ -1321,6 +1346,9 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 			uf := ufseg.ValuePtr()
 			if uf.refs <= 0 {
 				panic(fmt.Sprintf("DecRef(%v) called with %d references on pages %v", fr, uf.refs, ufseg.Range()))
+			}
+			if uf.unsaved {
+				panic(fmt.Sprintf("DecRef(%v) called on unsaved pages %v; use FreeUnsaved", fr, ufseg.Range()))
 			}
 			uf.refs--
 			if uf.refs == 0 {
