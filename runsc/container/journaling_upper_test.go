@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -373,6 +374,341 @@ func copySparseFile(t *testing.T, srcPath, dstPath string) {
 	}
 }
 
+func TestJournalingRootfsUpperShrink(t *testing.T) {
+	p := newJournalingUpperTest(t)
+	const bigSize = 64 << 20
+
+	c1, fs1, cleanup1 := p.start(p.conf("image-1", ""))
+	p.sh(p.conf("image-1", ""), c1, fmt.Sprintf(`
+mkdir -p /journaled
+echo small > /journaled/small
+echo after > /journaled/after
+dd if=/dev/urandom of=/journaled/big bs=1M count=%d 2>/dev/null
+rm /journaled/big
+`, bigSize>>20))
+	p.kill(c1, cleanup1)
+
+	f1, err := os.Open(fs1)
+	if err != nil {
+		t.Fatalf("Open(%q): %v", fs1, err)
+	}
+	endBeforeCompact, ok, err := journal.FilestoreEnd(f1)
+	f1.Close()
+	if err != nil || !ok {
+		t.Fatalf("FilestoreEnd(%q): %#x, %t, %v", fs1, endBeforeCompact, ok, err)
+	}
+	if endBeforeCompact < 2*journal.DefaultRegionSize+bigSize {
+		t.Fatalf("filestore end before compaction is %d bytes, want >= %d", endBeforeCompact, uint64(2*journal.DefaultRegionSize+bigSize))
+	}
+
+	// Importing into c2 compacts the journal after replay so the deleted 64 MiB
+	// file is no longer referenced by the active region.
+	conf2 := p.conf("image-1", fs1)
+	c2, fs2, cleanup2 := p.start(conf2)
+	if got, want := p.files(conf2, c2, "small", "big", "after"), "small\n-\nafter\n"; got != want {
+		t.Errorf("files after first import: got %q, want %q", got, want)
+	}
+	p.kill(c2, cleanup2)
+
+	fiBefore, err := os.Stat(fs2)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	f, err := os.OpenFile(fs2, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	if err := shrinkJournalingRootfsUpperFilestore(fs2, f); err != nil {
+		f.Close()
+		t.Fatalf("shrinkJournalingRootfsUpperFilestore: %v", err)
+	}
+	f.Close()
+	fiAfter, err := os.Stat(fs2)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	t.Logf("filestore shrank from %d to %d bytes (pre-compaction mark %d)", fiBefore.Size(), fiAfter.Size(), endBeforeCompact)
+	wantMax := int64(endBeforeCompact) - bigSize
+	if fiAfter.Size() > wantMax || fiAfter.Size()%int64(os.Getpagesize()) != 0 {
+		t.Errorf("filestore size after shrinking is %d bytes (was %d, pre-compaction mark %d), want page-aligned <= %d", fiAfter.Size(), fiBefore.Size(), endBeforeCompact, wantMax)
+	}
+
+	conf3 := p.importOnlyConf("image-1", fs2)
+	c3, _, cleanup3, err := p.create(conf3, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("create c3: %v", err)
+	}
+	if err := c3.Start(conf3); err != nil {
+		cleanup3()
+		t.Fatalf("start c3: %v", err)
+	}
+	if got, want := p.files(conf3, c3, "small", "big", "after"), "small\n-\nafter\n"; got != want {
+		t.Errorf("files after shrinking and importing: got %q, want %q", got, want)
+	}
+	cleanup3()
+}
+
+type journalingUpperImages struct {
+	checkpoint   string
+	fsCheckpoint string
+	tar          string
+}
+
+func (p *journalingUpperTest) makeImages() journalingUpperImages {
+	p.t.Helper()
+	conf := p.conf("image-1", "")
+	imgs := journalingUpperImages{
+		checkpoint:   p.t.TempDir(),
+		fsCheckpoint: p.t.TempDir(),
+		tar:          filepath.Join(p.t.TempDir(), "upper.tar"),
+	}
+	c, _, cleanup := p.start(conf)
+	p.sh(conf, c, "mkdir -p /journaled && echo A > /journaled/a")
+	if err := c.FSSave(conf, imgs.fsCheckpoint, sandbox.FSSaveOpts{Paths: []string{"/"}}); err != nil {
+		p.t.Fatalf("FSSave: %v", err)
+	}
+	tarFile, err := os.Create(imgs.tar)
+	if err != nil {
+		p.t.Fatalf("Create: %v", err)
+	}
+	if err := c.TarRootfsUpperLayer(tarFile); err != nil {
+		p.t.Fatalf("TarRootfsUpperLayer: %v", err)
+	}
+	tarFile.Close()
+	if err := c.Checkpoint(conf, imgs.checkpoint, sandbox.CheckpointOpts{}); err != nil {
+		p.t.Fatalf("Checkpoint: %v", err)
+	}
+	_, _ = c.Wait()
+	cleanup()
+	return imgs
+}
+
+func TestJournalingRootfsUpperLargeSnapshot(t *testing.T) {
+	p := newJournalingUpperTest(t)
+	conf1 := p.conf("image-1", "")
+	conf1.TestOnlyJournalingRootfsUpperRegionSize = 16 << 10
+	const n = 500
+
+	c1, fs1, cleanup1 := p.start(conf1)
+	p.sh(conf1, c1, fmt.Sprintf(`
+mkdir -p /journaled/many
+i=0
+while [ $i -lt %d ]; do echo $i > /journaled/many/file-with-a-long-name-$i; i=$((i+1)); done
+`, n))
+	p.kill(c1, cleanup1)
+
+	check := func(what string, conf *config.Config, c *Container) {
+		t.Helper()
+		got := p.sh(conf, c, "ls /journaled/many | wc -l; cat /journaled/many/file-with-a-long-name-123")
+		if want := fmt.Sprintf("%d\n123\n", n); strings.TrimLeft(got, " ") != want {
+			t.Errorf("%s: got %q, want %q", what, got, want)
+		}
+	}
+
+	conf2 := p.conf("image-1", fs1)
+	conf2.TestOnlyJournalingRootfsUpperRegionSize = 16 << 10
+	c2, fs2, cleanup2 := p.start(conf2)
+	check("after first crash and import", conf2, c2)
+	p.sh(conf2, c2, "echo new > /journaled/new")
+	p.kill(c2, cleanup2)
+
+	conf3 := p.importOnlyConf("image-1", fs2)
+	c3, _, cleanup3 := p.start(conf3)
+	check("after second crash and import", conf3, c3)
+	if got, want := p.files(conf3, c3, "new"), "new\n"; got != want {
+		t.Errorf("after second crash and import: got %q, want %q", got, want)
+	}
+	cleanup3()
+}
+
+type multiUpperTest struct {
+	t           *testing.T
+	conf        *config.Config
+	enabled     [2]bool
+	imports     [2]string
+	imageIDs    [2]string
+	rootViaFlag bool
+}
+
+var multiUpperNames = [2]string{"root", "sub"}
+
+func newMultiUpperTest(t *testing.T) *multiUpperTest {
+	t.Helper()
+	conf := testutil.TestConfig(t)
+	if err := conf.Overlay2.Set("root:self"); err != nil {
+		t.Fatalf("Overlay2.Set: %v", err)
+	}
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("SetupRootDir: %v", err)
+	}
+	t.Cleanup(cleanup)
+	conf.RootDir = rootDir
+	conf.JournalingRootfsUpperAnnotations = config.JournalingRootfsUpperAnnotationsOn
+	return &multiUpperTest{
+		t:        t,
+		conf:     conf,
+		enabled:  [2]bool{true, true},
+		imageIDs: [2]string{"image-1", "image-1"},
+	}
+}
+
+func (m *multiUpperTest) specs() ([]*specs.Spec, []string, *config.Config) {
+	conf := *m.conf
+	sps, ids := createSpecs(sleepCmd, sleepCmd)
+	for i, spec := range sps {
+		rootPath, sysMounts := makeWritableRootfs(m.t)
+		applyWritableRootfs(spec, rootPath, sysMounts)
+		name := multiUpperNames[i]
+		spec.Annotations[specutils.ContainerdContainerNameAnnotation] = name
+		if !m.enabled[i] && m.imports[i] == "" {
+			continue
+		}
+		if i == 0 && m.rootViaFlag {
+			if m.enabled[i] {
+				conf.JournalingRootfsUpper = config.JournalingRootfsUpperOn
+			} else {
+				conf.JournalingRootfsUpper = config.JournalingRootfsUpperOff
+			}
+			conf.JournalingRootfsUpperImport = m.imports[i]
+			conf.JournalingRootfsUpperImageID = m.imageIDs[i]
+			continue
+		}
+		if m.enabled[i] {
+			spec.Annotations[specutils.AnnotationRootfsUpperJournal+"."+name] = "true"
+		}
+		if m.imports[i] != "" {
+			spec.Annotations[specutils.AnnotationRootfsUpperJournalImport+"."+name] = m.imports[i]
+		}
+		if m.imageIDs[i] != "" {
+			spec.Annotations[specutils.AnnotationRootfsUpperJournalImageID+"."+name] = m.imageIDs[i]
+		}
+	}
+	return sps, ids, &conf
+}
+
+func (m *multiUpperTest) start() ([]*Container, [2]string, func(), *config.Config) {
+	m.t.Helper()
+	specs, ids, conf := m.specs()
+	cs, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		m.t.Fatalf("starting containers: %v", err)
+	}
+	fsPaths := [2]string{selfFilestoreOf(cs[0]), selfFilestoreOf(cs[1])}
+	return cs, fsPaths, func() {
+		cleanup()
+		for _, p := range fsPaths {
+			waitUnlockedPath(m.t, p)
+		}
+	}, conf
+}
+
+func (m *multiUpperTest) kill(cs []*Container, cleanup func()) {
+	m.t.Helper()
+	if err := unix.Kill(cs[0].SandboxPid(), unix.SIGKILL); err != nil {
+		m.t.Fatalf("killing sandbox: %v", err)
+	}
+	_, _ = cs[0].Wait()
+	cleanup()
+}
+
+func (m *multiUpperTest) sh(conf *config.Config, c *Container, script string) string {
+	m.t.Helper()
+	out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", script)
+	if err != nil {
+		m.t.Fatalf("script %q failed: %v, output: %s", script, err, out)
+	}
+	return string(out)
+}
+
+func (m *multiUpperTest) files(conf *config.Config, c *Container, names ...string) string {
+	m.t.Helper()
+	script := ""
+	for _, name := range names {
+		script += fmt.Sprintf("cat /journaled/%s 2>/dev/null || echo -; ", name)
+	}
+	return m.sh(conf, c, script)
+}
+
+func TestJournalingRootfsUpperMultiContainer(t *testing.T) {
+	for _, rootViaFlag := range []bool{false, true} {
+		t.Run(fmt.Sprintf("rootViaFlag=%t", rootViaFlag), func(t *testing.T) {
+			m := newMultiUpperTest(t)
+			m.rootViaFlag = rootViaFlag
+
+			cs, fsPaths1, cleanup, conf := m.start()
+			m.sh(conf, cs[0], "mkdir -p /journaled && echo R > /journaled/root")
+			m.sh(conf, cs[1], "mkdir -p /journaled && echo S > /journaled/sub")
+			m.kill(cs, cleanup)
+
+			check := func(what string, conf *config.Config, cs []*Container, want0, want1 string) {
+				t.Helper()
+				if got := m.files(conf, cs[0], "root", "sub", "more"); got != want0 {
+					t.Errorf("%s: root container files: got %q, want %q", what, got, want0)
+				}
+				if got := m.files(conf, cs[1], "root", "sub", "more"); got != want1 {
+					t.Errorf("%s: subcontainer files: got %q, want %q", what, got, want1)
+				}
+			}
+
+			m.imports = fsPaths1
+			cs, fsPaths2, cleanup, conf := m.start()
+			check("after crash and import", conf, cs, "R\n-\n-\n", "-\nS\n-\n")
+			m.sh(conf, cs[1], "echo M > /journaled/more")
+			cleanup()
+
+			m.enabled = [2]bool{false, false}
+			m.imports = fsPaths2
+			cs, _, cleanup, conf = m.start()
+			check("after clean unjournaled import", conf, cs, "R\n-\n-\n", "-\nS\nM\n")
+			cleanup()
+		})
+	}
+}
+
+func TestJournalingRootfsUpperSubcontainerNotJournaled(t *testing.T) {
+	m := newMultiUpperTest(t)
+	m.enabled[1] = false
+	cs, fsPaths, cleanup, conf := m.start()
+	m.sh(conf, cs[0], "mkdir -p /journaled && echo R > /journaled/root")
+	m.sh(conf, cs[1], "mkdir -p /journaled && echo S > /journaled/sub")
+	cleanup()
+
+	if _, err := os.Stat(fsPaths[0]); err != nil {
+		t.Fatalf("journaled root filestore deleted on Destroy: %v", err)
+	}
+	if _, err := os.Stat(fsPaths[1]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unjournaled subcontainer filestore was not deleted on Destroy: err=%v", err)
+	}
+}
+
+func TestJournalingRootfsUpperSubcontainerImageMismatch(t *testing.T) {
+	m := newMultiUpperTest(t)
+	cs, fsPaths, cleanup, conf := m.start()
+	m.sh(conf, cs[1], "mkdir -p /journaled && echo S > /journaled/sub")
+	cleanup()
+
+	m.imports = fsPaths
+	m.imageIDs[1] = "image-2"
+	specs, ids, conf := m.specs()
+	if _, cleanupBad, err := startContainers(conf, specs, ids); err == nil {
+		cleanupBad()
+		t.Fatalf("starting subcontainer with mismatched image ID succeeded")
+	} else if !strings.Contains(err.Error(), `journal was created for image "image-1"`) {
+		t.Errorf("subcontainer mismatched image ID: got %v, want image mismatch", err)
+	}
+	waitUnlockedPath(t, fsPaths[0])
+	waitUnlockedPath(t, fsPaths[1])
+
+	m.imageIDs[1] = "image-1"
+	m.enabled = [2]bool{false, false}
+	cs, _, cleanup, conf = m.start()
+	if got, want := m.files(conf, cs[1], "sub"), "S\n"; got != want {
+		t.Errorf("subcontainer files after failed mismatch attempt: got %q, want %q", got, want)
+	}
+	cleanup()
+}
+
 func TestJournalingRootfsUpperOverlayValidation(t *testing.T) {
 	p := newJournalingUpperTest(t)
 
@@ -442,4 +778,33 @@ func TestJournalingRootfsUpperAnnotationGateAndFastExit(t *testing.T) {
 		t.Fatalf("procfs import annotation succeeded")
 	}
 
+	// A short-lived container started from fs-restore that exits 0 immediately
+	// must wait for background journal activation before tearing down so its
+	// preserved filestore is complete and importable.
+	imgs := p.makeImages()
+	conf := p.conf("image-1", "")
+	rootFast, sysMountsFast := makeWritableRootfs(t)
+	cFast, cleanupFast, err := p.createOnRoot(conf, rootFast, sysMountsFast, nil, func(args *Args) {
+		args.FSRestoreImagePaths = []string{imgs.fsCheckpoint}
+	}, "/bin/sh", "-c", "echo fast > /journaled/fast")
+	if err != nil {
+		t.Fatalf("createOnRoot: %v", err)
+	}
+	fsFast := selfFilestoreOf(cFast)
+	if err := cFast.Start(conf); err != nil {
+		cleanupFast()
+		t.Fatalf("Start: %v", err)
+	}
+	if ws, err := cFast.Wait(); err != nil || ws.ExitStatus() != 0 {
+		cleanupFast()
+		t.Fatalf("Wait: %v, %v", ws, err)
+	}
+	cleanupFast()
+
+	impConf := p.importOnlyConf("image-1", fsFast)
+	cImp, _, cleanupImp := p.start(impConf)
+	if got, want := p.files(impConf, cImp, "a", "fast"), "A\nfast\n"; got != want {
+		t.Errorf("after fast-exit fs-restore and import: got %q, want %q", got, want)
+	}
+	cleanupImp()
 }
