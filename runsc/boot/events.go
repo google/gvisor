@@ -54,7 +54,8 @@ func (cm *containerManager) getUsageFromCgroups(file controlapi.CgroupControlFil
 }
 
 // Event gets the events from the container.
-func (cm *containerManager) Event(cid *string, out *sentryapi.EventOut) error {
+func (cm *containerManager) Event(args *sentryapi.EventArgs, out *sentryapi.EventOut) error {
+	cid := &args.CID
 	*out = sentryapi.EventOut{
 		Event: sentryapi.Event{
 			ID:   *cid,
@@ -89,7 +90,10 @@ func (cm *containerManager) Event(cid *string, out *sentryapi.EventOut) error {
 	if cm.l.k.Cgroup2FS().EverMounted() {
 		memFile.Name = "memory.current"
 	}
+	// Cgroup reads update filesystem refs that checkpoint serializes.
+	cm.l.saveMu.Lock()
 	memUsage, err := cm.getUsageFromCgroups(memFile)
+	cm.l.saveMu.Unlock()
 	if err != nil {
 		// Cgroups is not installed or there was an error to get usage
 		// from the cgroups. Fall back to the old method of getting the
@@ -116,36 +120,67 @@ func (cm *containerManager) Event(cid *string, out *sentryapi.EventOut) error {
 	}
 	out.Event.Data.Memory.Usage.Usage = memUsage
 
-	// CPU usage by container.
-	out.ContainerUsage, err = cm.getCPUUsageFromCgroups()
+	return cm.cpuStats(args, out)
+}
+
+func (cm *containerManager) cpuStats(args *sentryapi.EventArgs, out *sentryapi.EventOut) error {
+	// Keep the guest snapshot and host allocation in the same container
+	// lifecycle window. Destroy retires CPU accounting under l.mu.
+	for {
+		cm.l.saveMu.Lock()
+		if cm.l.mu.TryLock() {
+			break
+		}
+		cm.l.saveMu.Unlock()
+		// Destroy may wait for task exit under mu; leave saveMu available.
+		cm.l.mu.Lock()
+		_, err := cm.l.tryThreadGroupFromIDLocked(execID{cid: args.CID})
+		cm.l.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+	defer cm.l.saveMu.Unlock()
+	_, err := cm.l.tryThreadGroupFromIDLocked(execID{cid: args.CID}) // +checklocksforce: mu.TryLock succeeded above.
+	defer cm.l.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	out.ContainerUsage, err = cm.getCPUUsageFromCgroupsLocked()
+	source := "cgroup"
 	if err != nil {
 		// Cgroups is not installed or there was an error to get usage
 		// from the cgroups. Fall back to the old method of getting the
 		// usage from the sentry and host cgroups.
 		log.Warningf("could not get container cpu usage from cgroups, error:  %v", err)
 		out.ContainerUsage = control.ContainerUsage(cm.l.k)
+		source = "sentry"
 	}
+	allocated := cm.l.k.AccountContainerCPU(out.ContainerUsage, source, args.HostCPU, args.HostValid, args.HostConfigured)
+	out.Event.Data.CPU.Usage.Total = allocated[args.CID]
 	return nil
 }
 
-func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) {
+// Requires l.mu across guest snapshot and allocation to exclude retirement.
+// +checklocks:cm.l.mu
+func (cm *containerManager) getCPUUsageFromCgroupsLocked() (map[string]uint64, error) {
 	usage := make(map[string]uint64)
-
-	cm.l.mu.Lock()
-	defer cm.l.mu.Unlock()
+	var missing []string
 
 	isV2 := cm.l.k.Cgroup2FS().EverMounted()
 	for name, cid := range cm.l.containerIDs {
-		// Before the introduction of cgroup v2, the container name, not the ID, was incorrectly used in
-		// the cgroup path. For avoiding behavior changes when cgroup v1 is in use, we use the container
-		// ID only for cgroup v2.
-		id := name
-		if isV2 {
-			id = cid
+		// Destroy retires this CID but leaves its name and v1 cgroup behind.
+		if _, active := cm.l.processes[execID{cid: cid}]; !active {
+			continue
+		}
+		// Pause and other containers without a cgroup mount use task CPU.
+		if !specHasCgroupMount(cm.l.containerSpecs[name]) {
+			missing = append(missing, cid)
+			continue
 		}
 		file := controlapi.CgroupControlFile{
 			Controller: "cpuacct",
-			Path:       "/" + id,
+			Path:       "/" + cid,
 			Name:       "cpuacct.usage",
 		}
 		if isV2 {
@@ -154,7 +189,11 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 		}
 		valStr, err := cm.readControlFile(file)
 		if err != nil {
-			return nil, err
+			// Keep the cgroup clock after a transient failure. Containers
+			// without a prior cgroup sample use retained sentry CPU.
+			log.Debugf("could not get container %q cpu usage from cgroups, retaining its previous cgroup sample or sentry usage: %v", cid, err)
+			missing = append(missing, cid)
+			continue
 		}
 		var cpuUsage uint64
 		if isV2 {
@@ -175,7 +214,7 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 				return nil, err
 			}
 		}
-		usage[id] = cpuUsage
+		usage[cid] = cpuUsage
 	}
-	return usage, nil
+	return cm.l.k.ContainerCPUUsageWithFallback(usage, missing), nil
 }

@@ -178,6 +178,7 @@ go_test(
     size = "small",
     srcs = [
         "compat_test.go",
+        "events_test.go",
         "fscheckpoint_test.go",
         "lifecyclecpus_test.go",
         "loader_test.go",
