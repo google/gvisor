@@ -149,6 +149,7 @@ func (i *InternalData) StateFields() []string {
 	return []string{
 		"ProductName",
 		"EnableTPUProxyPaths",
+		"EnableNUMATopology",
 		"RDMASysfs",
 		"TestSysfsPathPrefix",
 	}
@@ -161,8 +162,9 @@ func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.SaveString(0, &i.ProductName)
 	stateSinkObject.SaveBool(1, &i.EnableTPUProxyPaths)
-	stateSinkObject.Save(2, &i.RDMASysfs)
-	stateSinkObject.SaveString(3, &i.TestSysfsPathPrefix)
+	stateSinkObject.SaveBool(2, &i.EnableNUMATopology)
+	stateSinkObject.Save(3, &i.RDMASysfs)
+	stateSinkObject.SaveString(4, &i.TestSysfsPathPrefix)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
@@ -171,8 +173,9 @@ func (i *InternalData) afterLoad(context.Context) {}
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadString(0, &i.ProductName)
 	stateSourceObject.LoadBool(1, &i.EnableTPUProxyPaths)
-	stateSourceObject.Load(2, &i.RDMASysfs)
-	stateSourceObject.LoadString(3, &i.TestSysfsPathPrefix)
+	stateSourceObject.LoadBool(2, &i.EnableNUMATopology)
+	stateSourceObject.Load(3, &i.RDMASysfs)
+	stateSourceObject.LoadString(4, &i.TestSysfsPathPrefix)
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -184,6 +187,7 @@ func (fs *filesystem) StateFields() []string {
 		"Filesystem",
 		"devMinor",
 		"enableTPUProxyPaths",
+		"enableNUMATopology",
 		"testSysfsPathPrefix",
 		"productName",
 		"root",
@@ -198,9 +202,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fs.Filesystem)
 	stateSinkObject.SaveUint32(1, &fs.devMinor)
 	stateSinkObject.SaveBool(2, &fs.enableTPUProxyPaths)
-	stateSinkObject.SaveString(3, &fs.testSysfsPathPrefix)
-	stateSinkObject.SaveString(4, &fs.productName)
-	stateSinkObject.Save(5, &fs.root)
+	stateSinkObject.SaveBool(3, &fs.enableNUMATopology)
+	stateSinkObject.SaveString(4, &fs.testSysfsPathPrefix)
+	stateSinkObject.SaveString(5, &fs.productName)
+	stateSinkObject.Save(6, &fs.root)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -210,9 +215,10 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.LoadUint32(1, &fs.devMinor)
 	stateSourceObject.LoadBool(2, &fs.enableTPUProxyPaths)
-	stateSourceObject.LoadString(3, &fs.testSysfsPathPrefix)
-	stateSourceObject.LoadString(4, &fs.productName)
-	stateSourceObject.Load(5, &fs.root)
+	stateSourceObject.LoadBool(3, &fs.enableNUMATopology)
+	stateSourceObject.LoadString(4, &fs.testSysfsPathPrefix)
+	stateSourceObject.LoadString(5, &fs.productName)
+	stateSourceObject.Load(6, &fs.root)
 }
 
 func (d *dir) StateTypeName() string {
