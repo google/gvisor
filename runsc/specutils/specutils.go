@@ -73,6 +73,41 @@ const (
 	//	"dev.gvisor.tar.rootfs.upper.<container-name>": "<path>"
 	AnnotationRootfsUpperTar = "dev.gvisor.tar.rootfs.upper"
 
+	// AnnotationRootfsUpperJournal enables metadata journaling in the
+	// container's file-backed rootfs overlay upper layer tmpfs ("true"/"false"),
+	// as for --journaling-rootfs-upper. Requires
+	// --journaling-rootfs-upper-annotations=on. In multi-container pods, append
+	// the container name to select a specific container:
+	//
+	// Usage:
+	//	"dev.gvisor.journal.rootfs.upper": "true"
+	//	"dev.gvisor.journal.rootfs.upper.<container-name>": "true"
+	AnnotationRootfsUpperJournal = "dev.gvisor.journal.rootfs.upper"
+
+	// AnnotationRootfsUpperJournalImport specifies an absolute host file path to
+	// a previously journaled rootfs upper filestore file to replay and adopt in
+	// place on container startup, as for --journaling-rootfs-upper-import
+	// (procfs/devfd paths are only accepted via the CLI flag). Requires
+	// --journaling-rootfs-upper-annotations=on. In multi-container pods, append
+	// the container name to select a specific container:
+	//
+	// Usage:
+	//	"dev.gvisor.journal.rootfs.upper.import": "<path>"
+	//	"dev.gvisor.journal.rootfs.upper.import.<container-name>": "<path>"
+	AnnotationRootfsUpperJournalImport = "dev.gvisor.journal.rootfs.upper.import"
+
+	// AnnotationRootfsUpperJournalImageID optionally identifies the lower layer
+	// of the container's rootfs overlay, as for
+	// --journaling-rootfs-upper-image-id. Recorded when creating a journal and
+	// verified on import when non-empty. Requires
+	// --journaling-rootfs-upper-annotations=on. In multi-container pods, append
+	// the container name to select a specific container:
+	//
+	// Usage:
+	//	"dev.gvisor.journal.rootfs.upper.image-id": "<id>"
+	//	"dev.gvisor.journal.rootfs.upper.image-id.<container-name>": "<id>"
+	AnnotationRootfsUpperJournalImageID = "dev.gvisor.journal.rootfs.upper.image-id"
+
 	// annotationSeccomp indicates what seccomp rules was set to a given container.
 	//
 	// Usage:
@@ -207,6 +242,20 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config, noRootContainer bool) e
 		}
 		if spec.Root.Readonly {
 			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
+		}
+	}
+
+	// Validate journaling rootfs upper configuration and annotations.
+	jcfg, err := JournalingRootfsUpper(spec, conf)
+	if err != nil {
+		return err
+	}
+	if !noRootContainer && (jcfg.Enabled || jcfg.ImportPath != "") {
+		if spec.Root == nil {
+			return fmt.Errorf("journaling rootfs upper is configured but Spec.Root is not defined")
+		}
+		if spec.Root.Readonly {
+			return fmt.Errorf("journaling rootfs upper is configured but rootfs is readonly")
 		}
 	}
 
@@ -1079,17 +1128,105 @@ func containerNameNoRemap(spec *specs.Spec) string {
 // string if not set. In multi-container mode, only container-specific
 // annotations are used.
 func RootfsTarUpperPath(spec *specs.Spec) string {
+	return containerAnnotation(spec, AnnotationRootfsUpperTar)
+}
+
+// containerAnnotation returns the value of the annotation with the given key
+// for the container, or empty string if not set. In multi-container mode,
+// only container-specific annotations (key + "." + container name) are used.
+func containerAnnotation(spec *specs.Spec, key string) string {
 	if spec == nil || spec.Annotations == nil {
 		return ""
 	}
 	if name := ContainerName(spec); name != "" {
-		return spec.Annotations[AnnotationRootfsUpperTar+"."+name]
+		return spec.Annotations[key+"."+name]
 	}
 	// Multi-container sandbox must use container-specific annotations.
 	if cType := SpecContainerType(spec); cType == ContainerTypeContainer || cType == ContainerTypeSandbox {
 		return ""
 	}
-	return spec.Annotations[AnnotationRootfsUpperTar]
+	return spec.Annotations[key]
+}
+
+// JournalingRootfsUpperConfig holds the resolved journaling rootfs upper
+// settings of a container.
+type JournalingRootfsUpperConfig struct {
+	// Enabled is true if runtime journaling is enabled for the container's
+	// rootfs upper layer.
+	Enabled bool
+
+	// ImportPath, if non-empty, is the path (or /proc/self/fd/N) of an existing
+	// journaled rootfs upper filestore file to replay and adopt on startup.
+	ImportPath string
+
+	// ImageID optionally identifies the lower layer of the rootfs overlay.
+	ImageID string
+}
+
+// JournalingRootfsUpper returns the journaling rootfs upper configuration of
+// the container from its annotations and (for the root container) CLI flags.
+func JournalingRootfsUpper(spec *specs.Spec, conf *config.Config) (JournalingRootfsUpperConfig, error) {
+	var cfg JournalingRootfsUpperConfig
+	annEnabled := containerAnnotation(spec, AnnotationRootfsUpperJournal)
+	annImport := containerAnnotation(spec, AnnotationRootfsUpperJournalImport)
+	annImageID := containerAnnotation(spec, AnnotationRootfsUpperJournalImageID)
+	if annEnabled != "" || annImport != "" || annImageID != "" {
+		if conf == nil || conf.JournalingRootfsUpperAnnotations != config.JournalingRootfsUpperAnnotationsOn {
+			return JournalingRootfsUpperConfig{}, fmt.Errorf("journaling rootfs upper annotations are disabled, use --journaling-rootfs-upper-annotations=on to enable them")
+		}
+		if IsProcFDPath(annImport) {
+			return JournalingRootfsUpperConfig{}, fmt.Errorf("annotation %s cannot use procfs/devfd path %q", AnnotationRootfsUpperJournalImport, annImport)
+		}
+	}
+	if annEnabled != "" {
+		b, err := strconv.ParseBool(annEnabled)
+		if err != nil {
+			return JournalingRootfsUpperConfig{}, fmt.Errorf("invalid boolean value %q for annotation %s: %w", annEnabled, AnnotationRootfsUpperJournal, err)
+		}
+		cfg.Enabled = b
+	}
+	cfg.ImportPath = annImport
+	cfg.ImageID = annImageID
+
+	if IsRootContainer(spec) && conf != nil {
+		switch conf.JournalingRootfsUpper {
+		case config.JournalingRootfsUpperOn:
+			if annEnabled != "" && !cfg.Enabled {
+				return JournalingRootfsUpperConfig{}, fmt.Errorf("--journaling-rootfs-upper=on and annotation %s=%q differ", AnnotationRootfsUpperJournal, annEnabled)
+			}
+			cfg.Enabled = true
+		case config.JournalingRootfsUpperOff:
+			if annEnabled != "" && cfg.Enabled {
+				return JournalingRootfsUpperConfig{}, fmt.Errorf("--journaling-rootfs-upper=off and annotation %s=%q differ", AnnotationRootfsUpperJournal, annEnabled)
+			}
+			cfg.Enabled = false
+		}
+		if flag := conf.JournalingRootfsUpperImport; flag != "" {
+			if cfg.ImportPath != "" && cfg.ImportPath != flag {
+				return JournalingRootfsUpperConfig{}, fmt.Errorf("--journaling-rootfs-upper-import=%q and annotation %s=%q differ", flag, AnnotationRootfsUpperJournalImport, cfg.ImportPath)
+			}
+			cfg.ImportPath = flag
+		}
+		if flag := conf.JournalingRootfsUpperImageID; flag != "" {
+			if cfg.ImageID != "" && cfg.ImageID != flag {
+				return JournalingRootfsUpperConfig{}, fmt.Errorf("--journaling-rootfs-upper-image-id=%q and annotation %s=%q differ", flag, AnnotationRootfsUpperJournalImageID, cfg.ImageID)
+			}
+			cfg.ImageID = flag
+		}
+	}
+
+	if cfg.ImportPath != "" {
+		if !filepath.IsAbs(cfg.ImportPath) {
+			return JournalingRootfsUpperConfig{}, fmt.Errorf("journaling rootfs upper import path must be an absolute path, got %q", cfg.ImportPath)
+		}
+		if RootfsTarUpperPath(spec) != "" {
+			return JournalingRootfsUpperConfig{}, fmt.Errorf("journaling rootfs upper import (%s) is mutually exclusive with rootfs upper tar (%s)", AnnotationRootfsUpperJournalImport, AnnotationRootfsUpperTar)
+		}
+	}
+	if cfg.ImageID != "" && !cfg.Enabled && cfg.ImportPath == "" {
+		return JournalingRootfsUpperConfig{}, fmt.Errorf("annotation %s requires %s or %s", AnnotationRootfsUpperJournalImageID, AnnotationRootfsUpperJournal, AnnotationRootfsUpperJournalImport)
+	}
+	return cfg, nil
 }
 
 // IsProcFDPath returns true if the path is a numeric procfs/devfd magic link
@@ -1184,6 +1321,9 @@ func Features() *features.Features {
 		// LINT.IfChange
 		annotations["dev.gvisor.container-name-remap."] = ""
 		annotations[AnnotationRootfsUpperTar] = ""
+		annotations[AnnotationRootfsUpperJournal] = ""
+		annotations[AnnotationRootfsUpperJournalImport] = ""
+		annotations[AnnotationRootfsUpperJournalImageID] = ""
 		annotations["dev.gvisor.internal.seccomp."] = ""
 		annotations["dev.gvisor.internal.seccomp.cont"] = "RuntimeDefault"
 		annotations[AnnotationTPU] = ""
@@ -1202,6 +1342,9 @@ func Features() *features.Features {
 		unsafeAnnotations = append(unsafeAnnotations,
 			"dev.gvisor.container-name-remap.",
 			AnnotationRootfsUpperTar,
+			AnnotationRootfsUpperJournal,
+			AnnotationRootfsUpperJournalImport,
+			AnnotationRootfsUpperJournalImageID,
 			"dev.gvisor.internal.seccomp.",
 			AnnotationTPU,
 			AnnotationCPUFeatures,
