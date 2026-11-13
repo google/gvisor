@@ -260,8 +260,15 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 	allocDir := mm.getAllocationDirection(ar, vma)
 	atomic.StoreUintptr(&vma.lastFault, uintptr(ar.Start))
 
-	// Limit the range we allocate to ar, aligned to hugepage boundaries.
-	hugeMaskAR := hugepageAligned(ar)
+	// Compute the maximum ranges we will allocate for
+	// unallocated/copy-on-write accesses in small/huge-page backed mappings
+	// respectively. These are generally bigger than ar, in order to reduce
+	// application page faults (that trap into the sentry) by creating
+	// AddressSpace mappings in advance.
+	allocSmallMaskAR := alignedAddrRange(ar, mm.allocSmallAlignShift)
+	allocHugeMaskAR := alignedAddrRange(ar, mm.allocHugeAlignShift)
+	copySmallMaskAR := alignedAddrRange(ar, mm.copySmallAlignShift)
+	copyHugeMaskAR := alignedAddrRange(ar, mm.copyHugeAlignShift)
 	// The range in which we iterate vmas and pmas is still limited to ar, to
 	// ensure that we don't allocate or COW-break a pma we don't need.
 	pseg, pgap := mm.pmas.Find(ar.Start)
@@ -283,37 +290,35 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 				}
 				if vma.mappable == nil {
 					// Private anonymous mappings get pmas by allocating.
-					// The allocated range is limited to ar, expanded to
-					// hugepage alignment. This is done even if the allocation
-					// will not be hugepage-backed, in an attempt to reduce
-					// application page faults (that trap into the sentry) by
-					// creating AddressSpace mappings in advance.
-					allocAR := optAR.Intersect(hugeMaskAR)
 					// Don't back stacks with huge pages due to low utilization
 					// and because they're often fragmented by copy-on-write.
 					mayHuge := mm.mf.HugepagesEnabled() && !vma.growsDown && !vma.isStack
+					allocAR := optAR.Intersect(allocSmallMaskAR)
 					huge := false
 					if mayHuge {
-						if allocAR.IsHugePageAligned() {
+						if hugeAR := optAR.Intersect(allocHugeMaskAR); hugeAR.IsHugePageAligned() {
+							allocAR = hugeAR
 							huge = true
-						} else {
-							startHugeRoundUp, ok := allocAR.Start.HugeRoundUp()
-							endHugeRoundDown := allocAR.End.HugeRoundDown()
-							if ok && startHugeRoundUp < endHugeRoundDown {
-								// allocAR contains at least one full aligned
+						} else if startHugeRoundUp, ok := hugeAR.Start.HugeRoundUp(); ok {
+							endHugeRoundDown := hugeAR.End.HugeRoundDown()
+							if startHugeRoundUp < endHugeRoundDown {
+								// hugeAR contains at least one full aligned
 								// huge page.
-								if allocAR.Start != startHugeRoundUp {
+								if hugeAR.Start != startHugeRoundUp {
+									// hugeAR.Start < startHugeRoundUp, so
+									// optAR.Start must be in the middle of a
+									// hugepage.
 									// Shorten allocAR to exclude full huge
 									// pages, so that a later iteration of this
 									// loop can allocate huge pages for the
 									// hugepage-aligned subrange.
 									allocAR.End = startHugeRoundUp
 								} else {
-									// Shorten allocAR to include only full
-									// huge pages, so that a later iteration of
-									// this loop can allocate small pages for
-									// the sub-hugepage tail of allocAR.
-									allocAR.End = endHugeRoundDown
+									// Allocate full huge pages now, so that a
+									// later iteration of this loop can
+									// allocate the sub-hugepage tail of hugeAR
+									// with small pages.
+									allocAR = hostarch.AddrRange{hugeAR.Start, endHugeRoundDown}
 									huge = true
 								}
 							}
@@ -326,14 +331,18 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						Huge:    huge,
 						Dir:     allocDir,
 					}
-					// If the allocation is hugepage-backed and
-					// callerIndirectCommit is true, the caller will commit every
-					// allocated huge page. If the allocation is not
-					// hugepage-backed, the caller won't commit every allocated
-					// page since hugeMaskAR is ar expanded to huge alignment,
-					// unless only one page in optAR falls into the huge page.
-					if callerIndirectCommit && (huge || allocAR.Length() == hostarch.Addr(hostarch.PageSize)) {
-						allocOpts.Mode = pgalloc.AllocateCallerIndirectCommit
+					// If callerIndirectCommit is true, the caller will commit
+					// every allocated page only if the range they are
+					// guaranteed to commit touches every page in the
+					// allocation.
+					if callerIndirectCommit {
+						commitAR := ar
+						if huge {
+							commitAR = alignedAddrRange(ar, uint8(hostarch.HugePageShift))
+						}
+						if commitAR.IsSupersetOf(allocAR) {
+							allocOpts.Mode = pgalloc.AllocateCallerIndirectCommit
+						}
 					}
 					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), allocOpts)
 					if err != nil {
@@ -460,9 +469,13 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						}
 						copyAR = pseg.Range().Intersect(stackMaskAR)
 					} else {
-						// Hugepage-align the range to be copied, for the same
-						// reasons as for private anonymous allocations.
-						copyAR = pseg.Range().Intersect(hugeMaskAR)
+						// Align the range to be copied to the fault copy
+						// alignment, for the same reasons as for private
+						// anonymous allocations.
+						copyAR = pseg.Range().Intersect(copySmallMaskAR)
+						if hugeAR := pseg.Range().Intersect(copyHugeMaskAR); mm.mf.HugepagesEnabled() && hugeAR.IsHugePageAligned() {
+							copyAR = hugeAR
+						}
 					}
 					// Get internal mappings from the pma to copy from.
 					ims, err := pseg.getInternalMappingsLocked(copyAR)
@@ -613,14 +626,16 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 	}
 }
 
-func hugepageAligned(ar hostarch.AddrRange) hostarch.AddrRange {
-	aligned := hostarch.AddrRange{ar.Start.HugeRoundDown(), ar.End}
-	if end, ok := ar.End.HugeRoundUp(); ok {
-		aligned.End = end
+// alignedAddrRange returns the smallest superset of ar aligned to 1<<shift.
+func alignedAddrRange(ar hostarch.AddrRange, shift uint8) hostarch.AddrRange {
+	mask := hostarch.Addr(1)<<shift - 1
+	aligned := hostarch.AddrRange{ar.Start &^ mask, ar.End}
+	if end := ar.End + mask; end >= ar.End {
+		aligned.End = end &^ mask
 	}
 	if checkInvariants {
 		if !aligned.IsSupersetOf(ar) {
-			panic(fmt.Sprintf("aligned AddrRange %#v is not a superset of ar %#v", aligned, ar))
+			panic(fmt.Sprintf("AddrRange %#v aligned to shift %d is not a superset of ar %#v", aligned, shift, ar))
 		}
 	}
 	return aligned

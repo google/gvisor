@@ -144,12 +144,23 @@ type MemoryFile struct {
 
 	// These fields are used for memory accounting.
 	//
-	// Memory accounting is based on identifying the set of committed pages.
-	// Since we do not have direct access to application page tables (on most
-	// platforms), tracking application accesses to uncommitted pages to detect
-	// commitment would introduce additional page faults, which would be
-	// prohibitively expensive. Instead, we query the host kernel to determine
-	// which pages are committed.
+	// Under MemoryAccountingCommitted, memory accounting is based on
+	// identifying the set of committed pages. Since we do not have direct
+	// access to application page tables (on most platforms), tracking
+	// application accesses to uncommitted pages to detect commitment would
+	// introduce additional page faults, which would be prohibitively
+	// expensive. Instead, we query the host kernel to determine which pages
+	// are committed. Pages are accounted in usage.MemoryAccounting under their
+	// allocation's memory kind if they are known-committed, and not accounted
+	// otherwise.
+	//
+	// Under MemoryAccountingAllocated, all used pages are accounted at
+	// allocation time; memAcct is still needed to track kind and memory
+	// cgroup.
+	//
+	// In all memory accounting modes, these fields are also used by
+	// f.SaveTo(), which temporarily requires committed pages to have at least
+	// one non-zero byte, then saves only the set of committed pages.
 	//
 	// memAcct tracks memory accounting state, including commitment status, for
 	// each page. Non-empty gaps in memAcct represent pages known to be
@@ -389,9 +400,44 @@ type MemoryFileOpts struct {
 	// MADV_NOHUGEPAGE.
 	AdviseNoHugepage bool
 
-	// If DisableMemoryAccounting is true, memory usage observed by the
-	// MemoryFile will not be reported in usage.MemoryAccounting.
-	DisableMemoryAccounting bool
+	// MemoryAccounting specifies how memory usage for pages allocated from
+	// the MemoryFile is accounted in usage.MemoryAccounting.
+	MemoryAccounting MemoryAccountingMode
+}
+
+// MemoryAccountingMode is the type of MemoryFileOpts.MemoryAccounting.
+type MemoryAccountingMode uint8
+
+// MemoryAccountingMode values.
+const (
+	// MemoryAccountingCommitted accounts a page when it is committed, i.e.
+	// when the host kernel begins spending resources to store its contents.
+	//
+	// MemoryAccountingCommitted is the zero value.
+	MemoryAccountingCommitted MemoryAccountingMode = iota
+
+	// MemoryAccountingAllocated accounts a page when it is allocated from the
+	// MemoryFile.
+	MemoryAccountingAllocated
+
+	// MemoryAccountingDisabled does not report memory usage for the
+	// MemoryFile in usage.MemoryAccounting.
+	MemoryAccountingDisabled
+)
+
+// isAccounted reports whether an allocated page with the given commitment
+// state is accounted in usage.MemoryAccounting, per m.
+func (m MemoryAccountingMode) isAccounted(knownCommitted bool) bool {
+	switch m {
+	case MemoryAccountingAllocated:
+		// Allocated pages are always accounted.
+		return true
+	case MemoryAccountingCommitted:
+		return knownCommitted
+	case MemoryAccountingDisabled:
+		return false
+	}
+	panic(fmt.Sprintf("invalid MemoryAccountingMode: %v", m))
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -438,6 +484,12 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		// ok
 	default:
 		return nil, fmt.Errorf("invalid MemoryFileOpts.DelayedEviction: %v", opts.DelayedEviction)
+	}
+	switch opts.MemoryAccounting {
+	case MemoryAccountingCommitted, MemoryAccountingAllocated, MemoryAccountingDisabled:
+		// ok
+	default:
+		return nil, fmt.Errorf("invalid MemoryFileOpts.MemoryAccounting: %v", opts.MemoryAccounting)
 	}
 
 	// Truncate the file to 0 bytes first to ensure that it's empty.
@@ -637,94 +689,93 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	}
 
 	var dsts safemem.BlockSeq
-	if alloc.willCommit {
-		needHugeTouch := false
-		if alloc.recycled {
-			// We will need writable page table entries in our address space to
-			// zero these pages.
-			alloc.opts.Mode = AllocateAndWritePopulate
-		} else if alloc.opts.Mode != AllocateAndWritePopulate && ((alloc.huge && f.opts.AdviseHugepage) || (!alloc.huge && f.opts.AdviseNoHugepage)) {
-			// If Mode is AllocateCallerIndirectCommit and we do nothing, the
-			// first access to the allocation may be by the application,
-			// through a platform.AddressSpace, which may not have
-			// MADV_HUGEPAGE (=> vma flag VM_HUGEPAGE) set. Consequently,
-			// shmem_fault() => shmem_get_folio_gfp() will commit a small page.
-			//
-			// If Mode is AllocateAndCommit and we do nothing, the first access
-			// to the allocation is via fallocate(2), which has the same
-			// problem: shmem_fallocate() => shmem_get_folio() =>
-			// shmem_get_folio_gfp(vma=NULL).
-			//
-			// khugepaged may eventually collapse the containing
-			// hugepage-aligned region into a huge page when it scans our
-			// mapping (khugepaged_scan_mm_slot() => khugepaged_scan_file()),
-			// but this depends on khugepaged_max_ptes_none, and in addition to
-			// the latency and overhead of doing so, this will incur another
-			// round of page faults.
-			//
-			// If write-populating through our mappings succeeds, then it will
-			// avoid this problem. Otherwise, we need to touch each huge page
-			// through our mappings.
-			//
-			// An analogous problem applies if MADV_NOHUGEPAGE is required
-			// rather than MADV_HUGEPAGE; MADV_NOHUGEPAGE is only enabled if
-			// the file defaults to huge pages, so populating or touching
-			// through our mappings is needed to ensure that the allocation is
-			// small-page-backed. In this case, we only need to force
-			// commitment of one small page per huge page to prevent future
-			// page faults within the huge page from faulting a huge page,
-			// though there's nothing we can do about khugepaged.
-			alloc.opts.Mode = AllocateAndWritePopulate
-			needHugeTouch = true
-		}
-
-		switch alloc.opts.Mode {
-		case AllocateUncommitted, AllocateCallerIndirectCommit:
-			// Nothing for us to do.
-		case AllocateAndCommit:
-			if err := f.commitFile(fr); err != nil {
-				f.DecRef(fr)
-				return memmap.FileRange{}, err
-			}
-		case AllocateAndWritePopulate:
-			dsts, err = f.MapInternal(fr, hostarch.Write)
-			if err != nil {
-				f.DecRef(fr)
-				return memmap.FileRange{}, err
-			}
-			if canPopulate() {
-				rem := dsts
-				for tryPopulate(rem.Head()) {
-					rem = rem.Tail()
-					if rem.IsEmpty() {
-						needHugeTouch = false
-						break
-					}
-				}
-			}
-			if alloc.recycled {
-				// The contents of recycled waste pages are initially unknown, so we
-				// need to zero them. Zeroing also commits them unless it skips pages
-				// of a disk-backed file; commit those if the caller asked for
-				// AllocateAndCommit.
-				if !f.manuallyZero(fr) && opts.Mode == AllocateAndCommit {
-					if err := f.commitFile(fr); err != nil {
-						f.DecRef(fr)
-						return memmap.FileRange{}, err
-					}
-				}
-			} else if needHugeTouch {
-				// We only need to touch a single byte in each huge page.
-				f.forEachMappingSlice(fr, func(bs []byte) {
-					for i := 0; i < len(bs); i += int(hostarch.HugePageSize) {
-						bs[i] = 0
-					}
-				})
-			}
-		default:
-			panic(fmt.Sprintf("unknown AllocOpts.Mode %d", alloc.opts.Mode))
-		}
+	needHugeTouch := false
+	if alloc.recycled {
+		// We will need writable page table entries in our address space to
+		// zero these pages.
+		alloc.opts.Mode = AllocateAndWritePopulate
+	} else if (alloc.opts.Mode == AllocateCallerIndirectCommit || alloc.opts.Mode == AllocateAndCommit) && ((alloc.huge && f.opts.AdviseHugepage) || (!alloc.huge && f.opts.AdviseNoHugepage)) {
+		// If Mode is AllocateCallerIndirectCommit and we do nothing, the
+		// first access to the allocation may be by the application,
+		// through a platform.AddressSpace, which may not have
+		// MADV_HUGEPAGE (=> vma flag VM_HUGEPAGE) set. Consequently,
+		// shmem_fault() => shmem_get_folio_gfp() will commit a small page.
+		//
+		// If Mode is AllocateAndCommit and we do nothing, the first access
+		// to the allocation is via fallocate(2), which has the same
+		// problem: shmem_fallocate() => shmem_get_folio() =>
+		// shmem_get_folio_gfp(vma=NULL).
+		//
+		// khugepaged may eventually collapse the containing
+		// hugepage-aligned region into a huge page when it scans our
+		// mapping (khugepaged_scan_mm_slot() => khugepaged_scan_file()),
+		// but this depends on khugepaged_max_ptes_none, and in addition to
+		// the latency and overhead of doing so, this will incur another
+		// round of page faults.
+		//
+		// If write-populating through our mappings succeeds, then it will
+		// avoid this problem. Otherwise, we need to touch each huge page
+		// through our mappings.
+		//
+		// An analogous problem applies if MADV_NOHUGEPAGE is required
+		// rather than MADV_HUGEPAGE; MADV_NOHUGEPAGE is only enabled if
+		// the file defaults to huge pages, so populating or touching
+		// through our mappings is needed to ensure that the allocation is
+		// small-page-backed. In this case, we only need to force
+		// commitment of one small page per huge page to prevent future
+		// page faults within the huge page from faulting a huge page,
+		// though there's nothing we can do about khugepaged.
+		alloc.opts.Mode = AllocateAndWritePopulate
+		needHugeTouch = true
 	}
+
+	switch alloc.opts.Mode {
+	case AllocateUncommitted, AllocateCallerIndirectCommit:
+		// Nothing for us to do.
+	case AllocateAndCommit:
+		if err := f.commitFile(fr); err != nil {
+			f.DecRef(fr)
+			return memmap.FileRange{}, err
+		}
+	case AllocateAndWritePopulate:
+		dsts, err = f.MapInternal(fr, hostarch.Write)
+		if err != nil {
+			f.DecRef(fr)
+			return memmap.FileRange{}, err
+		}
+		if canPopulate() {
+			rem := dsts
+			for tryPopulate(rem.Head()) {
+				rem = rem.Tail()
+				if rem.IsEmpty() {
+					needHugeTouch = false
+					break
+				}
+			}
+		}
+		if alloc.recycled {
+			// The contents of recycled waste pages are initially unknown, so we
+			// need to zero them. Zeroing also commits them unless it skips pages
+			// of a disk-backed file; commit those if the caller asked for
+			// AllocateAndCommit.
+			if !f.manuallyZero(fr) && opts.Mode == AllocateAndCommit {
+				if err := f.commitFile(fr); err != nil {
+					f.DecRef(fr)
+					return memmap.FileRange{}, err
+				}
+			}
+		} else if needHugeTouch {
+			// We only need to touch a single byte in each huge page.
+			f.forEachMappingSlice(fr, func(bs []byte) {
+				for i := 0; i < len(bs); i += int(hostarch.HugePageSize) {
+					bs[i] = 0
+				}
+			})
+		}
+	default:
+		panic(fmt.Sprintf("unknown AllocOpts.Mode %d", alloc.opts.Mode))
+	}
+
 	if alloc.opts.ReaderFunc != nil {
 		if dsts.IsEmpty() {
 			dsts, err = f.MapInternal(fr, hostarch.Write)
@@ -760,7 +811,7 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if alloc.willCommit {
+	if alloc.willCommit || f.opts.MemoryAccounting != MemoryAccountingCommitted {
 		// Try to recycle waste pages, since this avoids the overhead of
 		// decommitting and then committing them again.
 		var uwgap unwasteGapIterator
@@ -783,20 +834,24 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 			f.memAcct.MutateFullRange(fr, func(maseg memAcctIterator) bool {
 				ma := maseg.ValuePtr()
 				malen := maseg.Range().Length()
-				if ma.knownCommitted {
-					if ma.kind != usage.System {
-						panic(fmt.Sprintf("waste pages %v have unexpected kind %v\n%s", maseg.Range(), ma.kind, f.stringLocked()))
-					}
-					ma.knownCommitted = false
-					ma.commitSeq = f.commitSeq
+				wasCommitted := ma.knownCommitted
+				if ma.kind != usage.System {
+					panic(fmt.Sprintf("waste pages %v have unexpected kind %v\n%s", maseg.Range(), ma.kind, f.stringLocked()))
+				}
+				ma.knownCommitted = false
+				ma.commitSeq = f.commitSeq
+				if wasCommitted {
 					f.knownCommittedBytes -= malen
-					if !f.opts.DisableMemoryAccounting {
-						usage.MemoryAccounting.Dec(malen, usage.System, ma.memCgID)
-					}
+				}
+				if f.opts.MemoryAccounting.isAccounted(wasCommitted) {
+					usage.MemoryAccounting.Dec(malen, usage.System, ma.memCgID)
 				}
 				ma.kind = alloc.opts.Kind
 				ma.memCgID = alloc.opts.MemCgID
 				ma.wasteOrReleasing = false
+				if f.opts.MemoryAccounting == MemoryAccountingAllocated {
+					usage.MemoryAccounting.Inc(malen, alloc.opts.Kind, alloc.opts.MemCgID)
+				}
 				return true
 			})
 			return
@@ -847,6 +902,9 @@ retryFree:
 		knownCommitted: false,
 		commitSeq:      f.commitSeq,
 	})
+	if f.opts.MemoryAccounting == MemoryAccountingAllocated {
+		usage.MemoryAccounting.Inc(fr.Length(), alloc.opts.Kind, alloc.opts.MemCgID)
+	}
 	return
 }
 
@@ -1117,7 +1175,9 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) {
 			ma.knownCommitted = false
 			malen := maseg.Range().Length()
 			f.knownCommittedBytes -= malen
-			if !f.opts.DisableMemoryAccounting {
+			if f.opts.MemoryAccounting == MemoryAccountingCommitted {
+				// In allocation-based accounting mode, the pages remain
+				// allocated (and hence accounted) despite being decommitted.
 				usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
 			}
 		}
@@ -1332,7 +1392,7 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 				// released.
 				f.memAcct.MutateFullRange(wasteFR, func(maseg memAcctIterator) bool {
 					ma := maseg.ValuePtr()
-					if !f.opts.DisableMemoryAccounting && ma.knownCommitted {
+					if f.opts.MemoryAccounting.isAccounted(ma.knownCommitted) {
 						usage.MemoryAccounting.Move(maseg.Range().Length(), usage.System, ma.kind, ma.memCgID)
 					}
 					ma.kind = usage.System
@@ -1418,12 +1478,12 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 			if ma.kind != usage.System {
 				panic(fmt.Sprintf("waste pages %v have unexpected kind %v\n%s", maseg.Range(), ma.kind, f.stringLocked()))
 			}
+			malen := maseg.Range().Length()
 			if ma.knownCommitted {
-				malen := maseg.Range().Length()
 				f.knownCommittedBytes -= malen
-				if !f.opts.DisableMemoryAccounting {
-					usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
-				}
+			}
+			if f.opts.MemoryAccounting.isAccounted(ma.knownCommitted) {
+				usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
 			}
 			maseg = f.memAcct.Remove(maseg).NextSegment()
 		}
@@ -1675,6 +1735,10 @@ const commitScanIntervalRatio = 8
 // unbounded amount; only callers that tolerate stale statistics may use
 // UpdateUsage.
 func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
+	if f.opts.MemoryAccounting != MemoryAccountingCommitted {
+		// Commitment state isn't needed for memory accounting in other modes.
+		return nil
+	}
 	if memCgIDs == nil && f.ongoingCommitScan.Load() {
 		return nil
 	}
@@ -1845,7 +1909,7 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 						ma.knownCommitted = true
 						ma.commitSeq = 0
 						f.knownCommittedBytes += amount
-						if !f.opts.DisableMemoryAccounting {
+						if f.opts.MemoryAccounting == MemoryAccountingCommitted {
 							usage.MemoryAccounting.Inc(amount, ma.kind, ma.memCgID)
 						}
 						changedAny = true

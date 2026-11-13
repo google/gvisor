@@ -145,7 +145,7 @@ func (t *Task) Stack() *arch.Stack {
 // args.MemoryManager does not need to be set by the caller.
 func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskImage, *auth.Credentials, bool, *syserr.Error) {
 	// Prepare a new user address space to load into.
-	m, merr := mm.NewMemoryManager(k, k.mf)
+	m, merr := mm.NewMemoryManager(k, k.mf, k.mmOpts)
 	if merr != nil {
 		log.Warningf("Failed to create new memory manager: %v", merr)
 		return nil, nil, false, syserr.ErrNoMemory

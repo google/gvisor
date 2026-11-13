@@ -424,6 +424,7 @@ func (r *restorer) restore(l *Loader) error {
 		Platform: p,
 	}
 	l.k.SetMemoryFile(r.mainMF)
+	l.k.SetMemoryManagerOpts(memoryManagerOpts(l.root.conf))
 
 	if l.root.conf.ProfileEnable {
 		// pprof.Initialize opens /proc/self/maps, so has to be called before

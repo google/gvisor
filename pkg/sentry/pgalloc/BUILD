@@ -207,8 +207,10 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = [
+        "account_test.go",
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
+        "recycle_zero_verify_test.go",
         "save_restore_test.go",
     ],
     embed = [":pgalloc"],
@@ -218,6 +220,7 @@ go_test(
         "//pkg/memutil",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
+        "//pkg/sentry/usage",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -144,7 +144,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 	if err != nil {
 		return nil, err
 	}
-	m, err := mm.NewMemoryManager(k, k.MemoryFile())
+	m, err := mm.NewMemoryManager(k, k.MemoryFile(), mm.MemoryManagerOpts{})
 	if err != nil {
 		return nil, err
 	}

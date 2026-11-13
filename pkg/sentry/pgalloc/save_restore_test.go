@@ -56,9 +56,9 @@ func newSaveTestMemoryFile(t *testing.T, dir string, diskBacked bool) *MemoryFil
 	t.Helper()
 	file := openSaveTestFile(t, dir)
 	f, err := NewMemoryFile(file, MemoryFileOpts{
-		DelayedEviction:         DelayedEvictionDisabled,
-		DisableMemoryAccounting: true,
-		DiskBackedFile:          diskBacked,
+		DelayedEviction:  DelayedEvictionDisabled,
+		MemoryAccounting: MemoryAccountingDisabled,
+		DiskBackedFile:   diskBacked,
 	})
 	if err != nil {
 		file.Close()
@@ -340,8 +340,8 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 					b.Fatalf("CreateMemFD: %v", err)
 				}
 				f, err := NewMemoryFile(os.NewFile(uintptr(fd), "pgalloc-save-bench"), MemoryFileOpts{
-					DelayedEviction:         DelayedEvictionDisabled,
-					DisableMemoryAccounting: true,
+					DelayedEviction:  DelayedEvictionDisabled,
+					MemoryAccounting: MemoryAccountingDisabled,
 				})
 				if err != nil {
 					b.Fatalf("NewMemoryFile: %v", err)
@@ -394,10 +394,10 @@ func BenchmarkSaveToDiskBacked(b *testing.B) {
 				b.StopTimer()
 				file := openSaveTestFile(b, bc.dir)
 				f, err := NewMemoryFile(file, MemoryFileOpts{
-					DelayedEviction:         DelayedEvictionDisabled,
-					DisableMemoryAccounting: true,
-					DiskBackedFile:          true,
-					DecommitOnDestroy:       true,
+					DelayedEviction:   DelayedEvictionDisabled,
+					MemoryAccounting:  MemoryAccountingDisabled,
+					DiskBackedFile:    true,
+					DecommitOnDestroy: true,
 				})
 				if err != nil {
 					b.Fatalf("NewMemoryFile: %v", err)

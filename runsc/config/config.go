@@ -396,6 +396,17 @@ type Config struct {
 	// AppHugePages enables support for application huge pages.
 	AppHugePages bool `flag:"app-huge-pages"`
 
+	// FaultAllocAlignShift is mm.MemoryManagerOpts.FaultAllocAlignShift, or -1
+	// for unspecified default behavior.
+	FaultAllocAlignShift int `flag:"fault-alloc-align-shift"`
+
+	// FaultCopyAlignShift is mm.MemoryManagerOpts.FaultCopyAlignShift, or -1
+	// for unspecified default behavior.
+	FaultCopyAlignShift int `flag:"fault-copy-align-shift"`
+
+	// AppMemoryAccounting controls application memory accounting behavior.
+	AppMemoryAccounting AppMemoryAccounting `flag:"app-memory-accounting"`
+
 	// NVProxy enables support for Nvidia GPUs.
 	NVProxy bool `flag:"nvproxy"`
 
@@ -1863,6 +1874,54 @@ func (p RestoreSpecValidationPolicy) String() string {
 		return "enforce"
 	default:
 		panic(fmt.Sprintf("invalid restore spec validation policy %d", p))
+	}
+}
+
+// AppMemoryAccounting is the type of Config.AppMemoryAccounting.
+type AppMemoryAccounting int
+
+// AppMemoryAccounting values.
+const (
+	// AppMemoryAccountingCommitted represents pgalloc.MemoryAccountingCommitted.
+	AppMemoryAccountingCommitted AppMemoryAccounting = iota
+
+	// AppMemoryAccountingAllocated represents pgalloc.MemoryAccountingAllocated.
+	AppMemoryAccountingAllocated
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *AppMemoryAccounting) Set(v string) error {
+	switch v {
+	case "committed":
+		*p = AppMemoryAccountingCommitted
+	case "allocated":
+		*p = AppMemoryAccountingAllocated
+	default:
+		return fmt.Errorf("invalid memory accounting mode %q", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p AppMemoryAccounting) Ptr() *AppMemoryAccounting {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *AppMemoryAccounting) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p AppMemoryAccounting) String() string {
+	switch p {
+	case AppMemoryAccountingCommitted:
+		return "committed"
+	case AppMemoryAccountingAllocated:
+		return "allocated"
+	default:
+		panic(fmt.Sprintf("invalid memory accounting mode %d", p))
 	}
 }
 
