@@ -77,7 +77,7 @@ const (
 	AttrRawFd
 	// AttrUnsupported is a modeled-but-rejected attribute (e.g. UMEM or a
 	// buffer-FD path the proxy does not implement). Its presence in a request
-	// fails the ioctl with EINVAL rather than being silently forwarded.
+	// fails the ioctl like an attribute missing from the schema.
 	AttrUnsupported
 )
 
@@ -120,13 +120,20 @@ type MethodSchema struct {
 	// create/destroy resource tracking. Only meaningful when Dma tracks a
 	// handle.
 	HandleAttr uint16
+	// WriteFallback marks the methods that rdma-core retries through the
+	// legacy write interface after EPROTONOSUPPORT, and keeps using it for the
+	// rest of the context's lifetime. Since the proxy does not forward every
+	// legacy write, unsupported attributes on these fail with EINVAL instead,
+	// so that one rejected request does not break later calls of the method.
+	WriteFallback bool
 	// Attrs maps attribute id -> type. Any attribute not present here causes
 	// the request to be rejected.
 	Attrs map[uint16]AttrType
 }
 
 // schemas is the allowlist of supported (object, method) pairs, keyed by
-// (object<<16 | method). Requests outside this set are rejected with EINVAL.
+// (object<<16 | method). Requests outside this set are rejected with
+// EPROTONOSUPPORT.
 // Built on first use so that a runsc without RDMA never allocates it.
 var (
 	schemasOnce sync.Once
@@ -160,6 +167,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_GET_CONTEXT): {
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_GET_CONTEXT_NUM_COMP_VECTORS: AttrPtrOut,
 				ib.UVERBS_ATTR_GET_CONTEXT_CORE_SUPPORT:     AttrPtrOut,
@@ -178,12 +186,14 @@ func buildSchemas() map[uint32]*MethodSchema {
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_QUERY_PORT): {
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_QUERY_PORT_PORT_NUM: AttrPtrIn,
 				ib.UVERBS_ATTR_QUERY_PORT_RESP:     AttrPtrOut,
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_QUERY_GID_TABLE): {
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_QUERY_GID_TABLE_ENTRY_SIZE:       AttrPtrIn,
 				ib.UVERBS_ATTR_QUERY_GID_TABLE_FLAGS:            AttrPtrIn,
@@ -192,6 +202,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_QUERY_GID_ENTRY): {
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_QUERY_GID_ENTRY_PORT:       AttrPtrIn,
 				ib.UVERBS_ATTR_QUERY_GID_ENTRY_GID_INDEX:  AttrPtrIn,
@@ -200,6 +211,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_PD, ib.UVERBS_METHOD_PD_DESTROY): {
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_PD_HANDLE: AttrIdr,
 			},
@@ -207,12 +219,14 @@ func buildSchemas() map[uint32]*MethodSchema {
 		// AH creation rides the legacy write path (DmaInvokeWrite); only
 		// destroy has a modern object method.
 		SchemaKey(ib.UVERBS_OBJECT_AH, ib.UVERBS_METHOD_AH_DESTROY): {
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_AH_HANDLE: AttrIdr,
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_REG_MR): {
 			Dma: DmaMRReg, HandleAttr: ib.UVERBS_ATTR_REG_MR_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_REG_MR_HANDLE:       AttrIdr,
 				ib.UVERBS_ATTR_REG_MR_PD_HANDLE:    AttrIdr,
@@ -245,6 +259,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 		},
 		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_MR_DESTROY): {
 			Dma: DmaMRDestroy, HandleAttr: ib.UVERBS_ATTR_DESTROY_MR_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_MR_HANDLE: AttrIdr,
 			},
@@ -255,6 +270,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 			// buf_addr/db_addr prefix as CQ/QP create, so the CQ/QP DMA
 			// mirroring applies unchanged.
 			Dma: DmaSRQCreate, HandleAttr: ib.UVERBS_ATTR_CREATE_SRQ_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_CREATE_SRQ_HANDLE:       AttrIdr,
 				ib.UVERBS_ATTR_CREATE_SRQ_PD_HANDLE:    AttrIdr,
@@ -276,6 +292,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 		},
 		SchemaKey(ib.UVERBS_OBJECT_SRQ, ib.UVERBS_METHOD_SRQ_DESTROY): {
 			Dma: DmaSRQDestroy, HandleAttr: ib.UVERBS_ATTR_DESTROY_SRQ_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_SRQ_HANDLE: AttrIdr,
 				ib.UVERBS_ATTR_DESTROY_SRQ_RESP:   AttrPtrOut,
@@ -283,6 +300,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 		},
 		SchemaKey(ib.UVERBS_OBJECT_CQ, ib.UVERBS_METHOD_CQ_CREATE): {
 			Dma: DmaCQCreate, HandleAttr: ib.UVERBS_ATTR_CREATE_CQ_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_CREATE_CQ_HANDLE:       AttrIdr,
 				ib.UVERBS_ATTR_CREATE_CQ_CQE:          AttrPtrIn,
@@ -306,6 +324,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 		},
 		SchemaKey(ib.UVERBS_OBJECT_CQ, ib.UVERBS_METHOD_CQ_DESTROY): {
 			Dma: DmaCQDestroy, HandleAttr: ib.UVERBS_ATTR_DESTROY_CQ_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_CQ_HANDLE: AttrIdr,
 				ib.UVERBS_ATTR_DESTROY_CQ_RESP:   AttrPtrOut,
@@ -313,6 +332,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 		},
 		SchemaKey(ib.UVERBS_OBJECT_QP, ib.UVERBS_METHOD_QP_CREATE): {
 			Dma: DmaQPCreate, HandleAttr: ib.UVERBS_ATTR_CREATE_QP_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_CREATE_QP_HANDLE:           AttrIdr,
 				ib.UVERBS_ATTR_CREATE_QP_XRCD_HANDLE:      AttrIdr,
@@ -338,6 +358,7 @@ func buildSchemas() map[uint32]*MethodSchema {
 		},
 		SchemaKey(ib.UVERBS_OBJECT_QP, ib.UVERBS_METHOD_QP_DESTROY): {
 			Dma: DmaQPDestroy, HandleAttr: ib.UVERBS_ATTR_DESTROY_QP_HANDLE,
+			WriteFallback: true,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_DESTROY_QP_HANDLE: AttrIdr,
 				ib.UVERBS_ATTR_DESTROY_QP_RESP:   AttrPtrOut,
