@@ -144,7 +144,7 @@ type controller interface {
 
 	// Charge charges a controller for a particular resource. The implementation
 	// should panic if passed a resource type they do not control.
-	Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.CgroupResourceType, value int64) error
+	Charge(t *kernel.Task, res kernel.CgroupResourceType, value int64) error
 }
 
 // cgroupInode implements kernel.CgroupImpl and kernfs.Inode.
@@ -330,11 +330,11 @@ func (c *cgroupInode) CgroupFromControlFileFD(fd *vfs.FileDescription) kernel.Cg
 // matching controller is present in this directory, the call silently
 // succeeds. The caller should call Charge on all hierarchies to ensure any
 // matching controller across the entire system is charged.
-func (c *cgroupInode) Charge(t *kernel.Task, d *kernfs.Dentry, ctlType kernel.CgroupControllerType, res kernel.CgroupResourceType, value int64) error {
+func (c *cgroupInode) Charge(t *kernel.Task, ctlType kernel.CgroupControllerType, res kernel.CgroupResourceType, value int64) error {
 	c.fs.tasksMu.RLock()
 	defer c.fs.tasksMu.RUnlock()
 	if ctl, ok := c.controllers[ctlType]; ok {
-		return ctl.Charge(t, d, res, value)
+		return ctl.Charge(t, res, value)
 	}
 	return nil
 }
@@ -574,6 +574,6 @@ func (*controllerStateless) AbortMigrate(t *kernel.Task, src controller) {}
 type controllerNoResource struct{}
 
 // Charge implements controller.Charge.
-func (*controllerNoResource) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.CgroupResourceType, value int64) error {
+func (*controllerNoResource) Charge(_ *kernel.Task, res kernel.CgroupResourceType, value int64) error {
 	panic(fmt.Sprintf("cgroupfs: Attempted to charge a controller with unknown resource %v for value %v", res, value))
 }
