@@ -22,6 +22,8 @@
 #   tools/lint.sh                        # run every check
 #   tools/lint.sh goimports clang-format  # run only the named checks
 #   tools/lint.sh --fix                  # rewrite files in place where a check can
+#   tools/lint.sh --bazel="bazel --foo" --bazel-options="--config=bar"
+#                                        # run Bazel as `bazel --foo <command> --config=bar`
 #
 # Environment:
 #   LINT_CACHE_DIR   where to cache downloaded linters
@@ -87,6 +89,28 @@ esac
 
 # FIX is set by --fix; checks that can rewrite files consult it.
 declare FIX=0
+
+# BAZEL is set by --bazel and BAZEL_OPTIONS by --bazel-options.
+declare -a BAZEL=(bazel)
+declare -a BAZEL_OPTIONS=()
+
+# run_bazel <command> [args...] runs a Bazel command with BAZEL_OPTIONS.
+run_bazel() {
+  "${BAZEL[@]}" "$1" "${BAZEL_OPTIONS[@]+"${BAZEL_OPTIONS[@]}"}" "${@:2}"
+}
+
+# bazel_binary <target> builds an executable target and prints its path.
+bazel_binary() {
+  local -r target="$1"
+  # Like the Makefile's build_paths, so the binary is materialized locally.
+  run_bazel build --remote_download_outputs=toplevel "${target}" >&2
+  local execroot path
+  execroot="$(run_bazel info execution_root)"
+  # show_paths.bzl prints "<path relative to the execroot> <basename>".
+  path="$(run_bazel cquery --output=starlark \
+    --starlark:file=tools/show_paths.bzl "${target}")"
+  echo "${execroot}/${path%% *}"
+}
 
 # fetch <url> <sha256> <output> downloads a file and verifies its checksum,
 # leaving <output> in place only if the checksum matches.
@@ -206,9 +230,9 @@ report() {
 # Formatting-only mode does not add or remove imports: generated packages may
 # not exist until Bazel builds them.
 check_goimports() {
-  local -ra goimports=(
-    bazel run --run_in_cwd @org_golang_x_tools//cmd/goimports -- -format-only
-  )
+  local binary
+  binary="$(bazel_binary @org_golang_x_tools//cmd/goimports)"
+  local -ra goimports=("${binary}" -format-only)
   # This golden output tests comment positions across merged import declarations.
   # goimports would merge the declarations and move their comments.
   local -r golden_outputs=':(exclude)tools/go_generics/tests/simple/output.go'
@@ -269,12 +293,13 @@ check_clang_tidy() {
   fi
   local -r database="${REPO_DIR}/compile_commands.json"
   if [[ ! -f "${database}" ]]; then
-    if ! command -v bazel > /dev/null 2>&1; then
-      echo "lint: ${database} is missing and bazel is not on PATH" >&2
+    if ! command -v "${BAZEL[0]}" > /dev/null 2>&1; then
+      echo "lint: ${database} is missing and ${BAZEL[0]} is not on PATH" >&2
       echo "lint: run tools/gen_compile_commands.py to create it" >&2
       return 1
     fi
-    python3 "${REPO_DIR}/tools/gen_compile_commands.py" >&2
+    python3 "${REPO_DIR}/tools/gen_compile_commands.py" --bazel="${BAZEL[*]}" \
+      --bazel-options="${BAZEL_OPTIONS[*]+"${BAZEL_OPTIONS[*]}"}" >&2
   fi
   local clang_tidy
   clang_tidy="$(install_clang_tidy)"
@@ -325,11 +350,11 @@ check_buildifier() {
 }
 
 check_actions() {
-  if ! command -v bazel > /dev/null 2>&1; then
-    echo "lint: bazel is not on PATH; the actions check runs //:github_actions_test" >&2
+  if ! command -v "${BAZEL[0]}" > /dev/null 2>&1; then
+    echo "lint: ${BAZEL[0]} is not on PATH; the actions check runs //:github_actions_test" >&2
     return 1
   fi
-  bazel test --enable_runfiles --test_output=errors //:github_actions_test
+  run_bazel test --enable_runfiles --test_output=errors //:github_actions_test
 }
 
 check_spelling() {
@@ -387,12 +412,20 @@ main() {
 
   local -a args=()
   local arg
-  for arg in "$@"; do
+  while [[ "$#" -gt 0 ]]; do
+    arg="$1"
+    shift
     case "${arg}" in
-      --fix) FIX=1 ;;
-      *)     args+=("${arg}") ;;
+      --fix)             FIX=1 ;;
+      --bazel=*)         read -r -a BAZEL <<< "${arg#--bazel=}" ;;
+      --bazel-options=*) read -r -a BAZEL_OPTIONS <<< "${arg#--bazel-options=}" ;;
+      *)                 args+=("${arg}") ;;
     esac
   done
+  if [[ "${#BAZEL[@]}" -eq 0 ]]; then
+    echo "lint: --bazel must not be empty" >&2
+    exit 1
+  fi
 
   local -a checks=("${args[@]+"${args[@]}"}")
   if [[ "${#checks[@]}" -eq 0 ]]; then

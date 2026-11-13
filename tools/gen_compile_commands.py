@@ -20,30 +20,53 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 
 
-def _bazel(*args):
-  """Runs bazel, returning its stdout."""
+def _bazel(bazel, options, command, *args):
+  """Runs a bazel command with the given options, returning its stdout."""
 
   return subprocess.run(
-      ("bazel",) + args, check=True, text=True, stdout=subprocess.PIPE
+      bazel + [command] + options + list(args),
+      check=True,
+      text=True,
+      stdout=subprocess.PIPE,
   ).stdout
 
 
-def _compile_actions(targets):
+def _compile_actions(bazel, options, targets):
   """Yields the C++ compile actions for the targets' dependencies."""
 
   query = 'mnemonic("CppCompile", deps({}))'.format(" union ".join(targets))
   return json.loads(
-      _bazel("aquery", "--output=jsonproto", "--noshow_progress", query)
+      _bazel(
+          bazel,
+          options,
+          "aquery",
+          "--output=jsonproto",
+          "--noshow_progress",
+          query,
+      )
   )["actions"]
 
 
 def main():
   parser = argparse.ArgumentParser(
       description="Generates compile_commands.json for gVisor's C++ code."
+  )
+  parser.add_argument(
+      "--bazel",
+      default="bazel",
+      help="Bazel command, including any startup options (default: %(default)s).",
+  )
+  parser.add_argument(
+      "--bazel-options",
+      default="",
+      help=(
+          "Options passed through to Bazel calls."
+      ),
   )
   parser.add_argument(
       "targets",
@@ -53,21 +76,27 @@ def main():
   )
   args = parser.parse_args()
   targets = args.targets
+  bazel = shlex.split(args.bazel)
+  options = shlex.split(args.bazel_options)
 
   workspace = pathlib.Path(__file__).parent.parent.resolve()
   os.chdir(workspace)
 
   _bazel(
+      bazel,
+      options,
       "build",
       "--aspects=//tools:cc_compile_inputs.bzl%cc_compile_inputs",
       "--output_groups=cc_compile_inputs",
       *targets,
   )
-  execroot = pathlib.Path(_bazel("info", "execution_root").strip())
+  execroot = pathlib.Path(
+      _bazel(bazel, options, "info", "execution_root").strip()
+  )
 
   database = []
   seen = set()
-  for action in _compile_actions(targets):
+  for action in _compile_actions(bazel, options, targets):
     arguments = action["arguments"]
     if "-c" not in arguments:
       continue
