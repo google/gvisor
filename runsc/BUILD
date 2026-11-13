@@ -19,6 +19,7 @@ go_binary(
     visibility = ["//:__subpackages__"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
+        "//runsc/cgoextras",
         "//runsc/cli/maincli",
         "//runsc/coretagprime",
         "//runsc/version",
@@ -39,6 +40,7 @@ go_binary(
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/sentry/socket/plugin/cgo",
+        "//runsc/cgoextras",
         "//runsc/cli/maincli",
         "//runsc/coretagprime",
         "//runsc/sandbox",
@@ -70,6 +72,7 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
+        "//runsc/cgoextras",
         "//runsc/cli/maincli",
         "//runsc/coretagprime",
         "//runsc/version",
