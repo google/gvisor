@@ -1,0 +1,18 @@
+Buildifier's CLI wraps its executable in a shell script. The lint action
+needs the executable registered for its execution platform. Expose the
+upstream `tool` field alongside `_tool`, which the 8.5.1.4 rules use.
+Drop this patch when the pinned buildifier_prebuilt release includes [1].
+
+[1]: https://github.com/keith/buildifier-prebuilt/commit/9cefc248d
+
+diff --git a/toolchain.bzl b/toolchain.bzl
+--- a/toolchain.bzl
++++ b/toolchain.bzl
+@@ -7,6 +7,7 @@ load("//:buildtools.bzl", "buildtools")
+ def _buildifier_toolchain(ctx):
+     return [
+         platform_common.ToolchainInfo(
++            tool = ctx.executable.tool,
+             _binary_runner = ctx.attr.binary_runner,
+             _tool = ctx.executable.tool,
+             _runner = ctx.attr.runner,

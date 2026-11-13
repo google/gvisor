@@ -50,30 +50,21 @@ declare -ra OPTIONAL_CHECKS=(actions clang-tidy)
 declare -ra KNOWN_CHECKS=("${ALL_CHECKS[@]}" "${OPTIONAL_CHECKS[@]}")
 
 declare -r CODESPELL_VERSION="2.3.0"
-declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
 declare -r CLANG_TIDY_VERSION="22.1.8"
-# Keep in sync with images/default/Dockerfile.
-declare -r BUILDIFIER_VERSION="8.5.1"
 
-# The codespell and cpplint wheels are architecture-independent.
+# The codespell wheel is architecture-independent.
 declare -r CODESPELL_URL="https://files.pythonhosted.org/packages/0e/20/b6019add11e84f821184234cea0ad91442373489ef7ccfa3d73a71b908fa/codespell-${CODESPELL_VERSION}-py3-none-any.whl"
 declare -r CODESPELL_SHA256="a9c7cef2501c9cfede2110fd6d4e5e62296920efe9abfb84648df866e47f58d1"
-declare -r CPPLINT_URL="https://files.pythonhosted.org/packages/6a/52/4ec97b6e4f55549973ce668285228ff0bb1913f058265ff7549c65b3a97d/cpplint-${CPPLINT_VERSION}-py3-none-any.whl"
-declare -r CPPLINT_SHA256="5031cb9671cd5bb3dbb4d3243eebd0d42cdf76388ab49c0d276f8a2d116e9928"
 
 case "$(uname -m)" in
   x86_64|amd64)
-    declare -r BUILDIFIER_ARCH="amd64"
-    declare -r BUILDIFIER_SHA256="887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/42/ef/3f8e215916e79ecd435b5bc20810443f80fce3fb8bbfe6d2783ceb775c1b/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     declare -r CLANG_FORMAT_SHA256="64900462c1203cee2fec364536c2dda708baf0619e15b52ceda926648cc82f56"
     declare -r CLANG_TIDY_URL="https://files.pythonhosted.org/packages/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-${CLANG_TIDY_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     declare -r CLANG_TIDY_SHA256="1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1"
     ;;
   aarch64|arm64)
-    declare -r BUILDIFIER_ARCH="arm64"
-    declare -r BUILDIFIER_SHA256="947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/0e/b6/1a162e427d912b88653a66e99a22414d798eb885b761ffddb74dbc13963f/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
     declare -r CLANG_FORMAT_SHA256="09af54d2ef51680b34e36ed71b9f510bd399fb7b10b29a2a40843cd0e0344228"
     declare -r CLANG_TIDY_URL="https://files.pythonhosted.org/packages/ac/b7/61ed8c319f2d9ddb9762a550a6fee434bdef7bdc46d5a4b50929f1c90ec0/clang_tidy-${CLANG_TIDY_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
@@ -112,35 +103,11 @@ fetch() {
   mv "${tmp}" "${out}"
 }
 
-install_buildifier() {
-  local -r bin="${CACHE_DIR}/buildifier-${BUILDIFIER_VERSION}"
-  if [[ ! -x "${bin}" ]]; then
-    fetch "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-${BUILDIFIER_ARCH}" \
-      "${BUILDIFIER_SHA256}" "${bin}"
-    chmod +x "${bin}"
-  fi
-  echo "${bin}"
-}
-
 install_codespell() {
   local -r dir="${CACHE_DIR}/codespell-${CODESPELL_VERSION}"
   if [[ ! -d "${dir}" ]]; then
     local -r wheel="${CACHE_DIR}/codespell.whl"
     fetch "${CODESPELL_URL}" "${CODESPELL_SHA256}" "${wheel}"
-    rm -rf "${dir}.tmp"
-    mkdir -p "${dir}.tmp"
-    unzip -q "${wheel}" -d "${dir}.tmp"
-    mv "${dir}.tmp" "${dir}"
-    rm -f "${wheel}"
-  fi
-  echo "${dir}"
-}
-
-install_cpplint() {
-  local -r dir="${CACHE_DIR}/cpplint-${CPPLINT_VERSION}"
-  if [[ ! -d "${dir}" ]]; then
-    local -r wheel="${CACHE_DIR}/cpplint.whl"
-    fetch "${CPPLINT_URL}" "${CPPLINT_SHA256}" "${wheel}"
     rm -rf "${dir}.tmp"
     mkdir -p "${dir}.tmp"
     unzip -q "${wheel}" -d "${dir}.tmp"
@@ -187,9 +154,6 @@ install_clang_tidy() {
 go_files() { git ls-files -z -- '*.go' "$@"; }
 doc_files() { git ls-files -z -- '*.md' '*.html'; }
 cc_files() { git ls-files -z -- '*.c' '*.cc' '*.h'; }
-bazel_files() {
-  git ls-files -z -- 'BUILD' '*/BUILD' '*.bzl' 'WORKSPACE' 'MODULE.bazel'
-}
 
 declare -a FAILED=()
 declare -a PASSED=()
@@ -285,43 +249,12 @@ check_clang_tidy() {
     --jobs="$(nproc 2> /dev/null || echo 1)"
 }
 
-# Native rule loads (native-sh-test, native-sh-binary, native-proto) are
-# excluded because rules_shell / proto_library.bzl loads are not used here.
 check_buildifier() {
-  local buildifier
-  buildifier="$(install_buildifier)"
-  local -r warnings="-duplicated-name,-list-append,-native-py,-native-sh-binary,-native-sh-library,-native-sh-test,-native-proto"
-  if [[ "${FIX}" -eq 1 ]]; then
-    bazel_files | xargs -0 "${buildifier}" --mode=fix --lint=fix --warnings="${warnings}"
-    return 0
+  if [[ "${FIX}" -eq 0 ]]; then
+    bazel build //tools/lint:buildifier
+  else
+    bazel run //tools/lint:format
   fi
-  local output status=0
-  output="$(bazel_files | xargs -0 "${buildifier}" --mode=check --lint=warn --warnings="${warnings}" 2>&1)" || status=$?
-  if [[ -z "${output}" ]]; then
-    return "${status}"
-  fi
-  local unformatted
-  unformatted="$(printf '%s\n' "${output}" | sed -n 's/^\(.*\) # reformat$/\1/p')"
-  local lint_warnings
-  lint_warnings="$(printf '%s\n' "${output}" | grep -v ' # reformat$' || true)"
-  local rc="${status}"
-  if [[ -n "${unformatted}" ]]; then
-    local file
-    while IFS= read -r file; do
-      # -path lets buildifier infer the file type from stdin, so the diff
-      # matches what --mode=fix would write.
-      diff -u --label "${file}" --label "${file} (formatted)" \
-        "${file}" <("${buildifier}" -path="${file}" < "${file}") || true
-    done <<< "${unformatted}"
-    echo
-    echo "Run \`make lint-fix\` to reformat these files." >&2
-    rc=1
-  fi
-  if [[ -n "${lint_warnings}" ]]; then
-    echo "${lint_warnings}" >&2
-    rc=1
-  fi
-  return "${rc}"
 }
 
 check_actions() {
@@ -343,12 +276,7 @@ check_spelling() {
 }
 
 check_cpplint() {
-  local cpplint_dir
-  cpplint_dir="$(install_cpplint)"
-  local -r jobs="$(nproc 2>/dev/null || echo 1)"
-  cc_files |
-    PYTHONPATH="${cpplint_dir}" xargs -0 -P "${jobs}" -n 32 python3 -W ignore::DeprecationWarning -m cpplint \
-      --quiet --filter=-,+build/include_order,+build/c++11
+  bazel build //tools/lint:cpplint
 }
 
 
