@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/sandboxposture"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/autoplatform"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -141,6 +142,10 @@ func TestCreateContainerHooksRootFS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// The test skips cli.Main, which resolves --platform=auto.
+			if err := autoplatform.Resolve(conf, nil); err != nil {
+				t.Fatal(err)
+			}
 			conf.Network = config.NetworkNone
 			conf.IgnoreCgroups = true
 			conf.Overlay2.Set("none")
@@ -230,6 +235,10 @@ func TestSandboxCreationCPULimit(t *testing.T) {
 			config.RegisterFlags(testFlags)
 			conf, err := config.NewFromFlags(testFlags)
 			if err != nil {
+				t.Fatal(err)
+			}
+			// The test skips cli.Main, which resolves --platform=auto.
+			if err := autoplatform.Resolve(conf, nil); err != nil {
 				t.Fatal(err)
 			}
 			conf.Network = config.NetworkNone
@@ -354,6 +363,10 @@ func TestSubcontainerGoferGOMAXPROCSAfterUpdate(t *testing.T) {
 				config.RegisterFlags(testFlags)
 				conf, err := config.NewFromFlags(testFlags)
 				if err != nil {
+					t.Fatal(err)
+				}
+				// The test skips cli.Main, which resolves --platform=auto.
+				if err := autoplatform.Resolve(conf, nil); err != nil {
 					t.Fatal(err)
 				}
 				conf.Network = config.NetworkNone
