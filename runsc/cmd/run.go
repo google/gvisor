@@ -147,6 +147,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		BundleDir:           r.bundleDir,
 		ConsoleSocket:       r.consoleSocket,
 		PIDFile:             r.pidFile,
+		PidfdSocket:         r.pidfdSocket,
 		UserLog:             r.userLog,
 		Attached:            !r.detach,
 		PassFiles:           fdMap,

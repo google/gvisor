@@ -16,6 +16,7 @@ package runsc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,6 +64,10 @@ type Container struct {
 
 	// task is the main process that is running the container.
 	task *proc.Init
+
+	// sandboxExitDone closes after the pre-start exit watcher has queued its exit or
+	// handed exit reporting over to the normal runsc waiter.
+	sandboxExitDone chan struct{}
 
 	// processes maps ExecId to processes running through exec.
 	//
@@ -224,6 +229,9 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 		cgroup:    cgroupMode,
 		processes: make(map[string]extension.Process),
 	}
+	if process.Sandbox {
+		c.sandboxExitDone = make(chan struct{})
+	}
 	return &c, nil
 }
 
@@ -307,12 +315,28 @@ func (c *Container) Start(ctx context.Context, r *task.StartRequest) (extension.
 
 // Delete the container or a process by id
 func (c *Container) Delete(ctx context.Context, r *task.DeleteRequest) (extension.Process, error) {
+	if r.ExecID == "" && c.sandboxExitDone != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = proc.WithRuntimeTimeout(ctx)
+		defer cancel()
+	}
 	p, err := c.Process(r.ExecID)
 	if err != nil {
 		return nil, err
 	}
 	if err := p.Delete(ctx); err != nil {
-		return nil, err
+		// A previous delete may have finished runtime cleanup but timed out
+		// waiting for the sandbox exit notification.
+		if r.ExecID != "" || c.sandboxExitDone == nil || !errors.Is(err, errdefs.ErrNotFound) {
+			return nil, err
+		}
+	}
+	if r.ExecID == "" && c.sandboxExitDone != nil {
+		select {
+		case <-c.sandboxExitDone:
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		}
 	}
 	// When ExecID is empty, it removes the init task in the container.
 	if r.ExecID != "" {
