@@ -5,6 +5,9 @@
 gVisor has the ability to save changes made to root filesystems in a *filesystem
 snapshot*, and subsequently restore those changes in new sandboxes.
 
+For a comparison of all the ways to save sandbox state, see
+[Choosing a way to save sandbox state](checkpoint_restore.md#choosing-a-way-to-save-sandbox-state).
+
 Compared to [rootfs tar snapshots](rootfs_snapshot.md):
 
 *   Filesystem snapshots include root filesystem changes in all containers in a

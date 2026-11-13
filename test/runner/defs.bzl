@@ -84,6 +84,7 @@ def _syscall_test(
         limit_ephemeral_ports = False,
         file_access = "exclusive",
         overlay = False,
+        journaled_overlay = False,
         add_host_uds = False,
         add_host_connector = False,
         add_host_fifo = False,
@@ -114,6 +115,8 @@ def _syscall_test(
         name += "_shared"
     if overlay:
         name += "_overlay"
+    if journaled_overlay:
+        name += "_overlay_journal"
     if network != "none":
         name += "_" + network + "net"
     if fusefs:
@@ -184,6 +187,7 @@ def _syscall_test(
         "--fusefs=" + str(fusefs),
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
+        "--journaled-overlay=" + str(journaled_overlay),
         "--add-host-uds=" + str(add_host_uds),
         "--add-host-connector=" + str(add_host_connector),
         "--add-host-fifo=" + str(add_host_fifo),
@@ -254,6 +258,7 @@ def syscall_test_variants(
         nftables = False,
         kvm_use_cpu_nums = False,
         in_sandbox_cgroup = "v1",
+        add_journaled_overlay = None,
         **kwargs):
     """Generates syscall tests for all variants.
 
@@ -283,8 +288,14 @@ def syscall_test_variants(
       nftables: if nftables is true, enable nftables.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
+      add_journaled_overlay: add an overlay test whose rootfs upper layer is
+        journaled (--journaling-rootfs-upper). None means the same as
+        add_overlay. Each restore of a save variant populates a new
+        journaling upper.
       **kwargs: Additional test arguments; requires_atime enables host atime updates.
     """
+    if add_journaled_overlay == None:
+        add_journaled_overlay = add_overlay
     for platform, platform_tags in all_platforms():
         # Add directfs to the default platform variant.
         directfs = add_directfs and platform == default_platform
@@ -329,6 +340,32 @@ def syscall_test_variants(
             container = container,
             one_sandbox = one_sandbox,
             overlay = True,
+            leak_check = leak_check,
+            save = save,
+            save_resume = save_resume,
+            size = size,
+            timeout = timeout,
+            nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
+            in_sandbox_cgroup = in_sandbox_cgroup,
+            **kwargs
+        )
+
+    if add_journaled_overlay:
+        _syscall_test(
+            test = test,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
+            tags = platforms.get(default_platform, []) + tags,
+            debug = debug,
+            iouring = iouring,
+            container = container,
+            one_sandbox = one_sandbox,
+            journaled_overlay = True,
             leak_check = leak_check,
             save = save,
             save_resume = save_resume,
@@ -443,6 +480,7 @@ def syscall_test(
         perf = False,
         kvm_use_cpu_nums = False,
         in_sandbox_cgroup = "v1",
+        add_journaled_overlay = None,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -471,6 +509,8 @@ def syscall_test(
       perf: test is a benchmark.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
+      add_journaled_overlay: add a journaled overlay test. None means the same
+        as add_overlay.
       **kwargs: Additional test arguments; requires_atime enables host atime updates.
     """
     if not tags:
@@ -530,6 +570,7 @@ def syscall_test(
         nftables = nftables,
         kvm_use_cpu_nums = kvm_use_cpu_nums,
         in_sandbox_cgroup = in_sandbox_cgroup,
+        add_journaled_overlay = add_journaled_overlay,
         **kwargs
     )
 
@@ -562,6 +603,7 @@ def syscall_test(
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
             in_sandbox_cgroup = in_sandbox_cgroup,
+            add_journaled_overlay = add_journaled_overlay,
             **kwargs
         )
 
@@ -591,5 +633,6 @@ def syscall_test(
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
             in_sandbox_cgroup = in_sandbox_cgroup,
+            add_journaled_overlay = add_journaled_overlay,
             **kwargs
         )

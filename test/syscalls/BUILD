@@ -471,6 +471,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_journaled_overlay = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:mmap_test",
 )
@@ -1323,6 +1324,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_journaled_overlay = True,
     test = "//test/syscalls/linux:utimes_test",
 )
 

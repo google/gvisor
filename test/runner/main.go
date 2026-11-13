@@ -62,6 +62,7 @@ var (
 	fusefs             = flag.Bool("fusefs", false, "mounts a fusefs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
+	journaledOverlay   = flag.Bool("journaled-overlay", false, "like --overlay, and also journal the rootfs overlay upper layer with --journaling-rootfs-upper")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root. Implicitly enabled if network=host, or if using network namespaces")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 	trace              = flag.Bool("trace", false, "enables all trace points")
@@ -377,7 +378,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("TEST_HOST_PTY_FD=%d", hostPTYGuestFD))
 	}
 
-	if *overlay {
+	if *overlay || *journaledOverlay {
 		for _, kv := range spec.Process.Env {
 			xmlPath, ok := strings.CutPrefix(kv, "XML_OUTPUT_FILE=")
 			if !ok || xmlPath == "" {
@@ -442,10 +443,15 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	} else {
 		args = append(args, "-net-raw")
 	}
-	if *overlay {
+	if *overlay || *journaledOverlay {
+		// The journaling rootfs upper requires a root overlay, which
+		// dir=/tmp provides.
 		args = append(args, "-overlay2=all:dir=/tmp")
 	} else {
 		args = append(args, "-overlay2=none")
+	}
+	if *journaledOverlay {
+		args = append(args, "-journaling-rootfs-upper=on")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
