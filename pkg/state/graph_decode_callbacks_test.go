@@ -1372,3 +1372,60 @@ func TestPooledEncoderScratchReleasesPointers(t *testing.T) {
 	}
 	t.Fatal("pooled graphEncodeState retained user allocation across GC")
 }
+
+func TestGraphDecodeStateReleaseClearsUsedEntries(t *testing.T) {
+	ti := typeInfoOf(reflect.TypeFor[int]())
+	var targetVal int
+	ds := &graphDecodeState{
+		types:     []*typeInfo{ti, ti}[0:1:2],
+		typeNames: []string{"used", "unused"}[0:1:2],
+		objs: []decObject{
+			{base: reflect.ValueOf(&targetVal).UnsafePointer(), ti: ti, size: 8, kind: objKindValue},
+			{base: reflect.ValueOf(&targetVal).UnsafePointer(), ti: ti, size: 8, kind: objKindValue},
+		}[0:1:2],
+		cbs: []decodeCallback{
+			{fn: func() {}, value: &targetVal, slot: 1, waiter: 2, next: 3},
+			{fn: func() {}, value: &targetVal, slot: 4, waiter: 5, next: 6},
+		}[0:1:2],
+	}
+	ds.targets = append(ds.targets, reflect.ValueOf(&targetVal).UnsafePointer(), reflect.ValueOf(&targetVal).UnsafePointer())[:1:2]
+
+	typesBacking := ds.types[:2]
+	typeNamesBacking := ds.typeNames[:2]
+	objsBacking := ds.objs[:2]
+	cbsBacking := ds.cbs[:2]
+	targetsBacking := ds.targets[:2]
+
+	ds.release()
+
+	if typesBacking[0] != nil {
+		t.Errorf("types[0] = %v, want nil", typesBacking[0])
+	}
+	if typesBacking[1] == nil {
+		t.Errorf("types[1] (beyond len) was cleared")
+	}
+	if typeNamesBacking[0] != "" {
+		t.Errorf("typeNames[0] = %q, want empty", typeNamesBacking[0])
+	}
+	if typeNamesBacking[1] != "unused" {
+		t.Errorf("typeNames[1] (beyond len) = %q, want %q", typeNamesBacking[1], "unused")
+	}
+	if objsBacking[0] != (decObject{}) {
+		t.Errorf("objs[0] = %+v, want zero decObject", objsBacking[0])
+	}
+	if objsBacking[1] == (decObject{}) {
+		t.Errorf("objs[1] (beyond len) was cleared")
+	}
+	if cbsBacking[0].fn != nil || cbsBacking[0].value != nil || cbsBacking[0].slot != 0 || cbsBacking[0].waiter != 0 || cbsBacking[0].next != 0 {
+		t.Errorf("cbs[0] = %+v, want zero decodeCallback", cbsBacking[0])
+	}
+	if cbsBacking[1].fn == nil {
+		t.Errorf("cbs[1] (beyond len) was cleared")
+	}
+	if targetsBacking[0] != nil {
+		t.Errorf("targets[0] = %v, want nil", targetsBacking[0])
+	}
+	if targetsBacking[1] == nil {
+		t.Errorf("targets[1] (beyond len) was cleared")
+	}
+}
