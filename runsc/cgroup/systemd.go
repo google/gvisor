@@ -95,9 +95,9 @@ func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
 	if err != nil {
 		return nil, err
 	}
-	var version int
-	if version, err = systemdVersion(conn); err != nil {
-		return nil, fmt.Errorf("error parsing systemd version: %v", err)
+	version, err := systemdVersion(conn)
+	if err != nil {
+		return nil, fmt.Errorf("reading systemd version: %w", err)
 	}
 	if version < 244 {
 		return nil, fmt.Errorf("systemd version %d not supported, please upgrade to at least 244", version)
@@ -354,7 +354,7 @@ func isRunningSystemd() bool {
 func systemdVersion(conn *systemdDbus.Conn) (int, error) {
 	vStr, err := conn.GetManagerProperty("Version")
 	if err != nil {
-		return -1, errors.New("unable to get systemd version")
+		return -1, err
 	}
 	// vStr should be of the form:
 	// "v245.4-1.fc32", "245", "v245-1.fc32", "245-1.fc32" (without quotes).
