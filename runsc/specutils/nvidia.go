@@ -171,6 +171,23 @@ func ParseNvidiaVisibleDevices(spec *specs.Spec, conf *config.Config) (string, e
 	return nvd, nil
 }
 
+// NVProxyDevRoot returns the host directory under which the NVIDIA device
+// files are found: the first of the configured dev roots that has the NVIDIA
+// control device. It is an error if there is none.
+func NVProxyDevRoot(conf *config.Config) (string, error) {
+	return nvconf.ResolveDevRoot(conf.NVProxyDevRoots)
+}
+
+// NVProxyHostDriverVersion returns the version of the host NVIDIA driver, found
+// through the device files under the configured dev roots.
+func NVProxyHostDriverVersion(conf *config.Config) (string, error) {
+	devRoot, err := NVProxyDevRoot(conf)
+	if err != nil {
+		return "", err
+	}
+	return nvconf.HostDriverVersion(devRoot)
+}
+
 // NVProxyDriverCapsAllowed returns the driver capabilities allowed by the
 // configuration, irrespective of what a container requests.
 // This should be used to determine the bounding set of driver capabilities
