@@ -202,6 +202,7 @@ go_test(
         "//pkg/seccomp",
         "//pkg/sentry/checkpoint",
         "//pkg/sentry/fscheckpoint",
+        "//pkg/sentry/fsimpl/sys",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/netstack",
