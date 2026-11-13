@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -30,6 +29,9 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -114,16 +116,11 @@ func TestDeleteRunningRequiresForce(t *testing.T) {
 	}
 }
 
-const sandboxProcessEnv = "RUNSC_CMD_TEST_SANDBOX_PROCESS"
-
 func TestMain(m *testing.M) {
-	if os.Getenv(sandboxProcessEnv) == "1" {
-		for {
-			if err := unix.Pause(); err != unix.EINTR {
-				fmt.Fprintf(os.Stderr, "unix.Pause() = %v, want EINTR\n", err)
-				os.Exit(1)
-			}
-		}
+	testprocess.RunIfChild()
+	log.SetLevel(log.Debug)
+	if err := testutil.ConfigureExePath(); err != nil {
+		panic(err.Error())
 	}
 	if err := specutils.MaybeRunAsRoot(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
@@ -135,28 +132,17 @@ func TestMain(m *testing.M) {
 
 // startSandboxProcess starts a child with no sandbox control server. The
 // caller can observe whether a runsc command killed it before test cleanup.
-func startSandboxProcess(t *testing.T) (int, <-chan struct{}) {
+func startSandboxProcess(t *testing.T) (int, <-chan error) {
 	t.Helper()
-	proc := exec.CommandContext(t.Context(), "/proc/self/exe")
-	proc.Env = append(os.Environ(), sandboxProcessEnv+"=1")
-	proc.Stderr = os.Stderr
-	if err := proc.Start(); err != nil {
-		t.Fatalf("error starting fake sandbox process: %v", err)
-	}
-	exited := make(chan struct{})
-	go func() {
-		proc.Wait()
-		close(exited)
-	}()
-	t.Cleanup(func() { <-exited })
-	return proc.Process.Pid, exited
+	proc, exited := testprocess.Pause.Start(t)
+	return proc.Pid, exited
 }
 
 // startUnresponsiveSandbox writes the state of a container with the given
 // status and for which the sandbox never responds on its control socket.
 // Returns the container ID, and a channel closed when the sandbox process
 // exits.
-func startUnresponsiveSandbox(t *testing.T, rootDir string, status container.Status) (string, <-chan struct{}) {
+func startUnresponsiveSandbox(t *testing.T, rootDir string, status container.Status) (string, <-chan error) {
 	t.Helper()
 	sockPath := filepath.Join(rootDir, "control.sock")
 	sockFD, err := server.CreateSocket(sockPath)
@@ -269,7 +255,7 @@ func TestListUnresponsiveSandbox(t *testing.T) {
 // exits.
 // `reusedPID` makes the state contain a different process identity under the
 // same PID.
-func startFakeSandbox(t *testing.T, rootDir string, reusedPID bool) (string, <-chan struct{}) {
+func startFakeSandbox(t *testing.T, rootDir string, reusedPID bool) (string, <-chan error) {
 	t.Helper()
 	pid, exited := startSandboxProcess(t)
 	identity, err := specutils.ProcessIdentity(pid)
