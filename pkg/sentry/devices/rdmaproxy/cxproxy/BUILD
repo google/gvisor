@@ -17,7 +17,9 @@ go_library(
     deps = [
         "//pkg/abi/ib",
         "//pkg/cleanup",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/sentry/devices/rdmaproxy",
         "//pkg/sentry/kernel",
     ],
