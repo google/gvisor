@@ -16,6 +16,7 @@ package netfilter
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -126,7 +127,7 @@ func (m *addrTypeMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ stri
 	return true, false
 }
 
-func (m *addrTypeMatcher) matchType(addr tcpip.Address, mask uint16) bool {
+func (m *addrTypeMatcher) matchType(addr netip.Addr, mask uint16) bool {
 	if m.netProto == header.IPv6ProtocolNumber {
 		return m.matchTypeIPv6(addr, mask)
 	}
@@ -135,8 +136,8 @@ func (m *addrTypeMatcher) matchType(addr tcpip.Address, mask uint16) bool {
 
 // ipv4AddrType classifies addr like Linux inet_dev_addr_type, which looks addr
 // up in the local routing table.
-func (m *addrTypeMatcher) ipv4AddrType(addr tcpip.Address) uint16 {
-	if addr.Len() != header.IPv4AddressSize {
+func (m *addrTypeMatcher) ipv4AddrType(addr netip.Addr) uint16 {
+	if !addr.Is4() {
 		return linux.XT_ADDRTYPE_UNICAST
 	}
 	// ipv4_is_zeronet and ipv4_is_lbcast.
@@ -162,8 +163,8 @@ func (m *addrTypeMatcher) ipv4AddrType(addr tcpip.Address) uint16 {
 // matchTypeIPv6 implements Linux match_type6. Each of MULTICAST, UNICAST and
 // UNSPEC in mask is a separate requirement on addr; LOCAL then requires addr
 // to be local.
-func (m *addrTypeMatcher) matchTypeIPv6(addr tcpip.Address, mask uint16) bool {
-	if addr.Len() != header.IPv6AddressSize {
+func (m *addrTypeMatcher) matchTypeIPv6(addr netip.Addr, mask uint16) bool {
+	if !addr.Is6() {
 		return false
 	}
 	multicast := header.IsV6MulticastAddress(addr)
@@ -188,25 +189,25 @@ func (m *addrTypeMatcher) matchTypeIPv6(addr tcpip.Address, mask uint16) bool {
 }
 
 // isLocal returns whether addr is assigned to a NIC.
-func (m *addrTypeMatcher) isLocal(proto tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+func (m *addrTypeMatcher) isLocal(proto tcpip.NetworkProtocolNumber, addr netip.Addr) bool {
 	return m.stack.CheckLocalAddress(0, proto, addr) != 0
 }
 
-func addrsFromPacket(pkt *stack.PacketBuffer) (src, dst tcpip.Address, ok bool) {
+func addrsFromPacket(pkt *stack.PacketBuffer) (src, dst netip.Addr, ok bool) {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		hdr := header.IPv4(pkt.NetworkHeader().Slice())
 		if len(hdr) < header.IPv4MinimumSize {
-			return tcpip.Address{}, tcpip.Address{}, false
+			return netip.Addr{}, netip.Addr{}, false
 		}
 		return hdr.SourceAddress(), hdr.DestinationAddress(), true
 	case header.IPv6ProtocolNumber:
 		hdr := header.IPv6(pkt.NetworkHeader().Slice())
 		if len(hdr) < header.IPv6MinimumSize {
-			return tcpip.Address{}, tcpip.Address{}, false
+			return netip.Addr{}, netip.Addr{}, false
 		}
 		return hdr.SourceAddress(), hdr.DestinationAddress(), true
 	default:
-		return tcpip.Address{}, tcpip.Address{}, false
+		return netip.Addr{}, netip.Addr{}, false
 	}
 }

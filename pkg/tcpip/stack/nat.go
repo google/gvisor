@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"math"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -284,7 +285,7 @@ type PortOrIdentRange struct {
 // packets will be manipulated without needing to modify the connection.
 //
 // Returns whether the NAT was configured or not.
-func (cn *conn) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Address, natType NATType, changePort, changeAddress bool) bool {
+func (cn *conn) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress netip.Addr, natType NATType, changePort, changeAddress bool) bool {
 	lastPortOrIdentU32 := uint32(portsOrIdents.Start) + portsOrIdents.Size - 1
 	if lastPortOrIdentU32 > math.MaxUint16 {
 		log.Warningf("got lastPortOrIdent = %d, want <= MaxUint16(=%d); portsOrIdents=%#v", lastPortOrIdentU32, math.MaxUint16, portsOrIdents)
@@ -296,7 +297,7 @@ func (cn *conn) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Ad
 	defer cn.mu.Unlock()
 
 	var manip *manipType
-	var address *tcpip.Address
+	var address *netip.Addr
 	var portOrIdent *uint16
 	if natType == DNAT {
 		manip = &cn.destinationManip
@@ -398,7 +399,7 @@ func (cn *conn) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Ad
 
 // IPTPerformNAT performs NAT on the packet and updates the connection.
 // Used by IPTables.
-func IPTPerformNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents PortOrIdentRange, natAddress tcpip.Address, dnat, changePort, changeAddress bool) {
+func IPTPerformNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents PortOrIdentRange, natAddress netip.Addr, dnat, changePort, changeAddress bool) {
 	// Make sure the packet is re-written after performing NAT.
 	defer func() {
 		// handlePacket returns true if the packet may skip the NAT table as the
@@ -450,7 +451,7 @@ func IPTMaybePerformNoopNAT(pkt *PacketBuffer, hook Hook, r *Route, dnat bool) {
 	// simply perform source port remapping to ensure that source ports for
 	// locally generated traffic do not clash with ports used by existing NAT
 	// bindings.
-	_, _ = snatAction(pkt, hook, r, 0, tcpip.Address{}, true /* changePort */, false /* changeAddress */)
+	_, _ = snatAction(pkt, hook, r, 0, netip.Addr{}, true /* changePort */, false /* changeAddress */)
 }
 
 // NFTApplyNAT applies NAT to the packet and updates the connection.
@@ -563,7 +564,7 @@ func (cn *conn) ConfigureNoopNAT(pkt *PacketBuffer, natType NATType) bool {
 		portsOrIdents = targetPortRangeForTCPAndUDP(port)
 	}
 
-	return cn.ConfigureNAT(portsOrIdents, tcpip.Address{}, natType, true /* changePort */, false /* changeAddress */)
+	return cn.ConfigureNAT(portsOrIdents, netip.Addr{}, natType, true /* changePort */, false /* changeAddress */)
 }
 
 // configureMasquerade configures the connection for masquerade to the primary
@@ -592,22 +593,22 @@ func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, outNICID tc
 
 	// Ref: net/netfilter/nf_nat_masquerade.c:nf_nat_masquerade_ipv[4|6]()
 	// Use the next hop address as the destination address if it is set.
-	var nh tcpip.Address
+	var nh netip.Addr
 	if route != nil {
 		nh = route.NextHop()
 	}
-	if nh.Len() == 0 {
+	if !nh.IsValid() {
 		nh = pkt.Network().DestinationAddress()
 	}
 
 	// addressEP is expected to be set for the postrouting hook.
 	// Find the outgoing primary address for the destination address.
-	ep := addressEP.AcquireOutgoingPrimaryAddress(nh, tcpip.Address{} /* srcHint */, false /* allowExpired */)
+	ep := addressEP.AcquireOutgoingPrimaryAddress(nh, netip.Addr{} /* srcHint */, false /* allowExpired */)
 	if ep == nil {
 		// No address exists that we can use as a source address.
 		return false
 	}
-	address := ep.AddressWithPrefix().Address
+	address := ep.AddressWithPrefix().Addr()
 	ep.DecRef()
 
 	// Configure NAT for the packet to change the source address.
