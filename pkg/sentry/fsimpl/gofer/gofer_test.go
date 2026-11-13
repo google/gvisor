@@ -92,6 +92,70 @@ func TestDestroyIdempotent(t *testing.T) {
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 }
 
+// TestDentryCacheOverflow checks that an overflow evicts the least recently
+// used dentries in one batch, and caches the parents that this leaves
+// unreferenced rather than evicting further.
+func TestDentryCacheOverflow(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fs := filesystem{
+		mf:                pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:          make(map[inoKey]uint64),
+		inodeByKey:        make(map[inoKey]*inode),
+		clock:             ktime.RealtimeClockFromContext(ctx),
+		devMinorByHostDev: map[uint64]uint32{0: 1},
+		dentryCache:       &dentryCache{maxCachedDentries: 8},
+		client:            &lisafs.Client{},
+	}
+	var fd lisafs.FDID
+	newDir := func(parent *dentry) *dentry {
+		fd++
+		d, err := fs.newLisafsDentry(ctx, &lisafs.Inode{
+			ControlFD: fd,
+			Stat: lisafs.Statx{
+				Mask: linux.STATX_TYPE | linux.STATX_MODE,
+				Mode: linux.S_IFDIR | 0777,
+			},
+		})
+		if err != nil {
+			t.Fatalf("fs.newLisafsDentry(): %v", err)
+		}
+		if parent != nil {
+			parent.opMu.Lock()
+			parent.childrenMu.Lock()
+			parent.cacheNewChildLocked(d, fmt.Sprint(fd))
+			parent.childrenMu.Unlock()
+			parent.opMu.Unlock()
+		}
+		return d
+	}
+
+	// The two least recently used leaves are only children.
+	root := newDir(nil)
+	leaves := []*dentry{newDir(newDir(root)), newDir(newDir(root))}
+	for len(leaves) <= 8 {
+		leaves = append(leaves, newDir(root))
+	}
+
+	fs.renameMu.Lock()
+	defer fs.renameMu.Unlock()
+	for _, d := range leaves {
+		d.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	}
+	// 9 leaves shrink to 6, then the 2 parents join the cache.
+	if got := fs.dentryCache.dentriesLen; got != 8 {
+		t.Errorf("fs.dentryCache.dentriesLen=%d, want: 8", got)
+	}
+	for i, d := range leaves {
+		want := int64(0)
+		if i < 3 {
+			want = -1
+		}
+		if got := d.refs.Load(); got != want {
+			t.Errorf("leaves[%d].refs=%d, want: %d", i, got, want)
+		}
+	}
+}
+
 func TestStringFixedCache(t *testing.T) {
 	names := []string{"a", "b", "c"}
 	cache := stringFixedCache{}
