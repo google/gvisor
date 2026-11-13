@@ -634,11 +634,18 @@ func SchedSetattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (ui
 		// This matches Setpriority(), and doesn't matter since niceness has no effect.
 	}
 
+	policy := uint(schedAttr.SchedPolicy)
+	if isRealtimeScheduler(policy) {
+		if schedAttr.SchedFlags&^linux.SCHED_FLAG_RESET_ON_FORK != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		return 0, nil, setRealtimeScheduler(int64(schedAttr.SchedPriority))
+	}
+
 	if schedAttr.SchedFlags&^supportedSchedFlags != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	policy := uint(schedAttr.SchedPolicy)
 	if !isSchedulerSupported(policy) {
 		return 0, nil, linuxerr.EINVAL
 	}
