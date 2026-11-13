@@ -15,6 +15,7 @@
 package tmpfs
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -54,6 +56,163 @@ import (
 // Atime updates by reads are not journaled; the next INODE record or
 // snapshot of the inode records them.
 
+
+func (fs *filesystem) startJournal(j *journal.Journal) error {
+	fs.mu.Lock()
+	if fs.released {
+		fs.mu.Unlock()
+		return fmt.Errorf("tmpfs filesystem was released")
+	}
+	fs.journal.Store(j)
+	fs.journaled.Store(true)
+	fs.mu.Unlock()
+	if err := fs.compactJournal(); err != nil {
+		fs.journal.Store(nil)
+		return fmt.Errorf("failed to compact tmpfs journal: %w", err)
+	}
+	return nil
+}
+
+// stopJournal stops journaling. Later changes to fs are not journaled, so
+// that releasing the filesystem does not delete its contents from the
+// journal.
+func (fs *filesystem) stopJournal() {
+	j := fs.journal.Swap(nil)
+	if j == nil {
+		return
+	}
+	j.Close()
+}
+
+// snapshotWriter is implemented by journal.Snapshot, which writes snapshot
+// records, and by journal.SnapshotSizer, which computes their size.
+type snapshotWriter interface {
+	Inode(r *journal.InodeRecord)
+	DirentAdd(parent uint64, name string, child uint64)
+	ExtentSet(ino, off, length, mfOff uint64)
+}
+
+// compactionAttempts is the number of times that compactJournal tries to
+// write a snapshot whose region overflows because the filesystem grew during
+// the compaction.
+const compactionAttempts = 3
+
+// compactJournal writes a snapshot of fs to the journal.
+func (fs *filesystem) compactJournal() error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	j := fs.journal.Load()
+	// Compute the size of the snapshot first, so that the journal can
+	// make its region large enough. Files can grow between the two passes,
+	// and records are appended during the compaction; the journal leaves
+	// room for both, and the size doubles on each retry.
+	var sizer journal.SnapshotSizer
+	fs.snapshotLocked(&sizer)
+	size := sizer.Size()
+	var err error
+	for attempt := 0; attempt < compactionAttempts; attempt++ {
+		var s *journal.Snapshot
+		s, err = j.BeginSnapshot(fs.root.inode.ino, fs.nextInoMinusOne.Load()+1, size)
+		if err != nil {
+			return err
+		}
+		fs.snapshotLocked(s)
+		if err = s.Commit(); !errors.Is(err, journal.ErrSnapshotOverflow) {
+			return err
+		}
+		log.Infof("tmpfs: journal snapshot overflowed its region; retrying: %v", err)
+		size *= 2
+	}
+	return err
+}
+
+// snapshotLocked writes snapshot records for all inodes in fs to s.
+//
+// Preconditions: filesystem.mu must be locked.
+func (fs *filesystem) snapshotLocked(s snapshotWriter) {
+	visited := make(map[*inode]struct{})
+	fs.root.inode.snapshot(s)
+	visited[fs.root.inode] = struct{}{}
+	fs.root.snapshotChildrenLocked(s, visited)
+}
+
+// snapshotChildrenLocked writes snapshot records for the children of d,
+// recursively.
+//
+// Preconditions: filesystem.mu must be locked.
+func (d *dentry) snapshotChildrenLocked(s snapshotWriter, visited map[*inode]struct{}) {
+	dir, ok := d.inode.impl.(*directory)
+	if !ok {
+		return
+	}
+	for name, child := range dir.childMap {
+		if _, ok := visited[child.inode]; !ok {
+			visited[child.inode] = struct{}{}
+			child.inode.snapshot(s)
+			child.snapshotChildrenLocked(s, visited)
+		}
+		s.DirentAdd(d.inode.ino, name, child.inode.ino)
+	}
+}
+
+// snapshot writes the snapshot records of i.
+func (i *inode) snapshot(s snapshotWriter) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	var r journal.InodeRecord
+	i.fillJournalRecord(&r)
+	rf, ok := i.impl.(*regularFile)
+	if !ok {
+		s.Inode(&r)
+		return
+	}
+	rf.dataMu.RLock()
+	defer rf.dataMu.RUnlock()
+	s.Inode(&r)
+	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		s.ExtentSet(i.ino, seg.Start(), seg.Range().Length(), seg.Value())
+	}
+}
+
+// fillJournalRecord sets r to the state of i.
+//
+// +checklocks:i.mu
+func (i *inode) fillJournalRecord(r *journal.InodeRecord) {
+	*r = journal.InodeRecord{
+		Ino:   i.ino,
+		Mode:  i.mode.Load(),
+		UID:   i.uid.Load(),
+		GID:   i.gid.Load(),
+		Atime: i.atime.Load(),
+		Mtime: i.mtime.Load(),
+		Ctime: i.ctime.Load(),
+		Btime: i.btime.Load(),
+	}
+	switch impl := i.impl.(type) {
+	case *regularFile:
+		r.Size = impl.size.Load()
+	case *symlink:
+		r.Target = impl.target
+	case *deviceFile:
+		r.RdevMajor = impl.major
+		r.RdevMinor = impl.minor
+	}
+	if xattrs := i.xattrs.RawXattrs(); len(xattrs) != 0 {
+		r.Xattrs = make([]journal.Xattr, 0, len(xattrs)+2)
+		for name, value := range xattrs {
+			r.Xattrs = append(r.Xattrs, journal.Xattr{Name: name, Value: value})
+		}
+		sort.Slice(r.Xattrs, func(a, b int) bool { return r.Xattrs[a].Name < r.Xattrs[b].Name })
+	}
+	// ACLs are stored outside i.xattrs. Record them in their xattr
+	// representation; KUIDs and KGIDs are not mapped.
+	if acl := i.accessACL.Load(); acl != nil {
+		r.Xattrs = append(r.Xattrs, journal.Xattr{Name: linux.XATTR_NAME_POSIX_ACL_ACCESS, Value: string(acl.Serialize(auth.NewRootUserNamespace()))})
+	}
+	if acl := i.defaultACL.Load(); acl != nil {
+		r.Xattrs = append(r.Xattrs, journal.Xattr{Name: linux.XATTR_NAME_POSIX_ACL_DEFAULT, Value: string(acl.Serialize(auth.NewRootUserNamespace()))})
+	}
+}
 
 // rebuildFromJournal creates the files in st in fs. The MemoryFile of fs
 // must already have adopted st.UsedRanges().

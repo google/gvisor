@@ -15,7 +15,12 @@
 package tmpfs
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"reflect"
+	"runtime"
+	"sort"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -24,12 +29,13 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const pageSize = uint64(hostarch.PageSize)
@@ -62,6 +68,30 @@ type journaledTmpfs struct {
 	mf     *pgalloc.MemoryFile
 }
 
+// mountFreshJournaled mounts a brand-new journaled tmpfs in fd.
+func mountFreshJournaled(t testing.TB, ctx context.Context, fd int, regionSize uint64) *journaledTmpfs {
+	t.Helper()
+	mf, err := pgalloc.NewMemoryFile(dupFile(t, fd, "filestore"), pgalloc.MemoryFileOpts{
+		DelayedEviction:         pgalloc.DelayedEvictionDisabled,
+		DisableMemoryAccounting: true,
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryFile: %v", err)
+	}
+	j, err := journal.Create(mf, journal.Options{
+		BuildID:    "build",
+		ImageID:    "image",
+		RegionSize: regionSize,
+	})
+	if err != nil {
+		mf.Destroy()
+		t.Fatalf("journal.Create: %v", err)
+	}
+	return mountTmpfsForTest(t, ctx, mf, FilesystemOpts{
+		MemoryFile: mf,
+		Journal:    j,
+	})
+}
 
 // mountImported mounts a tmpfs by replaying the journal in fd, with runtime
 // journaling either enabled or disabled.
@@ -75,7 +105,7 @@ func mountImported(t testing.TB, ctx context.Context, fd int, regionSize uint64,
 	if err != nil {
 		t.Fatalf("NewMemoryFile: %v", err)
 	}
-	_, st, err := journal.Open(mf, journal.Options{
+	j, st, err := journal.Open(mf, journal.Options{
 		BuildID:    "build",
 		ImageID:    "image",
 		RegionSize: regionSize,
@@ -86,6 +116,7 @@ func mountImported(t testing.TB, ctx context.Context, fd int, regionSize uint64,
 	}
 	return mountTmpfsForTest(t, ctx, mf, FilesystemOpts{
 		MemoryFile:   mf,
+		Journal:      j,
 		JournalState: st,
 	})
 }
@@ -118,54 +149,202 @@ func mountTmpfsForTest(t testing.TB, ctx context.Context, mf *pgalloc.MemoryFile
 	}
 }
 
+// crash abandons m without releasing it, as if the sentry was killed.
+func (m *journaledTmpfs) crash() {
+	if j := m.fs.journal.Load(); j != nil {
+		j.Close()
+	}
+	m.mf.Destroy()
+}
+
 func (m *journaledTmpfs) pop(path string) *vfs.PathOperation {
 	return &vfs.PathOperation{Root: m.root, Start: m.root, Path: fspath.Parse(path)}
+}
+
+// fileModel is the state of one file, as compared across a rebuild.
+type fileModel struct {
+	Ino     uint64
+	Mode    uint32
+	UID     uint32
+	GID     uint32
+	Nlink   uint32
+	Size    uint64
+	Atime   int64
+	Mtime   int64
+	Ctime   int64
+	Btime   int64
+	Target  string
+	Rdev    [2]uint32
+	Xattrs  map[string]string
+	ACL     string
+	Data    []byte
+	Extents [][3]uint64
+}
+
+// model returns the state of every file in m, by path.
+func (m *journaledTmpfs) model(t *testing.T) map[string]fileModel {
+	t.Helper()
+	fs := m.fs
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	model := make(map[string]fileModel)
+	var walk func(d *dentry, path string)
+	walk = func(d *dentry, path string) {
+		i := d.inode
+		fm := fileModel{
+			Ino:   i.ino,
+			Mode:  i.mode.Load(),
+			UID:   i.uid.Load(),
+			GID:   i.gid.Load(),
+			Nlink: i.nlink.Load(),
+			Atime: i.atime.Load(),
+			Mtime: i.mtime.Load(),
+			Ctime: i.ctime.Load(),
+			Btime: i.btime.Load(),
+		}
+		if xattrs := i.xattrs.RawXattrs(); len(xattrs) != 0 {
+			fm.Xattrs = xattrs
+		}
+		if acl := i.accessACL.Load(); acl != nil {
+			fm.ACL = acl.String()
+		}
+		switch impl := i.impl.(type) {
+		case *regularFile:
+			fm.Size = impl.size.Load()
+			fm.Data = make([]byte, fm.Size)
+			rw := getRegularFileReadWriter(impl, 0, 0)
+			if _, err := rw.ReadToBlocks(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(fm.Data))); err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			putRegularFileReadWriter(rw)
+			impl.dataMu.RLock()
+			for seg := impl.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+				fm.Extents = append(fm.Extents, [3]uint64{seg.Start(), seg.End(), seg.Value()})
+			}
+			impl.dataMu.RUnlock()
+		case *symlink:
+			fm.Target = impl.target
+		case *deviceFile:
+			fm.Rdev = [2]uint32{impl.major, impl.minor}
+		case *directory:
+			for name, child := range impl.childMap {
+				walk(child, path+"/"+name)
+			}
+		}
+		model[path] = fm
+	}
+	walk(fs.root, "")
+	return model
+}
+
+func compareModels(t *testing.T, what string, got, want map[string]fileModel) {
+	t.Helper()
+	var paths []string
+	for p := range want {
+		paths = append(paths, p)
+	}
+	for p := range got {
+		if _, ok := want[p]; !ok {
+			paths = append(paths, p)
+		}
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		g, gok := got[p]
+		w, wok := want[p]
+		switch {
+		case !gok:
+			t.Errorf("%s: %q is missing", what, p)
+		case !wok:
+			t.Errorf("%s: %q is unexpected", what, p)
+		case !reflect.DeepEqual(g, w):
+			gd, wd := g.Data, w.Data
+			g.Data, w.Data = nil, nil
+			t.Errorf("%s: %q differs:\n got %+v\nwant %+v\ndata equal: %t", what, p, g, w, bytes.Equal(gd, wd))
+		}
+	}
+}
+
+type journalScript struct {
+	t     *testing.T
+	ctx   context.Context
+	creds *auth.Credentials
+	m     *journaledTmpfs
+}
+
+func (s *journalScript) check(err error, what string) {
+	s.t.Helper()
+	if err != nil {
+		s.t.Fatalf("%s: %v", what, err)
+	}
+}
+
+func (s *journalScript) mkdir(path string, mode linux.FileMode) {
+	s.t.Helper()
+	s.check(s.m.vfsObj.MkdirAt(s.ctx, s.creds, s.m.pop(path), &vfs.MkdirOptions{Mode: mode}), "mkdir "+path)
+}
+
+func (s *journalScript) open(path string, flags uint32) *vfs.FileDescription {
+	s.t.Helper()
+	fd, err := s.m.vfsObj.OpenAt(s.ctx, s.creds, s.m.pop(path), &vfs.OpenOptions{Flags: flags, Mode: 0644})
+	s.check(err, "open "+path)
+	return fd
+}
+
+func (s *journalScript) write(fd *vfs.FileDescription, data []byte) {
+	s.t.Helper()
+	n, err := fd.Write(s.ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
+	s.check(err, "write")
+	if n != int64(len(data)) {
+		s.t.Fatalf("write wrote %d bytes, want %d", n, len(data))
+	}
 }
 
 func rootCreds() *auth.Credentials {
 	return auth.NewRootCredentials(auth.NewRootUserNamespace())
 }
 
-func TestRebuildFromJournal(t *testing.T) {
+func pattern(n int, seed byte) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = seed + byte(i*7)
+	}
+	return b
+}
+
+func createFiles(t *testing.T, m *journaledTmpfs, n int) {
+	t.Helper()
+	s := &journalScript{t: t, ctx: m.ctx, creds: rootCreds(), m: m}
+	for i := 0; i < n; i++ {
+		for j := m.fs.journal.Load(); j != nil && j.CompactionPending(); {
+			runtime.Gosched()
+		}
+		if i%50 == 0 {
+			s.mkdir(fmt.Sprintf("/d%d", i/50), 0755)
+		}
+		fd := s.open(fmt.Sprintf("/d%d/file-with-a-long-name-%d", i/50, i), linux.O_RDWR|linux.O_CREAT)
+		s.write(fd, pattern(100+i%300, byte(i)))
+		fd.DecRef(m.ctx)
+	}
+}
+
+func TestJournalLargeSnapshot(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fd := newJournalTestFD(t)
-	mf, err := pgalloc.NewMemoryFile(dupFile(t, fd, "filestore"), pgalloc.MemoryFileOpts{
-		DelayedEviction:         pgalloc.DelayedEvictionDisabled,
-		DisableMemoryAccounting: true,
-	})
-	if err != nil {
-		t.Fatalf("NewMemoryFile: %v", err)
+	const regionSize = 4 * pageSize
+	m1 := mountFreshJournaled(t, ctx, fd, regionSize)
+	createFiles(t, m1, 600)
+	if err := m1.fs.compactJournal(); err != nil {
+		t.Fatalf("compactJournal: %v", err)
 	}
-	j, err := journal.Create(mf, journal.Options{BuildID: "build", ImageID: "image"})
-	if err != nil {
-		mf.Destroy()
-		t.Fatalf("journal.Create: %v", err)
+	if m1.fs.journal.Load().Broken() {
+		t.Fatalf("journal broken")
 	}
-	fr, err := mf.Allocate(pageSize, pgalloc.AllocOpts{Kind: usage.Tmpfs})
-	if err != nil {
-		t.Fatalf("Allocate: %v", err)
-	}
-	s, err := j.BeginSnapshot(1, 3, 0)
-	if err != nil {
-		t.Fatalf("BeginSnapshot: %v", err)
-	}
-	s.Inode(&journal.InodeRecord{Ino: 1, Mode: linux.S_IFDIR | 0755})
-	s.Inode(&journal.InodeRecord{Ino: 2, Mode: linux.S_IFREG | 0640, UID: 7, Size: pageSize})
-	s.ExtentSet(2, 0, pageSize, fr.Start)
-	s.DirentAdd(1, "file", 2)
-	if err := s.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	j.Close()
-	mf.Destroy()
-
-	m := mountImported(t, ctx, fd, 0, false)
-	defer func() {
-		m.fs.Release(m.ctx)
-		m.mf.Destroy()
-	}()
-	st, err := m.vfsObj.StatAt(m.ctx, rootCreds(), m.pop("/file"), &vfs.StatOptions{Mask: linux.STATX_UID | linux.STATX_SIZE})
-	if err != nil || st.UID != 7 || st.Size != pageSize {
-		t.Fatalf("StatAt(/file) = %+v, %v", st, err)
-	}
+	want := m1.model(t)
+	m1.crash()
+	m2 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
+	compareModels(t, "after compaction and crash", m2.model(t), want)
+	m2.crash()
+	m3 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
+	compareModels(t, "after rebuild and crash", m3.model(t), want)
 }

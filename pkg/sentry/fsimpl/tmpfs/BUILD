@@ -187,6 +187,7 @@ go_test(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
