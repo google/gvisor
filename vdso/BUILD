@@ -5,7 +5,7 @@
 
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//tools:arch.bzl", "select_arch")
-load("//tools:defs.bzl", "cc_binary")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -14,17 +14,8 @@ package(
 
 exports_files(["check_vdso.py"])
 
-filegroup(
-    name = "linker_script",
-    srcs = select_arch(
-        amd64 = ["vdso_amd64.lds"],
-        arm64 = ["vdso_arm64.lds"],
-        no_match_error = "unsupported architecture",
-    ),
-)
-
-cc_binary(
-    name = "vdso.so",
+genrule(
+    name = "vdso",
     srcs = [
         "barrier.h",
         "compiler.h",
@@ -32,49 +23,50 @@ cc_binary(
         "seqlock.h",
         "syscalls.h",
         "vdso.cc",
-        "vdso_time.cc",
+        "vdso_amd64.lds",
+        "vdso_arm64.lds",
         "vdso_time.h",
+        "vdso_time.cc",
     ],
-    additional_linker_inputs = [":linker_script"],
-    copts = [
-        "-O2",
-        "-std=c++11",
-        "-fPIC",
-        "-fno-sanitize=all",
-        # Some toolchains enable stack protector by default. Disable it, the
-        # VDSO has no hooks to handle failures.
-        "-fno-stack-protector",
+    outs = [
+        "vdso.so",
     ],
-    features = [
-        "-coverage",
-        "-default_link_flags",
-        "-pie",
-        # The vDSO is freestanding. Under ThinLTO, the C++ runtime's bitcode
-        # objects are added to the link and pull in libc symbols (stderr,
-        # free, abort, etc.) that -nostdlib leaves undefined.
-        "-thin_lto",
+    cmd = "$(CC) $(CC_FLAGS) " +
+          "-I. " +
+          "-O2 " +
+          "-std=c++11 " +
+          "-fPIC " +
+          "-fno-sanitize=all " +
+          # Some toolchains enable stack protector by default. Disable it, the
+          # VDSO has no hooks to handle failures.
+          "-fno-stack-protector " +
+          "-shared " +
+          "-nostdlib " +
+          "-Wl,-soname=linux-vdso.so.1 " +
+          "-Wl,--hash-style=sysv " +
+          "-Wl,--no-undefined " +
+          "-Wl,-Bsymbolic " +
+          "-Wl,-z,max-page-size=4096 " +
+          "-Wl,-z,common-page-size=4096 " +
+          select_arch(
+              amd64 = "-Wl,-T$(location vdso_amd64.lds) ",
+              arm64 = "-Wl,-T$(location vdso_arm64.lds) ",
+              no_match_error = "unsupported architecture",
+          ) +
+          "-o $(location vdso.so) " +
+          "$(location vdso.cc) " +
+          "$(location vdso_time.cc)",
+    features = ["-pie"],
+    toolchains = [
+        cc_toolchain,
+        ":no_pie_cc_flags",
     ],
-    link_extra_lib = None,
-    linkopts = [
-        "-nostdlib",
-        "-Wl,-soname=linux-vdso.so.1",
-        "-Wl,--hash-style=sysv",
-        "-Wl,--no-undefined",
-        "-Wl,-Bsymbolic",
-        "-Wl,-z,max-page-size=4096",
-        "-Wl,-z,common-page-size=4096",
-        "-Wl,-T,$(execpath :linker_script)",
-    ],
-    linkshared = True,
-    linkstatic = True,
-    stamp = 0,
     visibility = ["//:sandbox"],
 )
 
-alias(
-    name = "vdso",
-    actual = ":vdso.so",
-    visibility = ["//:sandbox"],
+cc_flags_supplier(
+    name = "no_pie_cc_flags",
+    features = ["-pie"],
 )
 
 py_test(
@@ -82,7 +74,7 @@ py_test(
     srcs = ["check_vdso.py"],
     args = [
         "--check-data",
-        "--vdso=$(rootpath :vdso)",
+        "--vdso=$(location :vdso)",
     ],
     data = [":vdso"],
     main = "check_vdso.py",
