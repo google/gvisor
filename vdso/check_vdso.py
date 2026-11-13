@@ -59,11 +59,16 @@ def CheckSegments(vdso_path):
   * No two PT_LOAD segments share part of the same page.
 
   The readelf line format looks like:
-  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
-  LOAD           0x000000 0xffffffffff700000 0xffffffffff700000 0x000e68 0x000e68 R E 0x1000
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz
+  Flg Align
+  LOAD           0x000000 0xffffffffff700000 0xffffffffff700000 0x000e68
+  0x000e68 R E 0x1000
 
   Args:
     vdso_path: Path to VDSO binary.
+
+  Returns:
+    A list of dicts describing each PT_LOAD segment.
   """
   output = subprocess.check_output(["readelf", "-lW", vdso_path]).decode()
   lines = output.split("\n")
@@ -108,6 +113,63 @@ def CheckSegments(vdso_path):
       if last_page >= start_page:
         Fatal("PT_LOAD segments share a page: %s and %s", segment,
               segments[i - 1])
+
+  return segments
+
+
+def CheckEhFrame(vdso_path, load_segments):
+  """Verifies PT_GNU_EH_FRAME is non-empty and mapped within a PT_LOAD segment.
+
+  If compilation omits .eh_frame (e.g. -fno-asynchronous-unwind-tables), the
+  linker leaves PT_GNU_EH_FRAME at vaddr 0 with size 0, which causes the arm64
+  unwinder to dereference an unmapped address when unwinding across the VDSO.
+
+  Args:
+    vdso_path: Path to VDSO binary.
+    load_segments: List of PT_LOAD segment dicts returned by CheckSegments.
+  """
+  output = subprocess.check_output(["readelf", "-lW", vdso_path]).decode()
+  eh_frames = []
+  for line in output.split("\n"):
+    if not line.startswith("  GNU_EH_FRAME"):
+      continue
+    components = line.split()
+    eh_frames.append({
+        "offset": int(components[1], 16),
+        "addr": int(components[2], 16),
+        "filesz": int(components[4], 16),
+        "memsz": int(components[5], 16),
+    })
+
+  if not eh_frames:
+    Fatal("No PT_GNU_EH_FRAME segment in VDSO:\n%s", output)
+
+  for eh in eh_frames:
+    if eh["filesz"] == 0 or eh["memsz"] == 0:
+      Fatal("Empty PT_GNU_EH_FRAME segment in VDSO: %s", eh)
+    if not any(
+        seg["addr"] <= eh["addr"]
+        and eh["addr"] + eh["memsz"] <= seg["addr"] + seg["memsz"]
+        for seg in load_segments
+    ):
+      Fatal(
+          "PT_GNU_EH_FRAME segment %s is not contained in any PT_LOAD segment:"
+          " %s",
+          eh,
+          load_segments,
+      )
+
+
+def CheckDynamic(vdso_path):
+  """Verifies the VDSO declares no DT_NEEDED shared library dependencies.
+
+  Args:
+    vdso_path: Path to VDSO binary.
+  """
+  output = subprocess.check_output(["readelf", "-dW", vdso_path]).decode()
+  for line in output.split("\n"):
+    if "(NEEDED)" in line:
+      Fatal("VDSO contains DT_NEEDED dependency:\n%s", output)
 
 
 # Matches the section name in readelf -SW output.
@@ -191,13 +253,22 @@ def main():
       "--check-data",
       action="store_true",
       help="Check that the ELF contains no .data or .bss sections")
+  parser.add_argument(
+      "--check-eh-frame",
+      action="store_true",
+      help="Check that PT_GNU_EH_FRAME is non-empty and mapped",
+  )
   args = parser.parse_args()
 
-  CheckSegments(args.vdso)
+  load_segments = CheckSegments(args.vdso)
   CheckRelocs(args.vdso)
+  CheckDynamic(args.vdso)
 
   if args.check_data:
     CheckData(args.vdso)
+
+  if args.check_eh_frame:
+    CheckEhFrame(args.vdso, load_segments)
 
 
 if __name__ == "__main__":

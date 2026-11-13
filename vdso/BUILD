@@ -41,6 +41,11 @@ cc_binary(
         "-std=c++11",
         "-fPIC",
         "-fno-sanitize=all",
+        # Some toolchains disable unwind tables in non-opt or sanitizer builds.
+        # Force them on so .eh_frame and PT_GNU_EH_FRAME are populated (on
+        # arm64, libgcc_s dereferences PT_GNU_EH_FRAME when unwinding across
+        # __kernel_rt_sigreturn).
+        "-fasynchronous-unwind-tables",
         # Some toolchains enable stack protector by default. Disable it, the
         # VDSO has no hooks to handle failures.
         "-fno-stack-protector",
@@ -82,6 +87,7 @@ py_test(
     srcs = ["check_vdso.py"],
     args = [
         "--check-data",
+        "--check-eh-frame",
         "--vdso=$(rootpath :vdso)",
     ],
     data = [":vdso"],

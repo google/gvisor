@@ -286,7 +286,7 @@ TEST(EpollTest, UnblockWithSignal) {
   EXPECT_THAT(epoll_wait(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallFailsWithErrno(EINTR));
   EXPECT_THAT(pthread_cancel(thread), SyscallSucceeds());
-  EXPECT_THAT(pthread_detach(thread), SyscallSucceeds());
+  EXPECT_THAT(pthread_join(thread, nullptr), SyscallSucceedsWithValue(0));
 }
 
 #endif  // ANDROID
