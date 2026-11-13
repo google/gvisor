@@ -106,6 +106,50 @@ func TestSleepOnStateStuckContextWhenStubIsGone(t *testing.T) {
 	}
 }
 
+func TestThreadContextInitResetsFields(t *testing.T) {
+	tc := &sysmsg.ThreadContext{
+		Interrupt:        1,
+		SentryFastPath:   1,
+		AckedTime:        42,
+		StateChangedTime: 99,
+	}
+	tc.Init(invalidThreadID)
+	if tc.Interrupt != 0 || tc.SentryFastPath != 0 || tc.AckedTime != 0 || tc.StateChangedTime != 0 {
+		t.Fatalf("Init() left stale fields: Interrupt=%d SentryFastPath=%d AckedTime=%d StateChangedTime=%d",
+			tc.Interrupt, tc.SentryFastPath, tc.AckedTime, tc.StateChangedTime)
+	}
+}
+
+func TestSleepOnStateNoStubThreadRecovers(t *testing.T) {
+	sc := newTestSharedContext(t)
+	atomic.StoreUint32(&sc.shared.ThreadID, invalidThreadID)
+
+	stateChanged := make(chan struct{})
+	go func() {
+		for atomic.LoadUint32(&sc.shared.Interrupt) == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		sc.setState(sysmsg.ContextStateSyscall)
+		close(stateChanged)
+	}()
+
+	err := sc.sleepOnStateWithTimeout(sysmsg.ContextStateNone, time.Second, 10*time.Millisecond)
+	<-stateChanged
+	if err != nil {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want nil", err)
+	}
+}
+
+func TestSleepOnStateNoStubThreadStuck(t *testing.T) {
+	sc := newTestSharedContext(t)
+	atomic.StoreUint32(&sc.shared.ThreadID, invalidThreadID)
+
+	err := sc.sleepOnStateWithTimeout(sysmsg.ContextStateNone, 15*time.Millisecond, 10*time.Millisecond)
+	if !errors.Is(err, errStuckContext) {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want %v", err, errStuckContext)
+	}
+}
+
 func TestSleepOnStateRepeatedInterruptsStillStuck(t *testing.T) {
 	sc := newTestSharedContext(t)
 
