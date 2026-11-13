@@ -32,6 +32,7 @@ go_test(
     srcs = ["journal_test.go"],
     embed = [":journal"],
     deps = [
+        "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/sentry/pgalloc",
         "@org_golang_x_sys//unix:go_default_library",

@@ -26,3 +26,10 @@ import (
 func atomicStore64(b []byte, v uint64) {
 	(*atomicbitops.Uint64)(unsafe.Pointer(&b[0])).Store(v)
 }
+
+// atomicStore32 atomically stores v to b.
+//
+// Preconditions: b is 4 bytes long and 4-byte aligned.
+func atomicStore32(b []byte, v uint32) {
+	(*atomicbitops.Uint32)(unsafe.Pointer(&b[0])).Store(v)
+}

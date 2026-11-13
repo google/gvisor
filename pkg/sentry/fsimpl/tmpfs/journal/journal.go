@@ -46,6 +46,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -121,6 +122,9 @@ const (
 
 	minRegionSize = 4 * hostarch.PageSize
 	maxRegionSize = 1 << 32
+
+	// snapshotSlack is added to the space for a snapshot.
+	snapshotSlack = hostarch.PageSize
 )
 
 // Options configures Create, CreateIncomplete, and Open.
@@ -151,7 +155,44 @@ type Journal struct {
 	// header is a shared mapping of [0, headerSize) in file.
 	header []byte
 
+	// regionSize is the minimum size of a region. regionSize is immutable.
+	regionSize uint64
+
 	mu sync.Mutex
+
+	// gen is the generation of the active region.
+	//
+	// +checklocks:mu
+	gen uint64
+
+	// active is the writer for the active region.
+	//
+	// +checklocks:mu
+	active regionWriter
+
+	// next is the writer for the inactive region during compaction, and nil
+	// otherwise.
+	//
+	// +checklocks:mu
+	next *regionWriter
+
+	// filestoreEnd is the value of the filestoreEnd header field.
+	//
+	// +checklocks:mu
+	filestoreEnd uint64
+
+	// nextEnd is the filestore high-water mark for the inactive region
+	// during compaction (at least the end of every EXTENT_SET record written
+	// to it).
+	//
+	// +checklocks:mu
+	nextEnd uint64
+
+	// regions holds the region descriptors, as in the header. An unallocated
+	// inactive slot has size == 0.
+	//
+	// +checklocks:mu
+	regions [2]region
 
 	// regionMaps holds the shared mapping for each allocated region slot.
 	//
@@ -174,12 +215,32 @@ func (r region) end() uint64 {
 	return r.off + r.size
 }
 
+func (r region) overlaps(o region) bool {
+	return r.off < o.end() && o.off < r.end()
+}
+
 // valid returns true if r is a well-formed region in a file of size
 // fileSize.
 func (r region) valid(fileSize uint64) bool {
 	return r.off >= headerSize && hostarch.IsPageAligned(r.off) &&
 		r.size >= minRegionSize && r.size <= maxRegionSize && hostarch.IsPageAligned(r.size) &&
 		r.off <= fileSize && r.size <= fileSize-r.off
+}
+
+// regionWriter appends records to one region.
+type regionWriter struct {
+	// mapping is the shared mapping of the region, of length size.
+	mapping []byte
+	// size is the size of the region.
+	size uint64
+	// tail is the offset of the next record within mapping.
+	tail uint64
+	// nextSeq is the sequence number of the next record.
+	nextSeq uint64
+	// full is true if an append did not fit.
+	full bool
+	// reserved is true between reserve and seal.
+	reserved bool
 }
 
 // Create initializes a new journal in file, replacing any existing contents.
@@ -226,7 +287,7 @@ func Open(mf *pgalloc.MemoryFile, file *os.File, opts Options, keepJournal bool)
 		return nil, nil, ErrIncomplete
 	}
 
-	_, err := checkHeader(hdr[:], opts)
+	regionSize, err := checkHeader(hdr[:], opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -237,6 +298,8 @@ func Open(mf *pgalloc.MemoryFile, file *os.File, opts Options, keepJournal bool)
 	if active&brokenBit != 0 {
 		return nil, nil, fmt.Errorf("journal overflowed before the previous sandbox stopped; its state is incomplete")
 	}
+
+	filestoreEnd := binary.LittleEndian.Uint64(hdr[filestoreEndOff:])
 
 	gen := active
 	activeSlot := int(gen & 1)
@@ -250,11 +313,12 @@ func Open(mf *pgalloc.MemoryFile, file *os.File, opts Options, keepJournal bool)
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err := checkRegionHeader(activeMap, gen); err != nil {
+	startSeq, err := checkRegionHeader(activeMap, gen)
+	if err != nil {
 		unmapRange(activeMap)
 		return nil, nil, err
 	}
-	st := &State{}
+	st, tail, nextSeq := &State{}, uint64(regionHeaderSize), startSeq
 
 	if err := mf.AdoptExisting(st.UsedRanges(), usage.Tmpfs); err != nil {
 		unmapRange(activeMap)
@@ -271,11 +335,23 @@ func Open(mf *pgalloc.MemoryFile, file *os.File, opts Options, keepJournal bool)
 		unmapRange(activeMap)
 		return nil, nil, err
 	}
-	j := &Journal{
-		file:   file,
-		header: headerMap,
+	// The inactive region is not mapped. If its descriptor is not valid, the
+	// next compaction allocates a new inactive region.
+	inactiveSlot := 1 - activeSlot
+	if !regions[inactiveSlot].valid(journalSize) || regions[inactiveSlot].overlaps(r) {
+		regions[inactiveSlot] = region{}
 	}
+	j := &Journal{
+		file:       file,
+		header:     headerMap,
+		regionSize: regionSize,
+	}
+	j.storeRegion(inactiveSlot, regions[inactiveSlot])
 	j.mu.Lock()
+	j.gen = gen
+	j.active = regionWriter{mapping: activeMap, size: r.size, tail: tail, nextSeq: nextSeq}
+	j.filestoreEnd = filestoreEnd
+	j.regions = regions
 	j.regionMaps[activeSlot] = activeMap
 	j.mu.Unlock()
 	return j, st, nil
@@ -323,8 +399,9 @@ func create(file *os.File, opts Options, incomplete bool) (*Journal, error) {
 	}
 
 	j := &Journal{
-		file:   file,
-		header: headerMap,
+		file:       file,
+		header:     headerMap,
+		regionSize: regionSize,
 	}
 	h := j.header
 	binary.LittleEndian.PutUint32(h[8:], formatVersion)
@@ -349,6 +426,9 @@ func create(file *os.File, opts Options, incomplete bool) (*Journal, error) {
 	atomicStore64(h[0:8], binary.LittleEndian.Uint64(headerMagic[:]))
 
 	j.mu.Lock()
+	j.gen = gen
+	j.active = regionWriter{mapping: map1, size: regionSize, tail: regionHeaderSize, nextSeq: 1}
+	j.regions = regions
 	j.regionMaps = [2][]byte{map0, map1}
 	j.mu.Unlock()
 	return j, nil
@@ -459,6 +539,27 @@ func (j *Journal) storeActive(v uint64) {
 	atomicStore64(j.header[activeOff:activeOff+8], v)
 }
 
+// raiseFilestoreEndLocked raises the filestoreEnd header field to cover an
+// extent that ends at end. The caller must call it before it seals the
+// record.
+//
+// +checklocks:j.mu
+func (j *Journal) raiseFilestoreEndLocked(end uint64) {
+	if end > j.filestoreEnd {
+		j.filestoreEnd = end
+		atomicStore64(j.header[filestoreEndOff:filestoreEndOff+8], end)
+	}
+}
+
+// extentEnd returns the end of the filestore range of an extent.
+func extentEnd(length, mfOff uint64) uint64 {
+	end := mfOff + length
+	if end < mfOff {
+		return math.MaxUint64
+	}
+	return end
+}
+
 func loadRegionFromHeader(hdr []byte, i int) region {
 	off := regionDescOff + 16*i
 	return region{
@@ -473,6 +574,69 @@ func (j *Journal) storeRegion(i int, r region) {
 	off := regionDescOff + 16*i
 	atomicStore64(j.header[off:off+8], r.off)
 	atomicStore64(j.header[off+8:off+16], r.size)
+}
+
+// prepareRegionLocked makes the region in slot, which must be inactive,
+// large enough for need bytes. If the region is unallocated, too small, or
+// much larger than needed, prepareRegionLocked frees it (if allocated) and
+// allocates a new region of the target size in the journal file.
+//
+// +checklocks:j.mu
+func (j *Journal) prepareRegionLocked(slot int, need uint64) error {
+	if need > maxRegionSize {
+		return fmt.Errorf("journal snapshot needs %d bytes, more than the maximum region size %d", need, uint64(maxRegionSize))
+	}
+	cur := j.regions[slot]
+	active := j.regions[1-slot]
+	// Leave room for appends after the snapshot, so that the next
+	// compaction, which starts when the region is half full, is not due at
+	// once.
+	want := max(j.regionSize, hostarch.MustPageRoundUp(min(2*need, maxRegionSize)))
+	if cur.size != 0 && !cur.overlaps(active) && cur.size >= want && cur.size <= max(j.regionSize, 2*want) {
+		if j.regionMaps[slot] == nil {
+			m, err := mmapRange(int(j.file.Fd()), cur.off, cur.size)
+			if err != nil {
+				return err
+			}
+			j.regionMaps[slot] = m
+		}
+		return nil
+	}
+	if j.regionMaps[slot] != nil {
+		unmapRange(j.regionMaps[slot])
+		j.regionMaps[slot] = nil
+	}
+	if cur.size != 0 {
+		j.storeRegion(slot, region{})
+		j.regions[slot] = region{}
+		j.freeRange(cur)
+	}
+	// Place the region at the start of the file if it fits before the
+	// active region, and after the active region otherwise.
+	next := region{off: headerSize, size: want}
+	if next.overlaps(active) {
+		next.off = active.end()
+	}
+	// Grow or shrink the file to the end of the last region.
+	if err := j.file.Truncate(int64(max(next.end(), active.end()))); err != nil {
+		return fmt.Errorf("failed to resize journal file for a %d-byte region: %w", want, err)
+	}
+	m, err := mmapRange(int(j.file.Fd()), next.off, next.size)
+	if err != nil {
+		return err
+	}
+	j.storeRegion(slot, next)
+	j.regions[slot] = next
+	j.regionMaps[slot] = m
+	log.Infof("tmpfs journal: placed region %d at [%#x, +%#x) for a %d-byte snapshot", slot, next.off, next.size, need)
+	return nil
+}
+
+// freeRange releases the disk space of region r of the journal file.
+func (j *Journal) freeRange(r region) {
+	if err := unix.Fallocate(int(j.file.Fd()), unix.FALLOC_FL_PUNCH_HOLE|unix.FALLOC_FL_KEEP_SIZE, int64(r.off), int64(r.size)); err != nil {
+		log.Debugf("tmpfs journal: failed to punch hole over [%#x, +%#x): %v", r.off, r.size, err)
+	}
 }
 
 func writeRegionHeader(regionMap []byte, gen, startSeq uint64) {
@@ -510,6 +674,8 @@ func (j *Journal) Close() {
 		return
 	}
 	j.closed = true
+	j.next = nil
+	j.active.mapping = nil
 	for i := range j.regionMaps {
 		unmapRange(j.regionMaps[i])
 		j.regionMaps[i] = nil
@@ -521,8 +687,226 @@ func (j *Journal) Close() {
 	}
 }
 
+// reserve returns the payload buffer for a record of the given payload length
+// at the tail of w, or nil if the record does not fit.
+//
+// +checklocks:j.mu
+func (j *Journal) reserve(w *regionWriter, payloadLen uint64) []byte {
+	if w.full {
+		return nil
+	}
+	size := recordSize(payloadLen)
+	if size > w.size-w.tail {
+		w.full = true
+		return nil
+	}
+	w.reserved = true
+	off := w.tail + recordHeaderSize
+	return w.mapping[off : off+payloadLen]
+}
+
+// seal completes the record reserved at the tail of w. The payload must
+// already be written. seal writes the header fields and the checksum, then
+// the magic, last, with an atomic store. A crash before the magic is written
+// leaves a record that replay rejects.
+//
+// +checklocks:j.mu
+func (j *Journal) seal(w *regionWriter, typ RecordType, payloadLen uint64) {
+	size := recordSize(payloadLen)
+	rec := w.mapping[w.tail : w.tail+size]
+	binary.LittleEndian.PutUint32(rec[4:], uint32(payloadLen))
+	binary.LittleEndian.PutUint64(rec[8:], w.nextSeq)
+	binary.LittleEndian.PutUint16(rec[16:], uint16(typ))
+	binary.LittleEndian.PutUint16(rec[18:], 0)
+	binary.LittleEndian.PutUint32(rec[20:], 0)
+	crc := crc32.Checksum(rec[4:recordHeaderSize+payloadLen], castagnoli())
+	binary.LittleEndian.PutUint32(rec[recordHeaderSize+payloadLen:], crc)
+	atomicStore32(rec[0:4], recordMagic)
+	w.tail += size
+	w.nextSeq++
+	w.reserved = false
+}
+
 func direntAddLen(name string) uint64 {
 	return 8 + 8 + 2 + uint64(len(name))
+}
+
+func encodeDirentAdd(buf []byte, parent uint64, name string, child uint64) {
+	e := encoder{buf: buf}
+	e.u64(parent)
+	e.u64(child)
+	e.str16(name)
+}
+
+func encodeExtent(buf []byte, ino, off, length, mfOff uint64) {
+	binary.LittleEndian.PutUint64(buf[0:], ino)
+	binary.LittleEndian.PutUint64(buf[8:], off)
+	binary.LittleEndian.PutUint64(buf[16:], length)
+	if len(buf) > 24 {
+		binary.LittleEndian.PutUint64(buf[24:], mfOff)
+	}
+}
+
+// Snapshot writes a new snapshot to the inactive region. Records that are
+// appended to the Journal while a Snapshot is in progress are also written
+// to the inactive region, in order with the snapshot records.
+//
+// For each inode, the snapshot records must reflect a state at least as new
+// as every record for that inode that was appended before them. Callers
+// ensure this by holding the locks that serialize changes to each inode while
+// they write its snapshot records.
+type Snapshot struct {
+	j *Journal
+}
+
+// BeginSnapshot starts a compaction, and writes a RecordRoot record with the
+// given root inode number and next free inode number as the first snapshot
+// record. size is the expected total size of the other snapshot records; see
+// SnapshotSizer. If the inactive region may be too small for them, together
+// with the records that are appended during the compaction, BeginSnapshot
+// first moves it to a larger range of the MemoryFile. The caller must call
+// Commit or Abort on the returned Snapshot.
+func (j *Journal) BeginSnapshot(rootIno, nextIno, size uint64) (*Snapshot, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.closed {
+		return nil, fmt.Errorf("journal is closed")
+	}
+	if j.next != nil {
+		return nil, fmt.Errorf("compaction already in progress")
+	}
+	gen := j.gen + 1
+	slot := int(gen & 1)
+	need := regionHeaderSize + recordSize(16) + snapshotSlack
+	if size > (maxRegionSize-need)/2 {
+		need = maxRegionSize + 1
+	} else {
+		need += 2 * size
+	}
+	// The inactive region is not replayed, so it can move. Its new
+	// descriptor is in the header before Commit makes it active.
+	if err := j.prepareRegionLocked(slot, need); err != nil {
+		return nil, err
+	}
+	r := j.regions[slot]
+	m := j.regionMaps[slot]
+	// Sequence numbers increase across regions, so that stale records left
+	// in the new region by its previous use always have lower sequence
+	// numbers than the new region's first record.
+	startSeq := j.active.nextSeq
+	writeRegionHeader(m, gen, startSeq)
+	j.next = &regionWriter{mapping: m, size: r.size, tail: regionHeaderSize, nextSeq: startSeq}
+	j.nextEnd = 0
+	const n = 16
+	if buf := j.reserve(j.next, n); buf != nil {
+		binary.LittleEndian.PutUint64(buf[0:], rootIno)
+		binary.LittleEndian.PutUint64(buf[8:], nextIno)
+		j.seal(j.next, RecordRoot, n)
+	}
+	return &Snapshot{j: j}, nil
+}
+
+// snapshotBegin returns the buffer for the payload of a snapshot record, or
+// nil if the record is dropped. The caller must call j.snapshotEnd.
+//
+// +checklocksacquire:j.mu
+func (j *Journal) snapshotBegin(payloadLen uint64) []byte {
+	j.mu.Lock()
+	if j.next == nil {
+		return nil
+	}
+	return j.reserve(j.next, payloadLen)
+}
+
+// +checklocksrelease:j.mu
+func (j *Journal) snapshotEnd(typ RecordType, payloadLen uint64) {
+	if j.next != nil && j.next.reserved {
+		j.seal(j.next, typ, payloadLen)
+	}
+	j.mu.Unlock()
+}
+
+// Inode writes a RecordInode record. For a regular file, it also writes a
+// RecordExtentClear record for the whole file, so that the snapshot replaces
+// the extents set by earlier records.
+func (s *Snapshot) Inode(r *InodeRecord) {
+	n := r.payloadLen()
+	if buf := s.j.snapshotBegin(n); buf != nil {
+		e := encoder{buf: buf}
+		r.encode(&e)
+	}
+	s.j.snapshotEnd(RecordInode, n)
+	if r.Mode&modeTypeMask == modeRegular {
+		const n = 24
+		if buf := s.j.snapshotBegin(n); buf != nil {
+			encodeExtent(buf, r.Ino, 0, maxFileOffset, 0)
+		}
+		s.j.snapshotEnd(RecordExtentClear, n)
+	}
+}
+
+// DirentAdd writes a RecordDirentAdd record.
+func (s *Snapshot) DirentAdd(parent uint64, name string, child uint64) {
+	n := direntAddLen(name)
+	if buf := s.j.snapshotBegin(n); buf != nil {
+		encodeDirentAdd(buf, parent, name, child)
+	}
+	s.j.snapshotEnd(RecordDirentAdd, n)
+}
+
+// ExtentSet writes a RecordExtentSet record.
+func (s *Snapshot) ExtentSet(ino, off, length, mfOff uint64) {
+	const n = 32
+	if buf := s.j.snapshotBegin(n); buf != nil {
+		encodeExtent(buf, ino, off, length, mfOff)
+		// Until Commit, the mark must also cover the active region, so
+		// it can only grow here.
+		end := extentEnd(length, mfOff)
+		s.j.raiseFilestoreEndLocked(end)
+		s.j.nextEnd = max(s.j.nextEnd, end)
+	}
+	s.j.snapshotEnd(RecordExtentSet, n)
+}
+
+// ErrSnapshotOverflow is returned by Commit if the snapshot and the records
+// that were appended during the compaction did not fit in the region. The
+// caller can retry with a larger size.
+var ErrSnapshotOverflow = errors.New("journal snapshot does not fit in its region")
+
+// Commit makes the snapshot the active region. If the snapshot did not fit in
+// the region, Commit returns an error that wraps ErrSnapshotOverflow, and the
+// old region stays active.
+func (s *Snapshot) Commit() error {
+	j := s.j
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	next := j.next
+	j.next = nil
+	if next == nil {
+		return fmt.Errorf("journal closed during compaction")
+	}
+	if next.full {
+		return fmt.Errorf("%w: region size is %d bytes", ErrSnapshotOverflow, next.size)
+	}
+	// This single atomic store makes the new region active and clears
+	// brokenBit and incompleteBit.
+	j.gen++
+	j.storeActive(j.gen)
+	j.active = *next
+	// Before this point, the mark covers the extents of both regions.
+	// Shrink it to the extents of the new active region. A crash between the
+	// two stores leaves a mark that is too high, which is safe.
+	j.filestoreEnd = j.nextEnd
+	atomicStore64(j.header[filestoreEndOff:filestoreEndOff+8], j.nextEnd)
+	return nil
+}
+
+// Abort abandons the snapshot. The old region stays active.
+func (s *Snapshot) Abort() {
+	j := s.j
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.next = nil
 }
 
 // SnapshotSizer computes the size of snapshot records for BeginSnapshot. It
