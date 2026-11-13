@@ -206,6 +206,7 @@ func (rf *regularFile) truncate(newSize uint64) error {
 		return err
 	}
 	rf.inode.touchCMtimeLocked()
+	rf.inode.journalInodeLocked()
 	return nil
 }
 
@@ -266,6 +267,8 @@ func (rf *regularFile) truncateNoTimeUpdateLocked(newSize uint64) error {
 	// We are now guaranteed that there are no translations of truncated pages,
 	// and can remove them.
 	rf.dataMu.Lock()
+	// Journal the removal before the pages are freed.
+	rf.journalExtentClearLocked(memmap.MappableRange{Start: newpgend, End: journalMaxFileOffset})
 	decPages := rf.data.Truncate(newSize, rf.inode.fs.mf)
 	rf.dataMu.Unlock()
 	rf.inode.fs.unaccountPages(decPages)
@@ -392,6 +395,9 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	// rf.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
+	if pagesAlloced != 0 {
+		rf.journalExtentsLocked(fillRange)
+	}
 
 	// translateRange bounds how far Translate extends the returned translation
 	// over pages that are *already* present, beyond the allocation-bounded
@@ -504,17 +510,21 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		}
 		required := memmap.MappableRange{Start: curPgStart, End: curPgEnd}
 		if err := f.allocateLocked(ctx, mode, newSize, required, memCgID); err != nil {
+			// Earlier chunks may have grown the file.
+			f.inode.journalInodeLocked()
 			return err
 		}
 		// This loop can take a long time to process, so periodically check for
 		// interrupts. This also pets the watchdog.
 		if ctx.Interrupted() {
+			f.inode.journalInodeLocked()
 			return linuxerr.EINTR
 		}
 		// Advance curPgStart.
 		curPgStart = curPgEnd
 	}
 	f.inode.touchCMtimeLocked()
+	f.inode.journalInodeLocked()
 	return nil
 }
 
@@ -557,6 +567,9 @@ func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64,
 	// f.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
+	if pagesAlloced != 0 {
+		rf.journalExtentsLocked(required)
+	}
 	if err != nil && err != io.EOF {
 		return err
 	}
@@ -666,6 +679,8 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		}
 	}
 	f.inode.xattrs.KillPriv()
+	// Journal the new size and times after the data is written.
+	f.inode.journalInodeLocked()
 	putRegularFileReadWriter(rw)
 	return n, n + offset, err
 }
@@ -936,6 +951,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 
 			// Write to that memory as usual.
 			seg, gap = rw.file.data.Insert(gap, gapMR, fr.Start), fsutil.FileRangeGapIterator{}
+			rw.file.journalExtentSetLocked(gapMR, fr.Start)
 		default:
 			panic("unreachable")
 		}

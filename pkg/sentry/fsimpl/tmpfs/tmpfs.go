@@ -876,6 +876,8 @@ func (i *inode) tryIncRef() bool {
 func (i *inode) decRef(ctx context.Context) {
 	i.refs.DecRef(func() {
 		i.watches.HandleDeletion(ctx)
+		// Journal the release before the pages are freed below.
+		i.journalRelease()
 		// Remove pages used if child being removed is a SymLink or Regular File.
 		switch impl := i.impl.(type) {
 		case *directory:
@@ -1094,6 +1096,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	if needsCtimeBump {
 		i.ctime.Store(now)
 	}
+	i.journalInodeLocked()
 
 	return nil
 }
@@ -1255,7 +1258,11 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, acl, kuid, kgid); err != nil {
 		return err
 	}
-	return i.xattrs.SetXattr(creds, mode, kuid, kgid, opts)
+	if err := i.xattrs.SetXattr(creds, mode, kuid, kgid, opts); err != nil {
+		return err
+	}
+	i.journalInode()
+	return nil
 }
 
 func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
@@ -1282,7 +1289,11 @@ func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 		return err
 	}
 
-	return i.xattrs.RemoveXattr(creds, mode, kuid, name)
+	if err := i.xattrs.RemoveXattr(creds, mode, kuid, name); err != nil {
+		return err
+	}
+	i.journalInode()
+	return nil
 }
 
 func (i *inode) setPosixACL(creds *auth.Credentials, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
@@ -1325,14 +1336,18 @@ func (i *inode) setPosixACL(creds *auth.Credentials, t vfs.ACLType, acl *vfs.Pos
 		if equiv {
 			// If the ACL can be represented simply as a mode, no need for the ACL.
 			i.accessACL.Store(nil)
+			i.journalInodeLocked()
 			return nil, linux.FileMode(newMode), nil
 		}
 		// Otherwise, store the ACL too for permission checking.
 		i.accessACL.Store(acl)
+		i.journalInodeLocked()
 		return acl, linux.FileMode(newMode), nil
 	case vfs.DefaultACL:
 		i.defaultACL.Store(acl)
-		return acl, linux.FileMode(i.mode.Load()), nil
+		newMode := linux.FileMode(i.mode.Load())
+		i.journalInode()
+		return acl, newMode, nil
 	}
 
 	return nil, 0, linuxerr.EOPNOTSUPP

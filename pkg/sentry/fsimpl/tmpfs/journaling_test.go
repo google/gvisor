@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -291,6 +292,15 @@ func (s *journalScript) open(path string, flags uint32) *vfs.FileDescription {
 	return fd
 }
 
+func (s *journalScript) pwrite(fd *vfs.FileDescription, data []byte, off int64) {
+	s.t.Helper()
+	n, err := fd.PWrite(s.ctx, usermem.BytesIOSequence(data), off, vfs.WriteOptions{})
+	s.check(err, "pwrite")
+	if n != int64(len(data)) {
+		s.t.Fatalf("pwrite wrote %d bytes, want %d", n, len(data))
+	}
+}
+
 func (s *journalScript) write(fd *vfs.FileDescription, data []byte) {
 	s.t.Helper()
 	n, err := fd.Write(s.ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
@@ -298,6 +308,21 @@ func (s *journalScript) write(fd *vfs.FileDescription, data []byte) {
 	if n != int64(len(data)) {
 		s.t.Fatalf("write wrote %d bytes, want %d", n, len(data))
 	}
+}
+
+func (s *journalScript) setStat(path string, stat linux.Statx) {
+	s.t.Helper()
+	s.check(s.m.vfsObj.SetStatAt(s.ctx, s.creds, s.m.pop(path), &vfs.SetStatOptions{Stat: stat}), "setstat "+path)
+}
+
+func (s *journalScript) rename(from, to string, flags uint32) {
+	s.t.Helper()
+	s.check(s.m.vfsObj.RenameAt(s.ctx, s.creds, s.m.pop(from), s.m.pop(to), &vfs.RenameOptions{Flags: flags}), "rename "+from)
+}
+
+func (s *journalScript) mknod(path string, mode linux.FileMode, major, minor uint32) {
+	s.t.Helper()
+	s.check(s.m.vfsObj.MknodAt(s.ctx, s.creds, s.m.pop(path), &vfs.MknodOptions{Mode: mode, DevMajor: major, DevMinor: minor}), "mknod "+path)
 }
 
 func rootCreds() *auth.Credentials {
@@ -310,6 +335,188 @@ func pattern(n int, seed byte) []byte {
 		b[i] = seed + byte(i*7)
 	}
 	return b
+}
+
+func (s *journalScript) run() []*vfs.FileDescription {
+	var keep []*vfs.FileDescription
+	s.mkdir("/d", 0755)
+	s.mkdir("/d/e", 0750)
+
+	f := s.open("/d/f", linux.O_RDWR|linux.O_CREAT)
+	s.write(f, []byte("hello"))
+	s.pwrite(f, []byte("world"), int64(3*pageSize))
+	af := s.open("/d/f", linux.O_WRONLY|linux.O_APPEND)
+	s.write(af, []byte("!!"))
+
+	big := s.open("/big", linux.O_RDWR|linux.O_CREAT)
+	s.write(big, pattern(20*int(pageSize), 1))
+	s.setStat("/big", linux.Statx{Mask: linux.STATX_SIZE, Size: 5*pageSize + 100})
+	s.pwrite(big, pattern(1000, 9), int64(2*pageSize-500))
+
+	g := s.open("/g", linux.O_RDWR|linux.O_CREAT)
+	s.write(g, pattern(3000, 3))
+	s.rename("/g", "/d/f", 0)
+	keep = append(keep, f, af, g)
+
+	s.check(s.m.vfsObj.LinkAt(s.ctx, s.creds, s.m.pop("/big"), s.m.pop("/d/e/hard")), "link")
+	s.check(s.m.vfsObj.UnlinkAt(s.ctx, s.creds, s.m.pop("/big")), "unlink")
+	keep = append(keep, big)
+
+	s.check(s.m.vfsObj.SymlinkAt(s.ctx, s.creds, s.m.pop("/d/s"), "../d/e/hard"), "symlink")
+	s.setStat("/d/e", linux.Statx{Mask: linux.STATX_MODE, Mode: 0700})
+	s.setStat("/d/e/hard", linux.Statx{Mask: linux.STATX_UID | linux.STATX_GID, UID: 123, GID: 456})
+	s.setStat("/d/f", linux.Statx{
+		Mask:  linux.STATX_ATIME | linux.STATX_MTIME,
+		Atime: linux.StatxTimestamp{Sec: 1000, Nsec: 1},
+		Mtime: linux.StatxTimestamp{Sec: 2000, Nsec: 2},
+	})
+
+	s.check(s.m.vfsObj.SetXattrAt(s.ctx, s.creds, s.m.pop("/d/e/hard"), &vfs.SetXattrOptions{Name: "user.foo", Value: "bar"}), "setxattr")
+	s.check(s.m.vfsObj.SetXattrAt(s.ctx, s.creds, s.m.pop("/d"), &vfs.SetXattrOptions{Name: "trusted.overlay.opaque", Value: "y"}), "setxattr")
+	s.check(s.m.vfsObj.SetXattrAt(s.ctx, s.creds, s.m.pop("/d"), &vfs.SetXattrOptions{Name: "user.gone", Value: "x"}), "setxattr")
+	s.check(s.m.vfsObj.RemoveXattrAt(s.ctx, s.creds, s.m.pop("/d"), "user.gone"), "removexattr")
+
+	s.mknod("/wh1", linux.FileMode(linux.S_IFCHR|linux.WHITEOUT_MODE), 0, 0)
+	s.mknod("/d/wh2", linux.FileMode(linux.S_IFCHR|linux.WHITEOUT_MODE), 0, 0)
+	s.mknod("/fifo", linux.S_IFIFO|0640, 0, 0)
+	s.mknod("/null", linux.S_IFCHR|0666, 1, 3)
+
+	fa := s.open("/fa", linux.O_RDWR|linux.O_CREAT)
+	s.check(fa.Allocate(s.ctx, 0, 0, 3*pageSize), "fallocate")
+	keep = append(keep, fa)
+
+	x := s.open("/x", linux.O_RDWR|linux.O_CREAT)
+	s.write(x, []byte("x"))
+	s.mkdir("/d/y", 0755)
+	s.rename("/x", "/d/y", linux.RENAME_EXCHANGE)
+	keep = append(keep, x)
+
+	s.mkdir("/d/e2", 0755)
+	s.check(s.m.vfsObj.RmdirAt(s.ctx, s.creds, s.m.pop("/d/e2")), "rmdir")
+
+	tmp := s.open("/tmpf", linux.O_RDWR|linux.O_CREAT)
+	s.write(tmp, pattern(int(pageSize), 5))
+	s.check(s.m.vfsObj.UnlinkAt(s.ctx, s.creds, s.m.pop("/tmpf")), "unlink")
+	s.write(tmp, pattern(int(pageSize), 6))
+	keep = append(keep, tmp)
+	return keep
+}
+
+func (s *journalScript) runAfterCompaction() []*vfs.FileDescription {
+	var keep []*vfs.FileDescription
+	mm := s.open("/mm", linux.O_RDWR|linux.O_CREAT)
+	s.setStat("/mm", linux.Statx{Mask: linux.STATX_SIZE, Size: 3 * pageSize})
+	rf := mm.Impl().(*regularFileFD).inode().impl.(*regularFile)
+	ts, err := rf.Translate(s.ctx, memmap.MappableRange{Start: pageSize, End: 2 * pageSize}, memmap.MappableRange{Start: 0, End: 3 * pageSize}, hostarch.Write)
+	s.check(err, "Translate")
+	for _, tr := range ts {
+		ims, err := tr.File.MapInternal(memmap.FileRange{Start: tr.Offset, End: tr.Offset + tr.Source.Length()}, hostarch.Write)
+		s.check(err, "MapInternal")
+		if _, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(pattern(int(tr.Source.Length()), 7)))); err != nil {
+			s.t.Fatalf("copy: %v", err)
+		}
+	}
+	keep = append(keep, mm)
+
+	s.mkdir("/after", 0755)
+	f := s.open("/after/f", linux.O_RDWR|linux.O_CREAT)
+	s.write(f, pattern(5000, 8))
+	s.setStat("/after/f", linux.Statx{Mask: linux.STATX_SIZE, Size: 10})
+	reuse := s.open("/after/reuse", linux.O_RDWR|linux.O_CREAT)
+	s.write(reuse, pattern(3*int(pageSize), 4))
+	s.setStat("/after/f", linux.Statx{Mask: linux.STATX_SIZE, Size: 2 * pageSize})
+	keep = append(keep, reuse)
+	s.rename("/d/s", "/after/s", 0)
+	s.check(s.m.vfsObj.UnlinkAt(s.ctx, s.creds, s.m.pop("/wh1")), "unlink")
+	keep = append(keep, f)
+	h := s.open("/d/e/hard", linux.O_RDWR|linux.O_TRUNC)
+	s.write(h, []byte("truncated"))
+	keep = append(keep, h)
+	return keep
+}
+
+func TestJournalCrashRebuild(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd := newJournalTestFD(t)
+	const regionSize = 1 << 20
+
+	m1 := mountFreshJournaled(t, ctx, fd, regionSize)
+	s := &journalScript{t: t, ctx: m1.ctx, creds: rootCreds(), m: m1}
+	s.run()
+	if err := m1.fs.compactJournal(); err != nil {
+		t.Fatalf("compactJournal: %v", err)
+	}
+	s.runAfterCompaction()
+	want := m1.model(t)
+	if _, ok := want["/tmpf"]; ok {
+		t.Fatalf("model has unlinked file")
+	}
+	if m1.fs.journal.Load().Broken() {
+		t.Fatalf("journal broken")
+	}
+	m1.crash()
+
+	m2 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
+	compareModels(t, "after crash", m2.model(t), want)
+	if m2.fs.ovlWhiteout == nil {
+		t.Errorf("rebuilt filesystem has no shared whiteout")
+	}
+
+	if err := m2.fs.compactJournal(); err != nil {
+		t.Fatalf("compactJournal: %v", err)
+	}
+	m2.crash()
+	m3 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
+	compareModels(t, "after compaction and crash", m3.model(t), want)
+
+	s3 := &journalScript{t: t, ctx: m3.ctx, creds: rootCreds(), m: m3}
+	s3.mkdir("/new", 0755)
+	model3 := m3.model(t)
+	for p, fm := range want {
+		if fm.Ino == model3["/new"].Ino {
+			t.Errorf("new directory reuses inode number %d of %q", fm.Ino, p)
+		}
+	}
+	m3.crash()
+
+	// Import without keeping runtime journaling enabled: rebuilds state and
+	// adopts data pages cleanly without starting a journal.
+	m4 := mountImported(t, ctx, fd, regionSize, false /* keepJournal */)
+	compareModels(t, "after unjournaled import", m4.model(t), model3)
+	if m4.fs.journal.Load() != nil {
+		t.Errorf("unjournaled import started a journal")
+	}
+	s4 := &journalScript{t: t, ctx: m4.ctx, creds: rootCreds(), m: m4}
+	f4 := s4.open("/after-unjournaled", linux.O_RDWR|linux.O_CREAT)
+	s4.write(f4, []byte("still writable"))
+	f4.DecRef(m4.ctx)
+	m4.fs.Release(m4.ctx)
+	m4.mf.Destroy()
+}
+
+func TestJournalCleanRelease(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd := newJournalTestFD(t)
+	const regionSize = 1 << 20
+	m1 := mountFreshJournaled(t, ctx, fd, regionSize)
+	s := &journalScript{t: t, ctx: m1.ctx, creds: rootCreds(), m: m1}
+	s.mkdir("/d", 0755)
+	f := s.open("/d/f", linux.O_RDWR|linux.O_CREAT)
+	s.write(f, pattern(10000, 1))
+	f.DecRef(ctx)
+	want := m1.model(t)
+
+	m1.fs.Release(ctx)
+	for _, e := range want["/d/f"].Extents {
+		fr := memmap.FileRange{Start: e[2], End: e[2] + e[1] - e[0]}
+		if !m1.mf.HasUniqueRef(fr) {
+			t.Errorf("Release freed pages %v", fr)
+		}
+	}
+	m1.mf.Destroy()
+
+	m2 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
+	compareModels(t, "after release", m2.model(t), want)
 }
 
 func createFiles(t *testing.T, m *journaledTmpfs, n int) {
