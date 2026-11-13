@@ -10,6 +10,8 @@ go_library(
     srcs = [
         "journal.go",
         "journal_unsafe.go",
+        "record.go",
+        "replay.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
