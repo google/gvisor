@@ -156,7 +156,10 @@ func TestSnapshotTooLarge(t *testing.T) {
 	if err := s.Commit(); err == nil {
 		t.Fatalf("Commit of an oversized snapshot succeeded")
 	}
-	mustOpen(t, fd, opts)
+	_, _, st := mustOpen(t, fd, opts)
+	if n := len(st.Inodes); n != 1 {
+		t.Fatalf("got %d inodes, want 1", n)
+	}
 }
 
 func TestHeaderValidation(t *testing.T) {
