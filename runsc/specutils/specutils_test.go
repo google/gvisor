@@ -452,6 +452,45 @@ func TestSpecInvalid(t *testing.T) {
 			error: "rootfs tar upper path is set but rootfs is readonly",
 		},
 		{
+			name: "journal annotation disabled by default",
+			spec: specs.Spec{
+				Root:    &specs.Root{Path: "/"},
+				Process: &specs.Process{Args: []string{"/bin/true"}},
+				Annotations: map[string]string{
+					AnnotationRootfsUpperJournal: "true",
+				},
+			},
+			error: "journaling rootfs upper annotations are disabled, use --journaling-rootfs-upper-annotations=on to enable them",
+		},
+		{
+			name: "journal import procfs annotation rejected even when annotations enabled",
+			spec: specs.Spec{
+				Root:    &specs.Root{Path: "/"},
+				Process: &specs.Process{Args: []string{"/bin/true"}},
+				Annotations: map[string]string{
+					AnnotationRootfsUpperJournalImport: "/proc/self/fd/3",
+				},
+			},
+			conf: config.Config{
+				JournalingRootfsUpperAnnotations: config.JournalingRootfsUpperAnnotationsOn,
+			},
+			error: "cannot use procfs/devfd path",
+		},
+		{
+			name: "readonly rootfs with journal annotation enabled",
+			spec: specs.Spec{
+				Root:    &specs.Root{Readonly: true, Path: "/"},
+				Process: &specs.Process{Args: []string{"/bin/true"}},
+				Annotations: map[string]string{
+					AnnotationRootfsUpperJournal: "true",
+				},
+			},
+			conf: config.Config{
+				JournalingRootfsUpperAnnotations: config.JournalingRootfsUpperAnnotationsOn,
+			},
+			error: "journaling rootfs upper is configured but rootfs is readonly",
+		},
+		{
 			name: "sandbox spec",
 			spec: specs.Spec{
 				Hostname: "pod",
@@ -870,6 +909,135 @@ func TestRootfsUpperTarPath(t *testing.T) {
 	}
 }
 
+func TestJournalingRootfsUpper(t *testing.T) {
+	sub := func(annotations map[string]string) specs.Spec {
+		a := map[string]string{
+			ContainerdContainerTypeAnnotation: ContainerdContainerTypeContainer,
+			ContainerdContainerNameAnnotation: "cont",
+		}
+		for k, v := range annotations {
+			a[k] = v
+		}
+		return specs.Spec{Annotations: a}
+	}
+	for _, tc := range []struct {
+		name        string
+		spec        specs.Spec
+		flag        config.JournalingRootfsUpperPolicy
+		flagImport  string
+		flagImageID string
+		want        JournalingRootfsUpperConfig
+		wantErr     string
+	}{
+		{
+			name: "nothing set",
+		},
+		{
+			name:        "flags enable and import",
+			flag:        config.JournalingRootfsUpperOn,
+			flagImport:  "/imported/filestore",
+			flagImageID: "image",
+			want:        JournalingRootfsUpperConfig{Enabled: true, ImportPath: "/imported/filestore", ImageID: "image"},
+		},
+		{
+			name:        "import only via flag",
+			flagImport:  "/proc/self/fd/7",
+			flagImageID: "image",
+			want:        JournalingRootfsUpperConfig{Enabled: false, ImportPath: "/proc/self/fd/7", ImageID: "image"},
+		},
+		{
+			name: "annotations",
+			spec: specs.Spec{Annotations: map[string]string{
+				AnnotationRootfsUpperJournal:        "true",
+				AnnotationRootfsUpperJournalImport:  "/imported/filestore",
+				AnnotationRootfsUpperJournalImageID: "image",
+			}},
+			want: JournalingRootfsUpperConfig{Enabled: true, ImportPath: "/imported/filestore", ImageID: "image"},
+		},
+		{
+			name: "subcontainer annotations",
+			spec: sub(map[string]string{
+				AnnotationRootfsUpperJournal + ".cont":        "true",
+				AnnotationRootfsUpperJournalImport + ".cont":  "/imported/sub",
+				AnnotationRootfsUpperJournalImageID + ".cont": "image",
+			}),
+			want: JournalingRootfsUpperConfig{Enabled: true, ImportPath: "/imported/sub", ImageID: "image"},
+		},
+		{
+			// Root flags only apply to the root container.
+			name:       "unselected subcontainer annotation",
+			spec:       sub(map[string]string{AnnotationRootfsUpperJournal + ".other": "true"}),
+			flag:       config.JournalingRootfsUpperOn,
+			flagImport: "/flag-import",
+		},
+		{
+			name:    "image ID annotation without journal or import",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournalImageID: "image"}},
+			wantErr: "requires",
+		},
+		{
+			name:    "flag on and annotation false differ",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "false"}},
+			flag:    config.JournalingRootfsUpperOn,
+			wantErr: "differ",
+		},
+		{
+			name:    "flag off and annotation true differ",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "true"}},
+			flag:    config.JournalingRootfsUpperOff,
+			wantErr: "differ",
+		},
+		{
+			name:       "import flag and annotation differ",
+			spec:       specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournalImport: "/a"}},
+			flagImport: "/b",
+			wantErr:    "differ",
+		},
+		{
+			name:    "invalid boolean annotation",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournal: "/not-a-bool"}},
+			wantErr: "invalid boolean",
+		},
+		{
+			name:    "relative import path",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournalImport: "relative/file"}},
+			wantErr: "absolute path",
+		},
+		{
+			name: "import mutually exclusive with tar",
+			spec: specs.Spec{Annotations: map[string]string{
+				AnnotationRootfsUpperJournalImport: "/imported/file",
+				AnnotationRootfsUpperTar:           "/upper.tar",
+			}},
+			wantErr: "mutually exclusive",
+		},
+		{
+			name:    "procfs import path rejected in annotation",
+			spec:    specs.Spec{Annotations: map[string]string{AnnotationRootfsUpperJournalImport: "/dev/fd/5"}},
+			wantErr: "cannot use procfs/devfd path",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{
+				JournalingRootfsUpperAnnotations: config.JournalingRootfsUpperAnnotationsOn,
+				JournalingRootfsUpper:            tc.flag,
+				JournalingRootfsUpperImport:      tc.flagImport,
+				JournalingRootfsUpperImageID:     tc.flagImageID,
+			}
+			got, err := JournalingRootfsUpper(&tc.spec, conf)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("JournalingRootfsUpper: got error %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Errorf("JournalingRootfsUpper: got %+v, %v; want %+v, nil", got, err, tc.want)
+			}
+		})
+	}
+}
+
 func TestIsProcFDPath(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -1267,6 +1435,84 @@ func TestValidateSpecForContainerMountAnnotationOptionsSize(t *testing.T) {
 			}),
 			new: newSpec(map[string]string{
 				"dev.gvisor.spec.rootfs.options": "size=2G",
+			}),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSpecForContainer(tc.old, tc.new, "test")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("validateSpecForContainer(%v, %v) = %v, wantErr %t", tc.old.Annotations, tc.new.Annotations, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateSpecForContainerJournalingRootfsUpper(t *testing.T) {
+	newSpec := func(annotations map[string]string) *specs.Spec {
+		return &specs.Spec{
+			Process: &specs.Process{
+				Args: []string{"/bin/true"},
+				Cwd:  "/",
+			},
+			Annotations: annotations,
+		}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		old, new *specs.Spec
+		wantErr  bool
+	}{
+		{
+			name: "journal_annotations_changed",
+			old: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal:        "true",
+				AnnotationRootfsUpperJournalImport:  "/old/import",
+				AnnotationRootfsUpperJournalImageID: "image-1",
+			}),
+			new: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal:        "false",
+				AnnotationRootfsUpperJournalImageID: "image-1",
+			}),
+		},
+		{
+			name: "container_specific_journal_annotations_changed",
+			old: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal + ".root":        "true",
+				AnnotationRootfsUpperJournalImport + ".root":  "/old/root",
+				AnnotationRootfsUpperJournalImageID + ".root": "image-1",
+			}),
+			new: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal + ".root":        "true",
+				AnnotationRootfsUpperJournalImageID + ".root": "image-1",
+			}),
+		},
+		{
+			name: "journaling_removed",
+			old: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal + ".root":        "true",
+				AnnotationRootfsUpperJournalImageID + ".root": "image-1",
+			}),
+			new: newSpec(nil),
+		},
+		{
+			name: "journaling_added",
+			old:  newSpec(nil),
+			new: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal + ".root":        "true",
+				AnnotationRootfsUpperJournalImageID + ".root": "image-1",
+			}),
+		},
+		{
+			name: "other_gvisor_annotation_still_validated",
+			old: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal:  "true",
+				"dev.gvisor.spec.rootfs.type": "overlay",
+			}),
+			new: newSpec(map[string]string{
+				AnnotationRootfsUpperJournal:  "false",
+				"dev.gvisor.spec.rootfs.type": "tmpfs",
 			}),
 			wantErr: true,
 		},
