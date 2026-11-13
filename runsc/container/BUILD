@@ -117,6 +117,55 @@ go_test(
 )
 
 go_test(
+    name = "fscheckpoint_compat_test",
+    size = "large",
+    srcs = [
+        "container_test.go",
+        "fscheckpoint_compat_test.go",
+        "multi_container_test.go",
+    ],
+    args = [
+        "--test_platforms=%s" % default_platform,
+    ],
+    data = [
+        "//:release",
+        "//test/cmd/test_app",
+    ],
+    embed = [":container"],
+    tags = [
+        "manual",
+        "notap",
+        "requires-kvm",
+    ],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/cleanup",
+        "//pkg/hostos",
+        "//pkg/log",
+        "//pkg/sentry/control/controlapi",
+        "//pkg/sentry/fscheckpoint",
+        "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
+        "//pkg/sentry/fsimpl/erofs",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/platform/platformdesc",
+        "//pkg/sentry/state/checkpointfiles",
+        "//pkg/state/statefile",
+        "//pkg/sync",
+        "//pkg/test/testutil",
+        "//runsc/boot/sentryapi",
+        "//runsc/cgroup",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/sandbox",
+        "//runsc/specutils",
+        "@com_github_cenkalti_backoff//:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
     name = "gofer_env_test",
     srcs = ["gofer_env_test.go"],
     embed = [":container"],
