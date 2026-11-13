@@ -519,6 +519,28 @@ func TestJournalCleanRelease(t *testing.T) {
 	compareModels(t, "after release", m2.model(t), want)
 }
 
+func TestJournalAutomaticCompaction(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd := newJournalTestFD(t)
+	const regionSize = 64 << 10
+	m1 := mountFreshJournaled(t, ctx, fd, regionSize)
+	s := &journalScript{t: t, ctx: m1.ctx, creds: rootCreds(), m: m1}
+	f := s.open("/f", linux.O_RDWR|linux.O_CREAT)
+	for i := 0; i < 2000; i++ {
+		for m1.fs.journal.Load().CompactionPending() {
+			runtime.Gosched()
+		}
+		s.pwrite(f, []byte{byte(i)}, int64(i))
+		if m1.fs.journal.Load().Broken() {
+			t.Fatalf("journal overflowed at iteration %d", i)
+		}
+	}
+	want := m1.model(t)
+	m1.crash()
+	m2 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
+	compareModels(t, "after automatic compactions", m2.model(t), want)
+}
+
 func createFiles(t *testing.T, m *journaledTmpfs, n int) {
 	t.Helper()
 	s := &journalScript{t: t, ctx: m.ctx, creds: rootCreds(), m: m}
@@ -554,4 +576,82 @@ func TestJournalLargeSnapshot(t *testing.T) {
 	m2.crash()
 	m3 := mountImported(t, ctx, fd, regionSize, true /* keepJournal */)
 	compareModels(t, "after rebuild and crash", m3.model(t), want)
+}
+
+func TestJournalPrepareSaveStopsCompactorAndSelfWhiteoutsPreserveRootTimes(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd := newJournalTestFD(t)
+	m1 := mountFreshJournaled(t, ctx, fd, 4*pageSize)
+	defer func() {
+		if m1 != nil {
+			m1.crash()
+		}
+	}()
+
+	creds := rootCreds()
+	if err := m1.vfsObj.MkdirAt(m1.ctx, creds, m1.pop("/sub"), &vfs.MkdirOptions{Mode: 0755}); err != nil {
+		t.Fatalf("MkdirAt(/sub): %v", err)
+	}
+	wantMtime := linux.StatxTimestamp{Sec: 1234567890, Nsec: 42}
+	if err := m1.vfsObj.SetStatAt(m1.ctx, creds, m1.pop("/"), &vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask:  linux.STATX_MTIME,
+			Mtime: wantMtime,
+		},
+	}); err != nil {
+		t.Fatalf("SetStatAt(/): %v", err)
+	}
+	beforeStat, err := m1.vfsObj.StatAt(m1.ctx, creds, m1.pop("/"), &vfs.StatOptions{Mask: linux.STATX_MTIME | linux.STATX_CTIME})
+	if err != nil {
+		t.Fatalf("StatAt(/): %v", err)
+	}
+
+	if err := SyncSelfFilestoreWhiteouts(m1.ctx, &m1.fs.vfsfs, ".gvisor.filestore.sb1", nil); err != nil {
+		t.Fatalf("SyncSelfFilestoreWhiteouts(sb1): %v", err)
+	}
+	afterStat, err := m1.vfsObj.StatAt(m1.ctx, creds, m1.pop("/"), &vfs.StatOptions{Mask: linux.STATX_MTIME | linux.STATX_CTIME})
+	if err != nil {
+		t.Fatalf("StatAt(/) after whiteout: %v", err)
+	}
+	if afterStat.Mtime != beforeStat.Mtime || afterStat.Ctime != beforeStat.Ctime {
+		t.Errorf("root timestamps changed on SyncSelfFilestoreWhiteouts: got mtime=%+v ctime=%+v, want mtime=%+v ctime=%+v", afterStat.Mtime, afterStat.Ctime, beforeStat.Mtime, beforeStat.Ctime)
+	}
+
+	// PrepareSave must stop the compactor, and BeforeResume must restart it so
+	// subsequent writes that exceed half the region still compact cleanly.
+	if err := m1.fs.PrepareSave(m1.ctx, vfs.PrepareSaveOptions{}); err != nil {
+		t.Fatalf("PrepareSave: %v", err)
+	}
+	if m1.fs.journalStop != nil {
+		t.Fatalf("journalCompactor still running after PrepareSave")
+	}
+	m1.fs.BeforeResume(m1.ctx)
+	if m1.fs.journalStop == nil {
+		t.Fatalf("journalCompactor not restarted by BeforeResume")
+	}
+	for i := 0; i < 40; i++ {
+		f, err := m1.vfsObj.OpenAt(m1.ctx, creds, m1.pop(fmt.Sprintf("/sub/file-%03d", i)), &vfs.OpenOptions{Flags: linux.O_RDWR | linux.O_CREAT, Mode: 0644})
+		if err != nil {
+			t.Fatalf("OpenAt: %v", err)
+		}
+		f.DecRef(m1.ctx)
+	}
+	m1.crash()
+	m1 = nil
+
+	m2 := mountImported(t, ctx, fd, 4*pageSize, true /* keepJournal */)
+	defer m2.crash()
+	if err := SyncSelfFilestoreWhiteouts(m2.ctx, &m2.fs.vfsfs, ".gvisor.filestore.sb2", SelfFilestoreWhiteouts(&m2.fs.vfsfs)); err != nil {
+		t.Fatalf("SyncSelfFilestoreWhiteouts(sb2): %v", err)
+	}
+	if got := SelfFilestoreWhiteouts(&m2.fs.vfsfs); len(got) != 1 || got[0] != ".gvisor.filestore.sb2" {
+		t.Errorf("SelfFilestoreWhiteouts after prune = %v, want [\".gvisor.filestore.sb2\"]", got)
+	}
+	importedStat, err := m2.vfsObj.StatAt(m2.ctx, creds, m2.pop("/"), &vfs.StatOptions{Mask: linux.STATX_MTIME})
+	if err != nil {
+		t.Fatalf("StatAt(/) on m2: %v", err)
+	}
+	if importedStat.Mtime != wantMtime {
+		t.Errorf("imported root mtime = %+v, want %+v", importedStat.Mtime, wantMtime)
+	}
 }
