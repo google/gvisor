@@ -186,6 +186,36 @@ func (r *InodeRecord) encode(e *encoder) {
 	}
 }
 
+func (r *InodeRecord) decode(d *decoder) error {
+	r.Ino = d.u64()
+	r.Mode = d.u32()
+	r.UID = d.u32()
+	r.GID = d.u32()
+	r.Atime = int64(d.u64())
+	r.Mtime = int64(d.u64())
+	r.Ctime = int64(d.u64())
+	r.Btime = int64(d.u64())
+	r.Size = d.u64()
+	r.RdevMajor = d.u32()
+	r.RdevMinor = d.u32()
+	r.Target = d.str32(MaxSymlinkLen)
+	n := d.u32()
+	if d.err != nil {
+		return d.err
+	}
+	if n > MaxXattrs {
+		return fmt.Errorf("inode %d has %d xattrs, more than %d", r.Ino, n, MaxXattrs)
+	}
+	r.Xattrs = nil
+	if n != 0 {
+		r.Xattrs = make([]Xattr, n)
+	}
+	for i := range r.Xattrs {
+		r.Xattrs[i].Name = d.str16(MaxXattrNameLen)
+		r.Xattrs[i].Value = d.str32(MaxXattrValueLen)
+	}
+	return d.err
+}
 
 // encoder writes little-endian values into a byte slice. Callers must size
 // buf in advance.
@@ -219,3 +249,79 @@ func (e *encoder) str32(s string) {
 	e.off += copy(e.buf[e.off:], s)
 }
 
+// decoder reads little-endian values from an untrusted byte slice. The first
+// out-of-bounds read sets err; later reads return zero values.
+type decoder struct {
+	buf []byte
+	off int
+	err error
+}
+
+func (d *decoder) need(n int) bool {
+	if d.err != nil {
+		return false
+	}
+	if n < 0 || len(d.buf)-d.off < n {
+		d.err = fmt.Errorf("truncated payload: need %d bytes at offset %d of %d", n, d.off, len(d.buf))
+		return false
+	}
+	return true
+}
+
+func (d *decoder) u16() uint16 {
+	if !d.need(2) {
+		return 0
+	}
+	v := binary.LittleEndian.Uint16(d.buf[d.off:])
+	d.off += 2
+	return v
+}
+
+func (d *decoder) u32() uint32 {
+	if !d.need(4) {
+		return 0
+	}
+	v := binary.LittleEndian.Uint32(d.buf[d.off:])
+	d.off += 4
+	return v
+}
+
+func (d *decoder) u64() uint64 {
+	if !d.need(8) {
+		return 0
+	}
+	v := binary.LittleEndian.Uint64(d.buf[d.off:])
+	d.off += 8
+	return v
+}
+
+func (d *decoder) bytes(n int, max int) string {
+	if d.err == nil && n > max {
+		d.err = fmt.Errorf("string length %d exceeds limit %d", n, max)
+	}
+	if !d.need(n) {
+		return ""
+	}
+	s := string(d.buf[d.off : d.off+n])
+	d.off += n
+	return s
+}
+
+func (d *decoder) str16(max int) string {
+	return d.bytes(int(d.u16()), max)
+}
+
+func (d *decoder) str32(max int) string {
+	return d.bytes(int(d.u32()), max)
+}
+
+// done returns an error if d failed or if bytes remain unread.
+func (d *decoder) done() error {
+	if d.err != nil {
+		return d.err
+	}
+	if d.off != len(d.buf) {
+		return fmt.Errorf("%d trailing payload bytes", len(d.buf)-d.off)
+	}
+	return nil
+}

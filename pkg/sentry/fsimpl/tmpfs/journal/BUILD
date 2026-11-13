@@ -18,6 +18,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/sentry/fsutil",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",
