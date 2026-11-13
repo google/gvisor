@@ -153,6 +153,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		BundleDir:           bundleDir,
 		ConsoleSocket:       r.consoleSocket,
 		PIDFile:             r.pidFile,
+		PidfdSocket:         r.pidfdSocket,
 		UserLog:             r.userLog,
 		Attached:            !r.detach,
 		FSRestoreImagePaths: []string(r.fsRestoreImagePaths),
@@ -195,6 +196,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 			c.Destroy()
 		})
 	} else {
+		if r.pidfdSocket != "" {
+			return util.Errorf("pidfd-socket must be supplied when creating the sandbox, not when restoring an existing sandbox")
+		}
 		if len(r.passFDs) != 0 {
 			return util.Errorf("pass-fd must be supplied when creating the container, not when restoring an existing container")
 		}

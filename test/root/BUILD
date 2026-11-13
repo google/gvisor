@@ -28,6 +28,7 @@ go_test(
         "chroot_test.go",
         "main_test.go",
         "oom_score_adj_test.go",
+        "pidfd_test.go",
         "runsc_test.go",
         "sandboxposture_test.go",
     ],

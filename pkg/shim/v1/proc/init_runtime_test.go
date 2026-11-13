@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -159,7 +160,13 @@ func newRuntimeWedgedInit(t *testing.T) *Init {
 		t.Fatalf("write fake runsc: %v", err)
 	}
 	p := New("test", &runsccmd.Runsc{Command: fake, Root: t.TempDir()}, stdio.Stdio{})
+	p.Monitor = testProcessMonitor{}
 	p.initState = &runningState{p: p}
+	t.Cleanup(func() {
+		if p.cancelSandboxExit != nil {
+			p.cancelSandboxExit()
+		}
+	})
 	return p
 }
 
@@ -214,9 +221,92 @@ func init() {
 				}
 			}
 			_ = gate.Close()
+		} else if err := runExitTestRuntime(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}
+}
+
+func runExitTestRuntime() error {
+	options := make(map[string]string)
+	operation := ""
+	for i, arg := range os.Args[1:] {
+		switch arg {
+		case "create", "start", "restore", "wait", "delete":
+			operation = arg
+		}
+		if key, value, ok := strings.Cut(arg, "="); ok {
+			options[key] = value
+		} else if strings.HasPrefix(arg, "--") && i+2 < len(os.Args) {
+			options[arg] = os.Args[i+2]
+		}
+	}
+	bundle := options["--bundle"]
+	if bundle == "" {
+		bundle = options["--root"]
+	}
+	switch operation {
+	case "create":
+		if options["--pidfd-socket"] == "" {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(bundle, "missing-pidfd")); err == nil {
+			return os.WriteFile(filepath.Join(bundle, "created-without-pidfd"), nil, 0o600)
+		}
+		pid, err := runc.ReadPidFile(options["--pid-file"])
+		if err != nil {
+			return err
+		}
+		fd, err := unix.PidfdOpen(pid, 0)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(filepath.Join(bundle, "invalid-pidfd")); err == nil {
+			unix.Close(fd)
+			fd, err = unix.Open(os.DevNull, unix.O_RDONLY|unix.O_CLOEXEC, 0)
+			if err != nil {
+				return err
+			}
+		}
+		defer unix.Close(fd)
+		conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: options["--pidfd-socket"], Net: "unix"})
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		if _, _, err := conn.WriteMsgUnix([]byte("pidfd"), unix.UnixRights(fd), nil); err != nil {
+			return err
+		}
+		if _, err := os.Stat(filepath.Join(bundle, "kill-during-create")); err == nil {
+			return unix.PidfdSendSignal(fd, unix.SIGKILL, nil, 0)
+		}
+	case "start", "restore":
+		if _, err := os.Stat(filepath.Join(bundle, "fail-start")); err == nil {
+			return fmt.Errorf("start failed")
+		}
+	case "wait":
+		fmt.Print(`{"exitStatus":17}`)
+	case "delete":
+		if err := os.WriteFile(filepath.Join(bundle, "deleted"), nil, 0o600); err != nil {
+			return err
+		}
+		if _, err := os.Stat(filepath.Join(bundle, "hang-delete")); err == nil {
+			time.Sleep(time.Hour)
+		}
+		if _, err := os.Stat(filepath.Join(bundle, "fail-delete")); err == nil {
+			return fmt.Errorf("delete failed")
+		}
+		if _, err := os.Stat(filepath.Join(bundle, "delete-kills-test-child")); err == nil {
+			pid, err := runc.ReadPidFile(filepath.Join(bundle, "init.pid"))
+			if err != nil {
+				return err
+			}
+			return unix.Kill(pid, unix.SIGKILL)
+		}
+	}
+	return nil
 }
 
 func sandboxIdentityProcess(t *testing.T, bundle, executable string) (*exec.Cmd, *os.File) {
@@ -249,7 +339,7 @@ func TestCreatePinsOnlyMatchingSandbox(t *testing.T) {
 	t.Setenv("GVISOR_SHIM_TEST_RUNTIME_HELPER", "1")
 	probe := testPidfd(t, os.Getpid())
 	_ = unix.Close(probe)
-	for _, name := range []string{"Matching", "MatchingSymlink", "MatchingPATH", "MatchingBundleSymlink", "MatchingBundleTrailingSlash", "MatchingBundleRelative", "WrongBundle", "UnrelatedProcess", "SpoofedExecutable", "FailedIO", "Sidecar", "PluginSidecar", "OverrideSidecar", "LinkedSidecar", "WrongSidecar"} {
+	for _, name := range []string{"Matching", "MatchingSymlink", "MatchingPATH", "MatchingBundleSymlink", "MatchingBundleTrailingSlash", "MatchingBundleRelative", "WrongBundle", "UnrelatedProcess", "SpoofedExecutable", "FailedIO", "Sidecar", "PluginSidecar", "PrewarmerSidecar", "OverrideSidecar", "LinkedSidecar", "WrongSidecar", "WrongPrewarmerSidecar"} {
 		t.Run(name, func(t *testing.T) {
 			p := newRuntimeWedgedInit(t)
 			runscLongOperationTimeout = 5 * time.Second
@@ -310,12 +400,14 @@ func TestCreatePinsOnlyMatchingSandbox(t *testing.T) {
 				sentryName := "gvisor_sentry"
 				if name == "PluginSidecar" {
 					sentryName = "gvisor_sentry_plugin_stack"
+				} else if strings.Contains(name, "Prewarmer") {
+					sentryName = "gvisor-sentry-prewarmer"
 				}
 				processExe = filepath.Join(dir, sentryName)
 				if err := os.WriteFile(processExe, payload, 0o755); err != nil {
 					t.Fatal(err)
 				}
-				if name == "WrongSidecar" {
+				if strings.HasPrefix(name, "Wrong") {
 					processExe = filepath.Join(t.TempDir(), sentryName)
 					if err := os.WriteFile(processExe, payload, 0o755); err != nil {
 						t.Fatal(err)
@@ -360,7 +452,7 @@ func TestCreatePinsOnlyMatchingSandbox(t *testing.T) {
 			} else if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			want := strings.HasPrefix(name, "Matching") || strings.HasSuffix(name, "Sidecar") && name != "WrongSidecar"
+			want := strings.HasPrefix(name, "Matching") || strings.HasSuffix(name, "Sidecar") && !strings.HasPrefix(name, "Wrong")
 			if got := p.sandboxPidfd >= 0; got != want {
 				t.Fatalf("Create retained pidfd = %v, want %v", got, want)
 			}

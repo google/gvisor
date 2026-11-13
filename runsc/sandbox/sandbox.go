@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -310,6 +311,9 @@ type Args struct {
 	// ConsoleSocket is the path to a unix domain socket that will receive
 	// the console FD. It may be empty.
 	ConsoleSocket string
+
+	// PidfdSocket receives a pidfd for the new sandbox. It may be empty.
+	PidfdSocket string
 
 	// UserLog is the filename to send user-visible logs to. It may be empty.
 	UserLog string
@@ -1664,6 +1668,22 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	s.Pid.Store(cmd.Process.Pid)
 	if s.PidIdentity, err = specutils.ProcessIdentity(cmd.Process.Pid); err != nil {
 		return err
+	}
+	if args.PidfdSocket != "" {
+		// The child is still unreaped, so its PID cannot have been reused.
+		pidfd, err := unix.PidfdOpen(cmd.Process.Pid, 0)
+		if err != nil {
+			return fmt.Errorf("opening sandbox pidfd: %w", err)
+		}
+		defer unix.Close(pidfd)
+		conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: args.PidfdSocket, Net: "unix"})
+		if err != nil {
+			return fmt.Errorf("connecting to pidfd socket: %w", err)
+		}
+		defer conn.Close()
+		if _, _, err := conn.WriteMsgUnix([]byte("pidfd"), unix.UnixRights(pidfd), nil); err != nil {
+			return fmt.Errorf("sending sandbox pidfd: %w", err)
+		}
 	}
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 

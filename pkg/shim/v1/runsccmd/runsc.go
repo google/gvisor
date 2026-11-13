@@ -118,6 +118,9 @@ type CreateOpts struct {
 	// PidFile is a path to where a pid file should be created.
 	PidFile string
 
+	// PidfdSocket receives a pidfd for a newly created sandbox.
+	PidfdSocket string
+
 	// UserLog is a path to where runsc user log should be generated.
 	UserLog string
 
@@ -129,6 +132,9 @@ type CreateOpts struct {
 }
 
 func (o *CreateOpts) args() (out []string, err error) {
+	if o.PidfdSocket != "" {
+		out = append(out, "--pidfd-socket", o.PidfdSocket)
+	}
 	if o.PidFile != "" {
 		abs, err := filepath.Abs(o.PidFile)
 		if err != nil {
