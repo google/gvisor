@@ -297,9 +297,17 @@ const (
 
 // mlx5 driver-namespace object/method/attr IDs from
 // include/uapi/rdma/mlx5_user_ioctl_cmds.h. The UAR (User Access Region) is
-// the CQ/QP doorbell page.
+// the CQ/QP doorbell page. DEVX carries device firmware commands.
 const (
-	MLX5_IB_OBJECT_UAR = 0x1008
+	MLX5_IB_OBJECT_DEVX = 0x1000
+	MLX5_IB_OBJECT_UAR  = 0x1008
+
+	// enum mlx5_ib_devx_methods.
+	MLX5_IB_METHOD_DEVX_OTHER = 0x1000
+
+	// enum mlx5_ib_devx_other_attrs.
+	MLX5_IB_ATTR_DEVX_OTHER_CMD_IN  = 0x1000
+	MLX5_IB_ATTR_DEVX_OTHER_CMD_OUT = 0x1001
 
 	// enum mlx5_ib_uar_obj_methods.
 	MLX5_IB_METHOD_UAR_OBJ_ALLOC   = 0x1000
@@ -315,6 +323,10 @@ const (
 	// enum mlx5_ib_uar_obj_destroy_attrs.
 	MLX5_IB_ATTR_UAR_OBJ_DESTROY_HANDLE = 0x1000
 )
+
+// MLX5_CMD_OP_QUERY_HCA_CAP is the mlx5 firmware command opcode that reads a
+// device capability page (include/linux/mlx5/mlx5_ifc.h).
+const MLX5_CMD_OP_QUERY_HCA_CAP = 0x100
 
 // EFA driver-namespace method/attr IDs from include/uapi/rdma/efa-abi.h. EFA
 // extends the standard UVERBS_OBJECT_MR with a query method returning the
