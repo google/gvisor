@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && pagesize_64k
+//go:build arm64
 
 package pgalloc
 
@@ -23,31 +23,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
 
-const (
-	page     = hostarch.PageSize
-	hugepage = hostarch.HugePageSize
-)
-
-// existingSegment represents a range of pages in a test MemoryFile that is not
-// void or free.
-type existingSegment struct {
-	start uint64
-	end   uint64
-	state int
-}
-
-// Possible values for existingSegment.state:
-const (
-	existingUnspecified = iota
-	existingUsed
-	existingWaste
-	existingReleasing // or sub-releasing
-)
-
 // TestFindAllocatable64K tests allocation for 64K page size.
 // Note: For 64K pages, hugepage is 512MB and chunkSize is 1GB,
 // so chunkSize only holds 2 hugepages. Tests are adjusted accordingly.
 func TestFindAllocatable64K(t *testing.T) {
+	use64KPagesForTest(t)
+	page, hugepage := uint64(hostarch.PageSize), uint64(hostarch.HugePageSize)
 	for _, test := range []struct {
 		name string
 		// Initial state:

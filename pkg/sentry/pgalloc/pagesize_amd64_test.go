@@ -12,25 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && pagesize_64k
+//go:build amd64
 
-package hostarch
+package pgalloc
 
-import "golang.org/x/sys/unix"
+import "testing"
 
-const (
-	// PageShift is the binary log of the system page size.
-	// 64K pages: 2^16 = 65536
-	PageShift = 16
-
-	// HugePageShift is the binary log of the system huge page size.
-	// For 64K pages: PageShift + (PageShift - 3) = 16 + 13 = 29
-	// This gives 512MB huge pages.
-	HugePageShift = 29
-)
-
-func init() {
-	if size := unix.Getpagesize(); size != PageSize {
-		println("WARNING: host page size mismatch - running on non-64K host")
-	}
-}
+// use4KPagesForTest is a no-op on amd64, which only supports 4K pages.
+func use4KPagesForTest(*testing.T) {}

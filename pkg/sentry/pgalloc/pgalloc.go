@@ -1183,7 +1183,7 @@ func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
 		}
 		wroteAll = false
 		start := hostarch.PageRoundDown(n)
-		end := start + hostarch.PageSize
+		end := start + uint64(hostarch.PageSize)
 		buf := make([]byte, hostarch.PageSize)
 		rn, rerr := unix.Pread(fd, buf, int64(off+start))
 		if rerr != nil || rn != len(buf) || slices.ContainsFunc(buf, func(b byte) bool { return b != 0 }) {
