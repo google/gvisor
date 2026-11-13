@@ -270,6 +270,7 @@ func (rf *regularFile) truncateNoTimeUpdateLocked(newSize uint64) error {
 	// Journal the removal before the pages are freed.
 	rf.journalExtentClearLocked(memmap.MappableRange{Start: newpgend, End: journalMaxFileOffset})
 	decPages := rf.data.Truncate(newSize, rf.inode.fs.mf)
+	rf.maybeClearPageZeroOwnerLocked()
 	rf.dataMu.Unlock()
 	rf.inode.fs.unaccountPages(decPages)
 	return nil
@@ -396,6 +397,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
 	if pagesAlloced != 0 {
+		rf.recordPageZeroLocked(fillRange)
 		rf.journalExtentsLocked(fillRange)
 	}
 
@@ -568,6 +570,7 @@ func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64,
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
 	if pagesAlloced != 0 {
+		rf.recordPageZeroLocked(required)
 		rf.journalExtentsLocked(required)
 	}
 	if err != nil && err != io.EOF {
@@ -950,6 +953,9 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 			}
 
 			// Write to that memory as usual.
+			if fr.Start == 0 {
+				fs.pageZeroOwner.Store(rw.file)
+			}
 			seg, gap = rw.file.data.Insert(gap, gapMR, fr.Start), fsutil.FileRangeGapIterator{}
 			rw.file.journalExtentSetLocked(gapMR, fr.Start)
 		default:

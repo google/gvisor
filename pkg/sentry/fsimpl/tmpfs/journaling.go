@@ -26,9 +26,11 @@ import (
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -139,6 +141,195 @@ func (fs *filesystem) startJournal(j *journal.Journal) error {
 		return fmt.Errorf("failed to compact tmpfs journal: %w", err)
 	}
 	fs.startJournalCompactor()
+	return nil
+}
+
+// PrepareJournal creates an incomplete journal in vfsfs's MemoryFile after
+// relocating any regular-file page at offset 0 so page 0 can hold the journal
+// header. Callers should pause any tasks using vfsfs before calling
+// PrepareJournal, then pass the returned journal to ActivateJournal.
+func PrepareJournal(ctx context.Context, vfsfs *vfs.Filesystem, opts journal.Options) (*journal.Journal, error) {
+	fs, _ := vfsfs.Impl().(*filesystem)
+	if fs == nil {
+		return nil, fmt.Errorf("not a tmpfs filesystem")
+	}
+	if err := fs.relocatePageZero(ctx); err != nil {
+		return nil, err
+	}
+	return journal.CreateIncomplete(fs.mf, opts)
+}
+
+// relocatePageZero moves any regular-file data page stored at offset 0 of
+// fs.mf to a newly allocated page so that page 0 is free for the journal
+// header.
+func (fs *filesystem) relocatePageZero(ctx context.Context) error {
+	fs.mu.RLock()
+	if fs.released {
+		fs.mu.RUnlock()
+		return fmt.Errorf("tmpfs filesystem was released")
+	}
+	if fs.journal.Load() != nil {
+		fs.mu.RUnlock()
+		return fmt.Errorf("tmpfs filesystem is already journaled")
+	}
+	rf, fileOff, found := fs.findPageZeroOwnerLocked()
+	fs.mu.RUnlock()
+	if rf != nil {
+		defer rf.inode.decRef(ctx)
+	}
+	if !found {
+		return nil
+	}
+
+	mr := memmap.MappableRange{Start: fileOff, End: fileOff + hostarch.PageSize}
+	firstFR := memmap.FileRange{Start: 0, End: hostarch.PageSize}
+
+	rf.dataMu.Lock()
+	seg := rf.data.FindSegment(fileOff)
+	if !seg.Ok() || seg.FileRangeOf(mr).Start != 0 {
+		rf.dataMu.Unlock()
+		return nil
+	}
+	newFR, err := fs.mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{
+		Kind: rf.memoryUsageKind,
+		Mode: pgalloc.AllocateAndWritePopulate,
+	})
+	if err != nil {
+		rf.dataMu.Unlock()
+		return fmt.Errorf("failed to allocate replacement page for offset 0: %w", err)
+	}
+	srcSeq, err := fs.mf.MapInternal(firstFR, hostarch.Read)
+	if err == nil {
+		var dstSeq safemem.BlockSeq
+		dstSeq, err = fs.mf.MapInternal(newFR, hostarch.Write)
+		if err == nil {
+			_, err = safemem.CopySeq(dstSeq, srcSeq)
+		}
+	}
+	if err != nil {
+		fs.mf.DecRef(newFR)
+		rf.dataMu.Unlock()
+		return fmt.Errorf("failed to relocate page at offset 0: %w", err)
+	}
+	seg = rf.data.Isolate(seg, mr)
+	rf.data.Remove(seg)
+	rf.data.InsertRange(mr, newFR.Start)
+	fs.pageZeroOwner.CompareAndSwap(rf, nil)
+	rf.dataMu.Unlock()
+
+	rf.mapsMu.Lock()
+	rf.mappings.Invalidate(mr, memmap.InvalidateOpts{})
+	rf.mapsMu.Unlock()
+
+	fs.mf.DecRef(firstFR)
+	return nil
+}
+
+// recordPageZeroLocked records rf as fs.pageZeroOwner if any extent in mr starts
+// at MemoryFile offset 0.
+//
+// +checklocks:rf.dataMu
+func (rf *regularFile) recordPageZeroLocked(mr memmap.MappableRange) {
+	fs := rf.inode.fs
+	if fs.journal.Load() != nil || fs.pageZeroOwner.Load() != nil {
+		return
+	}
+	for seg := rf.data.LowerBoundSegment(mr.Start); seg.Ok() && seg.Start() < mr.End; seg = seg.NextSegment() {
+		if seg.Value() == 0 {
+			fs.pageZeroOwner.Store(rf)
+			return
+		}
+	}
+}
+
+// maybeClearPageZeroOwnerLocked clears fs.pageZeroOwner if it points to rf and
+// rf no longer holds MemoryFile offset 0.
+//
+// +checklocks:rf.dataMu
+func (rf *regularFile) maybeClearPageZeroOwnerLocked() {
+	fs := rf.inode.fs
+	if fs.pageZeroOwner.Load() != rf {
+		return
+	}
+	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		if seg.Value() == 0 {
+			return
+		}
+	}
+	fs.pageZeroOwner.CompareAndSwap(rf, nil)
+}
+
+// findPageZeroOwnerLocked returns the regularFile (linked or unlinked) with a
+// data extent covering MemoryFile offset 0, with an extra inode reference.
+//
+// Preconditions: filesystem.mu must be locked.
+func (fs *filesystem) findPageZeroOwnerLocked() (*regularFile, uint64, bool) {
+	if rf := fs.pageZeroOwner.Load(); rf != nil && rf.inode.tryIncRef() {
+		rf.dataMu.RLock()
+		for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+			if seg.Value() == 0 {
+				off := seg.Start()
+				rf.dataMu.RUnlock()
+				return rf, off, true
+			}
+		}
+		rf.dataMu.RUnlock()
+		fs.pageZeroOwner.CompareAndSwap(rf, nil)
+		// Caller drops rf's ref after releasing filesystem.mu.
+		return rf, 0, false
+	}
+	visited := make(map[*inode]struct{})
+	var walk func(d *dentry) (*regularFile, uint64, bool)
+	walk = func(d *dentry) (*regularFile, uint64, bool) {
+		i := d.inode
+		if _, seen := visited[i]; seen {
+			return nil, 0, false
+		}
+		visited[i] = struct{}{}
+		switch impl := i.impl.(type) {
+		case *regularFile:
+			impl.dataMu.RLock()
+			for seg := impl.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+				if seg.Value() == 0 {
+					off := seg.Start()
+					impl.dataMu.RUnlock()
+					impl.inode.incRef()
+					return impl, off, true
+				}
+			}
+			impl.dataMu.RUnlock()
+		case *directory:
+			for _, child := range impl.childMap {
+				if rf, off, ok := walk(child); ok {
+					return rf, off, true
+				}
+			}
+		}
+		return nil, 0, false
+	}
+	return walk(fs.root)
+}
+
+// ActivateJournal starts journaling a tmpfs filesystem whose contents were
+// populated by a restore or tar archive. It writes a snapshot of the
+// filesystem to j, which must be new, then journals later changes. The
+// filesystem's data then outlives the sandbox, so its MemoryFile must not
+// decommit the filestore on destruction. On failure, ActivateJournal closes
+// j.
+func ActivateJournal(vfsfs *vfs.Filesystem, j *journal.Journal) error {
+	fs, _ := vfsfs.Impl().(*filesystem)
+	if fs == nil {
+		j.Close()
+		return fmt.Errorf("not a tmpfs filesystem")
+	}
+	if fs.journal.Load() != nil {
+		j.Close()
+		return fmt.Errorf("tmpfs filesystem is already journaled")
+	}
+	if err := fs.startJournal(j); err != nil {
+		j.Close()
+		return err
+	}
 	return nil
 }
 
