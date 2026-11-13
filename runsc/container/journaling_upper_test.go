@@ -16,13 +16,16 @@ package container
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
@@ -63,6 +66,7 @@ func makeWritableRootfs(t *testing.T) (string, []specs.Mount) {
 // tracks their combined journal+filestore files.
 type journalingUpperTest struct {
 	t      *testing.T
+	bigSum string
 }
 
 func newJournalingUpperTest(t *testing.T) *journalingUpperTest {
@@ -86,7 +90,13 @@ func (p *journalingUpperTest) conf(imageID string, importPath string) *config.Co
 	return conf
 }
 
-
+func (p *journalingUpperTest) importOnlyConf(imageID, importPath string) *config.Config {
+	conf := p.plainConf()
+	conf.JournalingRootfsUpper = config.JournalingRootfsUpperOff
+	conf.JournalingRootfsUpperImport = importPath
+	conf.JournalingRootfsUpperImageID = imageID
+	return conf
+}
 
 func applyWritableRootfs(spec *specs.Spec, rootPath string, sysMounts []specs.Mount) {
 	spec.Root = &specs.Root{Path: rootPath, Readonly: false}
@@ -128,8 +138,51 @@ func (p *journalingUpperTest) create(conf *config.Config, args ...string) (*Cont
 	return c, rootPath, cleanup, err
 }
 
+func (p *journalingUpperTest) start(conf *config.Config) (*Container, string, func()) {
+	p.t.Helper()
+	c, _, cleanup, err := p.create(conf, "sleep", "1000")
+	if err != nil {
+		p.t.Fatalf("creating container: %v", err)
+	}
+	if err := c.Start(conf); err != nil {
+		cleanup()
+		p.t.Fatalf("starting container: %v", err)
+	}
+	return c, selfFilestoreOf(c), cleanup
+}
+
 func selfFilestoreOf(c *Container) string {
 	return sentryapi.SelfFilestorePath(c.Spec.Root.Path, c.Saver.ID.SandboxID)
+}
+
+func (p *journalingUpperTest) sh(conf *config.Config, c *Container, script string) string {
+	p.t.Helper()
+	out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", script)
+	if err != nil {
+		p.t.Fatalf("script %q failed: %v, output: %s", script, err, out)
+	}
+	return string(out)
+}
+
+func (p *journalingUpperTest) check(conf *config.Config, c *Container) {
+	p.t.Helper()
+	got := p.sh(conf, c, `
+cat /journaled/d/f
+cat /journaled/d/link
+md5sum /journaled/big | cut -d' ' -f1
+stat -c '%a %s' /journaled/d/f
+stat -c '%Y' /
+if test -e /lower-file; then echo lower present; else echo lower deleted; fi
+ls -A / | grep '^\.gvisor\.filestore' || true
+ls /journaled/d
+`)
+	want := "hello\nhello\n" + p.bigSum + "\n600 6\n1234567890\nlower deleted\nf\nlink\n"
+	if got != want {
+		p.t.Errorf("files after import:\n%s\nwant:\n%s", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(c.Spec.Root.Path, "lower-file")); err != nil {
+		p.t.Errorf("lower-file was modified on the host: %v", err)
+	}
 }
 
 func waitUnlockedPath(t *testing.T, path string) {
@@ -156,6 +209,170 @@ func waitUnlockedPath(t *testing.T, path string) {
 	}
 }
 
+func (p *journalingUpperTest) kill(c *Container, cleanup func()) {
+	p.t.Helper()
+	if err := unix.Kill(c.SandboxPid(), unix.SIGKILL); err != nil {
+		p.t.Fatalf("killing sandbox: %v", err)
+	}
+	_, _ = c.Wait()
+	cleanup()
+}
+
+func (p *journalingUpperTest) files(conf *config.Config, c *Container, names ...string) string {
+	p.t.Helper()
+	script := ""
+	for _, name := range names {
+		script += fmt.Sprintf("cat /journaled/%s 2>/dev/null || echo -; ", name)
+	}
+	return p.sh(conf, c, script)
+}
+
+func TestJournalingRootfsUpper(t *testing.T) {
+	p := newJournalingUpperTest(t)
+	conf1 := p.conf("image-1", "" /* importPath */)
+
+	// First sandbox: write files, delete /lower-file, verify .gvisor.filestore
+	// is hidden from inside the container, and verify another sandbox cannot
+	// import the live filestore while c1 is running.
+	c1, fs1, cleanup1 := p.start(conf1)
+	p.bigSum = strings.TrimSpace(p.sh(conf1, c1, `
+mkdir -p /journaled/d
+echo hello > /journaled/d/f
+chmod 600 /journaled/d/f
+ln -s f /journaled/d/link
+dd if=/dev/urandom of=/journaled/big bs=4096 count=300 2>/dev/null
+rm /lower-file
+touch -d @1234567890 /
+md5sum /journaled/big | cut -d' ' -f1
+`))
+	if hidden := p.sh(conf1, c1, "ls -A / | grep '^\\.gvisor\\.filestore' || true"); hidden != "" {
+		t.Fatalf("self filestore visible inside container: %q", hidden)
+	}
+
+	// Importing fs1 while c1 is still running must fail immediately via flock.
+	if _, _, cleanupBusy, err := p.create(p.conf("image-1", fs1), "sleep", "1000"); err == nil {
+		cleanupBusy()
+		t.Errorf("importing an active container's filestore succeeded")
+	} else if !strings.Contains(err.Error(), "in use by another sandbox") {
+		t.Errorf("importing active filestore: got %v, want \"in use by another sandbox\"", err)
+	}
+
+	p.kill(c1, cleanup1)
+
+	// Destroy must preserve .gvisor.filestore.<sandbox-id> in Spec.Root.Path.
+	if _, err := os.Stat(fs1); err != nil {
+		t.Fatalf("self filestore deleted on Destroy: %v", err)
+	}
+
+	// Second sandbox: import fs1 WITH runtime journaling enabled, mutate, and
+	// stop cleanly. Its own .gvisor.filestore.<id2> is hardlinked and preserved!
+	conf2 := p.conf("image-1", fs1)
+	c2, fs2, cleanup2 := p.start(conf2)
+	p.check(conf2, c2)
+	// Two sandboxes cannot import the same underlying file concurrently either.
+	if _, _, cleanupDup, err := p.create(p.importOnlyConf("image-1", fs1), "sleep", "1000"); err == nil {
+		cleanupDup()
+		t.Errorf("second concurrent import of same file succeeded")
+	} else if !strings.Contains(err.Error(), "in use by another sandbox") {
+		t.Errorf("second concurrent import: got %v, want \"in use by another sandbox\"", err)
+	}
+	p.sh(conf2, c2, "echo clean > /journaled/clean")
+	cleanup2()
+	if _, err := os.Stat(fs2); err != nil {
+		t.Fatalf("second self filestore deleted on Destroy: %v", err)
+	}
+
+	// Third sandbox: import fs2 via /proc/self/fd/N with runtime journaling
+	// enabled, let init exit on its own, and verify changes persist in fs3.
+	importFDFile, err := os.OpenFile(fs2, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(%q): %v", fs2, err)
+	}
+	defer importFDFile.Close()
+	procFDPath := fmt.Sprintf("/proc/self/fd/%d", importFDFile.Fd())
+	conf3 := p.conf("image-1", procFDPath)
+	c3, _, cleanup3, err := p.create(conf3, "/bin/sh", "-c", "echo exited > /journaled/exited")
+	if err != nil {
+		t.Fatalf("creating c3 via proc fd: %v", err)
+	}
+	importFDFile.Close()
+	fs3 := selfFilestoreOf(c3)
+	if err := c3.Start(conf3); err != nil {
+		cleanup3()
+		t.Fatalf("starting c3: %v", err)
+	}
+	if ws, err := c3.Wait(); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("c3 exited with %v, %v", ws, err)
+	}
+	cleanup3()
+
+	// Wrong image ID is refused without damaging fs3.
+	badConf := p.conf("image-2", fs3)
+	cBad, _, cleanupBad, err := p.create(badConf, "sleep", "1000")
+	if err == nil {
+		err = cBad.Start(badConf)
+		cleanupBad()
+	}
+	if err == nil {
+		t.Errorf("importing with mismatched image ID succeeded")
+	} else if !strings.Contains(err.Error(), `journal was created for image "image-1"`) {
+		t.Errorf("mismatched image ID: got %v, want image mismatch", err)
+	}
+
+	// Fourth sandbox: import a copy of fs3 WITHOUT runtime journaling enabled
+	// (--journaling-rootfs-upper=off) and WITHOUT setting an image ID, verifying
+	// startup replay is decoupled from runtime journaling and image ID checking
+	// is optional by default.
+	unjournaledCopy := filepath.Join(t.TempDir(), "imported.filestore")
+	copySparseFile(t, fs3, unjournaledCopy)
+	conf4 := p.importOnlyConf("" /* imageID */, unjournaledCopy)
+	c4, _, cleanup4, err := p.create(conf4, "sleep", "1000")
+	if err != nil {
+		t.Fatalf("creating unjournaled import container: %v", err)
+	}
+	if err := c4.Start(conf4); err != nil {
+		cleanup4()
+		t.Fatalf("starting unjournaled import container: %v", err)
+	}
+	p.check(conf4, c4)
+	if got, want := p.sh(conf4, c4, "cat /journaled/clean /journaled/exited"), "clean\nexited\n"; got != want {
+		t.Errorf("files after unjournaled import: got %q, want %q", got, want)
+	}
+	p.sh(conf4, c4, "echo transient > /journaled/transient")
+	cleanup4()
+	// Because runtime journaling was off, no .gvisor.filestore.<id4> was created
+	// in c4's Spec.Root.Path.
+	if _, err := os.Stat(selfFilestoreOf(c4)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("unjournaled container left self filestore behind: err=%v", err)
+	}
+}
+
+func copySparseFile(t *testing.T, srcPath, dstPath string) {
+	t.Helper()
+	src, err := os.Open(srcPath)
+	if err != nil {
+		t.Fatalf("Open(%q): %v", srcPath, err)
+	}
+	defer src.Close()
+	end, ok, err := journal.FilestoreEnd(src)
+	if err != nil || !ok {
+		fi, statErr := src.Stat()
+		if statErr != nil {
+			t.Fatalf("Stat(%q): %v", srcPath, statErr)
+		}
+		end = uint64(fi.Size())
+	}
+	size := (end + 4095) &^ 4095
+	buf := make([]byte, size)
+	n, err := unix.Pread(int(src.Fd()), buf, 0)
+	if err != nil {
+		t.Fatalf("Pread(%q): %v", srcPath, err)
+	}
+	if err := os.WriteFile(dstPath, buf[:n], 0600); err != nil {
+		t.Fatalf("WriteFile(%q): %v", dstPath, err)
+	}
+}
+
 func TestJournalingRootfsUpperOverlayValidation(t *testing.T) {
 	p := newJournalingUpperTest(t)
 
@@ -177,6 +394,30 @@ func TestJournalingRootfsUpperOverlayValidation(t *testing.T) {
 		})
 	}
 
+	// Import without runtime journaling works even when --overlay2=root:memory
+	// is configured, and rejects --overlay2=none!
+	cSrc, fsSrc, cleanupSrc := p.start(p.conf("image-1", ""))
+	p.sh(p.conf("image-1", ""), cSrc, "mkdir -p /journaled && echo MEM > /journaled/m")
+	cleanupSrc()
+
+	memConf := p.importOnlyConf("image-1", fsSrc)
+	if err := memConf.Overlay2.Set("root:memory"); err != nil {
+		t.Fatalf("Overlay2.Set: %v", err)
+	}
+	cMem, _, cleanupMem := p.start(memConf)
+	if got, want := p.files(memConf, cMem, "m"), "MEM\n"; got != want {
+		t.Errorf("import with root:memory: got %q, want %q", got, want)
+	}
+	cleanupMem()
+
+	noneConf := p.importOnlyConf("image-1", fsSrc)
+	if err := noneConf.Overlay2.Set("none"); err != nil {
+		t.Fatalf("Overlay2.Set: %v", err)
+	}
+	if _, _, cleanupNone, err := p.create(noneConf, "sleep", "1000"); err == nil {
+		cleanupNone()
+		t.Fatalf("import with overlay2=none succeeded")
+	}
 }
 
 func TestJournalingRootfsUpperAnnotationGateAndFastExit(t *testing.T) {
