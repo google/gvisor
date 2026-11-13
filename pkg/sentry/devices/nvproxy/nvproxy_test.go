@@ -384,3 +384,58 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// TestRatedTDPControlAllowed verifies that only the clock-lock settings used by
+// profilers are forwarded to the driver, with both parameter layouts.
+func TestRatedTDPControlAllowed(t *testing.T) {
+	const (
+		clientRM      = 0
+		clientGlobal  = 2
+		clientOS      = 3
+		clientProfile = nvgpu.NV2080_CTRL_PERF_RATED_TDP_CLIENT_PROFILE
+		actionDefault = nvgpu.NV2080_CTRL_PERF_RATED_TDP_ACTION_DEFAULT
+		actionExceed  = 1
+		actionLimit   = 2
+		actionLock    = nvgpu.NV2080_CTRL_PERF_RATED_TDP_ACTION_FORCE_LOCK
+		vpstateBase   = nvgpu.NV2080_CTRL_PERF_VPSTATE_RATED_TDP
+		vpstateBoost  = nvgpu.NV2080_CTRL_PERF_VPSTATE_TURBO_BOOST
+	)
+	for _, tc := range []struct {
+		name                       string
+		client, input, vpstateType uint32
+		want                       bool
+	}{
+		{"lock to base clocks", clientProfile, actionLock, vpstateBase, true},
+		{"lock to boost clocks", clientProfile, actionLock, vpstateBoost, true},
+		{"reset to default", clientProfile, actionDefault, vpstateBase, true},
+		{"force exceed", clientProfile, actionExceed, vpstateBase, false},
+		{"force limit", clientProfile, actionLimit, vpstateBase, false},
+		{"unknown vpstate", clientProfile, actionLock, 2, false},
+		{"RM client", clientRM, actionDefault, vpstateBase, false},
+		{"global client", clientGlobal, actionLock, vpstateBase, false},
+		{"OS client", clientOS, actionLock, vpstateBase, false},
+		{"unknown client", 5, actionLock, vpstateBase, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v560 := nvgpu.NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS_V560{
+				Client:      tc.client,
+				Input:       tc.input,
+				VPstateType: tc.vpstateType,
+			}
+			if got := ratedTDPControlAllowed(v560.GetRatedTDPControl()); got != tc.want {
+				t.Errorf("ratedTDPControlAllowed(%+v) = %t, want %t", v560, got, tc.want)
+			}
+			if tc.vpstateType != vpstateBase {
+				return
+			}
+			// Before 560.28.03, the parameters have no vPstateType.
+			v535 := nvgpu.NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS{
+				Client: tc.client,
+				Input:  tc.input,
+			}
+			if got := ratedTDPControlAllowed(v535.GetRatedTDPControl()); got != tc.want {
+				t.Errorf("ratedTDPControlAllowed(%+v) = %t, want %t", v535, got, tc.want)
+			}
+		})
+	}
+}

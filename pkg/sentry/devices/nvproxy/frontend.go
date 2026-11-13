@@ -1317,6 +1317,54 @@ func ctrlNvencSwSessionUpdateInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVO
 	return n, nil
 }
 
+// ctrlPerfRatedTDPSetControl handles NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL,
+// which profilers use to lock GPU clocks. The lock applies to the whole GPU
+// and outlives the client that set it, so only allow the settings that
+// profilers use; a lock left behind by a sandbox can then always be cleared by
+// setting the profiler client back to the default action.
+func ctrlPerfRatedTDPSetControl[Params any, PtrParams hasRatedTDPControlPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParamsValue Params
+	ctrlParams := PtrParams(&ctrlParamsValue)
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if client, input, vPstateType := ctrlParams.GetRatedTDPControl(); !ratedTDPControlAllowed(client, input, vPstateType) {
+		fi.ctx.Warningf("nvproxy: rejecting NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL with client=%d input=%d vPstateType=%d", client, input, vPstateType)
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INSUFFICIENT_PERMISSIONS)
+	}
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// ratedTDPControlAllowed returns true if the request sets the profiler client
+// of the RATED_TDP arbitration to locked or default clocks, as Nsight Compute
+// does for all of its --clock-control modes.
+func ratedTDPControlAllowed(client, input, vPstateType uint32) bool {
+	if client != nvgpu.NV2080_CTRL_PERF_RATED_TDP_CLIENT_PROFILE {
+		return false
+	}
+	switch input {
+	case nvgpu.NV2080_CTRL_PERF_RATED_TDP_ACTION_DEFAULT, nvgpu.NV2080_CTRL_PERF_RATED_TDP_ACTION_FORCE_LOCK:
+	default:
+		return false
+	}
+	switch vPstateType {
+	case nvgpu.NV2080_CTRL_PERF_VPSTATE_RATED_TDP, nvgpu.NV2080_CTRL_PERF_VPSTATE_TURBO_BOOST:
+		return true
+	default:
+		return false
+	}
+}
+
 func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {

@@ -286,6 +286,11 @@ type hasStatusPtr[T any] interface {
 	nvgpu.HasStatus
 }
 
+type hasRatedTDPControlPtr[T any] interface {
+	marshalPtr[T]
+	nvgpu.HasRatedTDPControl
+}
+
 type hasFrontendFDAndStatusPtr[T any] interface {
 	marshalPtr[T]
 	nvgpu.HasFrontendFD

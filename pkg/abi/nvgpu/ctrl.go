@@ -863,6 +863,57 @@ const (
 	NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2 = 0x20802096
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h:
+const (
+	NV2080_CTRL_PERF_RATED_TDP_CLIENT_PROFILE = 4
+
+	NV2080_CTRL_PERF_RATED_TDP_ACTION_DEFAULT    = 0
+	NV2080_CTRL_PERF_RATED_TDP_ACTION_FORCE_LOCK = 3
+
+	NV2080_CTRL_PERF_VPSTATE_RATED_TDP   = 0
+	NV2080_CTRL_PERF_VPSTATE_TURBO_BOOST = 1
+)
+
+// HasRatedTDPControl is a type constraint for the versions of
+// NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS.
+type HasRatedTDPControl interface {
+	// GetRatedTDPControl returns the requested arbitration client, action and
+	// vPstate.
+	GetRatedTDPControl() (client, input, vPstateType uint32)
+}
+
+// NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS is the parameter type for
+// NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL.
+//
+// +marshal
+type NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS struct {
+	_      structs.HostLayout
+	Client uint32
+	Input  uint32
+}
+
+// GetRatedTDPControl implements HasRatedTDPControl.GetRatedTDPControl. These
+// parameters predate vPstateType, and always select the rated TDP vPstate.
+func (p *NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS) GetRatedTDPControl() (uint32, uint32, uint32) {
+	return p.Client, p.Input, NV2080_CTRL_PERF_VPSTATE_RATED_TDP
+}
+
+// NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS_V560 is the updated version of
+// NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS since 560.28.03.
+//
+// +marshal
+type NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS_V560 struct {
+	_           structs.HostLayout
+	Client      uint32
+	Input       uint32
+	VPstateType uint32
+}
+
+// GetRatedTDPControl implements HasRatedTDPControl.GetRatedTDPControl.
+func (p *NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS_V560) GetRatedTDPControl() (uint32, uint32, uint32) {
+	return p.Client, p.Input, p.VPstateType
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080rc.h:
 const (
 	NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO         = 0x20802209
