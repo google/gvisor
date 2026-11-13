@@ -45,6 +45,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
+        "//pkg/bits",
         "//pkg/buffer",
         "//pkg/gomaxprocs",
         "//pkg/rand",
