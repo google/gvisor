@@ -70,6 +70,9 @@ type Create struct {
 	// passFDs are host FDs exposed to the sandboxed application.
 	passFDs sandboxsetup.FDMappings
 
+	// productName, if set, is shown in /sys/devices/virtual/dmi/id/product_name.
+	productName string
+
 	// userLog is the path to send user-visible logs to. This log is different
 	// from debug logs. The former is meant to be consumed by the users and should
 	// contain only information that is relevant to the person running the
@@ -111,6 +114,7 @@ func (*Create) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Create) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name. Defaults to the host's value")
 	f.Var(&c.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	f.StringVar(&c.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
@@ -204,6 +208,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		FSRestoreImagePaths: []string(c.fsRestoreImagePaths),
 		FSRestoreDirect:     c.fsRestoreDirect,
 		NoRootContainer:     c.noRootContainer,
+		ProductName:         c.productName,
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
 		return util.Errorf("creating container: %v", err)

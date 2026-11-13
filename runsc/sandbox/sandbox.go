@@ -381,6 +381,10 @@ type Args struct {
 	// NoRootContainer boots without a root container: no gofer FDs, no root
 	// process. See container.Args.NoRootContainer.
 	NoRootContainer bool
+
+	// ProductName, if set, is shown in
+	// /sys/devices/virtual/dmi/id/product_name instead of the host's value.
+	ProductName string
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -1611,6 +1615,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 		}
 	}
 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
+	if args.ProductName != "" {
+		cmd.Args = append(cmd.Args, "--product-name", args.ProductName)
+	}
 
 	if args.Attached {
 		// Kill sandbox if parent process exits in attached mode.

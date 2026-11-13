@@ -934,6 +934,48 @@ func TestSandboxExitBeforeStart(t *testing.T) {
 	}
 }
 
+// TestProductName checks that Args.ProductName replaces the host's value in
+// /sys/devices/virtual/dmi/id/product_name.
+func TestProductName(t *testing.T) {
+	const want = "gVisor test product"
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "product-name")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	out := filepath.Join(dir, "product_name")
+
+	spec := testutil.NewSpecWithArgs("/bin/sh", "-c", "cat /sys/devices/virtual/dmi/id/product_name > "+out)
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:          testutil.RandomContainerID(),
+		Spec:        spec,
+		BundleDir:   bundleDir,
+		Attached:    true,
+		ProductName: want,
+	}
+	ws, err := Run(conf, args)
+	if err != nil {
+		t.Fatalf("running container: %v", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Fatalf("container failed, waitStatus: %v", ws)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) failed: %v", out, err)
+	}
+	if string(got) != want+"\n" {
+		t.Errorf("product_name = %q, want %q", got, want+"\n")
+	}
+}
+
 // Test the we can execute the application with different path formats.
 func TestExePath(t *testing.T) {
 	// Create two directories that will be prepended to PATH.
