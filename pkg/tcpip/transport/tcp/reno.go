@@ -106,14 +106,10 @@ func (r *renoState) HandleLossDetected() {
 // HandleRTOExpired implements congestionControl.HandleRTOExpired.
 //
 // +checklocks:r.s.ep.mu
-func (r *renoState) HandleRTOExpired() {
-	// We lost a packet, so reduce ssthresh.
-	r.reduceSlowStartThreshold()
-
-	// Reduce the congestion window to 1, i.e., enter slow-start. Per
-	// RFC 5681, page 7, we must use 1 regardless of the value of the
-	// initial congestion window.
-	r.s.SndCwnd = 1
+func (r *renoState) HandleRTOExpired(reduceThreshold bool) {
+	if reduceThreshold {
+		r.reduceSlowStartThreshold()
+	}
 }
 
 // PostRecovery implements congestionControl.PostRecovery.
