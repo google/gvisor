@@ -143,6 +143,29 @@ func (fs *filesystem) startJournal(j *journal.Journal) error {
 	return nil
 }
 
+// ActivateJournal starts journaling a tmpfs filesystem whose contents were
+// populated by a restore or tar archive. It writes a snapshot of the
+// filesystem to j, which must be new, then journals later changes. The
+// filesystem's data then outlives the sandbox, so its MemoryFile must not
+// decommit the filestore on destruction. On failure, ActivateJournal closes
+// j.
+func ActivateJournal(vfsfs *vfs.Filesystem, j *journal.Journal) error {
+	fs, _ := vfsfs.Impl().(*filesystem)
+	if fs == nil {
+		j.Close()
+		return fmt.Errorf("not a tmpfs filesystem")
+	}
+	if fs.journal.Load() != nil {
+		j.Close()
+		return fmt.Errorf("tmpfs filesystem is already journaled")
+	}
+	if err := fs.startJournal(j); err != nil {
+		j.Close()
+		return err
+	}
+	return nil
+}
+
 // stopJournal stops journaling. Later changes to fs are not journaled, so
 // that releasing the filesystem does not delete its contents from the
 // journal.

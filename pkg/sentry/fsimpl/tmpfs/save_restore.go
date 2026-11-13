@@ -109,5 +109,3 @@ func (fs *filesystem) BeforeResume(ctx context.Context) {
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
 	return nil
 }
-
-// afterLoad is invoked by stateify.

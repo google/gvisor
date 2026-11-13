@@ -167,7 +167,6 @@ type filesystem struct {
 	// If retainPages is true, releasing a regular file does not return its
 	// pages to the MemoryFile. Release of a journaled filesystem sets it.
 	retainPages atomicbitops.Bool `state:"nosave"`
-
 }
 
 // Name implements vfs.FilesystemType.Name.
