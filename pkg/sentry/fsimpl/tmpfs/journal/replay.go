@@ -204,7 +204,20 @@ func (s *State) dir(ino uint64) (*Inode, error) {
 	return d, nil
 }
 
-
+// unlink removes the entry name from dir.
+func (s *State) unlink(dir *Inode, name string) (*Inode, error) {
+	childIno, ok := dir.Children[name]
+	if !ok {
+		return nil, fmt.Errorf("directory %d has no entry %q", dir.Ino, name)
+	}
+	child := s.Inodes[childIno]
+	delete(dir.Children, name)
+	child.links--
+	if child.fileType() == modeDir {
+		child.parent = 0
+	}
+	return child, nil
+}
 
 // link adds the entry name in dir for child.
 func (s *State) link(dir *Inode, name string, child *Inode) error {
@@ -312,6 +325,26 @@ func (s *State) apply(typ RecordType, payload []byte, filestoreSize uint64) erro
 		}
 		return s.applyInode(&r)
 
+	case RecordInodeFree:
+		ino := d.u64()
+		if err := d.done(); err != nil {
+			return err
+		}
+		i, ok := s.Inodes[ino]
+		if !ok {
+			// The inode was not linked when the snapshot was taken.
+			return nil
+		}
+		if ino == s.Root {
+			return fmt.Errorf("cannot free the root directory")
+		}
+		if i.links != 0 {
+			return fmt.Errorf("inode %d is freed with %d links", ino, i.links)
+		}
+		if len(i.Children) != 0 {
+			return fmt.Errorf("directory %d is freed with %d entries", ino, len(i.Children))
+		}
+		delete(s.Inodes, ino)
 
 	case RecordDirentAdd:
 		parent, child := d.u64(), d.u64()
@@ -332,6 +365,74 @@ func (s *State) apply(typ RecordType, payload []byte, filestoreSize uint64) erro
 		}
 		return s.link(dir, name, c)
 
+	case RecordDirentDel:
+		parent := d.u64()
+		name := d.str16(MaxNameLen)
+		if err := d.done(); err != nil {
+			return err
+		}
+		if err := checkName(name); err != nil {
+			return err
+		}
+		dir, err := s.dir(parent)
+		if err != nil {
+			return err
+		}
+		_, err = s.unlink(dir, name)
+		return err
+
+	case RecordRename:
+		oldParent, newParent, flags := d.u64(), d.u64(), d.u32()
+		oldName := d.str16(MaxNameLen)
+		newName := d.str16(MaxNameLen)
+		if err := d.done(); err != nil {
+			return err
+		}
+		if flags&^renameExchange != 0 {
+			return fmt.Errorf("invalid rename flags %#x", flags)
+		}
+		if err := checkName(oldName); err != nil {
+			return err
+		}
+		if err := checkName(newName); err != nil {
+			return err
+		}
+		oldDir, err := s.dir(oldParent)
+		if err != nil {
+			return err
+		}
+		newDir, err := s.dir(newParent)
+		if err != nil {
+			return err
+		}
+		if oldParent == newParent && oldName == newName {
+			if _, ok := oldDir.Children[oldName]; !ok {
+				return fmt.Errorf("directory %d has no entry %q", oldParent, oldName)
+			}
+			return nil
+		}
+		renamed, err := s.unlink(oldDir, oldName)
+		if err != nil {
+			return err
+		}
+		if flags&renameExchange != 0 {
+			replaced, err := s.unlink(newDir, newName)
+			if err != nil {
+				return err
+			}
+			if err := s.link(oldDir, oldName, replaced); err != nil {
+				return err
+			}
+		} else if _, ok := newDir.Children[newName]; ok {
+			replaced, err := s.unlink(newDir, newName)
+			if err != nil {
+				return err
+			}
+			if len(replaced.Children) != 0 {
+				return fmt.Errorf("rename replaces non-empty directory %d", replaced.Ino)
+			}
+		}
+		return s.link(newDir, newName, renamed)
 
 	case RecordExtentSet, RecordExtentClear:
 		ino, off, length := d.u64(), d.u64(), d.u64()

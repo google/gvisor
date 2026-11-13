@@ -35,7 +35,9 @@ go_test(
     deps = [
         "//pkg/hostarch",
         "//pkg/memutil",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/usage",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
