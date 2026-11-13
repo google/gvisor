@@ -1396,6 +1396,12 @@
   commit: 00abfca5723f527a2651c36d059188f702bbd392
   sha256: 8a3b78120510962fc74b577aaaf52412537cfbc25c88a596a375bd409e66b98a
   license: Apache-2.0
+- dependency: with_cfg.bzl
+  version: https://github.com/fmeum/with_cfg.bzl/releases/download/v1.0.2/with_cfg.bzl-v1.0.2.tar.gz
+  retrieved: "2026-11-06"
+  commit: 9b8b10962419346889e528cbe57a539754489d57
+  sha256: d1a910f7dde9a4aeddfa6dcaa307e93f7389a860a1e9f5f13b72568ac0a878ff
+  license: Apache-2.0
 - dependency: xds
   version: https://github.com/cncf/xds/archive/ee656c7534f5d7dc23d44dd611689568f72017a6.tar.gz
   retrieved: "2026-08-27"
