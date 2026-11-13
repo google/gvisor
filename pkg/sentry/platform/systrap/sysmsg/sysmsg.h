@@ -186,8 +186,6 @@ static void __panic(int err, int err_additional, long line) {
 #pragma GCC diagnostic pop
 }
 
-void memcpy(uint8_t* dest, uint8_t* src, size_t n);
-
 void __export_start(struct sysmsg* sysmsg, void* _ucontext);
 
 void restore_state(struct sysmsg* sysmsg, struct thread_context* ctx,

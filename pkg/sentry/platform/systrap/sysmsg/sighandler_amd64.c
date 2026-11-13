@@ -24,8 +24,10 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/prctl.h>
 #include <sys/ucontext.h>
+#include <sys/user.h>
 
 #include "atomic.h"
 #include "sysmsg.h"
@@ -208,13 +210,13 @@ struct thread_context* switch_context_amd64(
     // After setting THREAD_STATE_NONE, syshandled can be interrupted by
     // SIGCHLD. In this case, we consider that the current context contains
     // the actual state and sighandler can take control on it.
-    atomic_store(&sysmsg->state, THREAD_STATE_NONE);
-    if (atomic_load(&ctx->interrupt) != 0) {
-      atomic_store(&sysmsg->state, THREAD_STATE_PREP);
+    store_release(&sysmsg->state, THREAD_STATE_NONE);
+    if (load_acquire(&ctx->interrupt) != 0) {
+      store_release(&sysmsg->state, THREAD_STATE_PREP);
       // This context got interrupted while it was waiting in the queue.
       // Setup all the necessary bits to let the sentry know this context has
       // switched back because of it.
-      atomic_store(&ctx->interrupt, 0);
+      store_release(&ctx->interrupt, 0);
       new_context_state = CONTEXT_STATE_FAULT;
       ctx->signo = SIGCHLD;
       ctx->siginfo.si_signo = SIGCHLD;
@@ -238,7 +240,7 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
   struct sysmsg* sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
-  int32_t thread_state = atomic_load(&sysmsg->state);
+  int32_t thread_state = load_acquire(&sysmsg->state);
   struct thread_context* ctx = NULL;
   enum context_state ctx_state = CONTEXT_STATE_INVALID;
   long fs_base = 0;
@@ -255,7 +257,7 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
     // transition_syshandler_to_sighandler(). Jump to restore to safely restore
     // guest registers (including GS base and fpstate) via sigreturn.
     ctx = sysmsg->context;
-    atomic_store(&sysmsg->state, THREAD_STATE_NONE);
+    store_release(&sysmsg->state, THREAD_STATE_NONE);
     goto restore;
   }
 
@@ -328,12 +330,12 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
         // will mean that the first copy is in the consistent state.
         for (int i = 0; i < 2; i++) {
           // fault_jump is set to the size of "mov (%rbx)" which is 3 bytes.
-          atomic_store(&sysmsg->fault_jump, 3);
+          store_release(&sysmsg->fault_jump, 3);
           asm volatile("movq (%1), %0\n"
                        : "=a"(syscall_code_int[i])
                        : "b"(rip - 8)
                        : "cc", "memory");
-          atomic_store(&sysmsg->fault_jump, 0);
+          store_release(&sysmsg->fault_jump, 0);
         }
         // The mov instruction is 5 bytes:  b8 <sysno, 4 bytes>.
         // The syscall instruction is 2 bytes: 0f 05.
@@ -390,7 +392,7 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
       return;
   }
 
-  atomic_store(&ctx->fpstate_changed, 0);
+  store_release(&ctx->fpstate_changed, 0);
 
 init:
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
@@ -407,7 +409,8 @@ restore:
     set_gsbase(target_gs);
   }
 
-  if (atomic_load(&ctx->fpstate_changed) || is_syscall_patching_disabled(ctx)) {
+  if (load_acquire(&ctx->fpstate_changed) ||
+      is_syscall_patching_disabled(ctx)) {
     prep_fpstate_for_sigframe(
         ctx->fpstate, __export_arch_state.fp_len,
         __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
@@ -429,7 +432,7 @@ restore:
 // restore the context from there, exiting safely even when GS has been
 // modified.
 static void transition_syshandler_to_sighandler(struct sysmsg* sysmsg) {
-  atomic_store(&sysmsg->state, THREAD_STATE_TRANSITION_TO_SIGHANDLER);
+  store_release(&sysmsg->state, THREAD_STATE_TRANSITION_TO_SIGHANDLER);
   for (;;) {
     asm volatile("ud2");
   }
@@ -440,7 +443,7 @@ void __syshandler() {
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
-  int state = atomic_load(&sysmsg->state);
+  int state = load_acquire(&sysmsg->state);
   if (state != THREAD_STATE_PREP) panic(STUB_ERROR_BAD_THREAD_STATE, 0);
 
   struct thread_context* ctx = sysmsg->context;
@@ -454,7 +457,7 @@ void __syshandler() {
   long fs_base = get_fsbase();
   ctx->ptregs.fs_base = fs_base;
 
-  atomic_store(&ctx->fpstate_changed, 0);
+  store_release(&ctx->fpstate_changed, 0);
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
   // switch_context_amd64 changed sysmsg->state to THREAD_STATE_NONE, so we can
   // only resume the current process, all other actions are

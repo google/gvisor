@@ -23,8 +23,10 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/prctl.h>
 #include <sys/ucontext.h>
+#include <sys/user.h>
 
 #include "atomic.h"
 #include "sysmsg.h"
@@ -104,7 +106,7 @@ void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
   struct sysmsg* sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
-  int32_t thread_state = atomic_load(&sysmsg->state);
+  int32_t thread_state = load_acquire(&sysmsg->state);
 
   uint32_t ctx_state = CONTEXT_STATE_INVALID;
   struct thread_context *ctx = NULL, *old_ctx = NULL;
@@ -184,11 +186,11 @@ init:
   for (;;) {
     ctx = switch_context(sysmsg, ctx, ctx_state);
 
-    if (atomic_load(&ctx->interrupt) != 0) {
+    if (load_acquire(&ctx->interrupt) != 0) {
       // This context got interrupted while it was waiting in the queue.
       // Setup all the necessary bits to let the sentry know this context has
       // switched back because of it.
-      atomic_store(&ctx->interrupt, 0);
+      store_release(&ctx->interrupt, 0);
       ctx_state = CONTEXT_STATE_FAULT;
       ctx->signo = SIGCHLD;
       ctx->siginfo.si_signo = SIGCHLD;
@@ -212,12 +214,12 @@ void restore_state(struct sysmsg* sysmsg, struct thread_context* ctx,
       (struct fpsimd_context*)&ucontext->uc_mcontext.__reserved;
   uint8_t* fpStatePointer = (uint8_t*)&fpctx->fpsr;
 
-  if (atomic_load(&ctx->fpstate_changed)) {
+  if (load_acquire(&ctx->fpstate_changed)) {
     memcpy(fpStatePointer, ctx->fpstate, __export_arch_state.fp_len);
     fpctx[1].head.size = 0;
     fpctx[1].head.magic = 0;
   }
   ptregs_to_gregs(ucontext, &ctx->ptregs);
   set_tls(ctx->tls);
-  atomic_store(&sysmsg->state, THREAD_STATE_NONE);
+  store_release(&sysmsg->state, THREAD_STATE_NONE);
 }
