@@ -42,6 +42,21 @@ go_test(
         "aligned_test.go",
         "atomicbitops_test.go",
     ],
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
     embed = [":atomicbitops"],
     deps = ["//pkg/sync"],
+)
+
+# Explicitly select this suite with native executors for both architectures.
+test_suite(
+    name = "atomicbitops_test_all_architectures",
+    tags = ["manual"],
+    tests = [
+        ":atomicbitops_test_amd64",
+        ":atomicbitops_test_arm64",
+        ":atomicbitops_test_nogo",
+    ],
 )

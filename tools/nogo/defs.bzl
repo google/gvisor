@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "ARCHITECTURES", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
+load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_archive", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -268,7 +268,11 @@ def _nogo_aspect_impl(target, ctx):
     # we should not introduce new go_tool_library dependencies unless strictly
     # necessary.
     is_binary = ctx.rule.kind in ("go_binary", "go_non_executable_binary")
-    analyze_sources = is_binary or ctx.rule.kind in ("go_library", "go_tool_library", "go_test")
+
+    # A rule inheriting go_test has its own kind, but still compiles the
+    # test sources. Older with_cfg frontends only export the compiled test.
+    is_go_test = ctx.rule.kind.endswith("_test") and go_has_archive(target) and hasattr(ctx.rule.attr, "srcs")
+    analyze_sources = is_binary or is_go_test or ctx.rule.kind in ("go_library", "go_tool_library")
     if analyze_sources:
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
@@ -280,6 +284,15 @@ def _nogo_aspect_impl(target, ctx):
         # transitive dependencies.
         srcs = []
         deps = ctx.rule.attr.deps
+    elif go_has_archive(target) and hasattr(ctx.rule.attr, "exports"):
+        # Configuration wrappers forward one compiled target. Analyze that
+        # target in its own configuration, then preserve its complete facts.
+        exports = ctx.rule.attr.exports
+        if type(exports) == "list":
+            if len(exports) != 1:
+                fail("nogo requires configuration wrappers to export one target")
+            exports = exports[0]
+        return [exports[NogoInfo]]
     else:
         return [NogoInfo()]
 
@@ -320,7 +333,7 @@ def _nogo_aspect_impl(target, ctx):
         objfiles = (archive.file, archive.export_file)
         binaries = list(objfiles)
     else:
-        importpath = "test" if ctx.rule.kind == "go_test" else go_importpath(target)
+        importpath = "test" if is_go_test else go_importpath(target)
         binaries = target.files.to_list()
         compilation_outputs = binaries
         if hasattr(target.output_groups, "compilation_outputs"):
@@ -383,6 +396,7 @@ nogo_aspect = go_rule(
         "deps",
         "library",
         "embed",
+        "exports",
     ],
     attrs = {
         "_nogo": attr.label(
