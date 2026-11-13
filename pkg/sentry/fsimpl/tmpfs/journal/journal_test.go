@@ -17,6 +17,7 @@ package journal
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -36,7 +37,6 @@ const (
 	// dataBase is a page offset well past the default 64 KiB test regions.
 	dataBase = 64 * pg
 )
-
 
 func testOpts() Options {
 	return Options{
@@ -444,7 +444,10 @@ func TestCompaction(t *testing.T) {
 
 func copyFD(t *testing.T, srcFD int) int {
 	t.Helper()
-	end := uint64(2 << 20)
+	end, ok := filestoreEnd(t, srcFD)
+	if !ok {
+		end = 1 << 20
+	}
 	buf := make([]byte, hostarch.MustPageRoundUp(end))
 	n, err := unix.Pread(srcFD, buf, 0)
 	if err != nil {
@@ -738,6 +741,9 @@ func TestIncomplete(t *testing.T) {
 	if _, _, _, err := open(t, fd, testOpts()); !errors.Is(err, ErrIncomplete) {
 		t.Fatalf("Open of an incomplete journal: got %v, want ErrIncomplete", err)
 	}
+	if _, ok := filestoreEnd(t, fd); ok {
+		t.Errorf("incomplete journal has a filestore end mark")
+	}
 
 	s, err := j.BeginSnapshot(1, 4, 0)
 	if err != nil {
@@ -761,6 +767,9 @@ func TestIncomplete(t *testing.T) {
 	if got, want := children(st, 1), map[string]uint64{"g": 3}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("root entries after Commit: %v, want %v", got, want)
 	}
+	if end, ok := filestoreEnd(t, fd); !ok || end != dataBase+pg {
+		t.Fatalf("filestore end mark %#x, ok %t; want %#x, true", end, ok, dataBase+pg)
+	}
 }
 
 func dupFile(t *testing.T, fd int) *os.File {
@@ -770,6 +779,285 @@ func dupFile(t *testing.T, fd int) *os.File {
 		t.Fatalf("Dup: %v", err)
 	}
 	return os.NewFile(uintptr(dup), "journal")
+}
+
+// filestoreEnd returns the filestore end mark of the journal in fd, as the
+// host reads it.
+func filestoreEnd(t *testing.T, fd int) (uint64, bool) {
+	t.Helper()
+	f := dupFile(t, fd)
+	defer f.Close()
+	end, ok, err := FilestoreEnd(f)
+	if err != nil {
+		t.Fatalf("FilestoreEnd: %v", err)
+	}
+	return end, ok
+}
+
+// openShrunk opens a copy of fd shrunk to its filestore end mark, as the host
+// does before importing.
+func openShrunk(t *testing.T, fd int) (*State, error) {
+	t.Helper()
+	end, ok := filestoreEnd(t, fd)
+	if !ok {
+		t.Fatalf("FilestoreEnd: no valid mark")
+	}
+	shrunkFD := copyFD(t, fd)
+	newSize := hostarch.MustPageRoundUp(end)
+	if err := unix.Ftruncate(shrunkFD, int64(newSize)); err != nil {
+		t.Fatalf("Ftruncate: %v", err)
+	}
+	opts := testOpts()
+	opts.FilestoreSize = min(opts.FilestoreSize, newSize)
+	_, _, st, err := open(t, shrunkFD, opts)
+	return st, err
+}
+
+func TestFilestoreEnd(t *testing.T) {
+	fd := newTestFile(t)
+	opts := testOpts()
+	_, j := mustCreate(t, fd, opts)
+	initialEnd := headerSize + 2*opts.RegionSize
+	if end, ok := filestoreEnd(t, fd); !ok || end != initialEnd {
+		t.Fatalf("new journal: mark %#x, ok %t; want %#x, true", end, ok, initialEnd)
+	}
+	initRoot(t, j)
+	j.Inode(regRec(2, 0))
+	j.DirentAdd(1, "big", 2)
+	j.Inode(regRec(3, 0))
+	j.DirentAdd(1, "small", 3)
+
+	// The mark covers every EXTENT_SET record, including extents that were
+	// replaced later.
+	j.ExtentSet(2, 0, 4*pg, dataBase+40*pg)
+	j.ExtentSet(3, 0, pg, dataBase+2*pg)
+	j.ExtentSet(2, 0, 4*pg, dataBase+10*pg)
+	wantHigh := dataBase + 44*pg
+	if end, ok := filestoreEnd(t, fd); !ok || end != wantHigh {
+		t.Fatalf("after extents: mark %#x, ok %t; want %#x, true", end, ok, wantHigh)
+	}
+	if _, err := openShrunk(t, fd); err != nil {
+		t.Fatalf("Open after shrinking to the mark: %v", err)
+	}
+
+	// Delete the big file. The mark only shrinks after compaction.
+	j.DirentDel(1, "big")
+	j.ExtentClear(2, 0, 4*pg)
+	j.InodeFree(2)
+	if end, _ := filestoreEnd(t, fd); end != wantHigh {
+		t.Fatalf("after delete: mark %#x, want %#x", end, wantHigh)
+	}
+
+	s, err := j.BeginSnapshot(1, 5, 0)
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	s.Inode(dirRec(1))
+	s.Inode(regRec(3, pg))
+	s.ExtentSet(3, 0, pg, dataBase+2*pg)
+	s.DirentAdd(1, "small", 3)
+	// A crash before Commit replays the old region, which the mark still
+	// covers.
+	if end, _ := filestoreEnd(t, fd); end != wantHigh {
+		t.Fatalf("during compaction: mark %#x, want %#x", end, wantHigh)
+	}
+	if _, err := openShrunk(t, fd); err != nil {
+		t.Fatalf("Open during compaction: %v", err)
+	}
+	// An extent appended during compaction goes to both regions.
+	j.Inode(regRec(4, pg))
+	j.DirentAdd(1, "new", 4)
+	j.ExtentSet(4, 0, pg, dataBase+6*pg)
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if end, _ := filestoreEnd(t, fd); end != dataBase+7*pg {
+		t.Fatalf("after compaction: mark %#x, want %#x", end, dataBase+7*pg)
+	}
+	st, err := openShrunk(t, fd)
+	if err != nil {
+		t.Fatalf("Open after compaction: %v", err)
+	}
+	if got, want := st.UsedRanges(), []memmap.FileRange{
+		{Start: dataBase + 2*pg, End: dataBase + 3*pg},
+		{Start: dataBase + 6*pg, End: dataBase + 7*pg},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("used ranges %v, want %v", got, want)
+	}
+
+	// A mark that is too low makes Open fail, even if the filestore is
+	// large enough.
+	var low [8]byte
+	binary.LittleEndian.PutUint64(low[:], dataBase+3*pg)
+	if _, err := unix.Pwrite(fd, low[:], filestoreEndOff); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	if _, _, _, err := open(t, fd, testOpts()); err == nil || !strings.Contains(err.Error(), "filestore end mark") {
+		t.Fatalf("Open with a low mark: got %v, want filestore end mark error", err)
+	}
+}
+
+func TestFilestoreEndInvalid(t *testing.T) {
+	// An empty file has no mark.
+	fd := newTestFile(t)
+	if _, ok := filestoreEnd(t, fd); ok {
+		t.Errorf("empty file has a mark")
+	}
+
+	_, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+
+	// A broken journal has no mark.
+	opts := testOpts()
+	opts.RegionSize = 4 * pg
+	bfd := newTestFile(t)
+	_, bj := mustCreate(t, bfd, opts)
+	initRoot(t, bj)
+	for !bj.Broken() {
+		bj.ExtentSet(2, 0, pg, dataBase)
+	}
+	if _, ok := filestoreEnd(t, bfd); ok {
+		t.Errorf("broken journal has a mark")
+	}
+
+	// A header with a bad checksum has no mark. The mark itself is not
+	// covered by the checksum.
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], dataBase)
+	if _, err := unix.Pwrite(fd, b[:], filestoreEndOff); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	if end, ok := filestoreEnd(t, fd); !ok || end != dataBase {
+		t.Errorf("mark %#x, ok %t; want %#x, true", end, ok, dataBase)
+	}
+	if _, err := unix.Pwrite(fd, []byte{0xff}, imageIDOff+2); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	if _, ok := filestoreEnd(t, fd); ok {
+		t.Errorf("header with a bad checksum has a mark")
+	}
+}
+
+// writeTree writes a snapshot of a root directory with n regular files, each
+// with one extent placed at treeDataBase + i*pg, to w.
+const treeDataBase = 256 * pg
+
+func writeTree(w interface {
+	Inode(r *InodeRecord)
+	DirentAdd(parent uint64, name string, child uint64)
+	ExtentSet(ino, off, length, mfOff uint64)
+}, n uint64) {
+	w.Inode(dirRec(1))
+	for i := uint64(0); i < n; i++ {
+		ino := 2 + i
+		w.Inode(regRec(ino, pg))
+		w.ExtentSet(ino, 0, pg, treeDataBase+i*pg)
+		w.DirentAdd(1, fmt.Sprintf("file-%d", i), ino)
+	}
+}
+
+// compactTree compacts j to a snapshot of writeTree(n), with the size from
+// SnapshotSizer.
+func compactTree(t *testing.T, j *Journal, n uint64) {
+	t.Helper()
+	var z SnapshotSizer
+	writeTree(&z, n)
+	s, err := j.BeginSnapshot(1, n+2, z.Size())
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	writeTree(s, n)
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+}
+
+func (j *Journal) regionsForTest() [2]region {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.regions
+}
+
+func TestRegionRelocation(t *testing.T) {
+	fd := newTestFile(t)
+	opts := testOpts()
+	opts.RegionSize = 4 * pg
+	_, j := mustCreate(t, fd, opts)
+	initRoot(t, j)
+	const n = 200
+	var z SnapshotSizer
+	writeTree(&z, n)
+	if z.Size() < 4*pg {
+		t.Fatalf("test snapshot size %d is not larger than the region", z.Size())
+	}
+
+	// The snapshot does not fit in the region, so the inactive region
+	// moves to a larger range after the active region.
+	s, err := j.BeginSnapshot(1, n+2, z.Size())
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	writeTree(s, n)
+	regs := j.regionsForTest()
+	if regs[1].size < 2*z.Size() || regs[1].off != regs[0].end() {
+		t.Fatalf("regions after relocation: %+v", regs)
+	}
+	// A crash before Commit replays the old region.
+	crashFD := copyFD(t, fd)
+	_, _, st := mustOpen(t, crashFD, opts)
+	if len(st.Inodes) != 1 {
+		t.Fatalf("before commit: got %d inodes, want 1", len(st.Inodes))
+	}
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	// A crash after Commit replays the new region.
+	crashFD = copyFD(t, fd)
+	_, _, st = mustOpen(t, crashFD, opts)
+	if len(st.Inodes) != n+1 {
+		t.Fatalf("after commit: got %d inodes, want %d", len(st.Inodes), n+1)
+	}
+	if end, ok := filestoreEnd(t, fd); !ok || end != treeDataBase+n*pg {
+		t.Fatalf("filestore end mark %#x, ok %t; want %#x, true", end, ok, uint64(treeDataBase+n*pg))
+	}
+
+	// The next compaction moves the other region, which is too small, after
+	// the active one.
+	j.Inode(regRec(2, 2*pg))
+	compactTree(t, j, n)
+	regs = j.regionsForTest()
+	if regs[0].off != regs[1].end() || regs[0].size < 2*z.Size() {
+		t.Fatalf("regions after the second compaction: %+v", regs)
+	}
+
+	// The next compaction reuses the region.
+	compactTree(t, j, n)
+	if got := j.regionsForTest(); got != regs {
+		t.Fatalf("regions after the third compaction: %+v, want %+v", got, regs)
+	}
+	crashFD = copyFD(t, fd)
+	_, _, st = mustOpen(t, crashFD, opts)
+	if len(st.Inodes) != n+1 {
+		t.Fatalf("after the third compaction: got %d inodes, want %d", len(st.Inodes), n+1)
+	}
+
+	// A small snapshot moves the oversized inactive region back to the start
+	// of the file, and filestoreEnd covers the active region.
+	compactTree(t, j, 0)
+	regs = j.regionsForTest()
+	if regs[0].off != headerSize || regs[0].size != 4*pg {
+		t.Fatalf("regions after the small compaction: %+v", regs)
+	}
+	if end, ok := filestoreEnd(t, fd); !ok || end != regs[0].end() {
+		t.Fatalf("filestore end mark %#x, ok %t after small compaction; want %#x, true", end, ok, regs[0].end())
+	}
+	st, err = openShrunk(t, fd)
+	if err != nil {
+		t.Fatalf("openShrunk after small compaction: %v", err)
+	}
+	if len(st.Inodes) != 1 {
+		t.Fatalf("after the small compaction: got %d inodes, want 1", len(st.Inodes))
+	}
 }
 
 func TestRegionValidation(t *testing.T) {
@@ -805,6 +1093,9 @@ func TestFormatVersion(t *testing.T) {
 	}
 	if _, _, _, err := open(t, fd, testOpts()); err == nil || !strings.Contains(err.Error(), "format version is 2") {
 		t.Fatalf("Open of a version 2 journal: got %v, want a format version error", err)
+	}
+	if _, ok := filestoreEnd(t, fd); ok {
+		t.Errorf("version 2 journal has a filestore end mark")
 	}
 }
 
