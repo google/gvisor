@@ -139,6 +139,27 @@ type filesystem struct {
 
 	// ovlWhiteout is the shared overlay whiteout device. It is protected by mu.
 	ovlWhiteout *deviceFile
+
+	// journal records changes to the filesystem's metadata, or is nil. It
+	// is set by GetFilesystem or ActivateJournal; see startJournal. It is
+	// not saved: a checkpoint of a journaled filesystem restores as a
+	// filesystem that is not journaled.
+	journal atomic.Pointer[journal.Journal] `state:"nosave"`
+
+	// journaled is true if a journal was started for the filesystem. Its
+	// data then outlives the sandbox, so Release keeps its pages. It is not
+	// saved, since a restored filesystem is not journaled.
+	journaled atomicbitops.Bool `state:"nosave"`
+
+	// released is true after Release starts.
+	//
+	// +checklocks:mu
+	released bool `state:"nosave"`
+
+	// If retainPages is true, releasing a regular file does not return its
+	// pages to the MemoryFile. Release of a journaled filesystem sets it.
+	retainPages atomicbitops.Bool `state:"nosave"`
+
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -198,11 +219,17 @@ type FilesystemOpts struct {
 	SourceTar             io.ReadCloser
 	SourceTarFSCheckpoint bool
 
+	// If Journal is not nil, the filesystem records changes to its metadata
+	// in Journal, so that a new sentry can rebuild it after this one stops
+	// or crashes. Ownership of Journal is transferred to GetFilesystem,
+	// whether or not it returns an error. Journal requires a directory root,
+	// and is incompatible with SourceTar.
+	Journal *journal.Journal `state:"nosave"`
+
 	// If JournalState is not empty, GetFilesystem rebuilds the filesystem
 	// from it. MemoryFile must have adopted JournalState.UsedRanges().
 	JournalState *journal.State `state:"nosave"`
 }
-
 
 // Amount of total physical RAM, in bytes. It is immutable after initialization.
 var totalHostMem uint64
@@ -280,8 +307,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			defer tmpfsOpts.SourceTar.Close()
 		}
 	}
+	journalStarted := false
+	if j := tmpfsOpts.Journal; j != nil {
+		defer func() {
+			if !journalStarted {
+				j.Close()
+			}
+		}()
+	}
 	hasJournalState := tmpfsOpts.JournalState != nil && !tmpfsOpts.JournalState.Empty()
-	if hasJournalState && (tmpfsOpts.SourceTar != nil || rootFileType != linux.S_IFDIR) {
+	if (tmpfsOpts.Journal != nil || hasJournalState) && (tmpfsOpts.SourceTar != nil || rootFileType != linux.S_IFDIR) {
 		return nil, nil, fmt.Errorf("tmpfs journal requires a directory root and no source tar")
 	}
 
@@ -499,12 +534,31 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		ctx.Infof("tmpfs.filesystem: rebuilt %d inodes from journal in %s", len(tmpfsOpts.JournalState.Inodes), time.Since(timeRebuildStart))
 	}
+	if j := tmpfsOpts.Journal; j != nil {
+		if err := fs.startJournal(j); err != nil {
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, err
+		}
+		journalStarted = true
+	}
 
 	return &fs.vfsfs, &root.vfsd, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	// Releasing the filesystem must not delete its files from the journal,
+	// or return their pages to the MemoryFile, which hole-punches free
+	// pages: the journal still refers to them. Marking fs released first
+	// keeps ActivateJournal from starting the journal later; see
+	// startJournal.
+	fs.mu.Lock()
+	fs.released = true
+	fs.mu.Unlock()
+	fs.stopJournal()
+	if fs.journaled.Load() {
+		fs.retainPages.Store(true)
+	}
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.mu.Lock()
 	if fs.root.inode.isDir() {
@@ -837,7 +891,15 @@ func (i *inode) decRef(ctx context.Context) {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.
-			pagesDec := impl.data.DropAll(i.fs.mf)
+			var pagesDec uint64
+			if i.fs.retainPages.Load() {
+				// The pages hold journaled file data; see
+				// filesystem.Release.
+				pagesDec = impl.data.Span() >> hostarch.PageShift
+				impl.data.RemoveAll()
+			} else {
+				pagesDec = impl.data.DropAll(i.fs.mf)
+			}
 			impl.inode.fs.unaccountPages(pagesDec)
 		}
 
