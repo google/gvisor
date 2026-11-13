@@ -676,6 +676,15 @@ func (r *restorer) restore(l *Loader) error {
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()
 
+	journalingUppers, err := l.prepareJournalingUppersForRestore(l.k.SupervisorContext(), r.containers)
+	if err != nil {
+		return fmt.Errorf("preparing journaling rootfs uppers for restore: %w", err)
+	}
+	journalingCleanup := cleanup.Make(func() {
+		journalingUppers.release(l.k.SupervisorContext())
+	})
+	defer journalingCleanup.Clean()
+
 	l.lifecycleCPUs.releaseForRestore()
 	r.timer.Reached("Starting sandbox")
 	if err := r.cm.onStart(); err != nil {
@@ -683,13 +692,14 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	r.stateFile.Close()
+	journalingCleanup.Release()
 
 	// Transfer ownership of the `timer` to a new goroutine.
 	// This is because `timer.Log` blocks until all timed tasks are finished,
 	// but some restore tasks may still run in the background, and we don't
 	// want to block this function until they finish.
 	postRestoreTimeline := r.timer.Fork("postRestore")
-	go r.postRestore(l.k, postRestoreTimeline, r.timer)
+	go r.postRestore(l.k, postRestoreTimeline, r.timer, journalingUppers)
 	r.timer = nil
 
 	return nil
@@ -710,7 +720,8 @@ func (l *Loader) restoreNamespacePathsLocked(proc *execProcess, spec *specs.Spec
 	}
 }
 
-func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, timer *timing.Timer) {
+func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, timer *timing.Timer, journalingUppers *restoredJournalingUppers) {
+	defer journalingUppers.release(k.SupervisorContext())
 	defer timer.Log()
 	defer timeline.End()
 
@@ -740,6 +751,12 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 			r.cm.l.stopIfKilled()
 			return
 		}
+	}
+
+	if err := journalingUppers.activate(k.SupervisorContext()); err != nil {
+		r.cm.onRestoreFailed(fmt.Errorf("journaling rootfs upper activation failed: %w", err))
+		r.cm.l.killForJournalingUpper(err)
+		return
 	}
 
 	var s sentryapi.Savings
