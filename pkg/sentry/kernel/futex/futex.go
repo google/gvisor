@@ -344,11 +344,20 @@ func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) erro
 
 		requeued := w
 		w = w.Next() // Next iteration.
-		b.waiters.Remove(requeued)
 		requeued.key.release(t)
 		requeued.key = nkey.clone()
-		to.waiters.PushBack(requeued)
-		requeued.bucket.Store(to)
+		// Requeueing onto the same futex: leave the waiter where it is.
+		// Moving it to the back of the list would let this loop find it
+		// again, and the loop would only stop after n iterations.
+		//
+		// Requeueing onto a different futex: move the waiter to the back
+		// of the destination list, behind the waiters already there. This
+		// loop won't find it again, since it no longer matches key.
+		if !nkey.matches(key) {
+			b.waiters.Remove(requeued)
+			to.waiters.PushBack(requeued)
+			requeued.bucket.Store(to)
+		}
 		done++
 	}
 	return nil
