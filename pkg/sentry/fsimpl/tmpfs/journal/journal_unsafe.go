@@ -20,6 +20,13 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
+// atomicLoad64 atomically loads the little-endian uint64 in b.
+//
+// Preconditions: b is 8 bytes long and 8-byte aligned.
+func atomicLoad64(b []byte) uint64 {
+	return (*atomicbitops.Uint64)(unsafe.Pointer(&b[0])).Load()
+}
+
 // atomicStore64 atomically stores v to b.
 //
 // Preconditions: b is 8 bytes long and 8-byte aligned.

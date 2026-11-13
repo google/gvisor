@@ -18,13 +18,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 const (
@@ -164,6 +167,10 @@ func initRoot(t *testing.T, j *Journal) {
 	}
 }
 
+func children(st *State, ino uint64) map[string]uint64 {
+	return st.Inodes[ino].Children
+}
+
 func TestFreshJournal(t *testing.T) {
 	fd := newTestFile(t)
 	// Opening an uninitialized 0-byte file returns ErrIncomplete.
@@ -175,6 +182,152 @@ func TestFreshJournal(t *testing.T) {
 	_, _, st := mustOpen(t, fd, testOpts())
 	if !st.Empty() {
 		t.Fatalf("reopened journal has state %+v", st)
+	}
+}
+
+func TestRoundTrip(t *testing.T) {
+	fd := newTestFile(t)
+	mf1, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+
+	// Allocate data pages from the MemoryFile. The journal is in another
+	// file, so the first allocation may start at offset 0.
+	frA, err := mf1.Allocate(2*pg, pgalloc.AllocOpts{Kind: usage.Tmpfs})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	frGone, err := mf1.Allocate(2*pg, pgalloc.AllocOpts{Kind: usage.Tmpfs})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+
+	j.Inode(regRec(2, 0))
+	j.DirentAdd(1, "a", 2)
+	j.ExtentSet(2, 0, pg, frA.Start)
+	j.ExtentSet(2, pg, pg, frA.Start+pg)
+	j.Inode(regRec(2, pg+100))
+	j.Inode(dirRec(3))
+	j.DirentAdd(1, "d", 3)
+	j.Inode(&InodeRecord{Ino: 4, Mode: modeSymlink | 0777, Target: "../a"})
+	j.DirentAdd(3, "l", 4)
+	xattrs := []Xattr{{Name: "trusted.overlay.opaque", Value: "y"}, {Name: "user.empty", Value: ""}}
+	j.Inode(&InodeRecord{Ino: 5, Mode: modeChar, RdevMajor: 0, RdevMinor: 0, Xattrs: xattrs})
+	j.DirentAdd(3, "wh", 5)
+	j.Inode(&InodeRecord{Ino: 6, Mode: modeChar | 0600, RdevMajor: 1, RdevMinor: 3})
+	j.DirentAdd(1, "null", 6)
+	j.DirentAdd(1, "hard", 2)
+	j.Rename(1, "a", 3, "b", false /* exchange */)
+	j.DirentDel(1, "hard")
+	// An unlinked inode that is still open is dropped on replay.
+	j.Inode(regRec(7, 0))
+	j.DirentAdd(1, "tmp", 7)
+	j.ExtentSet(7, 0, pg, frGone.Start)
+	j.DirentDel(1, "tmp")
+	// A freed inode is gone.
+	j.Inode(regRec(8, 0))
+	j.DirentAdd(1, "gone", 8)
+	j.ExtentSet(8, 0, pg, frGone.Start+pg)
+	j.DirentDel(1, "gone")
+	j.ExtentClear(8, 0, pg)
+	j.InodeFree(8)
+
+	mf2, _, st := mustOpen(t, fd, testOpts())
+	if st.Root != 1 || st.NextIno != 9 {
+		t.Errorf("root %d, next inode %d; want 1, 9", st.Root, st.NextIno)
+	}
+	if got, want := children(st, 1), map[string]uint64{"d": 3, "null": 6}; !reflect.DeepEqual(got, want) {
+		t.Errorf("root entries %v, want %v", got, want)
+	}
+	if got, want := children(st, 3), map[string]uint64{"l": 4, "wh": 5, "b": 2}; !reflect.DeepEqual(got, want) {
+		t.Errorf("d entries %v, want %v", got, want)
+	}
+	if n := len(st.Inodes); n != 6 {
+		t.Errorf("got %d inodes, want 6", n)
+	}
+	f := st.Inodes[2]
+	if f.Nlink != 1 || f.Size != pg+100 || f.Mtime != 20 {
+		t.Errorf("file: nlink %d size %d mtime %d", f.Nlink, f.Size, f.Mtime)
+	}
+	if want := []Extent{{Off: 0, Len: 2 * pg, MFOff: frA.Start}}; !reflect.DeepEqual(f.Extents, want) {
+		t.Errorf("file extents %v, want %v", f.Extents, want)
+	}
+	if st.Inodes[1].Nlink != 3 || st.Inodes[3].Nlink != 2 {
+		t.Errorf("directory link counts %d, %d; want 3, 2", st.Inodes[1].Nlink, st.Inodes[3].Nlink)
+	}
+	if st.Inodes[4].Target != "../a" {
+		t.Errorf("symlink target %q", st.Inodes[4].Target)
+	}
+	if !reflect.DeepEqual(st.Inodes[5].Xattrs, xattrs) {
+		t.Errorf("xattrs %v, want %v", st.Inodes[5].Xattrs, xattrs)
+	}
+	if d := st.Inodes[6]; d.RdevMajor != 1 || d.RdevMinor != 3 {
+		t.Errorf("device %d:%d", d.RdevMajor, d.RdevMinor)
+	}
+	if got, want := st.UsedRanges(), []memmap.FileRange{frA}; !reflect.DeepEqual(got, want) {
+		t.Errorf("used ranges %v, want %v", got, want)
+	}
+	if !mf2.HasUniqueRef(frA) {
+		t.Errorf("adopted range %v does not have a unique reference", frA)
+	}
+}
+
+func TestOpenWithoutKeepingJournal(t *testing.T) {
+	fd := newTestFile(t)
+	mf1, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+	fr, err := mf1.Allocate(pg, pgalloc.AllocOpts{Kind: usage.Tmpfs})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	j.Inode(regRec(2, pg))
+	j.DirentAdd(1, "f", 2)
+	j.ExtentSet(2, 0, pg, fr.Start)
+
+	mf2 := newTestMF(t, fd, true /* keep */)
+	f := dupFile(t, fd)
+	defer f.Close()
+	j2, st, err := Open(mf2, f, testOpts(), false /* keepJournal */)
+	if err != nil {
+		t.Fatalf("Open(keepJournal=false): %v", err)
+	}
+	if j2 != nil {
+		t.Fatalf("Open(keepJournal=false) returned non-nil Journal")
+	}
+	if got, want := children(st, 1), map[string]uint64{"f": 2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root entries %v, want %v", got, want)
+	}
+	// Open does not modify the journal file.
+	if _, _, st, err := open(t, fd, testOpts()); err != nil {
+		t.Fatalf("reopening after keepJournal=false: %v", err)
+	} else if got, want := children(st, 1), map[string]uint64{"f": 2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root entries after reopening %v, want %v", got, want)
+	}
+}
+
+func TestRenameExchangeAndReplace(t *testing.T) {
+	fd := newTestFile(t)
+	_, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+	j.Inode(dirRec(2))
+	j.DirentAdd(1, "d", 2)
+	j.Inode(regRec(3, 0))
+	j.DirentAdd(1, "f", 3)
+	j.Inode(regRec(4, 0))
+	j.DirentAdd(2, "g", 4)
+	j.Rename(1, "f", 2, "g", true /* exchange */)
+	j.Inode(regRec(5, 0))
+	j.DirentAdd(1, "h", 5)
+	j.Rename(1, "h", 1, "f", false /* exchange */)
+
+	_, _, st := mustOpen(t, fd, testOpts())
+	if got, want := children(st, 1), map[string]uint64{"d": 2, "f": 5}; !reflect.DeepEqual(got, want) {
+		t.Errorf("root entries %v, want %v", got, want)
+	}
+	if got, want := children(st, 2), map[string]uint64{"g": 3}; !reflect.DeepEqual(got, want) {
+		t.Errorf("d entries %v, want %v", got, want)
+	}
+	if _, ok := st.Inodes[4]; ok {
+		t.Errorf("replaced inode 4 was not dropped")
 	}
 }
 
@@ -285,5 +438,30 @@ func TestFormatVersion(t *testing.T) {
 	}
 	if _, _, _, err := open(t, fd, testOpts()); err == nil || !strings.Contains(err.Error(), "format version is 2") {
 		t.Fatalf("Open of a version 2 journal: got %v, want a format version error", err)
+	}
+}
+
+// TestFilestorePageZero checks that file data may use page 0 of the
+// filestore, since the journal is in its own file.
+func TestFilestorePageZero(t *testing.T) {
+	fd := newTestFile(t)
+	mf1, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+	fr, err := mf1.Allocate(pg, pgalloc.AllocOpts{Kind: usage.Tmpfs})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if fr.Start != 0 {
+		t.Fatalf("first allocation %v does not start at 0", fr)
+	}
+	j.Inode(regRec(2, pg))
+	j.DirentAdd(1, "f", 2)
+	j.ExtentSet(2, 0, pg, 0)
+	mf2, _, st := mustOpen(t, fd, testOpts())
+	if want := []Extent{{Off: 0, Len: pg, MFOff: 0}}; !reflect.DeepEqual(st.Inodes[2].Extents, want) {
+		t.Fatalf("extents %v, want %v", st.Inodes[2].Extents, want)
+	}
+	if !mf2.HasUniqueRef(fr) {
+		t.Fatalf("page 0 was not adopted")
 	}
 }
