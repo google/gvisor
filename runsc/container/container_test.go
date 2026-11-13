@@ -242,6 +242,143 @@ func blockUntilWaitable(pid int) error {
 	return err
 }
 
+func TestPodMemorySwapMax(t *testing.T) {
+	const sandboxID = "pause"
+	newContainer := func(id string, containerType string, res *specs.LinuxResources) *Container {
+		return &Container{
+			ID: id,
+			Spec: &specs.Spec{
+				Annotations: map[string]string{specutils.ContainerdContainerTypeAnnotation: containerType},
+				Linux:       &specs.Linux{Resources: res},
+			},
+		}
+	}
+	pause := newContainer(sandboxID, specutils.ContainerdContainerTypeSandbox, nil)
+	noSwap := &specs.LinuxResources{
+		Memory:  &specs.LinuxMemory{Limit: int64Ptr(128 << 20), Swap: int64Ptr(128 << 20)},
+		Unified: map[string]string{"memory.swap.max": "0"},
+	}
+	swap := func(v string) *specs.LinuxResources {
+		return &specs.LinuxResources{Unified: map[string]string{"memory.swap.max": v}}
+	}
+	app := func(id string, res *specs.LinuxResources) *Container {
+		return newContainer(id, specutils.ContainerdContainerTypeContainer, res)
+	}
+
+	// A sandbox without a root container needs no CRI annotation.
+	noRootSandbox := &Container{ID: sandboxID, Spec: &specs.Spec{}}
+	sandboxWithSwap := func(v string) *Container {
+		return newContainer(sandboxID, specutils.ContainerdContainerTypeSandbox, swap(v))
+	}
+
+	for _, tc := range []struct {
+		name            string
+		noRootContainer bool
+		containers      []*Container
+		want            int64
+		wantErr         bool
+	}{
+		{
+			name:       "only-pause",
+			containers: []*Container{pause},
+			want:       -1,
+		},
+		{
+			name:       "only-pause-with-limit",
+			containers: []*Container{sandboxWithSwap("2048")},
+			want:       2048,
+		},
+		{
+			name:       "not-a-pod",
+			containers: []*Container{newContainer(sandboxID, specutils.ContainerdContainerTypeContainer, nil), app("a", noSwap)},
+			want:       -1,
+		},
+		{
+			name:       "no-swap",
+			containers: []*Container{pause, app("a", noSwap), app("b", swap("0"))},
+			want:       0,
+		},
+		{
+			name:       "sum",
+			containers: []*Container{pause, app("a", swap("1024")), app("b", swap("4096")), app("c", noSwap)},
+			want:       5120,
+		},
+		{
+			name:       "one-unlimited",
+			containers: []*Container{pause, app("a", noSwap), app("b", swap("max"))},
+			want:       -1,
+		},
+		{
+			name:       "one-unset",
+			containers: []*Container{pause, app("a", noSwap), app("b", nil)},
+			want:       -1,
+		},
+		{
+			name:       "overflow",
+			containers: []*Container{pause, app("a", swap(strconv.FormatInt(math.MaxInt64, 10))), app("b", swap("1"))},
+			want:       -1,
+		},
+		{
+			name:       "invalid",
+			containers: []*Container{pause, app("a", swap("lots"))},
+			wantErr:    true,
+		},
+		{
+			name:            "no-root-only-sandbox",
+			noRootContainer: true,
+			containers:      []*Container{noRootSandbox},
+			want:            -1,
+		},
+		{
+			name:            "no-root-sum",
+			noRootContainer: true,
+			containers:      []*Container{noRootSandbox, app("a", swap("1024")), app("b", noSwap)},
+			want:            1024,
+		},
+		{
+			name:            "no-root-unlimited",
+			noRootContainer: true,
+			containers:      []*Container{noRootSandbox, app("a", nil)},
+			want:            -1,
+		},
+		{
+			name:       "sandbox-limit-over-unlimited",
+			containers: []*Container{sandboxWithSwap("0"), app("a", noSwap), app("b", nil)},
+			want:       0,
+		},
+		{
+			name:       "sandbox-limit-below-sum",
+			containers: []*Container{sandboxWithSwap("2048"), app("a", swap("1024")), app("b", swap("4096"))},
+			want:       2048,
+		},
+		{
+			name:       "sandbox-limit-above-sum",
+			containers: []*Container{sandboxWithSwap("8192"), app("a", swap("1024")), app("b", swap("4096"))},
+			want:       5120,
+		},
+		{
+			name:       "sandbox-unlimited",
+			containers: []*Container{sandboxWithSwap("max"), app("a", swap("1024"))},
+			want:       1024,
+		},
+		{
+			name:       "sandbox-invalid",
+			containers: []*Container{sandboxWithSwap("lots"), app("a", swap("1024"))},
+			wantErr:    true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := podMemorySwapMax(sandboxID, tc.noRootContainer, tc.containers)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("podMemorySwapMax() error = %v, want error: %t", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("podMemorySwapMax() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSetOOMScoreAdjExited(t *testing.T) {
 	cmd := exec.Command("/bin/cat")
 	stdin, err := cmd.StdinPipe()
