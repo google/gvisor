@@ -38,6 +38,11 @@ const (
 	shortSymlinkLen = 128
 )
 
+// DrainDentryCache implements vfs.FilesystemImpl.DrainDentryCache.
+func (fs *filesystem) DrainDentryCache(ctx context.Context) error {
+	return linuxerr.EOPNOTSUPP
+}
+
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {
 	// All filesystem state is in-memory.

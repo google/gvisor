@@ -164,6 +164,7 @@ func (d *dentryCache) StateTypeName() string {
 
 func (d *dentryCache) StateFields() []string {
 	return []string{
+		"isGlobal",
 		"maxCachedDentries",
 		"dentries",
 		"dentriesLen",
@@ -175,18 +176,20 @@ func (d *dentryCache) beforeSave() {}
 // +checklocksignore
 func (d *dentryCache) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.SaveUint64(0, &d.maxCachedDentries)
-	stateSinkObject.Save(1, &d.dentries)
-	stateSinkObject.SaveUint64(2, &d.dentriesLen)
+	stateSinkObject.SaveBool(0, &d.isGlobal)
+	stateSinkObject.SaveUint64(1, &d.maxCachedDentries)
+	stateSinkObject.Save(2, &d.dentries)
+	stateSinkObject.SaveUint64(3, &d.dentriesLen)
 }
 
 func (d *dentryCache) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *dentryCache) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadUint64(0, &d.maxCachedDentries)
-	stateSourceObject.Load(1, &d.dentries)
-	stateSourceObject.LoadUint64(2, &d.dentriesLen)
+	stateSourceObject.LoadBool(0, &d.isGlobal)
+	stateSourceObject.LoadUint64(1, &d.maxCachedDentries)
+	stateSourceObject.Load(2, &d.dentries)
+	stateSourceObject.LoadUint64(3, &d.dentriesLen)
 }
 
 func (fstype *FilesystemType) StateTypeName() string {
