@@ -34,7 +34,9 @@ const (
 	pg            = uint64(hostarch.PageSize)
 	testFilestore = 8 << 20
 	// dataBase is a page offset well past the default 64 KiB test regions.
+	dataBase = 64 * pg
 )
+
 
 func testOpts() Options {
 	return Options{
@@ -288,6 +290,199 @@ func TestRenameExchangeAndReplace(t *testing.T) {
 	}
 }
 
+func TestTornTail(t *testing.T) {
+	fd := newTestFile(t)
+	_, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+	j.Inode(regRec(2, 0))
+	j.DirentAdd(1, "f", 2)
+	j.Inode(regRec(3, 0))
+	j.mu.Lock()
+	lastStart := j.active.tail
+	activeMap := j.active.mapping
+	j.mu.Unlock()
+	j.DirentAdd(1, "torn", 3)
+	j.mu.Lock()
+	lastEnd := j.active.tail
+	j.mu.Unlock()
+	// The covered bytes of the last record: header, payload and checksum.
+	covered := recordHeaderSize + uint64(len("torn")) + 18 + recordCRCSize
+
+	// Snapshot the whole file so Open's hole-punching of unused ranges doesn't
+	// clobber anything we restore.
+	fileSnap := make([]byte, dataBase*pg)
+	if n, err := unix.Pread(fd, fileSnap, 0); err != nil {
+		t.Fatalf("Pread: %v", err)
+	} else {
+		fileSnap = fileSnap[:n]
+	}
+	restore := func() {
+		if _, err := unix.Pwrite(fd, fileSnap, 0); err != nil {
+			t.Fatalf("Pwrite: %v", err)
+		}
+	}
+
+	check := func(t *testing.T, what string) {
+		t.Helper()
+		_, _, st, err := open(t, fd, testOpts())
+		if err != nil {
+			t.Fatalf("%s: Open: %v", what, err)
+		}
+		if got, want := children(st, 1), map[string]uint64{"f": 2}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: root entries %v, want %v", what, got, want)
+		}
+	}
+
+	// Truncate the last record: zero its second half.
+	clear(activeMap[lastStart+covered/2 : lastEnd])
+	check(t, "truncated")
+	restore()
+
+	// Remove the magic only.
+	clear(activeMap[lastStart : lastStart+4])
+	check(t, "no magic")
+	restore()
+
+	// Flip each covered byte of the last record in turn.
+	for k := uint64(0); k < covered; k++ {
+		activeMap[lastStart+k] ^= 0x5a
+		check(t, "flipped byte")
+		restore()
+	}
+
+	// Without damage, the last record is replayed.
+	_, _, st := mustOpen(t, fd, testOpts())
+	if got, want := children(st, 1), map[string]uint64{"f": 2, "torn": 3}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root entries %v, want %v", got, want)
+	}
+}
+
+func TestStaleRecordsAfterCompaction(t *testing.T) {
+	fd := newTestFile(t)
+	_, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+	for i := uint64(0); i < 100; i++ {
+		j.Inode(regRec(2, i))
+	}
+	for k := 0; k < 2; k++ {
+		s, err := j.BeginSnapshot(1, 2, 0)
+		if err != nil {
+			t.Fatalf("BeginSnapshot: %v", err)
+		}
+		s.Inode(dirRec(1))
+		if err := s.Commit(); err != nil {
+			t.Fatalf("Commit: %v", err)
+		}
+	}
+	_, _, st := mustOpen(t, fd, testOpts())
+	if n := len(st.Inodes); n != 1 {
+		t.Fatalf("got %d inodes, want 1", n)
+	}
+}
+
+func TestCompaction(t *testing.T) {
+	fd := newTestFile(t)
+	_, j := mustCreate(t, fd, testOpts())
+	requested := 0
+	j.SetCompactionRequester(func() { requested++ })
+	initRoot(t, j)
+	j.Inode(regRec(2, 0))
+	j.DirentAdd(1, "f", 2)
+	for i := uint64(0); requested == 0; i++ {
+		if i > 10000 {
+			t.Fatalf("compaction was never requested")
+		}
+		j.ExtentSet(2, 0, pg, dataBase+(i%16)*pg)
+	}
+	targetOff := dataBase + 5*pg
+	j.ExtentSet(2, 0, pg, targetOff)
+	j.Inode(regRec(2, 100))
+	if requested != 1 {
+		t.Fatalf("compaction requested %d times, want 1", requested)
+	}
+
+	j.mu.Lock()
+	oldGen := j.gen
+	j.mu.Unlock()
+	s, err := j.BeginSnapshot(1, 3, 0)
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	s.Inode(dirRec(1))
+	s.Inode(regRec(2, 100))
+	s.ExtentSet(2, 0, pg, targetOff)
+	s.DirentAdd(1, "f", 2)
+	// A record appended during compaction goes to both regions.
+	j.Inode(regRec(2, 200))
+
+	// Copy fd to inspect crash-before-Commit without hole-punching j's inactive
+	// region in fd!
+	crashFD := copyFD(t, fd)
+	_, _, st := mustOpen(t, crashFD, testOpts())
+	if f := st.Inodes[2]; f.Size != 200 || !reflect.DeepEqual(f.Extents, []Extent{{0, pg, targetOff}}) {
+		t.Fatalf("before commit: file %+v", f)
+	}
+
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	j.mu.Lock()
+	newGen, tail, size := j.gen, j.active.tail, j.active.size
+	j.mu.Unlock()
+	if newGen != oldGen+1 || tail > size/4 {
+		t.Fatalf("after commit: generation %d (was %d), tail %d", newGen, oldGen, tail)
+	}
+	j.Inode(regRec(2, 300))
+	_, _, st = mustOpen(t, fd, testOpts())
+	if f := st.Inodes[2]; f.Size != 300 || !reflect.DeepEqual(f.Extents, []Extent{{0, pg, targetOff}}) {
+		t.Fatalf("after commit: file %+v", f)
+	}
+	if got, want := children(st, 1), map[string]uint64{"f": 2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after commit: root entries %v, want %v", got, want)
+	}
+}
+
+func copyFD(t *testing.T, srcFD int) int {
+	t.Helper()
+	end := uint64(2 << 20)
+	buf := make([]byte, hostarch.MustPageRoundUp(end))
+	n, err := unix.Pread(srcFD, buf, 0)
+	if err != nil {
+		t.Fatalf("Pread: %v", err)
+	}
+	dst := newTestFile(t)
+	if _, err := unix.Pwrite(dst, buf[:n], 0); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	return dst
+}
+
+func TestOverflow(t *testing.T) {
+	fd := newTestFile(t)
+	opts := testOpts()
+	opts.RegionSize = 4 * pg
+	_, j := mustCreate(t, fd, opts)
+	initRoot(t, j)
+	for !j.Broken() {
+		j.Inode(regRec(2, 0))
+	}
+	if _, _, _, err := open(t, fd, opts); err == nil || !strings.Contains(err.Error(), "overflowed") {
+		t.Fatalf("Open of an overflowed journal: got %v, want overflow error", err)
+	}
+	s, err := j.BeginSnapshot(1, 2, 0)
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	s.Inode(dirRec(1))
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if j.Broken() {
+		t.Fatalf("journal still broken after compaction")
+	}
+	mustOpen(t, fd, opts)
+}
+
 func TestSnapshotTooLarge(t *testing.T) {
 	fd := newTestFile(t)
 	opts := testOpts()
@@ -353,6 +548,221 @@ func TestHeaderValidation(t *testing.T) {
 	}
 }
 
+func TestValidationFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		records func(j *Journal)
+	}{
+		{
+			name: "cycle",
+			records: func(j *Journal) {
+				j.Inode(dirRec(2))
+				j.DirentAdd(1, "a", 2)
+				j.Inode(dirRec(3))
+				j.DirentAdd(2, "b", 3)
+				j.Rename(1, "a", 3, "a", false)
+			},
+		},
+		{
+			name: "shared page",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, pg))
+				j.DirentAdd(1, "a", 2)
+				j.Inode(regRec(3, pg))
+				j.DirentAdd(1, "b", 3)
+				j.ExtentSet(2, 0, pg, dataBase)
+				j.ExtentSet(3, 0, pg, dataBase)
+			},
+		},
+		{
+			name: "shared page in one file",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, 2*pg))
+				j.DirentAdd(1, "a", 2)
+				j.ExtentSet(2, 0, pg, dataBase)
+				j.ExtentSet(2, pg, pg, dataBase)
+			},
+		},
+		{
+			name: "extent overlaps journal header",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, pg))
+				j.DirentAdd(1, "a", 2)
+				j.ExtentSet(2, 0, pg, 0)
+			},
+		},
+		{
+			name: "extent overlaps active journal region",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, pg))
+				j.DirentAdd(1, "a", 2)
+				j.ExtentSet(2, 0, pg, headerSize)
+			},
+		},
+		{
+			name: "name with slash",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, 0))
+				j.DirentAdd(1, "a/b", 2)
+			},
+		},
+		{
+			name: "dot name",
+			records: func(j *Journal) {
+				j.Inode(dirRec(2))
+				j.DirentAdd(1, "..", 2)
+			},
+		},
+		{
+			name: "empty name",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, 0))
+				j.DirentAdd(1, "", 2)
+			},
+		},
+		{
+			name: "extent beyond filestore",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, pg))
+				j.DirentAdd(1, "a", 2)
+				j.ExtentSet(2, 0, pg, testFilestore)
+			},
+		},
+		{
+			name: "unaligned extent",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, pg))
+				j.DirentAdd(1, "a", 2)
+				j.ExtentSet(2, 0, pg, dataBase+1)
+			},
+		},
+		{
+			name: "extent on directory",
+			records: func(j *Journal) {
+				j.Inode(dirRec(2))
+				j.DirentAdd(1, "a", 2)
+				j.ExtentSet(2, 0, pg, dataBase)
+			},
+		},
+		{
+			name: "entry for missing inode",
+			records: func(j *Journal) {
+				j.DirentAdd(1, "a", 9)
+			},
+		},
+		{
+			name: "directory hard link",
+			records: func(j *Journal) {
+				j.Inode(dirRec(2))
+				j.DirentAdd(1, "a", 2)
+				j.DirentAdd(1, "b", 2)
+			},
+		},
+		{
+			name: "duplicate entry",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, 0))
+				j.DirentAdd(1, "a", 2)
+				j.DirentAdd(1, "a", 2)
+			},
+		},
+		{
+			name: "type change",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, 0))
+				j.Inode(dirRec(2))
+			},
+		},
+		{
+			name: "free linked inode",
+			records: func(j *Journal) {
+				j.Inode(regRec(2, 0))
+				j.DirentAdd(1, "a", 2)
+				j.InodeFree(2)
+			},
+		},
+		{
+			name: "invalid mode",
+			records: func(j *Journal) {
+				j.Inode(&InodeRecord{Ino: 2, Mode: 0777})
+			},
+		},
+		{
+			name: "duplicate xattr",
+			records: func(j *Journal) {
+				j.Inode(&InodeRecord{Ino: 2, Mode: modeRegular, Xattrs: []Xattr{{"user.a", "1"}, {"user.a", "2"}}})
+			},
+		},
+		{
+			name: "second root record",
+			records: func(j *Journal) {
+				j.mu.Lock()
+				defer j.mu.Unlock()
+				if buf := j.reserve(&j.active, 16); buf != nil {
+					binary.LittleEndian.PutUint64(buf[0:], 1)
+					binary.LittleEndian.PutUint64(buf[8:], 2)
+					j.seal(&j.active, RecordRoot, 16)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fd := newTestFile(t)
+			_, j := mustCreate(t, fd, testOpts())
+			initRoot(t, j)
+			tc.records(j)
+			if _, _, st, err := open(t, fd, testOpts()); err == nil {
+				t.Fatalf("Open succeeded with state %+v, want error", st)
+			}
+		})
+	}
+}
+
+func TestIncomplete(t *testing.T) {
+	fd := newTestFile(t)
+	f := dupFile(t, fd)
+	defer f.Close()
+	if incomplete, err := Incomplete(f); err != nil || incomplete {
+		t.Fatalf("Incomplete on empty file: %t, %v; want false", incomplete, err)
+	}
+
+	mf := newTestMF(t, fd, false /* keep */)
+	j, err := CreateIncomplete(mf, testOpts())
+	if err != nil {
+		t.Fatalf("CreateIncomplete: %v", err)
+	}
+	t.Cleanup(j.Close)
+	if incomplete, err := Incomplete(f); err != nil || !incomplete {
+		t.Fatalf("Incomplete: %t, %v; want true", incomplete, err)
+	}
+	if _, _, _, err := open(t, fd, testOpts()); !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("Open of an incomplete journal: got %v, want ErrIncomplete", err)
+	}
+
+	s, err := j.BeginSnapshot(1, 4, 0)
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	s.Inode(dirRec(1))
+	s.Inode(regRec(3, pg))
+	s.ExtentSet(3, 0, pg, dataBase)
+	s.DirentAdd(1, "g", 3)
+	// A crash before Commit leaves the journal incomplete.
+	if _, _, _, err := open(t, fd, testOpts()); !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("Open before Commit: got %v, want ErrIncomplete", err)
+	}
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if incomplete, err := Incomplete(f); err != nil || incomplete {
+		t.Fatalf("Incomplete after Commit: %t, %v; want false", incomplete, err)
+	}
+	_, _, st := mustOpen(t, fd, testOpts())
+	if got, want := children(st, 1), map[string]uint64{"g": 3}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root entries after Commit: %v, want %v", got, want)
+	}
+}
+
 func dupFile(t *testing.T, fd int) *os.File {
 	t.Helper()
 	dup, err := unix.Dup(fd)
@@ -395,5 +805,16 @@ func TestFormatVersion(t *testing.T) {
 	}
 	if _, _, _, err := open(t, fd, testOpts()); err == nil || !strings.Contains(err.Error(), "format version is 2") {
 		t.Fatalf("Open of a version 2 journal: got %v, want a format version error", err)
+	}
+}
+
+func TestMaxInodeRejected(t *testing.T) {
+	fd := newTestFile(t)
+	_, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+	j.Inode(&InodeRecord{Ino: ^uint64(0), Mode: modeRegular | 0644})
+	j.DirentAdd(1, "max", ^uint64(0))
+	if _, _, _, err := open(t, fd, testOpts()); err == nil || !strings.Contains(err.Error(), "overflows next inode counter") {
+		t.Fatalf("Open with MaxUint64 inode: got %v, want overflow error", err)
 	}
 }

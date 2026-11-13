@@ -47,6 +47,8 @@ import (
 	"fmt"
 	"hash/crc32"
 	"math"
+	"os"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -266,6 +268,12 @@ func Create(mf *pgalloc.MemoryFile, opts Options) (*Journal, error) {
 	return create(mf, opts, false /* incomplete */)
 }
 
+// CreateIncomplete initializes a new journal in mf and marks it as incomplete.
+// Until the returned Journal commits its first snapshot, Open refuses the
+// journal with ErrIncomplete.
+func CreateIncomplete(mf *pgalloc.MemoryFile, opts Options) (*Journal, error) {
+	return create(mf, opts, true /* incomplete */)
+}
 
 // Open replays an existing journal in mf and adopts the regular-file pages that
 // it references into mf (which must have been created with KeepFileContents).
@@ -589,6 +597,22 @@ func checkHeaderFormat(h []byte) (uint64, error) {
 // ErrIncomplete is returned by Open if the journal is incomplete or was never
 // initialized. See CreateIncomplete.
 var ErrIncomplete = errors.New("journal is incomplete")
+
+// Incomplete returns true if the journal in file is marked as incomplete.
+func Incomplete(file *os.File) (bool, error) {
+	var hdr [headerSize]byte
+	n, err := unix.Pread(int(file.Fd()), hdr[:], 0)
+	if err != nil {
+		return false, fmt.Errorf("failed to read journal header: %w", err)
+	}
+	if n < headerSize {
+		return false, nil
+	}
+	if _, err := checkHeaderFormat(hdr[:]); err != nil {
+		return false, nil
+	}
+	return binary.LittleEndian.Uint64(hdr[activeOff:])&incompleteBit != 0, nil
+}
 
 // ImageMismatchError is returned by Open when the journal was created for a
 // different image.
