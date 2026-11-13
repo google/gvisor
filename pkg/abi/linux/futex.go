@@ -83,3 +83,32 @@ type RobustListHead struct {
 
 // SizeOfRobustListHead is the size of a RobustListHead struct.
 var SizeOfRobustListHead = (*RobustListHead)(nil).SizeBytes()
+
+// Flags for struct futex_waitv, from <linux/futex.h>.
+const (
+	FUTEX2_SIZE_U8   = 0x00
+	FUTEX2_SIZE_U16  = 0x01
+	FUTEX2_SIZE_U32  = 0x02
+	FUTEX2_SIZE_U64  = 0x03
+	FUTEX2_SIZE_MASK = 0x03
+	FUTEX2_NUMA      = 0x04
+	FUTEX2_MPOL      = 0x08
+	FUTEX2_PRIVATE   = FUTEX_PRIVATE_FLAG
+
+	// FUTEX_32 is the legacy name of FUTEX2_SIZE_U32.
+	FUTEX_32 = FUTEX2_SIZE_U32
+)
+
+// FUTEX_WAITV_MAX is the maximum number of futexes in a futex_waitv(2) call.
+const FUTEX_WAITV_MAX = 128
+
+// FutexWaitv corresponds to Linux's struct futex_waitv.
+//
+// +marshal slice:FutexWaitvSlice
+type FutexWaitv struct {
+	_        structs.HostLayout
+	Val      uint64
+	Uaddr    uint64
+	Flags    uint32
+	Reserved uint32
+}

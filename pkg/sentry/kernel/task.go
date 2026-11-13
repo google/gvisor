@@ -676,6 +676,12 @@ type Task struct {
 	// futexWaiter is exclusive to the task goroutine.
 	futexWaiter *futex.Waiter `state:"nosave"`
 
+	// futexWaiters holds linux.FUTEX_WAITV_MAX futex.Waiters that share one
+	// channel. It is allocated on first use.
+	//
+	// futexWaiters is exclusive to the task goroutine.
+	futexWaiters []*futex.Waiter `state:"nosave"`
+
 	// robustList is a pointer to the head of the tasks's robust futex
 	// list.
 	robustList hostarch.Addr
@@ -805,6 +811,16 @@ func (t *Task) CopyScratchBuffer(size int) []byte {
 // FutexWaiter returns the Task's futex.Waiter.
 func (t *Task) FutexWaiter() *futex.Waiter {
 	return t.futexWaiter
+}
+
+// FutexWaiters returns n of the Task's futex.Waiters that share one channel.
+// The caller must be running on the task goroutine, and n must be at most
+// linux.FUTEX_WAITV_MAX.
+func (t *Task) FutexWaiters(n int) []*futex.Waiter {
+	if len(t.futexWaiters) < n {
+		t.futexWaiters = futex.NewWaiters(linux.FUTEX_WAITV_MAX)
+	}
+	return t.futexWaiters[:n]
 }
 
 // Kernel returns the Kernel containing t.
