@@ -5,6 +5,142 @@
 gVisor has the ability to checkpoint a process, save its current state in a
 state file, and restore into a new container using the state file.
 
+## Choosing a way to save sandbox state
+
+gVisor has four ways to save state and use it in a later sandbox. They differ
+in what they save, when they save it, and what the new sandbox starts with.
+
+Method                                              | Saves                                                                                | When                                  | New sandbox gets
+--------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | ----------------
+Checkpoint/restore (this page)                      | Processes, memory, open files and all filesystems                                    | When you run `runsc checkpoint`       | The same processes, resumed
+[Filesystem snapshot](fs_snapshot.md)               | Rootfs upper layers of all containers, and optionally other disk-backed tmpfs mounts | When you run `runsc fscheckpoint`     | The saved files, with new processes
+[Rootfs tar snapshot](rootfs_snapshot.md)           | Rootfs upper layer of one container, as a tar file                                   | When you run `runsc tar rootfs-upper` | The saved files, with new processes
+[Journaling rootfs upper](#journaling-rootfs-upper) | Rootfs upper layer of each journaled container                                       | At each filesystem change             | The files as of the last change, with new processes
+
+### Comparison
+
+*   **Recovery point.** The first three methods save a point in time, so
+    changes made after the last save are lost. The journaling rootfs upper
+    records every change as it happens. After a sentry crash or a clean stop,
+    the next sandbox gets the upper layer as of the last completed file
+    operation. An operation that was in progress during a crash can be missing
+    or partly applied, as after a `SIGKILL`.
+
+*   **Crash recovery.** Only the journaling rootfs upper recovers from a crash
+    without an earlier save. It does not cover a host crash: it relies on the
+    host page cache, and it does not `fsync` its files. The other methods can
+    recover from any crash, but only to their last saved image.
+
+*   **Processes.** Only checkpoint/restore resumes processes, memory and open
+    file descriptors. The other methods restore files only, and the new sandbox
+    starts its processes from the beginning.
+
+*   **Cost.** Checkpoint/restore cost grows with application memory and
+    filesystem size, and the sandbox pauses while the checkpoint is taken.
+    Filesystem and tar snapshots cost grows with the size of the saved upper
+    layers. The journaling rootfs upper adds a small, synchronous metadata
+    record to each filesystem change, and data is never copied: a restart
+    reuses the pages already in the filestore, so its cost grows with the
+    number of files, not the amount of data. While the journal is compacted,
+    files can't be created, deleted or renamed, and the start of a new journal
+    after a restore pauses the sandbox. Both grow with the number of files.
+
+*   **Restore speed.** Checkpoint/restore and filesystem snapshots can load
+    data in the background while the application runs. A rootfs tar snapshot
+    must be applied completely before the container starts. The journaling
+    rootfs upper only rebuilds metadata at start.
+
+*   **Format and portability.** Rootfs tar snapshots are standard tar files
+    that other tools can read and change. Checkpoint images, filesystem
+    snapshots and journaling rootfs upper files can only be used by the same
+    runsc version that wrote them. The journaling rootfs upper can optionally
+    record and verify the container's lower-layer image ID on import.
+
+*   **Scope.** Checkpoint/restore and filesystem snapshots cover all
+    containers in a sandbox. A rootfs tar snapshot covers one container. The
+    journaling rootfs upper is enabled per container.
+
+*   **File management.** Checkpoint images, filesystem snapshots and tar files
+    are written where you choose, and you delete them when you no longer need
+    them. With `--overlay2=root:self` (the default), the journaling rootfs
+    upper stores both file data and journal records inside
+    `<rootfs>/.gvisor.filestore.<sandbox-id>`, and `runsc delete` keeps that
+    file so external tooling can extract or re-import it.
+
+### Combining methods
+
+The journaling rootfs upper works with the other methods:
+
+*   You can checkpoint, filesystem-checkpoint or tar-snapshot a sandbox that
+    uses a journaling rootfs upper. These saves only read the upper layer
+    (omitting journal metadata from checkpoints), and with `--leave-running`
+    the journal stays valid.
+
+*   A restore, a filesystem snapshot restore or a rootfs tar snapshot can
+    populate a new container with `--journaling-rootfs-upper=on`, starting
+    a fresh journal in the container's filestore once population completes.
+    `--journaling-rootfs-upper-import` cannot be combined with any of those
+    restore methods.
+
+*   Images saved from a sandbox that uses a journaling rootfs upper restore
+    either with `--journaling-rootfs-upper=on` or without it on any
+    file-backed rootfs overlay (such as `--overlay2=root:self` or
+    `--overlay2=root:dir=<dir>`), and vice versa.
+
+### Journaling rootfs upper
+
+> Note: This feature is experimental.
+
+The journaling rootfs upper logs metadata changes inside the container's
+file-backed rootfs overlay upper layer `tmpfs` so that file data pages and
+journal records live together in the same backing filestore file. Runtime
+journaling and startup replay/import are configured independently:
+
+*   **Runtime journaling**: Pass `--journaling-rootfs-upper=on` for the root
+    container, or pass `--journaling-rootfs-upper-annotations=on` and set
+    `dev.gvisor.journal.rootfs.upper: "true"` for any container (append
+    `.<container-name>` in multi-container pods, as for
+    `dev.gvisor.tar.rootfs.upper`). Requires a file-backed rootfs overlay such
+    as `--overlay2=root:self` (the default). With `root:self`, `runsc delete`
+    preserves `<rootfs>/.gvisor.filestore.<sandbox-id>` on the host's rootfs
+    upper layer so external tooling can extract or re-import it before tearing
+    down the container snapshot.
+
+*   **Startup import / replay**: Pass
+    `--journaling-rootfs-upper-import=<path-or-/proc/self/fd/N>` for the root
+    container, or pass `--journaling-rootfs-upper-annotations=on` and set
+    `dev.gvisor.journal.rootfs.upper.import` to a regular host file path (with
+    `.<container-name>` in multi-container pods; `/proc/self/fd/N` is only
+    accepted via the `--journaling-rootfs-upper-import` flag) to replay a
+    previously journaled filestore file and adopt its data pages in place
+    without copying. Startup import works with or without runtime journaling
+    enabled on the new container.
+
+*   **Optional image verification**: Pass `--journaling-rootfs-upper-image-id`
+    or (with `--journaling-rootfs-upper-annotations=on`) set
+    `dev.gvisor.journal.rootfs.upper.image-id` to record the lower-layer image
+    identity when creating a journal and verify it when importing one. If
+    omitted on import (the default), image ID verification is skipped.
+
+```bash
+# Run with runtime journaling enabled (leaves .gvisor.filestore.<id> in rootfs on delete):
+runsc --journaling-rootfs-upper=on run <container id>
+
+# Start a new container replaying an extracted filestore in place:
+runsc --journaling-rootfs-upper-import=/var/lib/sandboxes/app/upper.filestore \
+    run <new container id>
+```
+
+*   `runsc` takes an exclusive `flock` lock on journaled and imported filestore
+    files so two sandboxes cannot use the same file concurrently.
+
+*   `runsc restore`, `--fs-restore-image-path`, and `dev.gvisor.tar.rootfs.upper`
+    can populate a new container with `--journaling-rootfs-upper=on`,
+    initializing a fresh journal after population completes. They cannot be
+    combined with `--journaling-rootfs-upper-import`. If journal activation
+    fails during restore, the sandbox stops and leaves the filestore marked
+    incomplete so a subsequent import refuses it.
+
 ## How to use checkpoint/restore
 
 Checkpoint/restore functionality is currently available via raw `runsc`
