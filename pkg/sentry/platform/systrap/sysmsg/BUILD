@@ -1,86 +1,85 @@
 load("//tools:arch.bzl", "arch_genrule", "select_arch")
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "go_library")
-load("build.bzl", "cc_pie_obj")
+load("//tools:defs.bzl", "cc_binary", "cc_toolchain", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 
-cc_flags_supplier(
-    name = "no_pie_cc_flags",
-    features = ["-pie"],
-)
-
-cc_pie_obj(
-    name = "sighandler",
-    srcs = select_arch(
-        amd64 = [
-            "sighandler_amd64.c",
-            "sysmsg_offsets_amd64.h",
-        ],
-        arm64 = ["sighandler_arm64.c"],
-    ) + [
-        "atomic.h",
-        "sysmsg.h",
-        "sysmsg_offsets.h",
-    ],
-    outs = ["sighandler.o"],
-)
-
-cc_pie_obj(
-    name = "sysmsg_lib",
+# The stub runs inside a sandboxed process. It has no C runtime and must
+# contain only position-independent code and data in the layout in pie.lds.S.
+cc_binary(
+    name = "sighandler.built-in.bin.o",
     srcs = [
         "atomic.h",
         "sysmsg.h",
         "sysmsg_lib.c",
         "sysmsg_offsets.h",
-    ],
-    outs = ["sysmsg_lib.o"],
-)
-
-cc_pie_obj(
-    name = "sysrestorer",
-    srcs = select_arch(
-        amd64 = ["sigrestorer_amd64.S"],
-        arm64 = ["sigrestorer_arm64.S"],
-    ),
-    outs = ["sysrestorer.o"],
-)
-
-cc_pie_obj(
-    name = "syshandler",
-    srcs = select_arch(
+    ] + select_arch(
         amd64 = [
+            "sighandler_amd64.c",
+            "sigrestorer_amd64.S",
             "syshandler_amd64.S",
             "sysmsg_offsets_amd64.h",
         ],
-        arm64 = ["syshandler_arm64.S"],
-    ) + [
-        "sysmsg_offsets.h",
+        arm64 = [
+            "sighandler_arm64.c",
+            "sigrestorer_arm64.S",
+            "syshandler_arm64.S",
+        ],
+    ),
+    additional_linker_inputs = ["pie.lds.S"],
+    copts = [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-command-line-argument",
+        "-fpie",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-mgeneral-regs-only",
+        # pie.lds.S folds .debug* into the .crblob bytes Go embeds. Keep
+        # DWARF's build paths out of the mapped stub.
+        "-g0",
+        "-Wa,--noexecstack",
+        "-fno-asynchronous-unwind-tables",
+        "-fno-sanitize=all",
+        "-fno-stack-protector",
+    ] + select_arch(
+        amd64 = ["-O2"],
+        arm64 = [
+            # Keep the original ARM64 level. Unoptimized Clang emitted a
+            # memcpy call for a struct copy before the stub provided memcpy.
+            # That history doesn't establish a need for -O1 over -O2.
+            "-O1",
+            "-mno-outline-atomics",
+        ],
+    ),
+    features = [
+        "-coverage",
+        "-default_link_flags",
+        "-pie",
     ],
-    outs = ["syshandler.o"],
+    link_extra_lib = None,
+    linkopts = [
+        "-nostdlib",
+        "-pie",
+        "-Wl,--build-id=none",
+        # Go locates __export_ symbols that the stub itself need not reference.
+        "-Wl,--no-gc-sections",
+        "-Wl,-z,noexecstack",
+        "-Wl,-T,$(location pie.lds.S)",
+    ],
+    linkstatic = True,
+    local_defines = select({
+        "//tools/bazeldefs:pagesize_64k": ["PAGE_SIZE=65536"],
+        "//conditions:default": ["PAGE_SIZE=4096"],
+    }),
+    stamp = 0,
 )
 
-genrule(
+alias(
     name = "sighandler_object",
-    srcs = [
-        "pie.lds.S",
-        ":sighandler",
-        ":syshandler",
-        ":sysrestorer",
-        ":sysmsg_lib",
-    ],
-    outs = ["sighandler.built-in.bin.o"],
-    cmd = "$(LD) " +
-          "-pie -z noexecstack -T $(location pie.lds.S) " +
-          "$(location :sysrestorer) $(location :sighandler) " +
-          "$(location :syshandler) $(location :sysmsg_lib) " +
-          "-o $@",
-    features = ["-pie"],
-    toolchains = [
-        cc_toolchain,
-    ],
+    actual = ":sighandler.built-in.bin.o",
 )
 
 genrule(
