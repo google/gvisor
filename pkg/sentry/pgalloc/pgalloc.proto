@@ -40,6 +40,12 @@ message ChunkInfoProto {
 }
 
 message MemoryFileMetadataProto {
+  // Metadata format version for filesystem checkpoints (pages_meta), set and
+  // validated in pkg/sentry/pgalloc/save_restore.go. Increment this version
+  // (while keeping restore support in importMetadataProto for versions from
+  // the past 12 months) whenever a change to this proto or the saved pages
+  // layout alters restore semantics or would cause an older runsc binary
+  // (which ignores unknown proto3 fields) to misinterpret a newer checkpoint.
   uint64 version = 1;
   repeated ChunkInfoProto chunks = 2;
   repeated MemAcctRangeProto mem_acct = 3;

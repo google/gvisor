@@ -35,6 +35,14 @@ message Tmpfs {
 }
 
 message Manifest {
+  // Checkpoint format version, set in pkg/sentry/kernel/fscheckpoint.go and
+  // validated in runsc/boot/fscheckpoint.go. Increment this version (while
+  // keeping restore support for versions from the past 12 months) whenever
+  // changing this proto or the on-disk checkpoint layout (such as multitar
+  // regular-file encodings in pkg/sentry/fsimpl/tmpfs/fscheckpoint.go) in a
+  // way that requires restore to distinguish old and new checkpoints, or that
+  // would cause an older runsc binary (which ignores unknown proto3 fields) to
+  // misinterpret a newer checkpoint.
   uint64 version = 1;
   string runsc_version = 2;
   uint64 page_size = 3;

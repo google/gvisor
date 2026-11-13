@@ -194,6 +194,25 @@ Load the `gvisor-performance` skill whenever any of these paths show up, or when
 a change has any possibility of performance implications. Test-only changes do
 not have performance implications.
 
+#### Filesystem checkpoint versioning
+
+Filesystem checkpoints (`//pkg/sentry/fscheckpoint`, `//pkg/sentry/pgalloc`,
+`//pkg/sentry/fsimpl/tmpfs`, `//runsc/boot`) target 12 months of backward
+compatibility: `runsc` at `HEAD` must be able to restore checkpoints saved up to
+12 months ago.
+
+-   Increment `Manifest.version` (set in `pkg/sentry/kernel/fscheckpoint.go` and
+    checked in `runsc/boot/fscheckpoint.go`) or
+    `MemoryFileMetadataProto.version` (set and checked in
+    `pkg/sentry/pgalloc/save_restore.go`) whenever a proto or on-disk format
+    change (including `multitar` regular-file encodings in
+    `pkg/sentry/fsimpl/tmpfs/fscheckpoint.go`) requires restore logic to
+    distinguish old and new checkpoints, or would cause an older `runsc` binary
+    (which silently ignores unknown proto3 fields) to misinterpret a newer
+    checkpoint.
+-   Keep restore support for all checkpoint versions released within the past 12
+    months when bumping a version number.
+
 ## Git / GitHub / PR Guidelines
 
 Before sending PRs, check the following:

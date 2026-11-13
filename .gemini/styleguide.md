@@ -23,6 +23,17 @@ correctness and Linux compatibility before style.
 *   **Concurrency.** Check lock ordering, locks held across blocking calls, and
     fields accessed without the lock that protects them. Fields protected by a
     mutex have a checklocks annotation, such as `// +checklocks:mu`.
+*   **Filesystem checkpoint compatibility.** Checkpoints target 12 months of
+    backward compatibility across `runsc` versions. Flag changes to
+    `pkg/sentry/fscheckpoint/fscheckpoint.proto`,
+    `pkg/sentry/pgalloc/pgalloc.proto`, or on-disk checkpoint formats
+    (`pkg/sentry/fsimpl/tmpfs/fscheckpoint.go`,
+    `pkg/sentry/kernel/fscheckpoint.go`, `runsc/boot/fscheckpoint.go`,
+    `pkg/sentry/pgalloc/save_restore.go`) that alter restore semantics or layout
+    without bumping `Manifest.version` or `MemoryFileMetadataProto.version`
+    (proto3 ignores unknown fields, so older binaries can silently misinterpret
+    unversioned additions), or that drop restore support for versions from the
+    past 12 months.
 
 ## Coding guidelines
 
