@@ -16,7 +16,9 @@ package journal
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -75,6 +77,85 @@ func mustCreate(t *testing.T, fd int, opts Options) (*pgalloc.MemoryFile, *Journ
 	return mf, j
 }
 
+// open opens the journal in a new MemoryFile backed by a duplicate of fd.
+func open(t *testing.T, fd int, opts Options) (*pgalloc.MemoryFile, *Journal, *State, error) {
+	t.Helper()
+	mf := newTestMF(t, fd, true /* keep */)
+	j, st, err := Open(mf, opts, true /* keepJournal */)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	t.Cleanup(j.Close)
+	return mf, j, st, nil
+}
+
+func mustOpen(t *testing.T, fd int, opts Options) (*pgalloc.MemoryFile, *Journal, *State) {
+	t.Helper()
+	mf, j, st, err := open(t, fd, opts)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return mf, j, st
+}
+
+
+func TestFreshJournal(t *testing.T) {
+	fd := newTestFile(t)
+	// Opening an uninitialized 0-byte file returns ErrIncomplete.
+	if _, _, _, err := open(t, fd, testOpts()); !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("Open of empty file: got %v, want ErrIncomplete", err)
+	}
+	mustCreate(t, fd, testOpts())
+	// Reopening a created journal with no snapshot returns an empty State.
+	_, _, st := mustOpen(t, fd, testOpts())
+	if !st.Empty() {
+		t.Fatalf("reopened journal has state %+v", st)
+	}
+}
+
+
+func TestHeaderValidation(t *testing.T) {
+	fd := newTestFile(t)
+	mustCreate(t, fd, testOpts())
+
+	opts := testOpts()
+	opts.ImageID = ""
+	if _, _, _, err := open(t, fd, opts); err != nil {
+		t.Errorf("Open with empty ImageID (check disabled): got %v, want nil", err)
+	}
+
+	opts = testOpts()
+	opts.ImageID = "image-2"
+	_, _, _, err := open(t, fd, opts)
+	var mismatch *ImageMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Errorf("Open with another image ID: got %v, want ImageMismatchError", err)
+	}
+
+	opts = testOpts()
+	opts.BuildID = "build-2"
+	if _, _, _, err := open(t, fd, opts); err == nil {
+		t.Errorf("Open with another build ID succeeded")
+	}
+
+	// A garbage header is refused.
+	if _, err := unix.Pwrite(fd, []byte("garbage!"), 0); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	if _, _, _, err := open(t, fd, testOpts()); err == nil {
+		t.Errorf("Open with a garbage header succeeded")
+	}
+
+	// A header that is all zeros was never completely written and returns
+	// ErrIncomplete.
+	if _, err := unix.Pwrite(fd, make([]byte, headerSize), 0); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	if _, _, _, err := open(t, fd, testOpts()); !errors.Is(err, ErrIncomplete) {
+		t.Errorf("Open with a zero header: got %v, want ErrIncomplete", err)
+	}
+}
+
 func dupFile(t *testing.T, fd int) *os.File {
 	t.Helper()
 	dup, err := unix.Dup(fd)
@@ -84,17 +165,20 @@ func dupFile(t *testing.T, fd int) *os.File {
 	return os.NewFile(uintptr(dup), "journal")
 }
 
-func TestFreshJournal(t *testing.T) {
+func TestFormatVersion(t *testing.T) {
 	fd := newTestFile(t)
 	mustCreate(t, fd, testOpts())
+	// Rewrite the header with format version 2 and a valid checksum.
 	var h [headerSize]byte
 	if _, err := unix.Pread(fd, h[:], 0); err != nil {
 		t.Fatalf("Pread: %v", err)
 	}
-	if string(h[:8]) != string(headerMagic[:]) {
-		t.Fatalf("magic = %q, want %q", h[:8], headerMagic[:])
+	binary.LittleEndian.PutUint32(h[8:], 2)
+	binary.LittleEndian.PutUint32(h[headerCRCOff:], headerCRC(h[:], headerMagic))
+	if _, err := unix.Pwrite(fd, h[:], 0); err != nil {
+		t.Fatalf("Pwrite: %v", err)
 	}
-	if got, want := binary.LittleEndian.Uint32(h[headerCRCOff:]), headerCRC(h[:], headerMagic); got != want {
-		t.Fatalf("crc = %#x, want %#x", got, want)
+	if _, _, _, err := open(t, fd, testOpts()); err == nil || !strings.Contains(err.Error(), "format version is 2") {
+		t.Fatalf("Open of a version 2 journal: got %v, want a format version error", err)
 	}
 }
