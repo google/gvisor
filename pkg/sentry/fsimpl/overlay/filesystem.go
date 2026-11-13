@@ -1940,24 +1940,30 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 		return nil, err
 	}
 
-	return fs.listXattr(ctx, d, size)
+	return fs.listXattr(ctx, d, rp.Credentials())
 }
 
-func (fs *filesystem) listXattr(ctx context.Context, d *dentry, size uint64) ([]string, error) {
+func (fs *filesystem) listXattr(ctx context.Context, d *dentry, creds *auth.Credentials) ([]string, error) {
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	top := d.topLayer()
-	names, err := vfsObj.ListXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, size)
+	// A bounded size gets FUSE to return names; the syscall layer checks size.
+	names, err := vfsObj.ListXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, linux.XATTR_LIST_MAX)
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter out all overlay attributes.
+	// Filter out overlay attributes and hidden trusted.* names.
+	canListTrusted := creds.HasRootCapability(linux.CAP_SYS_ADMIN)
 	n := 0
 	for _, name := range names {
-		if !fs.isOverlayXattr(name) {
-			names[n] = name
-			n++
+		if fs.isOverlayXattr(name) {
+			continue
 		}
+		if !canListTrusted && strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+			continue
+		}
+		names[n] = name
+		n++
 	}
 	return names[:n], err
 }

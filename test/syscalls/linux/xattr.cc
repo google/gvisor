@@ -19,6 +19,7 @@
 #include <linux/limits.h>
 #include <sched.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -821,6 +822,46 @@ TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
 
   // Remove fails.
   EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_F(XattrTest, TrustedNamespaceListWithoutCapSysAdmin) {
+  // FUSE file descriptors list the server's names unfiltered.
+  SKIP_IF(absl::NullSafeStringView(getenv("GVISOR_FUSE_TEST")) == "TRUE");
+
+  const char* path = test_file_name_.c_str();
+  const char trusted_name[] = "trusted.test";
+  const char user_name[] = "user.test";
+
+  char val = 'a';
+  if (setxattr(path, trusted_name, &val, sizeof(val), /*flags=*/0) < 0) {
+    SKIP_IF(errno == EPERM || errno == EOPNOTSUPP);
+    FAIL() << "unexpected errno from setxattr: " << errno;
+  }
+  ASSERT_THAT(setxattr(path, user_name, &val, sizeof(val), /*flags=*/0),
+              SyscallSucceeds());
+
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+
+  char list[sizeof(trusted_name) + sizeof(user_name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(user_name)));
+  EXPECT_STREQ(list, user_name);
+  EXPECT_THAT(flistxattr(test_file_fd_.get(), list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(user_name)));
+  EXPECT_STREQ(list, user_name);
+
+  ssize_t size = listxattr(path, nullptr, 0);
+  ASSERT_GE(size, static_cast<ssize_t>(sizeof(user_name)));
+  std::vector<char> buf(size);
+  EXPECT_THAT(listxattr(path, buf.data(), buf.size()),
+              SyscallSucceedsWithValue(sizeof(user_name)));
+  EXPECT_STREQ(buf.data(), user_name);
+  size = flistxattr(test_file_fd_.get(), nullptr, 0);
+  ASSERT_GE(size, static_cast<ssize_t>(sizeof(user_name)));
+  buf.resize(size);
+  EXPECT_THAT(flistxattr(test_file_fd_.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(sizeof(user_name)));
+  EXPECT_STREQ(buf.data(), user_name);
 }
 
 int UnshareAndSetxattrInNewUserns(const char* path) {
