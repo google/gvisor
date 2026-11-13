@@ -146,6 +146,14 @@ type filesystem struct {
 	// filesystem that is not journaled.
 	journal atomic.Pointer[journal.Journal] `state:"nosave"`
 
+	// journalRequest signals the journal compactor goroutine.
+	journalRequest chan struct{} `state:"nosave"`
+
+	// journalStop is closed to stop the journal compactor goroutine, and
+	// journalDone is closed when it exits. Protected by mu.
+	journalStop chan struct{} `state:"nosave"`
+	journalDone chan struct{} `state:"nosave"`
+
 	// journaled is true if a journal was started for the filesystem. Its
 	// data then outlives the sandbox, so Release keeps its pages. It is not
 	// saved, since a restored filesystem is not journaled.

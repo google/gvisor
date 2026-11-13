@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
@@ -56,13 +57,80 @@ import (
 // Atime updates by reads are not journaled; the next INODE record or
 // snapshot of the inode records them.
 
+// journalCompactor runs compactions that the journal requests, until stop is
+// closed.
+func (fs *filesystem) journalCompactor(request <-chan struct{}, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	for {
+		select {
+		case <-stop:
+			return
+		case <-request:
+		}
+		if err := fs.compactJournal(); err != nil {
+			log.Warningf("tmpfs: journal compaction failed: %v", err)
+		}
+	}
+}
 
+// startJournalCompactor starts the background compactor goroutine if fs is
+// journaled and not released.
+func (fs *filesystem) startJournalCompactor() {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if fs.released || fs.journal.Load() == nil || fs.journalStop != nil {
+		return
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	fs.journalStop = stop
+	fs.journalDone = done
+	// Stopped in PrepareSave before MemoryFile.SaveTo runs.
+	go fs.journalCompactor(fs.journalRequest, stop, done) // S/R-SAFE: see above.
+}
+
+// stopJournalCompactor stops the background compactor goroutine and waits for
+// any in-flight compaction to finish.
+func (fs *filesystem) stopJournalCompactor() {
+	fs.mu.Lock()
+	stop := fs.journalStop
+	done := fs.journalDone
+	fs.journalStop = nil
+	fs.journalDone = nil
+	fs.mu.Unlock()
+	if stop != nil {
+		close(stop)
+		<-done
+	}
+}
+
+// startJournal starts journaling changes to fs, then compacts the journal.
+//
+// fs.journal is set before the snapshot starts. Each hook reads fs.journal
+// while it holds the lock that the snapshot takes for the state that the hook
+// journals: filesystem.mu for namespace changes, inode.mu for attributes, and
+// regularFile.dataMu for extents. So a change either completes before the
+// snapshot reads its state, or it is journaled. This lets startJournal run
+// while the filesystem is in use.
+//
+// fs.journal is set while filesystem.mu is locked, unless fs was released.
+// Release marks fs released while filesystem.mu is locked, then stops the
+// journal. So either startJournal fails, or Release stops the journal before
+// it releases any file.
 func (fs *filesystem) startJournal(j *journal.Journal) error {
+	request := make(chan struct{}, 1)
+	j.SetCompactionRequester(func() {
+		select {
+		case request <- struct{}{}:
+		default:
+		}
+	})
 	fs.mu.Lock()
 	if fs.released {
 		fs.mu.Unlock()
 		return fmt.Errorf("tmpfs filesystem was released")
 	}
+	fs.journalRequest = request
 	fs.journal.Store(j)
 	fs.journaled.Store(true)
 	fs.mu.Unlock()
@@ -70,6 +138,7 @@ func (fs *filesystem) startJournal(j *journal.Journal) error {
 		fs.journal.Store(nil)
 		return fmt.Errorf("failed to compact tmpfs journal: %w", err)
 	}
+	fs.startJournalCompactor()
 	return nil
 }
 
@@ -77,11 +146,86 @@ func (fs *filesystem) startJournal(j *journal.Journal) error {
 // that releasing the filesystem does not delete its contents from the
 // journal.
 func (fs *filesystem) stopJournal() {
+	fs.stopJournalCompactor()
 	j := fs.journal.Swap(nil)
 	if j == nil {
 		return
 	}
 	j.Close()
+}
+
+// SelfFilestoreWhiteouts returns the names of any self-filestore whiteout
+// entries in the root directory of vfsfs.
+func SelfFilestoreWhiteouts(vfsfs *vfs.Filesystem) []string {
+	fs, ok := vfsfs.Impl().(*filesystem)
+	if !ok {
+		return nil
+	}
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	rootDir, ok := fs.root.inode.impl.(*directory)
+	if !ok {
+		return nil
+	}
+	var names []string
+	for name, child := range rootDir.childMap {
+		if child.isSelfFilestoreWhiteout() {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// SyncSelfFilestoreWhiteouts removes removeNames (if they are self-filestore
+// whiteouts) and ensures selfName (if non-empty) exists as an overlay whiteout
+// in the root directory of vfsfs without modifying the root directory's
+// timestamps.
+//
+// Preconditions: No overlay filesystem is concurrently looking up selfName or
+// removeNames on vfsfs.
+func SyncSelfFilestoreWhiteouts(ctx context.Context, vfsfs *vfs.Filesystem, selfName string, removeNames []string) error {
+	if selfName != "" && !strings.HasPrefix(selfName, fsutil.SelfFilestorePrefix) {
+		return fmt.Errorf("not a self-filestore name: %q", selfName)
+	}
+	fs, ok := vfsfs.Impl().(*filesystem)
+	if !ok {
+		return fmt.Errorf("not a tmpfs filesystem")
+	}
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	rootDir, ok := fs.root.inode.impl.(*directory)
+	if !ok {
+		return fmt.Errorf("tmpfs root is not a directory")
+	}
+	for _, name := range removeNames {
+		if name == selfName {
+			continue
+		}
+		if child, ok := rootDir.childMap[name]; ok && child.isSelfFilestoreWhiteout() {
+			fs.journalUnlinkLocked(rootDir, name)
+			rootDir.removeChildLocked(child)
+			child.inode.decLinksLocked(ctx)
+		}
+	}
+	if selfName == "" {
+		return nil
+	}
+	if _, exists := rootDir.childMap[selfName]; exists {
+		return nil
+	}
+	hadWhiteout := fs.ovlWhiteout != nil
+	major, minor := linux.DecodeDeviceID(linux.WHITEOUT_DEV)
+	whiteoutInode, err := fs.newDeviceFileLocked(0, 0, linux.S_IFCHR|linux.WHITEOUT_MODE, uint32(major), minor, nil /* parentDir */)
+	if err != nil {
+		return err
+	}
+	rootDir.insertChildLocked(fs.newDentry(whiteoutInode), selfName)
+	if hadWhiteout {
+		fs.journalLinkLocked(rootDir, selfName, whiteoutInode)
+	} else {
+		fs.journalCreateLocked(rootDir, selfName, whiteoutInode)
+	}
+	return nil
 }
 
 // snapshotWriter is implemented by journal.Snapshot, which writes snapshot
