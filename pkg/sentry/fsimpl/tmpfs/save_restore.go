@@ -111,3 +111,11 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 }
 
 // afterLoad is invoked by stateify.
+func (rf *regularFile) afterLoad(goContext.Context) {
+	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		if seg.Value() == 0 {
+			rf.inode.fs.pageZeroOwner.Store(rf)
+			return
+		}
+	}
+}

@@ -553,6 +553,17 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	return minor, nil
 }
 
+// UpperRoot returns the root VirtualDentry of the upper layer of vfsfs,
+// without taking an extra reference. It returns a zero VirtualDentry if vfsfs
+// is not an overlay filesystem with an upper layer.
+func UpperRoot(vfsfs *vfs.Filesystem) vfs.VirtualDentry {
+	fs, ok := vfsfs.Impl().(*filesystem)
+	if !ok {
+		return vfs.VirtualDentry{}
+	}
+	return fs.opts.UpperRoot
+}
+
 // TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.
 func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 	upperFS := fs.opts.UpperRoot.Mount().Filesystem()

@@ -168,6 +168,10 @@ type filesystem struct {
 	// pages to the MemoryFile. Release of a journaled filesystem sets it.
 	retainPages atomicbitops.Bool `state:"nosave"`
 
+	// pageZeroOwner points to the regularFile (linked or unlinked) that
+	// currently holds MemoryFile offset 0, if any, so PrepareJournal can
+	// relocate page 0 when activating journaling on an existing filesystem.
+	pageZeroOwner atomic.Pointer[regularFile] `state:"nosave"`
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -901,6 +905,9 @@ func (i *inode) decRef(ctx context.Context) {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.
+			if i.fs.pageZeroOwner.Load() == impl {
+				i.fs.pageZeroOwner.CompareAndSwap(impl, nil)
+			}
 			var pagesDec uint64
 			if i.fs.retainPages.Load() {
 				// The pages hold journaled file data; see
