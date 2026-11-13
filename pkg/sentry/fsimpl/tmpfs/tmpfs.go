@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -196,7 +197,12 @@ type FilesystemOpts struct {
 	// TarWrite.
 	SourceTar             io.ReadCloser
 	SourceTarFSCheckpoint bool
+
+	// If JournalState is not empty, GetFilesystem rebuilds the filesystem
+	// from it. MemoryFile must have adopted JournalState.UsedRanges().
+	JournalState *journal.State `state:"nosave"`
 }
+
 
 // Amount of total physical RAM, in bytes. It is immutable after initialization.
 var totalHostMem uint64
@@ -273,6 +279,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if tmpfsOpts.SourceTar != nil {
 			defer tmpfsOpts.SourceTar.Close()
 		}
+	}
+	hasJournalState := tmpfsOpts.JournalState != nil && !tmpfsOpts.JournalState.Empty()
+	if hasJournalState && (tmpfsOpts.SourceTar != nil || rootFileType != linux.S_IFDIR) {
+		return nil, nil, fmt.Errorf("tmpfs journal requires a directory root and no source tar")
 	}
 
 	rootMode := linux.FileMode(0777)
@@ -479,6 +489,15 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, err
 		}
 		ctx.Infof("tmpfs.filesystem: loaded SourceTar in %s", time.Since(timeUntarStart))
+	}
+
+	if hasJournalState {
+		timeRebuildStart := time.Now()
+		if err := fs.rebuildFromJournal(ctx, tmpfsOpts.JournalState); err != nil {
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, fmt.Errorf("failed to rebuild tmpfs from journal: %w", err)
+		}
+		ctx.Infof("tmpfs.filesystem: rebuilt %d inodes from journal in %s", len(tmpfsOpts.JournalState.Inodes), time.Since(timeRebuildStart))
 	}
 
 	return &fs.vfsfs, &root.vfsd, nil
