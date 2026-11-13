@@ -388,10 +388,6 @@ type Kernel struct {
 	// described in shm.Shm.InodeID().
 	sysVShmDevID uint32
 
-	// If set to true, report address space activation waits as if the task is in
-	// external wait so that the watchdog doesn't report the task stuck.
-	SleepForAddressSpaceActivation bool
-
 	// Exceptions to YAMA ptrace restrictions. Each key-value pair represents a
 	// tracee-tracer relationship. The key is a process (technically, the thread
 	// group leader) that can be traced by any thread that is a descendant of the
