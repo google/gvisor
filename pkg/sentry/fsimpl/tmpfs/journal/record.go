@@ -15,6 +15,7 @@
 package journal
 
 import (
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 )
@@ -163,5 +164,58 @@ func (r *InodeRecord) payloadLen() uint64 {
 		n += 2 + uint64(len(r.Xattrs[i].Name)) + 4 + uint64(len(r.Xattrs[i].Value))
 	}
 	return n
+}
+
+func (r *InodeRecord) encode(e *encoder) {
+	e.u64(r.Ino)
+	e.u32(r.Mode)
+	e.u32(r.UID)
+	e.u32(r.GID)
+	e.u64(uint64(r.Atime))
+	e.u64(uint64(r.Mtime))
+	e.u64(uint64(r.Ctime))
+	e.u64(uint64(r.Btime))
+	e.u64(r.Size)
+	e.u32(r.RdevMajor)
+	e.u32(r.RdevMinor)
+	e.str32(r.Target)
+	e.u32(uint32(len(r.Xattrs)))
+	for i := range r.Xattrs {
+		e.str16(r.Xattrs[i].Name)
+		e.str32(r.Xattrs[i].Value)
+	}
+}
+
+
+// encoder writes little-endian values into a byte slice. Callers must size
+// buf in advance.
+type encoder struct {
+	buf []byte
+	off int
+}
+
+func (e *encoder) u16(v uint16) {
+	binary.LittleEndian.PutUint16(e.buf[e.off:], v)
+	e.off += 2
+}
+
+func (e *encoder) u32(v uint32) {
+	binary.LittleEndian.PutUint32(e.buf[e.off:], v)
+	e.off += 4
+}
+
+func (e *encoder) u64(v uint64) {
+	binary.LittleEndian.PutUint64(e.buf[e.off:], v)
+	e.off += 8
+}
+
+func (e *encoder) str16(s string) {
+	e.u16(uint16(len(s)))
+	e.off += copy(e.buf[e.off:], s)
+}
+
+func (e *encoder) str32(s string) {
+	e.u32(uint32(len(s)))
+	e.off += copy(e.buf[e.off:], s)
 }
 

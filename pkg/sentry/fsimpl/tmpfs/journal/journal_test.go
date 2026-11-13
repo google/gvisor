@@ -22,12 +22,16 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
-
-const testFilestore = 8 << 20
+const (
+	pg            = uint64(hostarch.PageSize)
+	testFilestore = 8 << 20
+	// dataBase is a page offset well past the default 64 KiB test regions.
+)
 
 func testOpts() Options {
 	return Options{
@@ -98,6 +102,27 @@ func mustOpen(t *testing.T, fd int, opts Options) (*pgalloc.MemoryFile, *Journal
 	return mf, j, st
 }
 
+func dirRec(ino uint64) *InodeRecord {
+	return &InodeRecord{Ino: ino, Mode: modeDir | 0755, UID: 1, GID: 2, Atime: 10, Mtime: 11, Ctime: 12, Btime: 13}
+}
+
+func regRec(ino, size uint64) *InodeRecord {
+	return &InodeRecord{Ino: ino, Mode: modeRegular | 0644, Size: size, Mtime: 20}
+}
+
+// initRoot writes a snapshot that holds only the root directory, inode 1.
+func initRoot(t *testing.T, j *Journal) {
+	t.Helper()
+	s, err := j.BeginSnapshot(1, 2, 0)
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	s.Inode(dirRec(1))
+	if err := s.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+}
+
 
 func TestFreshJournal(t *testing.T) {
 	fd := newTestFile(t)
@@ -113,6 +138,26 @@ func TestFreshJournal(t *testing.T) {
 	}
 }
 
+
+func TestSnapshotTooLarge(t *testing.T) {
+	fd := newTestFile(t)
+	opts := testOpts()
+	opts.RegionSize = 4 * pg
+	_, j := mustCreate(t, fd, opts)
+	initRoot(t, j)
+	s, err := j.BeginSnapshot(1, 2, 0)
+	if err != nil {
+		t.Fatalf("BeginSnapshot: %v", err)
+	}
+	s.Inode(dirRec(1))
+	for i := uint64(2); i < 1000; i++ {
+		s.Inode(regRec(i, 0))
+	}
+	if err := s.Commit(); err == nil {
+		t.Fatalf("Commit of an oversized snapshot succeeded")
+	}
+	mustOpen(t, fd, opts)
+}
 
 func TestHeaderValidation(t *testing.T) {
 	fd := newTestFile(t)
@@ -163,6 +208,24 @@ func dupFile(t *testing.T, fd int) *os.File {
 		t.Fatalf("Dup: %v", err)
 	}
 	return os.NewFile(uintptr(dup), "journal")
+}
+
+func TestRegionValidation(t *testing.T) {
+	fd := newTestFile(t)
+	_, j := mustCreate(t, fd, testOpts())
+	initRoot(t, j)
+
+	// The active region is region 0 after initRoot. A descriptor beyond
+	// FilestoreSize / filestoreEnd is refused.
+	var b [16]byte
+	binary.LittleEndian.PutUint64(b[0:], headerSize)
+	binary.LittleEndian.PutUint64(b[8:], 1<<30)
+	if _, err := unix.Pwrite(fd, b[:], regionDescOff); err != nil {
+		t.Fatalf("Pwrite: %v", err)
+	}
+	if _, _, _, err := open(t, fd, testOpts()); err == nil {
+		t.Fatalf("Open with a bad region descriptor succeeded, want error")
+	}
 }
 
 func TestFormatVersion(t *testing.T) {
