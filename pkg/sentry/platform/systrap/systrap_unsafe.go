@@ -77,6 +77,12 @@ func (t *thread) getSignalInfo(si *linux.SignalInfo) error {
 	return nil
 }
 
+// cloneRejectedError means that no child was created. Transport failures while
+// executing or reading back clone are deliberately not classified this way.
+type cloneRejectedError struct{ unix.Errno }
+
+func (e cloneRejectedError) Unwrap() error { return e.Errno }
+
 // clone creates a new sysmsg thread from this one.
 //
 // The returned thread will be stopped and available for any system thread to
@@ -86,7 +92,7 @@ func (t *thread) getSignalInfo(si *linux.SignalInfo) error {
 func (t *thread) clone() (*thread, error) {
 	r, ok := hostarch.Addr(stackPointer(&t.initRegs)).RoundUp()
 	if !ok {
-		return nil, unix.EINVAL
+		return nil, cloneRejectedError{unix.EINVAL}
 	}
 	// Create a sysmsg thread.
 	//
@@ -114,6 +120,11 @@ func (t *thread) clone() (*thread, error) {
 		// could be anything. We're going to stop immediately.
 		arch.SyscallArgument{Value: uintptr(unsafe.Pointer(&t.initRegs))})
 	if err != nil {
+		// syscall returns a bare errno only for a negative syscall result.
+		// ptrace and wait errors are wrapped and may follow a successful clone.
+		if errno, rejected := err.(unix.Errno); rejected {
+			return nil, cloneRejectedError{errno}
+		}
 		return nil, err
 	}
 

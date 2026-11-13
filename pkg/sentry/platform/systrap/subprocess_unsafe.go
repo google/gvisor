@@ -23,6 +23,7 @@ package systrap
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -77,6 +78,104 @@ func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.Allo
 	}
 
 	return fr, (*contextQueue)(unsafe.Pointer(addr))
+}
+
+// destroyHostMM destroys an address space that cannot be pooled because a
+// device may retain its mm. The final reference has been dropped, so no
+// context can use it.
+func (s *subprocess) destroyHostMM() {
+	close(s.requests)
+	<-s.requestsDone
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Stop every process sharing the mm before removing their data mappings.
+	// Keeping them traced also lets us wait for their deaths outside a PID
+	// namespace where the Sentry would otherwise not reap orphaned stubs.
+	threads := make([]*thread, 0, len(s.sysmsgThreads)+1)
+	for _, p := range s.sysmsgThreads {
+		threads = append(threads, p.thread)
+	}
+	threads = append(threads, s.syscallThread.thread)
+	for _, t := range threads {
+		if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_ATTACH, uintptr(t.tid), 0); errno != 0 {
+			panic(fmt.Sprintf("cannot attach device-bound address space thread %d: %v", t.tid, errno))
+		}
+		// A newly created sysmsg thread may still have its startup SIGSEGV
+		// pending before the attach's SIGSTOP. Any ptrace stop suffices here:
+		// these threads will never resume application code.
+		if _, err := t.wait(stopped); err != nil {
+			panic(fmt.Sprintf("cannot stop device-bound address space thread %d: %v", t.tid, err))
+		}
+		if err := t.init(); err != nil {
+			panic(fmt.Sprintf("cannot trace device-bound address space thread %d: %v", t.tid, err))
+		}
+	}
+	if err := s.syscallThread.unmaskAllSignalsAttached(); err != nil {
+		panic(fmt.Sprintf("cannot unmask device-bound syscall thread: %v", err))
+	}
+	// A device FD can pin the mm after all tasks exit. Remove its aliases of
+	// shared backing before returning those offsets to the memory allocator.
+	if _, err := s.syscallThread.thread.syscallIgnoreInterrupt(&s.syscallThread.thread.initRegs, unix.SYS_MUNMAP,
+		arch.SyscallArgument{Value: stubROMapEnd},
+		arch.SyscallArgument{Value: stubEnd - stubROMapEnd}); err != nil {
+		panic(fmt.Sprintf("cannot unmap device-bound address space data: %v", err))
+	}
+	s.dead.Store(true)
+	for _, t := range threads {
+		t.kill()
+	}
+	for _, t := range threads {
+		for {
+			var status unix.WaitStatus
+			_, err := unix.Wait4(int(t.tid), &status, unix.WALL, nil)
+			if err == unix.EINTR {
+				continue
+			}
+			if err != nil {
+				panic(fmt.Sprintf("cannot reap device-bound address space thread %d: %v", t.tid, err))
+			}
+			if status.Exited() || status.Signaled() {
+				break
+			}
+			// PTRACE_O_TRACEEXIT stops the process once before its final exit.
+			if err := unix.PtraceCont(int(t.tid), 0); err != nil {
+				panic(fmt.Sprintf("cannot finish device-bound address space thread %d exit: %v", t.tid, err))
+			}
+		}
+	}
+	// A traced sysmsg process can first report its exit to us as tracer, then
+	// become our waitable child when its original parent (the syscall thread)
+	// exits. Reap that second notification when running as the PID-namespace init.
+	for _, t := range threads {
+		var status unix.WaitStatus
+		if _, err := unix.Wait4(int(t.tid), &status, unix.WALL|unix.WNOHANG, nil); err != nil && err != unix.ECHILD {
+			panic(fmt.Sprintf("cannot reap orphaned device-bound thread %d: %v", t.tid, err))
+		}
+	}
+	if s.syscallThread.seccompNotify != nil {
+		if err := s.syscallThread.seccompNotify.Close(); err != nil {
+			panic(fmt.Sprintf("cannot close device-bound seccomp listener: %v", err))
+		}
+	}
+	for _, p := range s.sysmsgThreads {
+		p.unmapStackFromSentry()
+		s.memoryFile.DecRef(p.stackRange)
+	}
+	s.sysmsgThreads = nil
+	s.syscallThread.destroySentryMapping()
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, uintptr(unsafe.Pointer(s.contextQueue)), uintptr(s.contextQueueRange.Length()), 0); errno != 0 {
+		panic(fmt.Sprintf("cannot unmap device-bound context queue: %v", errno))
+	}
+	s.contextQueue = nil
+	s.memoryFile.DecRef(s.contextQueueRange)
+	s.contextQueueRange = memmap.FileRange{}
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, s.threadContextRegion, uintptr(s.threadContextRange.Length()), 0); errno != 0 {
+		panic(fmt.Sprintf("cannot unmap device-bound thread contexts: %v", errno))
+	}
+	s.threadContextRegion = 0
+	s.memoryFile.DecRef(s.threadContextRange)
+	s.threadContextRange = memmap.FileRange{}
 }
 
 func saveFPState(ctx *sharedContext, ac *arch.Context64) {

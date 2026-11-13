@@ -14,9 +14,7 @@
 
 package systrap
 
-import (
-	"gvisor.dev/gvisor/pkg/hostarch"
-)
+import "gvisor.dev/gvisor/pkg/hostarch"
 
 const syscallStubMessageOffset = hostarch.PageSize
 
@@ -36,4 +34,8 @@ type syscallSentryMessage struct {
 // Attention: It can be compromised by user threads.
 type syscallStubMessage struct {
 	ret uint64
+
+	// ioctlParams contains only application-controlled data. Translated host
+	// file descriptors and Sentry pointers must never be placed here.
+	ioctlParams [hostarch.PageSize - 8]byte
 }

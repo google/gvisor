@@ -133,7 +133,7 @@ func (fd *uvmToolsFD) IsNvidiaDeviceFD() {}
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *uvmToolsFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-	return uvmIoctl(ctx, fd.dev.nvp, fd.hostFD, fd, args)
+	return uvmIoctl(ctx, fd.dev.nvp, fd.hostFD, nil /* fd */, fd, args)
 }
 
 // uvmToolsInitEventTracker handles UVM_TOOLS_INIT_EVENT_TRACKER(_V2). The host
