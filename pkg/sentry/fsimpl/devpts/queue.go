@@ -193,7 +193,10 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 		// CopyInTo invokes this callback synchronously with q.mu held.
 		// checklocks does not propagate that lock state into a passed callback.
 		copyLen := src.NumBytes()
-		room := waitBufMaxBytes - q.waitBufLen // +checklocksignore
+		var room uint64
+		if q.waitBufLen < waitBufMaxBytes { // +checklocksignore
+			room = waitBufMaxBytes - q.waitBufLen // +checklocksignore
+		}
 		// If out of room, return EAGAIN.
 		if room == 0 && copyLen > 0 {
 			return 0, linuxerr.ErrWouldBlock
@@ -234,8 +237,22 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 // +checklocksexclude:q.mu
 // +checklocksexclude:l.outQueue.mu
 func (q *queue) writeBytes(b []byte, l *lineDiscipline) bool {
+	if l.masterClosed {
+		return false
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	var room uint64
+	if q.waitBufLen < waitBufMaxBytes {
+		room = waitBufMaxBytes - q.waitBufLen
+	}
+	if uint64(len(b)) > room {
+		b = b[:room]
+	}
+	if len(b) == 0 {
+		return false
+	}
 
 	// Write to the wait buffer.
 	q.waitBufAppend(b)
