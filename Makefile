@@ -1039,14 +1039,16 @@ tag: ## Stages a release tag; the release pipeline publishes it once the artifac
 ##   These run source-level formatting and lint checks.
 ##   Deep Go analysis is owned by gVisor nogo.
 ##
+
+lint_sh = $(call wrapper,tools/lint.sh --bazel="$(BAZEL)" --bazel-options="$(BASE_OPTIONS) $(BAZEL_OPTIONS)" $(1))
 lint: ensure-bazel-server ## Runs the source linters.
-	@$(call wrapper,tools/lint.sh)
+	@$(call lint_sh)
 .PHONY: lint
 
 lint-fix: ensure-bazel-server ## Reformats sources in place.
-	@$(call wrapper,tools/lint.sh --fix)
+	@$(call lint_sh,--fix)
 .PHONY: lint-fix
 
-lint-cc: ensure-bazel-server ## Runs clang-tidy over the C++ sources; needs bazel for compile_commands.json.
-	@$(call wrapper,tools/lint.sh clang-tidy)
+lint-cc: ensure-bazel-server ## Runs clang-tidy over the C++ sources.
+	@$(call lint_sh,clang-tidy)
 .PHONY: lint-cc
