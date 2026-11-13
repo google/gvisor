@@ -310,7 +310,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_NOSIGNAL),
 	},
-	unix.SYS_SETITIMER: seccomp.MatchAll{},
 	unix.SYS_SHUTDOWN: seccomp.Or{
 		// Used by fs/host to shutdown host sockets.
 		seccomp.PerArg{seccomp.AnyValue{}, seccomp.EqualTo(unix.SHUT_RD)},
@@ -329,18 +328,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(1),                      /* len */
 		seccomp.EqualTo(unix.SPLICE_F_NONBLOCK), /* flags */
-	},
-	unix.SYS_TIMER_CREATE: seccomp.PerArg{
-		seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
-		seccomp.AnyValue{}, /* sevp */
-		seccomp.AnyValue{}, /* timerid */
-	},
-	unix.SYS_TIMER_DELETE: seccomp.MatchAll{},
-	unix.SYS_TIMER_SETTIME: seccomp.PerArg{
-		seccomp.AnyValue{}, /* timerid */
-		seccomp.EqualTo(0), /* flags */
-		seccomp.AnyValue{}, /* new_value */
-		seccomp.EqualTo(0), /* old_value */
 	},
 	unix.SYS_UTIMENSAT: seccomp.PerArg{
 		seccomp.AnyValue{},
@@ -379,6 +366,26 @@ func selfPIDFilters(pid uint64) seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_TGKILL: seccomp.PerArg{
 			seccomp.EqualTo(pid),
+		},
+	})
+}
+
+// cpuProfilerFilters contains the timer syscalls that the Go runtime makes
+// while it collects a CPU profile.
+func cpuProfilerFilters() seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_SETITIMER: seccomp.MatchAll{},
+		unix.SYS_TIMER_CREATE: seccomp.PerArg{
+			seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
+			seccomp.AnyValue{}, /* sevp */
+			seccomp.AnyValue{}, /* timerid */
+		},
+		unix.SYS_TIMER_DELETE: seccomp.MatchAll{},
+		unix.SYS_TIMER_SETTIME: seccomp.PerArg{
+			seccomp.AnyValue{}, /* timerid */
+			seccomp.EqualTo(0), /* flags */
+			seccomp.AnyValue{}, /* new_value */
+			seccomp.EqualTo(0), /* old_value */
 		},
 	})
 }

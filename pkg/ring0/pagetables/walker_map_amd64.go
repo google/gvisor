@@ -367,7 +367,7 @@ type mapWalker struct {
 //
 //go:nosplit
 func (w *mapWalker) iterateRange(start, end uintptr) {
-	if start%pteSize != 0 {
+	if start&(pteSize-1) != 0 {
 		panic("unaligned start")
 	}
 	if end < start {

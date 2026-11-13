@@ -1,18 +1,29 @@
-//go:build arm64 && !pagesize_64k
-// +build arm64,!pagesize_64k
+//go:build arm64 && arm64
+// +build arm64,arm64
 
 package pagetables
 
 // iterateRangeCanonical walks a canonical range.
 //
+// With the 64K granule, it calls iterateRangeCanonical64K. Otherwise, it walks
+// 4-level page tables (PGD -> PUD -> PMD -> PTE) inline, to avoid a call.
+//
 //go:nosplit
 func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
+	switch activeGranule {
+	case granule64K:
+		return w.iterateRangeCanonical64K(start, end)
+	case granule4K:
+	default:
+		panic("unknown translation granule")
+	}
+
 	pgdEntryIndex := w.pageTables.root
 	if start >= upperBottom {
 		pgdEntryIndex = w.pageTables.archPageTables.root
 	}
 
-	for pgdIndex := (uint16((start & pgdMask) >> pgdShift)); start < end && pgdIndex < entriesPerPage; pgdIndex++ {
+	for pgdIndex := (uint16((start & pgdMask4K) >> pgdShift4K)); start < end && pgdIndex < entriesPerPage4K; pgdIndex++ {
 		var (
 			pgdEntry   = &pgdEntryIndex[pgdIndex]
 			pudEntries *PTEs
@@ -20,7 +31,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 		if !pgdEntry.Valid() {
 			if !w.visitor.requiresAlloc() {
 				// Skip over this entry.
-				start = emptynext(start, pgdSize)
+				start = emptynext(start, pgdSize4K)
 				continue
 			}
 
@@ -34,7 +45,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 		// Map the next level.
 		clearPUDEntries := uint16(0)
 
-		for pudIndex := uint16((start & pudMask) >> pudShift); start < end && pudIndex < entriesPerPage; pudIndex++ {
+		for pudIndex := uint16((start & pudMask4K) >> pudShift4K); start < end && pudIndex < entriesPerPage4K; pudIndex++ {
 			var (
 				pudEntry   = &pudEntries[pudIndex]
 				pmdEntries *PTEs
@@ -43,7 +54,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 				if !w.visitor.requiresAlloc() {
 					// Skip over this entry.
 					clearPUDEntries++
-					start = emptynext(start, pudSize)
+					start = emptynext(start, pudSize4K)
 					continue
 				}
 
@@ -51,13 +62,13 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 				// entire region at least as large as a single
 				// PUD entry?  If so, we can skip allocating a
 				// new page for the pmd.
-				if start&(pudSize-1) == 0 && end-start >= pudSize {
+				if start&(pudSize4K-1) == 0 && end-start >= pudSize4K {
 					pudEntry.SetSect()
-					if !w.visitor.visit(uintptr(start), pudEntry, pudSize-1) {
+					if !w.visitor.visit(uintptr(start), pudEntry, pudSize4K-1) {
 						return false
 					}
 					if pudEntry.Valid() {
-						start = emptynext(start, pudSize)
+						start = emptynext(start, pudSize4K)
 						continue
 					}
 				}
@@ -68,19 +79,19 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 
 			} else if pudEntry.IsSect() {
 				// Does this page need to be split?
-				if w.visitor.requiresSplit() && (start&(pudSize-1) != 0 || end < emptynext(start, pudSize)) {
+				if w.visitor.requiresSplit() && (start&(pudSize4K-1) != 0 || end < emptynext(start, pudSize4K)) {
 					// Install the relevant entries.
 					pmdEntries = w.pageTables.Allocator.NewPTEs()
-					for index := uint16(0); index < entriesPerPage; index++ {
+					for index := uint16(0); index < entriesPerPage4K; index++ {
 						pmdEntries[index].SetSect()
 						pmdEntries[index].Set(
-							pudEntry.Address()+(pmdSize*uintptr(index)),
+							pudEntry.Address()+(pmdSize4K*uintptr(index)),
 							pudEntry.Opts())
 					}
 					pudEntry.setPageTable(w.pageTables, pmdEntries)
 				} else {
 					// A sect page to be checked directly.
-					if !w.visitor.visit(uintptr(start), pudEntry, pudSize-1) {
+					if !w.visitor.visit(uintptr(start), pudEntry, pudSize4K-1) {
 						return false
 					}
 
@@ -90,7 +101,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 					}
 
 					// Note that the sect page was changed.
-					start = emptynext(start, pudSize)
+					start = emptynext(start, pudSize4K)
 					continue
 				}
 
@@ -101,7 +112,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 			// Map the next level, since this is valid.
 			clearPMDEntries := uint16(0)
 
-			for pmdIndex := uint16((start & pmdMask) >> pmdShift); start < end && pmdIndex < entriesPerPage; pmdIndex++ {
+			for pmdIndex := uint16((start & pmdMask4K) >> pmdShift4K); start < end && pmdIndex < entriesPerPage4K; pmdIndex++ {
 				var (
 					pmdEntry   = &pmdEntries[pmdIndex]
 					pteEntries *PTEs
@@ -110,20 +121,20 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 					if !w.visitor.requiresAlloc() {
 						// Skip over this entry.
 						clearPMDEntries++
-						start = emptynext(start, pmdSize)
+						start = emptynext(start, pmdSize4K)
 						continue
 					}
 
 					// This level has 2-MB huge pages. If this
 					// region is continued in a single PMD entry?
 					// As above, we can skip allocating a new page.
-					if start&(pmdSize-1) == 0 && end-start >= pmdSize {
+					if start&(pmdSize4K-1) == 0 && end-start >= pmdSize4K {
 						pmdEntry.SetSect()
-						if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1) {
+						if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize4K-1) {
 							return false
 						}
 						if pmdEntry.Valid() {
-							start = emptynext(start, pmdSize)
+							start = emptynext(start, pmdSize4K)
 							continue
 						}
 					}
@@ -134,18 +145,18 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 
 				} else if pmdEntry.IsSect() {
 					// Does this page need to be split?
-					if w.visitor.requiresSplit() && (start&(pmdSize-1) != 0 || end < emptynext(start, pmdSize)) {
+					if w.visitor.requiresSplit() && (start&(pmdSize4K-1) != 0 || end < emptynext(start, pmdSize4K)) {
 						// Install the relevant entries.
 						pteEntries = w.pageTables.Allocator.NewPTEs()
-						for index := uint16(0); index < entriesPerPage; index++ {
+						for index := uint16(0); index < entriesPerPage4K; index++ {
 							pteEntries[index].Set(
-								pmdEntry.Address()+(pteSize*uintptr(index)),
+								pmdEntry.Address()+(pteSize4K*uintptr(index)),
 								pmdEntry.Opts())
 						}
 						pmdEntry.setPageTable(w.pageTables, pteEntries)
 					} else {
 						// A huge page to be checked directly.
-						if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1) {
+						if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize4K-1) {
 							return false
 						}
 
@@ -155,7 +166,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 						}
 
 						// Note that the huge page was changed.
-						start = emptynext(start, pmdSize)
+						start = emptynext(start, pmdSize4K)
 						continue
 					}
 
@@ -166,18 +177,18 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 				// Map the next level, since this is valid.
 				clearPTEEntries := uint16(0)
 
-				for pteIndex := uint16((start & pteMask) >> pteShift); start < end && pteIndex < entriesPerPage; pteIndex++ {
+				for pteIndex := uint16((start & pteMask4K) >> pteShift4K); start < end && pteIndex < entriesPerPage4K; pteIndex++ {
 					var (
 						pteEntry = &pteEntries[pteIndex]
 					)
 					if !pteEntry.Valid() && !w.visitor.requiresAlloc() {
 						clearPTEEntries++
-						start += pteSize
+						start += pteSize4K
 						continue
 					}
 
-					// At this point, we are guaranteed that start%pteSize == 0.
-					if !w.visitor.visit(uintptr(start), pteEntry, pteSize-1) {
+					// At this point, we are guaranteed that start%pteSize4K == 0.
+					if !w.visitor.visit(uintptr(start), pteEntry, pteSize4K-1) {
 						return false
 					}
 					if !pteEntry.Valid() {
@@ -188,12 +199,12 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 					}
 
 					// Note that the pte was changed.
-					start += pteSize
+					start += pteSize4K
 					continue
 				}
 
 				// Check if we no longer need this page.
-				if clearPTEEntries == entriesPerPage {
+				if clearPTEEntries == entriesPerPage4K {
 					pmdEntry.Clear()
 					w.pageTables.Allocator.FreePTEs(pteEntries)
 					clearPMDEntries++
@@ -201,7 +212,7 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 			}
 
 			// Check if we no longer need this page.
-			if clearPMDEntries == entriesPerPage {
+			if clearPMDEntries == entriesPerPage4K {
 				pudEntry.Clear()
 				w.pageTables.Allocator.FreePTEs(pmdEntries)
 				clearPUDEntries++
@@ -209,9 +220,152 @@ func (w *emptyWalker) iterateRangeCanonical(start, end uintptr) bool {
 		}
 
 		// Check if we no longer need this page.
-		if clearPUDEntries == entriesPerPage {
+		if clearPUDEntries == entriesPerPage4K {
 			pgdEntry.Clear()
 			w.pageTables.Allocator.FreePTEs(pudEntries)
+		}
+	}
+	return true
+}
+
+// iterateRangeCanonical64K walks a canonical range in 64K granule page
+// tables.
+//
+// This is a 3-level page table walker for 64K pages:
+// PGD -> PMD -> PTE (no PUD level)
+//
+//go:nosplit
+func (w *emptyWalker) iterateRangeCanonical64K(start, end uintptr) bool {
+	pgdEntryIndex := w.pageTables.root.as64K()
+	if start >= upperBottom {
+		pgdEntryIndex = w.pageTables.archPageTables.root.as64K()
+	}
+
+	for pgdIndex := (uint16((start & pgdMask64K) >> pgdShift64K)); start < end && pgdIndex < entriesPerPage64K; pgdIndex++ {
+		var (
+			pgdEntry   = &pgdEntryIndex[pgdIndex]
+			pmdEntries *ptes64K
+		)
+		if !pgdEntry.Valid() {
+			if !w.visitor.requiresAlloc() {
+				// Skip over this entry.
+				start = emptynext(start, pgdSize64K)
+				continue
+			}
+
+			// Allocate a new pgd.
+			pmdEntries = w.pageTables.Allocator.NewPTEs().as64K()
+			pgdEntry.setPageTable(w.pageTables, pmdEntries.ptes())
+		} else {
+			pmdEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()).as64K()
+		}
+
+		// Map the next level (PMD -> PTE, no PUD in 64K page mode).
+		clearPMDEntries := uint16(0)
+
+		for pmdIndex := uint16((start & pmdMask64K) >> pmdShift64K); start < end && pmdIndex < entriesPerPage64K; pmdIndex++ {
+			var (
+				pmdEntry   = &pmdEntries[pmdIndex]
+				pteEntries *ptes64K
+			)
+			if !pmdEntry.Valid() {
+				if !w.visitor.requiresAlloc() {
+					// Skip over this entry.
+					clearPMDEntries++
+					start = emptynext(start, pmdSize64K)
+					continue
+				}
+
+				// This level has 512-MB sect pages (for 64K page size).
+				// If this region is contained in a single PMD entry,
+				// we can skip allocating a new page.
+				if start&(pmdSize64K-1) == 0 && end-start >= pmdSize64K {
+					pmdEntry.SetSect()
+					if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize64K-1) {
+						return false
+					}
+					if pmdEntry.Valid() {
+						start = emptynext(start, pmdSize64K)
+						continue
+					}
+				}
+
+				// Allocate a new pmd.
+				pteEntries = w.pageTables.Allocator.NewPTEs().as64K()
+				pmdEntry.setPageTable(w.pageTables, pteEntries.ptes())
+
+			} else if pmdEntry.IsSect() {
+				// Does this page need to be split?
+				if w.visitor.requiresSplit() && (start&(pmdSize64K-1) != 0 || end < emptynext(start, pmdSize64K)) {
+					// Install the relevant entries.
+					pteEntries = w.pageTables.Allocator.NewPTEs().as64K()
+					for index := uint16(0); index < entriesPerPage64K; index++ {
+						pteEntries[index].Set(
+							pmdEntry.Address()+(pteSize64K*uintptr(index)),
+							pmdEntry.Opts())
+					}
+					pmdEntry.setPageTable(w.pageTables, pteEntries.ptes())
+				} else {
+					// A sect page to be checked directly.
+					if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize64K-1) {
+						return false
+					}
+
+					// Might have been cleared.
+					if !pmdEntry.Valid() {
+						clearPMDEntries++
+					}
+
+					// Note that the sect page was changed.
+					start = emptynext(start, pmdSize64K)
+					continue
+				}
+
+			} else {
+				pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address()).as64K()
+			}
+
+			// Map the next level, since this is valid.
+			clearPTEEntries := uint16(0)
+
+			for pteIndex := uint16((start & pteMask64K) >> pteShift64K); start < end && pteIndex < entriesPerPage64K; pteIndex++ {
+				var (
+					pteEntry = &pteEntries[pteIndex]
+				)
+				if !pteEntry.Valid() && !w.visitor.requiresAlloc() {
+					clearPTEEntries++
+					start += pteSize64K
+					continue
+				}
+
+				// At this point, we are guaranteed that start%pteSize64K == 0.
+				if !w.visitor.visit(uintptr(start), pteEntry, pteSize64K-1) {
+					return false
+				}
+				if !pteEntry.Valid() {
+					if w.visitor.requiresAlloc() {
+						panic("PTE not set after iteration with requiresAlloc!")
+					}
+					clearPTEEntries++
+				}
+
+				// Note that the pte was changed.
+				start += pteSize64K
+				continue
+			}
+
+			// Check if we no longer need this page.
+			if clearPTEEntries == entriesPerPage64K {
+				pmdEntry.Clear()
+				w.pageTables.Allocator.FreePTEs(pteEntries.ptes())
+				clearPMDEntries++
+			}
+		}
+
+		// Check if we no longer need this page.
+		if clearPMDEntries == entriesPerPage64K {
+			pgdEntry.Clear()
+			w.pageTables.Allocator.FreePTEs(pmdEntries.ptes())
 		}
 	}
 	return true
@@ -249,7 +403,7 @@ type emptyWalker struct {
 //
 //go:nosplit
 func (w *emptyWalker) iterateRange(start, end uintptr) {
-	if start%pteSize != 0 {
+	if start&(pteSize-1) != 0 {
 		panic("unaligned start")
 	}
 	if end < start {
