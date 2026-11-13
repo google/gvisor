@@ -44,3 +44,16 @@ func SelfFilestoreName(sandboxID string) string {
 func selfFilestoreName(sandboxID string) string {
 	return fsutil.SelfFilestorePrefix + sandboxID
 }
+
+// SelfJournalPath returns the path at which the journal file of the self
+// filestore is stored for a given mount.
+func SelfJournalPath(mountSrc, sandboxID string) string {
+	return path.Join(mountSrc, SelfJournalName(sandboxID))
+}
+
+// SelfJournalName returns the name of the journal file of the self filestore
+// for a given sandbox. It starts with the self filestore prefix, so that the
+// sandbox hides it in the same way.
+func SelfJournalName(sandboxID string) string {
+	return selfFilestoreName(sandboxID) + ".journal"
+}

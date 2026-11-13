@@ -35,8 +35,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs/journal"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -146,6 +148,12 @@ type Container struct {
 	// following entries are for bind mounts in Spec.Mounts (in the same order).
 	GoferMountConfs specutils.GoferMountConfFlags `json:"goferMountConfs"`
 
+	// JournalingRootfsUpper is true if runtime metadata journaling is enabled
+	// on this container's rootfs overlay upper layer. When true, Destroy keeps
+	// a self-backed rootfs filestore file in Spec.Root.Path so external tooling
+	// can extract it.
+	JournalingRootfsUpper bool `json:"journalingRootfsUpper,omitempty"`
+
 	//
 	// Fields below this line are not saved in the state file and will not
 	// be preserved across commands.
@@ -230,6 +238,13 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	if specutils.IsRootContainer(args.Spec) && len(args.FSRestoreImagePaths) == 0 && args.CheckpointDirPath != "" {
 		if sandbox.HasFSCheckpointManifest(args.CheckpointDirPath) {
 			args.FSRestoreImagePaths = []string{args.CheckpointDirPath}
+		}
+	}
+	if !args.NoRootContainer && (len(args.FSRestoreImagePaths) > 0 || args.CheckpointDirPath != "") {
+		if jcfg, err := specutils.JournalingRootfsUpper(args.Spec, conf); err != nil {
+			return nil, err
+		} else if jcfg.ImportPath != "" {
+			return nil, fmt.Errorf("journaling rootfs upper import cannot be used with restore or filesystem restore")
 		}
 	}
 
@@ -561,6 +576,13 @@ func (c *Container) endSandboxCreation() error {
 // to restore a container from its state file.
 func (c *Container) Restore(conf *config.Config, imagePath string, directIO sandbox.DirectIO, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
+	if c.Spec.Root != nil {
+		if jcfg, err := specutils.JournalingRootfsUpper(c.Spec, conf); err != nil {
+			return err
+		} else if jcfg.ImportPath != "" {
+			return fmt.Errorf("journaling rootfs upper import cannot be used with restore")
+		}
+	}
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
 		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, directIO, background, networkArgs)
@@ -1149,8 +1171,22 @@ func (c *Container) Destroy() error {
 				return
 			}
 		}
+		if mountSrc == c.Spec.Root.Path && c.JournalingRootfsUpper && c.Status != Creating {
+			// Keep the journaled rootfs upper filestore and journal files so
+			// external tooling can extract or re-import them after the
+			// container stops.
+			return
+		}
+		if mountSrc == c.Spec.Root.Path {
+			journalPath := sentryapi.SelfJournalPath(mountSrc, c.sandboxID())
+			if err := os.Remove(journalPath); err != nil && !os.IsNotExist(err) {
+				err = fmt.Errorf("failed to delete journal file %q: %v", journalPath, err)
+				log.Warningf("%v", err)
+				errs = append(errs, err.Error())
+			}
+		}
 		filestorePath := sentryapi.SelfFilestorePath(mountSrc, c.sandboxID())
-		if err := os.Remove(filestorePath); err != nil {
+		if err := os.Remove(filestorePath); err != nil && !(os.IsNotExist(err) && c.JournalingRootfsUpper) {
 			err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
 			log.Warningf("%v", err)
 			errs = append(errs, err.Error())
@@ -1268,7 +1304,7 @@ func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mou
 
 // initGoferConfs initializes c.GoferMountConfs with all the gofer configs that
 // dictate how each gofer mount should be configured.
-func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, rootfsHint *sentryapi.RootfsHint) error {
+func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, rootfsHint *sentryapi.RootfsHint, jcfg specutils.JournalingRootfsUpperConfig) error {
 	// Handle root mount first.
 	overlayMedium := ovlConf.RootOverlayMedium()
 	overlaySize := ovlConf.RootOverlaySize()
@@ -1286,6 +1322,20 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryap
 	goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)
 	if err != nil {
 		return err
+	}
+	c.JournalingRootfsUpper = jcfg.Enabled
+	if jcfg.Enabled && !goferConf.IsFilestorePresent() {
+		return fmt.Errorf("journaling rootfs upper requires a file-backed rootfs overlay (such as --overlay2=root:self), got %s", goferConf)
+	}
+	if jcfg.ImportPath != "" {
+		if !goferConf.ShouldUseOverlayfs() {
+			return fmt.Errorf("journaling rootfs upper import requires a rootfs overlay, got %s", goferConf)
+		}
+		if !jcfg.Enabled {
+			// An imported filestore without runtime journaling is backed directly
+			// by the imported file rather than a newly created self filestore.
+			goferConf.Upper = specutils.AnonOverlay
+		}
 	}
 	c.GoferMountConfs = append(c.GoferMountConfs, goferConf)
 
@@ -1327,22 +1377,33 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryap
 // tmpfs/overlayfs mounts that will overlay some gofer mounts.
 //
 // Precondition: gofer process must be running.
-func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints) ([]*os.File, error) {
+func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, jcfg specutils.JournalingRootfsUpperConfig) ([]*os.File, error) {
 	var goferFilestores []*os.File
+	cu := cleanup.Make(func() {
+		for _, f := range goferFilestores {
+			_ = f.Close()
+		}
+	})
+	defer cu.Clean()
 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
 	// namespace, so that they don't prevent the host mount points from being
 	// unmounted from the host's mount namespace. We will use /proc/pid/root
 	// to access gofer's mount namespace. See proc_pid_root(5).
 	goferRootfs := fmt.Sprintf("/proc/%d/root", c.GoferPid.Load())
 
-	// Handle rootfs first.
-	rootfsConf := c.GoferMountConfs[0]
-	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
+	// Handle rootfs first. Its journal file, if any, follows its filestore.
+	filestore, journalFile, linkedPaths, err := c.createRootfsFilestore(goferRootfs, ovlConf, mountHints, jcfg)
 	if err != nil {
 		return nil, err
 	}
+	for _, linkedPath := range linkedPaths {
+		cu.Add(func() { _ = os.Remove(linkedPath) })
+	}
 	if filestore != nil {
 		goferFilestores = append(goferFilestores, filestore)
+	}
+	if journalFile != nil {
+		goferFilestores = append(goferFilestores, journalFile)
 	}
 
 	// Then handle all the bind mounts.
@@ -1366,7 +1427,184 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 		// running with seccomp filters that do not allow this.
 		hostmm.IMAWorkAroundForMemFile(filestore.Fd())
 	}
+	cu.Release()
 	return goferFilestores, nil
+}
+
+// createRootfsFilestore returns the filestore of the rootfs upper, and its
+// journal file if the rootfs upper is journaled or imported. It also returns
+// the paths of any links to imported files that it created.
+func (c *Container) createRootfsFilestore(goferRootfs string, ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, jcfg specutils.JournalingRootfsUpperConfig) (filestore, journalFile *os.File, linkedPaths []string, err error) {
+	rootfsConf := c.GoferMountConfs[0]
+	if jcfg.ImportPath != "" {
+		return c.importRootfsUpperFilestore(rootfsConf, jcfg)
+	}
+	filestore, err = c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
+	if err != nil || filestore == nil || !jcfg.Enabled {
+		return filestore, nil, nil, err
+	}
+	if err := unix.Flock(int(filestore.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		_ = filestore.Close()
+		return nil, nil, nil, fmt.Errorf("failed to lock journaling rootfs upper filestore: %w", err)
+	}
+	if rootfsConf.Upper == specutils.SelfOverlay {
+		journalFile, err = c.createGoferFilestoreInSelf(goferRootfs, c.Spec.Root.Path, sentryapi.SelfJournalName(c.sandboxID()), mountHints)
+	} else {
+		journalFile, err = c.createGoferFilestoreInDir(goferRootfs, ovlConf.Medium().HostFileDir())
+	}
+	if err != nil {
+		_ = filestore.Close()
+		return nil, nil, nil, fmt.Errorf("failed to create journaling rootfs upper journal file: %w", err)
+	}
+	return filestore, journalFile, nil, nil
+}
+
+// openImportedFile opens a regular file at path, which may be a procfs/devfd
+// path, for an imported journaling rootfs upper.
+func openImportedFile(path string) (*os.File, error) {
+	openFlags := os.O_RDWR | unix.O_CLOEXEC
+	if !specutils.IsProcFDPath(path) {
+		openFlags |= unix.O_NOFOLLOW
+	}
+	f, err := os.OpenFile(path, openFlags, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open imported journaling rootfs upper file %q: %w", path, err)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &stat); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("imported journaling rootfs upper file %q: %w", path, err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
+		_ = f.Close()
+		return nil, fmt.Errorf("imported journaling rootfs upper file %q: not a regular file (mode %#o)", path, stat.Mode)
+	}
+	return f, nil
+}
+
+func (c *Container) importRootfsUpperFilestore(rootfsConf specutils.GoferMountConf, jcfg specutils.JournalingRootfsUpperConfig) (*os.File, *os.File, []string, error) {
+	f, err := openImportedFile(jcfg.ImportPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cu := cleanup.Make(func() { _ = f.Close() })
+	defer cu.Clean()
+	// The lock on the filestore also covers its journal file.
+	if err := lockImportedRootfsUpper(jcfg.ImportPath, f); err != nil {
+		return nil, nil, nil, err
+	}
+	jf, err := openImportedFile(jcfg.ImportJournalPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cu.Add(func() { _ = jf.Close() })
+	if err := shrinkJournalingRootfsUpperFilestore(jcfg.ImportPath, f, jf); err != nil {
+		return nil, nil, nil, err
+	}
+
+	var linkedPaths []string
+	if jcfg.Enabled && rootfsConf.IsSelfBacked() {
+		for _, link := range []struct {
+			f          *os.File
+			importPath string
+			name       string
+		}{
+			{f, jcfg.ImportPath, sentryapi.SelfFilestoreName(c.sandboxID())},
+			{jf, jcfg.ImportJournalPath, sentryapi.SelfJournalName(c.sandboxID())},
+		} {
+			linkedPath, err := linkImportedSelfFilestore(link.f, link.importPath, c.Spec.Root.Path, link.name)
+			if err != nil {
+				for _, p := range linkedPaths {
+					_ = os.Remove(p)
+				}
+				return nil, nil, nil, err
+			}
+			if linkedPath != "" {
+				linkedPaths = append(linkedPaths, linkedPath)
+			}
+		}
+	}
+	cu.Release()
+	return f, jf, linkedPaths, nil
+}
+
+func lockImportedRootfsUpper(importPath string, f *os.File) error {
+	// A sandbox that was just destroyed may still hold the lock until its
+	// process has fully exited, so retry for a short time.
+	const lockTimeout = 5 * time.Second
+	deadline := time.Now().Add(lockTimeout)
+	for {
+		err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			return nil
+		}
+		if err != unix.EWOULDBLOCK {
+			return fmt.Errorf("failed to lock imported journaling rootfs upper %q: %w", importPath, err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("imported journaling rootfs upper %q is in use by another sandbox", importPath)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func linkImportedSelfFilestore(f *os.File, importPath, rootPath, fileName string) (string, error) {
+	dirFD, err := unix.Open(rootPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return "", fmt.Errorf("failed to open directory %q: %w", rootPath, err)
+	}
+	defer unix.Close(dirFD)
+
+	// Link in runsc's mount namespace rather than /proc/<gofer>/root: f was
+	// opened in runsc's mount namespace, and linkat(2) returns EXDEV across
+	// distinct mount namespaces even on the same superblock.
+	procPath := fmt.Sprintf("/proc/self/fd/%d", f.Fd())
+	err = unix.Linkat(unix.AT_FDCWD, procPath, dirFD, fileName, unix.AT_SYMLINK_FOLLOW)
+	switch {
+	case err == nil:
+		return path.Join(rootPath, fileName), nil
+	case errors.Is(err, unix.EEXIST):
+		var fdStat, pathStat unix.Stat_t
+		if unix.Fstat(int(f.Fd()), &fdStat) != nil ||
+			unix.Fstatat(dirFD, fileName, &pathStat, unix.AT_SYMLINK_NOFOLLOW) != nil ||
+			fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
+			return "", fmt.Errorf("self filestore %q already exists in %q and refers to a different file", fileName, rootPath)
+		}
+		return "", nil
+	case errors.Is(err, unix.EXDEV):
+		log.Infof("Imported journaling rootfs upper %q is on a different mount from %q; using imported file directly", importPath, rootPath)
+		return "", nil
+	default:
+		return "", fmt.Errorf("failed to link imported journaling rootfs upper into %q: %w", rootPath, err)
+	}
+}
+
+// shrinkJournalingRootfsUpperFilestore shrinks filestore to the high-water
+// mark in the header of journalFile, rounded up to a page, so the IMA
+// workaround in createGoferFilestores hashes only the used part of the file.
+func shrinkJournalingRootfsUpperFilestore(importPath string, filestore, journalFile *os.File) error {
+	end, ok, err := journal.FilestoreEnd(journalFile)
+	if err != nil {
+		return fmt.Errorf("journaling rootfs upper %q: %w", importPath, err)
+	}
+	if !ok {
+		// The sandbox reports any problem with the journal header on Open.
+		return nil
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(filestore.Fd()), &stat); err != nil {
+		return fmt.Errorf("failed to stat journaling rootfs upper filestore: %w", err)
+	}
+	size := uint64(stat.Size)
+	newSize, ok := hostarch.PageRoundUp(end)
+	if !ok || newSize >= size {
+		return nil
+	}
+	if err := filestore.Truncate(int64(newSize)); err != nil {
+		return fmt.Errorf("failed to shrink journaling rootfs upper filestore from %d to %d bytes: %w", size, newSize, err)
+	}
+	log.Infof("Shrank imported journaling rootfs upper filestore from %d to %d bytes", size, newSize)
+	return nil
 }
 
 func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
@@ -1375,7 +1613,7 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 	}
 	switch goferConf.Upper {
 	case specutils.SelfOverlay:
-		return c.createGoferFilestoreInSelf(goferRootfs, mountSrc, mountHints)
+		return c.createGoferFilestoreInSelf(goferRootfs, mountSrc, sentryapi.SelfFilestoreName(c.sandboxID()), mountHints)
 	case specutils.AnonOverlay:
 		return c.createGoferFilestoreInDir(goferRootfs, ovlConf.Medium().HostFileDir())
 	default:
@@ -1383,7 +1621,7 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 	}
 }
 
-func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
+func (c *Container) createGoferFilestoreInSelf(goferRootfs, mountSrc, fileName string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
 	// Create the self filestore file.
 	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
 	if hint := mountHints.FindMount(mountSrc); hint == nil || !hint.ShouldShareMount() {
@@ -1392,7 +1630,6 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
 		createFlags |= unix.O_EXCL
 	}
 	dirPath := path.Join(goferRootfs, mountSrc)
-	fileName := sentryapi.SelfFilestoreName(c.sandboxID())
 
 	dirFD, err := unix.Open(dirPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
@@ -1736,7 +1973,14 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
 	}
-	if err := c.initGoferConfs(conf.GetOverlay2(), mountHints, rootfsHint); err != nil {
+	jcfg, err := specutils.JournalingRootfsUpper(c.Spec, conf)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if jcfg.ImportPath != "" && c.Sandbox != nil && c.Sandbox.FSRestore {
+		return nil, nil, nil, nil, fmt.Errorf("journaling rootfs upper import cannot be used with filesystem restore")
+	}
+	if err := c.initGoferConfs(conf.GetOverlay2(), mountHints, rootfsHint, jcfg); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error initializing gofer confs: %w", err)
 	}
 	if !c.GoferMountConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityRequestedViaHook(c.Spec, conf) {
@@ -2063,7 +2307,7 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 
 	// Create gofer filestore files with the Gofer's mount namespaces while
 	// chrootSyncSandEnd is still open.
-	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
+	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints, jcfg)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("creating gofer filestore files: %w", err)
 	}

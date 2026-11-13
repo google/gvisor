@@ -21,8 +21,10 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/control/controlapi",
+        "//pkg/sentry/fsimpl/tmpfs/journal",
         "//pkg/sentry/hostmm",
         "//pkg/sighandling",
         "//pkg/sync",
@@ -50,6 +52,7 @@ go_test(
         "console_test.go",
         "container_save_restore_test.go",
         "container_test.go",
+        "journaling_upper_test.go",
         "metric_server_test.go",
         "multi_container_save_restore_test.go",
         "multi_container_test.go",
