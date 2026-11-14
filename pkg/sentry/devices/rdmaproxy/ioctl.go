@@ -90,10 +90,13 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		return 0, linuxerr.EINVAL
 	}
 
+	// Like Linux, fail unsupported methods and mandatory attributes with
+	// EPROTONOSUPPORT, which rdma-core and its users treat as "not supported
+	// by this kernel" and fall back from; see MethodSchema.WriteFallback.
 	schema := lookupSchema(hdr.ObjectID, hdr.MethodID)
 	if schema == nil {
 		log.Warningf("rdmaproxy: unsupported ioctl object=%d method=%d", hdr.ObjectID, hdr.MethodID)
-		return 0, linuxerr.EINVAL
+		return 0, linuxerr.EPROTONOSUPPORT
 	}
 
 	attrsAddr := argPtr + hostarch.Addr(ib.SizeofUverbsIoctlHdr)
@@ -113,8 +116,11 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 	for i := range attrs {
 		a := &attrs[i]
 		typ, ok := schema.Attrs[a.AttrID]
-		if !ok {
+		if !ok || typ == AttrUnsupported {
 			log.Warningf("rdmaproxy: unsupported attr id=%#x on object=%d method=%d", a.AttrID, hdr.ObjectID, hdr.MethodID)
+			if a.Flags&ib.UVERBS_ATTR_F_MANDATORY != 0 && !schema.WriteFallback {
+				return 0, linuxerr.EPROTONOSUPPORT
+			}
 			return 0, linuxerr.EINVAL
 		}
 
@@ -199,10 +205,6 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 				a.Data = uint64(uint32(hostFD))
 			}
 
-		case AttrUnsupported:
-			log.Warningf("rdmaproxy: unsupported attr id=%#x on object=%d method=%d", a.AttrID, hdr.ObjectID, hdr.MethodID)
-			return 0, linuxerr.EINVAL
-
 		default:
 			log.Warningf("rdmaproxy: unsupported attr type %d for id=%#x on object=%d method=%d", typ, a.AttrID, hdr.ObjectID, hdr.MethodID)
 			return 0, linuxerr.EINVAL
@@ -231,7 +233,6 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 	case DmaMRRegDMABuf:
 		fdRelease, err := fd.prepareDMABufFD(t, attrs, &xlats)
 		if err != nil {
-			log.Warningf("rdmaproxy: REG_DMABUF_MR fd translation: %v", err)
 			return 0, err
 		}
 		defer fdRelease()

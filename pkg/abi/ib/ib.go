@@ -71,6 +71,11 @@ type UverbsAttr struct {
 	Data     uint64
 }
 
+// UVERBS_ATTR_F_MANDATORY is the UverbsAttr.Flags bit (enum
+// uverbs_attrs_flags) that makes the kernel reject a request whose attribute
+// it does not support instead of ignoring the attribute.
+const UVERBS_ATTR_F_MANDATORY = 1 << 0
+
 // UVERBS ioctl object, method, and attribute IDs from
 // include/uapi/rdma/ib_user_ioctl_cmds.h. Only the entries the rdma proxy
 // models are listed; the enums are cherry-picked, so values are explicit.
