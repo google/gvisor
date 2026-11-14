@@ -61,15 +61,16 @@ type Options struct {
 	runtimeDir string
 	// stateDir is where the sandbox keeps its state. Defaults to a directory
 	// inside the runtime directory.
-	stateDir   string
-	id         string
-	network    NetworkMode
-	mounts     []Mount
-	snapshot   *Snapshot
-	env        []string
-	err        error
-	workingDir string
-	hostname   string
+	stateDir      string
+	id            string
+	network       NetworkMode
+	mounts        []Mount
+	snapshot      *Snapshot
+	env           []string
+	err           error
+	workingDir    string
+	hostname      string
+	ignoreCgroups bool
 
 	// Process and filesystem layout.
 	rootPath     string
@@ -153,6 +154,14 @@ func WithRuntimeDir(runtimeDir string) Option {
 func WithID(id string) Option {
 	return func(o *Options) {
 		o.id = id
+	}
+}
+
+// WithIgnoreCgroups adds --ignore-cgroups for hosts without a writable cgroupfs.
+// If not set, --ignore-cgroups will only be provided when the effective UID of the user is not 0.
+func WithIgnoreCgroups() Option {
+	return func(o *Options) {
+		o.ignoreCgroups = true
 	}
 }
 
@@ -358,8 +367,9 @@ func resolveRunscPath() (string, error) {
 // newOptions applies opts on top of the sandbox defaults.
 func newOptions(opts ...Option) (*Options, error) {
 	options := &Options{
-		network:    NetworkModeNone,
-		workingDir: "/",
+		network:       NetworkModeNone,
+		workingDir:    "/",
+		ignoreCgroups: os.Geteuid() != 0,
 	}
 	for _, o := range opts {
 		o(options)
@@ -407,7 +417,7 @@ func (o *Options) runscGlobalArgs() []string {
 	if o.stateDir != "" {
 		args = append(args, "--root", o.stateDir)
 	}
-	if os.Geteuid() != 0 {
+	if o.ignoreCgroups {
 		args = append(args, "--ignore-cgroups")
 	}
 	switch o.network {
