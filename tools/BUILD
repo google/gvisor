@@ -82,6 +82,7 @@ bzl_library(
 exports_files([
     "benchmark-umbrella-exports.patch",
     "build_cover.sh",
+    "gazelle-native-environment.patch",
     "go-allow-internal.patch",
     "llvm-dev-backends.patch",
     "llvm-linux-header-default.patch",
