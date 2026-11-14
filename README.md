@@ -56,52 +56,43 @@ be found at [gvisor.dev][gvisor-dev].
 
 ## Installing from source
 
-gVisor builds on x86_64 and ARM64. Other architectures may become available in
-the future.
+These instructions cover native builds on x86_64 and ARM64 Linux. Running
+containers with `runsc` requires Linux 5.6 or later.
 
-For the purposes of these instructions, [bazel][bazel] and other build
-dependencies are wrapped in a build container. It is possible to use
-[bazel][bazel] directly, or type `make help` for standard targets.
+### Building on Linux
 
-### Requirements
+Install [Bazelisk][bazelisk], the native GNU C and C++ compilers, and binutils.
+Bazelisk runs the [Bazel][bazel] version pinned in [.bazelversion](.bazelversion).
+The [build image Dockerfile](images/default/Dockerfile) lists the packages used
+in CI.
 
-Make sure the following dependencies are installed:
+Build the release tarball and extract it to
+install `runsc`, the containerd shim, and the `gvisor-bin/` directory that
+`runsc` looks for next to its executable.
 
-*   Linux 5.6+
-*   [Docker version 17.09.0 or greater][docker]
+```sh
+bazelisk build -c opt //debian:gvisor-release-tar-bz2
+sudo tar -C /usr/local/bin -xf bazel-bin/debian/gvisor.tar.bz2
+```
 
-### Building
+To build an individual library or binary, pass its Bazel target directly.
 
-Build a release tarball containing `runsc`, the `containerd-shim-runsc-v1`
-containerd shim, and a few sidecar binaries that `runsc` expects to find in a
-`gvisor-bin/` directory next to itself, then extract it to `/usr/local/bin`:
+```sh
+bazelisk build //pkg/tcpip:tcpip
+```
+
+### Building with Docker
+
+The Makefile can also run Bazel in the
+[build container](images/default/Dockerfile). With
+[Docker 17.09.0 or later][docker] installed, run the following commands.
 
 ```sh
 make release-tarball DESTINATION=bin/
 sudo tar -C /usr/local/bin -xf bin/gvisor.tar.bz2
 ```
 
-To build specific libraries or binaries, you can specify the target:
-
-```sh
-make build TARGETS="//pkg/tcpip:tcpip"
-```
-
-### Building directly with Bazel (without Docker)
-
-Using Bazel directly isn't recommended due to the extra overhead, but in order
-to get started:
-
--   Look at the [build dockerfile](images/default/Dockerfile) for the canonical
-    list of needed dependencies.
--   Install and use [bazelisk][bazelisk]. Otherwise, make sure your bazel
-    version matches the one listed in the [.bazelversion](.bazelversion) file.
-
-After setting up dependencies, using Bazel is similar to the Makefile:
-
-```sh
-bazel build -c opt //debian:gvisor-release-tar-bz2
-```
+See `make help` for the other Makefile targets.
 
 ### Testing
 
