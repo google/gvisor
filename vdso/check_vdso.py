@@ -46,7 +46,7 @@ def Fatal(*args, **kwargs):
   exit(1)
 
 
-def CheckSegments(vdso_path):
+def CheckSegments(output):
   """Verifies layout of PT_LOAD segments.
 
   PT_LOAD segments must be laid out such that the ELF is directly mmappable.
@@ -63,9 +63,8 @@ def CheckSegments(vdso_path):
   LOAD           0x000000 0xffffffffff700000 0xffffffffff700000 0x000e68 0x000e68 R E 0x1000
 
   Args:
-    vdso_path: Path to VDSO binary.
+    output: The program headers reported by readelf -lW.
   """
-  output = subprocess.check_output(["readelf", "-lW", vdso_path]).decode()
   lines = output.split("\n")
 
   segments = []
@@ -119,7 +118,7 @@ _SECTION_NAME_RE = re.compile(r"""^\s+\[\ ?\d+\]\s+
                               (?P<size>[0-9a-f]+)""", re.VERBOSE)
 
 
-def CheckData(vdso_path):
+def CheckData(output):
   """Verifies the VDSO contains no .data or .bss sections.
 
   The readelf line format looks like:
@@ -141,9 +140,8 @@ def CheckData(vdso_path):
     l (large), p (processor specific)
 
   Args:
-    vdso_path: Path to VDSO binary.
+    output: The section headers reported by readelf -SW.
   """
-  output = subprocess.check_output(["readelf", "-SW", vdso_path]).decode()
   lines = output.split("\n")
 
   found_text = False
@@ -173,13 +171,12 @@ def CheckData(vdso_path):
     Fatal("VDSO contains no/empty .text section? Bad parsing?:\n%s" % output)
 
 
-def CheckRelocs(vdso_path):
+def CheckRelocs(output):
   """Verifies that the VDSO includes no relocations.
 
   Args:
-    vdso_path: Path to VDSO binary.
+    output: The relocations reported by readelf -r.
   """
-  output = subprocess.check_output(["readelf", "-r", vdso_path]).decode()
   if output.strip() != "There are no relocations in this file.":
     Fatal("VDSO contains relocations: %s", output)
 
@@ -191,13 +188,17 @@ def main():
       "--check-data",
       action="store_true",
       help="Check that the ELF contains no .data or .bss sections")
+  parser.add_argument("--readelf", default="readelf", help="Path to readelf")
   args = parser.parse_args()
 
-  CheckSegments(args.vdso)
-  CheckRelocs(args.vdso)
+  def readelf(option):
+    return subprocess.check_output([args.readelf, option, args.vdso]).decode()
+
+  CheckSegments(readelf("-lW"))
+  CheckRelocs(readelf("-r"))
 
   if args.check_data:
-    CheckData(args.vdso)
+    CheckData(readelf("-SW"))
 
 
 if __name__ == "__main__":
