@@ -1934,6 +1934,41 @@ TEST_P(SimpleTcpSocketTest, SetGetTCPCongestionLargeReadBuffer) {
   }
 }
 
+TEST_P(SimpleTcpSocketTest, SetGetTCPCongestionBuffersAround4096Bytes) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  constexpr socklen_t kTcpCaNameMax = 16;
+
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  const char kSetCC[] = "cubic";
+  ASSERT_THAT(
+      setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC, strlen(kSetCC)),
+      SyscallSucceedsWithValue(0));
+
+  char baseline[kTcpCaNameMax];
+  socklen_t baseline_len = sizeof(baseline);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, baseline, &baseline_len),
+      SyscallSucceedsWithValue(0));
+  ASSERT_EQ(baseline_len, sizeof(baseline));
+  EXPECT_EQ(0, memcmp(baseline, kSetCC, sizeof(kSetCC)));
+
+  for (socklen_t buffer_size : {4095, 4096, 4097}) {
+    SCOPED_TRACE(buffer_size);
+    std::vector<char> buffer(buffer_size, '!');
+    socklen_t optlen = buffer_size;
+    ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, buffer.data(),
+                           &optlen),
+                SyscallSucceedsWithValue(0));
+
+    EXPECT_EQ(kTcpCaNameMax, optlen);
+    EXPECT_EQ(0, memcmp(buffer.data(), baseline, sizeof(baseline)));
+    for (socklen_t i = kTcpCaNameMax; i < buffer_size; ++i) {
+      EXPECT_EQ('!', buffer[i]) << "buffer byte " << i << " was modified";
+    }
+  }
+}
+
 // Test that setting an unsupported congestion control algorithm fails for an
 // unconnected TCP socket.
 TEST_P(SimpleTcpSocketTest, SetCongestionControlFailsForUnsupported) {
