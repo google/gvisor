@@ -149,6 +149,14 @@ func (w *worker) work(compress bool, level int) {
 
 	var h hash.Hash
 
+	// Reuse the flate encoder and decoder across chunks. A flate.Writer holds
+	// about 1 MB of state, so allocating one per chunk costs more than
+	// compressing a small chunk, and adds GC pressure for any chunk size.
+	var (
+		fw *flate.Writer
+		fr io.ReadCloser
+	)
+
 	for c := range w.input {
 		if h == nil && w.hashPool != nil {
 			h = w.hashPool.getHash()
@@ -160,14 +168,18 @@ func (w *worker) work(compress bool, level int) {
 			}
 
 			// Encode this slice.
-			fw, err := flate.NewWriter(mw, level)
-			if err != nil {
-				w.output <- result{c, err}
-				continue
+			if fw == nil {
+				var err error
+				if fw, err = flate.NewWriter(mw, level); err != nil {
+					w.output <- result{c, err}
+					continue
+				}
+			} else {
+				fw.Reset(mw)
 			}
 
 			// Encode the input.
-			if _, err := io.CopyN(fw, c.uncompressed, int64(c.uncompressed.Len())); err != nil {
+			if _, err := fw.Write(c.uncompressed.Bytes()); err != nil {
 				w.output <- result{c, err}
 				continue
 			}
@@ -200,7 +212,12 @@ func (w *worker) work(compress bool, level int) {
 			}
 
 			// Decode this slice.
-			fr := flate.NewReader(c.compressed)
+			if fr == nil {
+				fr = flate.NewReader(c.compressed)
+			} else if err := fr.(flate.Resetter).Reset(c.compressed, nil); err != nil {
+				w.output <- result{c, err}
+				continue
+			}
 
 			// Decode the input.
 			if _, err := io.Copy(c.uncompressed, fr); err != nil {
@@ -791,8 +808,12 @@ func (w *Writer) flush(c *chunk) error {
 	}
 
 	// Write out to the stream.
-	if _, err := io.CopyN(w.out, c.compressed, int64(c.compressed.Len())); err != nil {
+	n, err := w.out.Write(c.compressed.Bytes())
+	if err != nil {
 		return err
+	}
+	if n != c.compressed.Len() {
+		return io.ErrShortWrite
 	}
 
 	if w.hashPool != nil {
