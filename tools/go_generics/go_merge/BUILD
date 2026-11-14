@@ -8,6 +8,7 @@ package(
 go_binary(
     name = "go_merge",
     srcs = ["main.go"],
+    pure = True,
     visibility = ["//:sandbox"],
     deps = [
         "//tools/constraintutil",
