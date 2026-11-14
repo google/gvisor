@@ -333,6 +333,26 @@ img_pull(
     tag = "1.4.3",
 )
 
+# Both platform manifests belong to the official mariadb:12.3.2 index:
+# sha256:a02fe89cb597d4375812b2eac90cf9d0775d4686daa7f7cc750ebbcad7525bbc
+img_pull(
+    name = "test_mariadb_amd64",
+    digest = "sha256:63b29a06fbde176102a20d90fee92b2bac3a112a4f47816cac18da9b70767393",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/mariadb",
+    tag = "12.3.2",
+)
+
+img_pull(
+    name = "test_mariadb_arm64",
+    digest = "sha256:f3761402303ebafc3bb4cb174afae399d71acd72b260f19139b5337dc39065f1",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/mariadb",
+    tag = "12.3.2",
+)
+
 # Both platform manifests belong to the official postgres:18.4 index:
 # sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
 img_pull(
