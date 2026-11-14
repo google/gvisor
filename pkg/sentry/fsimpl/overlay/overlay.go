@@ -176,19 +176,14 @@ func computeStackDepth(opts FilesystemOptions) int {
 	return depth + 1
 }
 
-// maxLockdepStackDepth is the number of per-depth lockdep subclasses declared
-// for overlay locks, matching Linux's FILESYSTEM_MAX_STACK_DEPTH.
-const maxLockdepStackDepth = 2
+// maxStackDepth is the maximum overlay stacking depth. As in Linux, an
+// overlay may be a layer of another overlay, but that overlay may not be a
+// layer of a third one. Overlay locks have one lockdep subclass per depth.
+const maxStackDepth = 2
 
+// depthIndex returns the index of fs' stacking depth among the per-depth lock
+// subclasses. GetFilesystem limits the depth to maxStackDepth.
 func (fs *filesystem) depthIndex() int {
-	// GetFilesystem does not restrict stackDepth; clamping keeps the slice
-	// index in bounds when stackDepth > maxLockdepStackDepth (with lockdep
-	// enabled, traversing from depth >= 3 into depth 2 will still trigger a
-	// nested-locking panic on subclass "d2"; without lockdep, this index is
-	// ignored).
-	if fs.stackDepth >= maxLockdepStackDepth {
-		return maxLockdepStackDepth - 1
-	}
 	return fs.stackDepth - 1
 }
 
@@ -396,6 +391,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: at least two lower layers are required when no upper layer is present")
 		return nil, nil, linuxerr.EINVAL
 	}
+	stackDepth := computeStackDepth(fsopts)
+	if stackDepth > maxStackDepth {
+		ctx.Infof("overlay.FilesystemType.GetFilesystem: stacking depth %d exceeds maximum %d", stackDepth, maxStackDepth)
+		return nil, nil, linuxerr.EINVAL
+	}
 	const maxLowerLayers = 500 // Linux: fs/overlay/super.c:OVL_MAX_STACK
 	if len(fsopts.LowerRoots) > maxLowerLayers {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: %d lower layers specified, maximum %d", len(fsopts.LowerRoots), maxLowerLayers)
@@ -433,7 +433,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
 		maxFilenameLen: linux.NAME_MAX,
-		stackDepth:     computeStackDepth(fsopts),
+		stackDepth:     stackDepth,
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
