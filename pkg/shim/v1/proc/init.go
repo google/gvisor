@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +68,9 @@ type Init struct {
 	// interface.
 	mu runtimeMutex
 
-	waitBlock chan struct{}
+	waitBlock         chan struct{}
+	sandboxExit       chan int
+	cancelSandboxExit func()
 
 	WorkDir string
 
@@ -140,6 +143,15 @@ func New(id string, runtime *runsccmd.Runsc, stdio stdio.Stdio) *Init {
 func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	ctx, cancelRuntime := context.WithTimeoutCause(ctx, runscLongOperationTimeout, errRunscTimeout)
 	defer cancelRuntime()
+	defer func() {
+		if err != nil {
+			if p.cancelSandboxExit != nil {
+				p.cancelSandboxExit()
+			}
+			p.closeSandboxPidfd()
+			p.closeIO()
+		}
+	}()
 
 	var socket *runc.Socket
 	if r.Terminal {
@@ -166,13 +178,38 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	if socket != nil {
 		opts.ConsoleSocket = socket
 	}
+	var pidfdSocket *net.UnixListener
 	if p.Sandbox {
 		opts.IO = p.io
 		// UserLog is only useful for sandbox.
 		opts.UserLog = p.UserLog
+		dir, err := os.MkdirTemp("", "runsc-pidfd")
+		if err != nil {
+			return fmt.Errorf("creating pidfd socket directory: %w", err)
+		}
+		defer os.RemoveAll(dir)
+		opts.PidfdSocket = filepath.Join(dir, "socket")
+		pidfdSocket, err = net.ListenUnix("unix", &net.UnixAddr{Name: opts.PidfdSocket, Net: "unix"})
+		if err != nil {
+			return fmt.Errorf("listening for sandbox pidfd: %w", err)
+		}
+		defer pidfdSocket.Close()
 	}
 	if err := p.runtime.Create(ctx, r.ID, r.Bundle, opts); err != nil {
 		return p.runtimeError(err, "OCI runtime create failed")
+	}
+	if p.Sandbox {
+		defer func() {
+			if err == nil {
+				return
+			}
+			cleanupCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), runscTimeout, errRunscTimeout)
+			defer cancel()
+			if cleanupErr := p.runtime.Delete(cleanupCtx, p.id, &runsccmd.DeleteOpts{Force: true}); cleanupErr != nil {
+				p.killSandbox("Create rollback failed")
+				log.G(ctx).WithError(cleanupErr).Errorf("Failed to delete sandbox %q after Create failed", p.id)
+			}
+		}()
 	}
 	pid, err := runc.ReadPidFile(pidFile)
 	if err != nil {
@@ -181,11 +218,13 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	p.pid = pid
 	if p.Sandbox {
 		p.pinSandboxPidfd(ctx)
-		defer func() {
-			if err != nil {
-				p.closeSandboxPidfd()
-			}
-		}()
+		pidfd, err := receiveSandboxPidfd(ctx, pidfdSocket)
+		if err != nil {
+			return fmt.Errorf("receiving sandbox pidfd: %w", err)
+		}
+		if err := p.monitorSandboxExit(pidfd); err != nil {
+			return err
+		}
 	}
 	if r.Stdin != "" {
 		sc, err := fifo.OpenFifo(context.Background(), r.Stdin, unix.O_WRONLY|unix.O_NONBLOCK, 0)
@@ -271,7 +310,7 @@ func (p *Init) sandboxExecutableMatches() bool {
 		return false
 	}
 	dir, err := gvisorbinaries.DirForExecutable(path)
-	return err == nil && (matches(filepath.Join(dir, gvisorbinaries.GvisorSentry.Name)) || matches(filepath.Join(dir, gvisorbinaries.GvisorSentryPluginStack.Name)))
+	return err == nil && (matches(filepath.Join(dir, gvisorbinaries.GvisorSentry.Name)) || matches(filepath.Join(dir, gvisorbinaries.GvisorSentryPluginStack.Name)) || matches(filepath.Join(dir, gvisorbinaries.GvisorSentryPrewarmer.Name)))
 }
 
 // lockRuntime gives the lock wait and the runsc call one shared deadline.
@@ -283,6 +322,11 @@ func (p *Init) lockRuntime(parent context.Context) (context.Context, func(), err
 
 func (p *Init) lockRuntimeFor(parent context.Context, timeout time.Duration) (context.Context, func(), error) {
 	return lockRuntimeFor(&p.mu, parent, timeout)
+}
+
+// WithRuntimeTimeout bounds an operation with the runtime recovery deadline.
+func WithRuntimeTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(ctx, runscTimeout, errRunscTimeout)
 }
 
 // runtimeMutex is a zero-value, context-aware lock for runtime and state calls.
@@ -330,6 +374,35 @@ func lockRuntimeFor(mu *runtimeMutex, parent context.Context, timeout time.Durat
 // Wait waits for the process to exit.
 func (p *Init) Wait() {
 	<-p.waitBlock
+}
+
+// WaitSandboxExit waits for a sandbox host exit before a successful Start.
+// A successful Start cancels this wait and uses runsc wait instead.
+func (p *Init) WaitSandboxExit() (int, bool) {
+	defer p.cancelSandboxExit()
+	status, exited := <-p.sandboxExit
+	return status, exited
+}
+
+// SetExitedBeforeStart records a host exit unless Start succeeded or an exit
+// was already recorded. The status callback runs only if this exit is accepted.
+// It also completes Wait after deletion of a created task.
+func (p *Init) SetExitedBeforeStart(status func() int) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.isExited() {
+		return false
+	}
+	switch state := p.initState.(type) {
+	case *createdState:
+		state.SetExited(status())
+	case *deletedState:
+		p.setExited(status())
+	default:
+		return false
+	}
+	return true
 }
 
 // ID returns the ID of the process.
@@ -439,6 +512,9 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 		}); err != nil {
 			return p.runtimeError(err, "OCI runtime restore failed")
 		}
+	}
+	if p.cancelSandboxExit != nil {
+		p.cancelSandboxExit()
 	}
 	go func() {
 		status, err := p.runtime.Wait(context.Background(), p.id)
@@ -625,7 +701,14 @@ func (p *Init) closeIO() {
 }
 
 func (p *Init) killSandboxAfterTimeout(cause error, operation string) {
-	if !p.Sandbox || !errors.Is(cause, errRunscTimeout) {
+	if !errors.Is(cause, errRunscTimeout) {
+		return
+	}
+	p.killSandbox(fmt.Sprintf("%s exceeded %v", operation, runscTimeout))
+}
+
+func (p *Init) killSandbox(reason string) {
+	if !p.Sandbox {
 		return
 	}
 	p.sandboxPidfdMu.Lock()
@@ -634,10 +717,14 @@ func (p *Init) killSandboxAfterTimeout(cause error, operation string) {
 		return
 	}
 	if err := unix.PidfdSendSignal(p.sandboxPidfd, unix.SIGKILL, nil, 0); err != nil {
-		log.L.WithError(err).Errorf("Failed to terminate unresponsive sandbox %q after %s timed out", p.id, operation)
+		if errors.Is(err, unix.ESRCH) {
+			p.closeSandboxPidfdLocked()
+			return
+		}
+		log.L.WithError(err).Errorf("Failed to terminate sandbox %q after %s", p.id, reason)
 		return
 	}
-	log.L.Errorf("Terminated unresponsive sandbox %q after its %s exceeded %v", p.id, operation, runscTimeout)
+	log.L.Errorf("Terminated sandbox %q after %s", p.id, reason)
 	p.closeSandboxPidfdLocked()
 }
 

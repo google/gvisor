@@ -16,6 +16,7 @@ go_library(
         "init_state.go",
         "io.go",
         "proc.go",
+        "sandbox_exit.go",
         "types.go",
         "utils.go",
     ],
@@ -49,6 +50,7 @@ go_test(
     name = "proc_test",
     size = "small",
     srcs = [
+        "init_exit_test.go",
         "init_kill_test.go",
         "init_runtime_test.go",
         "init_state_test.go",

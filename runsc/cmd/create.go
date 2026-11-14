@@ -61,6 +61,9 @@ type Create struct {
 	// the sandbox is ready to use.
 	pidFile string
 
+	// pidfdSocket receives a pidfd for a newly created sandbox.
+	pidfdSocket string
+
 	// consoleSocket is the path to an AF_UNIX socket which will receive a
 	// file descriptor referencing the master end of the console's
 	// pseudoterminal.  This is ignored unless spec.Process.Terminal is
@@ -115,6 +118,7 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.StringVar(&c.pidFile, "pid-file", "", "filename that the container pid will be written to")
+	f.StringVar(&c.pidfdSocket, "pidfd-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the new sandbox process")
 	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
 	f.Var(&c.fsRestoreImagePaths, "fs-restore-image-path", "path to filesystem checkpoint (<dir> or <dir>/<prefix>) to restore (can be repeated; combining bundles from different checkpoints is only supported for create/run, not restore)")
 	f.BoolVar(&c.fsRestoreDirect, "fs-restore-direct", false, "open files in fs-restore-image-path with O_DIRECT")
@@ -199,6 +203,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		BundleDir:           c.bundleDir,
 		ConsoleSocket:       c.consoleSocket,
 		PIDFile:             c.pidFile,
+		PidfdSocket:         c.pidfdSocket,
 		UserLog:             c.userLog,
 		PassFiles:           files,
 		FSRestoreImagePaths: []string(c.fsRestoreImagePaths),

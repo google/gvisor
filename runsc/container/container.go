@@ -186,6 +186,9 @@ type Args struct {
 	// written to. It may be empty.
 	PIDFile string
 
+	// PidfdSocket receives a pidfd when creating a new sandbox. It may be empty.
+	PidfdSocket string
+
 	// UserLog is the filename to send user-visible logs to. It may be empty.
 	//
 	// It only applies for the init container.
@@ -239,6 +242,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 
 	if len(args.PassFiles) != 0 && !specutils.IsRootContainer(args.Spec) {
 		return nil, fmt.Errorf("passed files are supported only when creating a new sandbox")
+	}
+	if args.PidfdSocket != "" && !specutils.IsRootContainer(args.Spec) {
+		return nil, fmt.Errorf("pidfd-socket is supported only when creating a new sandbox")
 	}
 
 	if err := os.MkdirAll(conf.RootDir, 0711); err != nil {
@@ -474,6 +480,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			Spec:                args.Spec,
 			BundleDir:           args.BundleDir,
 			ConsoleSocket:       args.ConsoleSocket,
+			PidfdSocket:         args.PidfdSocket,
 			UserLog:             args.UserLog,
 			IOFiles:             ioFiles,
 			DevIOFile:           devIOFile,
