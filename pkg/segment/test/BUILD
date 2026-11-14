@@ -20,6 +20,9 @@ go_template_instance(
 go_template_instance(
     name = "int_set",
     out = "int_set.go",
+    consts = {
+        "reuseNodes": "1",
+    },
     package = "segment",
     template = "//pkg/segment:generic_set",
     types = {
@@ -34,6 +37,7 @@ go_template_instance(
     name = "gap_set",
     out = "gap_set.go",
     consts = {
+        "reuseNodes": "1",
         "trackGaps": "1",
     },
     package = "segment",

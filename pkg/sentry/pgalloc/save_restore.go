@@ -63,6 +63,7 @@ func (f *MemoryFile) ResourceID() checkpoint.ResourceID {
 	return f.opts.ResourceID
 }
 
+// +checklocks:f.mu
 func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	pb := &pgallocpb.MemoryFileMetadataProto{
 		Version:     1,
@@ -78,32 +79,24 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 			Huge: c.huge,
 		}
 	}
+	count := 0
 	for s := f.memAcct.FirstSegment(); s.Ok(); s = s.NextSegment() {
-		val := s.Value()
-		pb.MemAcct = append(pb.MemAcct, &pgallocpb.MemAcctRangeProto{
-			Start:          s.Start(),
-			End:            s.End(),
-			Kind:           uint32(val.kind),
-			MemCgId:        val.memCgID,
-			KnownCommitted: val.knownCommitted,
-		})
+		count++
 	}
-	for s := f.unfreeSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
+	memAcct := make([]pgallocpb.MemAcctRangeProto, count)
+	pb.MemAcct = make([]*pgallocpb.MemAcctRangeProto, count)
+	for i, s := 0, f.memAcct.FirstSegment(); s.Ok(); i, s = i+1, s.NextSegment() {
 		val := s.Value()
-		pb.UnfreeSmall = append(pb.UnfreeSmall, &pgallocpb.UnfreeRangeProto{
-			Start: s.Start(),
-			End:   s.End(),
-			Refs:  val.refs,
-		})
+		entry := &memAcct[i]
+		entry.Start = s.Start()
+		entry.End = s.End()
+		entry.Kind = uint32(val.kind)
+		entry.MemCgId = val.memCgID
+		entry.KnownCommitted = val.knownCommitted
+		pb.MemAcct[i] = entry
 	}
-	for s := f.unfreeHuge.FirstSegment(); s.Ok(); s = s.NextSegment() {
-		val := s.Value()
-		pb.UnfreeHuge = append(pb.UnfreeHuge, &pgallocpb.UnfreeRangeProto{
-			Start: s.Start(),
-			End:   s.End(),
-			Refs:  val.refs,
-		})
-	}
+	pb.UnfreeSmall = f.exactRefRanges(&f.unfreeSmall)
+	pb.UnfreeHuge = f.exactRefRanges(&f.unfreeHuge)
 	for s := f.unwasteSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
 		pb.UnwasteSmall = append(pb.UnwasteSmall, &pgallocpb.FileRangeProto{
 			Start: s.Start(),
@@ -117,6 +110,68 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 		})
 	}
 	return pb
+}
+
+// +checklocks:f.mu
+func (f *MemoryFile) exactRefRanges(unfree *unfreeSet) []*pgallocpb.UnfreeRangeProto {
+	// Size the backing array first to avoid allocating each message separately.
+	count := 0
+	f.visitExactRefRanges(unfree, func(_, _, _ uint64) { count++ })
+	entries := make([]pgallocpb.UnfreeRangeProto, count)
+	dst := make([]*pgallocpb.UnfreeRangeProto, count)
+	i := 0
+	f.visitExactRefRanges(unfree, func(start, end, refs uint64) {
+		entry := &entries[i]
+		entry.Start = start
+		entry.End = end
+		entry.Refs = refs
+		dst[i] = entry
+		i++
+	})
+	return dst
+}
+
+// +checklocks:f.mu
+func (f *MemoryFile) visitExactRefRanges(unfree *unfreeSet, emit func(start, end, refs uint64)) {
+	extra := f.extraRefs.FirstSegment()
+	for s := unfree.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		baseRefs := s.Value().refs
+		if baseRefs == 0 {
+			emit(s.Start(), s.End(), 0)
+			continue
+		}
+		if baseRefs != 1 {
+			panic(fmt.Sprintf("unexpected base reference count %d on pages %v", baseRefs, s.Range()))
+		}
+
+		pos := s.Start()
+		for extra.Ok() && extra.End() <= pos {
+			extra = extra.NextSegment()
+		}
+		for pos < s.End() {
+			if !extra.Ok() || extra.Start() >= s.End() {
+				emit(pos, s.End(), 1)
+				break
+			}
+			if extra.Start() > pos {
+				end := min(extra.Start(), s.End())
+				emit(pos, end, 1)
+				pos = end
+				continue
+			}
+
+			end := min(extra.End(), s.End())
+			count := extra.Value().extra
+			if count == 0 || count == math.MaxUint64 {
+				panic(fmt.Sprintf("invalid extra reference count %d on pages %v", count, extra.Range()))
+			}
+			emit(pos, end, 1+count)
+			pos = end
+			if end == extra.End() {
+				extra = extra.NextSegment()
+			}
+		}
+	}
 }
 
 func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) error {
@@ -143,14 +198,9 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 			knownCommitted: s.KnownCommitted,
 		})
 	}
-	f.unfreeSmall.RemoveAll()
-	for _, s := range pb.UnfreeSmall {
-		f.unfreeSmall.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unfreeInfo{refs: s.Refs})
-	}
-	f.unfreeHuge.RemoveAll()
-	for _, s := range pb.UnfreeHuge {
-		f.unfreeHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unfreeInfo{refs: s.Refs})
-	}
+	f.extraRefs.RemoveAll()
+	f.importExactRefRanges(pb.UnfreeSmall, &f.unfreeSmall)
+	f.importExactRefRanges(pb.UnfreeHuge, &f.unfreeHuge)
 	f.unwasteSmall.RemoveAll()
 	for _, s := range pb.UnwasteSmall {
 		f.unwasteSmall.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
@@ -160,6 +210,21 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 		f.unwasteHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
 	}
 	return nil
+}
+
+func (f *MemoryFile) importExactRefRanges(ranges []*pgallocpb.UnfreeRangeProto, unfree *unfreeSet) {
+	unfree.RemoveAll()
+	for _, s := range ranges {
+		fr := memmap.FileRange{Start: s.Start, End: s.End}
+		baseRefs := uint64(0)
+		if s.Refs != 0 {
+			baseRefs = 1
+		}
+		unfree.InsertRange(fr, unfreeInfo{refs: baseRefs})
+		if s.Refs > 1 {
+			f.extraRefs.InsertRange(fr, extraRefInfo{extra: s.Refs - 1})
+		}
+	}
 }
 
 // SaveOpts provides options to MemoryFile.SaveTo().

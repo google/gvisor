@@ -110,6 +110,28 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "extra_refs_set",
+    out = "extra_refs_set.go",
+    consts = {
+        "minDegree": "10",
+        "reuseNodes": "1",
+        "trackGaps": "0",
+    },
+    imports = {
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
+    },
+    package = "pgalloc",
+    prefix = "extraRefs",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "uint64",
+        "Range": "memmap.FileRange",
+        "Value": "extraRefInfo",
+        "Functions": "extraRefSetFunctions",
+    },
+)
+
+go_template_instance(
     name = "unfree_set",
     out = "unfree_set.go",
     consts = {
@@ -163,6 +185,7 @@ go_library(
         "debug.go",
         "evictable_range.go",
         "evictable_range_set.go",
+        "extra_refs_set.go",
         "memacct_set.go",
         "memory_file_mutex.go",
         "pgalloc.go",
@@ -218,6 +241,7 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/memutil",
+        "//pkg/safemem",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
         "@org_golang_x_sys//unix:go_default_library",
