@@ -146,21 +146,26 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 
 // Preconditions: d.isDir().
 func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
+	var ds *[]*dentry
 	renameIdx := d.fs.renameLockIndex()
 	d.fs.renameMu.NestedRLock(renameIdx)
-	defer d.fs.renameMu.NestedRUnlock(renameIdx)
+	defer d.fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
 	dirIdx := d.dirLockIndex(dirLockD1)
 	d.dirMu.NestedLock(dirIdx)
 	defer d.dirMu.NestedUnlock(dirIdx)
-	return d.getDirentsLocked(ctx)
+	return d.getDirentsLocked(ctx, &ds)
 }
 
 // Preconditions:
 //   - filesystem.renameMu must be locked.
 //   - d.dirMu must be locked.
 //   - d.isDir().
-func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
-	if d.dirents != nil {
+func (d *dentry) getDirentsLocked(ctx context.Context, ds **[]*dentry) ([]vfs.Dirent, error) {
+	if err := d.fs.ensureDirInoCache(ctx); err != nil {
+		return nil, err
+	}
+	epoch := d.direntsEpoch.Load()
+	if d.dirents != nil && epoch == d.direntsEpochCached {
 		return d.dirents, nil
 	}
 
@@ -186,6 +191,15 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	prevDirents := make(map[string]struct{})
 	var maybeWhiteouts []vfs.Dirent
 	d.iterLayers(func(layerVD vfs.VirtualDentry, isUpper bool) bool {
+		stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
+			Root:  layerVD,
+			Start: layerVD,
+		}, &vfs.StatOptions{Mask: linux.STATX_INO})
+		if err != nil {
+			readdirErr = err
+			return false
+		}
+		dev := layerDevNumber{stat.DevMajor, stat.DevMinor}
 		layerFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
 			Root:  layerVD,
 			Start: layerVD,
@@ -201,6 +215,7 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 		// Reuse slice allocated for maybeWhiteouts from a previous layer to
 		// reduce allocations.
 		maybeWhiteouts = maybeWhiteouts[:0]
+		firstDirent := len(dirents)
 		err = layerFD.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
 			if dirent.Name == "." || dirent.Name == ".." {
 				return nil
@@ -226,6 +241,14 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 			return false
 		}
 
+		// Convert a layer's entries under one lock, after IterDirents releases
+		// its filesystem locks. No layer operations run under dirInoCacheMu.
+		d.fs.dirInoCacheMu.Lock()
+		for i := firstDirent; i < len(dirents); i++ {
+			dirents[i].Ino = d.fs.identityForLocked(layerDevNoAndIno{dev, dirents[i].Ino}).ino
+		}
+		d.fs.dirInoCacheMu.Unlock()
+
 		for _, dirent := range maybeWhiteouts {
 			stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
 				Root:  layerVD,
@@ -240,6 +263,9 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 				// This file is a whiteout; don't emit a dirent for it.
 				continue
 			}
+			dirent.Ino = d.fs.identityFor(layerDevNoAndIno{
+				layerDevNumber{stat.DevMajor, stat.DevMinor}, stat.Ino,
+			}).ino
 			dirent.NextOff = int64(len(dirents) + 1)
 			dirents = append(dirents, dirent)
 		}
@@ -249,8 +275,28 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 		return nil, readdirErr
 	}
 
-	// Cache dirents for future directoryFDs.
+	// Merged directories use their bottommost origin, which can differ from
+	// the layer that supplied the name. Regular files need no child lookup.
+	if len(d.lowerVDs) > 1 || d.upperVD.Ok() && len(d.lowerVDs) != 0 {
+		for i := 2; i < len(dirents); i++ {
+			if dirents[i].Type != linux.DT_DIR && dirents[i].Type != linux.DT_UNKNOWN {
+				continue
+			}
+			if child, _, err := d.fs.getChildLocked(ctx, d, dirents[i].Name, ds); err == nil {
+				dirents[i].Ino = child.ino.Load()
+			}
+		}
+	}
+
+	// A child's inode may have changed while this listing was built. Leave
+	// the cache empty so the next readdir reads the new numbers. This
+	// listing is still returned to the caller that raced with that change.
+	if d.direntsEpoch.Load() != epoch {
+		d.dirents = nil
+		return dirents, nil
+	}
 	d.dirents = dirents
+	d.direntsEpochCached = epoch
 	return dirents, nil
 }
 

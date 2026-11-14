@@ -662,6 +662,10 @@ func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opt
 	}
 	if !i.cachedMetadataAuthoritative() {
 		i.updateMetadataFromStatxLocked(&inode.Stat)
+	} else if !d.isDir() && !d.isDeleted() && inode.Stat.Mask&linux.STATX_NLINK != 0 {
+		// Deleted files are recreated temporarily; their saved link count
+		// describes the final object after restore removes the temporary name.
+		i.nlink.Store(inode.Stat.Nlink)
 	}
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {

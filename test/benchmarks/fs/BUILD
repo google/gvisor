@@ -36,6 +36,12 @@ benchmark_test(
 )
 
 benchmark_test(
+    name = "overlay_identity_test",
+    srcs = ["overlay_identity_test.go"],
+    use_for_pgo = False,
+)
+
+benchmark_test(
     name = "rubydev_test",
     srcs = ["rubydev_test.go"],
     use_for_pgo = True,
