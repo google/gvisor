@@ -1190,7 +1190,7 @@ func (c *Container) Destroy() error {
 			}
 		}
 		filestorePath := sentryapi.SelfFilestorePath(mountSrc, c.sandboxID())
-		if err := os.Remove(filestorePath); err != nil {
+		if err := os.Remove(filestorePath); err != nil && !os.IsNotExist(err) {
 			err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
 			log.Warningf("%v", err)
 			errs = append(errs, err.Error())
