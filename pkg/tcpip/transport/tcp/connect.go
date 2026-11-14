@@ -1425,15 +1425,13 @@ func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 		return nil
 	}
 
-	// If a userTimeout is set then abort the connection if it is
-	// exceeded.
-	if userTimeout != 0 && e.stack.Clock().NowMonotonic().Sub(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
-		e.keepalive.Unlock()
-		e.stack.Stats().TCP.EstablishedTimedout.Increment()
-		return &tcpip.ErrTimeout{}
+	// TCP_USER_TIMEOUT overrides the probe count once a keepalive probe
+	// has gone unanswered.
+	timedOut := e.keepalive.unacked >= e.keepalive.count
+	if userTimeout != 0 {
+		timedOut = e.keepalive.unacked > 0 && e.stack.Clock().NowMonotonic().Sub(e.rcv.lastRcvdAckTime) >= userTimeout
 	}
-
-	if e.keepalive.unacked >= e.keepalive.count {
+	if timedOut {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
 		return &tcpip.ErrTimeout{}
