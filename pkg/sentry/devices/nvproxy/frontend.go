@@ -1062,6 +1062,33 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 	return n, nil
 }
 
+// hostCtlFD returns the host fd to pass to the driver for file, an fd that a
+// control call carries. file is either a frontendFD that this sandbox opened, or
+// a host file of the NVIDIA control device received from outside the sandbox,
+// such as one that holds an allocation exported with
+// cuMemExportToShareableHandle. The device check matters: the driver checks only
+// the device number before it uses the file's private data.
+func hostCtlFD(file *vfs.FileDescription) (int32, error) {
+	switch impl := file.Impl().(type) {
+	case *frontendFD:
+		return impl.hostFD, nil
+	case interface{ HostFD() int }:
+		fd := impl.HostFD()
+		var st unix.Stat_t
+		if err := unix.Fstat(fd, &st); err != nil {
+			return 0, linuxerr.EINVAL
+		}
+		rdev := uint64(st.Rdev)
+		if st.Mode&unix.S_IFMT != unix.S_IFCHR ||
+			unix.Major(rdev) != nvgpu.NV_MAJOR_DEVICE_NUMBER ||
+			unix.Minor(rdev) != nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE {
+			return 0, linuxerr.EINVAL
+		}
+		return int32(fd), nil
+	}
+	return 0, linuxerr.EINVAL
+}
+
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
@@ -1078,12 +1105,12 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 		return 0, linuxerr.EINVAL
 	}
 	defer ctlFileGeneric.DecRef(fi.ctx)
-	ctlFile, ok := ctlFileGeneric.Impl().(*frontendFD)
-	if !ok {
-		return 0, linuxerr.EINVAL
+	hostFD, err := hostCtlFD(ctlFileGeneric)
+	if err != nil {
+		return 0, err
 	}
 
-	ctrlParams.SetFrontendFD(ctlFile.hostFD)
+	ctrlParams.SetFrontendFD(hostFD)
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
 	ctrlParams.SetFrontendFD(origFD)
 	if err != nil {
