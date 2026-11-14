@@ -388,7 +388,7 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 	// Sentry sidecar it boots is pure (see sentryUsesCgo in
 	// runsc/sandbox/sandbox.go). So a cgo test binary expects it.
 	if opts.CgoEnabled || opts.NetworkMode == "plugin" {
-		env = append(env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
+		env = append(env, "GLIBC_TUNABLES=glibc.pthread.rseq=0", mallocArenaMax)
 	}
 	if opts.GoDebug != "" {
 		env = append(env, "GODEBUG="+opts.GoDebug)

@@ -1170,6 +1170,20 @@ func parseLimits(s string) (map[string]string, error) {
 // `runsc` uses.
 var ignoredEnvRegExp = regexp.MustCompile(`^(RUNSC_(START|REEXEC)_TIME_NANOS=\d+|GVISOR_ENFORCE_RELEASE=.*)$`)
 
+const mallocArenaMaxPrefix = "MALLOC_ARENA_MAX="
+const mallocArenaMax = mallocArenaMaxPrefix + "<8*launcher-cpus>"
+
+// IsSentryMallocArenaMax reports whether entry is a glibc arena limit that
+// runsc can set. The launcher's CPU affinity can differ from the observer's.
+func IsSentryMallocArenaMax(entry string) bool {
+	s, ok := strings.CutPrefix(entry, mallocArenaMaxPrefix)
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n > 0 && n%8 == 0 && s == strconv.Itoa(n)
+}
+
 const envGOMAXPROCSPrefix = "GOMAXPROCS="
 
 // EnvGOMAXPROCSFromCPUNum is the normalized `Attrs.Environ` entry for
@@ -1228,6 +1242,14 @@ func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS stri
 		}
 		if cpuNum != "" && e == envGOMAXPROCSPrefix+cpuNum {
 			e = EnvGOMAXPROCSFromCPUNum
+		}
+		if strings.HasPrefix(e, mallocArenaMaxPrefix) {
+			if IsSentryMallocArenaMax(e) {
+				e = mallocArenaMax
+			} else {
+				// Distinguish a literal placeholder from a normalized value.
+				e = strconv.Quote(e)
+			}
 		}
 		a.Environ = append(a.Environ, e)
 	}
