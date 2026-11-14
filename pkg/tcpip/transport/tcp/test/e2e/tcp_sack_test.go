@@ -788,6 +788,36 @@ func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousR
 	}
 }
 
+// verifyRecoveryUndo verifies that on exit from a loss recovery that was
+// detected spurious (RFC3522), the RFC4015 response restored the congestion
+// control state instead of leaving the loss-based reduction in place:
+// Ssthresh back at wantSsthresh, the pre-recovery pipe estimate, and SndCwnd
+// at FlightSize + min(bytes_acked, IW), which is wantCwnd when the exit ACK
+// leaves nothing in flight.
+func verifyRecoveryUndo(t *testing.T, c *context.Context, wantSsthresh, wantCwnd int) {
+	t.Helper()
+
+	pollFn := func() error {
+		info := tcpip.TCPInfoOption{}
+		if err := c.EP.GetSockOpt(&info); err != nil {
+			return fmt.Errorf("c.EP.GetSockOpt(&%T) = %s", info, err)
+		}
+		if got, want := info.CcState, tcpip.Open; got != want {
+			return fmt.Errorf("got info.CcState = %v, want = %v", got, want)
+		}
+		if got, want := info.SndSsthresh, uint32(wantSsthresh); got != want {
+			return fmt.Errorf("Ssthresh was not restored on spurious recovery exit: got info.SndSsthresh = %d, want = %d", got, want)
+		}
+		if got, want := info.SndCwnd, uint32(wantCwnd); got != want {
+			return fmt.Errorf("SndCwnd was not reset on spurious recovery exit: got info.SndCwnd = %d, want = %d", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(pollFn, 1*time.Second); err != nil {
+		t.Error(err)
+	}
+}
+
 func checkReceivedPacket(t *testing.T, c *context.Context, tcpHdr header.TCP, bytesRead uint32, b *buffer.View, data []byte) {
 	payloadLen := uint32(len(tcpHdr.Payload()))
 	checker.IPv4(t, b,
@@ -930,6 +960,16 @@ func testSpuriousRecoveryWithRTO(t *testing.T, timestamps bool, ackOptions func(
 	if got := stats.SpuriousRTORecovery.Value(); got != want {
 		t.Errorf("SpuriousRTORecovery counter = %d, want %d", got, want)
 	}
+	if !wantSpurious {
+		return
+	}
+
+	// Acknowledge all outstanding data to exit RTO recovery and verify
+	// that the RFC4015 response restored the congestion control state.
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), numPackets*maxPayload)
+	// No loss had reduced ssthresh before the timeout, so RFC4015's
+	// max(FlightSize, ssthresh) keeps it unlimited.
+	verifyRecoveryUndo(t, c, tcp.InitialSsthresh, numPackets-1)
 }
 
 func TestEifelRetransmissionTimestamps(t *testing.T) {
@@ -1020,6 +1060,13 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	numAck := 0
 	probeDone := make(chan struct{})
 	probe := func(s *tcp.TCPEndpointState) {
+		select {
+		case <-probeDone:
+			// The ACK that exits recovery arrives after detection
+			// has already been verified.
+			return
+		default:
+		}
 		if numAck < 3 {
 			numAck++
 			return
@@ -1109,6 +1156,12 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	<-probeDone
 
 	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
+
+	// Acknowledge all outstanding data to exit SACK recovery and verify
+	// that the RFC4015 response restored the congestion control state.
+	// Two of the covered packets were already SACKed and out of flight.
+	c.SendAck(seq, numPackets*maxPayload)
+	verifyRecoveryUndo(t, c, tcp.InitialCwnd, numPackets-1-2)
 }
 
 func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
@@ -1221,4 +1274,435 @@ func TestMain(m *testing.M) {
 	time.Sleep(1 * time.Second)
 	refs.DoLeakCheck()
 	os.Exit(code)
+}
+
+// TestEifelFiniteApplicationFlight times out an application-limited flight
+// of two packets, after an earlier genuine timeout set a finite ssthresh of 2
+// and cwnd grew back to 10. If an ACK for an original transmission shows that
+// the timeout was spurious, RFC 4015 restores ssthresh to
+// max(FlightSize, ssthresh) = 2, not to cwnd. In the repair_ack control the
+// ACKs echo the retransmissions, so the timeout stays genuine.
+func TestEifelFiniteApplicationFlight(t *testing.T) {
+	for _, scenario := range []string{"original_ack", "repair_ack"} {
+		t.Run(scenario, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			observed := make(chan tcp.TCPSenderState, 32)
+			c := context.NewWithOpts(t, context.Options{
+				MTU: mtu, EnableV4: true, Clock: clock,
+				Probe: func(s *tcp.TCPEndpointState) { observed <- s.Sender },
+			})
+			defer c.Cleanup()
+			e2e.SetStackSACKPermitted(t, c, true)
+			e2e.SetStackTCPRecovery(t, c, 0)
+			cc := tcpip.CongestionControlOption("reno")
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+				t.Fatal(err)
+			}
+			peer := e2e.CreateConnectedWithSACKAndTS(c)
+			clock.Advance(time.Duration(uint32(1000)-peer.RecentTS) * time.Millisecond)
+			data := make([]byte, 200*maxPayload)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			info := func() tcpip.TCPInfoOption {
+				t.Helper()
+				var result tcpip.TCPInfoOption
+				if err := c.EP.GetSockOpt(&result); err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+			packet := func(offset int) uint32 {
+				t.Helper()
+				v := c.GetPacket()
+				defer v.Release()
+				h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+				checkReceivedPacket(t, c, h, uint32(offset), v, data)
+				if len(h.Payload()) != maxPayload || !h.ParsedOptions().TS {
+					t.Fatalf("offset %d: payload=%d TS=%t", offset, len(h.Payload()), h.ParsedOptions().TS)
+				}
+				return h.ParsedOptions().TSVal
+			}
+			sent := 0
+			send := func(count int) uint32 {
+				t.Helper()
+				end := sent + count*maxPayload
+				if end > len(data) {
+					t.Fatal("packet budget exceeded")
+				}
+				if n, err := c.EP.Write(bytes.NewReader(data[sent:end]), tcpip.WriteOptions{}); err != nil || int(n) != end-sent {
+					t.Fatalf("write = (%d,%v), want (%d,nil)", n, err, end-sent)
+				}
+				var ts uint32
+				for sent < end {
+					ts = packet(sent)
+					sent += maxPayload
+				}
+				return ts
+			}
+			peerTS := uint32(10)
+			ack := func(n int, echo uint32) tcp.TCPSenderState {
+				t.Helper()
+				peerTS++
+				want := c.IRS.Add(1 + seqnum.Size(n))
+				c.SendPacket(nil, &context.Headers{
+					SrcPort: context.TestPort, DstPort: c.Port, Flags: header.TCPFlagAck,
+					SeqNum: peer.NextSeqNum, AckNum: want, RcvWnd: 30000,
+					TCPOpts: timestampOption(peerTS, echo),
+				})
+				deadline := time.NewTimer(time.Second)
+				defer deadline.Stop()
+				for {
+					select {
+					case s := <-observed:
+						if s.SndUna == want {
+							if s.SndNxt != c.IRS.Add(1+seqnum.Size(sent)) || s.Outstanding != (sent-n)/maxPayload {
+								t.Fatalf("wrong remaining flight: UNA=%d NXT=%d outstanding=%d want=%d", s.SndUna, s.SndNxt, s.Outstanding, (sent-n)/maxPayload)
+							}
+							return s
+						}
+					case <-deadline.C:
+						t.Fatal("ACK was not processed")
+					}
+				}
+			}
+			rto := func(offset int, original uint32, wantTimeouts uint64) uint32 {
+				t.Helper()
+				wait := info().RTO
+				if wait < time.Millisecond || wait > time.Minute {
+					t.Fatalf("unexpected RTO %s", wait)
+				}
+				clock.Advance(wait + time.Millisecond)
+				repair := packet(offset)
+				if repair <= original || info().CcState != tcpip.RTORecovery || c.Stack().Stats().TCP.Timeouts.Value() != wantTimeouts {
+					t.Fatalf("missing real timeout: original=%d repair=%d state=%v timeouts=%d", original, repair, info().CcState, c.Stack().Stats().TCP.Timeouts.Value())
+				}
+				return repair
+			}
+
+			// Lose one original and acknowledge its repair. This creates a real,
+			// finite ssthresh; the initial sentinel is never the measured case.
+			original := send(1)
+			repair := rto(0, original, 1)
+			state := ack(sent, repair)
+			if state.Ssthresh != 2 || state.SpuriousRecovery || info().CcState != tcpip.Open {
+				t.Fatalf("genuine recovery: threshold=%d spurious=%t state=%v", state.Ssthresh, state.SpuriousRecovery, info().CcState)
+			}
+			// Grow through ordinary Reno congestion avoidance, without assigning
+			// sender fields or invoking recovery helpers from the test.
+			for round := 0; state.SndCwnd < tcp.InitialCwnd && round < 16; round++ {
+				clock.Advance(time.Millisecond)
+				ts := send(state.SndCwnd)
+				clock.Advance(time.Millisecond)
+				state = ack(sent, ts)
+			}
+			if state.SndCwnd != tcp.InitialCwnd || state.Ssthresh != 2 || info().CcState != tcpip.Open {
+				t.Fatalf("precondition: cwnd=%d threshold=%d state=%v", state.SndCwnd, state.Ssthresh, info().CcState)
+			}
+			before := state
+			offset := sent
+			clock.Advance(time.Millisecond)
+			original = send(2)
+			if got := info().SndCwnd; got != uint32(before.SndCwnd) {
+				t.Fatalf("window changed before RTO: %d", got)
+			}
+			// The preceding ACK drained every byte. These two packets form
+			// an application-limited flight, equal to the finite threshold.
+			// ACK only the first to meet RFC 3522 step 5 without prior DSACK.
+			repair = rto(offset, original, 2)
+			echo, wantSpurious := original, uint64(1)
+			if scenario == "repair_ack" {
+				echo, wantSpurious = repair, 0
+			}
+			ack(offset+maxPayload, echo)
+			stats := c.Stack().Stats().TCP
+			if stats.SpuriousRecovery.Value() != wantSpurious || stats.SpuriousRTORecovery.Value() != wantSpurious || info().CcState != tcpip.RTORecovery {
+				t.Fatalf("wrong partial recovery path: spurious=%d RTOspurious=%d state=%v", stats.SpuriousRecovery.Value(), stats.SpuriousRTORecovery.Value(), info().CcState)
+			}
+			// The first advancing ACK lets go-back-N send the second packet
+			// again, and the repair_ack control echoes that repair. In
+			// original_ack the timeout was spurious, and a sender that
+			// implements RFC 4015 step (8) does not resend, so only check
+			// the resend if there is one.
+			if scenario == "repair_ack" {
+				tailRepair := packet(offset + maxPayload)
+				if tailRepair < repair {
+					t.Fatalf("second repair timestamp %d precedes first %d", tailRepair, repair)
+				}
+				echo = tailRepair
+			} else if v := c.GetPacketNonBlocking(); v != nil {
+				h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+				checkReceivedPacket(t, c, h, uint32(offset+maxPayload), v, data)
+				v.Release()
+			}
+			state = ack(sent, echo)
+			if stats.SpuriousRecovery.Value() != wantSpurious || stats.SpuriousRTORecovery.Value() != wantSpurious || info().CcState != tcpip.Open {
+				t.Fatalf("wrong recovery path: spurious=%d RTOspurious=%d state=%v", stats.SpuriousRecovery.Value(), stats.SpuriousRTORecovery.Value(), info().CcState)
+			}
+			if state.Ssthresh != before.Ssthresh {
+				t.Errorf("finite application-limited threshold = %d, want max(2,%d)=%d", state.Ssthresh, before.Ssthresh, before.Ssthresh)
+			}
+		})
+	}
+}
+
+// TestEifelGenuineLossAfterSpuriousDetection times out a flight, and an ACK
+// that echoes the first packet's original transmission shows that the timeout
+// was spurious (RFC 3522). Another packet is really lost, and the sender
+// responds to that loss before recovery ends: in "timeout" a second timeout
+// resends it, and in "rack" RACK detects it from a SACK. Eifel cannot judge
+// that loss, so its reduction must survive the end of recovery instead of
+// ssthresh returning to the value captured at the first timeout, which here is
+// still unlimited.
+func TestEifelGenuineLossAfterSpuriousDetection(t *testing.T) {
+	for _, scenario := range []string{"timeout", "rack"} {
+		t.Run(scenario, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			observed := make(chan tcp.TCPSenderState, 32)
+			c := context.NewWithOpts(t, context.Options{
+				MTU: mtu, EnableV4: true, Clock: clock,
+				Probe: func(s *tcp.TCPEndpointState) { observed <- s.Sender },
+			})
+			defer c.Cleanup()
+			e2e.SetStackSACKPermitted(t, c, true)
+			if scenario == "timeout" {
+				e2e.SetStackTCPRecovery(t, c, 0)
+			}
+			cc := tcpip.CongestionControlOption("reno")
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+				t.Fatal(err)
+			}
+			peer := e2e.CreateConnectedWithSACKAndTS(c)
+			clock.Advance(time.Duration(uint32(1000)-peer.RecentTS) * time.Millisecond)
+			data := make([]byte, 4*maxPayload)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			info := func() tcpip.TCPInfoOption {
+				t.Helper()
+				var result tcpip.TCPInfoOption
+				if err := c.EP.GetSockOpt(&result); err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+			packet := func(offset int) uint32 {
+				t.Helper()
+				v := c.GetPacket()
+				defer v.Release()
+				h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+				checkReceivedPacket(t, c, h, uint32(offset), v, data)
+				if len(h.Payload()) != maxPayload || !h.ParsedOptions().TS {
+					t.Fatalf("offset %d: payload=%d TS=%t", offset, len(h.Payload()), h.ParsedOptions().TS)
+				}
+				return h.ParsedOptions().TSVal
+			}
+			// expire advances the clock past the RTO, so that the pending
+			// timer sends the packet at offset.
+			expire := func(offset int) uint32 {
+				t.Helper()
+				clock.Advance(info().RTO + time.Millisecond)
+				return packet(offset)
+			}
+			// drain discards the go-back-N resends that follow an ACK.
+			drain := func() {
+				for v := c.GetPacketNonBlocking(); v != nil; v = c.GetPacketNonBlocking() {
+					v.Release()
+				}
+			}
+			peerTS := uint32(10)
+			ack := func(n int, echo uint32, sacked ...header.SACKBlock) tcp.TCPSenderState {
+				t.Helper()
+				peerTS++
+				opts := timestampOption(peerTS, echo)
+				if len(sacked) > 0 {
+					var sack [header.TCPOptionsMaximumSize]byte
+					l := header.EncodeNOP(sack[:])
+					l += header.EncodeNOP(sack[l:])
+					l += header.EncodeSACKBlocks(sacked, sack[l:])
+					opts = append(opts, sack[:l]...)
+				}
+				want := c.IRS.Add(1 + seqnum.Size(n))
+				c.SendPacket(nil, &context.Headers{
+					SrcPort: context.TestPort, DstPort: c.Port, Flags: header.TCPFlagAck,
+					SeqNum: peer.NextSeqNum, AckNum: want, RcvWnd: 30000, TCPOpts: opts,
+				})
+				deadline := time.NewTimer(time.Second)
+				defer deadline.Stop()
+				for {
+					select {
+					case s := <-observed:
+						if s.SndUna == want {
+							return s
+						}
+					case <-deadline.C:
+						t.Fatal("ACK was not processed")
+					}
+				}
+			}
+
+			write := func(from, to int) {
+				t.Helper()
+				if n, err := c.EP.Write(bytes.NewReader(data[from:to]), tcpip.WriteOptions{}); err != nil || int(n) != to-from {
+					t.Fatalf("write = (%d,%v), want (%d,nil)", n, err, to-from)
+				}
+			}
+			// The last two packets go out 1 ms after the first two, so that
+			// RACK can tell that the third was sent after the second.
+			write(0, 2*maxPayload)
+			original := packet(0)
+			packet(maxPayload)
+			clock.Advance(time.Millisecond)
+			write(2*maxPayload, len(data))
+			packet(2 * maxPayload)
+			packet(3 * maxPayload)
+			var sacked []header.SACKBlock
+			if scenario == "rack" {
+				// RACK probes the last packet before the timeout. The ACK
+				// below also SACKs the third packet, sent only once, so
+				// RACK marks the second packet lost.
+				expire(3 * maxPayload)
+				sacked = []header.SACKBlock{{Start: c.IRS.Add(1 + 2*maxPayload), End: c.IRS.Add(1 + 3*maxPayload)}}
+			}
+			expire(0)
+			ack(maxPayload, original, sacked...)
+			stats := c.Stack().Stats().TCP
+			if got := stats.SpuriousRTORecovery.Value(); got != 1 {
+				t.Fatalf("spurious RTOs = %d, want 1", got)
+			}
+			var repair uint32
+			wantTimeouts := uint64(1)
+			if scenario == "timeout" {
+				// The second packet is lost, so a second timeout resends it.
+				drain()
+				repair = expire(maxPayload)
+				wantTimeouts = 2
+			} else {
+				repair = packet(maxPayload)
+				drain()
+			}
+			state := ack(len(data), repair)
+			if info().CcState != tcpip.Open || stats.Timeouts.Value() != wantTimeouts {
+				t.Fatalf("recovery did not end as expected: state=%v timeouts=%d, want %d", info().CcState, stats.Timeouts.Value(), wantTimeouts)
+			}
+			// Reno's loss and timeout responses set ssthresh to
+			// max(FlightSize/2, 2).
+			if state.Ssthresh != 2 {
+				t.Errorf("ssthresh after a genuine loss = %d, want 2", state.Ssthresh)
+			}
+		})
+	}
+}
+
+// TestTailLossProbeResponseIsKept repairs a lost tail packet with a tail loss
+// probe, after the peer has sent a DSACK. RFC 8985 section 7.4.2 calls for a
+// response equivalent to fast recovery, and the RFC 4015 response must not
+// reverse it. If that response enters recovery, it records RetransmitTS when
+// the ACK arrives, so the ACK's echo of the probe is older than RetransmitTS
+// and, with the DSACK, Eifel finds the recovery spurious.
+func TestTailLossProbeResponseIsKept(t *testing.T) {
+	clock := faketime.NewManualClock()
+	observed := make(chan tcp.TCPSenderState, 32)
+	c := context.NewWithOpts(t, context.Options{
+		MTU: mtu, EnableV4: true, Clock: clock,
+		Probe: func(s *tcp.TCPEndpointState) { observed <- s.Sender },
+	})
+	defer c.Cleanup()
+	e2e.SetStackSACKPermitted(t, c, true)
+	cc := tcpip.CongestionControlOption("reno")
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+		t.Fatal(err)
+	}
+	peer := e2e.CreateConnectedWithSACKAndTS(c)
+	clock.Advance(time.Duration(uint32(1000)-peer.RecentTS) * time.Millisecond)
+	data := make([]byte, 5*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	packet := func(offset int) uint32 {
+		t.Helper()
+		v := c.GetPacket()
+		defer v.Release()
+		h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+		checkReceivedPacket(t, c, h, uint32(offset), v, data)
+		if len(h.Payload()) != maxPayload || !h.ParsedOptions().TS {
+			t.Fatalf("offset %d: payload=%d TS=%t", offset, len(h.Payload()), h.ParsedOptions().TS)
+		}
+		return h.ParsedOptions().TSVal
+	}
+	write := func(from, to int) {
+		t.Helper()
+		if n, err := c.EP.Write(bytes.NewReader(data[from:to]), tcpip.WriteOptions{}); err != nil || int(n) != to-from {
+			t.Fatalf("write = (%d,%v), want (%d,nil)", n, err, to-from)
+		}
+	}
+	peerTS := uint32(10)
+	ack := func(n int, echo uint32, sacked ...header.SACKBlock) tcp.TCPSenderState {
+		t.Helper()
+		peerTS++
+		opts := timestampOption(peerTS, echo)
+		if len(sacked) > 0 {
+			var sack [header.TCPOptionsMaximumSize]byte
+			l := header.EncodeNOP(sack[:])
+			l += header.EncodeNOP(sack[l:])
+			l += header.EncodeSACKBlocks(sacked, sack[l:])
+			opts = append(opts, sack[:l]...)
+		}
+		want := c.IRS.Add(1 + seqnum.Size(n))
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort, DstPort: c.Port, Flags: header.TCPFlagAck,
+			SeqNum: peer.NextSeqNum, AckNum: want, RcvWnd: 30000, TCPOpts: opts,
+		})
+		deadline := time.NewTimer(time.Second)
+		defer deadline.Stop()
+		for {
+			select {
+			case s := <-observed:
+				if s.SndUna == want {
+					return s
+				}
+			case <-deadline.C:
+				t.Fatal("ACK was not processed")
+			}
+		}
+	}
+
+	// The ACK for the first packet also reports a duplicate of it: a DSACK.
+	write(0, maxPayload)
+	first := packet(0)
+	clock.Advance(10 * time.Millisecond)
+	ack(maxPayload, first, header.SACKBlock{Start: c.IRS.Add(1), End: c.IRS.Add(1 + maxPayload)})
+	stats := c.Stack().Stats().TCP
+	if stats.SegmentsAckedWithDSACK.Value() != 1 {
+		t.Fatalf("precondition: DSACKs = %d, want 1", stats.SegmentsAckedWithDSACK.Value())
+	}
+	// Send three more. The first two arrive, and the tail is lost.
+	write(maxPayload, 4*maxPayload)
+	packet(maxPayload)
+	second := packet(2 * maxPayload)
+	packet(3 * maxPayload)
+	clock.Advance(10 * time.Millisecond)
+	ack(3*maxPayload, second)
+	// The probe resends the tail and repairs the loss.
+	clock.Advance(500 * time.Millisecond)
+	probe := packet(3 * maxPayload)
+	clock.Advance(10 * time.Millisecond)
+	ack(4*maxPayload, probe)
+	// The response waits for an ACK beyond the probe (RFC 8985 section
+	// 7.4.2). Send one more packet and ACK it too.
+	write(4*maxPayload, len(data))
+	last := packet(4 * maxPayload)
+	clock.Advance(10 * time.Millisecond)
+	state := ack(len(data), last)
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatal(err)
+	}
+	if info.CcState != tcpip.Open || stats.Timeouts.Value() != 0 {
+		t.Fatalf("precondition: state=%v timeouts=%d, want Open and 0", info.CcState, stats.Timeouts.Value())
+	}
+	// Reno's loss response sets ssthresh to max(FlightSize/2, 2).
+	if state.Ssthresh != 2 {
+		t.Errorf("ssthresh after a loss repaired by a tail loss probe = %d, want 2", state.Ssthresh)
+	}
 }
