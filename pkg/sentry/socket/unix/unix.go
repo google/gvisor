@@ -547,6 +547,21 @@ func (s *Socket) GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Err
 	}, nil
 }
 
+// GetPeerGroups returns the supplementary groups of the peer of the socket
+// backed by a transport.Endpoint, for SO_PEERGROUPS.
+func (s *Socket) GetPeerGroups(t *kernel.Task) ([]auth.GID, *syserr.Error) {
+	pCreds := s.ep.PeerCreds()
+	if pCreds == nil {
+		// Unlike SO_PEERCRED, Linux fails with ENODATA if there is no peer.
+		return nil, syserr.ErrNoDataAvailable
+	}
+	scmCreds, ok := pCreds.(control.SCMCredentials)
+	if !ok {
+		return nil, syserr.ErrInvalidEndpointState
+	}
+	return scmCreds.Groups(t), nil
+}
+
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
 // a transport.Endpoint.
 func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
@@ -625,11 +640,9 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	}
 	defer ep.Release(t)
 
-	// Initialize the peer credentials of client endpoint.
-	s.ep.SetPeerCreds(control.MakeCreds(t))
-
-	// Connect the server endpoint.
-	err = s.ep.Connect(t, ep)
+	// Connect the server endpoint. The peer credentials of both endpoints are
+	// set by the transport once the connection is established.
+	err = s.ep.Connect(t, ep, control.MakeCreds(t))
 
 	if err == syserr.ErrWrongProtocolForSocket {
 		// Linux for abstract sockets returns ErrConnectionRefused
