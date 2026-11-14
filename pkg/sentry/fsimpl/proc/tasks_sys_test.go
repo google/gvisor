@@ -143,6 +143,73 @@ func TestRejectedTCPSACKWrite(t *testing.T) {
 	}
 }
 
+// TestTCPCongestionControl tests /proc/sys/net/ipv4/tcp_congestion_control,
+// tcp_available_congestion_control and tcp_allowed_congestion_control.
+func TestTCPCongestionControl(t *testing.T) {
+	ctx := contexttest.Context(t)
+	s := inet.NewTestStack()
+	s.AvailableCongestionControl = []string{"reno", "cubic"}
+	s.CongestionControl = "reno"
+	available := tcpAvailableCongestionControlData{stack: s}
+	cc := tcpCongestionControlData{stack: s}
+
+	generate := func(src interface {
+		Generate(context.Context, *bytes.Buffer) error
+	}) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := src.Generate(ctx, &buf); err != nil {
+			t.Fatalf("Generate() failed: %v", err)
+		}
+		return buf.String()
+	}
+	if got, want := generate(&available), "reno cubic\n"; got != want {
+		t.Errorf("available = %q, want %q", got, want)
+	}
+	if got, want := generate(&cc), "reno\n"; got != want {
+		t.Errorf("default = %q, want %q", got, want)
+	}
+
+	for _, tc := range []struct {
+		write   string
+		wantErr error
+		want    string
+	}{
+		{write: "cubic\n", want: "cubic"},
+		{write: "reno", want: "reno"},
+		// Like Linux, the name ends at the first NUL or newline.
+		{write: "cubic\x00reno", want: "cubic"},
+		{write: "reno\ncubic", want: "reno"},
+		{write: "bbr\n", wantErr: linuxerr.ENOENT, want: "reno"},
+		{write: "", want: "reno"},
+		{write: "\n", wantErr: linuxerr.ENOENT, want: "reno"},
+		// Like Linux, only TCP_CA_NAME_MAX-1 bytes of the name are used.
+		{write: "cubic" + strings.Repeat(" ", linux.TCP_CA_NAME_MAX), wantErr: linuxerr.ENOENT, want: "reno"},
+	} {
+		n, err := cc.Write(ctx, nil, usermem.BytesIOSequence([]byte(tc.write)), 0)
+		if err != tc.wantErr {
+			t.Errorf("Write(%q) = %v, want %v", tc.write, err, tc.wantErr)
+		}
+		if err == nil && n != int64(len(tc.write)) {
+			t.Errorf("Write(%q) = %d, want %d", tc.write, n, len(tc.write))
+		}
+		if got := generate(&cc); got != tc.want+"\n" {
+			t.Errorf("after Write(%q): default = %q, want %q", tc.write, got, tc.want+"\n")
+		}
+	}
+
+	s.AvailableCongestionControl = []string{"reno", "cubic", "bbr"}
+	if got, want := generate(&available), "reno cubic bbr\n"; got != want {
+		t.Errorf("available = %q, want %q", got, want)
+	}
+	if _, err := cc.Write(ctx, nil, usermem.BytesIOSequence([]byte("bbr\n")), 0); err != nil {
+		t.Errorf("Write(%q) = %v, want nil", "bbr\n", err)
+	}
+	if got, want := generate(&cc), "bbr\n"; got != want {
+		t.Errorf("default = %q, want %q", got, want)
+	}
+}
+
 type forwardingTestStack struct {
 	*inet.TestStack
 	forwarding map[tcpip.NetworkProtocolNumber]bool

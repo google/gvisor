@@ -50,6 +50,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/sentry/fsimpl/nsfs",

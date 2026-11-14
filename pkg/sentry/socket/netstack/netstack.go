@@ -1331,14 +1331,7 @@ func (s *sock) getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int
 
 		// We match linux behaviour here where it returns the lower of
 		// TCP_CA_NAME_MAX bytes or the value of the option length.
-		//
-		// This is Linux's net/tcp.h TCP_CA_NAME_MAX.
-		const tcpCANameMax = 16
-
-		toCopy := tcpCANameMax
-		if outLen < tcpCANameMax {
-			toCopy = outLen
-		}
+		toCopy := min(outLen, linux.TCP_CA_NAME_MAX)
 		b := make([]byte, toCopy)
 		copy(b, v)
 

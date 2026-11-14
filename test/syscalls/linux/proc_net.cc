@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sched.h>
 #include <signal.h>
@@ -194,6 +195,102 @@ void CheckSysctlAcrossProcMounts(absl::string_view sysctl,
 
 TEST(ProcSysNetIpv4Sack, SharedAcrossProcMounts) {
   CheckSysctlAcrossProcMounts("tcp_sack", "0\n", "1\n");
+}
+
+constexpr const char kTCPCongestionControl[] =
+    "/proc/sys/net/ipv4/tcp_congestion_control";
+
+// Returns the names listed in a /proc/sys/net/ipv4 congestion control file.
+PosixErrorOr<std::vector<std::string>> CongestionControlNames(
+    absl::string_view file) {
+  ASSIGN_OR_RETURN_ERRNO(
+      std::string contents,
+      GetContents(absl::StrCat("/proc/sys/net/ipv4/", file)));
+  return std::vector<std::string>(
+      absl::StrSplit(contents, absl::ByAnyChar(" \t\n"), absl::SkipEmpty()));
+}
+
+// Returns the congestion control algorithm of a TCP socket.
+PosixErrorOr<std::string> SocketCongestionControl(int fd) {
+  // Linux's TCP_CA_NAME_MAX.
+  char name[16] = {};
+  socklen_t len = sizeof(name);
+  RETURN_ERROR_IF_SYSCALL_FAIL(
+      getsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, name, &len));
+  return std::string(name, strnlen(name, len));
+}
+
+TEST(ProcSysNetIpv4CongestionControl, DefaultIsAvailableAndUsed) {
+  const std::vector<std::string> names = ASSERT_NO_ERRNO_AND_VALUE(
+      CongestionControlNames("tcp_congestion_control"));
+  ASSERT_EQ(names.size(), 1);
+  EXPECT_THAT(ASSERT_NO_ERRNO_AND_VALUE(
+                  CongestionControlNames("tcp_available_congestion_control")),
+              ::testing::Contains(names[0]));
+
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(SocketCongestionControl(s.get())),
+            names[0]);
+}
+
+TEST(ProcSysNetIpv4CongestionControl, AllowedCanBeSelected) {
+  // With hostinet, the host decides what the sandbox may select.
+  SKIP_IF(IsRunningWithHostinet());
+
+  const std::vector<std::string> available = ASSERT_NO_ERRNO_AND_VALUE(
+      CongestionControlNames("tcp_available_congestion_control"));
+  const std::vector<std::string> allowed = ASSERT_NO_ERRNO_AND_VALUE(
+      CongestionControlNames("tcp_allowed_congestion_control"));
+  EXPECT_THAT(allowed, ::testing::Not(::testing::IsEmpty()));
+
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+  for (const std::string& name : allowed) {
+    EXPECT_THAT(available, ::testing::Contains(name));
+    EXPECT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, name.c_str(),
+                           name.size()),
+                SyscallSucceeds())
+        << name;
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(SocketCongestionControl(s.get())),
+              name);
+  }
+}
+
+TEST(ProcSysNetIpv4CongestionControl, CanWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)) ||
+          IsRunningWithHostinet());
+  // Some containers mount /proc/sys read-only.
+  SKIP_IF(!IsRunningOnGvisor() && access(kTCPCongestionControl, W_OK) != 0);
+
+  const std::string old =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kTCPCongestionControl));
+  // Best effort: outside the initial network namespace, Linux refuses to set
+  // a default that unprivileged users may not select.
+  const Cleanup restore([&] {
+    if (auto fd = Open(kTCPCongestionControl, O_WRONLY); fd.ok()) {
+      (void)WriteFd(fd.ValueOrDie().get(), old.data(), old.size());
+    }
+  });
+
+  // Every Linux kernel has Reno, and anyone may select it.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kTCPCongestionControl, O_WRONLY));
+  constexpr char kReno[] = "reno\n";
+  ASSERT_THAT(PwriteFd(fd.get(), kReno, strlen(kReno), 0),
+              SyscallSucceedsWithValue(strlen(kReno)));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(kTCPCongestionControl)),
+            kReno);
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(SocketCongestionControl(s.get())),
+            "reno");
+
+  constexpr char kUnknown[] = "no-such-cc\n";
+  EXPECT_THAT(PwriteFd(fd.get(), kUnknown, strlen(kUnknown), 0),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(kTCPCongestionControl)),
+            kReno);
 }
 
 TEST(ProcSysNetPortRange, SharedAcrossProcMounts) {

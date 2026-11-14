@@ -66,6 +66,11 @@ type Stack struct {
 	// allowedSocketTypes is the list of allowed socket types
 	allowedSocketTypes []AllowedSocketType `state:"nosave"`
 	ipv6KeepAddrOnDown bool
+
+	// tcpCongestionControl and tcpAvailableCongestionControl are the host's
+	// default and available TCP congestion control algorithms.
+	tcpCongestionControl          string
+	tcpAvailableCongestionControl []string
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -118,6 +123,20 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.tcpSACKEnabled = strings.TrimSpace(string(sack)) != "0"
 	} else {
 		log.Warningf("Failed to read if TCP SACK if enabled, setting to true")
+	}
+
+	// Fall back to Linux's defaults if the host's settings can't be read.
+	s.tcpCongestionControl = "cubic"
+	if cc, err := os.ReadFile("/proc/sys/net/ipv4/tcp_congestion_control"); err == nil {
+		s.tcpCongestionControl = strings.TrimSpace(string(cc))
+	} else {
+		log.Warningf("Failed to read the TCP congestion control algorithm, assuming %q", s.tcpCongestionControl)
+	}
+	s.tcpAvailableCongestionControl = []string{"reno", "cubic"}
+	if avail, err := os.ReadFile("/proc/sys/net/ipv4/tcp_available_congestion_control"); err == nil {
+		s.tcpAvailableCongestionControl = strings.Fields(string(avail))
+	} else {
+		log.Warningf("Failed to read the available TCP congestion control algorithms, assuming %q", s.tcpAvailableCongestionControl)
 	}
 
 	if f, err := os.Open("/proc/net/dev"); err != nil {
@@ -364,6 +383,22 @@ func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 
 // SetTCPRecovery implements inet.Stack.SetTCPRecovery.
 func (*Stack) SetTCPRecovery(inet.TCPLossRecovery) error {
+	return linuxerr.EACCES
+}
+
+// TCPAvailableCongestionControl implements
+// inet.Stack.TCPAvailableCongestionControl.
+func (s *Stack) TCPAvailableCongestionControl() ([]string, error) {
+	return s.tcpAvailableCongestionControl, nil
+}
+
+// TCPCongestionControl implements inet.Stack.TCPCongestionControl.
+func (s *Stack) TCPCongestionControl() (string, error) {
+	return s.tcpCongestionControl, nil
+}
+
+// SetTCPCongestionControl implements inet.Stack.SetTCPCongestionControl.
+func (*Stack) SetTCPCongestionControl(string) error {
 	return linuxerr.EACCES
 }
 

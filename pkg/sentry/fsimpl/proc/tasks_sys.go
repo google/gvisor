@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -268,6 +269,13 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 			"tcp_sack":            fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
 			"tcp_wmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
 
+			"tcp_available_congestion_control": fs.newInode(ctx, root, 0444, &tcpAvailableCongestionControlData{stack: stack}),
+			"tcp_congestion_control":           fs.newInode(ctx, root, 0644, &tcpCongestionControlData{stack: stack}),
+			// tcp_allowed_congestion_control lists the algorithms that an
+			// unprivileged process may select. Netstack lets any process
+			// select any available algorithm.
+			"tcp_allowed_congestion_control": fs.newInode(ctx, root, 0444, &tcpAvailableCongestionControlData{stack: stack}),
+
 			// The following files are simple stubs until they are implemented in
 			// netstack, most of these files are configuration related. We use the
 			// value closest to the actual netstack behavior or any empty file, all
@@ -276,12 +284,6 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 			"ipfrag_time":             fs.newInode(ctx, root, 0444, newStaticFile("30")),
 			"ip_nonlocal_bind":        fs.newInode(ctx, root, 0444, newStaticFile("0")),
 			"ip_no_pmtu_disc":         fs.newInode(ctx, root, 0444, newStaticFile("1")),
-
-			// tcp_allowed_congestion_control tell the user what they are able to
-			// do as an unprivledged process so we leave it empty.
-			"tcp_allowed_congestion_control":   fs.newInode(ctx, root, 0444, newStaticFile("")),
-			"tcp_available_congestion_control": fs.newInode(ctx, root, 0444, newStaticFile("reno")),
-			"tcp_congestion_control":           fs.newInode(ctx, root, 0444, newStaticFile("reno")),
 
 			// Many of the following stub files are features netstack doesn't
 			// support. The unsupported features return "0" to indicate they are
@@ -556,6 +558,77 @@ func (d *tcpSackData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 		return 0, err
 	}
 	return n, d.stack.SetTCPSACKEnabled(buf[0] != 0)
+}
+
+// tcpAvailableCongestionControlData implements vfs.DynamicBytesSource for
+// /proc/sys/net/ipv4/tcp_available_congestion_control and
+// /proc/sys/net/ipv4/tcp_allowed_congestion_control.
+//
+// +stateify savable
+type tcpAvailableCongestionControlData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.DynamicBytesSource = (*tcpAvailableCongestionControlData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *tcpAvailableCongestionControlData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	names, err := d.stack.TCPAvailableCongestionControl()
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(buf, "%s\n", strings.Join(names, " "))
+	return err
+}
+
+// tcpCongestionControlData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/tcp_congestion_control.
+//
+// +stateify savable
+type tcpCongestionControlData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.WritableDynamicBytesSource = (*tcpCongestionControlData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *tcpCongestionControlData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	name, err := d.stack.TCPCongestionControl()
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(buf, "%s\n", name)
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *tcpCongestionControlData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	// Like Linux's proc_dostring(), use at most TCP_CA_NAME_MAX-1 bytes, up
+	// to the first NUL or newline, and consume the whole write. Like Linux's
+	// proc_sys_call_handler(), ignore an empty write.
+	srclen := src.NumBytes()
+	if srclen == 0 {
+		return 0, nil
+	}
+	name := make([]byte, min(srclen, linux.TCP_CA_NAME_MAX-1))
+	if _, err := src.CopyIn(ctx, name); err != nil {
+		return 0, err
+	}
+	if i := bytes.IndexAny(name, "\x00\n"); i >= 0 {
+		name = name[:i]
+	}
+	if err := d.stack.SetTCPCongestionControl(string(name)); err != nil {
+		return 0, err
+	}
+	return srclen, nil
 }
 
 // tcpRecoveryData implements vfs.WritableDynamicBytesSource for

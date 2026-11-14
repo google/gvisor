@@ -92,6 +92,18 @@ type Stack interface {
 	// SetTCPRecovery attempts to change TCP loss detection algorithm.
 	SetTCPRecovery(recovery TCPLossRecovery) error
 
+	// TCPAvailableCongestionControl returns the TCP congestion control
+	// algorithms that sockets may select.
+	TCPAvailableCongestionControl() ([]string, error)
+
+	// TCPCongestionControl returns the TCP congestion control algorithm that
+	// new sockets use.
+	TCPCongestionControl() (string, error)
+
+	// SetTCPCongestionControl attempts to change the TCP congestion control
+	// algorithm that new sockets use.
+	SetTCPCongestionControl(name string) error
+
 	// Statistics reports stack statistics.
 	Statistics(stat any, arg string) error
 
