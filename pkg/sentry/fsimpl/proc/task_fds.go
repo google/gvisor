@@ -297,7 +297,10 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode,
 		task: i.task,
 		fd:   fd,
 	}
-	return i.fs.newTaskOwnedInode(ctx, i.task, i.fs.NextIno(), 0444, data), nil
+	return &fdInfoInode{
+		Inode: i.fs.newTaskOwnedInode(ctx, i.task, i.fs.NextIno(), 0444, data),
+		task:  i.task,
+	}, nil
 }
 
 // IterDirents implements Inode.IterDirents.
@@ -305,6 +308,19 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode,
 // +checklocksexclude:i.fdDir.task.mu
 func (i *fdInfoDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
 	return i.fdDir.IterDirents(ctx, mnt, cb, offset, relOffset)
+}
+
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
+//
+// This is to match Linux, which gates both the /proc/[pid]/fdinfo directory
+// and its files behind a PTRACE_MODE_READ_FSCREDS access check, since fdinfo
+// leaks the task's file offsets, open flags and mount IDs. See
+// fs/proc/fd.c:proc_fdinfo_permission.
+func (i *fdInfoDirInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if !kernel.ContextCanTraceFSCreds(ctx, i.task) {
+		return linuxerr.EACCES
+	}
+	return i.InodeAttrs.CheckPermissions(ctx, creds, ats)
 }
 
 // Open implements kernfs.Inode.Open.
@@ -335,6 +351,29 @@ type fdInfoData struct {
 }
 
 var _ dynamicInode = (*fdInfoData)(nil)
+
+// fdInfoInode wraps the inode for a /proc/[pid]/fdinfo/[fd] file. Linux
+// applies the same permission handler to the fdinfo files as to their parent
+// directory (fs/proc/fd.c:proc_fdinfo_permission); the ptrace gate must live
+// on this wrapper because taskOwnedInode implements CheckPermissions itself
+// rather than delegating to the wrapped inode.
+//
+// +stateify savable
+type fdInfoInode struct {
+	kernfs.Inode
+
+	task *kernel.Task
+}
+
+var _ kernfs.Inode = (*fdInfoInode)(nil)
+
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
+func (i *fdInfoInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if !kernel.ContextCanTraceFSCreds(ctx, i.task) {
+		return linuxerr.EACCES
+	}
+	return i.Inode.CheckPermissions(ctx, creds, ats)
+}
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 //

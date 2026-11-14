@@ -28,6 +28,10 @@ const (
 	// signature and semantics as kernel.Task.CanTrace.
 	CtxCanTrace contextID = iota
 
+	// CtxCanTraceFSCreds is a Context.Value key for a function with the same
+	// signature and semantics as kernel.Task.CanTraceFSCreds.
+	CtxCanTraceFSCreds
+
 	// CtxKernel is a Context.Value key for a Kernel.
 	CtxKernel
 
@@ -58,6 +62,18 @@ const (
 func ContextCanTrace(ctx context.Context, t *Task, attach bool) bool {
 	if v := ctx.Value(CtxCanTrace); v != nil {
 		return v.(func(*Task, bool) bool)(t, attach)
+	}
+	return false
+}
+
+// ContextCanTraceFSCreds returns true if ctx is permitted to trace t under
+// Linux's PTRACE_MODE_READ_FSCREDS, in the same sense as
+// kernel.Task.CanTraceFSCreds.
+//
+// +checklocksexclude:t.mu
+func ContextCanTraceFSCreds(ctx context.Context, t *Task) bool {
+	if v := ctx.Value(CtxCanTraceFSCreds); v != nil {
+		return v.(func(*Task) bool)(t)
 	}
 	return false
 }
