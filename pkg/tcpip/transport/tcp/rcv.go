@@ -173,6 +173,7 @@ func (r *receiver) nonZeroWindow() {
 // Returns true if the segment was consumed, false if it cannot be consumed
 // yet because of a missing segment. If this segment closes the receive side,
 // include duplicate in the FIN ACK.
+//
 // +checklocks:r.ep.mu
 func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum.Size, duplicate header.SACKBlock) bool {
 	if segLen > 0 {

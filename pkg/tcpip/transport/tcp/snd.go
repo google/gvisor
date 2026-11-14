@@ -450,6 +450,7 @@ func (s *sender) sendAck() {
 
 // sendDSACK reports duplicate in the first SACK block without adding it to
 // the receiver's SACK history (RFC 2883 section 4).
+//
 // +checklocks:s.ep.mu
 func (s *sender) sendDSACK(duplicate header.SACKBlock) {
 	var blocks [1 + MaxSACKBlocks]header.SACKBlock
@@ -1893,6 +1894,7 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 }
 
 // sendEmptyAck sends an ACK with the given sequence number and SACK blocks.
+//
 // +checklocks:s.ep.mu
 func (s *sender) sendEmptyAck(seq seqnum.Value, sackBlocks []header.SACKBlock) tcpip.Error {
 	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
