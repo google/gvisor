@@ -25,11 +25,9 @@ gh --version
 gh auth login --with-token < "$HOME/.github-token"
 gh auth setup-git
 
-# Create new branch for the PR and stages changes in it.
-git stash
-git pull --rebase=true "$repo_url" master
+# A new Go version writes untracked profiles. Commit them before rebasing
+# onto any changes that landed while the benchmarks ran.
 git checkout -b "$pgo_branch_name"
-git stash pop
 git add runsc/profiles/data
 git status
 
@@ -38,7 +36,12 @@ export GIT_AUTHOR_NAME=gvisor-bot
 export GIT_AUTHOR_EMAIL=gvisor-bot@google.com
 export GIT_COMMITTER_NAME=gvisor-bot
 export GIT_COMMITTER_EMAIL=gvisor-bot@google.com
-git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today."
+git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today." -- runsc/profiles/data
+git pull --rebase=true --autostash "$repo_url" master
+if git diff --quiet FETCH_HEAD HEAD; then
+  echo 'The generated PGO profiles are already on master.' >&2
+  exit 0
+fi
 git push --set-upstream "$repo_url" "$pgo_branch_name"
 
 # Send PR.
