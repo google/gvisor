@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <stddef.h>
+#include <stdint.h>
 
 // asm/signal.h needs size_t from stddef.h.
 #include <asm/signal.h>
@@ -22,7 +23,6 @@
 #include "test/syscalls/linux/rseq/critical.h"
 #include "test/syscalls/linux/rseq/syscalls.h"
 #include "test/syscalls/linux/rseq/test.h"
-#include "test/syscalls/linux/rseq/types.h"
 #include "test/syscalls/linux/rseq/uapi.h"
 
 namespace gvisor {
@@ -140,7 +140,7 @@ int TestUnaligned() {
   }
 
   auto reg = RSeqRegister(reinterpret_cast<rseq*>(ptr), sizeof(rseq), 0, 0);
-  if (reg.errno() != EINVAL) {
+  if (reg.errno() != kInvalidArgument) {
     return 1;
   }
   return 0;
@@ -165,7 +165,7 @@ int TestDoubleRegister() {
   }
 
   auto reg2 = RSeqRegister(&r, sizeof(r), 0, 0);
-  if (reg2.errno() != EBUSY) {
+  if (reg2.errno() != kBusy) {
     return 1;
   }
 
@@ -206,7 +206,7 @@ int TestUnregisterDifferentPtr() {
   struct rseq r2 = {};
 
   int ret = sys_rseq(&r2, sizeof(r2), kRseqFlagUnregister, 0);
-  if (sys_errno(ret) != EINVAL) {
+  if (sys_errno(ret) != kInvalidArgument) {
     return 1;
   }
 
@@ -224,7 +224,7 @@ int TestUnregisterDifferentSignature() {
   }
 
   int ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, kSignature + 1);
-  if (sys_errno(ret) != EPERM) {
+  if (sys_errno(ret) != kOperationNotPermitted) {
     return 1;
   }
 
@@ -463,7 +463,8 @@ int TestMembarrierResetsCpuIdStart() {
     }
     auto ret =
         sys_futex(&child_cleartid, FUTEX_WAIT, cur_child_cleartid, nullptr);
-    if (ret != 0 && sys_errno(ret) != EAGAIN && sys_errno(ret) != EINTR) {
+    if (ret != 0 && sys_errno(ret) != kTryAgain &&
+        sys_errno(ret) != kInterrupted) {
       return 1;
     }
   }
