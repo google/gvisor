@@ -161,6 +161,56 @@ TEST_P(GoferStreamSeqpacketTest, EpollBindListenWaitAccept) {
   ASSERT_EQ(0, memcmp(send_buffer, recv_buffer, sizeof(send_buffer)));
 }
 
+// Binding a connected socket gives it a name without changing its peer.
+TEST_P(GoferStreamSeqpacketTest, BindConnectedSocket) {
+  const auto& [env, proto] = GetParam();
+  const char* root = getenv(env.c_str());
+  ASSERT_NE(root, nullptr);
+
+  int fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, proto.protocol, 0, fds), SyscallSucceeds());
+  FileDescriptor socket(fds[0]);
+  FileDescriptor peer(fds[1]);
+  int epfd;
+  ASSERT_THAT(epfd = epoll_create1(EPOLL_CLOEXEC), SyscallSucceeds());
+  FileDescriptor epoll(epfd);
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLET;
+  ASSERT_THAT(epoll_ctl(epfd, EPOLL_CTL_ADD, socket.get(), &event),
+              SyscallSucceeds());
+  ASSERT_THAT(WriteFd(peer.get(), "x", 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epfd, &event, 1, -1),
+              SyscallSucceedsWithValue(1));
+  ASSERT_EQ(event.events, EPOLLIN);
+
+  const std::string path = JoinPath(root, proto.name, "connected");
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  ASSERT_LT(path.size(), sizeof(addr.sun_path));
+  memcpy(addr.sun_path, path.c_str(), path.size());
+  ASSERT_THAT(bind(socket.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                   sizeof(addr)),
+              SyscallSucceeds());
+  // The same unread byte is not a second edge.
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd, &event, 1, 250),
+              SyscallSucceedsWithValue(0));
+  // Linux f0d9c3ffc restored EINVAL here. Affected kernels instead return
+  // success without turning the connected socket into a listener.
+  ASSERT_THAT(
+      listen(socket.get(), 1),
+      ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EINVAL)));
+  int listening = -1;
+  socklen_t len = sizeof(listening);
+  ASSERT_THAT(
+      getsockopt(socket.get(), SOL_SOCKET, SO_ACCEPTCONN, &listening, &len),
+      SyscallSucceeds());
+  EXPECT_EQ(listening, 0);
+
+  char byte;
+  ASSERT_THAT(ReadFd(socket.get(), &byte, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(byte, 'x');
+}
+
 INSTANTIATE_TEST_SUITE_P(
     StreamSeqpacket, GoferStreamSeqpacketTest,
     ::testing::Combine(::testing::Values("TEST_CONNECTOR_TREE"),
