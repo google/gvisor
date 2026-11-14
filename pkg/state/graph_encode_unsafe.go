@@ -33,14 +33,12 @@ const (
 	objDone
 )
 
-// segment is a range of graphEncodeState.out.
-type segment struct {
-	off, len int
-}
+// segment indexes a pair of consecutive boundaries in graphEncodeState.segments.
+// The zero segment is empty.
+type segment int
 
-// segmentRefs is the index in graphEncodeState.refs of the first target
-// referenced in the non-empty segment at off.
-type segmentRefs struct {
+// segmentBoundary is an offset into the encoded data and its pointer targets.
+type segmentBoundary struct {
 	off int
 	ref int32
 }
@@ -276,11 +274,11 @@ type graphEncodeState struct {
 	splices              []splice
 	spliceLo, spliceSpan uintptr
 
-	// refs are the targets referenced in out, in order. segRefs indexes
-	// refs by the non-empty segments of out, which are created in order and
-	// cover it. They are kept outside of segments to keep encObject small.
+	// refs are the targets referenced in out, in order. Nonempty segments
+	// cover both buffers in emission order. The first two boundaries are
+	// zero so that segment 0 always refers to an empty range.
 	refs      []int32
-	segRefs   []segmentRefs
+	segments  []segmentBoundary
 	liveBits  []bool
 	liveQueue []int32
 	// refMarks marks targets with refStamp, for pruneUnreachable.
@@ -339,7 +337,7 @@ func newGraphEncodeState(ctx context.Context, root *typeInfo) *graphEncodeState 
 		blockEntries: make([]blockEntry, 0, targets),
 		queue:        make([]work, 0, targets),
 		refs:         make([]int32, 0, targets),
-		segRefs:      make([]segmentRefs, 0, targets),
+		segments:     make([]segmentBoundary, 2, targets+2),
 		traversals:   make(map[traversalKey]bool),
 		out:          encBuf{b: make([]byte, 0, max(bytes, 4<<10))},
 	}
@@ -437,7 +435,7 @@ func (es *graphEncodeState) release() {
 	if cap(es.out.b)+cap(es.final.b)+cap(es.binaryBuf) > maxPooledBytes ||
 		len(es.byAddr.slots)+len(es.blocks.slots) > maxPooledSlots ||
 		cap(es.blockEntries)+cap(es.queue) > maxPooledSlots ||
-		cap(es.refs)+cap(es.segRefs) > maxPooledSlots {
+		cap(es.refs)+cap(es.segments) > maxPooledSlots {
 		return
 	}
 	es.ctx = nil
@@ -464,7 +462,7 @@ func (es *graphEncodeState) release() {
 	es.spliceLo = 0
 	es.spliceSpan = 0
 	es.refs = es.refs[:0]
-	es.segRefs = es.segRefs[:0]
+	es.segments = es.segments[:2]
 	es.refStamp = 0
 	es.refMarks = es.refMarks[:0]
 	es.liveBits = es.liveBits[:0]
