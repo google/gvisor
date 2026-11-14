@@ -21,14 +21,10 @@ func testClosureInvalid(tc *oneGuardStruct) {
 	})
 }
 
-func testClosureUnsupported(tc *oneGuardStruct) {
-	// Locked outside the closure, so may or may not be valid. This cannot
-	// be handled and we should explicitly fail. This can't be handled
-	// because of the call through callClosure, below, which means the
-	// closure will actually be passed as a value somewhere.
+func testClosurePassedToHelper(tc *oneGuardStruct) {
 	tc.mu.Lock()
 	callClosure(func() {
-		tc.guardedField = 1 // +checklocksfail
+		tc.guardedField = 1
 	})
 	tc.mu.Unlock()
 }
@@ -63,7 +59,7 @@ func testClosureIgnore(tc *oneGuardStruct) {
 	}
 	x()
 
-	// Passing a closure as an argument is not an inline invocation.
+	// Ignore applies to callbacks passed to helpers as well.
 	callClosure(func() {
 		callPreconditions(tc)
 		tc.guardedField = 1
@@ -81,12 +77,15 @@ func testAnonymousInvalid(tc *oneGuardStruct) {
 	}, tc)
 }
 
-func testAnonymousUnsupported(tc *oneGuardStruct) {
-	// Not supportable, as per testClosureUnsupported above.
+func testAnonymousUsesOtherArgument(tc, other *oneGuardStruct) {
+	if tc == other {
+		return
+	}
 	tc.mu.Lock()
 	callAnonymous(func(tc *oneGuardStruct) {
+		// The helper passes other. Only the outer tc's mutex is held.
 		tc.guardedField = 1 // +checklocksfail
-	}, tc)
+	}, other)
 	tc.mu.Unlock()
 }
 

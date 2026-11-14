@@ -246,29 +246,20 @@ until that caller returns. Arguments retain their values from call or defer
 registration, while closures can observe and modify captured variables when they
 execute.
 
-However, if a closure is passed to another function, the anonymous function
-backing that closure will be analyzed assuming no available lock state. For
-example, the following will report violations:
+A closure or bound method passed to a helper can also use the caller's
+locks when checklocks can prove from the helper's body that it only reads
+data and calls that parameter, directly or through another such helper.
+For example, `slices.ContainsFunc(keys, e.hasKeyLocked)` can call a
+method requiring `e.mu` if the caller holds it. Each invocation must
+return with the same locks in the same modes: the helper can call the
+predicate zero or more times.
 
-```go
-func runFunc(f func()) {
-  f()
-}
-
-func foo(ts *testStruct) {
-  x := func() {
-    ts.guardedField = 1
-  }
-  ts.mu.Lock()
-  runFunc(x) // We can't know what will happen with x.
-  ts.mu.Unlock()
-}
-```
-
-Since x cannot be annotated, this may require use of the force annotation used
-below. However, if anonymous functions and closures require annotations, there
-may be an opportunity to split them into named functions for improved analysis
-and debuggability, and avoid the need to use force annotations.
+If the helper saves the callback, starts a goroutine, calls another
+unknown function, or has no such proof, the callback is checked without
+the caller's locks. A named function can declare its own lock requirements
+when a closure cannot. For a proven helper, checklocks also checks a named
+callback's lock requirements and effects at the call site; a lock on an
+argument supplied by the helper cannot be resolved there.
 
 ### Mixed Atomic Access and Lock Enforcement
 
