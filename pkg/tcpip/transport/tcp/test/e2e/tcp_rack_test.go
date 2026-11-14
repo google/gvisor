@@ -286,6 +286,182 @@ func TestRACKTLPRecovery(t *testing.T) {
 	}
 }
 
+// sendAckWithTS sends an ACK with a timestamps option and the given SACK
+// blocks.
+func sendAckWithTS(c *context.Context, bytesReceived int, tsVal, tsEcr uint32, sackBlocks []header.SACKBlock) {
+	options := make([]byte, maxTCPOptionSize)
+	offset := header.EncodeNOP(options)
+	offset += header.EncodeNOP(options[offset:])
+	offset += header.EncodeTSOption(tsVal, tsEcr, options[offset:])
+	if len(sackBlocks) > 0 {
+		offset += header.EncodeNOP(options[offset:])
+		offset += header.EncodeNOP(options[offset:])
+		offset += header.EncodeSACKBlocks(sackBlocks, options[offset:])
+	}
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seqnum.Value(context.TestInitialSequenceNumber).Add(1),
+		AckNum:  c.IRS.Add(1 + seqnum.Size(bytesReceived)),
+		RcvWnd:  30000,
+		TCPOpts: options[:offset],
+	})
+}
+
+// receiveTSOptions receives the segment that starts at offset and returns
+// its timestamps option.
+func receiveTSOptions(t *testing.T, c *context.Context, data []byte, offset int) header.TCPOptions {
+	t.Helper()
+	v := c.GetPacket()
+	defer v.Release()
+	tcpHdr := header.TCP(header.IPv4(v.AsSlice()).Payload())
+	if got, want := tcpHdr.SequenceNumber(), uint32(c.IRS.Add(seqnum.Size(1+offset))); got != want {
+		t.Fatalf("got sequence number %d, want %d", got, want)
+	}
+	if got, want := tcpHdr.Payload(), data[offset:][:maxPayload]; !bytes.Equal(got, want) {
+		t.Fatalf("got data %v, want %v", got, want)
+	}
+	opts := tcpHdr.ParsedOptions()
+	if !opts.TS {
+		t.Fatalf("segment at offset %d has no timestamps option", offset)
+	}
+	return opts
+}
+
+// TestRACKTLPRecoveryWithTimestamps follows TestRACKTLPRecovery, with ACKs
+// that carry timestamps as a receiver sends them. The receiver gets #1-#5 and
+// the loss probe for #8. The probe arrives above the hole at #6, so it does
+// not change the timestamp the receiver echoes (RFC 7323, section 4.3), and
+// the SACK of the probe echoes #5's timestamp, which is older than the
+// probe's. RACK must still use that SACK to detect that #6 and #7 were lost.
+// A SACK of only part of the probe does not show that the rest of it arrived,
+// so RACK must not use that SACK, and the RTO retransmits #6.
+func TestRACKTLPRecoveryWithTimestamps(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// sacked is how many bytes of the probe the SACK covers.
+		sacked int
+	}{
+		{name: "whole probe", sacked: maxPayload},
+		{name: "half of probe", sacked: maxPayload / 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := context.New(t, uint32(mtu))
+			defer c.Cleanup()
+
+			e2e.SetStackSACKPermitted(t, c, true)
+			c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 800*time.Millisecond /* delay */)
+
+			const numPackets = 8
+			data := make([]byte, numPackets*maxPayload)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			var r bytes.Reader
+			r.Reset(data)
+			if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write failed: %s", err)
+			}
+			var fifth header.TCPOptions
+			for i := 0; i < numPackets; i++ {
+				opts := receiveTSOptions(t, c, data, i*maxPayload)
+				if i == 4 {
+					fifth = opts
+				}
+			}
+
+			// Packets [6-8] are lost. ACK [1-5], echoing #5's timestamp.
+			bytesRead := 5 * maxPayload
+			sendAckWithTS(c, bytesRead, fifth.TSEcr+1, fifth.TSVal, nil)
+
+			// PTO should fire and send #8 packet as a TLP.
+			probe := receiveTSOptions(t, c, data, 7*maxPayload)
+			if probe.TSVal <= fifth.TSVal {
+				t.Fatalf("got probe TSVal %d, want more than #5's %d", probe.TSVal, fifth.TSVal)
+			}
+			var info tcpip.TCPInfoOption
+			if err := c.EP.GetSockOpt(&info); err != nil {
+				t.Fatalf("GetSockOpt failed: %v", err)
+			}
+			// RACK ignores a retransmission's ACK that arrives sooner than its
+			// minimum RTT.
+			time.Sleep(info.RTT)
+
+			// SACK #8, or its first part. The echoed timestamp is still #5's.
+			eighthPStart := c.IRS.Add(1 + seqnum.Size(7*maxPayload))
+			eighthPEnd := eighthPStart.Add(seqnum.Size(tc.sacked))
+			sendAckWithTS(c, bytesRead, probe.TSEcr+1, fifth.TSVal, []header.SACKBlock{{eighthPStart, eighthPEnd}})
+
+			if tc.sacked < maxPayload {
+				// RACK does not mark #6 lost, so the RTO retransmits it.
+				c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, e2e.TSOptionSize)
+				if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+					t.Errorf("got stats.TCP.Timeouts.Value() = %d, want = 1", got)
+				}
+				return
+			}
+
+			// The sender should enter RACK loss recovery and retransmit #6 and
+			// #7, without waiting for the RTO.
+			for i := 0; i < 2; i++ {
+				c.ReceiveAndCheckPacketWithOptions(data, bytesRead+i*maxPayload, maxPayload, e2e.TSOptionSize)
+				if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 0 {
+					t.Fatalf("#%d was retransmitted after an RTO (stats.TCP.Timeouts.Value() = %d), want RACK recovery from the probe's SACK", 6+i, got)
+				}
+			}
+			tcpStats := c.Stack().Stats().TCP
+			if got := tcpStats.SACKRecovery.Value(); got != 1 {
+				t.Errorf("got stats.TCP.SACKRecovery.Value() = %d, want = 1", got)
+			}
+		})
+	}
+}
+
+// TestRACKCumulativeAckWithOlderTSecr tests that RACK takes no sample from an
+// ACK that cumulatively acknowledges a retransmitted segment but echoes the
+// timestamp of the original transmission. The ACK can be for the original,
+// so it does not show when the acknowledged copy was sent (RFC 8985, section
+// 6.2, step 2).
+func TestRACKCumulativeAckWithOlderTSecr(t *testing.T) {
+	probeDone := make(chan struct{})
+	probe := func(state *tcp.TCPEndpointState) {
+		// The ACK below is the only segment that the endpoint gets after the
+		// handshake.
+		if rs := state.Sender.RACKState; rs.RTT != 0 || rs.XmitTime != (tcpip.MonotonicTime{}) {
+			t.Errorf("RACK used an ACK that echoes the original's timestamp: got RACKState.RTT = %v, RACKState.XmitTime = %v, want zero values", rs.RTT, rs.XmitTime)
+		}
+		close(probeDone)
+	}
+
+	c := context.NewWithProbe(t, uint32(mtu), probe)
+	defer c.Cleanup()
+
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.CreateConnectedWithSACKAndTS(c)
+
+	data := make([]byte, maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	original := receiveTSOptions(t, c, data, 0)
+
+	// No ACK arrives, so the sender sends the segment again.
+	rxt := receiveTSOptions(t, c, data, 0)
+	if rxt.TSVal <= original.TSVal {
+		t.Fatalf("got retransmission TSVal %d, want more than the original's %d", rxt.TSVal, original.TSVal)
+	}
+
+	// The original arrives late, and its ACK echoes the original's timestamp.
+	sendAckWithTS(c, maxPayload, original.TSEcr+1, original.TSVal, nil)
+	<-probeDone
+}
+
 // TestRACKTLPFallbackRTO tests that RACK sends a tail loss probe (TLP) in the
 // case of a tail loss. This simulates a situation where either the TLP or its
 // ACK is lost. The sender should retransmit when RTO fires.
