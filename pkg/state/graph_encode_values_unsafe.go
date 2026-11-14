@@ -191,8 +191,8 @@ func (es *graphEncodeState) scratchAliased(p unsafe.Pointer, ti *typeInfo, zeroB
 	if len(es.query(addr, end)) > 0 {
 		return true
 	}
-	for _, tid := range es.zeroTargets[zeroBefore:] {
-		if a := es.target(tid).addr; a >= addr && a <= end {
+	for _, z := range es.zeroTargets[zeroBefore:] {
+		if a := uintptr(z.ptr); a >= addr && a <= end {
 			return true
 		}
 	}
