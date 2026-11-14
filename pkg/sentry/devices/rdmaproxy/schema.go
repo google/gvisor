@@ -237,10 +237,11 @@ func buildSchemas() map[uint32]*MethodSchema {
 				ib.UVERBS_ATTR_REG_DMABUF_MR_IOVA:      AttrPtrIn,
 				// The DMABUF fd is translated from an app fd to a host fd in
 				// the DMABUF-specific pre-processing step.
-				ib.UVERBS_ATTR_REG_DMABUF_MR_FD:           AttrInline,
-				ib.UVERBS_ATTR_REG_DMABUF_MR_ACCESS_FLAGS: AttrPtrIn,
-				ib.UVERBS_ATTR_REG_DMABUF_MR_RESP_LKEY:    AttrPtrOut,
-				ib.UVERBS_ATTR_REG_DMABUF_MR_RESP_RKEY:    AttrPtrOut,
+				ib.UVERBS_ATTR_REG_DMABUF_MR_FD:            AttrInline,
+				ib.UVERBS_ATTR_REG_DMABUF_MR_ACCESS_FLAGS:  AttrPtrIn,
+				ib.UVERBS_ATTR_REG_DMABUF_MR_RESP_LKEY:     AttrPtrOut,
+				ib.UVERBS_ATTR_REG_DMABUF_MR_RESP_RKEY:     AttrPtrOut,
+				ib.MLX5_IB_ATTR_REG_DMABUF_MR_ACCESS_FLAGS: AttrInline,
 			},
 		},
 		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_MR_DESTROY): {
