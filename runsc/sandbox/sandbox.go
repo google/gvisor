@@ -1668,6 +1668,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	if pinRing != nil {
+		if args.Cgroup != nil && args.CloneIntoCgroupFD == nil {
+			// This process joined the sandbox's cgroup to start the sandbox in
+			// it, so the sidecar starts in that cgroup too.
+			log.Warningf("Cannot use cgroupv2 or CLONE_INTO_CGROUP, requiring sandbox FD release to be synchronous with cgroup deletion. This slows down sandbox teardown.")
+		}
 		if err := spawnFDParking(pinRing, cmd.Process.Pid); err != nil {
 			log.Warningf("Cannot spawn sidecar %q: %v. This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
 		}
@@ -1698,6 +1703,12 @@ func donateProcUmounter(conf *config.Config, donations *donation.Agency) error {
 // `ring` until the sandbox process `pid` has exited and thus keeps the
 // sandbox from being the last ref holder of the FDs pinned into the ring.
 // See `//pkg/pinring` and `//runsc/fdparking`.
+//
+// The sidecar must not be put in the sandbox's cgroup: it releases the pinned
+// FDs after the sandbox has exited, and the cgroup can't be deleted until the
+// sidecar has exited too. It is in that cgroup anyway when this process had to
+// join it to start the sandbox there, which is when cgroup v1 is in use or
+// `clone3(CLONE_INTO_CGROUP)` doesn't work.
 func spawnFDParking(ring *os.File, pid int) error {
 	pidfd, err := unix.PidfdOpen(pid, 0)
 	if err != nil {
@@ -1714,6 +1725,7 @@ func spawnFDParking(ring *os.File, pid int) error {
 		// `//runsc/fdparking` binary expects.
 		Files: []uintptr{devNull.Fd(), devNull.Fd(), devNull.Fd(), uintptr(pidfd), ring.Fd()},
 		// The sidecar must outlive this process and not die with its session.
+		// Don't set `CgroupFD` here; see above.
 		SysProcAttr: &unix.SysProcAttr{Setsid: true},
 	})
 	if err != nil {
