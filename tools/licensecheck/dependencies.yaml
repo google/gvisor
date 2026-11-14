@@ -1141,12 +1141,24 @@
   commit: 2279d708c817db657611a30c427c7d06c4360049
   sha256: b9837481134fa6eabce91c2fba57d96695f81360468f83e11e6982584ad4d29d
   license: GPL-2.0-only
+- dependency: luajit
+  version: https://github.com/LuaJIT/LuaJIT/archive/c4b1e2f73a2e10fbcc637fcec474f639c38daafe.tar.gz
+  retrieved: "2026-11-09"
+  commit: c4b1e2f73a2e10fbcc637fcec474f639c38daafe
+  sha256: 8232ea0ebc837a56ef679f8e4c04c2dfc4dec0b4145282337fd618b270b43ddd
+  license: MIT
 - dependency: nlohmann_json
   version: https://github.com/nlohmann/json/releases/download/v3.12.0/include.zip
   retrieved: "2026-09-10"
   commit: 55f93686c01528224f448c19128836e7df245f72
   sha256: b8cb0ef2dd7f57f18933997c9934bb1fa962594f701cd5a8d3c2c80541559372
   license: MIT
+- dependency: openssl
+  version: https://github.com/openssl/openssl/releases/download/openssl-4.0.3/openssl-4.0.3.tar.gz
+  retrieved: "2026-11-09"
+  commit: af1775b60dfa141a4ad762585052cabeb9f37e9e
+  sha256: 325b5c806167c13b40b1ffeadfe0248197c00eccc4cf123ec1e28d2d2fd216d9
+  license: Apache-2.0
 - dependency: platforms
   version: https://github.com/bazelbuild/platforms/releases/download/1.1.0/platforms-1.1.0.tar.gz
   retrieved: "2026-09-25"
@@ -1395,6 +1407,12 @@
   retrieved: "2026-11-07"
   commit: 00abfca5723f527a2651c36d059188f702bbd392
   sha256: 8a3b78120510962fc74b577aaaf52412537cfbc25c88a596a375bd409e66b98a
+  license: Apache-2.0
+- dependency: wrk2
+  version: https://github.com/giltene/wrk2/archive/44a94c17d8e6a0bac8559b53da76848e430cb7a7.tar.gz
+  retrieved: "2026-10-21"
+  commit: 44a94c17d8e6a0bac8559b53da76848e430cb7a7
+  sha256: 40fb577303ae83bfc211855880696b6e14daf1eaea2a684fe8cf2252c735b47e
   license: Apache-2.0
 - dependency: xds
   version: https://github.com/cncf/xds/archive/ee656c7534f5d7dc23d44dd611689568f72017a6.tar.gz

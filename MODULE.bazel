@@ -83,6 +83,21 @@ http_archive(
     ],
 )
 
+### wrk2
+bazel_dep(name = "luajit", version = "2.1.1794214635", dev_dependency = True)
+bazel_dep(name = "openssl", version = "4.0.3.bcr.1", dev_dependency = True)
+
+http_archive(
+    name = "wrk2",
+    build_file = "//images/benchmarks/wrk2:upstream/BUILD",
+    dev_dependency = True,
+    patch_args = ["-p1"],
+    patches = ["//images/benchmarks/wrk2:wrk2_luajit_arm.patch"],
+    sha256 = "40fb577303ae83bfc211855880696b6e14daf1eaea2a684fe8cf2252c735b47e",
+    strip_prefix = "wrk2-44a94c17d8e6a0bac8559b53da76848e430cb7a7",
+    urls = ["https://github.com/giltene/wrk2/archive/44a94c17d8e6a0bac8559b53da76848e430cb7a7.tar.gz"],
+)
+
 ### Python
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.11")
@@ -305,6 +320,20 @@ img_pull(
     registries = DOCKER_HUB_REGISTRIES,
     repository = "library/alpine",
     tag = "3.24.3",
+)
+
+img_pull(
+    name = "benchmark_ubuntu",
+    dev_dependency = True,
+    digest = "sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/ubuntu",
+    tag = "22.04",
 )
 
 img_pull(

@@ -492,6 +492,7 @@ func TestLicenseSourceIdentity(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "pinned", url: artifact, hash: hash, source: source},
+		{name: "pinned COPYRIGHT", url: artifact, hash: hash, source: strings.ReplaceAll(source, "/COPYING", "/COPYRIGHT")},
 		{name: "automatic", url: artifact, hash: hash},
 		{name: "changed artifact", url: artifact + "?changed", hash: hash, source: source, wantErr: true},
 		{name: "changed digest", url: artifact, hash: strings.Repeat("a", 64), source: source, wantErr: true},
