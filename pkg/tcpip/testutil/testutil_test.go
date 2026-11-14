@@ -15,9 +15,8 @@
 package testutil
 
 import (
+	"net/netip"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // Who tests the testutils?
@@ -54,8 +53,10 @@ func TestMustParse4(t *testing.T) {
 						t.Errorf("panic expected, but did not occur")
 					}
 				}()
+				MustParse4(tc.str)
+				return
 			}
-			if got := MustParse4(tc.str); got != tcpip.AddrFromSlice([]byte(tc.addr)) {
+			if got := MustParse4(tc.str); got != netip.AddrFrom4([4]byte([]byte(tc.addr))) {
 				t.Errorf("got MustParse4(%s) = %s, want = %s", tc.str, got, tc.addr)
 			}
 		})
@@ -94,9 +95,40 @@ func TestMustParse6(t *testing.T) {
 						t.Errorf("panic expected, but did not occur")
 					}
 				}()
+				MustParse6(tc.str)
+				return
 			}
-			if got := MustParse6(tc.str); got != tcpip.AddrFromSlice([]byte(tc.addr)) {
+			if got := MustParse6(tc.str); got != netip.AddrFrom16([16]byte([]byte(tc.addr))) {
 				t.Errorf("got MustParse6(%s) = %s, want = %s", tc.str, got, tc.addr)
+			}
+		})
+	}
+}
+
+func TestMustParseSubnet4(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{"192.0.2.129/24", "192.0.2.0/24"},
+		{"::ffff:192.0.2.129/24", "192.0.2.0/24"},
+		{"192.0.2.129/32", "192.0.2.129/32"},
+		{"192.0.2.129/33", ""},
+		{"2001:db8::/32", ""},
+		{"::ffff:192.0.2.129/120", ""},
+		{"192.0.2.129", ""},
+	} {
+		t.Run(test.input, func(t *testing.T) {
+			if test.want == "" {
+				defer func() {
+					if recover() == nil {
+						t.Error("MustParseSubnet4 did not panic")
+					}
+				}()
+			}
+			got := MustParseSubnet4(test.input)
+			if test.want != "" && got != netip.MustParsePrefix(test.want) {
+				t.Errorf("MustParseSubnet4(%q) = %s, want %s", test.input, got, test.want)
 			}
 		})
 	}

@@ -17,6 +17,7 @@ package netstack_test
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"slices"
 	"testing"
 
@@ -42,10 +43,7 @@ func TestRemoveRouteRemovesFirstMatchOnly(t *testing.T) {
 	s := &netstack.Stack{
 		Stack: stack.New(stack.Options{}),
 	}
-	dst := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFrom4([4]byte{10, 0, 0, 0}),
-		PrefixLen: 24,
-	}.Subnet()
+	dst := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 0, 0, 0}), 24)
 	s.Stack.AddRoute(tcpip.Route{Destination: dst, NIC: 1})
 	s.Stack.AddRoute(tcpip.Route{Destination: dst, NIC: 2})
 
@@ -78,50 +76,37 @@ func TestRemoveRouteRemovesFirstMatchOnly(t *testing.T) {
 	}
 }
 
-func mustSubnet(t *testing.T, cidr string) tcpip.Subnet {
-	t.Helper()
-	_, ipNet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		t.Fatalf("net.ParseCIDR(%q): %v", cidr, err)
-	}
-	ones, _ := ipNet.Mask.Size()
-	return tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice(ipNet.IP),
-		PrefixLen: ones,
-	}.Subnet()
-}
-
 // RouteTable lists routes in Linux FIB dump order instead of netstack's
 // longest-prefix-first lookup order.
 func TestRouteTableDumpOrder(t *testing.T) {
 	s := &netstack.Stack{
 		Stack: stack.New(stack.Options{}),
 	}
-	v4Gateway := tcpip.AddrFrom4([4]byte{10, 88, 0, 1})
-	v6Gateway := tcpip.AddrFromSlice(net.ParseIP("2001:db8:0:1::1"))
+	v4Gateway := netip.MustParseAddr("10.88.0.1")
+	v6Gateway := netip.MustParseAddr("2001:db8:0:1::1")
 	for _, rt := range []struct {
 		cidr    string
 		nic     tcpip.NICID
-		gateway tcpip.Address
+		gateway netip.Addr
 	}{
 		{"0.0.0.0/0", 1, v4Gateway},
 		{"::/0", 1, v6Gateway},
-		{"192.168.0.0/16", 1, tcpip.Address{}},
+		{"192.168.0.0/16", 1, netip.Addr{}},
 		{"10.0.0.0/8", 1, v4Gateway},
-		{"fe80::/64", 1, tcpip.Address{}},
+		{"fe80::/64", 1, netip.Addr{}},
 		{"2001:db8::/32", 1, v6Gateway},
 		{"10.0.0.0/24", 1, v4Gateway},
 		{"10.0.0.0/24", 2, v4Gateway},
-		{"127.0.0.0/8", 3, tcpip.Address{}},
+		{"127.0.0.0/8", 3, netip.Addr{}},
 		{"2001:db8:1::/48", 1, v6Gateway},
-		{"::1/128", 3, tcpip.Address{}},
-		{"169.254.1.1/32", 1, tcpip.Address{}},
+		{"::1/128", 3, netip.Addr{}},
+		{"169.254.1.1/32", 1, netip.Addr{}},
 		{"2001:db8:1:2::/64", 1, v6Gateway},
 		{"10.1.0.0/16", 1, v4Gateway},
-		{"2001:db8:0:1::/64", 1, tcpip.Address{}},
+		{"2001:db8:0:1::/64", 1, netip.Addr{}},
 	} {
 		s.Stack.AddRoute(tcpip.Route{
-			Destination: mustSubnet(t, rt.cidr),
+			Destination: netip.MustParsePrefix(rt.cidr),
 			Gateway:     rt.gateway,
 			NIC:         rt.nic,
 		})
@@ -157,7 +142,7 @@ func TestRouteTableDumpOrder(t *testing.T) {
 	}
 
 	// Lookups still use netstack's longest-prefix-first order.
-	if got := s.Stack.GetRouteTable()[0].Destination.Prefix(); got != 128 {
+	if got := s.Stack.GetRouteTable()[0].Destination.Bits(); got != 128 {
 		t.Errorf("GetRouteTable()[0] prefix = %d, want 128", got)
 	}
 }

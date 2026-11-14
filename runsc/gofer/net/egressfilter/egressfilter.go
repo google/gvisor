@@ -22,7 +22,6 @@ import (
 	"net"
 	"net/netip"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -42,12 +41,12 @@ type Options struct {
 // Filter validates whether a destination is permitted for outbound traffic.
 type Filter struct {
 	allowLoopback bool
-	localAddrs    map[tcpip.Address]struct{}
+	localAddrs    map[netip.Addr]struct{}
 }
 
 // New creates a new Filter with the given options.
 func New(opts Options) (*Filter, error) {
-	localAddrs := make(map[tcpip.Address]struct{})
+	localAddrs := make(map[netip.Addr]struct{})
 	if opts.LocalAddrs != nil {
 		for _, ip := range opts.LocalAddrs {
 			recordLocalIP(localAddrs, ip)
@@ -74,7 +73,7 @@ func New(opts Options) (*Filter, error) {
 	}, nil
 }
 
-func recordLocalIP(m map[tcpip.Address]struct{}, ip net.IP) {
+func recordLocalIP(m map[netip.Addr]struct{}, ip net.IP) {
 	if ip == nil {
 		return
 	}
@@ -84,14 +83,14 @@ func recordLocalIP(m map[tcpip.Address]struct{}, ip net.IP) {
 	}
 	netAddr = netAddr.Unmap()
 	if netAddr.BitLen() == 32 {
-		m[tcpip.AddrFrom4(netAddr.As4())] = struct{}{}
+		m[netip.AddrFrom4(netAddr.As4())] = struct{}{}
 	} else if netAddr.BitLen() == 128 {
-		m[tcpip.AddrFrom16(netAddr.As16())] = struct{}{}
+		m[netip.AddrFrom16(netAddr.As16())] = struct{}{}
 	}
 }
 
 // Allows reports whether the destination (addr, port) is permitted.
-func (f *Filter) Allows(addr tcpip.Address, port uint16) bool {
+func (f *Filter) Allows(addr netip.Addr, port uint16) bool {
 	if f == nil || port == 0 {
 		return false
 	}
@@ -104,9 +103,9 @@ func (f *Filter) Allows(addr tcpip.Address, port uint16) bool {
 	}
 	netAddr = netAddr.Unmap()
 	if netAddr.BitLen() == 32 {
-		addr = tcpip.AddrFrom4(netAddr.As4())
+		addr = netip.AddrFrom4(netAddr.As4())
 	} else {
-		addr = tcpip.AddrFrom16(netAddr.As16())
+		addr = netip.AddrFrom16(netAddr.As16())
 	}
 	if _, isLocal := f.localAddrs[addr]; isLocal {
 		return false
