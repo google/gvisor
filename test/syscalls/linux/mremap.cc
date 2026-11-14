@@ -434,6 +434,24 @@ TEST(MremapTest, MustMove_Copy) {
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
+// An empty source range doesn't overlap the destination, so a copy onto the
+// source itself unmaps the source before it is looked up again.
+TEST(MremapTest, MustMove_CopyOntoSource) {
+  Mapping const m =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_SHARED));
+
+  const auto rest = [&] {
+    void* ptr = MremapSafe(m.ptr(), 0, kPageSize, MREMAP_MAYMOVE | MREMAP_FIXED,
+                           m.ptr());
+    int const err = errno;
+    TEST_CHECK_MSG(ptr == MAP_FAILED, "mremap succeeded");
+    TEST_CHECK_MSG(err == EFAULT, "mremap failed with wrong errno");
+    MaybeSave();
+    TEST_CHECK(!IsMapped(m.addr()));
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
 void ExpectAllBytesAre(absl::string_view v, char c) {
   for (size_t i = 0; i < v.size(); i++) {
     ASSERT_EQ(v[i], c) << "at offset " << i;
