@@ -2577,6 +2577,23 @@ func checkBindMountCharDevices(t *testing.T, conf *config.Config, app string) {
 	}
 }
 
+// TestNvidiaDevicesWithoutNVProxy checks that a container starts when its spec
+// has NVIDIA device files and nvproxy is disabled.
+func TestNvidiaDevicesWithoutNVProxy(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/true")
+	spec.Linux = &specs.Linux{}
+	for _, path := range []string{
+		"/dev/nvidia-uvm",
+		"/dev/nvidia-caps/nvidia-cap1",
+		"/dev/nvidia-caps-imex-channels/channel0",
+	} {
+		spec.Linux.Devices = append(spec.Linux.Devices, specs.LinuxDevice{Path: path, Type: "c", Major: 511})
+	}
+	if err := run(spec, testutil.TestConfig(t)); err != nil {
+		t.Fatalf("run() failed: %v", err)
+	}
+}
+
 func TestReadonlyRoot(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
