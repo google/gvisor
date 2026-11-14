@@ -40,6 +40,12 @@ func ProcfsInfoFromVFS(vfsObj *vfs.VirtualFilesystem) *ProcfsInfo {
 			"params": nvp.procDriverNvidiaParams,
 		},
 	}
+	// The version file exists only if the host has one, and holds the host's
+	// contents unchanged, as mount_procfs() in libnvidia-container's
+	// src/nvc_mount.c copies it.
+	if nvp.procDriverNvidiaVersion != "" {
+		procfsInfo.StaticFiles["version"] = nvp.procDriverNvidiaVersion
+	}
 	if nvp.devInfo.HaveFabricIMEXManagement {
 		procfsInfo.StaticFiles["capabilities/fabric-imex-mgmt"] = procfsCapability(nvp.devInfo.FabricIMEXManagementDevMinor, 0o400)
 	}
