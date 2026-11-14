@@ -341,8 +341,10 @@ func (es *graphEncodeState) save(root unsafe.Pointer, ti *typeInfo, w *encBuf) {
 			}
 			tables.byte(objKindValue | flag)
 			tables.uvarint(uint64(idx))
-			// Value payload has an optional byte-length uvarint when inexact.
-			dataMaxBytes += binary.MaxVarintLen64 + o.seg.len
+			dataMaxBytes += o.seg.len
+			if flag == objInexact {
+				dataMaxBytes += binary.MaxVarintLen64
+			}
 		}
 	}
 
