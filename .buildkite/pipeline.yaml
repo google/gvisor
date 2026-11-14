@@ -287,8 +287,7 @@ steps:
     <<: *source_test
     label: ":ship: Release tests"
     commands:
-      - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
-      - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
+      - make artifacts-all
       - make release
     agents:
       arch: "amd64"

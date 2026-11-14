@@ -1,6 +1,6 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "pkg_deb", "pkg_tar", "version")
-load("//tools:release.bzl", "SIDECARS", "release_tars")
+load("//tools:release.bzl", "SIDECARS", "release_archives", "release_tars")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -82,6 +82,21 @@ release_tars(
     bins = RELEASE_TAR_EXTRA_BINS,
     flavor = "default",
     visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "release-packages",
+    srcs = [
+        ":debian",
+        ":gvisor-release-tar-bz2",
+        ":gvisor-release-tar-zstd",
+    ],
+)
+
+release_archives(
+    name = "release-archives",
+    packages = ":release-packages",
+    tags = ["manual"],
 )
 
 # Release tarballs of instrumented gVisor builds, for fuzzing and testing.
