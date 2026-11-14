@@ -108,7 +108,11 @@ func probe(probePrivateExpedited bool) HostMemBarrier {
 	// Registering a  process for private-expedited membarrier blocks on an RCU
 	// grace period (tens of ms), so only do it if needed.
 	if req := uintptr(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED | linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED); supported&req == req {
-		if _, _, e := unix.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0 /* flags */, 0 /* unused */); e != 0 {
+		// This must not be a RawSyscall: it waits for an RCU grace period,
+		// and a goroutine in a raw syscall keeps its P, so any
+		// stop-the-world (e.g. a GC cycle during sandbox startup) would
+		// wait for the whole grace period.
+		if _, _, e := unix.Syscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0 /* flags */, 0 /* unused */); e != 0 {
 			log.Warningf("membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED) failed: %s", e.Error())
 		} else {
 			mb.privateExpedited = true
