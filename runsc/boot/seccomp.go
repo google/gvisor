@@ -20,22 +20,23 @@ import (
 	"fmt"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 )
 
 // ociSeccompCache maps the hash of an OCI seccomp profile to its built
-// program. Containers in a pod usually share one profile, and building it takes
-// tens of milliseconds. bpf.Program is immutable, so tasks can share it.
+// filter. Containers in a pod usually share one profile, so the sandbox
+// builds it one time.
+// kernel.SyscallFilter is immutable, so tasks can share it.
 var ociSeccompCache = struct {
-	mu       sync.Mutex
-	programs map[[sha256.Size]byte]*bpf.Program
-}{programs: make(map[[sha256.Size]byte]*bpf.Program)}
+	mu      sync.Mutex
+	filters map[[sha256.Size]byte]*kernel.SyscallFilter
+}{filters: make(map[[sha256.Size]byte]*kernel.SyscallFilter)}
 
-func buildOCISeccompProgram(conf *config.Config, spec *specs.Spec) (*bpf.Program, error) {
+func buildOCISeccompFilter(conf *config.Config, spec *specs.Spec) (*kernel.SyscallFilter, error) {
 	if !conf.OCISeccomp {
 		if spec.Linux != nil && spec.Linux.Seccomp != nil {
 			log.Warningf("Seccomp spec is being ignored because oci-seccomp is disabled")
@@ -54,23 +55,22 @@ func buildOCISeccompProgram(conf *config.Config, spec *specs.Spec) (*bpf.Program
 	key := sha256.Sum256(profile)
 
 	ociSeccompCache.mu.Lock()
-	program, ok := ociSeccompCache.programs[key]
+	filter, ok := ociSeccompCache.filters[key]
 	ociSeccompCache.mu.Unlock()
 	if !ok {
-		p, err := seccomp.BuildProgram(spec.Linux.Seccomp)
+		f, err := seccomp.BuildFilter(spec.Linux.Seccomp)
 		if err != nil {
-			return nil, fmt.Errorf("building seccomp program: %w", err)
+			return nil, fmt.Errorf("building seccomp filter: %w", err)
 		}
-		program = &p
+		filter = &f
 		ociSeccompCache.mu.Lock()
-		ociSeccompCache.programs[key] = program
+		ociSeccompCache.filters[key] = filter
 		ociSeccompCache.mu.Unlock()
 	}
 
 	if log.IsLogging(log.Debug) {
-		out, _ := bpf.DecodeProgram(*program)
-		log.Debugf("Installing OCI seccomp filters\nProgram:\n%s", out)
+		log.Debugf("Installing OCI seccomp filter\n%v", filter)
 	}
 
-	return program, nil
+	return filter, nil
 }

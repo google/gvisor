@@ -39,6 +39,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -3607,6 +3608,13 @@ func TestOCISeccompErrnoRet(t *testing.T) {
 					Names:  []string{"getpgid"},
 					Action: specs.ActErrno,
 				},
+				{
+					// The action depends on the first argument.
+					Names:    []string{"getpriority"},
+					Action:   specs.ActErrno,
+					ErrnoRet: &enosys,
+					Args:     []specs.LinuxSeccompArg{{Index: 0, Value: unix.PRIO_PGRP, Op: specs.OpEqualTo}},
+				},
 			},
 		},
 	}
@@ -3634,20 +3642,24 @@ func TestOCISeccompErrnoRet(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		sysno int
-		want  error
+		args  []string
+		want  string
 	}{
-		{name: "errno_ret_honored", sysno: unix.SYS_GETSID, want: unix.ENOSYS},
-		{name: "no_errno_ret_defaults_to_eperm", sysno: unix.SYS_GETPGID, want: unix.EPERM},
+		{name: "errno_ret_honored", sysno: unix.SYS_GETSID, want: fmt.Sprintf("failed: %v", unix.ENOSYS)},
+		{name: "no_errno_ret_defaults_to_eperm", sysno: unix.SYS_GETPGID, want: fmt.Sprintf("failed: %v", unix.EPERM)},
+		{name: "args_match", sysno: unix.SYS_GETPRIORITY, args: []string{strconv.Itoa(unix.PRIO_PGRP), "0", "0"}, want: fmt.Sprintf("failed: %v", unix.ENOSYS)},
+		{name: "args_no_match", sysno: unix.SYS_GETPRIORITY, args: []string{strconv.Itoa(unix.PRIO_PROCESS), "0", "0"}, want: "success"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// test_app's "syscall" subcommand always exits 0; it prints the
-			// errno it observed, which is what we assert on.
-			out, err := executeCombinedOutput(conf, cont, nil, app, "syscall", "--syscall="+strconv.Itoa(tc.sysno))
+			// result it observed, which is what we assert on.
+			args := append([]string{"syscall", "--syscall=" + strconv.Itoa(tc.sysno)}, tc.args...)
+			out, err := executeCombinedOutput(conf, cont, nil, app, args...)
 			if err != nil {
 				t.Fatalf("error executing test_app: %v", err)
 			}
-			if want := fmt.Sprintf("failed: %v", tc.want); !strings.Contains(string(out), want) {
-				t.Errorf("syscall(%d) output %q does not contain %q", tc.sysno, out, want)
+			if !strings.Contains(string(out), tc.want) {
+				t.Errorf("syscall(%d) output %q does not contain %q", tc.sysno, out, tc.want)
 			}
 		})
 	}
