@@ -53,6 +53,26 @@ supported and is expected to eventually be removed entirely. If you depend on
 `ptrace`, and `systrap` doesn't fulfill your needs, please
 [voice your feedback](../community.md).
 
+## Clock source
+
+The default `--clock-source=calibrated` mode derives application time from
+hardware counters calibrated against the host clocks. It requires counters
+that remain synchronized across every CPU on which the sandbox can run,
+including after CPU migration or hotplug. A constant counter frequency alone
+does not guarantee synchronization.
+
+Use `--clock-source=reference` when the host cannot provide that counter
+contract. The Sentry reads the host clocks directly, and application VDSO clock
+reads fall back to system calls into the Sentry. This adds overhead to clock
+reads but leaves syscall transport and CPU affinity unchanged. It applies to
+both the KVM and systrap platforms; it is not selected automatically from the
+hypervisor or clocksource name.
+
+Clock selection follows the runtime configuration used to restore a sandbox.
+Configure the destination's clock source explicitly; saved calibration does
+not select the source on the destination. The existing sandbox monotonic-time
+offset and optional distinct `CLOCK_MONOTONIC_RAW` behavior are preserved.
+
 ## Configuring Docker
 
 The platform is selected by the `--platform` command line flag passed to
