@@ -54,9 +54,9 @@ func buildSliceObject(n int) any {
 	return &s
 }
 
-// buildAdoptionObject controls whether the enclosing array is discovered before
-// or after its children's save hooks. Pointer-array capture queues the children;
-// one additional intermediary delays array discovery until those children save.
+// buildAdoptionObject builds a graph in which the encoder reaches the array
+// elements through pointers first. If captured is true, an extra link delays
+// discovery of the array until after its elements have been saved.
 func buildAdoptionObject(n int, captured bool) *benchAdoption {
 	values := make([]benchAdopted, n)
 	pointers := make([]*benchAdopted, n)

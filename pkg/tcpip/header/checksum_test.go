@@ -291,9 +291,11 @@ func TestChecksummableTransportUpdatePort(t *testing.T) {
 			}
 		})
 	}
-	// Exercise a computed zero UDP checksum both before and after the update.
+	// Exercise a computed zero UDP checksum before and after updating either port.
 	check(1, 0xfffe, 2)
 	check(2, 0xfffe, 1)
+	check(0xfffe, 1, 2)
+	check(0xfffe, 2, 1)
 	for i := 0; i < 1000; i++ {
 		check(uint16(rand.Uint32()), uint16(rand.Uint32()), uint16(rand.Uint32()))
 	}
