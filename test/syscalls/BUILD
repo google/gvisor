@@ -377,7 +377,10 @@ syscall_test(
     test = "//test/syscalls/linux:kcov_test",
 )
 
+# Linux's key quotas are host-wide, and the quota tests lower them. Prevent
+# other local tests from overlapping this target.
 syscall_test(
+    tags = ["exclusive-if-local"],
     test = "//test/syscalls/linux:keys_test",
 )
 
