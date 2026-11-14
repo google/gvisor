@@ -1,82 +1,39 @@
 """Defines rules for packetimpact test targets."""
 
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("//tools:defs.bzl", "go_test")
-
-def _packetimpact_test_impl(ctx):
-    test_runner = ctx.executable.test_runner
-    bench = ctx.actions.declare_file("%s-bench" % ctx.label.name)
-    dut_binary_flag = [] if ctx.attr.dut_binary == None else [
-        "--dut_binary",
-        ctx.file.dut_binary.short_path,
-    ]
-    bench_content = "\n".join([
-        "#!/bin/bash",
-        # This test will run part in a distinct user namespace. This can cause
-        # permission problems, because all runfiles may not be owned by the
-        # current user, and no other users will be mapped in that namespace.
-        # Make sure that everything is readable here.
-        "find . -type f -or -type d -exec chmod a+rx {} \\;",
-        "%s %s --testbench_binary %s --num_duts %d $@\n" % (
-            test_runner.short_path,
-            " ".join(ctx.attr.flags + dut_binary_flag),
-            ctx.files.testbench_binary[0].short_path,
-            ctx.attr.num_duts,
-        ),
-    ])
-    ctx.actions.write(bench, bench_content, is_executable = True)
-
-    transitive_files = []
-    if hasattr(ctx.attr.test_runner, "data_runfiles"):
-        transitive_files.append(ctx.attr.test_runner.data_runfiles.files)
-    if hasattr(ctx.attr.dut_binary, "data_runfiles"):
-        transitive_files.append(ctx.attr.dut_binary.data_runfiles.files)
-    files = [test_runner] + ctx.files.testbench_binary + ctx.files._posix_server + ctx.files.dut_binary
-    runfiles = ctx.runfiles(
-        files = files,
-        transitive_files = depset(transitive = transitive_files),
-        collect_default = True,
-        collect_data = True,
-    )
-    return [DefaultInfo(executable = bench, runfiles = runfiles)]
-
-_packetimpact_test = rule(
-    attrs = {
-        "test_runner": attr.label(
-            executable = True,
-            cfg = "target",
-            default = ":packetimpact_test",
-        ),
-        "_posix_server": attr.label(
-            cfg = "target",
-            default = "//test/packetimpact/dut:posix_server",
-        ),
-        "testbench_binary": attr.label(
-            cfg = "target",
-            mandatory = True,
-        ),
-        "flags": attr.string_list(
-            mandatory = False,
-            default = [],
-        ),
-        "num_duts": attr.int(
-            mandatory = False,
-            default = 1,
-        ),
-        "dut_binary": attr.label(
-            executable = True,
-            cfg = "target",
-            allow_single_file = True,
-        ),
-    },
-    test = True,
-    implementation = _packetimpact_test_impl,
-)
 
 PACKETIMPACT_TAGS = [
     "manual",
     "notap",
     "packetimpact",
 ]
+
+def _packetimpact_test(
+        name,
+        testbench_binary,
+        dut_binary,
+        variant,
+        expect_failure,
+        num_duts = 1,
+        args = [],
+        **kwargs):
+    # The DUT needs its runfiles in the new user namespace, including its
+    # POSIX server and, for netstack, runsc and its sidecars.
+    native_test(
+        name = name,
+        src = "//test/packetimpact/runner:main",
+        out = name + "-bench",
+        args = [
+            "--variant=" + variant,
+            "--dut_binary=$(rootpath %s)" % dut_binary,
+            "--testbench_binary=$(rootpath %s)" % testbench_binary,
+            "--num_duts=%d" % num_duts,
+        ] + (["--expect_failure"] if expect_failure else []) + args,
+        data = [dut_binary, testbench_binary],
+        tags = PACKETIMPACT_TAGS,
+        **kwargs
+    )
 
 def packetimpact_native_test(
         name,
@@ -91,14 +48,12 @@ def packetimpact_native_test(
         expect_failure: the test must fail
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
-    expect_failure_flag = ["--expect_failure"] if expect_failure else []
     _packetimpact_test(
-        test_runner = "//test/packetimpact/runner:main",
         name = name + "_native_test",
         testbench_binary = testbench_binary,
-        flags = expect_failure_flag + ["--variant", "native"],
         dut_binary = "//test/packetimpact/dut/native",
-        tags = PACKETIMPACT_TAGS,
+        variant = "native",
+        expect_failure = expect_failure,
         **kwargs
     )
 
@@ -115,16 +70,12 @@ def packetimpact_netstack_test(
         expect_failure: the test must fail
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
-    expect_failure_flag = []
-    if expect_failure:
-        expect_failure_flag = ["--expect_failure"]
     _packetimpact_test(
-        test_runner = "//test/packetimpact/runner:main",
         name = name + "_netstack_test",
         testbench_binary = testbench_binary,
-        flags = expect_failure_flag + ["--variant", "gvisor"],
         dut_binary = "//test/packetimpact/dut/runsc",
-        tags = PACKETIMPACT_TAGS,
+        variant = "gvisor",
+        expect_failure = expect_failure,
         **kwargs
     )
 
