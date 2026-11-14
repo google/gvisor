@@ -96,32 +96,44 @@ func (sfd *SignalFileDescription) SetMask(mask linux.SignalSet) {
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
-	// Attempt to dequeue relevant signals.
-	info, err := sfd.target.Sigtimedwait(sfd.Mask(), 0)
-	if err != nil {
-		// There must be no signal available.
-		return 0, linuxerr.ErrWouldBlock
+	var infoNative linux.SignalfdSiginfo
+	if dst.NumBytes() < int64(infoNative.SizeBytes()) {
+		return 0, linuxerr.EINVAL
 	}
 
-	// Copy out the signal info using the specified format.
-	infoNative := linux.SignalfdSiginfo{
-		Signo:   uint32(info.Signo),
-		Errno:   info.Errno,
-		Code:    info.Code,
-		PID:     uint32(info.PID()),
-		UID:     uint32(info.UID()),
-		Status:  info.Status(),
-		Overrun: uint32(info.Overrun()),
-		Addr:    info.Addr(),
-		Int:     int32(info.Sigval()),
-		Ptr:     info.Sigval(),
+	var total int64
+	for dst.NumBytes() >= int64(infoNative.SizeBytes()) {
+		// Attempt to dequeue relevant signals.
+		info, err := sfd.target.Sigtimedwait(sfd.Mask(), 0)
+		if err != nil {
+			if total == 0 {
+				// There must be no signal available.
+				return 0, linuxerr.ErrWouldBlock
+			}
+			break
+		}
+
+		// Copy out the signal info using the specified format.
+		infoNative = linux.SignalfdSiginfo{
+			Signo:   uint32(info.Signo),
+			Errno:   info.Errno,
+			Code:    info.Code,
+			PID:     uint32(info.PID()),
+			UID:     uint32(info.UID()),
+			Status:  info.Status(),
+			Overrun: uint32(info.Overrun()),
+			Addr:    info.Addr(),
+			Int:     int32(info.Sigval()),
+			Ptr:     info.Sigval(),
+		}
+		n, err := infoNative.WriteTo(dst.Writer(ctx))
+		total += n
+		if err != nil {
+			return total, err
+		}
+		dst = dst.DropFirst64(n)
 	}
-	n, err := infoNative.WriteTo(dst.Writer(ctx))
-	if err == usermem.ErrEndOfIOSequence {
-		// Partial copy-out ok.
-		err = nil
-	}
-	return n, err
+	return total, nil
 }
 
 // Readiness implements waiter.Waitable.Readiness.
