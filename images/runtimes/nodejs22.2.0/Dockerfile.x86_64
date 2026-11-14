@@ -26,6 +26,12 @@ RUN make -j $(nproc) test-build
 RUN out/Release/node --check test/common/index.js \
   && out/Release/node --check test/parallel/test-http-outgoing-end-cork.js
 
+# Backport the HTTP/1.0 close test from https://github.com/nodejs/node/pull/55959.
+COPY http10-close.patch /tmp/http10-close.patch
+RUN patch -p1 --no-backup-if-mismatch < /tmp/http10-close.patch \
+  && out/Release/node --check test/parallel/test-http-remove-connection-header-persists-connection.js \
+  && rm -f /tmp/http10-close.patch
+
 # Including dumb-init emulates the Linux "init" process, preventing the failure
 # of tests involving worker processes.
 ENTRYPOINT ["/usr/bin/dumb-init"]
