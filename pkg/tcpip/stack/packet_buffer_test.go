@@ -851,6 +851,8 @@ func TestPacketDataReadToPreservesHeaders(t *testing.T) {
 		{name: "partial read", size: 3, wantErr: io.ErrShortWrite},
 		{name: "full read", size: 6},
 		{name: "fragmented partial read", size: 3, wantErr: io.ErrShortWrite, pieces: []string{"he", "adab", "cd", "ef"}},
+		{name: "destination full at view boundary", size: 2, wantErr: io.ErrShortWrite, pieces: []string{"head", "ab", "cdef"}},
+		{name: "empty destination", wantErr: io.ErrShortWrite},
 		{name: "peek", size: 3, peek: true, wantErr: io.ErrShortWrite},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

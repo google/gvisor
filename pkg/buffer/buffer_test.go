@@ -144,10 +144,10 @@ func TestBuffer(t *testing.T) {
 			op: func(t *testing.T, b *Buffer) {
 				defer func() {
 					if r := recover(); r == nil {
-						t.Errorf("advanceRead(Size()+1) did not panic")
+						t.Errorf("removeFrom accepted more bytes than the buffer contains")
 					}
 				}()
-				b.advanceRead(b.Size() + 1)
+				b.removeFrom(b.data.Front(), b.Size()+1)
 			},
 		},
 
@@ -738,6 +738,48 @@ func TestBufferClone(t *testing.T) {
 	}
 	if got := clonedB.Size(); got != originalSize {
 		t.Errorf("cloned buffer should not be modified: expected size = %d, got = %d", originalSize, got)
+	}
+}
+
+func TestBufferRemove(t *testing.T) {
+	const data = "abcdefghijkl"
+	var original Buffer
+	defer original.Release()
+	for _, part := range []string{"abcd", "efgh", "ijkl"} {
+		v := NewViewWithData([]byte(".." + part))
+		v.TrimFront(2)
+		original.appendOwned(v)
+	}
+
+	for offset := 0; offset <= len(data)+1; offset++ {
+		for count := -1; count <= len(data)+1; count++ {
+			t.Run(fmt.Sprintf("offset=%d/count=%d", offset, count), func(t *testing.T) {
+				b := original.Clone()
+				defer b.Release()
+				b.Remove(int64(offset), int64(count))
+				start := min(offset, len(data))
+				end := min(start+max(count, 0), len(data))
+				want := data[:start] + data[end:]
+				if got := string(b.Flatten()); got != want || b.Size() != int64(len(want)) {
+					t.Fatalf("Remove returned %q (%d bytes), want %q", got, b.Size(), want)
+				}
+				if start < len(want) {
+					// Write through the first remaining payload view. A clone
+					// of the original must still see its original bytes.
+					v, ok := b.PullUp(start, 1)
+					if !ok {
+						t.Fatal("PullUp failed")
+					}
+					v.AsSlice()[0] = '!'
+					if got := string(b.Flatten()); got != want[:start]+"!"+want[start+1:] {
+						t.Fatalf("write after Remove changed the wrong bytes: %q", got)
+					}
+				}
+				if got := string(original.Flatten()); got != data {
+					t.Fatalf("original buffer = %q, want %q", got, data)
+				}
+			})
+		}
 	}
 }
 
