@@ -1406,7 +1406,11 @@ func (s *sender) walkSACK(rcvdSeg *segment) bool {
 	seg := s.writeList.Front()
 	for _, sb := range sackBlocks {
 		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
-			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
+			// A block may end inside a segment that left as several
+			// packets. Its last part is still missing then, so it does
+			// not count as acknowledged.
+			segEnd := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
+			if sb.Start.LessThanEq(seg.sequenceNumber) && segEnd.LessThanEq(sb.End) && !seg.acked {
 				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
 				seg.acked = true

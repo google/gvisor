@@ -1252,6 +1252,180 @@ func TestRACKWithWindowFull(t *testing.T) {
 	c.CheckNoPacket("unexpected packet received after userTimeout has expired")
 }
 
+// sackTest is a connection with SACK, timestamps and RACK on a manual clock.
+// The test plays the peer: it reads what the endpoint sends and acknowledges
+// it by hand.
+type sackTest struct {
+	t     *testing.T
+	c     *context.Context
+	clock *faketime.ManualClock
+	peer  *context.RawEndpoint
+	// echo is the timestamp of the last segment the endpoint sent.
+	echo uint32
+}
+
+// newSACKTest returns a connection whose endpoint has numSegments segments
+// of maxPayload bytes to send.
+func newSACKTest(t *testing.T, numSegments int) *sackTest {
+	t.Helper()
+	st := &sackTest{t: t, clock: faketime.NewManualClock()}
+	st.c = context.NewWithOpts(t, context.Options{MTU: uint32(mtu), EnableV4: true, Clock: st.clock})
+	t.Cleanup(st.c.Cleanup)
+	e2e.SetStackSACKPermitted(t, st.c, true)
+	e2e.SetStackTCPRecovery(t, st.c, int(tcpip.TCPRACKLossDetection))
+	st.peer = e2e.CreateConnectedWithSACKAndTS(st.c)
+	st.peer.Flags = header.TCPFlagAck
+
+	data := make([]byte, numSegments*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	if n, err := st.c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+		t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+	}
+	return st
+}
+
+// sent returns the numbers of the segments transmitted since the last call.
+func (st *sackTest) sent() []int {
+	st.t.Helper()
+	st.c.Stack().Pause()
+	st.c.Stack().Resume()
+	var segs []int
+	for {
+		v := st.c.GetPacketNonBlocking()
+		if v == nil {
+			return segs
+		}
+		h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+		offset := int(h.SequenceNumber() - uint32(st.c.IRS) - 1)
+		opts := h.ParsedOptions()
+		if !opts.TS || len(h.Payload()) != maxPayload || offset%maxPayload != 0 {
+			st.t.Fatalf("segment at %d: TS = %t, size = %d", offset, opts.TS, len(h.Payload()))
+		}
+		st.echo = opts.TSVal
+		segs = append(segs, offset/maxPayload)
+		v.Release()
+	}
+}
+
+// ack acknowledges every segment below cumulative, and selectively the byte
+// ranges in sacked, given as offsets in the data. It returns the numbers of
+// the segments sent in response.
+func (st *sackTest) ack(cumulative int, sacked ...[2]int) []int {
+	st.t.Helper()
+	st.clock.Advance(100 * time.Microsecond)
+	st.peer.TSVal++
+	opts := make([]byte, maxTCPOptionSize)
+	n := header.EncodeTSOption(st.peer.TSVal, st.echo, opts)
+	n += header.EncodeNOP(opts[n:])
+	n += header.EncodeNOP(opts[n:])
+	if len(sacked) != 0 {
+		var blocks []header.SACKBlock
+		for _, r := range sacked {
+			blocks = append(blocks, header.SACKBlock{
+				Start: st.c.IRS.Add(1 + seqnum.Size(r[0])),
+				End:   st.c.IRS.Add(1 + seqnum.Size(r[1])),
+			})
+		}
+		n += header.EncodeNOP(opts[n:])
+		n += header.EncodeNOP(opts[n:])
+		n += header.EncodeSACKBlocks(blocks, opts[n:])
+	}
+	st.peer.AckNum = st.c.IRS.Add(1 + seqnum.Size(cumulative*maxPayload))
+	st.peer.SendPacket(nil, opts[:n])
+	return st.sent()
+}
+
+// TestRACKHonorsSACKBeyondScoreboard checks that RACK does not retransmit
+// segments that were selectively acknowledged after the SACK scoreboard, which
+// holds 100 blocks, ran out of room to record them.
+func TestRACKHonorsSACKBeyondScoreboard(t *testing.T) {
+	// holes is the number of lost segments, each followed by one that
+	// arrives: more SACK blocks than the scoreboard holds.
+	const holes = 130
+	st := newSACKTest(t, 1200)
+
+	// Slow start, until one flight has room for all the holes.
+	first := 0
+	flight := st.sent()
+	for len(flight) < 2*holes {
+		if len(flight) == 0 {
+			t.Fatalf("nothing sent after the ACK of %d segments", first)
+		}
+		first += len(flight)
+		flight = st.ack(first)
+	}
+	for i, seg := range flight {
+		if seg != first+i {
+			t.Fatalf("flight %v, want consecutive segments from %d", flight, first)
+		}
+	}
+
+	// Every second segment of the flight is lost. Each one that arrives is
+	// acknowledged as a receiver does: its own block first, then the two
+	// before it.
+	arrived := make(map[int]bool)
+	var resent []int
+	for i := 0; i < holes; i++ {
+		seg := first + 2*i + 1
+		arrived[seg] = true
+		blocks := [][2]int{{seg * maxPayload, (seg + 1) * maxPayload}}
+		for prev := seg - 2; prev > first && len(blocks) < 3; prev -= 2 {
+			blocks = append(blocks, [2]int{prev * maxPayload, (prev + 1) * maxPayload})
+		}
+		resent = append(resent, st.ack(first, blocks...)...)
+	}
+
+	repairs, spurious := 0, 0
+	for _, seg := range resent {
+		switch {
+		case arrived[seg]:
+			spurious++
+		case seg < first+len(flight):
+			repairs++
+		}
+	}
+	if spurious != 0 {
+		t.Errorf("%d retransmissions of segments that had been selectively acknowledged, want 0", spurious)
+	}
+	if repairs == 0 {
+		t.Errorf("no lost segment was retransmitted; sent %v", resent)
+	}
+	if got := st.c.Stack().Stats().TCP.Timeouts.Value(); got != 0 {
+		t.Errorf("%d retransmission timeouts, want 0", got)
+	}
+}
+
+// TestRACKRetransmitsPartlySACKedSegment checks that RACK still retransmits a
+// segment of which only the first part was selectively acknowledged, as
+// happens when the segment left as several packets and a later one was lost.
+func TestRACKRetransmitsPartlySACKedSegment(t *testing.T) {
+	st := newSACKTest(t, 20)
+	if flight := st.sent(); len(flight) < 7 {
+		t.Fatalf("flight %v, want at least 7 segments", flight)
+	}
+
+	// The first two segments and half of the third arrive.
+	half := [2]int{2 * maxPayload, 2*maxPayload + maxPayload/2}
+	resent := st.ack(2, half)
+	// So do the four segments after it, one by one.
+	for seg := 3; seg <= 6; seg++ {
+		resent = append(resent, st.ack(2, [2]int{3 * maxPayload, (seg + 1) * maxPayload}, half)...)
+	}
+
+	found := false
+	for _, seg := range resent {
+		found = found || seg == 2
+	}
+	if !found {
+		t.Errorf("sent %v, want a retransmission of segment 2", resent)
+	}
+	if got := st.c.Stack().Stats().TCP.Timeouts.Value(); got != 0 {
+		t.Errorf("%d retransmission timeouts, want 0", got)
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
