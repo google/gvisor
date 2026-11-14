@@ -72,12 +72,18 @@ type StartArgs struct {
 	// IsRootfsUpperTarFilePresent indicates whether the rootfs upper tar file is present.
 	IsRootfsUpperTarFilePresent bool
 
+	// Checkpoint contains restore options when a subcontainer binds a deferred
+	// checkpoint. Its files are carried at the end of FilePayload, not in the
+	// nested RestoreOpts payload. It is nil for ordinary start requests.
+	Checkpoint *RestoreOpts
+
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
 	//   * file descriptors to gofer-backing host files (optional).
 	//   * file descriptor for /dev gofer connection (optional)
 	//   * file descriptor for rootfs upper tar file (optional)
 	//   * file descriptors to connect to gofer to serve the root filesystem.
+	//   * checkpoint files, in RestoreOpts order (optional: restore only).
 	urpc.FilePayload
 }
 
@@ -122,6 +128,14 @@ type RestoreOpts struct {
 	HaveDeviceFile bool
 	Background     bool
 
+	// DeferCheckpoint prepares a no-root restore without checkpoint files.
+	// FilePayload must be empty; checkpoint binding is performed separately.
+	DeferCheckpoint bool
+
+	// CheckpointDir is the absolute host checkpoint directory. All children in
+	// a deferred restore must supply the same path.
+	CheckpointDir string
+
 	// If UseCheckpointGofer is true, the first file in FilePayload is a Unix
 	// domain socket connected to a URPC server implementing
 	// stateipc.AsyncFileServer and providing checkpoint files. In this case,
@@ -139,6 +153,22 @@ type RestoreReply struct {
 	// KernelStarted is set when the call restored the last container, which
 	// starts the kernel.
 	KernelStarted bool
+}
+
+// NumFiles returns the number of payload FDs required by these restore options.
+// A nil receiver represents a request without a checkpoint payload.
+func (o *RestoreOpts) NumFiles() int {
+	if o == nil {
+		return 0
+	}
+	n := 1 // State file or checkpoint Gofer socket.
+	if o.HavePagesFile && !o.UseCheckpointGofer {
+		n += 2
+	}
+	if o.HaveDeviceFile {
+		n++
+	}
+	return n
 }
 
 // ContMgrRestoreSubcontainer restores a container from a statefile.
