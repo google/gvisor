@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -1062,6 +1063,32 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 	return n, nil
 }
 
+// ctrlClientGetHandleInfo only allows the scalar parent and class queries. The
+// driver's result union could acquire pointer-bearing indices without changing
+// its size, so ABI layout parity alone cannot validate future indices.
+func ctrlClientGetHandleInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV0000_CTRL_CLIENT_GET_HANDLE_INFO_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	switch ctrlParams.Index {
+	case nvgpu.NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO_INDEX_PARENT, nvgpu.NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO_INDEX_CLASSID:
+	default:
+		return 0, linuxerr.EINVAL
+	}
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
@@ -1623,15 +1650,16 @@ func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 		// src/nvidia/src/kernel/gpu/fifo/kernel_channel_group_api.c:kchangrpapiConstruct_IMPL()
 		// => refAddDependant().
 		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
-		// Note: When the channel group's engine type is GR, which is always
-		// true unless MIG is enabled, kchangrpapiConstruct_IMPL() constructs a
-		// KERNEL_GRAPHICS_CONTEXT whose lifetime is the same as the channel
-		// group's (the graphics context is freed when the channel group is).
-		// Channels, context shares, and graphics objects depend on this
-		// graphics context rather than the channel group. Consequently, if MIG
-		// is enabled, these might not depend on the channel group at all.
-		// Since nvproxy currently does not support MIG, we represent these
-		// dependencies as unconditionally on the channel group instead.
+		// A graphics-engine group owns an internal KERNEL_GRAPHICS_CONTEXT;
+		// MIG copy-engine groups can omit it. We do not represent that
+		// internal object. Context shares are children of their channel
+		// group, and graphics objects are children of their channel, so
+		// their parent chains already cover the optional graphics-context
+		// dependencies. Channels are either group children or have a group
+		// allocated and freed internally. These parent relationships also
+		// apply to groups without a graphics context. See resource_list.h,
+		// kernel_ctxshare.c:kctxshareapiConstruct_IMPL(), and
+		// kernel_channel.c:kchannelConstruct_IMPL().
 	})
 }
 
@@ -1676,9 +1704,9 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_ctxshare.c:kctxshareapiConstruct_IMPL()
 		// => refAddDependant(). The context share's parent is the channel
-		// group, so (given that we are representing graphics context
-		// dependencies as channel group dependencies) no separate dependency
-		// is required.
+		// group. Its optional graphics-context dependency is covered by that
+		// parent relationship, including when a MIG copy-engine group has no
+		// graphics context.
 		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
 	})
 }
@@ -1958,4 +1986,60 @@ func failWithStatus[Params any, PtrParams hasStatusPtr[Params]](ctx context.Cont
 	ioctlParams.SetStatus(status)
 	_, err := ioctlParams.CopyOut(t, ioctlParamsAddr)
 	return err
+}
+
+// hasCapDescriptorPtr is implemented by RM allocation parameters containing a
+// capability file descriptor.
+type hasCapDescriptorPtr[T any] interface {
+	marshalPtr[T]
+	GetCapDescriptor() uint64
+	SetCapDescriptor(uint64)
+}
+
+// rmAllocMIGPartitionRef allocates a reference to an existing GPU or compute
+// instance. The driver validates that the capability descriptor authorizes the
+// requested instance; guest descriptors must be translated before that check.
+func rmAllocMIGPartitionRef[Params any, PtrParams hasCapDescriptorPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	var allocParamsValue Params
+	allocParams := PtrParams(&allocParamsValue)
+	// The driver derives the allocation parameter size from the class, as in
+	// rmAllocSimpleParams().
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return 0, err
+	}
+	// The device-profiling sentinel bypasses the driver's instance access
+	// capability check. Instance access must not grant device-wide profiling.
+	if params, ok := any(allocParams).(*nvgpu.NVC637_ALLOCATION_PARAMETERS); ok && params.SwizzID == nvgpu.NVC637_DEVICE_PROFILING_SWIZZID {
+		return 0, linuxerr.EINVAL
+	}
+	origCapDescriptor := allocParams.GetCapDescriptor()
+	// An invalid 64-bit descriptor must not alias a valid guest descriptor
+	// after conversion to the FD table's signed 32-bit index.
+	if origCapDescriptor > 0x7fffffff {
+		return 0, linuxerr.EINVAL
+	}
+	capsFileGeneric, _ := fi.t.FDTable().Get(int32(origCapDescriptor))
+	if capsFileGeneric == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer capsFileGeneric.DecRef(fi.ctx)
+	capsFile, ok := capsFileGeneric.Impl().(*openOnlyFD)
+	if !ok || capsFile.dev.nvp != fi.fd.dev.nvp || capsFile.dev.migCapabilityPath == "" {
+		return 0, linuxerr.EINVAL
+	}
+	isComputeInstance := strings.Contains(capsFile.dev.migCapabilityPath, "/ci")
+	if isComputeInstance != (ioctlParams.HClass == nvgpu.AMPERE_SMC_EXEC_PARTITION_REF) {
+		return 0, linuxerr.EINVAL
+	}
+	allocParams.SetCapDescriptor(uint64(capsFile.hostFD))
+	n, err := rmAllocInvoke(fi, ioctlParams, allocParams, isNVOS64, addSimpleObjDepParentLocked)
+	if err != nil {
+		return n, err
+	}
+	// Never expose a sentry file descriptor to the application.
+	allocParams.SetCapDescriptor(origCapDescriptor)
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return n, err
+	}
+	return n, nil
 }

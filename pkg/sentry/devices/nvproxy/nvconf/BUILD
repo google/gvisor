@@ -29,6 +29,9 @@ go_library(
 go_test(
     name = "nvconf_test",
     size = "small",
-    srcs = ["caps_test.go"],
+    srcs = [
+        "caps_test.go",
+        "hostsettings_test.go",
+    ],
     embed = [":nvconf"],
 )
