@@ -81,6 +81,7 @@ def _syscall_test(
         tags,
         debug,
         network = "none",
+        udp_network = False,
         limit_ephemeral_ports = False,
         file_access = "exclusive",
         overlay = False,
@@ -126,6 +127,11 @@ def _syscall_test(
         name += "_save_resume"
     if nftables:
         name += "_nftables"
+
+    if udp_network:
+        container = True
+        if platform != "native" and network == "none":
+            network = "sandbox"
 
     # Apply all tags.
     if tags == None:
@@ -200,6 +206,9 @@ def _syscall_test(
         "--nftables=" + str(nftables),
         "--kvm-use-cpu-nums=" + str(kvm_use_cpu_nums),
     ]
+
+    if udp_network:
+        runner_args.append("--udp-network")
 
     if in_sandbox_cgroup:
         runner_args.append("--in-sandbox-cgroup=" + in_sandbox_cgroup)

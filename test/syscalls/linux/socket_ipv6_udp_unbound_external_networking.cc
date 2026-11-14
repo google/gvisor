@@ -109,7 +109,12 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestJoinLeaveMulticast) {
                          &group_req, sizeof(group_req)),
               SyscallSucceeds());
 
-  // Set the sender to the loopback interface.
+  // Binding ::1 selects the source address. Send on the interface where the
+  // receiver joined the multicast group.
+  ASSERT_THAT(setsockopt(sender->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         &group_req.ipv6mr_interface,
+                         sizeof(group_req.ipv6mr_interface)),
+              SyscallSucceeds());
   auto sender_addr = V6Loopback();
   ASSERT_THAT(
       bind(sender->get(), AsSockAddr(&sender_addr.addr), sender_addr.addr_len),
