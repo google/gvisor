@@ -65,10 +65,14 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 	}
 	t.root.mu.Lock()
 	ri, ok := t.root.replicas[t.replicaKTTY.Index()]
-	t.root.mu.Unlock()
-	if !ok {
+	if !ok || ri.t != t {
+		t.root.mu.Unlock()
 		return nil, linuxerr.EIO
 	}
+	// Reserve the index before dropping root.mu, so a concurrent master close
+	// cannot recycle it while this replica is being opened.
+	t.root.allocated[t.n]++
+	t.root.mu.Unlock()
 	fd := &replicaFileDescription{
 		inode: ri,
 	}
@@ -78,6 +82,7 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		DenyPWrite:  true,
 		SpecialFile: true,
 	}); err != nil {
+		t.root.releaseTerminalRef(t.n)
 		return nil, err
 	}
 	if opts.Flags&linux.O_NOCTTY == 0 {

@@ -60,8 +60,12 @@ go_test(
     embed = [":devpts"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",
     ],
