@@ -1503,6 +1503,7 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 			decommitFR.Start = firstHugeStart
 			freeFR.Start = firstHugeStart
 		} else {
+			f.subreleased[firstHugeStart] = newSubrel
 			decommitFR.Start = fr.Start
 			freeFR.Start = firstHugeEnd
 		}
@@ -1521,6 +1522,7 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 			decommitFR.End = lastHugeEnd
 			freeFR.End = lastHugeEnd
 		} else {
+			f.subreleased[lastHugeStart] = newSubrel
 			decommitFR.End = fr.End
 			freeFR.End = lastHugeStart
 		}
