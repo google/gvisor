@@ -89,17 +89,20 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
   echo 'Current Docker daemon configuration:' >&2
   cat /etc/docker/daemon.json >&2
   HAD_EXPERIMENTAL="$(cat /etc/docker/daemon.json | jq '.experimental')"
-  export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
   if [[ -n "${STAGED_BINARIES:-}" ]]; then
+    # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
+    export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
     gcloud storage cat "$STAGED_BINARIES" \
       | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf -
     chmod -R +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY"
+    runsc="$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc"
   else
-    make copy TARGETS=//:release DESTINATION="$BUILDKITE_STAGED_BINARIES_DIRECTORY"
+    make release-tarball DESTINATION=bin/
+    sudo tar -C /usr/local/bin -xf bin/gvisor.tar.bz2
+    runsc=/usr/local/bin/runsc
   fi
   read -r -a runtime_args <<< "${RUNTIME_ARGS:-}"
-  sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
-    --experimental=true --runtime="${RUNTIME}" -- "${runtime_args[@]}"
+  sudo "$runsc" install --experimental=true --runtime="${RUNTIME}" -- "${runtime_args[@]}"
   if [[ "$HAD_EXPERIMENTAL" != true ]]; then
     # WARNING: We may be running in a container when this command executes.
     # This only makes sense if Docker's `live-restore` feature is enabled.

@@ -130,7 +130,7 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
   fi
 fi
 
-# Source and archive installs both stage the runsc release here.
+# Cleanup temporary directory where STAGED_BINARIES may have been extracted.
 if [[ -n "${BUILDKITE_STAGED_BINARIES_DIRECTORY:-}" ]]; then
   rm -rf "$BUILDKITE_STAGED_BINARIES_DIRECTORY" || true
 fi
