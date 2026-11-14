@@ -35,7 +35,35 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
+
+func TestRuntimeMutexUnlockWithoutLock(t *testing.T) {
+	for _, initialized := range []bool{false, true} {
+		t.Run(fmt.Sprintf("initialized=%t", initialized), func(t *testing.T) {
+			var mu runtimeMutex
+			if initialized {
+				if err := mu.acquire(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				mu.Unlock() // +checklocksforce: acquisition succeeded above.
+			}
+			panicked := make(chan any, 1)
+			go func() {
+				defer func() { panicked <- recover() }()
+				mu.Unlock() // +checklocksforce: tests unlocking an unlocked mutex.
+			}()
+			select {
+			case got := <-panicked:
+				if got != "runtimeMutex: unlock of unlocked mutex" {
+					t.Errorf("Unlock() panic = %v, want unmatched unlock", got)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("Unlock() blocked without a matching Lock()")
+			}
+		})
+	}
+}
 
 func BenchmarkRuntimeLockUncontended(b *testing.B) {
 	p := New("bench", nil, stdio.Stdio{})
@@ -204,7 +232,7 @@ func TestCreateWedgedRunscIsBounded(t *testing.T) {
 
 func init() {
 	if os.Getenv("GVISOR_SHIM_TEST_RUNTIME_HELPER") == "1" {
-		if filepath.Base(os.Args[0]) == "runsc-sandbox" {
+		if filepath.Base(os.Args[0]) == gvisorbinaries.SandboxProcessName {
 			gate := os.NewFile(3, "sandbox-gate")
 			token := make([]byte, 1)
 			if _, err := gate.Read(token); err == nil && token[0] == 'E' {
@@ -229,7 +257,7 @@ func sandboxIdentityProcess(t *testing.T, bundle, executable string) (*exec.Cmd,
 	if executable == "/bin/sh" {
 		process = exec.Command("/bin/sh", "-c", "read token <&3", "--bundle="+bundle)
 	}
-	process.Args[0] = "runsc-sandbox"
+	process.Args[0] = gvisorbinaries.SandboxProcessName
 	process.ExtraFiles = []*os.File{r}
 	if err := process.Start(); err != nil {
 		r.Close()

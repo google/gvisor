@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 // postureConfig returns the `runsc` configuration the sandbox under test is
@@ -327,7 +328,7 @@ func findSandboxUnder(root int) (int, error) {
 		if err != nil {
 			continue // The process went away.
 		}
-		if argv0, _, _ := strings.Cut(string(cmdline), "\x00"); argv0 != "runsc-sandbox" {
+		if argv0, _, _ := strings.Cut(string(cmdline), "\x00"); argv0 != gvisorbinaries.SandboxProcessName {
 			continue
 		}
 		if descendsFrom(pid, root) {

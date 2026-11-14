@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 // Reference describes the posture of process the sandbox was launched from.
@@ -425,7 +426,7 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 		ProcessGroupLeader: true,
 		ChildOfRef:         opts.ChildOfRef,
 		Environ:            env,
-		Argv0:              "runsc-sandbox",
+		Argv0:              gvisorbinaries.SandboxProcessName,
 		Limits:             map[string]string{"NOFILE": nofile, "MEMLOCK": memlock},
 		UIDMap:             uidMap,
 		GIDMap:             gidMap,
