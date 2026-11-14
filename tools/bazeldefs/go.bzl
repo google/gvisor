@@ -1,6 +1,7 @@
 """Go rules."""
 
 load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
+load("@bazel_lib//lib:run_binary.bzl", _run_binary = "run_binary")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@io_bazel_rules_go//go:def.bzl", "GoArchive", "GoInfo", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_library = "go_library", _go_path = "go_path", _go_reset_target = "go_reset_target", _go_rule = "go_rule", _go_test = "go_test")
@@ -11,6 +12,7 @@ gazelle = _gazelle
 
 go_reset_target = _go_reset_target
 go_cov = native.genrule
+go_export = _run_binary
 cov_available = True
 
 def _go_source_export_config(_settings, _attr):
