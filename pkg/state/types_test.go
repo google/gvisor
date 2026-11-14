@@ -18,12 +18,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 func init() {
 	registerBinary((*binaryFailure)(nil))
+	Register((*zeroArrayHook)(nil))
 }
 
 var errBinary = errors.New("binary codec failed")
@@ -106,5 +110,55 @@ func TestLazyValidation(t *testing.T) {
 	_, err := Save(t.Context(), &buf, &duplicateFieldType{})
 	if err == nil || !strings.Contains(err.Error(), "duplicate field") {
 		t.Fatalf("Save = %v, want duplicate field error", err)
+	}
+}
+
+func TestZeroWireRepresentations(t *testing.T) {
+	for _, ptr := range []any{
+		new(bool), new(int64), new(uint32), new(float32), new(float64),
+		new(complex64), new(complex128), new(string), new(*int),
+		new([]int), new(map[int]int), new(any), new([2]int), new([1][1]int),
+	} {
+		v := reflect.ValueOf(ptr).Elem()
+		t.Run(v.Type().String(), func(t *testing.T) {
+			for _, how := range []encodeStrategy{encodeDefault, encodeAsValue} {
+				var es encodeState
+				var got wire.Object
+				es.encodeObject(v, how, &got)
+				_, omitted := got.(wire.Nil)
+				if want := how == encodeDefault; omitted != want {
+					t.Errorf("strategy %v encoded zero as %T, want omitted=%t", how, got, want)
+				}
+			}
+		})
+	}
+}
+
+type zeroArrayHook struct {
+	value int64
+}
+
+func (*zeroArrayHook) StateTypeName() string                   { return "state.zeroArrayHook" }
+func (*zeroArrayHook) StateFields() []string                   { return []string{"value"} }
+func (*zeroArrayHook) StateSave(s Sink)                        { s.SaveValue(0, int64(7)) }
+func (h *zeroArrayHook) StateLoad(_ context.Context, s Source) { s.Load(0, &h.value) }
+
+func TestZeroArrayStructHook(t *testing.T) {
+	prev := GraphEngineEnabled()
+	EnableGraphEngine(false)
+	defer EnableGraphEngine(prev)
+
+	var root, restored [2][1]zeroArrayHook
+	var saved bytes.Buffer
+	if _, err := Save(t.Context(), &saved, &root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(t.Context(), &saved, &restored); err != nil {
+		t.Fatal(err)
+	}
+	for i, elem := range restored {
+		if got := elem[0].value; got != 7 {
+			t.Errorf("element [%d][0] = %d, want 7 from StateSave", i, got)
+		}
 	}
 }
