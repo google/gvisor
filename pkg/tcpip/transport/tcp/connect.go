@@ -1110,7 +1110,7 @@ func (e *Endpoint) sendData(next *segment) {
 func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
-	e.hardError = err
+	e.setHardErrorLocked(err)
 	switch err.(type) {
 	case *tcpip.ErrConnectionReset, *tcpip.ErrTimeout:
 	default:
@@ -1269,8 +1269,8 @@ func (e *Endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 	//  Users should also receive an unsolicited general "connection reset"
 	//  signal. Enter the CLOSED state, delete the TCB, and return.
 	case StateCloseWait:
+		e.setHardErrorLocked(&tcpip.ErrAborted{})
 		e.transitionToStateCloseLocked()
-		e.hardError = &tcpip.ErrAborted{}
 		return false, nil
 	default:
 		return false, &tcpip.ErrConnectionReset{}
@@ -1505,7 +1505,7 @@ func (e *Endpoint) handshakeFailed(err tcpip.Error) {
 	if e.h != nil && e.h.retransmitTimer != nil {
 		e.h.retransmitTimer.stop()
 	}
-	e.hardError = err
+	e.setHardErrorLocked(err)
 	e.cleanupLocked()
 	e.setEndpointState(StateError)
 }
