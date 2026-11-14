@@ -99,6 +99,8 @@ func (s *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) uint
 // the same page are zeroed; pages after EOF are invalid. fileSize is an upper
 // bound on the file's size; bytes after fileSize will be zeroed without
 // calling readAt.
+// readAt must initialize every byte in its reported prefix without reading the
+// destination as input, exposing it to others, or retaining it after return.
 //
 // Fill may read offsets outside of required, but will never read offsets
 // outside of optional. It returns a non-nil error if any error occurs, even
@@ -133,6 +135,9 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 						if off+dsts.NumBytes() > fileSize {
 							rd := fileSize - off
 							n, err := readAt(ctx, dsts.TakeFirst64(rd), off)
+							if n > rd {
+								return 0, fmt.Errorf("readAt returned %d bytes for %d-byte destination", n, rd)
+							}
 							if n == rd && err == nil {
 								return n, io.EOF
 							}
@@ -140,17 +145,31 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 						}
 						return readAt(ctx, dsts, off)
 					}()
+					if n > dsts.NumBytes() {
+						return done, fmt.Errorf("readAt returned %d bytes for %d-byte destination", n, dsts.NumBytes())
+					}
+					if n == 0 && err == nil {
+						return done, io.ErrNoProgress
+					}
 					done += n
 					dsts = dsts.DropFirst64(n)
 					if err != nil {
 						if err == io.EOF {
-							// MemoryFile.AllocateAndFill truncates down to a page
+							// MemoryFile.Allocate truncates down to a page
 							// boundary, but FileRangeSet.Fill is supposed to
 							// zero-fill to the end of the page in this case.
 							donepgaddr, ok := hostarch.Addr(done).RoundUp()
 							if donepg := uint64(donepgaddr); ok && donepg != done {
-								dsts.DropFirst64(donepg - done)
-								done = donepg
+								padding := donepg - done
+								n, zeroErr := safemem.ZeroSeq(dsts.TakeFirst64(padding))
+								done += n
+								dsts = dsts.DropFirst64(n)
+								if zeroErr != nil {
+									return done, zeroErr
+								}
+								if n != padding {
+									return done, io.ErrShortWrite
+								}
 								if dsts.IsEmpty() {
 									return done, nil
 								}
