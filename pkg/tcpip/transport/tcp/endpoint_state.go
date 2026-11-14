@@ -354,8 +354,10 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			tcpip.AsyncLoading.Done()
 		}()
 	case epState == StateClose:
+		e.mu.Lock()
 		e.isPortReserved = false
 		e.state.Store(uint32(StateClose))
+		e.mu.Unlock()
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	case epState == StateError:

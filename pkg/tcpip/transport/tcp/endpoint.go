@@ -427,7 +427,11 @@ type Endpoint struct {
 	// state.
 	origEndpointState uint32 `state:"nosave"`
 
-	isPortReserved    bool
+	// isPortReserved records whether cleanup must release the reserved port.
+	//
+	// +checklocks:mu
+	isPortReserved bool
+
 	isRegistered      bool
 	boundNICID        tcpip.NICID
 	route             *stack.Route `state:"nosave"`
@@ -2490,17 +2494,15 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 				return false, err
 			}
 
-			// Port picking successful. Save the details of
-			// the selected port.
-			e.isPortReserved = true
-			e.boundBindToDevice = bindToDevice
-			e.boundPortFlags = e.portFlags
-			e.boundDest = addr
 			return true, nil
 		}); err != nil {
 			e.stack.Stats().TCP.FailedPortReservations.Increment()
 			return err
 		}
+		e.isPortReserved = true
+		e.boundBindToDevice = bindToDevice
+		e.boundPortFlags = e.portFlags
+		e.boundDest = addr
 		e.boundAddr = e.TransportEndpointInfo.ID.LocalAddress
 		e.boundNetProtos = netProtos
 	}
