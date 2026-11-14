@@ -44,6 +44,36 @@ func sendFIN(t *testing.T, conn *testbench.TCPIPv4, dut *testbench.DUT, fd int32
 	dut.Close(t, fd)
 }
 
+func TestKeepaliveReenable(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listener, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listener)
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+	defer conn.Close(t)
+	conn.Connect(t)
+	fd, _ := dut.Accept(t, listener)
+	defer dut.Close(t, fd)
+
+	probe := testbench.TCP{
+		Flags:  testbench.TCPFlags(header.TCPFlagAck),
+		SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum(t) - 1)),
+		AckNum: testbench.Uint32(uint32(*conn.LocalSeqNum(t))),
+	}
+	dut.SetSockOptInt(t, fd, unix.SOL_TCP, unix.TCP_KEEPIDLE, 1)
+	dut.SetSockOptInt(t, fd, unix.SOL_TCP, unix.TCP_KEEPINTVL, 1)
+	dut.SetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_KEEPALIVE, 1)
+	dut.SetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_KEEPALIVE, 0)
+	// Leave the connection idle and disabled past the original probe deadline.
+	conn.Drain(t)
+	if got, err := conn.Expect(t, probe, 3*time.Second); err == nil {
+		t.Fatalf("keepalive probe while disabled: %s", got)
+	}
+	dut.SetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_KEEPALIVE, 1)
+	if _, err := conn.ExpectData(t, &probe, &testbench.Payload{Bytes: []byte{}}, 4*time.Second); err != nil {
+		t.Fatalf("keepalive probe after re-enable: %v", err)
+	}
+}
+
 func TestTCPUserTimeout(t *testing.T) {
 	for _, tt := range []struct {
 		description string
