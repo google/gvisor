@@ -525,8 +525,8 @@ func testHardLink(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 	defer unix.Close(hostFD)
 
 	linkName := "linkFile"
-	link, linkStat := link(ctx, t, root, linkName, controlFile)
-	defer closeFD(ctx, t, link)
+	linkFD, linkStat := link(ctx, t, root, linkName, controlFile)
+	defer closeFD(ctx, t, linkFD)
 
 	if linkStat.Ino != fileIno.Ino {
 		t.Errorf("hard linked files have different inode numbers: %d %d", linkStat.Ino, fileIno.Ino)
@@ -537,6 +537,28 @@ func testHardLink(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 	if linkStat.DevMajor != fileIno.DevMajor {
 		t.Errorf("hard linked files have different major device numbers: %d %d", linkStat.DevMajor, fileIno.DevMajor)
 	}
+
+	// The server runs in this process, so host FDs that it leaks show up here.
+	fdsBefore := countOpenFDs(t)
+	const numLinks = 10
+	for i := 0; i < numLinks; i++ {
+		name := fmt.Sprintf("leakCheckLink%d", i)
+		l, _ := link(ctx, t, root, name, controlFile)
+		closeFD(ctx, t, l)
+		unlinkFile(ctx, t, root, name, false /* isDir */)
+	}
+	if fdsAfter := countOpenFDs(t); fdsAfter > fdsBefore {
+		t.Errorf("%d LinkAt calls leaked %d host FDs", numLinks, fdsAfter-fdsBefore)
+	}
+}
+
+func countOpenFDs(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatalf("failed to read /proc/self/fd: %v", err)
+	}
+	return len(entries)
 }
 
 func testWalk(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {

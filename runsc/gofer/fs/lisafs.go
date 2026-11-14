@@ -826,6 +826,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
 	if err != nil {
 		return nil, lisafs.Statx{}, err
 	}
+	defer unix.Close(oldDirFD)
 	dirFD := dir.(*controlFDLisa)
 	err = unix.Linkat(oldDirFD, oldName, dirFD.hostFD, name, 0)
 	_ = unix.Close(oldDirFD)
@@ -849,6 +850,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
 
 	linkStat, err := fstatTo(linkFD)
 	if err != nil {
+		_ = unix.Close(linkFD)
 		return nil, lisafs.Statx{}, err
 	}
 	cu.Release()
