@@ -20,6 +20,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
@@ -187,8 +188,12 @@ func BenchmarkDecoding(b *testing.B) {
 					b.Errorf("save failed: %v", err)
 				}
 				b.ReportAllocs()
+				dst := reflect.ValueOf(v).Elem()
 				var r bytes.Reader
 				for b.Loop() {
+					// A restored kernel starts without the saved objects. A populated
+					// destination lets gob reuse the previous pointer chain or slice.
+					dst.SetZero()
 					r.Reset(buf.Bytes())
 					if _, err := algoInfo.Load(context.Background(), &r, v); err != nil {
 						b.Errorf("load failed: %v", err)
