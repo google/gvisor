@@ -220,6 +220,9 @@ func (b *Bitmap) clearRange(begin, end uint32) {
 
 // ClearRange clear bits within range (begin and end) for the Bitmap. begin is inclusive and end is exclusive.
 func (b *Bitmap) ClearRange(begin, end uint32) {
+	if begin >= end {
+		return
+	}
 	blockRange := end/64 - begin/64
 	// When the number of cleared blocks is larger than half of the length of b.bitBlock,
 	// counting 1s for the entire bitmap has better performance.
@@ -227,15 +230,18 @@ func (b *Bitmap) ClearRange(begin, end uint32) {
 		b.clearRange(begin, end)
 		b.numOnes = uint32(b.countOnesForAllBlocks())
 	} else {
-		oldRangeOnes := b.countOnesForBlocks(begin, end)
+		oldRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.clearRange(begin, end)
-		newRangeOnes := b.countOnesForBlocks(begin, end)
+		newRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.numOnes += uint32(newRangeOnes - oldRangeOnes)
 	}
 }
 
 // FlipRange flip bits within range (begin and end) for the Bitmap. begin is inclusive and end is exclusive.
 func (b *Bitmap) FlipRange(begin, end uint32) {
+	if begin >= end {
+		return
+	}
 	blockRange := end/64 - begin/64
 	// When the number of flipped blocks is larger than half of the length of b.bitBlock,
 	// counting 1s for the entire bitmap has better performance.
@@ -243,9 +249,9 @@ func (b *Bitmap) FlipRange(begin, end uint32) {
 		b.flipRange(begin, end)
 		b.numOnes = uint32(b.countOnesForAllBlocks())
 	} else {
-		oldRangeOnes := b.countOnesForBlocks(begin, end)
+		oldRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.flipRange(begin, end)
-		newRangeOnes := b.countOnesForBlocks(begin, end)
+		newRangeOnes := b.countOnesForBlocks(begin, end-1)
 		b.numOnes += uint32(newRangeOnes - oldRangeOnes)
 	}
 }
