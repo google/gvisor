@@ -1721,9 +1721,11 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
 			t.tg.itimerRealTimer.Pause()
+			t.tg.timerMu.Lock()
 			for _, it := range t.tg.timers {
 				it.PauseTimer()
 			}
+			t.tg.timerMu.Unlock()
 		}
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
@@ -1754,9 +1756,11 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
 			t.tg.itimerRealTimer.Resume()
+			t.tg.timerMu.Lock()
 			for _, it := range t.tg.timers {
 				it.ResumeTimer()
 			}
+			t.tg.timerMu.Unlock()
 		}
 		if t.fdTable != nil {
 			t.fdTable.forEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool { // +checklocksignore
