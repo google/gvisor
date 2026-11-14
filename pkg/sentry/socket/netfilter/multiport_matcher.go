@@ -36,6 +36,7 @@ type multiportMarshaler struct{}
 
 // multiportMatcher represents a multiport matcher
 // with source and/or destination ports.
+// +stateify savable
 type multiportMatcher struct {
 	flags uint8    // Port match flag (source/destination/either).
 	count uint8    // Number of ports.

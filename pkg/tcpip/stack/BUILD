@@ -339,6 +339,7 @@ go_test(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/buffer",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",

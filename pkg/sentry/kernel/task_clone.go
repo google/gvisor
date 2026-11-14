@@ -202,7 +202,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	netns := t.netns
 	if args.Flags&linux.CLONE_NEWNET != 0 {
-		netns = inet.NewNamespace(netns, userns)
+		netns = inet.NewNamespace(t.k.RootNetworkNamespace(), userns)
 		inode := nsfs.NewInode(t, t.k.nsfsMount, netns)
 		netns.SetInode(inode)
 	} else {
@@ -1003,7 +1003,7 @@ func (t *Task) Unshare(flags int32) error {
 		newChildPIDNS = t.tg.pidns.NewChild(t, t.k, creds.UserNamespace)
 	}
 	if flags&linux.CLONE_NEWNET != 0 {
-		newNetNS = inet.NewNamespace(t.netns, creds.UserNamespace)
+		newNetNS = inet.NewNamespace(t.k.RootNetworkNamespace(), creds.UserNamespace)
 		newNetNS.SetInode(nsfs.NewInode(t, t.k.nsfsMount, newNetNS))
 	}
 	if flags&linux.CLONE_NEWUTS != 0 {

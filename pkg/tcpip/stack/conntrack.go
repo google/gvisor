@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -160,7 +161,6 @@ type conn struct {
 	// reply is the tuple in reply direction.
 	reply tuple
 
-	// TODO(b/341946753): Restore when netstack is savable.
 	finalizeOnce sync.Once `state:"nosave"`
 	// Holds a finalizeResult.
 	finalizeResult atomicbitops.Uint32
@@ -190,6 +190,13 @@ type conn struct {
 	//
 	// +checklocks:stateMu
 	replySeen bool
+}
+
+// afterLoad is invoked by stateify.
+func (cn *conn) afterLoad(context.Context) {
+	if cn.finalizeResult.Load() != 0 {
+		cn.finalizeOnce.Do(func() {})
+	}
 }
 
 // timedOut returns whether the connection timed out based on its state.
@@ -283,14 +290,7 @@ type ConnTrack struct {
 	// and is used in the calculation of hash keys for the list of buckets.
 	// It is immutable.
 	//
-	// TODO(gvisor.dev/issue/4595): When Stack.tables becomes savable and
-	// ConnTrack flows into checkpoint state, this seed must be redrawn
-	// from secureRNG during restore AND the entries in buckets must be
-	// rehashed under the new seed. bucket_index = jenkins.Sum32(seed) %
-	// len(buckets) couples the seed value to bucket layout; redrawing the
-	// seed without rehashing leaves restored entries unreachable by
-	// Lookup. Persisting the pre-checkpoint seed extends the brute-force
-	// window across save boundaries.
+	// Redrawn from the secure RNG on restore together with bucket rehashing.
 	seed uint32
 
 	// nftIDSeed is a one-time random value initialized at stack startup
@@ -300,8 +300,7 @@ type ConnTrack struct {
 
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
-	// TODO(b/341946753): Restore when netstack is savable.
-	rng connTrackRNG `state:"nosave"`
+	rng   connTrackRNG `state:"nosave"`
 
 	mu connTrackRWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
@@ -483,6 +482,34 @@ func (ct *ConnTrack) init() {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	ct.buckets = make([]bucket, numBuckets)
+}
+
+// restore redraws the hash seeds and rebuilds bucket placement before packets
+// or the connection reaper can access the restored table.
+func (ct *ConnTrack) restore(rng connTrackRNG, seed, nftIDSeed uint32) {
+	ct.rng = rng
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	ct.seed = seed
+	ct.nftIDSeed = nftIDSeed
+	if len(ct.buckets) == 0 {
+		return
+	}
+	var tuples []*tuple
+	for i := range ct.buckets {
+		ct.buckets[i].mu.Lock()
+		for t := ct.buckets[i].tuples.Front(); t != nil; t = t.Next() {
+			tuples = append(tuples, t)
+		}
+		ct.buckets[i].tuples.Reset()
+		ct.buckets[i].mu.Unlock()
+	}
+	for _, t := range tuples {
+		b := &ct.buckets[tupleHash(t.tupleID, ct.seed)%uint32(len(ct.buckets))]
+		b.mu.Lock()
+		b.tuples.PushBack(t)
+		b.mu.Unlock()
+	}
 }
 
 // getConnAndUpdate attempts to get a connection or creates one if no

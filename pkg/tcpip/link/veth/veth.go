@@ -16,6 +16,8 @@
 package veth
 
 import (
+	goContext "context"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -35,6 +37,8 @@ type veth struct {
 	closed bool
 
 	backlogQueue chan vethPacket `state:"nosave"`
+	// backlogSize lets afterLoad recreate the unsavable channel.
+	backlogSize uint32
 
 	// +checklocks:mu
 	mtu uint32
@@ -100,6 +104,7 @@ type Endpoint struct {
 func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
 	veth := veth{
 		backlogQueue: make(chan vethPacket, backlogQueueSize),
+		backlogSize:  backlogQueueSize,
 		mtu:          mtu,
 		endpoints: [2]Endpoint{
 			{
@@ -124,6 +129,26 @@ func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
 
 	}()
 	return a, b
+}
+
+// afterLoad is invoked by stateify.
+func (v *veth) afterLoad(goContext.Context) {
+	v.mu.RLock()
+	closed := v.closed
+	v.mu.RUnlock()
+	if closed {
+		// The pair was closed before the checkpoint; nothing will ever be
+		// written, so skip recreating the queue and the pump goroutine
+		// (it would block forever on a channel nobody closes).
+		return
+	}
+	v.backlogQueue = make(chan vethPacket, v.backlogSize)
+	go func() {
+		for t := range v.backlogQueue {
+			t.e.InjectInbound(t.protocol, t.pkt)
+			t.pkt.DecRef()
+		}
+	}()
 }
 
 // Close closes e. Further packet injections will return an error, and all pending

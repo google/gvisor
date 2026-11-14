@@ -77,6 +77,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/buffer",
         "//pkg/marshal",
+        "//pkg/state",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",

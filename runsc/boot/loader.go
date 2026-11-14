@@ -2344,6 +2344,7 @@ func (c *sandboxNetstackCreator) createStack(loopbackUp bool) (inet.Stack, error
 		Name:               link.Name,
 		DeliverLinkPackets: true,
 		Disabled:           !loopbackUp,
+		Checkpointable:     true,
 	}
 	var addrs []sentryapi.IPWithPrefix
 	if loopbackUp {

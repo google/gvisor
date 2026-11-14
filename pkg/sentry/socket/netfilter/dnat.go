@@ -30,6 +30,7 @@ import (
 // and/or IP for packets.
 const DNATTargetName = "DNAT"
 
+// +stateify savable
 type dnatTarget struct {
 	stack.DNATTarget
 	revision uint8
