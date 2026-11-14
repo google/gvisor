@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -15,4 +15,12 @@ go_library(
     deps = [
         "@org_golang_x_tools//go/analysis:go_default_library",
     ],
+)
+
+go_test(
+    name = "checkconst_test",
+    size = "small",
+    srcs = ["checkconst_test.go"],
+    embed = [":checkconst"],
+    nogo = False,
 )

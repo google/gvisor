@@ -40,8 +40,23 @@ var (
 	checkconstMagic  = "\\+check(const|align|offset|size)"
 	checkconstRegexp = regexp.MustCompile(checkconstMagic)
 	constRegexp      = regexp.MustCompile("//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\./]+)\\s+([A-Za-z0-9_\\.]+)")
-	defineRegexp     = regexp.MustCompile("#define\\s+[A-Za-z0-9_]+\\s+([A-Za-z0-9_]+\\s*\\+\\s*)*([x0-9]+)\\s+//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\./]+)\\s+([A-Za-z0-9_\\.]+)")
+	defineRegexp     = regexp.MustCompile("#define\\s+[A-Za-z0-9_]+\\s+((?:[A-Za-z0-9_]+\\s*\\+\\s*)*)([x0-9]+)\\s+//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\./]+)\\s+([A-Za-z0-9_\\.]+)")
 )
+
+// checkDefinePrefix checks the terms added before the checked value in a
+// #define, e.g. "CPU_ARCH_STATE+" in "#define CPU_ERROR_CODE CPU_ARCH_STATE+0".
+// Only the last term is checked against the Go value, so the other terms must
+// be macro names, which carry their own checkconst annotations. A literal
+// number would silently change the defined value.
+func checkDefinePrefix(prefix string) error {
+	for _, term := range strings.Split(prefix, "+") {
+		term = strings.TrimSpace(term)
+		if term != "" && term[0] >= '0' && term[0] <= '9' {
+			return fmt.Errorf("literal %q added to the checked value; only macro names may be added", term)
+		}
+	}
+	return nil
+}
 
 // Analyzer defines the entrypoint.
 var Analyzer = &analysis.Analyzer{
@@ -373,6 +388,10 @@ func checkAssembly(pass *analysis.Pass) error {
 			m, ok := matchRegexp(pass, pos, defineRegexp, lineContent)
 			if !ok {
 				continue // Already reported, if needed.
+			}
+			if err := checkDefinePrefix(m[1]); err != nil {
+				pass.Reportf(pos(), "%v", err)
+				continue
 			}
 			newValue, ok := buildExpected(pass, pos, m[3], m[4], m[5])
 			if !ok {
