@@ -492,7 +492,21 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 	snd := rc.snd
 	if fastRetransmit {
-		snd.resendSegment()
+		// Recovery has just started, and its first step is to retransmit the
+		// first unacknowledged segment. Skip that step if the segment has
+		// been retransmitted already and RACK has not marked that
+		// retransmission lost: either nothing sent after it has been
+		// delivered, or RACK is waiting out the reordering window and
+		// retransmits it when that ends. Whatever started this recovery is
+		// then no evidence against it. That is the case after a recovery
+		// that ended while the repair of a segment above its recovery point
+		// was in flight: the duplicate ACKs that follow are for segments
+		// sent before the repair.
+		if head := snd.writeList.Front(); head != nil && head.xmitCount > 1 && !head.lost {
+			snd.SetPipe()
+		} else {
+			snd.resendSegment()
+		}
 	}
 
 	var dataSent bool
