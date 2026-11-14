@@ -173,7 +173,7 @@ TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadData) {
   ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
-  // A shutdown with unread data will cause a RST to be sent instead
+  // A close with unread data will cause a RST to be sent instead
   // of a FIN, per RFC 2525 section 2.17; this is also what Linux does.
   ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ECONNRESET));
@@ -246,37 +246,36 @@ TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadDataAllowsReadBuffered) {
   ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
-  // A shutdown with unread data will cause a RST to be sent instead
+  // A close with unread data will cause a RST to be sent instead
   // of a FIN, per RFC 2525 section 2.17; this is also what Linux does.
   ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ECONNRESET));
 }
 
-// This test will verify that a clean shutdown (FIN) is performed when there
-// is unread data but only the write side is closed.
-TEST_P(TCPSocketPairTest, FINSentOnShutdownWrWithUnreadData) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+// shutdown(2) queues a FIN and leaves buffered data available to read.
+TEST_P(TCPSocketPairTest, FINSentOnShutdownWithUnreadData) {
+  for (int how : {SHUT_WR, SHUT_RDWR}) {
+    SCOPED_TRACE(how);
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  char buf[10] = {};
-  ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
-              SyscallSucceedsWithValue(sizeof(buf)));
+    char buf[10] = {};
+    ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
+                SyscallSucceedsWithValue(sizeof(buf)));
 
-  // Wait until t_ sees the data on its side but don't read it.
-  struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
-              SyscallSucceedsWithValue(1));
+    // Wait for the data to arrive without consuming it.
+    struct pollfd receiver = {sockets->second_fd(), POLLIN, 0};
+    ASSERT_THAT(RetryEINTR(poll)(&receiver, 1, kPositiveTimeoutMs),
+                SyscallSucceedsWithValue(1));
+    ASSERT_THAT(shutdown(sockets->second_fd(), how), SyscallSucceeds());
 
-  // Now shutdown the write end leaving the read end open.
-  ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
-
-  // Wait for the other end to receive the FIN (up to 20 seconds).
-  struct pollfd poll_fd2 = {sockets->first_fd(), POLLIN | POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
-              SyscallSucceedsWithValue(1));
-
-  // Since we didn't shutdown the read end this will be a clean close.
-  ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
-              SyscallSucceedsWithValue(0));
+    struct pollfd peer = {sockets->first_fd(), POLLIN | POLLHUP, 0};
+    ASSERT_THAT(RetryEINTR(poll)(&peer, 1, kPositiveTimeoutMs),
+                SyscallSucceedsWithValue(1));
+    EXPECT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
+                SyscallSucceedsWithValue(0));
+    EXPECT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+                SyscallSucceedsWithValue(sizeof(buf)));
+  }
 }
 
 // This test will verify that when data is received by a socket, even if it's
@@ -416,7 +415,7 @@ TEST_P(TCPSocketPairTest,
   ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));  // The other end has closed.
 
-  // A shutdown with unread data will cause a RST to be sent instead
+  // A close with unread data will cause a RST to be sent instead
   // of a FIN, per RFC 2525 section 2.17; this is also what Linux does.
   ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ECONNRESET));
