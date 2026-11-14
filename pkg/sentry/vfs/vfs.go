@@ -105,6 +105,10 @@ type VirtualFilesystem struct {
 	// Configurable by userspace via /proc/sys/fs/mount-max.
 	MountMax atomicbitops.Int32
 
+	// InotifyMaxQueuedEvents is the queue limit for new inotify instances,
+	// configurable through /proc/sys/fs/inotify/max_queued_events.
+	InotifyMaxQueuedEvents atomicbitops.Int32
+
 	// numFiles is the number of live file descriptions: those for which
 	// FileDescription.Init has succeeded and whose last reference has not been
 	// dropped. numFiles is accessed using atomic memory operations.
@@ -203,6 +207,7 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	vfs.mounts.Init()
 	vfs.groupIDBitmap = bitmap.New(1024)
 	vfs.MountMax.Store(DefaultMountMax)
+	vfs.InotifyMaxQueuedEvents.Store(16384)
 	vfs.mountMu.Lock()
 	vfs.toDecRef = make(map[refs.RefCounter]int)
 	vfs.mountMu.Unlock()
