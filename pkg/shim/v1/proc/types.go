@@ -44,6 +44,10 @@ type CreateConfig struct {
 	// FS checkpoint configuration.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// NoRootContainer creates a sandbox with no root container, for the
+	// sandbox API.
+	NoRootContainer bool
 }
 
 // ExecConfig holds exec creation configuration.
