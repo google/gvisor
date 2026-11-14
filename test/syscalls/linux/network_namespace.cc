@@ -407,6 +407,42 @@ TEST(NetworkNamespaceTest, BindMount) {
   ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
 }
 
+// Recursive, shared bind mount of an nsfs file, which pins the namespace.
+TEST(NetworkNamespaceTest, RecursiveBindMount) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  struct stat ns_st;
+  ASSERT_THAT(stat("/proc/thread-self/ns/net", &ns_st), SyscallSucceeds());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  ASSERT_THAT(mount("/proc/thread-self/ns/net", file.path().c_str(), "none",
+                    MS_BIND | MS_REC | MS_SHARED, NULL),
+              SyscallSucceedsWithValue(0));
+
+  struct stat bind_st;
+  ASSERT_THAT(stat(file.path().c_str(), &bind_st), SyscallSucceeds());
+  EXPECT_EQ(bind_st.st_dev, ns_st.st_dev);
+  EXPECT_EQ(bind_st.st_ino, ns_st.st_ino);
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDONLY));
+  ASSERT_THAT(umount2(file.path().c_str(), MNT_DETACH),
+              SyscallSucceedsWithValue(0));
+
+  ScopedThread t([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    struct stat st;
+    ASSERT_THAT(stat("/proc/thread-self/ns/net", &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, ns_st.st_ino);
+  });
+}
+
 TEST(NetworkNamespaceTest, CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin) {
   AutoCapability cap(CAP_SYS_ADMIN, false);
   ASSERT_THAT(unshare(CLONE_NEWNET), SyscallFailsWithErrno(EPERM));

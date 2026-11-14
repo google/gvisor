@@ -821,10 +821,11 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	if sourceVd.mount.umounted {
 		return linuxerr.EINVAL
 	}
-	// nsfs, cgroupfs, and cgroup2fs are exempt from the requirement that the source
-	// mount must be in a mount namespace, but *only* for non-recursive binds.
+	// The source mount must be in a mount namespace, except for nsfs (as in
+	// Linux) and, for non-recursive binds only, cgroupfs and cgroup2fs. The
+	// kernel's nsfs mount has no children, so a recursive bind copies only it.
 	fsName := sourceVd.mount.Filesystem().FilesystemType().Name()
-	if !vfs.validInMountNS(ctx, sourceVd.mount) && (recursive || (fsName != nsfsName && fsName != cgroupFsName && fsName != cgroup2FsName)) {
+	if !vfs.validInMountNS(ctx, sourceVd.mount) && fsName != nsfsName && (recursive || (fsName != cgroupFsName && fsName != cgroup2FsName)) {
 		return linuxerr.EINVAL
 	}
 	if !vfs.validInMountNS(ctx, mp.mount) {
