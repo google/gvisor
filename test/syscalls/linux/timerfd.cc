@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <sys/socket.h>
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
@@ -26,6 +27,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -55,6 +57,43 @@ PosixErrorOr<FileDescriptor> TimerfdCreate(int clockid, int flags) {
 // CLOCK_MONOTONIC used to trigger timerfd expirations. The same applies to
 // CLOCK_BOOTTIME.
 absl::Duration TimerSlack() { return absl::Milliseconds(500); }
+
+TEST(TimerfdRightsTest, QueuedTimerKeepsExpiring) {
+  DisableSave setup;
+  auto sockets =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+  auto tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, 0));
+  struct itimerspec setting = {};
+  setting.it_interval = setting.it_value =
+      absl::ToTimespec(absl::Milliseconds(100));
+  ASSERT_THAT(timerfd_settime(tfd.get(), 0, &setting, nullptr),
+              SyscallSucceeds());
+  char tag = 'T';
+  ASSERT_NO_FATAL_FAILURE(
+      SendSingleFD(sockets->first_fd(), tfd.get(), &tag, 1));
+  tfd.reset();  // Only the socket message holds the file at the checkpoint.
+  setup.reset();
+  MaybeSave();
+
+  DisableSave finish;
+  int fd;
+  ASSERT_NO_FATAL_FAILURE(RecvSingleFD(sockets->second_fd(), &fd, &tag, 1));
+  FileDescriptor received(fd);
+  // The first read may consume expirations from before the checkpoint. The
+  // second must receive a new expiration without rearming the timer.
+  for (int i = 0; i < 2; ++i) {
+    struct pollfd pfd = {fd, POLLIN, 0};
+    ASSERT_THAT(poll(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+    uint64_t expirations;
+    ASSERT_THAT(read(fd, &expirations, sizeof(expirations)),
+                SyscallSucceedsWithValue(sizeof(expirations)));
+    ASSERT_GT(expirations, 0);
+  }
+  struct itimerspec current = {};
+  ASSERT_THAT(timerfd_gettime(fd, &current), SyscallSucceeds());
+  EXPECT_EQ(current.it_interval.tv_sec, setting.it_interval.tv_sec);
+  EXPECT_EQ(current.it_interval.tv_nsec, setting.it_interval.tv_nsec);
+}
 
 class TimerfdTest : public ::testing::TestWithParam<int> {};
 
