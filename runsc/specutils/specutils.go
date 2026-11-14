@@ -136,6 +136,28 @@ func LogSpecCustomLogger(orig *specs.Spec, logSeccomp bool, logf func(format str
 	logf("Spec:\n%s", out)
 }
 
+// isCurrentUTSNamespace reports whether path names the current UTS
+// namespace, comparing against the current process's namespace and, as a
+// fallback, against PID 1's namespace. It reports false for any other
+// namespace path, for a non-existent path, or when the namespace cannot be
+// determined.
+func isCurrentUTSNamespace(path string) bool {
+	ns, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	for _, candidate := range []string{nsPath(specs.UTSNamespace), "/proc/1/ns/uts"} {
+		self, err := os.Stat(candidate)
+		if err != nil {
+			continue
+		}
+		if os.SameFile(self, ns) {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateSpec validates that the spec is compatible with runsc.
 //
 // noRootContainer requires the spec to have no Process and no Root.
@@ -188,7 +210,13 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config, noRootContainer bool) e
 	}
 	if IsRootContainer(spec) {
 		if utsns, ok := GetNS(specs.UTSNamespace, spec); ok && utsns.Path != "" {
-			return fmt.Errorf("joining UTS namespace %q is not supported", utsns.Path)
+			// Reject only a path that names the current UTS namespace (as
+			// docker --uts=host provides); a namespace pinned for a pod
+			// (for example by CRI-O's pinns) is a different namespace and
+			// is accepted.
+			if isCurrentUTSNamespace(utsns.Path) {
+				return fmt.Errorf("joining UTS namespace %q is not supported", utsns.Path)
+			}
 		}
 	}
 	for _, m := range spec.Mounts {
