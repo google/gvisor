@@ -98,6 +98,11 @@ type Stack interface {
 	// RouteTable returns the network stack's route table.
 	RouteTable() []Route
 
+	// MulticastGroups returns the multicast groups of the given address
+	// family (AF_INET or AF_INET6) that each network interface has joined, as
+	// a mapping from interface indexes to groups.
+	MulticastGroups(family int) map[int32][]MulticastGroup
+
 	// RemoveRoute deletes the specified route.
 	RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error
 
@@ -220,6 +225,15 @@ type TCPBufferSize struct {
 // StatDev describes one line of /proc/net/dev, i.e., stats for one network
 // interface.
 type StatDev [16]uint64
+
+// MulticastGroup is a multicast group that a network interface has joined.
+type MulticastGroup struct {
+	// Addr is the group address in network byte order.
+	Addr []byte
+
+	// Users is the number of times the group was joined.
+	Users uint64
+}
 
 // Route contains information about a network route.
 type Route struct {

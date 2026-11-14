@@ -181,6 +181,11 @@ func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
 }
 
+// MulticastGroups implements Stack.
+func (s *TestStack) MulticastGroups(family int) map[int32][]MulticastGroup {
+	return nil
+}
+
 // RemoveRoute implements Stack.
 func (s *TestStack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
 	return nil

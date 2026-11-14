@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ func (fs *filesystem) newTaskNetDir(ctx context.Context, task *kernel.Task) kern
 		// network namespace.
 		contents = map[string]kernfs.Inode{
 			"dev":  fs.newInode(ctx, root, 0444, &netDevData{stack: stack}),
+			"igmp": fs.newInode(ctx, root, 0444, &netIGMPData{stack: stack}),
 			"snmp": fs.newInode(ctx, root, 0444, &netSnmpData{stack: stack}),
 
 			// The following files are simple stubs until they are implemented in
@@ -87,6 +89,7 @@ func (fs *filesystem) newTaskNetDir(ctx context.Context, task *kernel.Task) kern
 
 		if stack.SupportsIPv6() {
 			contents["if_inet6"] = fs.newInode(ctx, root, 0444, &ifinet6{stack: stack})
+			contents["igmp6"] = fs.newInode(ctx, root, 0444, &netIGMP6Data{stack: stack})
 			contents["ipv6_route"] = fs.newInode(ctx, root, 0444, newStaticFile(""))
 			contents["tcp6"] = fs.newInode(ctx, root, 0444, &netTCP6Data{kernel: k})
 			contents["udp6"] = fs.newInode(ctx, root, 0444, newStaticFile(upd6))
@@ -142,6 +145,80 @@ func (n *ifinet6) contents() []string {
 func (n *ifinet6) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	for _, l := range n.contents() {
 		buf.WriteString(l)
+	}
+	return nil
+}
+
+// netIGMPData implements vfs.DynamicBytesSource for /proc/net/igmp.
+//
+// +stateify savable
+type netIGMPData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
+}
+
+var _ dynamicInode = (*netIGMPData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (n *netIGMPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	// Implements the same format as net/ipv4/igmp.c:igmp_mc_seq_show().
+	// TODO: Expose querier version, timer and reporter state through
+	// inet.Stack instead of reporting V3 and 0.
+	buf.WriteString("Idx\tDevice    : Count Querier\tGroup    Users Timer\tReporter\n")
+	groups := n.stack.MulticastGroups(linux.AF_INET)
+	interfaces := n.stack.Interfaces()
+	for _, idx := range n.stack.InterfaceIDs() {
+		iface, ok := interfaces[idx]
+		ifGroups := groups[idx]
+		if !ok || len(ifGroups) == 0 {
+			continue
+		}
+		sortMulticastGroups(ifGroups)
+		fmt.Fprintf(buf, "%d\t%-10s: %5d %7s\n", idx, iface.Name, len(ifGroups), "V3")
+		for _, g := range ifGroups {
+			fmt.Fprintf(buf, "\t\t\t\t%08X %5d %d:%08X\t\t%d\n", hostarch.ByteOrder.Uint32(g.Addr), g.Users, 0, 0, 0)
+		}
+	}
+	return nil
+}
+
+// sortMulticastGroups sorts groups by address to keep the output stable across
+// reads.
+func sortMulticastGroups(groups []inet.MulticastGroup) {
+	slices.SortFunc(groups, func(a, b inet.MulticastGroup) int {
+		return bytes.Compare(a.Addr, b.Addr)
+	})
+}
+
+// netIGMP6Data implements vfs.DynamicBytesSource for /proc/net/igmp6.
+//
+// +stateify savable
+type netIGMP6Data struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
+}
+
+var _ dynamicInode = (*netIGMP6Data)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (n *netIGMP6Data) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	// Implements the same format as net/ipv6/mcast.c:igmp6_mc_seq_show().
+	// TODO: Expose MLD flags and timer state through inet.Stack instead of
+	// reporting 0.
+	groups := n.stack.MulticastGroups(linux.AF_INET6)
+	interfaces := n.stack.Interfaces()
+	for _, idx := range n.stack.InterfaceIDs() {
+		iface, ok := interfaces[idx]
+		if !ok {
+			continue
+		}
+		ifGroups := groups[idx]
+		sortMulticastGroups(ifGroups)
+		for _, g := range ifGroups {
+			fmt.Fprintf(buf, "%-4d %-15s %032x %5d %08X %d\n", idx, iface.Name, g.Addr, g.Users, 0, 0)
+		}
 	}
 	return nil
 }

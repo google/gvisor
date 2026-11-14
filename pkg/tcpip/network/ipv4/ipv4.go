@@ -1661,6 +1661,13 @@ func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	return e.igmp.isInGroup(addr)
 }
 
+// JoinedGroups implements stack.GroupAddressableEndpoint.
+func (e *endpoint) JoinedGroups() map[tcpip.Address]uint64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.igmp.joinedGroups()
+}
+
 // Stats implements stack.NetworkEndpoint.
 func (e *endpoint) Stats() stack.NetworkEndpointStats {
 	return &e.stats.localStats
