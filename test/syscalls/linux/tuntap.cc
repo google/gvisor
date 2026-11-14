@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/udp.h>
 #include <poll.h>
 #include <sched.h>
 #include <sys/ioctl.h>
@@ -35,6 +36,7 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -50,6 +52,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/cleanup.h"
@@ -61,6 +64,7 @@
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -817,6 +821,65 @@ TEST_F(TuntapTest, WriteHangBug155928773) {
   // Return values do not matter in this test.
   connect(sock.get(), AsSockAddr(&remote), sizeof(remote));
   write(sock.get(), "hello", 5);
+}
+
+TEST_F(TuntapTest, TruncatedReadConsumesPacket) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const auto tun = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTunName, kTapIPAddr, false /* tap */, true /* no_pi */));
+  ASSERT_THAT(fcntl(tun.fd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  const auto sender =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  const sockaddr_in dest = {.sin_family = AF_INET,
+                            .sin_port = htons(42),
+                            .sin_addr = {.s_addr = kTapPeerIPAddr}};
+  struct {
+    iphdr ip;
+    udphdr udp;
+    char payload[6];
+  } packet = {};
+
+  auto check_packet = [&](const std::string& message, size_t prefix) {
+    ASSERT_THAT(sendto(sender.get(), message.data(), message.size(), 0,
+                       AsSockAddr(&dest), sizeof(dest)),
+                SyscallSucceedsWithValue(message.size()));
+    const size_t headers = sizeof(packet.ip) + sizeof(packet.udp);
+    const absl::Time deadline = Now(CLOCK_MONOTONIC) + absl::Seconds(5);
+    ssize_t n;
+    for (;;) {
+      const int timeout =
+          absl::ToInt64Milliseconds(deadline - Now(CLOCK_MONOTONIC));
+      ASSERT_GT(timeout, 0) << "Timed out waiting for " << message;
+      pollfd pfd = {tun.fd.get(), POLLIN, 0};
+      const int ready = poll(&pfd, 1, timeout);
+      if (ready < 0 && errno == EINTR) {
+        continue;
+      }
+      ASSERT_THAT(ready, SyscallSucceedsWithValue(1))
+          << "Waiting for " << message;
+      ASSERT_NE(pfd.revents & POLLIN, 0);
+      n = read(tun.fd.get(), &packet, headers + prefix);
+      if (n < 0 && (errno == EAGAIN || errno == EINTR)) {
+        continue;
+      }
+      ASSERT_THAT(n, SyscallSucceeds());
+      // The kernel may also send unsolicited IPv6 traffic on a new interface.
+      if (n == 0 || packet.ip.version != 6) {
+        break;
+      }
+    }
+    ASSERT_EQ(n, headers + prefix);
+    ASSERT_EQ(static_cast<int>(packet.ip.version), 4);
+    ASSERT_EQ(packet.ip.protocol, IPPROTO_UDP);
+    ASSERT_EQ(ntohs(packet.ip.tot_len), headers + message.size());
+    ASSERT_EQ(packet.udp.dest, dest.sin_port);
+    EXPECT_EQ(memcmp(packet.payload, message.data(), prefix), 0);
+  };
+
+  // Leave the last byte of the first datagram unread. The next read must
+  // start at the second datagram's IP header.
+  ASSERT_NO_FATAL_FAILURE(check_packet("first", 4));
+  ASSERT_NO_FATAL_FAILURE(check_packet("second", 6));
 }
 
 // Test that raw packet sockets do not need/include link headers when
