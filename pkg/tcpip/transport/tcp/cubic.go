@@ -62,6 +62,11 @@ type cubicState struct {
 	// cwndEpoch is cwnd at the start of the current epoch (RFC 9438 section 4.2).
 	cwndEpoch float64
 
+	// Pause the cubic epoch while the application or receive window limits
+	// the sender, including when writes arrive more often than once per RTO.
+	appLimited      bool
+	appLimitedSince tcpip.MonotonicTime
+
 	// numCongestionEvents tracks the number of congestion events since last
 	// RTO.
 	numCongestionEvents int
@@ -347,6 +352,28 @@ func (c *cubicState) fastConvergence() {
 // +checklocks:c.s.ep.mu
 func (c *cubicState) PostRecovery() {
 	c.enterCongestionAvoidance()
+}
+
+// SetApplicationLimited implements congestionControl.SetApplicationLimited.
+//
+// +checklocks:c.s.ep.mu
+func (c *cubicState) SetApplicationLimited(limited bool) {
+	if c.appLimited == limited {
+		return
+	}
+	now := c.s.ep.stack.Clock().NowMonotonic()
+	c.appLimited = limited
+	if limited {
+		c.appLimitedSince = now
+		return
+	}
+	// A loss or idle restart may have started a new epoch in the meantime.
+	// Exclude only the portion of that epoch during which cwnd was unused.
+	start := c.appLimitedSince
+	if start.Before(c.T) {
+		start = c.T
+	}
+	c.T = c.T.Add(now.Sub(start))
 }
 
 // HandleWindowRestart implements congestionControl.HandleWindowRestart.

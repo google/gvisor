@@ -163,6 +163,53 @@ func testCubicWindowGrowthAfterPacketLoss(t *testing.T, recovery string, segment
 	}
 }
 
+// TestSlowStartWindowUse sends one flight into an open receive window, then
+// ACKs its segments individually. Small flights cannot grow cwnd. A flight
+// using more than half the window can probe up to twice its size; a full
+// flight continues to earn growth even as its last packets are acknowledged.
+func TestSlowStartWindowUse(t *testing.T) {
+	for _, cc := range []string{"cubic", "reno"} {
+		for _, tc := range []struct{ flight, want int }{
+			{1, tcp.InitialCwnd},
+			{tcp.InitialCwnd / 2, tcp.InitialCwnd},
+			{tcp.InitialCwnd/2 + 1, tcp.InitialCwnd + 2},
+			{tcp.InitialCwnd, 2 * tcp.InitialCwnd},
+		} {
+			t.Run(fmt.Sprintf("%s/flight_%d", cc, tc.flight), func(t *testing.T) {
+				const mss = 32
+				clock := faketime.NewManualClock()
+				c := context.NewWithOpts(t, context.Options{EnableV4: true, Clock: clock, MTU: header.IPv4MinimumSize + header.TCPMinimumSize + mss})
+				defer c.Cleanup()
+				algorithm := tcpip.CongestionControlOption(cc)
+				if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &algorithm); err != nil {
+					t.Fatal(err)
+				}
+				c.CreateConnected(789, 30000, -1)
+				data := make([]byte, tc.flight*mss)
+				if n, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+					t.Fatalf("Write: got (%d, %v), want (%d, nil)", n, err, len(data))
+				}
+				for i := range tc.flight {
+					c.ReceiveAndCheckPacket(data, i*mss, mss)
+				}
+				for i := range tc.flight {
+					clock.Advance(time.Millisecond)
+					c.SendAck(790, (i+1)*mss)
+					c.Stack().Pause()
+					c.Stack().Resume()
+				}
+				var info tcpip.TCPInfoOption
+				if err := c.EP.GetSockOpt(&info); err != nil {
+					t.Fatal(err)
+				}
+				if got := int(info.SndCwnd); got != tc.want {
+					t.Errorf("after ACKing %d segments cwnd = %d, want %d", tc.flight, got, tc.want)
+				}
+			})
+		}
+	}
+}
+
 // endpointTester provides helper functions to test a tcpip.Endpoint.
 type endpointTester struct {
 	ep tcpip.Endpoint
