@@ -19,6 +19,17 @@ import (
 	"testing"
 )
 
+// TestAllExcludesDisplay checks that the display capability is supported, but
+// is not one of the capabilities that "all" enables.
+func TestAllExcludesDisplay(t *testing.T) {
+	if SupportedDriverCaps&CapDisplay == 0 {
+		t.Errorf("SupportedDriverCaps = %v, want it to include display", SupportedDriverCaps)
+	}
+	if AllContainerDriverCaps&CapDisplay != 0 {
+		t.Errorf("AllContainerDriverCaps = %v, want it to exclude display", AllContainerDriverCaps)
+	}
+}
+
 // TestNVIDIAFlagsSkipsPrivilegedCaps is a regression test for the
 // container-startup bug seen when NVIDIA_DRIVER_CAPABILITIES=all is combined
 // with --nvproxy-allowed-driver-capabilities using privileged capabilities.
