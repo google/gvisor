@@ -32,13 +32,23 @@ import (
 // by the binary that saved them. Objects are decoded without running their
 // load callbacks.
 func PrintGraph(w io.Writer, data []byte, graph uint64, asHTML bool) error {
-	return safely(func() {
-		printGraph(w, data, int(graph), asHTML)
+	_, _, err := PrintGraphRoot(w, data, graph, asHTML, "", "")
+	return err
+}
+
+// PrintGraphRoot also reports the registered root type and the length of
+// the requested slice field when the root matches sliceRoot. The length is -1 when the field is unavailable.
+func PrintGraphRoot(w io.Writer, data []byte, graph uint64, asHTML bool, sliceRoot, sliceField string) (string, int64, error) {
+	var name string
+	var length int64
+	err := safely(func() {
+		name, length = printGraph(w, data, int(graph), asHTML, sliceRoot, sliceField)
 	})
+	return name, length, err
 }
 
 // printGraph prints a single object graph.
-func printGraph(w io.Writer, data []byte, graph int, asHTML bool) {
+func printGraph(w io.Writer, data []byte, graph int, asHTML bool, sliceRoot, sliceField string) (string, int64) {
 	ds := graphDecodeState{ctx: context.Background(), in: decBuf{b: data}, noCallbacks: true}
 	d := &ds.in
 	if magic := d.uint32(); magic != streamMagic {
@@ -96,6 +106,13 @@ func printGraph(w io.Writer, data []byte, graph int, asHTML bool) {
 		}
 		fmt.Fprint(w, "\n")
 	}
+	if sliceRoot != "" && rootType.name == sliceRoot && rootType.typ.Kind() == reflect.Struct {
+		f := reflect.NewAt(rootType.typ, root).Elem().FieldByName(sliceField)
+		if f.IsValid() && f.Kind() == reflect.Slice {
+			return rootType.name, int64(f.Len())
+		}
+	}
+	return rootType.name, -1
 }
 
 // printer prints decoded objects.
