@@ -450,6 +450,11 @@ type Endpoint struct {
 	boundPortFlags    ports.Flags
 	boundDest         tcpip.FullAddress
 
+	// A caller-selected local port remains reserved on a refused active open.
+	//
+	// +checklocks:mu
+	fixedBindPort bool
+
 	// boundAddr is the local address that was used to reserve the port. It
 	// differs from TransportEndpointInfo.ID.LocalAddress when the endpoint is
 	// bound to the wildcard address, in which case ID.LocalAddress is replaced
@@ -1137,22 +1142,7 @@ func (e *Endpoint) closeNoShutdownLocked() {
 			e.isRegistered = false
 		}
 
-		portRes := ports.Reservation{
-			Networks:     e.boundNetProtos,
-			Transport:    ProtocolNumber,
-			Addr:         e.boundAddr,
-			Port:         e.TransportEndpointInfo.ID.LocalPort,
-			Flags:        e.boundPortFlags,
-			BindToDevice: e.boundBindToDevice,
-			Dest:         e.boundDest,
-		}
-		e.stack.ReleasePort(portRes)
-		e.isPortReserved = false
-		e.boundBindToDevice = 0
-		e.boundPortFlags = ports.Flags{}
-		e.boundDest = tcpip.FullAddress{}
-		e.boundAddr = tcpip.Address{}
-		e.boundNetProtos = nil
+		e.releasePortLocked()
 	}
 
 	// Mark endpoint as closed.
@@ -1219,9 +1209,42 @@ func (e *Endpoint) closePendingAcceptableConnectionsLocked() {
 	}
 }
 
+// +checklocks:e.mu
+func (e *Endpoint) releasePortLocked() {
+	if e.isPortReserved {
+		portRes := ports.Reservation{
+			Networks:     e.boundNetProtos,
+			Transport:    ProtocolNumber,
+			Addr:         e.boundAddr,
+			Port:         e.TransportEndpointInfo.ID.LocalPort,
+			Flags:        e.boundPortFlags,
+			BindToDevice: e.boundBindToDevice,
+			Dest:         e.boundDest,
+		}
+		e.stack.ReleasePort(portRes)
+		e.isPortReserved = false
+	}
+	e.boundBindToDevice = 0
+	e.boundPortFlags = ports.Flags{}
+	e.boundDest = tcpip.FullAddress{}
+	e.boundAddr = tcpip.Address{}
+	e.boundNetProtos = nil
+}
+
 // cleanupLocked frees all resources associated with the endpoint.
 // +checklocks:e.mu
 func (e *Endpoint) cleanupLocked() {
+	e.cleanupEndpointLocked(false /* keepPort */)
+}
+
+// +checklocks:e.mu
+func (e *Endpoint) cleanupFailedOpenLocked() {
+	keepPort := !e.closed && e.EndpointState().connecting() && e.h != nil && e.h.active && e.fixedBindPort
+	e.cleanupEndpointLocked(keepPort)
+}
+
+// +checklocks:e.mu
+func (e *Endpoint) cleanupEndpointLocked(keepPort bool) {
 	if e.snd != nil {
 		e.snd.resendTimer.cleanup()
 		e.snd.probeTimer.cleanup()
@@ -1255,24 +1278,9 @@ func (e *Endpoint) cleanupLocked() {
 		e.isRegistered = false
 	}
 
-	if e.isPortReserved {
-		portRes := ports.Reservation{
-			Networks:     e.boundNetProtos,
-			Transport:    ProtocolNumber,
-			Addr:         e.boundAddr,
-			Port:         e.TransportEndpointInfo.ID.LocalPort,
-			Flags:        e.boundPortFlags,
-			BindToDevice: e.boundBindToDevice,
-			Dest:         e.boundDest,
-		}
-		e.stack.ReleasePort(portRes)
-		e.isPortReserved = false
+	if !keepPort {
+		e.releasePortLocked()
 	}
-	e.boundBindToDevice = 0
-	e.boundPortFlags = ports.Flags{}
-	e.boundDest = tcpip.FullAddress{}
-	e.boundAddr = tcpip.Address{}
-	e.boundNetProtos = nil
 
 	if e.route != nil {
 		e.route.Release()
@@ -2968,6 +2976,7 @@ func (e *Endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	e.boundPortFlags = e.portFlags
 	e.boundAddr = addr.Addr
 	e.boundNetProtos = netProtos
+	e.fixedBindPort = addr.Port != 0
 	// TODO(gvisor.dev/issue/3691): Add test to verify boundNICID is correct.
 	e.boundNICID = nic
 	e.isPortReserved = true
@@ -3086,7 +3095,7 @@ func (e *Endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 			lEP.stats.FailedConnectionAttempts.Increment()
 		}
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
-		e.cleanupLocked()
+		e.cleanupFailedOpenLocked()
 		e.hardError = err
 		e.setEndpointState(StateError)
 		e.mu.Unlock()
