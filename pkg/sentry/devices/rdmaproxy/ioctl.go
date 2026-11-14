@@ -209,6 +209,12 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		}
 	}
 
+	if schema.Validate != nil {
+		if err := schema.Validate(staged); err != nil {
+			return 0, err
+		}
+	}
+
 	// Method-specific DMA / fd pre-processing that operates on inline values
 	// (which the generic loop leaves untouched).
 	var mrMirror *MirroredPages

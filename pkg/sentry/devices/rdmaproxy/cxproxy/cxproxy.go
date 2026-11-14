@@ -20,9 +20,14 @@
 package cxproxy
 
 import (
+	"encoding/binary"
+	"slices"
+
 	"gvisor.dev/gvisor/pkg/abi/ib"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
@@ -92,9 +97,18 @@ func (cxDriver) PrepareCreateDMA(t *kernel.Task, uhwIn []byte) (*rdmaproxy.Pinne
 // Schemas implements rdmaproxy.Driver.Schemas. It models the mlx5 UAR (User
 // Access Region — the CQ/QP doorbell page) object: alloc returns an mmap
 // offset that the app maps through the uverbs FD via the generic passthrough,
-// so no address translation is needed here.
+// so no address translation is needed here. It also models the DEVX general
+// command, limited to the device capability query rdma-core issues when it
+// opens a device.
 func (cxDriver) Schemas() map[uint32]*rdmaproxy.MethodSchema {
 	return map[uint32]*rdmaproxy.MethodSchema{
+		rdmaproxy.SchemaKey(ib.MLX5_IB_OBJECT_DEVX, ib.MLX5_IB_METHOD_DEVX_OTHER): {
+			Attrs: map[uint16]rdmaproxy.AttrType{
+				ib.MLX5_IB_ATTR_DEVX_OTHER_CMD_IN:  rdmaproxy.AttrPtrIn,
+				ib.MLX5_IB_ATTR_DEVX_OTHER_CMD_OUT: rdmaproxy.AttrPtrOut,
+			},
+			Validate: validateDevxOther,
+		},
 		rdmaproxy.SchemaKey(ib.MLX5_IB_OBJECT_UAR, ib.MLX5_IB_METHOD_UAR_OBJ_ALLOC): {
 			Attrs: map[uint16]rdmaproxy.AttrType{
 				ib.MLX5_IB_ATTR_UAR_OBJ_ALLOC_HANDLE:      rdmaproxy.AttrIdr,
@@ -110,6 +124,25 @@ func (cxDriver) Schemas() map[uint32]*rdmaproxy.MethodSchema {
 			},
 		},
 	}
+}
+
+// validateDevxOther admits only a QUERY_HCA_CAP of the calling function. The
+// command is struct mlx5_ifc_query_hca_cap_in_bits, big-endian: opcode, uid
+// (set by the kernel), vhca_tunnel_id, op_mod (the capability page), then the
+// fields selecting another function.
+func validateDevxOther(staged map[uint16][]byte) error {
+	in := staged[ib.MLX5_IB_ATTR_DEVX_OTHER_CMD_IN]
+	if len(in) < 16 {
+		return linuxerr.EINVAL
+	}
+	opcode := binary.BigEndian.Uint16(in)
+	tunnel := binary.BigEndian.Uint16(in[4:])
+	other := slices.ContainsFunc(in[8:], func(b byte) bool { return b != 0 })
+	if opcode != ib.MLX5_CMD_OP_QUERY_HCA_CAP || tunnel != 0 || other {
+		log.Warningf("rdmaproxy: unsupported DEVX command opcode=%#x", opcode)
+		return linuxerr.EINVAL
+	}
+	return nil
 }
 
 // Init registers the ConnectX (mlx5) driver plug-in with the rdmaproxy core.
