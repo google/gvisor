@@ -46,7 +46,7 @@ fi
 echo "Building runsc release tarball..."
 BIN_DIR=$(mktemp -d)
 trap 'rm -rf "${BIN_DIR}"' EXIT
-make release-tarball DESTINATION="${BIN_DIR}/"
+make copy OPTIONS="-c opt" TARGETS=//debian:gvisor-release-tar-bz2 DESTINATION="${BIN_DIR}/"
 
 KUBECONFIG_PATH="${BIN_DIR}/kubeconfig"
 KUBECONFIG_INTERNAL_PATH="${BIN_DIR}/kubeconfig_internal"
