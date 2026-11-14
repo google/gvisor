@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/pkg/zip"
 	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )
 
@@ -38,6 +39,19 @@ func TestParser(t *testing.T) {
 	testStructFile, err := testutil.FindFile("tools/nvidia_driver_differ/test_struct.cc")
 	if err != nil {
 		t.Fatalf("failed to find test_struct.cc: %v", err)
+	}
+	headerArchive, err := testutil.FindFile("tools/nvidia_driver_differ/parser/builtin_headers.zip")
+	if err != nil {
+		t.Fatalf("failed to find builtin headers: %v", err)
+	}
+	headers, err := zip.OpenReader(headerArchive)
+	if err != nil {
+		t.Fatalf("failed to read builtin headers: %v", err)
+	}
+	defer headers.Close()
+	resourceDir := t.TempDir()
+	if err := os.CopyFS(resourceDir, &headers.Reader); err != nil {
+		t.Fatalf("failed to extract builtin headers: %v", err)
 	}
 
 	// Write a file containing the struct name we want to parse.
@@ -69,7 +83,9 @@ func TestParser(t *testing.T) {
 	}
 	inputFile.Sync()
 
-	cmd := exec.Command(driverParser, "--input", inputFile.Name(), testStructFile)
+	cmd := exec.Command(driverParser, "--input", inputFile.Name(), testStructFile,
+		"--extra-arg=-resource-dir="+resourceDir,
+		"--extra-arg=-nostdlibinc", "--extra-arg=-nostdinc++")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -95,7 +111,7 @@ func TestParser(t *testing.T) {
 				},
 				Size:    44,
 				IsUnion: false,
-				Source:  "test_struct.cc:25:16",
+				Source:  "test_struct.cc:28:16",
 			},
 			"TestStruct2": parser.RecordDef{
 				Fields: []parser.RecordField{
@@ -106,7 +122,7 @@ func TestParser(t *testing.T) {
 				},
 				Size:    44,
 				IsUnion: false,
-				Source:  "test_struct.cc:25:16",
+				Source:  "test_struct.cc:28:16",
 			},
 			"TestStruct::e_t": parser.RecordDef{
 				Fields: []parser.RecordField{
@@ -115,7 +131,7 @@ func TestParser(t *testing.T) {
 				},
 				Size:    8,
 				IsUnion: false,
-				Source:  "test_struct.cc:28:3",
+				Source:  "test_struct.cc:31:3",
 			},
 			"TestUnion": parser.RecordDef{
 				Fields: []parser.RecordField{
@@ -124,7 +140,7 @@ func TestParser(t *testing.T) {
 				},
 				Size:    4,
 				IsUnion: true,
-				Source:  "test_struct.cc:20:9",
+				Source:  "test_struct.cc:23:9",
 			},
 		},
 		Aliases: parser.TypeAliases{
