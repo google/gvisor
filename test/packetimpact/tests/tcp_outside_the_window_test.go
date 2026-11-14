@@ -31,6 +31,95 @@ func init() {
 	testbench.Initialize(flag.CommandLine)
 }
 
+func TestWindowWithUnreadFIN(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		payload    []testbench.Layer
+		firstFlags int32
+		firstRead  string
+		lastRead   string
+	}{
+		{name: "FINOnly", firstFlags: unix.MSG_PEEK},
+		{name: "DataAndFIN", payload: []testbench.Layer{&testbench.Payload{Bytes: []byte("ab")}}, firstRead: "a", lastRead: "b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			listenFD, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFD)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+			defer conn.Close(t)
+			conn.Connect(t)
+			fd, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, fd)
+
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, tc.payload...)
+			ack := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(*conn.LocalSeqNum(t)))}
+			reply, err := conn.Expect(t, ack, time.Second)
+			if err != nil {
+				t.Fatalf("waiting for FIN ACK: %v", err)
+			}
+			checkState := func() {
+				t.Helper()
+				if got, want := uint32(dut.GetSockOptTCPInfo(t, fd).State), uint32(linux.TCP_CLOSE_WAIT); got != want {
+					t.Fatalf("TCP state = %d, want CLOSE_WAIT (%d)", got, want)
+				}
+			}
+			checkState()
+			read := func(flags int32, want string) {
+				t.Helper()
+				if got := string(dut.Recv(t, fd, 1, unix.MSG_DONTWAIT|flags)); got != want {
+					t.Fatalf("recv(flags=%d) = %q, want %q", flags, got, want)
+				}
+				// A window update caused by the read is not an answer to the next probe.
+				deadline := time.Now().Add(100 * time.Millisecond)
+				for time.Now().Before(deadline) {
+					update, err := conn.Expect(t, ack, time.Until(deadline))
+					if err != nil {
+						break
+					}
+					reply = update
+				}
+			}
+			probe := func(inside seqnum.Size, wantACK bool) {
+				t.Helper()
+				window := seqnum.Size(*reply.WindowSize)
+				if window <= inside {
+					t.Fatalf("receive window %d is too small for probe", window)
+				}
+				// A stateless injection leaves the peer's next sequence number at EOF.
+				seq := conn.LocalSeqNum(t).Add(window - inside)
+				conn.SendFrameStateless(t, conn.CreateFrame(t, testbench.Layers{
+					&testbench.TCP{Flags: ack.Flags, SeqNum: testbench.Uint32(uint32(seq))},
+				}, &testbench.Payload{Bytes: []byte("xy")}))
+				if wantACK {
+					got, err := conn.Expect(t, ack, time.Second)
+					if err != nil {
+						t.Fatalf("waiting for ACK while receive queue is unread: %v", err)
+					}
+					reply = got
+					return
+				}
+				// Catch a reply even if it carries the wrong acknowledgment number.
+				frames, _ := conn.ListenForFrame(t, testbench.Layers{nil, nil, &ack}, time.Second)
+				for _, frame := range frames {
+					for _, layer := range frame {
+						if tcp, ok := layer.(*testbench.TCP); ok && *tcp.SrcPort == port && *tcp.DstPort == *reply.DstPort && *tcp.Flags&header.TCPFlagAck != 0 {
+							t.Errorf("unexpected ACK after draining receive queue: %s", tcp)
+						}
+					}
+				}
+			}
+
+			probe(0, true)
+			read(tc.firstFlags, tc.firstRead) // Peek at EOF or leave one byte unread.
+			probe(1, true)
+			read(0, tc.lastRead) // Consume EOF or the final byte accompanying FIN.
+			probe(0, false)
+			checkState()
+		})
+	}
+}
+
 // TestTCPOutsideTheWindows tests the behavior of the DUT when packets arrive
 // that are inside or outside the TCP window. Packets that are outside the
 // window should force an extra ACK, as described in RFC793 page 69:
