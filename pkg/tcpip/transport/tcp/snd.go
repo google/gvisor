@@ -1489,6 +1489,22 @@ func (s *sender) startSpuriousRecoveryDetection() {
 	// e.g., in case of a second timeout and subsequent second retransmit of
 	// the same octet.
 	s.retransmitTS = s.ep.tsValNow()
+
+	// Eifel assumes that this episode's retransmission is the first one of
+	// the oldest outstanding segment. That segment, or another one still
+	// outstanding, may have been retransmitted already, by a recovery that
+	// ended before its repair was acknowledged or by a tail loss probe. The
+	// ACK for that repair echoes a timestamp older than this episode, as if
+	// the original had arrived. Like Linux's retrans_stamp, start from the
+	// earliest retransmission still outstanding.
+	for seg := s.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
+		if seg.xmitCount < 2 {
+			continue
+		}
+		if ts := s.ep.tsVal(seg.xmitTime); seqnum.Value(ts).LessThan(seqnum.Value(s.retransmitTS)) {
+			s.retransmitTS = ts
+		}
+	}
 }
 
 // +checklocks:s.ep.mu
