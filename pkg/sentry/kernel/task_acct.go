@@ -216,6 +216,14 @@ func (t *Task) StartTime() ktime.Time {
 	return t.startTime
 }
 
+// StartTimeSinceBoot returns t's start time relative to system boot, measured
+// using CLOCK_BOOTTIME.
+func (t *Task) StartTimeSinceBoot() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.startTimeSinceBoot.Sub(ktime.Time{})
+}
+
 // MaxRSS returns the maximum resident set size of the task in bytes. which
 // should be one of RUSAGE_SELF, RUSAGE_CHILDREN, RUSAGE_THREAD, or
 // RUSAGE_BOTH. See getrusage(2) for documentation on the behavior of these

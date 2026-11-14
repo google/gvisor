@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
-	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -197,7 +196,7 @@ func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cpu := k.CPUStats()
 
 	cores := k.ApplicationCores()
-	uptime := ktime.NowFromContext(ctx).Sub(k.Timekeeper().BootTime())
+	uptime := k.BoottimeClock().Now()
 
 	userTicks := uint64(linux.ClockTFromDuration(cpu.UserTime))
 	sysTicks := uint64(linux.ClockTFromDuration(cpu.SysTime))
@@ -360,10 +359,10 @@ var _ dynamicInode = (*uptimeData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*uptimeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	k := kernel.KernelFromContext(ctx)
-	now := ktime.NowFromContext(ctx)
+	uptime := k.BoottimeClock().Now()
 
 	// Pretend that we've spent zero time sleeping (second number).
-	fmt.Fprintf(buf, "%.2f 0.00\n", now.Sub(k.Timekeeper().BootTime()).Seconds())
+	fmt.Fprintf(buf, "%.2f 0.00\n", uptime.Seconds())
 	return nil
 }
 
