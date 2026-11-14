@@ -18,6 +18,7 @@ bazel_dep(name = "libbpf", version = "1.7.0.bcr.1")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_qemu", version = "0.3.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.16.0")
+bazel_dep(name = "with_cfg.bzl", version = "1.0.2")
 bazel_dep(name = "grpc", version = "1.84.0", repo_name = "com_github_grpc_grpc")
 
 # Select gRPC's c-ares configuration header without a shell.
