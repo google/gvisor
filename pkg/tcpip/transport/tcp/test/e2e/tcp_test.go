@@ -2142,62 +2142,27 @@ func TestConnectBindToDevice(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		device tcpip.NICID
-		want   tcp.EndpointState
 	}{
-		{"RightDevice", 1, tcp.StateEstablished},
-		{"WrongDevice", 2, tcp.StateSynSent},
-		{"AnyDevice", 0, tcp.StateEstablished},
+		{"RightDevice", 1},
+		{"WrongDevice", 2},
+		{"AnyDevice", 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
-
 			c.Create(-1)
 			if err := c.EP.SocketOptions().SetBindToDevice(int32(test.device)); err != nil {
-				t.Fatalf("c.EP.SetSockOpt(&%T(%d)): %s", test.device, test.device, err)
+				t.Fatalf("SetBindToDevice(%d): %s", test.device, err)
 			}
-			// Start connection attempt.
-			waitEntry, _ := waiter.NewChannelEntry(waiter.WritableEvents)
-			c.WQ.EventRegister(&waitEntry)
-			defer c.WQ.EventUnregister(&waitEntry)
-
-			err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-			if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
-				t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
+			// Only NIC 1 has an address and a route to the peer.
+			if test.device == 2 {
+				err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+				if diff := cmp.Diff(&tcpip.ErrNetworkUnreachable{}, err); diff != "" {
+					t.Fatalf("Connect mismatch (-want +got):\n%s", diff)
+				}
+				return
 			}
-
-			// Receive SYN packet.
-			v := c.GetPacket()
-			defer v.Release()
-			checker.IPv4(t, v,
-				checker.TCP(
-					checker.DstPort(context.TestPort),
-					checker.TCPFlags(header.TCPFlagSyn),
-				),
-			)
-			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
-				t.Fatalf("unexpected endpoint state: want %s, got %s", want, got)
-			}
-			tcpHdr := header.TCP(header.IPv4(v.AsSlice()).Payload())
-			c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
-
-			iss := seqnum.Value(context.TestInitialSequenceNumber)
-			rcvWnd := seqnum.Size(30000)
-			c.SendPacket(nil, &context.Headers{
-				SrcPort: tcpHdr.DestinationPort(),
-				DstPort: tcpHdr.SourcePort(),
-				Flags:   header.TCPFlagSyn | header.TCPFlagAck,
-				SeqNum:  iss,
-				AckNum:  c.IRS.Add(1),
-				RcvWnd:  rcvWnd,
-				TCPOpts: nil,
-			})
-
-			v = c.GetPacket()
-			defer v.Release()
-			if got, want := tcp.EndpointState(c.EP.State()), test.want; got != want {
-				t.Fatalf("unexpected endpoint state: want %s, got %s", want, got)
-			}
+			c.Connect(context.TestInitialSequenceNumber, 30000, nil)
 		})
 	}
 }
