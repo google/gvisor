@@ -790,7 +790,11 @@ func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params
 	if length > math.MaxUint16 {
 		return &tcpip.ErrMessageTooLong{}
 	}
-	header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen)).Encode(&header.IPv6Fields{
+	ipH := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen))
+	if pkt.GSOOptions.NeedsCsum {
+		pkt.GSOOptions.L3HdrLen = uint16(len(ipH))
+	}
+	ipH.Encode(&header.IPv6Fields{
 		PayloadLength:     uint16(length),
 		TransportProtocol: params.Protocol,
 		HopLimit:          params.TTL,
