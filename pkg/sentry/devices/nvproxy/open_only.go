@@ -17,6 +17,8 @@ package nvproxy
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -29,23 +31,38 @@ import (
 type openOnlyDevice struct {
 	nvp     *nvproxy
 	relpath string
+
+	// caps is the set of driver capabilities that opening the device needs.
+	caps nvconf.DriverCaps
+
+	// If hostless is true, opening the device does not open the host device.
+	// Nothing can be done with an open-only file, so the sandbox cannot tell
+	// the difference, but the file cannot be passed to nvproxy ioctls that
+	// need the host device.
+	hostless bool
 }
 
 // Open implements vfs.Device.Open.
 func (dev *openOnlyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd := &openOnlyFD{
-		dev: dev,
+	if dev.nvp.capsEnabled&dev.caps != dev.caps {
+		return nil, linuxerr.ENXIO
 	}
-	var err error
-	fd.hostFD, fd.containerName, err = openHostDevFile(ctx, dev.relpath, dev.nvp.useDevGofer, opts.Flags)
-	if err != nil {
-		return nil, err
+	fd := &openOnlyFD{
+		dev:    dev,
+		hostFD: -1,
+	}
+	if !dev.hostless {
+		var err error
+		fd.hostFD, fd.containerName, err = openHostDevFile(ctx, dev.relpath, dev.nvp.useDevGofer, opts.Flags)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		SpecialFile:       true,
 	}); err != nil {
-		unix.Close(int(fd.hostFD))
+		fd.closeHost()
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -68,5 +85,12 @@ func (fd *openOnlyFD) IsNvidiaDeviceFD() {}
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *openOnlyFD) Release(ctx context.Context) {
-	unix.Close(int(fd.hostFD))
+	fd.closeHost()
+}
+
+// closeHost closes the host device file, if one was opened.
+func (fd *openOnlyFD) closeHost() {
+	if fd.hostFD >= 0 {
+		unix.Close(int(fd.hostFD))
+	}
 }

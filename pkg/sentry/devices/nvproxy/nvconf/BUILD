@@ -16,6 +16,7 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf",
     visibility = [
         "//pkg/sentry:internal",
+        "//test/gpu:__subpackages__",
         "//tools:__subpackages__",
     ],
     deps = [
