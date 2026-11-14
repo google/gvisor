@@ -122,8 +122,11 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		for vp.pipe.isNamed && !nonblocking && !hasWriter && !vp.pipe.HasWriters() &&
 			generation == vp.pipe.writerGeneration.Load() {
 			if !ctx.BlockOn((*waitWriters)(&vp.pipe), waiter.EventInternal) {
+				if vp.pipe.HasWriters() || generation != vp.pipe.writerGeneration.Load() {
+					break
+				}
 				fd.vfsfd.DecRef(ctx)
-				return nil, linuxerr.EINTR
+				return nil, linuxerr.ERESTARTSYS
 			}
 		}
 
@@ -133,8 +136,11 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		for vp.pipe.isNamed && !nonblocking && !vp.pipe.HasReaders() &&
 			tReaders == vp.pipe.totalReaders.Load() {
 			if !ctx.BlockOn((*waitReaders)(&vp.pipe), waiter.EventInternal) {
+				if vp.pipe.HasReaders() || tReaders != vp.pipe.totalReaders.Load() {
+					break
+				}
 				fd.vfsfd.DecRef(ctx)
-				return nil, linuxerr.EINTR
+				return nil, linuxerr.ERESTARTSYS
 			}
 		}
 
