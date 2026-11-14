@@ -34,9 +34,11 @@ type fdInfo struct {
 	// membership and queued event masks.
 	queue *waiter.Queue
 
-	// id identifies the current epoll registration, or is zero if there is
-	// none. It is protected by the owning notifier's mu.
-	id uint64
+	// id and mask identify the host epoll registration and the events it
+	// monitors. Both are zero when unregistered and protected by the
+	// owning notifier's mu.
+	id   uint64
+	mask waiter.EventMask
 }
 
 // notifier holds all the state necessary to issue notifications when IO events
@@ -74,12 +76,16 @@ type notifier struct {
 //
 // +checklocks:n.mu
 func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
+	// Even an unchanged EPOLL_CTL_MOD can wake an edge-triggered watcher
+	// a second time while the file remains ready.
+	if mask == fi.mask {
+		return nil
+	}
 	if mask == 0 {
-		if fi.id != 0 {
-			unix.EpollCtl(n.epFD, unix.EPOLL_CTL_DEL, int(fd), nil)
-			delete(n.queues, fi.id)
-			fi.id = 0
-		}
+		unix.EpollCtl(n.epFD, unix.EPOLL_CTL_DEL, int(fd), nil)
+		delete(n.queues, fi.id)
+		fi.id = 0
+		fi.mask = 0
 		return nil
 	}
 
@@ -106,6 +112,7 @@ func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 		fi.id = id
 		n.queues[id] = fi.queue
 	}
+	fi.mask = mask
 	return nil
 }
 
