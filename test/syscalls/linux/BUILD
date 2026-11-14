@@ -3453,7 +3453,6 @@ cc_library(
         "//test/util:socket_util",
         "//test/util:test_util",
         "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/memory",
     ],
     alwayslink = 1,
 )
@@ -3470,10 +3469,8 @@ cc_library(
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:posix_error",
-        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_util",
-        "@com_google_absl//absl/memory",
     ],
     alwayslink = 1,
 )
@@ -3547,7 +3544,6 @@ cc_library(
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_ip_udp_unbound_external_networking",
-        "//test/util:capability_util",
         "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_util",

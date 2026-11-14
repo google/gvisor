@@ -972,6 +972,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto sendto_addr = V4Multicast();
   reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port = receiver_port;
   char send_buf[4];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
   ASSERT_THAT(
       RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
                          AsSockAddr(&sendto_addr.addr), sendto_addr.addr_len),
