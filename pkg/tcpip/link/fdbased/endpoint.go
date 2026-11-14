@@ -614,6 +614,7 @@ const (
 
 	_VIRTIO_NET_HDR_GSO_TCPV4 = 1
 	_VIRTIO_NET_HDR_GSO_TCPV6 = 4
+	_VIRTIO_NET_HDR_GSO_ECN   = 0x80
 )
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.

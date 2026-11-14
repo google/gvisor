@@ -40,6 +40,9 @@ type SocketOptionsHandler interface {
 	// OnCorkOptionSet is invoked when TCP_CORK is set for an endpoint.
 	OnCorkOptionSet(v bool)
 
+	// OnQuickAckSet is invoked when TCP_QUICKACK is set for an endpoint.
+	OnQuickAckSet(v bool)
+
 	// LastError is invoked when SO_ERROR is read for an endpoint.
 	LastError() Error
 
@@ -89,6 +92,9 @@ func (*DefaultSocketOptionsHandler) OnDelayOptionSet(bool) {}
 
 // OnCorkOptionSet implements SocketOptionsHandler.OnCorkOptionSet.
 func (*DefaultSocketOptionsHandler) OnCorkOptionSet(bool) {}
+
+// OnQuickAckSet implements SocketOptionsHandler.OnQuickAckSet.
+func (*DefaultSocketOptionsHandler) OnQuickAckSet(bool) {}
 
 // LastError implements SocketOptionsHandler.LastError.
 func (*DefaultSocketOptionsHandler) LastError() Error {
@@ -475,6 +481,7 @@ func (so *SocketOptions) GetQuickAck() bool {
 // SetQuickAck sets value for TCP_QUICKACK option.
 func (so *SocketOptions) SetQuickAck(v bool) {
 	storeAtomicBool(&so.quickAckEnabled, v)
+	so.handler.OnQuickAckSet(v)
 }
 
 // GetDelayOption gets inverted value for TCP_NODELAY option.

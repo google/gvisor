@@ -166,6 +166,10 @@ type PacketBuffer struct {
 	// safely skipped.
 	RXChecksumValidated bool
 
+	// GROSegmentSize is the payload size of the TCP segments that GRO
+	// coalesced into an incoming packet, or zero.
+	GROSegmentSize uint16
+
 	// NetworkPacketInfo holds an incoming packet's network-layer information.
 	NetworkPacketInfo NetworkPacketInfo
 
@@ -403,6 +407,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.NICID = pk.NICID
 	newPk.InputNICID = pk.InputNICID
 	newPk.RXChecksumValidated = pk.RXChecksumValidated
+	newPk.GROSegmentSize = pk.GROSegmentSize
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
 	newPk.InitRefs()

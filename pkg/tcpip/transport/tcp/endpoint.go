@@ -1227,6 +1227,7 @@ func (e *Endpoint) cleanupLocked() {
 		e.snd.probeTimer.cleanup()
 		e.snd.reorderTimer.cleanup()
 		e.snd.corkTimer.cleanup()
+		e.snd.ackTimer.cleanup()
 	}
 
 	if e.finWait2Timer != nil {
@@ -1525,6 +1526,10 @@ func (e *Endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		if err != nil {
 			break
 		}
+	}
+
+	if done > 0 && !opts.Peek && e.EndpointState().connected() {
+		e.rcv.ackAfterRead()
 	}
 
 	// If something is read, we must report it. Report error when nothing is read.
@@ -1861,6 +1866,25 @@ func (e *Endpoint) OnCorkOptionSet(v bool) {
 		if e.EndpointState().connected() {
 			e.sendData(nil /* next */)
 		}
+	}
+}
+
+// OnQuickAckSet implements tcpip.SocketOptionsHandler.OnQuickAckSet.
+//
+// +checklocksexclude:e.segmentQueue.mu
+// +checklocksexclude:e.pendingProcessingMu
+func (e *Endpoint) OnQuickAckSet(v bool) {
+	e.LockUser()
+	defer e.UnlockUser()
+	if !e.EndpointState().connected() {
+		return
+	}
+	// Like Linux, TCP_QUICKACK leaves or enters pingpong mode, and setting
+	// it sends a delayed ACK as if the application read data.
+	e.rcv.pingpong = !v
+	if v && e.rcv.RcvNxt != e.snd.MaxSentAck {
+		e.rcv.ackFlags |= ackPushed
+		e.rcv.ackAfterRead()
 	}
 }
 

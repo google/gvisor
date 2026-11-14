@@ -611,9 +611,12 @@ func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *st
 }
 
 func TestDispatchPacketFormat(t *testing.T) {
+	// A virtioNetHdr for TCPv4 segments of 1448 bytes coalesced by the host.
+	groVnetHdr := (&virtioNetHdr{gsoType: _VIRTIO_NET_HDR_GSO_TCPV4, gsoSize: 1448}).marshal()
 	for _, test := range []struct {
 		name          string
 		newDispatcher func(fd int, e *endpoint, opts *Options) (linkDispatcher, error)
+		vnetHdr       []byte
 		ethHdr        []byte
 		netHdr        []byte
 	}{
@@ -630,6 +633,28 @@ func TestDispatchPacketFormat(t *testing.T) {
 		{
 			name:          "recvMMsgDispatcher",
 			newDispatcher: newRecvMMsgDispatcher,
+			ethHdr: []byte{
+				1, 2, 3, 4, 5, 60,
+				1, 2, 3, 4, 5, 61,
+				8, 0,
+			},
+			netHdr: []byte{0x40, 0, 0, 0},
+		},
+		{
+			name:          "readVDispatcherHostGRO",
+			newDispatcher: newReadVDispatcher,
+			vnetHdr:       groVnetHdr,
+			ethHdr: []byte{
+				1, 2, 3, 4, 5, 60,
+				1, 2, 3, 4, 5, 61,
+				8, 0,
+			},
+			netHdr: []byte{0x40, 0, 0, 0},
+		},
+		{
+			name:          "recvMMsgDispatcherHostGRO",
+			newDispatcher: newRecvMMsgDispatcher,
+			vnetHdr:       groVnetHdr,
 			ethHdr: []byte{
 				1, 2, 3, 4, 5, 60,
 				1, 2, 3, 4, 5, 61,
@@ -688,7 +713,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			data := append(test.ethHdr, test.netHdr...)
+			data := append(append(test.vnetHdr, test.ethHdr...), test.netHdr...)
 			err = unix.Sendmsg(fds[1], data, nil, nil, 0)
 			if err != nil {
 				t.Fatal(err)
@@ -700,10 +725,15 @@ func TestDispatchPacketFormat(t *testing.T) {
 			if len(test.ethHdr) > 0 {
 				addr = tcpip.LinkAddress(test.ethHdr[:header.EthernetAddressSize])
 			}
+			gsoKind := stack.GSONotSupported
+			if len(test.vnetHdr) > 0 {
+				gsoKind = stack.HostGSOSupported
+			}
 			d, err := test.newDispatcher(fds[0], &endpoint{
 				addr:       addr,
 				hdrSize:    len(test.ethHdr),
 				dispatcher: sink,
+				gsoKind:    gsoKind,
 			}, &Options{ProcessorsPerChannel: 1})
 			if err != nil {
 				t.Fatal(err)
@@ -733,6 +763,13 @@ func TestDispatchPacketFormat(t *testing.T) {
 			}
 			if pkt.NetworkProtocolNumber != wantProto {
 				t.Errorf("pkt.NetworkProtocolNumber = %d, want %d", pkt.NetworkProtocolNumber, wantProto)
+			}
+			var wantGROSegmentSize uint16
+			if len(test.vnetHdr) > 0 {
+				wantGROSegmentSize = 1448
+			}
+			if pkt.GROSegmentSize != wantGROSegmentSize {
+				t.Errorf("pkt.GROSegmentSize = %d, want %d", pkt.GROSegmentSize, wantGROSegmentSize)
 			}
 		})
 	}

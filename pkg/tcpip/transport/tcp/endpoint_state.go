@@ -188,6 +188,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		snd.reorderTimer.init(s.Clock(), timerHandler(e, e.snd.rc.reorderTimerExpired))
 		snd.probeTimer.init(s.Clock(), timerHandler(e, e.snd.probeTimerExpired))
 		snd.corkTimer.init(s.Clock(), timerHandler(e, e.snd.corkTimerExpired))
+		snd.ackTimer.init(s.Clock(), timerHandler(e, e.snd.ackTimerExpired))
 	}
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
@@ -278,6 +279,10 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			// Rearm the timer if TCP_CORK is enabled which will
 			// drain all the segments in the queue after restore.
 			e.snd.corkTimer.enable(MinRTO)
+		}
+		if e.rcv.RcvNxt != e.snd.MaxSentAck {
+			// Rearm the timer for an ACK that was delayed at save.
+			e.snd.ackTimer.enable(delayedAckTimeout)
 		}
 		e.mu.Unlock()
 		e.requeueOnRestore()
