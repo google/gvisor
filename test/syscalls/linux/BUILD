@@ -2109,6 +2109,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
+        "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:logging",

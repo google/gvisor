@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
@@ -51,6 +52,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
@@ -688,13 +690,6 @@ class PtyTest : public ::testing::Test {
       }
       ASSERT_EQ(n, 1);
     }
-  }
-
-  void FillUntilBlocked(const FileDescriptor& fd) {
-    FillUntilWriteReturnsEAGAIN(fd);
-
-    struct pollfd pfd = {fd.get(), POLLOUT, 0};
-    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 0), SyscallSucceedsWithValue(0));
   }
 
   void EnablePacketMode() {
@@ -2804,29 +2799,36 @@ TEST_F(PtyTest, TCFLSHMasterDoesNotReportPacketModeStatus) {
 // Flushing the master's input queue should wake a blocked replica writer.
 TEST_F(PtyTest, TCFLSHWakesReplicaPolloutAfterMasterInputFlush) {
   DisableCanonicalAndEcho();
-  FillUntilBlocked(replica_);
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), replica_.get(), EPOLLOUT, 0));
 
-  struct pollfd initial = {replica_.get(), POLLOUT, 0};
-  EXPECT_THAT(poll(&initial, 1, 0), SyscallSucceedsWithValue(0));
+  // Linux's pty_write queues work to transfer data to the peer. If the replica
+  // became writable after write returned EAGAIN, fill the newly available
+  // space.
+  // https://github.com/torvalds/linux/blob/e5f0a698b/drivers/tty/pty.c#L118
+  // https://github.com/torvalds/linux/blob/e5f0a698b/drivers/tty/tty_buffer.c#L563
+  struct epoll_event event;
+  const absl::Time deadline = absl::Now() + kTimeout;
+  for (;;) {
+    ASSERT_NO_FATAL_FAILURE(FillUntilWriteReturnsEAGAIN(replica_));
+    int ready = RetryEINTR(epoll_wait)(epollfd.get(), &event, 1, 0);
+    ASSERT_THAT(ready, SyscallSucceeds());
+    if (ready == 0) {
+      break;
+    }
+    ASSERT_EQ(event.events, EPOLLOUT);
+    ASSERT_LT(absl::Now(), deadline)
+        << "replica remained writable after write returned EAGAIN";
+  }
 
-  absl::Notification notify;
-  int sfd = replica_.get();
-  ScopedThread th([sfd, &notify]() {
-    notify.Notify();
-
-    struct pollfd poll_fd = {sfd, POLLOUT, 0};
-    EXPECT_THAT(
-        RetryEINTR(poll)(&poll_fd, 1, absl::ToInt64Milliseconds(kTimeout)),
-        SyscallSucceedsWithValue(1));
-    EXPECT_EQ(poll_fd.revents & POLLOUT, POLLOUT);
-
-    constexpr char kByte = 'r';
-    EXPECT_THAT(RetryEINTR(write)(sfd, &kByte, 1), SyscallSucceedsWithValue(1));
-  });
-
-  notify.WaitForNotification();
-  absl::SleepFor(absl::Seconds(1));
-  EXPECT_THAT(ioctl(master_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+  ASSERT_THAT(ioctl(master_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &event, 1,
+                                     absl::ToInt64Milliseconds(kTimeout)),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(event.events, EPOLLOUT);
+  constexpr char kByte = 'r';
+  EXPECT_THAT(RetryEINTR(write)(replica_.get(), &kByte, 1),
+              SyscallSucceedsWithValue(1));
 }
 
 // Flushing the replica's input queue should wake a blocked master writer.
