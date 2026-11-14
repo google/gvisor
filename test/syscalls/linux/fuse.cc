@@ -962,6 +962,66 @@ class FuseServerTest : public ::testing::Test {
   Cleanup mount_;
 };
 
+TEST_F(FuseServerTest, ReleaseDirectoryAfterUnsupportedFileOpen) {
+  const DisableSave ds;
+  constexpr uint64_t kDirectoryHandle = 0x12345678;
+  ScopedThread client([&] {
+    ASSERT_NO_ERRNO(Open(JoinPath(mount_point_.path(), "file"), O_RDONLY));
+    ASSERT_NO_ERRNO(Open(mount_point_.path(), O_RDONLY | O_DIRECTORY));
+  });
+  // Abort pending client requests if the server fails before replying.
+  Cleanup abort([&] { fd_.reset(); });
+  bool file_open_unsupported = false;
+  bool directory_opened = false;
+  for (;;) {
+    SCOPED_TRACE(directory_opened ? "waiting for FUSE_RELEASEDIR"
+                                  : "opening file and directory");
+    FuseRequest req;
+    ASSERT_NO_FATAL_FAILURE(ReadFuseRequest(fd_.get(), &req));
+    const auto& in = *req.hdr();
+    switch (in.opcode) {
+      case FUSE_LOOKUP: {
+        fuse_entry_out out = {.nodeid = 2, .generation = 1, .attr_valid = 1};
+        out.attr = {.ino = 2, .mode = S_IFREG | 0644, .nlink = 1};
+        FuseRespond(fd_.get(), in.unique, &out, sizeof(out));
+        break;
+      }
+      case FUSE_GETATTR: {
+        fuse_attr_out out = {.attr_valid = 1};
+        out.attr = {.ino = in.nodeid,
+                    .mode = in.nodeid == FUSE_ROOT_ID ? S_IFDIR | 0755U
+                                                      : S_IFREG | 0644U,
+                    .nlink = 1};
+        FuseRespond(fd_.get(), in.unique, &out, sizeof(out));
+        break;
+      }
+      case FUSE_OPEN:
+        file_open_unsupported = true;
+        ASSERT_NO_ERRNO(ReplyError(fd_.get(), in.unique, ENOSYS));
+        break;
+      case FUSE_OPENDIR: {
+        ASSERT_TRUE(file_open_unsupported);
+        fuse_open_out out = {.fh = kDirectoryHandle};
+        FuseRespond(fd_.get(), in.unique, &out, sizeof(out));
+        directory_opened = true;
+        break;
+      }
+      case FUSE_RELEASEDIR:
+        ASSERT_TRUE(directory_opened);
+        ASSERT_EQ(in.nodeid, FUSE_ROOT_ID);
+        ASSERT_EQ(in.len, sizeof(in) + sizeof(fuse_release_in));
+        EXPECT_EQ(req.payload<fuse_release_in>()->fh, kDirectoryHandle);
+        FuseRespond(fd_.get(), in.unique);
+        return;
+      case FUSE_FORGET:
+        break;
+      default:
+        ASSERT_NO_ERRNO(ReplyError(fd_.get(), in.unique, ENOSYS));
+        break;
+    }
+  }
+}
+
 class FuseInterruptTest : public FuseServerTest {
  protected:
   void SetUp() override {

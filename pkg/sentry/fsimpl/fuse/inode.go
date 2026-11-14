@@ -564,7 +564,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 
 	// An open request is sent unless the file handle was already returned by
 	// FUSE_CREATE, or the server does not support open for regular files.
-	willSendOpen := !i.fh.new && (!i.fs.conn.noOpen || i.filemode().IsDir())
+	willSendOpen := !i.fh.new && (!i.fs.conn.noOpen.Load() || i.filemode().IsDir())
 
 	truncateRegFile := opts.Flags&linux.O_TRUNC != 0 && i.filemode().FileType() == linux.S_IFREG
 	if truncateRegFile && !(willSendOpen && i.fs.conn.atomicOTrunc) {
@@ -593,7 +593,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		out := linux.FUSEOpenOut{}
 		if err := i.call(ctx, opcode, &in, &out); err != nil {
 			if linuxerr.Equals(linuxerr.ENOSYS, err) && !i.filemode().IsDir() {
-				i.fs.conn.noOpen = true
+				i.fs.conn.noOpen.Store(true)
 				// The open that was to carry O_TRUNC was refused; truncate with SETATTR.
 				if truncateRegFile && i.fs.conn.atomicOTrunc {
 					opts := vfs.SetStatOptions{Stat: linux.Statx{Size: 0, Mask: linux.STATX_SIZE}}

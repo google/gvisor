@@ -305,9 +305,8 @@ type connection struct {
 	// on this connection.
 	noFlush atomicbitops.Bool
 
-	// noOpen if FUSE server doesn't support open operation.
-	// This flag only influences performance, not correctness of the program.
-	noOpen bool
+	// noOpen records an ENOSYS reply to FUSE_OPEN for regular files.
+	noOpen atomicbitops.Bool
 
 	// noCreate if FUSE server doesn't support the create operation. Files are
 	// then created with FUSE_MKNOD followed by FUSE_OPEN, as Linux does.
