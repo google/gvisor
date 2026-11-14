@@ -16,6 +16,7 @@ package tcp_test
 
 import (
 	"bytes"
+	stdcontext "context"
 	"fmt"
 	"io"
 	"math"
@@ -29,11 +30,13 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -3964,6 +3967,432 @@ func TestMSSNotDelayed(t *testing.T) {
 
 // TestMinshallPartialSegment checks that Nagle waits for an outstanding small
 // segment, rather than for every outstanding full segment.
+func writePayload(t *testing.T, ep tcpip.Endpoint, data []byte, opts tcpip.WriteOptions, want int) *bytes.Reader {
+	t.Helper()
+	payload := bytes.NewReader(data)
+	n, err := ep.Write(payload, opts)
+	if err != nil {
+		t.Fatalf("Write(%d bytes) failed: %s", len(data), err)
+	}
+	if n != int64(want) {
+		t.Fatalf("Write(%d bytes) = %d, want %d", len(data), n, want)
+	}
+	return payload
+}
+
+func checkNoPacket(t *testing.T, c *context.Context) {
+	t.Helper()
+	ep := c.EP.(*tcp.Endpoint)
+	ep.LockUser()
+	defer ep.UnlockUser()
+	if packet := c.GetPacketNonBlocking(); packet.Size() != 0 {
+		defer packet.Release()
+		t.Fatalf("unexpected packet: %x", packet.AsSlice())
+	}
+}
+
+func TestCorkAndMsgMoreSendCycles(t *testing.T) {
+	const maxPayload = 100
+	for _, test := range []struct {
+		name string
+		opts tcpip.WriteOptions
+		cork bool
+	}{
+		{name: "msg-more", opts: tcpip.WriteOptions{More: true}},
+		{name: "cork", cork: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			c := context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				MTU:      e2e.DefaultMTU,
+				Clock:    clock,
+			})
+			defer c.Cleanup()
+			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+				header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+			})
+			c.EP.SocketOptions().SetCorkOption(test.cork)
+
+			stream := make([]byte, maxPayload)
+			stream = append(stream, []byte("firstsecond")...)
+			writePayload(t, c.EP, stream[:maxPayload], test.opts, maxPayload)
+			c.ReceiveAndCheckPacket(stream, 0, maxPayload)
+
+			received := maxPayload
+			for _, size := range []int{len("first"), len("second")} {
+				writePayload(t, c.EP, stream[received:received+size], test.opts, size)
+				checkNoPacket(t, c)
+
+				// Empty writes must not release the data or cancel its timer.
+				writePayload(t, c.EP, nil, tcpip.WriteOptions{}, 0)
+				clock.Advance(tcp.MinRTO)
+				c.ReceiveAndCheckPacket(stream, received, size)
+				received += size
+			}
+			checkNoPacket(t, c)
+		})
+	}
+}
+
+func TestMsgMoreTimerAfterRestore(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      e2e.DefaultMTU,
+		Clock:    faketime.NewManualClock(),
+	})
+	defer c.Cleanup()
+	c.Stack().SetAllowLiveTCPMigration(true)
+	c.Stack().SetRemoveConf(true)
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	data := []byte("header")
+	writePayload(t, c.EP, data, tcpip.WriteOptions{More: true}, len(data))
+	checkNoPacket(t, c)
+
+	var snapshot bytes.Buffer
+	if _, err := state.Save(t.Context(), &snapshot, c.Stack()); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	c.Stack().Resume()
+
+	restoredStack := stack.New(stack.Options{
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+	})
+	defer restoredStack.Destroy()
+	if _, err := state.Load(t.Context(), bytes.NewReader(snapshot.Bytes()), restoredStack); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	restoredStack.SetAllowLiveTCPMigration(true)
+	linkEP := channel.New(10, e2e.DefaultMTU, "")
+	defer linkEP.Close()
+	if err := restoredStack.CreateNIC(1, linkEP); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
+	}
+	if err := restoredStack.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: context.StackAddrWithPrefix,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress failed: %s", err)
+	}
+	restoredStack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
+	restoredStack.Restore()
+
+	clock, ok := restoredStack.Clock().(*faketime.ManualClock)
+	if !ok {
+		t.Fatalf("restored clock = %T, want *faketime.ManualClock", restoredStack.Clock())
+	}
+	clock.Advance(tcp.MinRTO)
+	readCtx, cancel := stdcontext.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	packet := linkEP.ReadContext(readCtx)
+	if packet == nil {
+		t.Fatal("restored MSG_MORE timer did not release data")
+	}
+	defer packet.DecRef()
+	view := packet.ToView()
+	defer view.Release()
+	checker.IPv4(t, view,
+		checker.TCP(
+			checker.Payload(data),
+		),
+	)
+}
+
+func TestCorkExpiryWithClosedWindow(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		opts tcpip.WriteOptions
+		cork bool
+	}{
+		{name: "msg-more", opts: tcpip.WriteOptions{More: true}},
+		{name: "cork", cork: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			windows := make(chan seqnum.Size, 16)
+			c := context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				MTU:      e2e.DefaultMTU,
+				Clock:    clock,
+				Probe: func(state *tcp.TCPEndpointState) {
+					select {
+					case windows <- state.Sender.SndWnd:
+					default:
+					}
+				},
+			})
+			defer c.Cleanup()
+			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+				header.TCPOptionMSS, 4, 0, 100,
+			})
+			c.EP.SocketOptions().SetCorkOption(test.cork)
+
+			data := []byte("header")
+			writePayload(t, c.EP, data, test.opts, len(data))
+			checkNoPacket(t, c)
+
+			iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			sendWindow := func(window seqnum.Size) {
+				t.Helper()
+				c.SendPacket(nil, &context.Headers{
+					SrcPort: context.TestPort,
+					DstPort: c.Port,
+					Flags:   header.TCPFlagAck,
+					SeqNum:  iss,
+					AckNum:  c.IRS.Add(1),
+					RcvWnd:  window,
+				})
+				deadline := time.After(5 * time.Second)
+				for {
+					select {
+					case got := <-windows:
+						if got == window {
+							return
+						}
+					case <-deadline:
+						t.Fatalf("send window %d was not processed", window)
+					}
+				}
+			}
+			sendWindow(0)
+			clock.Advance(tcp.MinRTO)
+			checkNoPacket(t, c)
+
+			// Expiry retains the push across a closed window. Reopening enough
+			// space for the data, but less than one MSS, must not start another
+			// 200 ms hold.
+			sendWindow(seqnum.Size(len(data) + 1))
+			c.ReceiveAndCheckPacket(data, 0, len(data))
+			checkNoPacket(t, c)
+		})
+	}
+}
+
+func TestMsgMoreGSOFullPrefixAndTail(t *testing.T) {
+	const maxPayload = 100
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      e2e.DefaultMTU,
+		Clock:    faketime.NewManualClock(),
+	})
+	defer c.Cleanup()
+	c.SetGSOEnabled(true)
+	c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+		header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+	})
+
+	data := make([]byte, 2*maxPayload+2)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	writePayload(t, c.EP, data[:2*maxPayload+1], tcpip.WriteOptions{More: true}, 2*maxPayload+1)
+	c.ReceiveAndCheckPacket(data, 0, 2*maxPayload)
+	checkNoPacket(t, c)
+
+	writePayload(t, c.EP, data[2*maxPayload+1:], tcpip.WriteOptions{}, 1)
+	c.ReceiveAndCheckPacket(data, 2*maxPayload, 2)
+	checkNoPacket(t, c)
+}
+
+func TestMsgMoreTLPReleaseAndRearm(t *testing.T) {
+	const (
+		maxPayload       = 100
+		maxTCPOptionSize = 40
+		mtu              = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
+		rtt              = 70 * time.Millisecond
+	)
+	clock := faketime.NewManualClock()
+	ackProcessed := make(chan struct{}, 1)
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      uint32(mtu),
+		Clock:    clock,
+		Probe: func(state *tcp.TCPEndpointState) {
+			if state.Sender.RTTState.SRTT > 0 {
+				select {
+				case ackProcessed <- struct{}{}:
+				default:
+				}
+			}
+		},
+	})
+	defer c.Cleanup()
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.SetStackTCPRecovery(t, c, int(tcpip.TCPRACKLossDetection))
+	minRTO := tcpip.TCPMinRTOOption(time.Second)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &minRTO); err != nil {
+		t.Fatalf("SetTransportProtocolOption(TCPMinRTOOption): %s", err)
+	}
+
+	// Use a nonzero SYN timestamp. Timestamp-based RTT sampling ignores ACKs
+	// with a zero echoed timestamp.
+	clock.Advance(time.Second)
+	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: true, TS: true, TSVal: 100}, 0 /* delay */)
+	c.EP.SocketOptions().SetDelayOption(false)
+
+	data := make([]byte, 3*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	data = append(data, []byte("firstsecond")...)
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+
+	// Keep a second loss probe later than the first hold's cork deadline.
+	writePayload(t, c.EP, data[:maxPayload], tcpip.WriteOptions{}, maxPayload)
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, e2e.TSOptionSize)
+	clock.Advance(rtt)
+	c.SendAck(seq, maxPayload)
+	select {
+	case <-ackProcessed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("warmup ACK was not processed")
+	}
+
+	// Leave two full-MSS packets outstanding.
+	writePayload(t, c.EP, data[maxPayload:3*maxPayload], tcpip.WriteOptions{}, 2*maxPayload)
+	for _, offset := range []int{maxPayload, 2 * maxPayload} {
+		c.ReceiveAndCheckPacketWithOptions(data, offset, maxPayload, e2e.TSOptionSize)
+	}
+
+	firstTail := 3 * maxPayload
+	writePayload(t, c.EP, data[firstTail:firstTail+len("first")], tcpip.WriteOptions{More: true}, len("first"))
+	checkNoPacket(t, c)
+
+	// TLP releases the first hold without an ACK pass that would clean it up.
+	pto := 2*rtt + 2*time.Millisecond
+	clock.Advance(pto)
+	c.ReceiveAndCheckPacketWithOptions(data, firstTail, len("first"), e2e.TSOptionSize)
+
+	secondTail := firstTail + len("first")
+	writePayload(t, c.EP, data[secondTail:], tcpip.WriteOptions{More: true}, len("second"))
+	checkNoPacket(t, c)
+
+	// The old deadline must not release the fresh hold.
+	clock.Advance(tcp.MinRTO - pto)
+	checkNoPacket(t, c)
+	data = append(data, []byte("body")...)
+	writePayload(t, c.EP, []byte("body"), tcpip.WriteOptions{}, len("body"))
+	c.ReceiveAndCheckPacketWithOptions(data, secondTail, len("secondbody"), e2e.TSOptionSize)
+	checkNoPacket(t, c)
+}
+
+func TestMsgMoreShutdownWrite(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      e2e.DefaultMTU,
+		Clock:    faketime.NewManualClock(),
+	})
+	defer c.Cleanup()
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	data := []byte("header")
+	writePayload(t, c.EP, data, tcpip.WriteOptions{More: true}, len(data))
+	checkNoPacket(t, c)
+	if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
+		t.Fatalf("ShutdownWrite failed: %s", err)
+	}
+	c.ReceiveAndCheckPacket(data, 0, len(data))
+
+	packet := c.GetPacket()
+	defer packet.Release()
+	checker.IPv4(t, packet,
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS.Add(1+seqnum.Size(len(data))))),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagFin),
+		),
+	)
+	checkNoPacket(t, c)
+}
+
+func TestShortWritePush(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		delay bool
+		cork  bool
+		opts  tcpip.WriteOptions
+	}{
+		{name: "nagle", delay: true},
+		{name: "cork", cork: true},
+		{name: "msg-more", opts: tcpip.WriteOptions{More: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.NewWithOpts(t, context.Options{EnableV4: true, MTU: e2e.DefaultMTU})
+			defer c.Cleanup()
+			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+			stream := []byte("01234567890")
+			writePayload(t, c.EP, stream[:1], tcpip.WriteOptions{}, 1)
+			c.ReceiveAndCheckPacket(stream, 0, 1)
+			c.EP.SocketOptions().SetDelayOption(test.delay)
+			c.EP.SocketOptions().SetCorkOption(test.cork)
+			c.EP.SocketOptions().SetSendBufferSize(6, true /* notify */)
+
+			payload := writePayload(t, c.EP, stream[1:], test.opts, 5)
+			if got, want := payload.Len(), len(stream)-6; got != want {
+				t.Fatalf("unwritten payload = %d, want %d", got, want)
+			}
+			c.ReceiveAndCheckPacket(stream, 1, 5)
+			checkNoPacket(t, c)
+		})
+	}
+}
+
+type writeDuringCopyPayload struct {
+	ep        tcpip.Endpoint
+	payload   *bytes.Reader
+	during    *bytes.Reader
+	duringN   int64
+	duringErr tcpip.Error
+}
+
+func (p *writeDuringCopyPayload) Len() int {
+	return p.payload.Len()
+}
+
+func (p *writeDuringCopyPayload) Read(dst []byte) (int, error) {
+	if p.during.Len() != 0 {
+		p.duringN, p.duringErr = p.ep.Write(p.during, tcpip.WriteOptions{})
+	}
+	return p.payload.Read(dst)
+}
+
+func TestTruncatedWritePush(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      e2e.DefaultMTU,
+		Clock:    faketime.NewManualClock(),
+	})
+	defer c.Cleanup()
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+	c.EP.SocketOptions().SetCorkOption(true)
+	c.EP.SocketOptions().SetSendBufferSize(10, true /* notify */)
+
+	payload := writeDuringCopyPayload{
+		ep:      c.EP,
+		payload: bytes.NewReader([]byte("0123456789")),
+		during:  bytes.NewReader([]byte("abcde")),
+	}
+	n, err := c.EP.Write(&payload, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	if payload.duringErr != nil {
+		t.Fatalf("competing Write failed: %s", payload.duringErr)
+	}
+	if payload.duringN != 5 || n != 5 {
+		t.Fatalf("competing Write = %d, truncated Write = %d; want 5, 5", payload.duringN, n)
+	}
+	// The competing write consumed buffer space after the original copy began.
+	// The accepted prefix must still bypass CORK and preserve byte order.
+	expected := []byte("abcde01234")
+	c.ReceiveAndCheckPacket(expected, 0, len(expected))
+	checkNoPacket(t, c)
+}
+
 func TestMinshallPartialSegment(t *testing.T) {
 	const maxPayload = 100
 	for _, gso := range []bool{false, true} {

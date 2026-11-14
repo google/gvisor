@@ -16,6 +16,7 @@ package tcp_cork_mss_test
 
 import (
 	"flag"
+	"fmt"
 	"testing"
 	"time"
 
@@ -80,4 +81,58 @@ func TestTCPCorkMSS(t *testing.T) {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+}
+
+// TestTCPMsgMore checks that MSG_MORE combines a header with its final body.
+func TestTCPMsgMore(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFD)
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	defer conn.Close(t)
+	conn.Connect(t)
+	acceptFD, _ := dut.Accept(t, listenFD)
+	defer dut.Close(t, acceptFD)
+	dut.SetSockOptInt(t, acceptFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+
+	dut.Send(t, acceptFD, []byte("header"), unix.MSG_MORE)
+	dut.Send(t, acceptFD, []byte("body"), 0)
+	expectedPayload := testbench.Payload{Bytes: []byte("headerbody")}
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, &expectedPayload, time.Second); err != nil {
+		t.Fatalf("expected combined header and body: %s", err)
+	}
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+}
+
+func TestTCPMsgMoreACKRelease(t *testing.T) {
+	for _, window := range []uint16{30000, 0} {
+		t.Run(fmt.Sprintf("window=%d", window), func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFD)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			defer conn.Close(t)
+			conn.Connect(t)
+			acceptFD, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, acceptFD)
+			dut.SetSockOptInt(t, acceptFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+
+			dut.Send(t, acceptFD, []byte("x"), 0)
+			if _, err := conn.ExpectData(t, &testbench.TCP{}, &testbench.Payload{Bytes: []byte("x")}, time.Second); err != nil {
+				t.Fatalf("initial payload: %s", err)
+			}
+			if window == 0 {
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(window)})
+			}
+			dut.Send(t, acceptFD, []byte("header"), unix.MSG_MORE)
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(30000)})
+
+			// Require ACK/window processing to release the data before the
+			// 200 ms cork timer can expire.
+			if _, err := conn.ExpectData(t, &testbench.TCP{}, &testbench.Payload{Bytes: []byte("header")}, 100*time.Millisecond); err != nil {
+				t.Fatalf("ACK/window update did not release MSG_MORE data: %s", err)
+			}
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+		})
+	}
 }

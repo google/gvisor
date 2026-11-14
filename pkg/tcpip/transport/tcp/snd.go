@@ -194,11 +194,10 @@ type sender struct {
 	// RFC3522 Section 3.2.
 	retransmitTS uint32
 
-	// startCork start corking the segments.
+	// startCork reports whether a corking interval is active.
 	startCork bool
 
-	// corkTimer is used to drain the segments which are held when TCP_CORK
-	// option is enabled.
+	// corkTimer releases segments held by TCP_CORK or MSG_MORE.
 	corkTimer timer `state:"nosave"`
 }
 
@@ -439,7 +438,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 	// Since we likely reduced the number of outstanding packets, we may be
 	// ready to send some more.
 	s.updateWriteNext(nextSeg)
-	s.sendData()
+	s.sendData(sendNormal)
 }
 
 // sendAck sends an ACK segment.
@@ -697,7 +696,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		return &tcpip.ErrTimeout{}
 	}
 
-	s.sendData()
+	s.sendData(sendNormal)
 
 	return nil
 }
@@ -857,7 +856,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 // lower of the specified limit value or the receivers window size specified by
 // end.
 // +checklocks:s.ep.mu
-func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (sent bool) {
+func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value, mode sendMode) (sent bool) {
 	// We abuse the flags field to determine if we have already
 	// assigned a sequence number to this segment.
 	newData := !s.isAssignedSequenceNumber(seg)
@@ -890,9 +889,9 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				nSeg.DecRef()
 			}
 			if !nextTooBig {
-				nagle := s.Outstanding > 0 && s.ep.ops.GetDelayOption() &&
+				nagle := mode != sendPush && s.Outstanding > 0 && s.ep.ops.GetDelayOption() &&
 					s.SndUna.LessThan(s.smallSegmentEnd) && !s.SndNxt.LessThan(s.smallSegmentEnd)
-				cork := s.ep.ops.GetCorkOption()
+				cork := mode != sendPush && (mode == sendMore || s.ep.ops.GetCorkOption())
 				if nagle || cork {
 					// GSO can send several segments at once. Send its full-MSS
 					// prefix while retaining the partial segment for coalescing.
@@ -1083,6 +1082,11 @@ func (s *sender) disableZeroWindowProbing() {
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
 func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
+	if s.startCork && s.writeNext == nil {
+		s.startCork = false
+		s.corkTimer.disable()
+	}
+
 	if dataSent {
 		// We sent data, so we should stop the keepalive timer to ensure
 		// that no keepalives are sent while there is pending data.
@@ -1115,11 +1119,20 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 	}
 }
 
+// sendMode selects how a send pass applies Nagle and corking.
+type sendMode uint8
+
+const (
+	sendNormal sendMode = iota
+	sendMore
+	sendPush
+)
+
 // sendData sends new data segments. It is called when data becomes available or
 // when the send window opens up.
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
-func (s *sender) sendData() {
+func (s *sender) sendData(mode sendMode) {
 	limit := s.MaxPayloadSize
 	if s.gso {
 		limit = int(s.ep.gso.MaxSize - header.TCPTotalHeaderMaximumSize - 1)
@@ -1150,7 +1163,7 @@ func (s *sender) sendData() {
 			s.updateWriteNext(seg.Next())
 			continue
 		}
-		if sent := s.maybeSendSegment(seg, limit, end); !sent {
+		if sent := s.maybeSendSegment(seg, limit, end, mode); !sent {
 			break
 		}
 		dataSent = true
@@ -1829,7 +1842,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
-	s.sendData()
+	s.sendData(sendNormal)
 }
 
 // sendSegment sends the specified segment.
@@ -1929,7 +1942,7 @@ func (s *sender) updateWriteNext(seg *segment) {
 	s.writeNext = seg
 }
 
-// corkTimerExpired drains all the segments when TCP_CORK is enabled.
+// corkTimerExpired releases data held by TCP_CORK or MSG_MORE.
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
 func (s *sender) corkTimerExpired() tcpip.Error {
@@ -1939,14 +1952,16 @@ func (s *sender) corkTimerExpired() tcpip.Error {
 		return nil
 	}
 
-	// Assign sequence number and flags to the segment.
+	s.startCork = false
 	seg := s.writeNext
 	if seg == nil {
 		return nil
 	}
-	seg.sequenceNumber = s.SndNxt
-	seg.flags = header.TCPFlagAck | header.TCPFlagPsh
-	// Drain all the segments.
-	s.sendData()
+	// Retain the forced push if the window prevents transmission now.
+	if !s.isAssignedSequenceNumber(seg) {
+		seg.sequenceNumber = s.SndNxt
+		seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+	}
+	s.sendData(sendPush)
 	return nil
 }
