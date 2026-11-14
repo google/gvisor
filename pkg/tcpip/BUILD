@@ -41,6 +41,7 @@ go_library(
         "socketops.go",
         "stdclock.go",
         "stdclock_state.go",
+        "stdclock_windows_unsafe.go",
         "tcpip.go",
         "timer.go",
     ],
@@ -125,6 +126,7 @@ go_test(
     size = "small",
     srcs = [
         "errors_test.go",
+        "stdclock_test.go",
         "tcpip_test.go",
     ],
     embed = [":tcpip"],

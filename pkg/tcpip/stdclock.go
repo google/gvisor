@@ -53,6 +53,10 @@ type stdClock struct {
 	// https://golang.org/pkg/time/#Since.
 	baseTime time.Time `state:"nosave"`
 
+	// baseCounter holds the reading of highResCounter when the clock was
+	// constructed. It is only used when highResCounter is set.
+	baseCounter time.Duration `state:"nosave"`
+
 	// monotonicOffset is the offset applied to the calculated monotonic time.
 	//
 	// monotonicOffset is assigned after restore so that the monotonic time
@@ -60,10 +64,23 @@ type stdClock struct {
 	monotonicOffset MonotonicTime `state:".(MonotonicTime)"`
 }
 
+// highResCounter, if set, returns the time elapsed since an arbitrary point
+// with a finer resolution than the monotonic clock of the time package. It is
+// set on platforms where that clock only moves in coarse steps.
+var highResCounter func() time.Duration
+
 // NewStdClock returns an instance of a clock that uses the time package.
 func NewStdClock() Clock {
-	return &stdClock{
-		baseTime: time.Now(),
+	s := &stdClock{}
+	s.setBase()
+	return s
+}
+
+// setBase makes the monotonic time count from now.
+func (s *stdClock) setBase() {
+	s.baseTime = time.Now()
+	if highResCounter != nil {
+		s.baseCounter = highResCounter()
 	}
 }
 
@@ -76,7 +93,12 @@ func (*stdClock) Now() time.Time {
 
 // NowMonotonic implements Clock.NowMonotonic.
 func (s *stdClock) NowMonotonic() MonotonicTime {
-	sinceBase := time.Since(s.baseTime)
+	var sinceBase time.Duration
+	if highResCounter != nil {
+		sinceBase = highResCounter() - s.baseCounter
+	} else {
+		sinceBase = time.Since(s.baseTime)
+	}
 	if sinceBase < 0 {
 		panic(fmt.Sprintf("got negative duration = %s since base time = %s", sinceBase, s.baseTime))
 	}
