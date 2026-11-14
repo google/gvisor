@@ -28,4 +28,41 @@
   .navbar-nav .nav-icon {
     font-size: 18px;
   }
+
+  // Brand-colored buttons. The vertical margins and paddings keep the total
+  // height equal to the height of the other navigation links.
+  .navbar-nav > li > a.nav-button {
+    margin: 9px 0 9px 8px;
+    padding: 6px 9px;
+    border-radius: 4px;
+    line-height: 20px;
+  }
+
+  // Align the last button with the right edge of the page content.
+  .navbar-nav > li:last-child > a.nav-button {
+    margin-right: 15px;
+  }
+
+  // The darkened green gives the white icon a contrast ratio above 3:1.
+  .navbar-nav > li > a.nav-button-slack {
+    background-color: darken($slack-green, 8%);
+    color: #fff;
+
+    &:focus,
+    &:hover {
+      background-color: darken($slack-green, 16%);
+      color: #fff;
+    }
+  }
+
+  .navbar-nav > li > a.nav-button-github {
+    background-color: #fff;
+    color: $github-black;
+
+    &:focus,
+    &:hover {
+      background-color: darken(#fff, 12%);
+      color: $github-black;
+    }
+  }
 }
