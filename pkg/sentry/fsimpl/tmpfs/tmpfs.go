@@ -38,6 +38,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -116,6 +117,11 @@ type filesystem struct {
 	// maxSizeInPages is the maximum permissible size for the tmpfs in terms of pages.
 	// This field is immutable.
 	maxSizeInPages uint64
+
+	// If hostStatFS is true, the tmpfs has no size limit and mf is
+	// disk-backed, so statfs(2) reports the capacity of the host filesystem
+	// that stores mf. This field is immutable.
+	hostStatFS bool
 
 	// maxInodes is the maximum permissible number of inodes for the tmpfs.
 	// If maxInodes == 0, there is no limit on the number of inodes.
@@ -281,6 +287,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	maxSizeInPages := getDefaultSizeLimit(disableDefaultSizeLimit) >> hostarch.PageShift
+	sizeLimited := !disableDefaultSizeLimit
 	maxInodes := getDefaultInodeLimit(disableDefaultSizeLimit)
 	rootKUID := creds.FilesystemKUID
 	rootKGID := creds.FilesystemKGID
@@ -312,6 +319,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				maxSizeInPages = math.MaxInt64
 				printedSize = 0
 			}
+			sizeLimited = maxSizeInBytes > 0
 			printedOptsMap[optSize] = fmt.Sprintf("size=%vk", printedSize)
 
 		case optNrBlocks:
@@ -325,6 +333,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				return nil, nil, linuxerr.EINVAL
 			}
 			maxSizeInPages = maxBlocks
+			sizeLimited = true
 			printedSize := (maxSizeInPages*uint64(hostarch.PageSize) + 1023) / 1024
 			printedOptsMap[optSize] = fmt.Sprintf("size=%vk", printedSize)
 
@@ -431,6 +440,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		huge:             huge,
 		maxFilenameLen:   linux.NAME_MAX,
 		maxSizeInPages:   maxSizeInPages,
+		hostStatFS:       !sizeLimited && mf.IsDiskBacked(),
 		maxInodes:        maxInodes,
 		allowXattrPrefix: allowXattrPrefix,
 	}
@@ -528,7 +538,7 @@ func (d *dentry) releaseChildrenLocked(ctx context.Context) {
 	}
 }
 
-func (fs *filesystem) statFS() linux.Statfs {
+func (fs *filesystem) statFS() (linux.Statfs, error) {
 	st := linux.Statfs{
 		Type:         linux.TMPFS_MAGIC,
 		BlockSize:    int64(hostarch.PageSize),
@@ -536,11 +546,25 @@ func (fs *filesystem) statFS() linux.Statfs {
 		NameLength:   linux.NAME_MAX,
 	}
 
-	// If size is set for tmpfs return set values.
-	st.Blocks = fs.maxSizeInPages
-	pagesUsed := fs.pagesUsed.Load()
-	st.BlocksFree = fs.maxSizeInPages - pagesUsed
-	st.BlocksAvailable = fs.maxSizeInPages - pagesUsed
+	if fs.hostStatFS {
+		// Compare Linux's fs/overlayfs/super.c:ovl_statfs(), which reports the
+		// filesystem containing the upper directory.
+		var hostSt unix.Statfs_t
+		if err := unix.Fstatfs(fs.mf.FD(), &hostSt); err != nil {
+			return linux.Statfs{}, err
+		}
+		st.BlockSize = hostSt.Bsize
+		st.FragmentSize = hostSt.Frsize
+		st.Blocks = hostSt.Blocks
+		st.BlocksFree = hostSt.Bfree
+		st.BlocksAvailable = hostSt.Bavail
+	} else {
+		// If size is set for tmpfs return set values.
+		st.Blocks = fs.maxSizeInPages
+		pagesUsed := fs.pagesUsed.Load()
+		st.BlocksFree = fs.maxSizeInPages - pagesUsed
+		st.BlocksAvailable = fs.maxSizeInPages - pagesUsed
+	}
 
 	// If nr_inodes is set for tmpfs return set values.
 	st.Files = fs.maxInodes
@@ -551,7 +575,7 @@ func (fs *filesystem) statFS() linux.Statfs {
 		st.FilesFree = fs.maxInodes - inodesUsed
 	}
 
-	return st
+	return st, nil
 }
 
 // dentry implements vfs.DentryImpl.
@@ -1293,7 +1317,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 
 // StatFS implements vfs.FileDescriptionImpl.StatFS.
 func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
-	return fd.filesystem().statFS(), nil
+	return fd.filesystem().statFS()
 }
 
 // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
