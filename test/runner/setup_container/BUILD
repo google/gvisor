@@ -1,5 +1,5 @@
-# setup_container contains a shim binary that runs within the test container
-# for syscall tests with container=True.
+# setup_container starts the syscall test runner. For container=True tests,
+# it also prepares the network inside the test container.
 
 load("//tools:defs.bzl", "cc_binary")
 
@@ -12,7 +12,7 @@ cc_binary(
     name = "setup_container",
     testonly = 1,
     srcs = ["setup_container.cc"],
-    visibility = ["//test/runner:__subpackages__"],
+    visibility = ["//:sandbox"],
     deps = [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
