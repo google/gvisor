@@ -90,9 +90,8 @@ func (dc *deviceConn) interrupt(fut *futureResponse) {
 // connection is the struct by which the sentry communicates with the FUSE server daemon.
 //
 // Lock order:
-//   - conn.fd.mu
-//   - conn.mu
-//   - conn.asyncMu
+//   - DeviceFD.mu
+//   - connection.mu
 //
 // +stateify savable
 type connection struct {
@@ -130,7 +129,7 @@ type connection struct {
 
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
-	// Use setInitialized() and isInitialized() for atomic access.
+	// Use setInitializedLocked and isInitialized to access it.
 	initialized atomicbitops.Int32
 
 	// initializedChan is used to block requests before initialization.
@@ -232,26 +231,23 @@ type connection struct {
 	// The "async requests" in unix term is our async requests that expect a reply,
 	// i.e. `!request.noReply`
 
-	// asyncMu protects the async request fields.
-	asyncMu sync.Mutex `state:"nosave"`
-
 	// asyncNum is the number of async requests.
 	//
-	// +checklocks:asyncMu
+	// +checklocks:mu
 	asyncNum uint16
 
 	// asyncCongestionThreshold the number of async requests.
 	// Negotiated in FUSE_INIT as "CongestionThreshold".
 	// TODO(gvisor.dev/issue/3529): add congestion control.
 	//
-	// +checklocks:asyncMu
+	// +checklocks:mu
 	asyncCongestionThreshold uint16
 
 	// asyncNumMax is the maximum number of asyncNum.
 	// Connection blocks the async requests when it is reached.
 	// Negotiated in FUSE_INIT as "MaxBackground".
 	//
-	// +checklocks:asyncMu
+	// +checklocks:mu
 	asyncNumMax uint16
 
 	// maxRead is the maximum size of a read buffer in in bytes.
@@ -372,18 +368,6 @@ func (conn *connection) setInitializedLocked() {
 	// unnecessary higher chance to be issued before the blocked one.
 
 	conn.initialized.Store(1)
-}
-
-// setInitialized atomically sets the connection as initialized.
-func (conn *connection) setInitialized() {
-	if conn.isInitialized() {
-		return
-	}
-
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-
-	conn.setInitializedLocked()
 }
 
 // isInitialized atomically check if the connection is initialized.

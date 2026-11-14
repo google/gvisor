@@ -17,6 +17,7 @@ package fuse
 import (
 	"math/rand"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -32,13 +33,13 @@ import (
 // Kernel.Pause() / TaskSet.BeginExternalStop().
 type interruptibleTaskContext struct {
 	context.Context
-	enteredBlock chan struct{}
+	enteredBlock chan (<-chan struct{})
 	interruptCh  chan struct{}
 }
 
 func (c *interruptibleTaskContext) Block(ch <-chan struct{}) error {
 	select {
-	case c.enteredBlock <- struct{}{}:
+	case c.enteredBlock <- ch:
 	default:
 	}
 	select {
@@ -47,6 +48,12 @@ func (c *interruptibleTaskContext) Block(ch <-chan struct{}) error {
 	case <-c.interruptCh:
 		return linuxerr.ErrInterrupted
 	}
+}
+
+func (conn *connection) setInitialized() {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	conn.setInitializedLocked()
 }
 
 // TestConnectionInitBlock tests if initialization
@@ -103,14 +110,34 @@ func TestConnectionAbort(t *testing.T) {
 		futNormal = append(futNormal, fut)
 	}
 
-	conn.Abort(s.Ctx)
-
-	// Abort should unblock the initialization channel.
-	// Note: no test requests are actually blocked on `conn.initializedChan`.
+	// A caller waiting for INIT must wake and see the disconnection.
+	taskCtx := &interruptibleTaskContext{Context: s.Ctx, enteredBlock: make(chan (<-chan struct{}), 1)}
+	req := conn.NewRequest(creds, 0, 0, linux.FUSE_GETATTR, &testObj)
+	done := make(chan error, 1)
+	go func() {
+		_, err := conn.Call(taskCtx, req)
+		done <- err
+	}()
+	defer conn.Abort(s.Ctx)
 	select {
-	case <-conn.initializedChan:
-	default:
-		t.Fatalf("initializedChan should not be blocking after SetInitialized")
+	case ch := <-taskCtx.enteredBlock:
+		if ch != conn.initializedChan {
+			t.Fatal("Call blocked on a channel other than initializedChan")
+		}
+	case err := <-done:
+		t.Fatalf("Call returned before INIT: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Call did not block waiting for INIT")
+	}
+
+	conn.Abort(s.Ctx)
+	select {
+	case err := <-done:
+		if !linuxerr.Equals(linuxerr.ENOTCONN, err) {
+			t.Fatalf("Call waiting for INIT returned %v, want ENOTCONN", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Call waiting for INIT did not return after Abort")
 	}
 
 	// Abort will return ECONNABORTED error to unblocked requests.
@@ -121,7 +148,6 @@ func TestConnectionAbort(t *testing.T) {
 	}
 
 	// After abort, Call() should return directly with ENOTCONN.
-	req := conn.NewRequest(creds, 0, 0, 0, &testObj)
 	_, err = conn.Call(s.Ctx, req)
 	if !linuxerr.Equals(linuxerr.ENOTCONN, err) {
 		t.Fatalf("Incorrect error code received for Call() after connection aborted")
@@ -173,7 +199,7 @@ func TestConnectionCallInterruptedByPause(t *testing.T) {
 
 	taskCtx := &interruptibleTaskContext{
 		Context:      s.Ctx,
-		enteredBlock: make(chan struct{}, 1),
+		enteredBlock: make(chan (<-chan struct{}), 1),
 		interruptCh:  make(chan struct{}),
 	}
 
@@ -221,7 +247,7 @@ func TestConnectionCallInterruptedByPause(t *testing.T) {
 	// Linux, the daemon's late reply to it fails with ENOENT.
 	taskCtx2 := &interruptibleTaskContext{
 		Context:      s.Ctx,
-		enteredBlock: make(chan struct{}, 1),
+		enteredBlock: make(chan (<-chan struct{}), 1),
 		interruptCh:  make(chan struct{}),
 	}
 	req2 := conn.NewRequest(creds, 1, 1, linux.FUSE_GETATTR, &testObj)
