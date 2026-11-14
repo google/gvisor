@@ -1170,6 +1170,11 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.net.SetOwner(owner)
 }
 
+// OnMulticastLoopChanged updates the connected datagram route.
+func (e *endpoint) OnMulticastLoopChanged() {
+	e.net.OnMulticastLoopChanged()
+}
+
 // SocketOptions implements tcpip.Endpoint.
 //
 // Setting reuse options calls back into this endpoint and requires e.mu to be

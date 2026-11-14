@@ -25,6 +25,8 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -42,6 +44,74 @@ namespace testing {
 
 using ::testing::IsNull;
 using ::testing::NotNull;
+
+TEST(MulticastSocketOptions, IPv4SmallOptionBuffers) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  for (int option : {IP_MULTICAST_TTL, IP_MULTICAST_LOOP}) {
+    SCOPED_TRACE(option);
+    for (socklen_t size : {0, 1, 2, 3, 4}) {
+      unsigned char value[4] = {};
+      socklen_t len = size;
+      ASSERT_THAT(getsockopt(fd.get(), IPPROTO_IP, option, value, &len),
+                  SyscallSucceeds());
+      EXPECT_EQ(len, size < sizeof(int) ? std::min<socklen_t>(size, 1) : size);
+      if (len != 0) {
+        EXPECT_EQ(value[0], 1);
+      }
+    }
+  }
+}
+
+TEST(MulticastSocketOptions, IndependentIPv4AndIPv6Values) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+  constexpr int v6_value = 0;
+  for (auto [ipv4, ipv6] :
+       {std::array<int, 2>{IP_MULTICAST_TTL, IPV6_MULTICAST_HOPS},
+        std::array<int, 2>{IP_MULTICAST_LOOP, IPV6_MULTICAST_LOOP}}) {
+    SCOPED_TRACE(ipv6);
+    int value = -1;
+    socklen_t len = sizeof(value);
+    ASSERT_THAT(getsockopt(fd.get(), IPPROTO_IPV6, ipv6, &value, &len),
+                SyscallSucceeds());
+    EXPECT_EQ(value, 1);
+    ASSERT_THAT(
+        setsockopt(fd.get(), IPPROTO_IPV6, ipv6, &v6_value, sizeof(v6_value)),
+        SyscallSucceeds());
+    ASSERT_THAT(getsockopt(fd.get(), IPPROTO_IP, ipv4, &value, &len),
+                SyscallSucceeds());
+    EXPECT_EQ(value, 1);
+    ASSERT_THAT(getsockopt(fd.get(), IPPROTO_IPV6, ipv6, &value, &len),
+                SyscallSucceeds());
+    EXPECT_EQ(value, v6_value);
+  }
+}
+
+TEST(MulticastSocketOptions, IPv6ValueLimits) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+  for (int hops : {255, -1}) {
+    ASSERT_THAT(setsockopt(fd.get(), IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &hops,
+                           sizeof(hops)),
+                SyscallSucceeds());
+    int value = -1;
+    socklen_t len = sizeof(value);
+    ASSERT_THAT(
+        getsockopt(fd.get(), IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &value, &len),
+        SyscallSucceeds());
+    EXPECT_EQ(value, hops == -1 ? 1 : hops);
+  }
+  int invalid = 256;
+  for (int option : {IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP}) {
+    EXPECT_THAT(
+        setsockopt(fd.get(), IPPROTO_IPV6, option, &invalid, sizeof(invalid)),
+        SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(setsockopt(fd.get(), IPPROTO_IPV6, option, &invalid, 1),
+                SyscallFailsWithErrno(EINVAL));
+  }
+  auto stream = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+  EXPECT_THAT(setsockopt(stream.get(), IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+                         &invalid, sizeof(invalid)),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+}
 
 constexpr int kTimeoutSecs = 10;
 

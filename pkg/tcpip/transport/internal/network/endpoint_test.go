@@ -365,3 +365,74 @@ func TestMain(m *testing.M) {
 	refs.DoLeakCheck()
 	os.Exit(code)
 }
+
+type multicastLoopHandler struct {
+	tcpip.DefaultSocketOptionsHandler
+	ep *network.Endpoint
+}
+
+func (h multicastLoopHandler) OnMulticastLoopChanged() {
+	h.ep.OnMulticastLoopChanged()
+}
+
+func TestMulticastLoopInFlightWrite(t *testing.T) {
+	s := stack.New(stack.Options{NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol}})
+	defer s.Destroy()
+	link := channel.New(1, header.IPv4MinimumMTU, "")
+	if err := s.CreateNIC(1, link); err != nil {
+		t.Fatal(err)
+	}
+	addr := tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: ipv4NICAddr.WithPrefix()}
+	if err := s.AddProtocolAddress(1, addr, stack.AddressProperties{}); err != nil {
+		t.Fatal(err)
+	}
+	peer := testutil.MustParse4("225.4.5.6")
+	s.SetRouteTable([]tcpip.Route{{Destination: peer.WithPrefix().Subnet(), NIC: 1}})
+
+	var ep network.Endpoint
+	var ops tcpip.SocketOptions
+	ops.InitHandler(&multicastLoopHandler{ep: &ep}, s, nil, nil)
+	ep.Init(s, ipv4.ProtocolNumber, udp.ProtocolNumber, &ops, &waiter.Queue{})
+	defer ep.Close()
+	ops.SetIPv4MulticastLoop(true)
+	if err := ep.Connect(tcpip.FullAddress{Addr: peer}); err != nil {
+		t.Fatal(err)
+	}
+	acquire := func() network.WriteContext {
+		t.Helper()
+		ctx, err := ep.AcquireContextForWrite(tcpip.WriteOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ctx
+	}
+	old := acquire()
+	defer old.Release()
+	ops.SetIPv4MulticastLoop(false)
+	current := acquire()
+	defer current.Release()
+
+	for _, tc := range []struct {
+		ctx  *network.WriteContext
+		loop bool
+	}{{&old, true}, {&current, false}} {
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(tc.ctx.PacketInfo().MaxHeaderLength),
+			Payload:            buffer.MakeWithData([]byte{1, 2, 3, 4}),
+		})
+		err := tc.ctx.WritePacket(pkt, false /* headerIncluded */)
+		pkt.DecRef()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sent := link.Read()
+		if sent == nil {
+			t.Fatal("no outgoing packet")
+		}
+		got := sent.EgressRoute.Loop&stack.PacketLoop != 0
+		sent.DecRef()
+		if got != tc.loop {
+			t.Fatalf("outgoing multicast loop = %t, want %t", got, tc.loop)
+		}
+	}
+}
