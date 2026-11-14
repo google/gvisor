@@ -752,6 +752,32 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 	}
 }
 
+// TestMemBarrierShared checks that all KVM instances share one host membarrier
+// probe, since registration for private-expedited membarrier applies to the
+// whole process.
+func TestMemBarrierShared(t *testing.T) {
+	desc, err := platformdesc.Lookup("kvm")
+	if err != nil {
+		t.Fatalf("error looking up platform: %v", err)
+	}
+	var ks [2]*KVM
+	for i := range ks {
+		deviceFile, err := desc.OpenDevice("")
+		if err != nil {
+			t.Fatalf("error opening device file: %v", err)
+		}
+		k, err := New(deviceFile, Config{})
+		if err != nil {
+			t.Fatalf("error creating KVM instance: %v", err)
+		}
+		t.Cleanup(k.machine.Destroy)
+		ks[i] = k
+	}
+	if ks[0].MemBarrier != ks[1].MemBarrier {
+		t.Errorf("KVM instances have different host membarrier probes: %p and %p", ks[0].MemBarrier, ks[1].MemBarrier)
+	}
+}
+
 func TestMain(m *testing.M) {
 	cpuid.Initialize()
 	dummyFPState = fpu.NewState()

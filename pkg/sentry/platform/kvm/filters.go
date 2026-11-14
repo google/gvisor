@@ -22,7 +22,14 @@ import (
 )
 
 // SeccompInfo returns seccomp information for the KVM platform.
+//
+// The filters do not allow the membarrier(2) commands that the host membarrier
+// probe uses, so SeccompInfo waits for the probe to complete. Callers may use a
+// nil or zero-value KVM to get the static filters; it has no probe to wait for.
 func (k *KVM) SeccompInfo() platform.SeccompInfo {
+	if k != nil && k.MemBarrier != nil {
+		k.MemBarrier.Get()
+	}
 	return platform.StaticSeccompInfo{
 		PlatformName: "kvm",
 		Filters: k.archSyscallFilters().Merge(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
