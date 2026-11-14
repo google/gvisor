@@ -1016,6 +1016,150 @@ func TestEifelRetransmissionTimestamps(t *testing.T) {
 	}
 }
 
+// TestEifelEarlierRepairNotSpurious checks that the ACK for a retransmission
+// sent during one recovery episode does not make the next episode look
+// spurious.
+func TestEifelEarlierRepairNotSpurious(t *testing.T) {
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{MTU: mtu, EnableV4: true, Clock: clock})
+	defer c.Cleanup()
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.SetStackTCPRecovery(t, c, 0)
+	peer := e2e.CreateConnectedWithSACKAndTS(c)
+	peer.Flags = header.TCPFlagAck
+
+	const numSegments = 40
+	data := make([]byte, numSegments*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	if n, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+		t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+	}
+
+	// sent returns the segments transmitted since the last call. lastTS has
+	// the timestamp of the latest copy of each segment.
+	lastTS := make(map[int]uint32)
+	sent := func() []int {
+		t.Helper()
+		c.Stack().Pause()
+		c.Stack().Resume()
+		var segs []int
+		for {
+			v := c.GetPacketNonBlocking()
+			if v == nil {
+				return segs
+			}
+			h := header.TCP(header.IPv4(v.AsSlice()).Payload())
+			offset := h.SequenceNumber() - uint32(c.IRS) - 1
+			checkReceivedPacket(t, c, h, offset, v, data)
+			opts := h.ParsedOptions()
+			if !opts.TS || len(h.Payload()) != maxPayload {
+				t.Fatalf("segment at %d: TS = %t, size = %d", offset, opts.TS, len(h.Payload()))
+			}
+			seg := int(offset) / maxPayload
+			lastTS[seg] = opts.TSVal
+			segs = append(segs, seg)
+			v.Release()
+		}
+	}
+	// ack acknowledges every segment below cumulative and the segment
+	// ranges in sacked, echoing the timestamp echo. It returns the segments
+	// sent in response.
+	ack := func(cumulative int, echo uint32, sacked ...[2]int) []int {
+		t.Helper()
+		clock.Advance(5 * time.Millisecond)
+		peer.TSVal++
+		opts := timestampOption(peer.TSVal, echo)
+		if len(sacked) != 0 {
+			var blocks []header.SACKBlock
+			for _, r := range sacked {
+				blocks = append(blocks, header.SACKBlock{
+					Start: c.IRS.Add(1 + seqnum.Size(r[0]*maxPayload)),
+					End:   c.IRS.Add(1 + seqnum.Size(r[1]*maxPayload)),
+				})
+			}
+			sackOpt := make([]byte, 4+8*len(blocks))
+			n := header.EncodeNOP(sackOpt)
+			n += header.EncodeNOP(sackOpt[n:])
+			header.EncodeSACKBlocks(blocks, sackOpt[n:])
+			opts = append(opts, sackOpt...)
+		}
+		peer.AckNum = c.IRS.Add(1 + seqnum.Size(cumulative*maxPayload))
+		peer.SendPacket(nil, opts)
+		return sent()
+	}
+	wantRetransmitted := func(got []int, seg int) {
+		t.Helper()
+		if !slices.Contains(got, seg) {
+			t.Fatalf("sent segments %v, want a retransmission of segment %d", got, seg)
+		}
+	}
+	wantRecoveries := func(want uint64) {
+		t.Helper()
+		if got := c.Stack().Stats().TCP.SACKRecovery.Value(); got != want {
+			t.Fatalf("SACK recoveries = %d, want %d", got, want)
+		}
+	}
+
+	// Segments 1 and 8 of the first flight are lost. Segment 0 arrives.
+	sent()
+	original := lastTS[0]
+	ack(1, original)
+
+	// Segments 2 to 4 arrive and start the first recovery, which repairs
+	// segment 1.
+	ack(1, original, [2]int{2, 3})
+	ack(1, original, [2]int{2, 4})
+	wantRetransmitted(ack(1, original, [2]int{2, 5}), 1)
+	wantRecoveries(1)
+
+	// The rest of the first flight arrives. Each ACK releases new data, and
+	// the third segment above the second hole has segment 8 repaired.
+	ack(1, original, [2]int{2, 6})
+	ack(1, original, [2]int{2, 7})
+	ack(1, original, [2]int{2, 8})
+	ack(1, original, [2]int{9, 10}, [2]int{2, 8})
+	ack(1, original, [2]int{9, 11}, [2]int{2, 8})
+	wantRetransmitted(ack(1, original, [2]int{9, 12}, [2]int{2, 8}), 8)
+
+	// The repair of segment 1 arrives, then the new data sent after it.
+	// Segment 13 of the new data is lost, and is repaired within the first
+	// recovery.
+	repair1 := lastTS[1]
+	ack(8, repair1, [2]int{9, 12})
+	ack(8, repair1, [2]int{9, 13})
+	ack(8, repair1, [2]int{14, 15}, [2]int{9, 13})
+	ack(8, repair1, [2]int{14, 16}, [2]int{9, 13})
+	wantRetransmitted(ack(8, repair1, [2]int{14, 17}, [2]int{9, 13}), 13)
+	repair13 := lastTS[13]
+
+	// The repair of segment 8 arrives and ends the first recovery, which
+	// covered the first flight only. The repair of segment 13 is still on
+	// its way.
+	repair8 := lastTS[8]
+	ack(13, repair8, [2]int{14, 17})
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+	if info.CcState != tcpip.Open {
+		t.Fatalf("CcState = %v, want %v", info.CcState, tcpip.Open)
+	}
+
+	// The next segment to arrive starts a second recovery.
+	ack(13, repair8, [2]int{14, 18})
+	wantRecoveries(2)
+
+	// The first repair of segment 13 arrives. It was sent before the second
+	// recovery started, but it is not the original transmission, so the
+	// second recovery is not spurious.
+	ack(18, repair13)
+	if got := c.Stack().Stats().TCP.SpuriousRecovery.Value(); got != 0 {
+		t.Errorf("spurious recoveries = %d, want 0", got)
+	}
+}
+
 func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	numAck := 0
 	probeDone := make(chan struct{})
