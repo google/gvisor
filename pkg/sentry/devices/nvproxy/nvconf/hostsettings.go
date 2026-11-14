@@ -30,6 +30,10 @@ type HostSettings struct {
 	// ProcDriverNvidiaParams is the contents of /proc/driver/nvidia/params.
 	ProcDriverNvidiaParams string
 
+	// ProcDriverNvidiaVersion is the contents of /proc/driver/nvidia/version,
+	// or empty if the host has no such file or it cannot be read.
+	ProcDriverNvidiaVersion string
+
 	// If HaveFabricIMEXManagement is true, FabricIMEXManagementDevMinor is the
 	// device minor number advertised in
 	// /proc/driver/nvidia/capabilities/fabric-imex-mgmt.
@@ -59,6 +63,12 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 		return nil, fmt.Errorf("failed to read /proc/driver/nvidia/params: %w", err)
 	}
 	settings.ProcDriverNvidiaParams = string(params)
+
+	version, err := readFileIfExists("/proc/driver/nvidia/version")
+	if err != nil {
+		log.Warningf("Not serving /proc/driver/nvidia/version: %v", err)
+	}
+	settings.ProcDriverNvidiaVersion = version
 
 	if opts.WantFabricIMEXManagement {
 		fabricImexMgmt, err := os.ReadFile("/proc/driver/nvidia/capabilities/fabric-imex-mgmt")
@@ -94,6 +104,19 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 	}
 
 	return settings, nil
+}
+
+// readFileIfExists returns the contents of the file at path, or an empty
+// string if no file exists at path.
+func readFileIfExists(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	return string(data), nil
 }
 
 // IMEXChannelCount returns the number of IMEX channels indicated by
