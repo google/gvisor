@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -138,6 +139,63 @@ func TestHostFileDataSeeker(t *testing.T) {
 	r.Close()
 	if d := pipeMemFile.newHostFileDataSeeker(); d != nil {
 		t.Errorf("newHostFileDataSeeker returned %v for a closed file, want nil", d)
+	}
+}
+
+func TestUnaccountedUsage(t *testing.T) {
+	f := newSaveTestMemoryFile(t, "", false)
+
+	// Wait for the releaser goroutine to release a waste page and go to sleep
+	// (it holds f.mu from clearing f.haveWaste until it waits), then set
+	// f.haveWaste so that DecRef doesn't wake it to release later waste pages.
+	fr, err := f.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	f.DecRef(fr)
+	f.mu.Lock()
+	for f.haveWaste {
+		f.mu.Unlock()
+		runtime.Gosched()
+		f.mu.Lock()
+	}
+	f.haveWaste = true
+	f.mu.Unlock()
+
+	fr = allocateSaveTestPages(t, f)
+	pwritePage(t, f, fr, 2, 1)
+	pwritePage(t, f, fr, 3, 1)
+	waste, err := f.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	pwritePage(t, f, waste, 0, 1)
+	f.DecRef(waste)
+
+	if got, err := f.UnaccountedUsage(); err != nil || got != 3*uint64(hostarch.PageSize) {
+		t.Errorf("UnaccountedUsage before scan: got (%d, %v), want (%d, nil)", got, err, 3*hostarch.PageSize)
+	}
+	if err := f.UpdateUsage(nil); err != nil {
+		t.Fatalf("UpdateUsage: %v", err)
+	}
+	// Scans count committed used pages, but skip waste pages.
+	if got, err := f.UnaccountedUsage(); err != nil || got != uint64(hostarch.PageSize) {
+		t.Errorf("UnaccountedUsage after scan: got (%d, %v), want (%d, nil)", got, err, hostarch.PageSize)
+	}
+
+	// If knownCommittedBytes exceeds TotalUsage (e.g. if the host reclaimed
+	// pages), UnaccountedUsage clamps to 0.
+	f.mu.Lock()
+	f.knownCommittedBytes = 10 * uint64(hostarch.PageSize)
+	f.mu.Unlock()
+	if got, err := f.UnaccountedUsage(); err != nil || got != 0 {
+		t.Errorf("UnaccountedUsage when total < known: got (%d, %v), want (0, nil)", got, err)
+	}
+
+	// If the backing file is closed, UnaccountedUsage returns an error.
+	f.file.Close()
+	if _, err := f.UnaccountedUsage(); err == nil {
+		t.Errorf("UnaccountedUsage on closed file succeeded, want error")
 	}
 }
 
