@@ -304,6 +304,10 @@ type Args struct {
 	// Spec is the OCI spec that describes the container.
 	Spec *specs.Spec
 
+	// NvidiaDriverVersion is the NVIDIA driver ABI version for nvproxy, or
+	// empty if nvproxy is disabled.
+	NvidiaDriverVersion string
+
 	// BundleDir is the directory containing the container bundle.
 	BundleDir string
 
@@ -1359,12 +1363,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 		{Type: specs.PIDNamespace},
 	}
 
-	if specutils.NVProxyEnabled(args.Spec, conf) {
-		version, err := getNvproxyDriverVersion(conf)
-		if err != nil {
-			return fmt.Errorf("failed to get Nvidia driver version: %w", err)
-		}
-		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+version)
+	if args.NvidiaDriverVersion != "" {
+		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+args.NvidiaDriverVersion)
 	}
 
 	// Joins the network namespace if network is enabled. the sandbox talks
@@ -3179,9 +3179,9 @@ func deviceFileForPlatform(name, devicePath string) (*fd.FD, error) {
 	return f, nil
 }
 
-// getNvproxyDriverVersion returns the NVIDIA driver ABI version to use by
+// NVProxyDriverVersion returns the NVIDIA driver ABI version to use by
 // nvproxy, or "latest", which the sentry resolves to the newest supported ABI.
-func getNvproxyDriverVersion(conf *config.Config) (string, error) {
+func NVProxyDriverVersion(conf *config.Config) (string, error) {
 	switch conf.NVProxyDriverVersion {
 	case "":
 		return nvconf.HostDriverVersion()
