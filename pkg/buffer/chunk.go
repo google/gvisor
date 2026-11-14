@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/bits"
@@ -70,12 +71,39 @@ func getChunkPool(size int) *sync.Pool {
 	return &chunkPools[idx]
 }
 
-// Chunk represents a slice of pooled memory.
+// ExternalStorage owns memory supplied to a View by another package. The caller
+// must not otherwise access the memory after transferring ownership to a View.
+//
+// To support checkpointing, the concrete implementation must be savable and
+// own restoration of the backing memory.
+type ExternalStorage interface {
+	// Bytes returns the same writable, nonempty slice until Release. Its length
+	// must not exceed MaxChunkSize, which bounds the heap copy when a shared
+	// external chunk detaches on write. Access must not require a fallible
+	// operation.
+	//
+	// Bytes is called when ownership is transferred, not during restore.
+	Bytes() []byte
+
+	// RestoreBytes installs the restored slice in dst. If restoring the backing
+	// requires a later phase, leave dst nil until then. Publish the slice once,
+	// before allowing any buffer access, and drop dst on completion or Release.
+	// A failed restore must never resume users of the buffer.
+	RestoreBytes(ctx context.Context, dst *[]byte)
+
+	// Release relinquishes the backing memory. It is called exactly once, when
+	// the last chunk reference is released, and must not require calling Bytes.
+	Release()
+}
+
+// chunk represents reference-counted heap or externally owned memory. It holds
+// its usable bytes in data. For external memory the owner saves those bytes.
 //
 // +stateify savable
 type chunk struct {
 	chunkRefs
-	data []byte
+	data     []byte          `state:".([]byte)"`
+	external ExternalStorage `state:"wait"`
 }
 
 func newChunk(size int) *chunk {
@@ -94,6 +122,12 @@ func newChunk(size int) *chunk {
 }
 
 func (c *chunk) destroy() {
+	if c.external != nil {
+		c.data = nil
+		c.external.Release()
+		c.external = nil
+		return
+	}
 	if len(c.data) > MaxChunkSize {
 		c.data = nil
 		return
