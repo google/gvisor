@@ -35,6 +35,16 @@ func TLSWorks() bool
 func AddrOfPACLoop() uintptr
 func pacLoop()
 
+// AddrOfIDRegisterLoop returns the address of a function that reads
+// MIDR_EL1 with MRS and then performs a syscall, in a loop.
+func AddrOfIDRegisterLoop() uintptr
+func idRegisterLoop()
+
+// AddrOfWFELoop returns the address of a function that executes WFE and then
+// performs a syscall, in a loop.
+func AddrOfWFELoop() uintptr
+func wfeLoop()
+
 // LoadPair loads two 64-bit values from addr using LDP (which does not set
 // ESR_EL2.ISV on a Stage-2 fault, triggering KVM_EXIT_ARM_NISV if unmapped in
 // Stage-2).
