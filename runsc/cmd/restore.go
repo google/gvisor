@@ -159,6 +159,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		FSRestoreDirect:     r.fsRestoreDirect || r.directIO == sandbox.DirectIOOn,
 		CheckpointDirPath:   r.imagePath,
 		NoRootContainer:     r.noRootContainer,
+		GoferFiles:          r.goferFiles(),
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
@@ -197,6 +198,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	} else {
 		if len(r.passFDs) != 0 {
 			return util.Errorf("pass-fd must be supplied when creating the container, not when restoring an existing container")
+		}
+		if len(r.goferFDs) != 0 {
+			return util.Errorf("gofer-fd must be supplied when creating the container, not when restoring an existing container")
 		}
 		runArgs.Spec = c.Spec
 	}

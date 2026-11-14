@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -218,6 +219,27 @@ type Args struct {
 	// neither Process nor Root, and no gofer is started. Only valid when ID is
 	// the sandbox ID.
 	NoRootContainer bool
+
+	// GoferFiles are connections to lisafs gofers that the caller runs, one
+	// per lisafs-backed mount of the root container, keyed by mount
+	// destination. When set, no gofer process is started. Only valid for the
+	// sandbox's root container.
+	GoferFiles []GoferFile
+}
+
+// GoferFile is a connection to a lisafs gofer that the runsc caller runs.
+type GoferFile struct {
+	// Destination is the container path of the mount that File serves: "/"
+	// for the rootfs, otherwise the destination of a spec mount.
+	Destination string
+
+	// File is a connected lisafs socket.
+	File *os.File
+
+	// Conf, if set, says how the caller's gofer backs the mount, and must be
+	// lisafs-backed. If nil, it is derived from --overlay2 and the spec, as for
+	// a runsc gofer.
+	Conf *specutils.GoferMountConf
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -270,6 +292,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 		if len(args.PassFiles) > 0 || args.ExecFile != nil {
 			return nil, fmt.Errorf("PassFiles and ExecFile cannot be set with NoRootContainer: there is no root container process to pass them to")
+		}
+		if len(args.GoferFiles) > 0 {
+			return nil, fmt.Errorf("GoferFiles cannot be set with NoRootContainer: there are no root container mounts to serve")
 		}
 	}
 
@@ -336,6 +361,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 
 	} else {
+		if len(args.GoferFiles) > 0 {
+			return nil, fmt.Errorf("gofer files are only supported for the root container")
+		}
 		log.Debugf("Creating new container, cid: %s, sandbox: %s", c.ID, sandboxID)
 
 		// Find the sandbox associated with this ID.
@@ -477,7 +505,14 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			devIOFile       *os.File
 			mountsFile      *os.File
 		)
-		if !args.NoRootContainer {
+		switch {
+		case args.NoRootContainer:
+		case len(args.GoferFiles) > 0:
+			ioFiles, goferFilestores, err = c.externalGoferIOFiles(conf, mountHints, args.GoferFiles)
+			if err != nil {
+				return fmt.Errorf("cannot use caller-provided gofers: %w", err)
+			}
+		default:
 			ioFiles, goferFilestores, devIOFile, mountsFile, err = c.createGoferProcess(conf, specFile, mountHints, args.Attached, cloneIntoCgroupFD, containerCgroup, cpuLimits)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
@@ -1309,7 +1344,26 @@ func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mou
 // initGoferConfs initializes c.GoferMountConfs with all the gofer configs that
 // dictate how each gofer mount should be configured.
 func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, rootfsHint *sentryapi.RootfsHint) error {
-	// Handle root mount first.
+	goferConf, err := c.rootGoferConf(ovlConf, rootfsHint)
+	if err != nil {
+		return err
+	}
+	c.GoferMountConfs = append(c.GoferMountConfs, goferConf)
+	for i := range c.Spec.Mounts {
+		if !specutils.HasMountConfig(c.Spec.Mounts[i]) {
+			continue
+		}
+		goferConf, err := mountGoferConf(ovlConf, mountHints, c.Spec.Mounts[i])
+		if err != nil {
+			return err
+		}
+		c.GoferMountConfs = append(c.GoferMountConfs, goferConf)
+	}
+	return nil
+}
+
+// rootGoferConf returns the gofer config for the root mount.
+func (c *Container) rootGoferConf(ovlConf config.Overlay2, rootfsHint *sentryapi.RootfsHint) (specutils.GoferMountConf, error) {
 	overlayMedium := ovlConf.RootOverlayMedium()
 	overlaySize := ovlConf.RootOverlaySize()
 	mountType := sentryapi.Bind
@@ -1323,44 +1377,33 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryap
 	if c.Spec.Root.Readonly {
 		overlayMedium = config.NoOverlay
 	}
-	goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)
-	if err != nil {
-		return err
-	}
-	c.GoferMountConfs = append(c.GoferMountConfs, goferConf)
+	return createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)
+}
 
-	// Handle sub mounts.
-	for i := range c.Spec.Mounts {
-		if !specutils.HasMountConfig(c.Spec.Mounts[i]) {
-			continue
-		}
-		// Determine mount type: Bind for gofer mounts, "erofs" for EROFS mounts
-		mountType := sentryapi.Bind
-		if specutils.IsErofsMount(c.Spec.Mounts[i]) {
-			mountType = "erofs"
-		}
-
-		overlayMedium := ovlConf.SubMountOverlayMedium()
-		overlaySize := ovlConf.SubMountOverlaySize()
-		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
-			overlayMedium = config.NoOverlay
-		}
-		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil && hint.IsSandboxLocal() {
-			// Note that we want overlayMedium=self even if this is a read-only mount so that
-			// the shared mount is created correctly. Future containers may mount this writably.
-			overlayMedium = config.SelfOverlay
-			if !specutils.IsGoferMount(hint.Mount) {
-				mountType = hint.Mount.Type
-			}
-			overlaySize = ""
-		}
-		goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Mounts[i].Source)
-		if err != nil {
-			return err
-		}
-		c.GoferMountConfs = append(c.GoferMountConfs, goferConf)
+// mountGoferConf returns the gofer config for m, a spec mount with a gofer
+// mount config.
+func mountGoferConf(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, m specs.Mount) (specutils.GoferMountConf, error) {
+	// Determine mount type: Bind for gofer mounts, "erofs" for "erofs" mounts
+	mountType := sentryapi.Bind
+	if specutils.IsErofsMount(m) {
+		mountType = "erofs"
 	}
-	return nil
+
+	overlayMedium := ovlConf.SubMountOverlayMedium()
+	overlaySize := ovlConf.SubMountOverlaySize()
+	if specutils.IsReadonlyMount(m.Options) {
+		overlayMedium = config.NoOverlay
+	}
+	if hint := mountHints.FindMount(m.Source); hint != nil && hint.IsSandboxLocal() {
+		// Note that we want overlayMedium=self even if this is a read-only mount so that
+		// the shared mount is created correctly. Future containers may mount this writably.
+		overlayMedium = config.SelfOverlay
+		if !specutils.IsGoferMount(hint.Mount) {
+			mountType = hint.Mount.Type
+		}
+		overlaySize = ""
+	}
+	return createGoferConf(overlayMedium, overlaySize, mountType, m.Source)
 }
 
 // createGoferFilestores creates the regular files that will back the
@@ -1372,8 +1415,12 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
 	// namespace, so that they don't prevent the host mount points from being
 	// unmounted from the host's mount namespace. We will use /proc/pid/root
-	// to access gofer's mount namespace. See proc_pid_root(5).
-	goferRootfs := fmt.Sprintf("/proc/%d/root", c.GoferPid.Load())
+	// to access gofer's mount namespace. See proc_pid_root(5). Gofers that the
+	// caller runs have no PID here, so their mounts are reached from ours.
+	goferRootfs := "/"
+	if pid := c.GoferPid.Load(); pid != 0 {
+		goferRootfs = fmt.Sprintf("/proc/%d/root", pid)
+	}
 
 	// Handle rootfs first.
 	rootfsConf := c.GoferMountConfs[0]
@@ -1764,6 +1811,122 @@ func goferEnv(conf *config.Config, environ []string, gomaxprocs int) []string {
 	// cannot re-enable Go's cgroup CPU reader/poller inside the chroot.
 	godebug += "containermaxprocs=0,updatemaxprocs=0"
 	return append(env, godebug, "GOMAXPROCS="+strconv.Itoa(gomaxprocs))
+}
+
+// externalGoferIOFiles returns the sandbox IO files and gofer filestores for a
+// root container whose lisafs mounts are served by goferFiles, connections to
+// gofers that the caller runs. Each lisafs-backed mount must have exactly one
+// gofer file with its destination. EROFS mounts are opened here, as for a runsc
+// gofer. No gofer resolves the spec mounts, so the sandbox uses them as given.
+func (c *Container) externalGoferIOFiles(conf *config.Config, mountHints *sentryapi.PodMountHints, goferFiles []GoferFile) ([]*os.File, []*os.File, error) {
+	if shouldCreateDeviceGofer(c.Spec, conf) {
+		return nil, nil, fmt.Errorf("device passthrough needs a runsc gofer")
+	}
+	rootfsHint, err := sentryapi.NewRootfsHint(c.Spec)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
+	}
+
+	// dests[i] and mounts[i-1] belong to c.GoferMountConfs[i]: the rootfs, then
+	// the spec mounts that have a gofer mount config, in spec order.
+	dests := []string{"/"}
+	var mounts []specs.Mount
+	for _, m := range c.Spec.Mounts {
+		if specutils.HasMountConfig(m) {
+			dests = append(dests, filepath.Clean(m.Destination))
+			mounts = append(mounts, m)
+		}
+	}
+	byDest := make(map[string]GoferFile, len(goferFiles))
+	for _, gf := range goferFiles {
+		dest := filepath.Clean(gf.Destination)
+		if !filepath.IsAbs(dest) {
+			return nil, nil, fmt.Errorf("gofer FD destination %q is not an absolute path", gf.Destination)
+		}
+		if _, ok := byDest[dest]; ok {
+			return nil, nil, fmt.Errorf("more than one gofer FD for %q", dest)
+		}
+		switch n := countOf(dests, dest); n {
+		case 0:
+			return nil, nil, fmt.Errorf("gofer FD for %q, which is not a gofer mount of the container", dest)
+		case 1:
+		default:
+			return nil, nil, fmt.Errorf("gofer FD for %q, which is the destination of %d gofer mounts", dest, n)
+		}
+		byDest[dest] = gf
+	}
+
+	// A caller-given config replaces the derived one, so only derive the rest.
+	confs := make([]specutils.GoferMountConf, len(dests))
+	for i, dest := range dests {
+		if gf, ok := byDest[dest]; ok && gf.Conf != nil {
+			confs[i] = *gf.Conf
+			continue
+		}
+		var err error
+		if i == 0 {
+			confs[i], err = c.rootGoferConf(conf.GetOverlay2(), rootfsHint)
+		} else {
+			confs[i], err = mountGoferConf(conf.GetOverlay2(), mountHints, mounts[i-1])
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("error initializing gofer conf for %q: %w", dest, err)
+		}
+	}
+	c.GoferMountConfs = confs
+
+	ioFiles := make([]*os.File, 0, len(dests))
+	var opened []*os.File
+	cu := cleanup.Make(func() {
+		for _, f := range opened {
+			_ = f.Close()
+		}
+	})
+	defer cu.Clean()
+	for i, dest := range dests {
+		if gf, ok := byDest[dest]; ok {
+			if !c.GoferMountConfs[i].ShouldUseLisafs() {
+				return nil, nil, fmt.Errorf("gofer FD for %q, whose mount is not lisafs-backed (%v)", dest, c.GoferMountConfs[i])
+			}
+			ioFiles = append(ioFiles, gf.File)
+			continue
+		}
+		switch cfg := c.GoferMountConfs[i]; {
+		case cfg.ShouldUseLisafs():
+			return nil, nil, fmt.Errorf("no gofer FD for %q, whose mount is lisafs-backed", dest)
+		case cfg.ShouldUseErofs():
+			var source string
+			switch {
+			case i > 0:
+				source = mounts[i-1].Source
+			case rootfsHint != nil:
+				source = rootfsHint.Mount.Source
+			}
+			f, err := os.Open(source)
+			if err != nil {
+				return nil, nil, fmt.Errorf("opening EROFS image %q: %v", source, err)
+			}
+			opened = append(opened, f)
+			ioFiles = append(ioFiles, f)
+		}
+	}
+	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating gofer filestore files: %w", err)
+	}
+	cu.Release()
+	return ioFiles, goferFilestores, nil
+}
+
+// countOf returns how many elements of s equal v.
+func countOf(s []string, v string) int {
+	n := 0
+	for _, e := range s {
+		if e == v {
+			n++
+		}
+	}
+	return n
 }
 
 // createGoferProcess returns an IO file list and a mounts file on success.
