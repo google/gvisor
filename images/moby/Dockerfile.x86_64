@@ -3,7 +3,7 @@ ARG DOCKER_VERSION=29.8.1
 FROM docker:${DOCKER_VERSION}-dind
 ARG DOCKER_VERSION
 
-RUN apk add --no-cache go git nftables nftables-dev pkgconf skopeo
+RUN apk add --no-cache go git iperf nftables nftables-dev pkgconf skopeo
 
 RUN git clone --depth 1 --branch "docker-v${DOCKER_VERSION}" https://github.com/moby/moby.git /moby
 WORKDIR /moby

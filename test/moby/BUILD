@@ -31,6 +31,7 @@ go_test(
     deps = [
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
+        "//test/moby/mobyutil",
         "//test/runtimes/runner/lib",
     ],
 )
