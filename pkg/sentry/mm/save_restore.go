@@ -47,7 +47,7 @@ func (mm *MemoryManager) afterLoad(ctx goContext.Context) {
 	mm.haveASIO = mm.p.SupportsAddressSpaceIO()
 	if mm.users.Load() != 0 {
 		as, err := mm.p.NewAddressSpace(platform.AddressSpaceOptions{
-			DisableSyscallPatching: mm.gsInUse,
+			DisableSyscallPatching: mm.syscallPatchingDisabled, // +checklocksforce: Restore is exclusive.
 		})
 		if err != nil {
 			panic(fmt.Sprintf("failed to create AddressSpace after restore: %v", err))
