@@ -39,6 +39,7 @@
 #include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/sockios.h>
 #include <linux/veth.h>
 
 #include <algorithm>
@@ -48,6 +49,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -71,6 +73,7 @@
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 #include "test/util/timer_util.h"
 
 // Tests for NETLINK_ROUTE sockets.
@@ -3681,6 +3684,149 @@ struct BridgeRequest GetBridgeRequest(uint32_t seq, const char* ifname) {
   linkinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)linkinfo;
 
   return req;
+}
+
+TEST(NetlinkRouteTest, BridgeVethRetainedNamespaceAcrossSave) {
+  auto disable_save = std::make_unique<DisableSave>();
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  ScopedThread thread([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+    const FileDescriptor parent_ns =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    FileDescriptor child_ns;
+    {
+      ScopedThread child([&] {
+        ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+        child_ns = ASSERT_NO_ERRNO_AND_VALUE(
+            Open("/proc/thread-self/ns/net", O_RDONLY));
+      });
+    }
+    ASSERT_GE(child_ns.get(), 0);
+
+    FileDescriptor netlink =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    BridgeRequest bridge = GetBridgeRequest(kSeq, "save-br");
+    ASSERT_NO_ERRNO(
+        NetlinkRequestAckOrError(netlink, kSeq, &bridge, bridge.hdr.nlmsg_len));
+    const int bridge_index = if_nametoindex("save-br");
+    ASSERT_NE(bridge_index, 0);
+    VethRequest veth =
+        GetVethRequest(kSeq, "save-host", "save-peer", child_ns.get());
+    ASSERT_NO_ERRNO(
+        NetlinkRequestAckOrError(netlink, kSeq, &veth, veth.hdr.nlmsg_len));
+    const int host_index = if_nametoindex("save-host");
+    ASSERT_NE(host_index, 0);
+
+    BridgeRequest master = {};
+    master.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(master.ifm));
+    master.hdr.nlmsg_type = RTM_SETLINK;
+    master.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    master.hdr.nlmsg_seq = kSeq;
+    master.ifm.ifi_index = host_index;
+    addattr(&master.hdr, sizeof(master), IFLA_MASTER, &bridge_index,
+            sizeof(bridge_index));
+    ASSERT_NO_ERRNO(
+        NetlinkRequestAckOrError(netlink, kSeq, &master, master.hdr.nlmsg_len));
+    ASSERT_NO_ERRNO(LinkChangeFlags(host_index, IFF_UP, IFF_UP));
+    ASSERT_NO_ERRNO(LinkChangeFlags(bridge_index, IFF_UP, IFF_UP));
+
+    sockaddr_in parent_addr = {};
+    parent_addr.sin_family = AF_INET;
+    ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &parent_addr.sin_addr), 1);
+    ASSERT_NO_ERRNO(LinkAddLocalAddr(netlink, bridge_index, AF_INET, 24,
+                                     &parent_addr.sin_addr, sizeof(in_addr)));
+    const FileDescriptor parent_socket =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    ASSERT_THAT(bind(parent_socket.get(), AsSockAddr(&parent_addr),
+                     sizeof(parent_addr)),
+                SyscallSucceeds());
+    socklen_t addr_len = sizeof(parent_addr);
+    ASSERT_THAT(
+        getsockname(parent_socket.get(), AsSockAddr(&parent_addr), &addr_len),
+        SyscallSucceeds());
+    const std::vector<Link> parent_links =
+        ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(netlink));
+
+    ASSERT_THAT(setns(child_ns.get(), CLONE_NEWNET), SyscallSucceeds());
+    const int peer_index = if_nametoindex("save-peer");
+    ASSERT_NE(peer_index, 0);
+    ASSERT_NO_ERRNO(LinkChangeFlags(peer_index, IFF_UP, IFF_UP));
+    FileDescriptor child_netlink =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    sockaddr_in child_addr = {};
+    child_addr.sin_family = AF_INET;
+    ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &child_addr.sin_addr), 1);
+    ASSERT_NO_ERRNO(LinkAddLocalAddr(child_netlink, peer_index, AF_INET, 24,
+                                     &child_addr.sin_addr, sizeof(in_addr)));
+    const FileDescriptor child_socket =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    ASSERT_THAT(
+        bind(child_socket.get(), AsSockAddr(&child_addr), sizeof(child_addr)),
+        SyscallSucceeds());
+    addr_len = sizeof(child_addr);
+    ASSERT_THAT(
+        getsockname(child_socket.get(), AsSockAddr(&child_addr), &addr_len),
+        SyscallSucceeds());
+    const std::vector<Link> child_links =
+        ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(child_netlink));
+    ASSERT_THAT(setns(parent_ns.get(), CLONE_NEWNET), SyscallSucceeds());
+
+    ASSERT_THAT(connect(parent_socket.get(), AsSockAddr(&child_addr),
+                        sizeof(child_addr)),
+                SyscallSucceeds());
+    ASSERT_THAT(connect(child_socket.get(), AsSockAddr(&parent_addr),
+                        sizeof(parent_addr)),
+                SyscallSucceeds());
+    auto exchange = [&](uint32_t payload) {
+      for (const auto& [sender, receiver] :
+           {std::pair{parent_socket.get(), child_socket.get()},
+            std::pair{child_socket.get(), parent_socket.get()}}) {
+        ASSERT_THAT(send(sender, &payload, sizeof(payload), 0),
+                    SyscallSucceedsWithValue(sizeof(payload)));
+        pollfd ready = {receiver, POLLIN, 0};
+        ASSERT_THAT(RetryEINTR(poll)(&ready, 1, 2000),
+                    SyscallSucceedsWithValue(1));
+        uint32_t received = 0;
+        ASSERT_THAT(recv(receiver, &received, sizeof(received), MSG_DONTWAIT),
+                    SyscallSucceedsWithValue(sizeof(received)));
+        EXPECT_EQ(received, payload);
+      }
+    };
+    ASSERT_NO_FATAL_FAILURE(exchange(1));
+
+    disable_save.reset();
+    MaybeSave();
+    disable_save = std::make_unique<DisableSave>();
+
+    auto check_links = [](const std::vector<Link>& before) {
+      const std::vector<Link> after = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks());
+      for (const Link& saved : before) {
+        const auto found = std::find_if(
+            after.begin(), after.end(),
+            [&](const Link& link) { return link.name == saved.name; });
+        ASSERT_NE(found, after.end()) << saved.name;
+        EXPECT_EQ(found->index, saved.index);
+        EXPECT_EQ(found->kind, saved.kind);
+        EXPECT_EQ(found->address, saved.address);
+        EXPECT_EQ(found->mtu, saved.mtu);
+        EXPECT_EQ(found->flags & IFF_UP, saved.flags & IFF_UP);
+      }
+    };
+    ASSERT_NO_FATAL_FAILURE(check_links(parent_links));
+    ASSERT_THAT(setns(child_ns.get(), CLONE_NEWNET), SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(check_links(child_links));
+    ASSERT_THAT(setns(parent_ns.get(), CLONE_NEWNET), SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(exchange(2));
+
+    bridge = GetBridgeRequest(kSeq, "save-after");
+    ASSERT_NO_ERRNO(
+        NetlinkRequestAckOrError(netlink, kSeq, &bridge, bridge.hdr.nlmsg_len));
+    EXPECT_GT(if_nametoindex("save-after"),
+              static_cast<unsigned int>(std::max(bridge_index, host_index)));
+  });
 }
 
 void DumpInetAddressSequence(std::vector<std::string>* sequence) {

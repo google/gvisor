@@ -18,10 +18,13 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sched.h>
+#include <signal.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -36,6 +39,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -61,6 +65,92 @@ TEST(NetworkNamespaceTest, LoopbackExists) {
     ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
   });
 }
+
+class NestedNetworkNamespaceTest : public ::testing::TestWithParam<bool> {};
+
+// Configuring the link also checks that the new network namespace is owned by
+// the task's user namespace, including one created in the same syscall.
+void BringLoopbackUp() {
+  const int index = TEST_CHECK_NO_ERRNO_AND_VALUE(GetLoopbackIndex());
+  TEST_CHECK_NO_ERRNO(LinkChangeFlags(index, IFF_UP, IFF_UP));
+}
+
+TEST_P(NestedNetworkNamespaceTest, UnshareFromChild) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  if (GetParam()) {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  }
+  const int flags = CLONE_NEWNET | (GetParam() ? CLONE_NEWUSER : 0);
+
+  ASSERT_THAT(InForkedProcess([&] {
+                TEST_CHECK_SUCCESS(unshare(CLONE_NEWNET));
+                const int parent_fd =
+                    open("/proc/thread-self/ns/net", O_RDONLY);
+                TEST_CHECK_SUCCESS(parent_fd);
+                struct stat parent = {};
+                TEST_CHECK_SUCCESS(fstat(parent_fd, &parent));
+
+                TEST_CHECK_SUCCESS(unshare(flags));
+                struct stat child = {};
+                TEST_CHECK_SUCCESS(stat("/proc/thread-self/ns/net", &child));
+                TEST_CHECK(parent.st_ino != child.st_ino);
+                BringLoopbackUp();
+                _exit(0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST_P(NestedNetworkNamespaceTest, CloneFromChild) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  if (GetParam()) {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  }
+  const int flags = CLONE_NEWNET | (GetParam() ? CLONE_NEWUSER : 0);
+  Mapping child_stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(16 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  ASSERT_THAT(
+      InForkedProcess([&] {
+        TEST_CHECK_SUCCESS(unshare(CLONE_NEWNET));
+        const int parent_fd = open("/proc/thread-self/ns/net", O_RDONLY);
+        TEST_CHECK_SUCCESS(parent_fd);
+        struct stat parent = {};
+        TEST_CHECK_SUCCESS(fstat(parent_fd, &parent));
+
+        const pid_t pid = clone(
+            +[](void* arg) {
+              const auto* parent = static_cast<struct stat*>(arg);
+              struct stat child = {};
+              TEST_CHECK_SUCCESS(stat("/proc/thread-self/ns/net", &child));
+              TEST_CHECK(parent->st_ino != child.st_ino);
+              BringLoopbackUp();
+              TEST_CHECK_SUCCESS(unshare(CLONE_NEWNET));
+              BringLoopbackUp();
+              return 0;
+            },
+            reinterpret_cast<void*>(child_stack.addr() + child_stack.len()),
+            flags | SIGCHLD, &parent);
+        TEST_CHECK_SUCCESS(pid);
+        int status = 0;
+        TEST_CHECK(waitpid(pid, &status, 0) == pid);
+        TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+        struct stat after = {};
+        TEST_CHECK_SUCCESS(stat("/proc/thread-self/ns/net", &after));
+        TEST_CHECK(parent.st_ino == after.st_ino);
+        _exit(0);
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
+INSTANTIATE_TEST_SUITE_P(UserNamespace, NestedNetworkNamespaceTest,
+                         ::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool>& info) {
+                           return info.param ? "NewUserNamespace"
+                                             : "SameUserNamespace";
+                         });
 
 // Like Linux, a newly created network namespace starts with its loopback
 // interface administratively DOWN. The application is responsible for bringing
