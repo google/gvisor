@@ -30,21 +30,7 @@ func getSandboxConfig(major, minor uint64) string {
 		sandboxerField = "sandbox_mode = \"shim\""
 	}
 
-	return `
-version=2
-disabled_plugins = ["io.containerd.internal.v1.restart"]
-[plugins."io.containerd.grpc.v1.cri"]
-  disable_tcp_service = true
-[plugins."io.containerd.runtime.v1.linux"]
-  shim_debug = true
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-  runtime_type = "io.containerd.runc.v2"
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
-  runtime_type = "io.containerd.runsc.v1"
-  ` + sandboxerField + `
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
-  TypeUrl = "io.containerd.runsc.v1.options"
-`
+	return containerdConfig(sandboxerField)
 }
 
 func TestSandboxControllerUnimplemented(t *testing.T) {
