@@ -485,7 +485,21 @@ func (ds *graphDecodeState) decodeStruct(ti *typeInfo, p unsafe.Pointer) {
 			ds.stats.start(ti)
 			defer ds.stats.done()
 		}
+		afterHead, afterTail := ds.afterHead, ds.afterTail
+		ds.afterHead, ds.afterTail = -1, -1
 		sl.StateLoad(ds.ctx, Source{graph: graphStructDecoder{ds: ds, st: ti}})
+		// A loader can register AfterLoad before loading its fields. Append
+		// its hooks after the fields' nested hooks and value publications.
+		if ds.afterHead >= 0 {
+			o := &ds.ods[ds.cur]
+			if o.cbTail < 0 {
+				o.cbHead = ds.afterHead
+			} else {
+				ds.cbs[o.cbTail].next = ds.afterHead
+			}
+			o.cbTail = ds.afterTail
+		}
+		ds.afterHead, ds.afterTail = afterHead, afterTail
 	case structBinary:
 		ds.hooks++
 		data := ds.in.next(ds.in.byteLength())
