@@ -15,6 +15,7 @@
 package bridge_test
 
 import (
+	"net/netip"
 	"os"
 	"testing"
 	"time"
@@ -455,7 +456,7 @@ func newDispatchTestContext(t *testing.T, classifying bool) *dispatchTestContext
 	}
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: dispatchBridgeIP, PrefixLen: 24},
+		AddressWithPrefix: netip.PrefixFrom(dispatchBridgeIP, 24),
 	}
 	if err := c.s.AddProtocolAddress(dispatchBridgeID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", dispatchBridgeID, protocolAddr, err)
