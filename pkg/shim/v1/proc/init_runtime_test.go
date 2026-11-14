@@ -202,6 +202,51 @@ func TestCreateWedgedRunscIsBounded(t *testing.T) {
 	requireBounded(t, start)
 }
 
+func TestCreateWithoutIODoesNotWaitForInheritedStdio(t *testing.T) {
+	bundle := t.TempDir()
+	childPIDFile := filepath.Join(bundle, "child.pid")
+	fake := filepath.Join(t.TempDir(), "fake-runsc")
+
+	script := fmt.Sprintf(`#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = "--pid-file" ]; then
+		shift
+		printf '%%s' "$$" > "$1"
+	fi
+	shift
+done
+sleep 60 &
+printf '%%s\n' "$!" > %q
+exit 0
+`, childPIDFile)
+
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New("test", &runsccmd.Runsc{Command: fake, Root: t.TempDir()}, stdio.Stdio{})
+	p.initState = &runningState{p: p}
+	p.Bundle = bundle
+	t.Cleanup(p.closeIO)
+
+	t.Cleanup(func() {
+		data, err := os.ReadFile(childPIDFile)
+		if err != nil {
+			return
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err == nil {
+			_ = unix.Kill(pid, unix.SIGKILL)
+		}
+	})
+
+	start := time.Now()
+	if err := p.Create(context.Background(), &CreateConfig{ID: p.id, Bundle: bundle}); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	requireBounded(t, start)
+}
+
 func init() {
 	if os.Getenv("GVISOR_SHIM_TEST_RUNTIME_HELPER") == "1" {
 		if filepath.Base(os.Args[0]) == "runsc-sandbox" {
