@@ -1021,111 +1021,77 @@ func TestProxyLimitsUDPConnections(t *testing.T) {
 	}
 }
 
-type closeNotifyingConn struct {
-	net.Conn
-	closeOnce sync.Once
-	closed    chan struct{}
-}
-
-func (c *closeNotifyingConn) Close() error {
-	c.closeOnce.Do(func() { close(c.closed) })
-	return c.Conn.Close()
-}
-
 func TestProxyUDPIdleTimeout(t *testing.T) {
-	udpPC, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	host, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.ListenPacket() failed: %v", err)
 	}
-	defer udpPC.Close()
-	go func() {
-		buf := make([]byte, 2048)
-		for {
-			nr, peer, err := udpPC.ReadFrom(buf)
-			if err != nil {
-				return
-			}
-			if _, err := udpPC.WriteTo(buf[:nr], peer); err != nil {
-				return
-			}
-		}
-	}()
+	defer host.Close()
 
-	closedChs := make(chan chan struct{}, 8)
-	trackingDial := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		conn, err := dialLoopback(ctx, network, addr)
-		if err != nil {
-			return nil, err
-		}
-		if strings.HasPrefix(network, "udp") {
-			ch := make(chan struct{})
-			closedChs <- ch
-			return &closeNotifyingConn{Conn: conn, closed: ch}, nil
-		}
-		return conn, nil
-	}
-
-	clientStack := startInProcessProxy(t, &Netgofer{
+	dialed := make(chan net.Conn, 1)
+	n := Netgofer{
 		maxActiveConns: 1,
 		udpIdleTimeout: 150 * time.Millisecond,
-		dialContext:    trackingDial,
-	})
-
-	udpTarget := tcpip.FullAddress{
+		dialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := dialLoopback(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			dialed <- conn
+			return conn, nil
+		},
+	}
+	clientStack := startInProcessProxy(t, &n)
+	target := tcpip.FullAddress{
 		NIC:  1,
 		Addr: testServerAddr4,
-		Port: uint16(udpPC.LocalAddr().(*net.UDPAddr).Port),
+		Port: uint16(host.LocalAddr().(*net.UDPAddr).Port),
 	}
-
-	conn1, err := gonet.DialUDP(clientStack, nil, &udpTarget, ipv4.ProtocolNumber)
-	if err != nil {
-		t.Fatalf("first gonet.DialUDP() failed: %v", err)
+	deadline := time.Now().Add(10 * n.udpIdleTimeout)
+	if err := host.SetDeadline(deadline); err != nil {
+		t.Fatalf("host.SetDeadline() failed: %v", err)
 	}
-	defer conn1.Close()
-	if err := conn1.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatalf("conn1.SetDeadline() failed: %v", err)
-	}
-	if _, err := conn1.Write([]byte("idle-timeout-1")); err != nil {
-		t.Fatalf("conn1.Write() failed: %v", err)
-	}
-	buf := make([]byte, 256)
-	nr, err := conn1.Read(buf)
-	if err != nil || string(buf[:nr]) != "idle-timeout-1" {
-		t.Fatalf("conn1.Read() = %q, %v; want %q", buf[:nr], err, "idle-timeout-1")
-	}
-
-	var closed1 chan struct{}
-	select {
-	case closed1 = <-closedChs:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for first UDP outbound dial")
-	}
-
-	// Leave conn1 open on the client; the proxy must close hostConn and release
-	// the maxActiveConns=1 slot after udpIdleTimeout.
-	select {
-	case <-closed1:
-	case <-time.After(5 * time.Second):
-		t.Fatal("host UDP connection did not close after udpIdleTimeout")
-	}
-
-	conn2, err := gonet.DialUDP(clientStack, nil, &udpTarget, ipv4.ProtocolNumber)
-	if err != nil {
-		t.Fatalf("second gonet.DialUDP() failed: %v", err)
-	}
-	defer conn2.Close()
-	for i := 0; i < 40; i++ {
-		_ = conn2.SetDeadline(time.Now().Add(50 * time.Millisecond))
-		if _, err := conn2.Write([]byte("idle-timeout-2")); err != nil {
-			t.Fatalf("conn2.Write() failed: %v", err)
+	const (
+		firstPayload  = "idle-timeout-1"
+		secondPayload = "idle-timeout-2"
+	)
+	buf := make([]byte, max(len(firstPayload), len(secondPayload))+1)
+	echo := func(payload string) net.Conn {
+		t.Helper()
+		conn, err := gonet.DialUDP(clientStack, nil, &target, ipv4.ProtocolNumber)
+		if err != nil {
+			t.Fatalf("gonet.DialUDP() failed: %v", err)
 		}
-		nr, err := conn2.Read(buf)
-		if err == nil && string(buf[:nr]) == "idle-timeout-2" {
-			return
+		t.Cleanup(func() { conn.Close() })
+		if err := conn.SetDeadline(deadline); err != nil {
+			t.Fatalf("conn.SetDeadline() failed: %v", err)
 		}
-		time.Sleep(25 * time.Millisecond)
+		if _, err := conn.Write([]byte(payload)); err != nil {
+			t.Fatalf("Write(%q) failed: %v", payload, err)
+		}
+		if nr, peer, err := host.ReadFrom(buf); err != nil {
+			t.Fatalf("host.ReadFrom() failed: %v", err)
+		} else if _, err := host.WriteTo(buf[:nr], peer); err != nil {
+			t.Fatalf("host.WriteTo() failed: %v", err)
+		}
+		if nr, err := conn.Read(buf); err != nil || string(buf[:nr]) != payload {
+			t.Fatalf("Read() = %q, %v; want %q", buf[:nr], err, payload)
+		}
+		return <-dialed
 	}
-	t.Fatal("second UDP flow failed to acquire activeConns slot after udpIdleTimeout")
+
+	// Keep the first client open while its idle flow returns the only slot.
+	firstHost := echo(firstPayload)
+	select {
+	case n.activeConns <- struct{}{}:
+		<-n.activeConns
+	case <-time.After(time.Until(deadline)):
+		t.Fatal("idle UDP flow did not release its slot")
+	}
+	if _, err := firstHost.Write(nil); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("write to idle flow's host socket: got %v, want %v", err, net.ErrClosed)
+	}
+	echo(secondPayload)
 }
 
 func getSocketBroadcastOption(t *testing.T, conn net.Conn) int {
