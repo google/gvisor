@@ -98,13 +98,19 @@ type lineDiscipline struct {
 	// outQueue is the output queue of the terminal.
 	outQueue queue
 
-	// termiosMu protects termios.
+	// termiosMu protects termios and lockedTermios.
 	termiosMu sync.RWMutex `state:"nosave"`
 
 	// termios is the terminal configuration used by the lineDiscipline.
 	//
 	// +checklocks:termiosMu
 	termios linux.KernelTermios
+
+	// lockedTermios masks the terminal settings that TCSETS/TCSETS2 cannot
+	// change. As on Linux, the master and replica share these masks.
+	//
+	// +checklocks:termiosMu
+	lockedTermios linux.KernelTermios
 
 	// column is the location in a row of the cursor. This is important for
 	// handling certain special characters like backspace.
@@ -170,6 +176,56 @@ func (l *lineDiscipline) getTermios(task *kernel.Task, args arch.SyscallArgument
 	return 0, err
 }
 
+// getLockedTermios implements TIOCGLCKTRMIOS.
+//
+// +checklocksexclude:l.termiosMu
+func (l *lineDiscipline) getLockedTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+	l.termiosMu.RLock()
+	t := l.lockedTermios.ToTermios()
+	l.termiosMu.RUnlock()
+	_, err := t.CopyOut(task, args[2].Pointer())
+	return 0, err
+}
+
+// setLockedTermios updates the shared termios lock mask. Initial user
+// namespace capabilities are checked before accessing user memory.
+//
+// +checklocksexclude:l.termiosMu
+func (l *lineDiscipline) setLockedTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+	if !task.HasRootCapability(linux.CAP_CHECKPOINT_RESTORE) && !task.HasRootCapability(linux.CAP_SYS_ADMIN) {
+		return 0, linuxerr.EPERM
+	}
+	var t linux.Termios
+	if _, err := t.CopyIn(task, args[2].Pointer()); err != nil {
+		return 0, err
+	}
+	l.termiosMu.Lock()
+	l.lockedTermios.FromTermios(t)
+	l.termiosMu.Unlock()
+	return 0, nil
+}
+
+// applyLockedTermios preserves locked fields from the current settings.
+// Control character and line locks are booleans, rather than bit masks.
+// The independent speed fields are not masked.
+//
+// +checklocks:l.termiosMu
+func (l *lineDiscipline) applyLockedTermios(next *linux.KernelTermios) {
+	locked := &l.lockedTermios
+	next.InputFlags = next.InputFlags&^locked.InputFlags | l.termios.InputFlags&locked.InputFlags
+	next.OutputFlags = next.OutputFlags&^locked.OutputFlags | l.termios.OutputFlags&locked.OutputFlags
+	next.ControlFlags = next.ControlFlags&^locked.ControlFlags | l.termios.ControlFlags&locked.ControlFlags
+	next.LocalFlags = next.LocalFlags&^locked.LocalFlags | l.termios.LocalFlags&locked.LocalFlags
+	if locked.LineDiscipline != 0 {
+		next.LineDiscipline = l.termios.LineDiscipline
+	}
+	for i, mask := range locked.ControlCharacters {
+		if mask != 0 {
+			next.ControlCharacters[i] = l.termios.ControlCharacters[i]
+		}
+	}
+}
+
 // getTermios2 gets the linux.KernelTermios for the tty.
 //
 // +checklocksexclude:l.termiosMu
@@ -199,6 +255,7 @@ func (l *lineDiscipline) setTermios2(task *kernel.Task, args arch.SyscallArgumen
 	}
 
 	l.termiosMu.Lock()
+	l.applyLockedTermios(&t)
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	l.termios = t
 
@@ -239,8 +296,11 @@ func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArgument
 	}
 
 	l.termiosMu.Lock()
+	next := l.termios
+	next.FromTermios(t)
+	l.applyLockedTermios(&next)
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
-	l.termios.FromTermios(t)
+	l.termios = next
 
 	// If canonical mode is turned off, move bytes from inQueue's wait
 	// buffer to its read buffer. Anything already in the read buffer is
