@@ -933,6 +933,62 @@ func TestConnectResetAfterClose(t *testing.T) {
 	}
 }
 
+// TestFinAckNotifiesInternalEvent tests that the endpoint notifies
+// waiter.EventInternal when the peer acknowledges its FIN in FIN-WAIT-1.
+func TestFinAckNotifiesInternalEvent(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+	ep := c.EP
+	c.EP = nil
+
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.EventInternal)
+	c.WQ.EventRegister(&waitEntry)
+	defer c.WQ.EventUnregister(&waitEntry)
+
+	// Close the endpoint and make sure we get a FIN segment.
+	ep.Close()
+	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	v := c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(uint32(iss)),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagFin),
+		),
+	)
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateFinWait1; got != want {
+		t.Fatalf("got State() = %s, want %s", got, want)
+	}
+	select {
+	case <-notifyCh:
+		t.Fatal("got EventInternal before the FIN was acknowledged")
+	default:
+	}
+
+	// Acknowledge the FIN, but don't send our own.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss,
+		AckNum:  c.IRS.Add(2),
+		RcvWnd:  30000,
+	})
+
+	select {
+	case <-notifyCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for EventInternal after the FIN was acknowledged")
+	}
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateFinWait2; got != want {
+		t.Errorf("got State() = %s, want %s", got, want)
+	}
+}
+
 // TestCurrentConnectedIncrement tests increment of the current
 // established and connected counters.
 func TestCurrentConnectedIncrement(t *testing.T) {
