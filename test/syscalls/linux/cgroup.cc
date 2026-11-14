@@ -767,6 +767,34 @@ TEST(CPUAcctCgroup, NoDoubleAccounting) {
   EXPECT_GE(usage_root, usage_parent);
 }
 
+TEST(CPUAcctCgroup, RmdirKeepsUsageInParent) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Cgroup root = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
+  ASSERT_NO_ERRNO(root.Enter(getpid()));
+
+  // The usage for parent and child is now frozen, since they no longer have
+  // any tasks.
+  const int64_t usage_parent =
+      ASSERT_NO_ERRNO_AND_VALUE(parent.ReadIntegerControlFile("cpuacct.usage"));
+  ASSERT_GT(usage_parent, 0);
+  const std::string stat_parent =
+      ASSERT_NO_ERRNO_AND_VALUE(parent.ReadControlFile("cpuacct.stat"));
+
+  // Removing child must not discard the usage it contributed to parent.
+  ASSERT_NO_ERRNO(child.Delete());
+  EXPECT_THAT(parent.ReadIntegerControlFile("cpuacct.usage"),
+              IsPosixErrorOkAndHolds(Eq(usage_parent)));
+  EXPECT_THAT(parent.ReadControlFile("cpuacct.stat"),
+              IsPosixErrorOkAndHolds(Eq(stat_parent)));
+}
+
 // WriteAndVerifyControlValue attempts to write val to a cgroup file at path,
 // and verify the value by reading it afterwards.
 PosixError WriteAndVerifyControlValue(const Cgroup& c, absl::string_view path,
