@@ -131,11 +131,18 @@ type MemoryFile struct {
 	// representing chunks that are backed by a different page size. Gaps in
 	// the sets therefore represent free ranges backed by small/huge pages,
 	// allowing use of segment.Set gap-tracking to efficiently find free ranges
-	// for allocation.
+	// for allocation. Ordinary sharing counts are stored separately, so
+	// sharing does not fragment this free-space index.
 	//
 	// unfreeSmall and unfreeHuge are protected by mu.
 	unfreeSmall unfreeSet
 	unfreeHuge  unfreeSet
+
+	// extraRefs tracks ordinary references beyond the first on used pages. It
+	// contains no segments for pages with at most one ordinary reference.
+	//
+	// extraRefs is protected by mu.
+	extraRefs extraRefsSet
 
 	// subreleased maps hugepage-aligned file offsets to the number of
 	// sub-released small pages within the hugepage beginning at that offset.
@@ -274,10 +281,16 @@ type unwasteInfo struct{}
 //
 // +stateify savable
 type unfreeInfo struct {
-	// refs is the per-page reference count. refs is non-zero for used pages,
-	// and zero for void, waste, releasing, and sub-released pages, as well as
-	// pages backed by a different page size.
+	// refs is one for used pages, and zero for void, waste, releasing, and
+	// sub-released pages, as well as pages backed by a different page size.
 	refs uint64
+}
+
+// extraRefInfo is the value type of MemoryFile.extraRefs.
+//
+// +stateify savable
+type extraRefInfo struct {
+	extra uint64
 }
 
 // memAcctInfo is the value type of MemoryFile.memAcct.
@@ -1211,24 +1224,9 @@ func (f *MemoryFile) decommitOrManuallyZero(fr memmap.FileRange) {
 //
 // Preconditions: At least one reference must be held on all pages in fr.
 func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
-	hasUniqueRef := true
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-		unfree := &f.unfreeSmall
-		if chunk.huge {
-			unfree = &f.unfreeHuge
-		}
-		unfree.VisitFullRange(fr, func(ufseg unfreeIterator) bool {
-			if ufseg.ValuePtr().refs != 1 {
-				hasUniqueRef = false
-				return false
-			}
-			return true
-		})
-		return hasUniqueRef
-	})
-	return hasUniqueRef
+	return f.extraRefs.IsEmptyRange(fr)
 }
 
 // FirstSharedRange returns the first subrange of fr on which more than one
@@ -1239,35 +1237,18 @@ func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
 //
 // Preconditions: At least one reference must be held on all pages in fr.
 func (f *MemoryFile) FirstSharedRange(fr memmap.FileRange) (memmap.FileRange, bool) {
-	var sr memmap.FileRange
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-		unfree := &f.unfreeSmall
-		if chunk.huge {
-			unfree = &f.unfreeHuge
-		}
-		cont := true
-		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
-			if ufseg.ValuePtr().refs > 1 {
-				r := ufseg.Range().Intersect(chunkFR)
-				if sr.Length() == 0 {
-					sr = r
-				} else if sr.End == r.Start {
-					sr.End = r.End
-				} else {
-					cont = false
-				}
-			} else if sr.Length() != 0 {
-				cont = false
-			}
-			return cont
-		})
-		// Continue to the next chunk only if no shared range has been found,
-		// or if the one found may extend into the next chunk.
-		return cont && (sr.Length() == 0 || sr.End == chunkFR.End)
-	})
-	return sr, sr.Length() != 0
+	seg := f.extraRefs.LowerBoundSegment(fr.Start)
+	if !seg.Ok() || seg.Start() >= fr.End {
+		return memmap.FileRange{}, false
+	}
+
+	sr := seg.Range().Intersect(fr)
+	for seg = seg.NextSegment(); seg.Ok() && seg.Start() == sr.End && seg.Start() < fr.End; seg = seg.NextSegment() {
+		sr.End = min(seg.End(), fr.End)
+	}
+	return sr, true
 }
 
 // IncRef implements memmap.File.IncRef.
@@ -1282,22 +1263,58 @@ func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 }
 
 // Preconditions: f.mu must be locked.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) incRefLocked(fr memmap.FileRange) {
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
 		unfree := &f.unfreeSmall
 		if chunk.huge {
 			unfree = &f.unfreeHuge
 		}
-		unfree.MutateFullRange(chunkFR, func(ufseg unfreeIterator) bool {
-			uf := ufseg.ValuePtr()
-			if uf.refs <= 0 {
-				panic(fmt.Sprintf("IncRef(%v) called with %d references on pages %v", fr, uf.refs, ufseg.Range()))
+		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
+			if ufseg.ValuePtr().refs != 1 {
+				panic(fmt.Sprintf("IncRef(%v) called on non-live pages %v", fr, ufseg.Range()))
 			}
-			uf.refs++
 			return true
 		})
 		return true
 	})
+	f.incExtraRefsLocked(fr)
+}
+
+// incExtraRefsLocked adds one reference to each page in fr. f.mu must be
+// locked, and all pages in fr must already have a live reference.
+//
+// +checklocks:f.mu
+func (f *MemoryFile) incExtraRefsLocked(fr memmap.FileRange) {
+	seg, gap := f.extraRefs.Find(fr.Start)
+	for pos := fr.Start; pos < fr.End; {
+		var end uint64
+		if seg.Ok() {
+			end = min(seg.End(), fr.End)
+			seg = f.extraRefs.Isolate(seg, memmap.FileRange{Start: pos, End: end})
+			if seg.ValuePtr().extra >= math.MaxUint64-1 {
+				panic(fmt.Sprintf("extra reference count overflow on pages %v", seg.Range()))
+			}
+			seg.ValuePtr().extra++
+		} else {
+			end = min(gap.End(), fr.End)
+			if end == fr.End {
+				f.extraRefs.Insert(gap, memmap.FileRange{Start: pos, End: end}, extraRefInfo{extra: 1})
+				return
+			}
+			seg = f.extraRefs.InsertWithoutMerging(gap, memmap.FileRange{Start: pos, End: end}, extraRefInfo{extra: 1})
+		}
+		if pos == fr.Start {
+			seg = f.extraRefs.MergePrev(seg)
+		}
+		if end == fr.End {
+			f.extraRefs.MergeNext(seg)
+			return
+		}
+		pos = end
+		seg, gap = seg.NextNonEmpty()
+	}
 }
 
 // DecRef implements memmap.File.DecRef.
@@ -1310,50 +1327,104 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 	defer f.mu.Unlock()
 
 	haveWaste := false
-	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+	chunks := f.chunksLoad()
+	chunkStart := fr.Start &^ chunkMask
+	i := int(fr.Start / chunkSize)
+	for chunkStart < fr.End {
+		chunkEnd := chunkStart + chunkSize
+		chunk := &chunks[i]
+		chunkFR := fr.Intersect(memmap.FileRange{chunkStart, chunkEnd})
 		unwaste := &f.unwasteSmall
 		unfree := &f.unfreeSmall
 		if chunk.huge {
 			unwaste = &f.unwasteHuge
 			unfree = &f.unfreeHuge
 		}
-		unfree.MutateFullRange(chunkFR, func(ufseg unfreeIterator) bool {
-			uf := ufseg.ValuePtr()
-			if uf.refs <= 0 {
-				panic(fmt.Sprintf("DecRef(%v) called with %d references on pages %v", fr, uf.refs, ufseg.Range()))
-			}
-			uf.refs--
-			if uf.refs == 0 {
-				// Mark these pages as waste.
-				wasteFR := ufseg.Range()
-				unwaste.RemoveFullRange(wasteFR)
-				haveWaste = true
-				// Reclassify waste memory as System until it's recycled or
-				// released.
-				f.memAcct.MutateFullRange(wasteFR, func(maseg memAcctIterator) bool {
-					ma := maseg.ValuePtr()
-					if !f.opts.DisableMemoryAccounting && ma.knownCommitted {
-						usage.MemoryAccounting.Move(maseg.Range().Length(), usage.System, ma.kind, ma.memCgID)
-					}
-					ma.kind = usage.System
-					ma.wasteOrReleasing = true
-					return true
-				})
-				// Cancel any pending async load on waste pages.
-				if apl := f.asyncPageLoad.Load(); apl != nil {
-					apl.cancelWasteLoad(wasteFR)
-				}
+		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
+			if ufseg.ValuePtr().refs != 1 {
+				panic(fmt.Sprintf("DecRef(%v) called on non-live pages %v", fr, ufseg.Range()))
 			}
 			return true
 		})
-		return true
-	})
+		if f.decRefRangeLocked(chunkFR, unfree, unwaste) {
+			haveWaste = true
+		}
+		chunkStart = chunkEnd
+		i++
+	}
 
 	// Wake the releaser if we marked any pages as waste. Leave this until just
 	// before unlocking f.mu.
 	if haveWaste && !f.haveWaste {
 		f.haveWaste = true
 		f.releaseCond.Signal()
+	}
+}
+
+// decRefRangeLocked releases one reference from fr and reports whether any
+// pages became waste. f.mu must be locked.
+//
+// +checklocks:f.mu
+func (f *MemoryFile) decRefRangeLocked(fr memmap.FileRange, unfree *unfreeSet, unwaste *unwasteSet) bool {
+	haveWaste := false
+	seg := f.extraRefs.LowerBoundSegment(fr.Start)
+	for pos := fr.Start; pos < fr.End; {
+		if !seg.Ok() || pos < seg.Start() {
+			end := fr.End
+			if seg.Ok() {
+				end = min(seg.Start(), fr.End)
+			}
+			f.markWasteLocked(memmap.FileRange{Start: pos, End: end}, unfree, unwaste)
+			haveWaste = true
+			pos = end
+			continue
+		}
+
+		end := min(seg.End(), fr.End)
+		seg = f.extraRefs.Isolate(seg, memmap.FileRange{Start: pos, End: end})
+		if seg.Value().extra == 1 {
+			gap := f.extraRefs.Remove(seg)
+			if end == fr.End {
+				return haveWaste
+			}
+			seg = gap.NextSegment()
+		} else {
+			seg.ValuePtr().extra--
+			if pos == fr.Start {
+				seg = f.extraRefs.MergePrev(seg)
+			}
+			if end == fr.End {
+				f.extraRefs.MergeNext(seg)
+				return haveWaste
+			}
+			seg = seg.NextSegment()
+		}
+		pos = end
+	}
+	return haveWaste
+}
+
+// +checklocks:f.mu
+func (f *MemoryFile) markWasteLocked(fr memmap.FileRange, unfree *unfreeSet, unwaste *unwasteSet) {
+	unfree.MutateFullRange(fr, func(seg unfreeIterator) bool {
+		if seg.Value().refs != 1 {
+			panic(fmt.Sprintf("release of non-live pages %v", seg.Range()))
+		}
+		seg.ValuePtr().refs = 0
+		return true
+	})
+	unwaste.RemoveFullRange(fr)
+	f.memAcct.MutateFullRange(fr, func(seg memAcctIterator) bool {
+		ma := seg.ValuePtr()
+		if !f.opts.DisableMemoryAccounting && ma.knownCommitted {
+			usage.MemoryAccounting.Move(seg.Range().Length(), usage.System, ma.kind, ma.memCgID)
+		}
+		ma.kind = usage.System
+		ma.wasteOrReleasing = true
+		return true
+	})
+	if apl := f.asyncPageLoad.Load(); apl != nil {
+		apl.cancelWasteLoad(fr)
 	}
 }
 
@@ -1971,6 +2042,7 @@ func (f *MemoryFile) stringLocked() string {
 			fmt.Fprintf(&b, "- %#x: %d\n", off, pgs)
 		}
 	}
+	fmt.Fprintf(&b, "extraRefs:\n%s", &f.extraRefs)
 	fmt.Fprintf(&b, "memAcct:\n%s", &f.memAcct)
 	return b.String()
 }
@@ -2059,6 +2131,27 @@ func (unwasteSetFunctions) Merge(_ memmap.FileRange, val1 unwasteInfo, _ memmap.
 }
 
 func (unwasteSetFunctions) Split(_ memmap.FileRange, val unwasteInfo, _ uint64) (unwasteInfo, unwasteInfo) {
+	return val, val
+}
+
+type extraRefSetFunctions struct{}
+
+func (extraRefSetFunctions) MinKey() uint64 {
+	return 0
+}
+
+func (extraRefSetFunctions) MaxKey() uint64 {
+	return math.MaxUint64
+}
+
+func (extraRefSetFunctions) ClearValue(val *extraRefInfo) {
+}
+
+func (extraRefSetFunctions) Merge(_ memmap.FileRange, val1 extraRefInfo, _ memmap.FileRange, val2 extraRefInfo) (extraRefInfo, bool) {
+	return val1, val1 == val2
+}
+
+func (extraRefSetFunctions) Split(_ memmap.FileRange, val extraRefInfo, _ uint64) (extraRefInfo, extraRefInfo) {
 	return val, val
 }
 

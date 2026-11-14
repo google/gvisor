@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
 
@@ -731,4 +732,344 @@ func TestZeroDiskBackedPanicsOnNonzeroUnwritablePage(t *testing.T) {
 		}
 	}()
 	zeroDiskBacked(fd, 0, m)
+}
+
+func BenchmarkMemoryFileRefAccounting(b *testing.B) {
+	pageSize := uint64(hostarch.PageSize)
+	for _, bc := range []struct {
+		name        string
+		pages       int
+		stride      uint64
+		singleRange bool
+		fragmented  bool
+	}{
+		{name: "contiguous-range", pages: 1024, singleRange: true},
+		{name: "adjacent-single-pages", pages: 1024, stride: 1},
+		{name: "sparse-single-pages", pages: 1024, stride: 4},
+		{name: "whole-fragmented-range-1024", pages: 1024, singleRange: true, fragmented: true},
+		{name: "whole-fragmented-range-65536", pages: 65536, singleRange: true, fragmented: true},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			file := openSaveTestFile(b, "")
+			f, err := NewMemoryFile(file, MemoryFileOpts{
+				DelayedEviction:         DelayedEvictionDisabled,
+				DisableMemoryAccounting: true,
+			})
+			if err != nil {
+				file.Close()
+				b.Fatalf("NewMemoryFile: %v", err)
+			}
+			backing, err := f.Allocate(4*uint64(bc.pages)*pageSize, AllocOpts{Mode: AllocateUncommitted})
+			if err != nil {
+				f.Destroy()
+				b.Fatalf("Allocate: %v", err)
+			}
+			b.Cleanup(func() {
+				if bc.fragmented {
+					for i := 0; i < bc.pages; i++ {
+						start := backing.Start + uint64(i)*pageSize
+						fr := memmap.FileRange{Start: start, End: start + pageSize}
+						f.DecRef(fr)
+						if i%2 == 0 {
+							f.DecRef(fr)
+						}
+					}
+				}
+				f.DecRef(backing)
+				f.Destroy()
+			})
+
+			var ranges []memmap.FileRange
+			if bc.singleRange {
+				ranges = make([]memmap.FileRange, 1)
+				ranges[0] = memmap.FileRange{Start: backing.Start, End: backing.Start + uint64(bc.pages)*pageSize}
+			} else {
+				ranges = make([]memmap.FileRange, bc.pages)
+				for i := range ranges {
+					start := backing.Start + uint64(i)*bc.stride*pageSize
+					ranges[i] = memmap.FileRange{Start: start, End: start + pageSize}
+				}
+			}
+
+			checkFragmentedCounts := func(stage string) {
+				if !bc.fragmented {
+					return
+				}
+				f.mu.Lock()
+				metadata := f.exportMetadataProto()
+				f.mu.Unlock()
+				pageIndex := 0
+				for _, r := range metadata.UnfreeSmall {
+					for start := max(r.Start, backing.Start); start < min(r.End, ranges[0].End); start += pageSize {
+						want := uint64(3 - pageIndex%2)
+						if r.Refs != want {
+							b.Fatalf("%s: page %d has %d references, want %d", stage, pageIndex, r.Refs, want)
+						}
+						pageIndex++
+					}
+				}
+				if pageIndex != bc.pages {
+					b.Fatalf("%s: found %d pages, want %d", stage, pageIndex, bc.pages)
+				}
+			}
+
+			if bc.fragmented {
+				for i := 0; i < bc.pages; i++ {
+					start := backing.Start + uint64(i)*pageSize
+					fr := memmap.FileRange{Start: start, End: start + pageSize}
+					f.IncRef(fr, 0)
+					if i%2 == 0 {
+						f.IncRef(fr, 0)
+					}
+				}
+				checkFragmentedCounts("after setup")
+			} else {
+				if !f.HasUniqueRef(backing) {
+					b.Fatal("backing allocation is not initially unique")
+				}
+				for _, fr := range ranges {
+					f.IncRef(fr, 0)
+				}
+				for _, fr := range ranges {
+					if f.HasUniqueRef(fr) {
+						b.Fatalf("range %v is unique after IncRef", fr)
+					}
+				}
+				for _, fr := range ranges {
+					f.DecRef(fr)
+				}
+				if !f.HasUniqueRef(backing) {
+					b.Fatal("backing allocation is not unique after DecRef")
+				}
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				for _, fr := range ranges {
+					f.IncRef(fr, 0)
+				}
+				for _, fr := range ranges {
+					f.DecRef(fr)
+				}
+			}
+			if bc.fragmented {
+				checkFragmentedCounts("after benchmark loop")
+			} else if !f.HasUniqueRef(backing) {
+				b.Fatal("backing allocation is not unique after benchmark loop")
+			}
+		})
+	}
+}
+
+func TestMemoryFileRefAccountingMatchesPerPageModel(t *testing.T) {
+	f := newSaveTestMemoryFile(t, "", false)
+	const numPages = 64
+	backing, err := f.Allocate(numPages*uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	owned := backing
+	t.Cleanup(func() { f.DecRef(owned) })
+
+	counts := make([]int, numPages)
+	for i := range counts {
+		counts[i] = 1
+	}
+	fileRange := func(start, end int) memmap.FileRange {
+		return memmap.FileRange{
+			Start: backing.Start + uint64(start*hostarch.PageSize),
+			End:   backing.Start + uint64(end*hostarch.PageSize),
+		}
+	}
+	verify := func(stage string) {
+		for start := 0; start < numPages; start++ {
+			for end := start + 1; end <= numPages; end++ {
+				fr := fileRange(start, end)
+				wantUnique := true
+				firstShared := -1
+				for i := start; i < end; i++ {
+					if counts[i] > 1 {
+						wantUnique = false
+						if firstShared < 0 {
+							firstShared = i
+						}
+					}
+				}
+				if got := f.HasUniqueRef(fr); got != wantUnique {
+					t.Errorf("%s: HasUniqueRef(%v) = %t, want %t", stage, fr, got, wantUnique)
+				}
+				gotShared, ok := f.FirstSharedRange(fr)
+				if firstShared < 0 {
+					if ok {
+						t.Errorf("%s: FirstSharedRange(%v) = %v, want no shared range", stage, fr, gotShared)
+					}
+					continue
+				}
+				sharedEnd := firstShared
+				for sharedEnd < end && counts[sharedEnd] > 1 {
+					sharedEnd++
+				}
+				wantShared := fileRange(firstShared, sharedEnd)
+				if !ok || gotShared != wantShared {
+					t.Errorf("%s: FirstSharedRange(%v) = (%v, %t), want (%v, true)", stage, fr, gotShared, ok, wantShared)
+				}
+			}
+		}
+	}
+	inc := func(start, end int) {
+		f.IncRef(fileRange(start, end), 0)
+		for i := start; i < end; i++ {
+			counts[i]++
+		}
+	}
+	dec := func(start, end int) {
+		f.DecRef(fileRange(start, end))
+		for i := start; i < end; i++ {
+			counts[i]--
+		}
+	}
+
+	// A surviving reference must keep the page live after another reference is
+	// released.
+	pageRange := fileRange(0, 1)
+	write, err := f.MapInternal(pageRange, hostarch.Write)
+	if err != nil {
+		t.Fatalf("MapInternal for write: %v", err)
+	}
+	const contents = byte(0x5a)
+	if n, err := safemem.CopySeq(write, safemem.BlockSeqOf(safemem.BlockFromSafeSlice([]byte{contents}))); err != nil || n != 1 {
+		t.Fatalf("write page: copied %d bytes, err %v", n, err)
+	}
+	inc(0, 1)
+	dec(0, 1)
+	read, err := f.MapInternal(pageRange, hostarch.Read)
+	if err != nil {
+		t.Fatalf("MapInternal for read: %v", err)
+	}
+	gotContents := []byte{0}
+	if n, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(gotContents)), read); err != nil || n != 1 {
+		t.Fatalf("read page: copied %d bytes, err %v", n, err)
+	}
+	if gotContents[0] != contents {
+		t.Fatalf("page contents after releasing one of two references = %#x, want %#x", gotContents[0], contents)
+	}
+	verify("after releasing one of two references")
+
+	inc(2, 6)
+	verify("after first overlapping reference")
+	inc(4, 7)
+	verify("after second overlapping reference")
+	inc(3, 5)
+	verify("after third overlapping reference")
+	dec(3, 6)
+	verify("after partial release")
+	for i := 0; i < numPages; i++ {
+		inc(i, i+1)
+		if i%2 == 0 {
+			inc(i, i+1)
+		}
+	}
+	verify("after fragmented references")
+	dec(0, numPages)
+	verify("after whole-range decrement to mixed references")
+	inc(0, numPages)
+	verify("after whole-range increment through gaps")
+	inc(0, numPages)
+	verify("after whole-range increment")
+	dec(0, numPages)
+	verify("after whole-range decrement")
+	for i := 0; i < numPages; i++ {
+		dec(i, i+1)
+		if i%2 == 0 {
+			dec(i, i+1)
+		}
+	}
+	verify("after removing fragmented references")
+	dec(3, 4)
+	verify("after making a gap in shared pages")
+	dec(4, 5)
+	verify("after reducing a count greater than two")
+	dec(4, 5)
+	verify("after releasing the last extra reference on a page")
+	dec(2, 3)
+	dec(5, 7)
+	verify("after balancing references")
+
+	// Dropping the final owner must stop serializing that page as live while
+	// preserving the neighboring allocation.
+	dec(0, 1)
+	owned.Start = pageRange.End
+	neighbor := fileRange(1, 2)
+	f.mu.Lock()
+	metadata := f.exportMetadataProto()
+	f.mu.Unlock()
+	neighborLive := false
+	for _, r := range metadata.UnfreeSmall {
+		if r.Refs == 0 {
+			continue
+		}
+		if r.Start < pageRange.End && pageRange.Start < r.End {
+			t.Errorf("released page %v is serialized with %d references", pageRange, r.Refs)
+		}
+		if r.Start <= neighbor.Start && neighbor.End <= r.End {
+			neighborLive = true
+			if r.Refs != 1 {
+				t.Errorf("neighbor %v has %d references, want 1", neighbor, r.Refs)
+			}
+		}
+	}
+	if !neighborLive {
+		t.Error("live neighbor is absent from serialized ownership")
+	}
+	probe, err := f.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate after final release: %v", err)
+	}
+	t.Cleanup(func() { f.DecRef(probe) })
+	if probe.Start < owned.End && owned.Start < probe.End {
+		t.Errorf("allocation %v overlaps still-owned backing %v", probe, owned)
+	}
+}
+
+func TestMemoryFileRefAccountingAcrossChunks(t *testing.T) {
+	f := newSaveTestMemoryFile(t, "", false)
+	pageSize := uint64(hostarch.PageSize)
+	backing, err := f.Allocate(chunkSize+2*pageSize, AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate across chunks: %v", err)
+	}
+	owned := []memmap.FileRange{backing}
+	t.Cleanup(func() {
+		for _, fr := range owned {
+			f.DecRef(fr)
+		}
+	})
+	boundary := (backing.Start/chunkSize + 1) * chunkSize
+	cross := memmap.FileRange{Start: boundary - pageSize, End: boundary + pageSize}
+	f.IncRef(cross, 0)
+	if got, ok := f.FirstSharedRange(backing); !ok || got != cross {
+		t.Fatalf("FirstSharedRange across chunks = (%v, %t), want (%v, true)", got, ok, cross)
+	}
+	f.DecRef(cross)
+	if !f.HasUniqueRef(backing) {
+		t.Fatal("backing remains shared after balancing the cross-chunk reference")
+	}
+	f.DecRef(cross)
+	owned = []memmap.FileRange{
+		{Start: backing.Start, End: cross.Start},
+		{Start: cross.End, End: backing.End},
+	}
+	f.mu.Lock()
+	metadata := f.exportMetadataProto()
+	f.mu.Unlock()
+	for _, r := range metadata.UnfreeSmall {
+		if r.Refs != 0 && r.Start < cross.End && cross.Start < r.End {
+			t.Errorf("released cross-chunk pages %v are serialized with %d references", cross, r.Refs)
+		}
+	}
+	for _, fr := range owned {
+		if !f.HasUniqueRef(fr) {
+			t.Errorf("remaining owned range %v is not unique", fr)
+		}
+	}
 }

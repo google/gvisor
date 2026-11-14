@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime"
 	"slices"
@@ -540,5 +541,167 @@ func TestAsyncLoadShortRead(t *testing.T) {
 	}
 	if !dst.HasUniqueRef(fr) {
 		t.Error("page loader still holds a reference after reporting EIO")
+	}
+}
+
+func TestSaveToPreservesReferenceCounts(t *testing.T) {
+	newMemoryFile := func() *MemoryFile {
+		file := openSaveTestFile(t, "")
+		f, err := NewMemoryFile(file, MemoryFileOpts{
+			DelayedEviction:         DelayedEvictionDisabled,
+			DisableMemoryAccounting: true,
+			ExpectHugepages:         true,
+		})
+		if err != nil {
+			file.Close()
+			t.Fatalf("NewMemoryFile: %v", err)
+		}
+		t.Cleanup(f.Destroy)
+		return f
+	}
+	f := newMemoryFile()
+	small, err := f.Allocate(8*uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate small pages: %v", err)
+	}
+	huge, err := f.Allocate(2*uint64(hostarch.HugePageSize), AllocOpts{Mode: AllocateUncommitted, Huge: true})
+	if err != nil {
+		t.Fatalf("Allocate huge pages: %v", err)
+	}
+	smallFirst := memmap.FileRange{Start: small.Start + uint64(hostarch.PageSize), End: small.Start + 5*uint64(hostarch.PageSize)}
+	smallSecond := memmap.FileRange{Start: small.Start + 3*uint64(hostarch.PageSize), End: small.Start + 6*uint64(hostarch.PageSize)}
+	hugeFirst := memmap.FileRange{Start: huge.Start, End: huge.Start + uint64(hostarch.HugePageSize)}
+	f.IncRef(smallFirst, 0)
+	f.IncRef(smallSecond, 0)
+	f.IncRef(huge, 0)
+	f.IncRef(hugeFirst, 0)
+
+	var checkpoint bytes.Buffer
+	if err := f.SaveTo(context.Background(), &checkpoint, &SaveOpts{}); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+	// Balance the source references before the MemoryFile is destroyed.
+	f.DecRef(smallSecond)
+	f.DecRef(smallFirst)
+	f.DecRef(hugeFirst)
+	f.DecRef(huge)
+	f.DecRef(small)
+	f.DecRef(huge)
+
+	restored := newMemoryFile()
+	if err := restored.LoadFrom(context.Background(), bytes.NewReader(checkpoint.Bytes()), &LoadOpts{}); err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if got, ok := restored.FirstSharedRange(small); !ok || got != (memmap.FileRange{
+		Start: small.Start + uint64(hostarch.PageSize),
+		End:   small.Start + 6*uint64(hostarch.PageSize),
+	}) {
+		t.Errorf("FirstSharedRange(small) = (%v, %t), want the complete overlapping range", got, ok)
+	}
+	if got, ok := restored.FirstSharedRange(huge); !ok || got != huge {
+		t.Errorf("FirstSharedRange(huge) = (%v, %t), want %v", got, ok, huge)
+	}
+	restored.DecRef(smallSecond)
+	if got, ok := restored.FirstSharedRange(small); !ok || got != (memmap.FileRange{
+		Start: small.Start + uint64(hostarch.PageSize),
+		End:   small.Start + 5*uint64(hostarch.PageSize),
+	}) {
+		t.Errorf("FirstSharedRange(small) after partial release = (%v, %t), want the remaining overlap", got, ok)
+	}
+	restored.DecRef(smallFirst)
+	if !restored.HasUniqueRef(small) {
+		t.Error("small backing is shared after all extra references are released")
+	}
+	restored.DecRef(huge)
+	if got, ok := restored.FirstSharedRange(huge); !ok || got != hugeFirst {
+		t.Errorf("FirstSharedRange(huge) after partial release = (%v, %t), want %v", got, ok, hugeFirst)
+	}
+	restored.DecRef(hugeFirst)
+	if !restored.HasUniqueRef(huge) {
+		t.Error("huge backing is shared after all extra references are released")
+	}
+
+	smallProbe, err := restored.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted, Dir: TopDown})
+	if err != nil {
+		t.Fatalf("Allocate small probe: %v", err)
+	}
+	if smallProbe.Start < huge.End && huge.Start < smallProbe.End {
+		t.Errorf("small allocation %v overlaps live huge allocation %v", smallProbe, huge)
+	}
+	hugeProbe, err := restored.Allocate(uint64(hostarch.HugePageSize), AllocOpts{Mode: AllocateUncommitted, Huge: true, Dir: BottomUp})
+	if err != nil {
+		t.Fatalf("Allocate huge probe: %v", err)
+	}
+	if hugeProbe.Start < small.End && small.Start < hugeProbe.End {
+		t.Errorf("huge allocation %v overlaps live small allocation %v", hugeProbe, small)
+	}
+	restored.DecRef(smallProbe)
+	restored.DecRef(hugeProbe)
+	restored.DecRef(small)
+	restored.DecRef(huge)
+}
+
+func TestMemoryFileOrdinaryReferenceLimits(t *testing.T) {
+	f := newSaveTestMemoryFile(t, "", false)
+	fr, err := f.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.DecRef(fr)
+	for _, count := range []uint64{2, 3, math.MaxUint64 - 1, math.MaxUint64} {
+		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
+			f.mu.Lock()
+			pb := f.exportMetadataProto()
+			f.mu.Unlock()
+			for _, r := range pb.UnfreeSmall {
+				if r.Start <= fr.Start && fr.End <= r.End {
+					r.Refs = count
+				}
+			}
+			loaded := &MemoryFile{}
+			if err := loaded.importMetadataProto(pb); err != nil {
+				t.Fatal(err)
+			}
+			checkCount := func(want uint64) {
+				t.Helper()
+				loaded.mu.Lock()
+				saved := loaded.exportMetadataProto()
+				loaded.mu.Unlock()
+				found := false
+				for _, r := range saved.UnfreeSmall {
+					if r.Start <= fr.Start && fr.End <= r.End {
+						found = true
+						if r.Refs != want {
+							t.Fatalf("saved count = %d, want %d", r.Refs, want)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("saved metadata omitted live range")
+				}
+				if loaded.HasUniqueRef(fr) != (want == 1) {
+					t.Fatalf("uniqueness disagrees with ordinary count %d", want)
+				}
+			}
+			checkCount(count)
+			loaded.DecRef(fr)
+			checkCount(count - 1)
+			loaded.IncRef(fr, 0)
+			checkCount(count)
+			if count == math.MaxUint64 {
+				func() {
+					defer func() {
+						if recover() == nil {
+							t.Error("ordinary reference overflow did not panic")
+						}
+					}()
+					loaded.IncRef(fr, 0)
+				}()
+				checkCount(count)
+			} else {
+				loaded.IncRef(fr, 0)
+				checkCount(count + 1)
+			}
+		})
 	}
 }
