@@ -2816,6 +2816,10 @@ func isSubnetBroadcastOnNIC(nic *nic, protocol tcpip.NetworkProtocolNumber, addr
 //
 // If the NIC is not specified, the stack will check all NICs.
 func (s *Stack) IsSubnetBroadcast(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+	if addr.Len() != header.IPv4AddressSize {
+		return false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
