@@ -278,6 +278,9 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 		o.kind = d.byte()
 		o.inexact = o.kind&objInexact != 0
 		o.kind &^= objInexact
+		if i == 0 && o.kind != objKindValue {
+			Failf("invalid root object kind %d", o.kind)
+		}
 		switch o.kind {
 		case objKindValue:
 			if i == 0 {
@@ -327,9 +330,6 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 			totalBytes += uint64(o.size)
 			o.base = reflect.MakeSlice(o.ti.sliceTypeOf(), int(count), int(count)).UnsafePointer()
 		case objKindMap:
-			if i == 0 {
-				Failf("root is a map")
-			}
 			// size is the number of entries.
 			count := d.uvarint()
 			if count > maxDecodeObjectBytes {
