@@ -39,5 +39,10 @@ go_test(
     name = "xdp_test",
     srcs = ["endpoint_test.go"],
     embed = [":xdp"],
-    deps = ["//pkg/tcpip"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/link/stopfd",
+        "//pkg/tcpip/stack",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

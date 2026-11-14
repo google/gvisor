@@ -101,7 +101,6 @@ func newProcessorManager(opts *Options, e *endpoint) *processorManager {
 	m.ready = make([]bool, opts.ProcessorsPerChannel)
 	m.processors = make([]processor, opts.ProcessorsPerChannel)
 	m.e = e
-	m.wg.Add(opts.ProcessorsPerChannel)
 
 	for i := range m.processors {
 		p := &m.processors[i]
@@ -115,14 +114,16 @@ func newProcessorManager(opts *Options, e *endpoint) *processorManager {
 }
 
 // start starts the processor goroutines if the processor manager is configured
-// with more than one processor.
+// with more than one processor. It must not be called again until close has
+// returned.
 func (m *processorManager) start() {
+	// Only start processor in separate goroutines if we have multiple of them.
+	if len(m.processors) < 2 {
+		return
+	}
+	m.wg.Add(len(m.processors))
 	for i := range m.processors {
-		p := &m.processors[i]
-		// Only start processor in a separate goroutine if we have multiple of them.
-		if len(m.processors) > 1 {
-			go p.start(&m.wg)
-		}
+		go m.processors[i].start(&m.wg)
 	}
 }
 
@@ -276,6 +277,7 @@ func (m *processorManager) close() {
 		p := &m.processors[i]
 		p.closeWaker.Assert()
 	}
+	m.wg.Wait()
 }
 
 // wakeReady wakes up all processors that have a packet queued. If there is only
