@@ -129,6 +129,11 @@ type sender struct {
 	// the first segment that was retransmitted due to RTO expiration.
 	firstRetransmittedSegXmitTime tcpip.MonotonicTime
 
+	// userTimeoutEnd is one past the last byte covered by
+	// firstRetransmittedSegXmitTime. New data sent during recovery gets
+	// its own deadline once the peer acknowledges this flight.
+	userTimeoutEnd seqnum.Value
+
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
 	zeroWindowProbing bool `state:"nosave"`
@@ -558,10 +563,9 @@ func (s *sender) resendSegment() {
 	}
 }
 
-// retransmitTimerExpired is called when the retransmit timer expires, and
-// unacknowledged segments are assumed lost, and thus need to be resent.
-// Returns true if the connection is still usable, or false if the connection
-// is deemed lost.
+// retransmitTimerExpired handles the retransmission or zero-window probe timer.
+// It returns an error if the connection timed out.
+//
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
 func (s *sender) retransmitTimerExpired() tcpip.Error {
@@ -597,6 +601,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		// segment has already been sent and unacked for the RTO at the
 		// time the segment was sent.
 		s.firstRetransmittedSegXmitTime = s.writeList.Front().xmitTime
+		s.userTimeoutEnd = s.SndNxt
 	}
 
 	elapsed := s.ep.stack.Clock().NowMonotonic().Sub(s.firstRetransmittedSegXmitTime)
@@ -621,10 +626,9 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		s.RTO = s.maxRTO
 	}
 
-	// Cap RTO to remaining time.
-	if s.RTO > remaining {
-		s.RTO = remaining
-	}
+	// Limit the timer armed by either a retransmission or a window probe.
+	// Keep the full backed-off RTO for the next flight.
+	defer s.limitResendTimerToUserTimeout()
 
 	if s.zeroWindowProbing && s.SndUna == s.SndNxt {
 		// The peer has acknowledged all transmitted data. Probe its window
@@ -700,6 +704,20 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	s.sendData()
 
 	return nil
+}
+
+// limitResendTimerToUserTimeout shortens a pending retransmission or probe
+// without changing the RTO that a later ACK will restart.
+//
+// +checklocks:s.ep.mu
+func (s *sender) limitResendTimerToUserTimeout() {
+	if !s.resendTimer.enabled() || s.ep.userTimeout == 0 {
+		return
+	}
+	deadline := s.firstRetransmittedSegXmitTime.Add(s.ep.userTimeout)
+	if deadline.Before(s.resendTimer.target) {
+		s.resendTimer.enable(max(0, deadline.Sub(s.ep.stack.Clock().NowMonotonic())))
+	}
 }
 
 // pCount returns the number of packets in the segment. Due to GSO, a segment
@@ -1778,14 +1796,24 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		s.SetPipe()
 
-		// If all outstanding data was acknowledged the disable the timer.
+		// If all outstanding data was acknowledged, disable the timer.
 		// RFC 6298 Rule 5.3
 		if s.SndUna == s.SndNxt {
 			s.Outstanding = 0
-			// Reset firstRetransmittedSegXmitTime to the zero value.
-			s.firstRetransmittedSegXmitTime = tcpip.MonotonicTime{}
 			s.resendTimer.disable()
 			s.probeTimer.disable()
+			s.firstRetransmittedSegXmitTime = tcpip.MonotonicTime{}
+		} else if !s.zeroWindowProbing && s.firstRetransmittedSegXmitTime != (tcpip.MonotonicTime{}) {
+			if s.userTimeoutEnd.LessThanEq(ack) {
+				// The old flight is acknowledged. A retransmission below can
+				// overwrite the new oldest segment's original transmit time.
+				s.firstRetransmittedSegXmitTime = s.writeList.Front().xmitTime
+				s.userTimeoutEnd = s.SndNxt
+			} else {
+				// The advancing ACK restarted the timer above, but the old
+				// flight still has unacknowledged bytes.
+				s.limitResendTimerToUserTimeout()
+			}
 		}
 	}
 
@@ -1851,6 +1879,13 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	seg.lost = false
 
 	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
+	if err == nil && seg.xmitCount > 1 && !s.zeroWindowProbing && s.firstRetransmittedSegXmitTime != (tcpip.MonotonicTime{}) {
+		// Sending new bytes leaves the old deadline alone. Only a
+		// retransmission makes later bytes part of this recovery.
+		if end := seg.sequenceNumber.Add(seg.logicalLen()); s.userTimeoutEnd.LessThan(end) {
+			s.userTimeoutEnd = end
+		}
+	}
 
 	if seg.payloadSize() != 0 {
 		switch {
