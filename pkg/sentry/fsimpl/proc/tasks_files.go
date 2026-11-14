@@ -285,11 +285,11 @@ var _ dynamicInode = (*loadavgData)(nil)
 func (*loadavgData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	k := kernel.KernelFromContext(ctx)
 	pidns := kernel.PIDNamespaceFromContext(ctx)
-	// TODO(b/62345059): Include real data in fields 1-3.
+	loads := k.Loadavg()
 	// Column 1-3: CPU and IO utilization of the last 1, 5, and 15 minute periods.
 	// Column 4-5: currently running processes and the total number of processes.
 	// Column 6: the last process ID used.
-	fmt.Fprintf(buf, "%.2f %.2f %.2f %d/%d %d\n", 0.00, 0.00, 0.00, k.RunningTasks(), k.RootPIDNamespace().NumTasks(), pidns.LastTID())
+	fmt.Fprintf(buf, "%.2f %.2f %.2f %d/%d %d\n", loads[0], loads[1], loads[2], k.RunningTasks(), k.RootPIDNamespace().NumTasks(), pidns.LastTID())
 	return nil
 }
 

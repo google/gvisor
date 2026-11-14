@@ -110,6 +110,7 @@ using ::testing::Eq;
 using ::testing::Gt;
 using ::testing::HasSubstr;
 using ::testing::IsSupersetOf;
+using ::testing::MatchesRegex;
 using ::testing::Pair;
 using ::testing::StartsWith;
 using ::testing::UnorderedElementsAre;
@@ -1874,19 +1875,25 @@ TEST(ProcLoadavg, Fields) {
   std::vector<std::string> lines = absl::StrSplit(proc_loadvg, '\n');
 
   // Single line.
-  EXPECT_EQ(lines.size(), 2) << proc_loadvg;
+  ASSERT_EQ(lines.size(), 2) << proc_loadvg;
 
   std::vector<std::string> fields =
       absl::StrSplit(lines[0], absl::ByAnyChar(" /"), absl::SkipWhitespace());
 
   // Six fields.
-  EXPECT_EQ(fields.size(), 6) << proc_loadvg;
+  ASSERT_EQ(fields.size(), 6) << proc_loadvg;
 
-  double val;
-  // First three fields are floating point numbers.
+  double val = 0;
+  // First three fields are non-negative numbers with two decimal digits.
+  EXPECT_THAT(fields[0], MatchesRegex("^[0-9]+\\.[0-9]{2}$")) << proc_loadvg;
   EXPECT_TRUE(absl::SimpleAtod(fields[0], &val)) << proc_loadvg;
+  EXPECT_GE(val, 0.0) << proc_loadvg;
+  EXPECT_THAT(fields[1], MatchesRegex("^[0-9]+\\.[0-9]{2}$")) << proc_loadvg;
   EXPECT_TRUE(absl::SimpleAtod(fields[1], &val)) << proc_loadvg;
+  EXPECT_GE(val, 0.0) << proc_loadvg;
+  EXPECT_THAT(fields[2], MatchesRegex("^[0-9]+\\.[0-9]{2}$")) << proc_loadvg;
   EXPECT_TRUE(absl::SimpleAtod(fields[2], &val)) << proc_loadvg;
+  EXPECT_GE(val, 0.0) << proc_loadvg;
   // Rest of the fields are valid base 10 numbers.
   uint64_t running_tasks = 0;
   EXPECT_TRUE(absl::SimpleAtoi(fields[3], &running_tasks)) << proc_loadvg;
@@ -1897,6 +1904,62 @@ TEST(ProcLoadavg, Fields) {
   uint64_t last_tid = 0;
   EXPECT_TRUE(absl::SimpleAtoi(fields[5], &last_tid)) << proc_loadvg;
   EXPECT_GE(last_tid, 1) << proc_loadvg;
+}
+
+TEST(ProcLoadavg, LoadAccrues) {
+  std::string before_contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/loadavg"));
+  std::vector<std::string> before_fields = absl::StrSplit(
+      before_contents, absl::ByAnyChar(" /"), absl::SkipWhitespace());
+  ASSERT_EQ(before_fields.size(), 6) << before_contents;
+  double before1 = 0;
+  double before5 = 0;
+  double before15 = 0;
+  ASSERT_TRUE(absl::SimpleAtod(before_fields[0], &before1)) << before_contents;
+  ASSERT_TRUE(absl::SimpleAtod(before_fields[1], &before5)) << before_contents;
+  ASSERT_TRUE(absl::SimpleAtod(before_fields[2], &before15)) << before_contents;
+
+  // Burn CPU across 4 runnable threads over a 5-second monotonic sample window
+  // (plus slack for tick alignment) so load1, load5, and load15 accrue cleanly.
+  const absl::Time deadline = Now(CLOCK_MONOTONIC) + absl::Milliseconds(5500);
+  auto spin = [deadline]() {
+    volatile uint64_t sink = 0;
+    while (Now(CLOCK_MONOTONIC) < deadline) {
+      for (int i = 0; i < 100000; ++i) {
+        sink = sink + i;
+      }
+    }
+  };
+  ScopedThread t1(spin);
+  ScopedThread t2(spin);
+  ScopedThread t3(spin);
+  spin();
+  t1.Join();
+  t2.Join();
+  t3.Join();
+
+  std::string proc_loadavg =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/loadavg"));
+  std::vector<std::string> fields = absl::StrSplit(
+      proc_loadavg, absl::ByAnyChar(" /"), absl::SkipWhitespace());
+  ASSERT_EQ(fields.size(), 6) << proc_loadavg;
+
+  double load1 = 0;
+  double load5 = 0;
+  double load15 = 0;
+  EXPECT_TRUE(absl::SimpleAtod(fields[0], &load1)) << proc_loadavg;
+  EXPECT_TRUE(absl::SimpleAtod(fields[1], &load5)) << proc_loadavg;
+  EXPECT_TRUE(absl::SimpleAtod(fields[2], &load15)) << proc_loadavg;
+  EXPECT_GT(load1, 0.0) << proc_loadavg;
+  EXPECT_GT(load5, 0.0) << proc_loadavg;
+  EXPECT_GT(load15, 0.0) << proc_loadavg;
+  if (IsRunningOnGvisor() ||
+      (before1 >= before5 && before5 >= before15 && before1 < 1.0)) {
+    EXPECT_GT(load1, load5)
+        << "before: " << before_contents << " after: " << proc_loadavg;
+    EXPECT_GT(load5, load15)
+        << "before: " << before_contents << " after: " << proc_loadavg;
+  }
 }
 
 // NOTE: Tests in priority.cc also check certain priority related fields in
