@@ -156,9 +156,8 @@ const NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
 
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
 type CreateLinksAndRoutesArgs struct {
-	// FilePayload contains the fds associated with the FDBasedLinks. The
-	// number of fd's should match the sum of the NumChannels field of the
-	// FDBasedLink entries below.
+	// FilePayload contains the link FDs in interface order, followed by the
+	// PCAP file and the NAT ruleset when their respective flags are set.
 	urpc.FilePayload
 
 	LoopbackLinks []LoopbackLink
