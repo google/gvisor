@@ -117,12 +117,6 @@ func (test *udpTest) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP
 		if bindTo.To4() != nil {
 			// But bindTo is an IPv4 address, we expect EAFNOSUPPORT.
 			wantErrno = unix.EAFNOSUPPORT
-
-			// TODO(gvisor.dev/issue/5967): Remove this if statement once UDPv4 sockets
-			// returns EAFNOSUPPORT after calling sendto with an IPv6 address.
-			if dut.Uname.IsGvisor() {
-				wantErrno = unix.EINVAL
-			}
 		}
 	} else {
 		// If sendTo is an IPv4 address.
