@@ -150,6 +150,19 @@ func TestFromFlags(t *testing.T) {
 	if c.Netgofer != NetgoferModeProxyLoopback || !c.Netgofer.Enabled() || !c.Netgofer.AllowLoopback() {
 		t.Errorf("Netgofer=%v Enabled()=%v AllowLoopback()=%v, want NetgoferModeProxyLoopback, true, true", c.Netgofer, c.Netgofer.Enabled(), c.Netgofer.AllowLoopback())
 	}
+	if err := testFlags.Lookup("netgofer").Value.Set("off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := testFlags.Lookup("rdmaproxy").Value.Set("true"); err != nil {
+		t.Fatal(err)
+	}
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RDMAProxy || c.UseNetworkProxy() {
+		t.Errorf("RDMAProxy=%v UseNetworkProxy()=%v, want true and false", c.RDMAProxy, c.UseNetworkProxy())
+	}
 }
 
 func TestToFlagsFromFlags(t *testing.T) {
@@ -430,6 +443,22 @@ func TestValidationFail(t *testing.T) {
 				"overlay2": "all:memory",
 			},
 			error: "overlay flag has been replaced with overlay2 flag",
+		},
+		{
+			name: "rdmaproxy+network-proxy-path",
+			flags: map[string]string{
+				"rdmaproxy":          "true",
+				"network-proxy-path": "/run/netproxy.sock",
+			},
+			error: "rdmaproxy flag is incompatible with netgofer and network-proxy-path flags",
+		},
+		{
+			name: "rdmaproxy+netgofer",
+			flags: map[string]string{
+				"rdmaproxy": "true",
+				"netgofer":  "proxy",
+			},
+			error: "rdmaproxy flag is incompatible with netgofer and network-proxy-path flags",
 		},
 		{
 			name: "network-proxy-path+network:none",

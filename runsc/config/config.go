@@ -611,6 +611,9 @@ func (c *Config) Validate() error {
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
 	}
+	if c.RDMAProxy && c.UseNetworkProxy() {
+		return fmt.Errorf("rdmaproxy flag is incompatible with netgofer and network-proxy-path flags")
+	}
 	if c.NetworkProxyPath != "" {
 		if !filepath.IsAbs(c.NetworkProxyPath) {
 			return fmt.Errorf("network-proxy-path must be an absolute path, got %q", c.NetworkProxyPath)
