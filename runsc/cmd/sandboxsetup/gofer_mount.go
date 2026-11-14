@@ -277,7 +277,7 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	}
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		if err := PivotRoot("/proc/fs"); err != nil {
+		if err := switchGoferRoot(spec); err != nil {
 			util.Fatalf("failed to change the root file system: %v", err)
 		}
 		if err := os.Chdir("/"); err != nil {
@@ -285,6 +285,62 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 		}
 	}
 	return nil
+}
+
+// switchGoferRoot makes /proc/fs the root filesystem.
+//
+// /proc/fs is unbindable so that the recursive bind mounts above can't copy
+// it into itself. PivotRoot avoids pivot_root(2) by copying the new root,
+// which an unbindable mount forbids, so once the bind mounts are done
+// /proc/fs is made private for the switch, and the new root is made
+// unbindable again after it.
+//
+// Containers whose mounts use unbindable or shared propagation keep
+// pivot_root(2). The copy leaves unbindable mounts out, and a copy of a
+// shared mount is a peer of the original, so unmounting the old root,
+// which still holds the originals, would unmount the copies too.
+func switchGoferRoot(spec *specs.Spec) error {
+	const root = "/proc/fs"
+	if !copyableMounts(spec) {
+		if err := os.Chdir(root); err != nil {
+			return fmt.Errorf("error changing working directory: %v", err)
+		}
+		return pivotRoot()
+	}
+	if err := unix.Mount("", root, "", unix.MS_PRIVATE, ""); err != nil {
+		return fmt.Errorf("error making %q private: %v", root, err)
+	}
+	if err := PivotRoot(root); err != nil {
+		return err
+	}
+	if err := unix.Mount("", "/", "", unix.MS_UNBINDABLE, ""); err != nil {
+		return fmt.Errorf("error making the new root unbindable: %v", err)
+	}
+	return nil
+}
+
+// copyableMounts returns whether a copy of the gofer's root keeps the
+// container's mounts as they are: none of them, nor the rootfs, asks for
+// unbindable or shared propagation.
+func copyableMounts(spec *specs.Spec) bool {
+	copyable := func(opt string) bool {
+		switch opt {
+		case "unbindable", "runbindable", "shared", "rshared":
+			return false
+		}
+		return true
+	}
+	if spec.Linux != nil && !copyable(spec.Linux.RootfsPropagation) {
+		return false
+	}
+	for _, m := range spec.Mounts {
+		for _, opt := range m.Options {
+			if !copyable(opt) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func msFlagsToMountAttr(flags uint32) (attrSet uint64, attrClr uint64) {
