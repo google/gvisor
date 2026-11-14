@@ -61,6 +61,8 @@ func (commentMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, _ stac
 }
 
 // commentMatcher is a no-op matcher carrying a comment string.
+//
+// +stateify savable
 type commentMatcher struct {
 	comment string
 }

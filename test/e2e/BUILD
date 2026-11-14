@@ -9,6 +9,7 @@ go_test(
     name = "integration_test",
     size = "large",
     srcs = [
+        "dind_checkpoint_test.go",
         "exec_test.go",
         "integration_test.go",
     ],
