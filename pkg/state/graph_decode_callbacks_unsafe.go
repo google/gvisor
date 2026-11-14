@@ -52,28 +52,21 @@ func (ds *graphDecodeState) decodeObjects() {
 	for i := range ds.objs {
 		ds.cur = int32(i)
 		o := &ds.objs[i]
-		if o.kind == objKindMap || (o.inexact && o.kind == objKindValue) {
+		if o.kind == objKindMap || o.inexact {
 			n := d.byteLength()
-			if !ds.decodable(o) {
+			if o.decodeType == nil {
 				// Decode the object once it has been referred to.
 				deferred = append(deferred, deferredObject{obj: int32(i), pos: d.pos, end: d.pos + n})
 				d.pos += n
 				continue
 			}
-		} else if o.inexact && !ds.decodable(o) {
-			n := d.byteLength()
-			deferred = append(deferred, deferredObject{obj: int32(i), pos: d.pos, end: d.pos + n})
-			d.pos += n
-			continue
-		} else if o.inexact {
-			d.byteLength()
 		}
 		ds.decodeObject(int32(i))
 	}
 	for len(deferred) > 0 {
 		remaining := deferred[:0]
 		for _, do := range deferred {
-			if !ds.decodable(&ds.objs[do.obj]) {
+			if ds.objs[do.obj].decodeType == nil {
 				remaining = append(remaining, do)
 				continue
 			}
@@ -93,22 +86,11 @@ func (ds *graphDecodeState) decodeObjects() {
 	}
 }
 
-// decodable returns true if the type needed to decode o is known.
-func (ds *graphDecodeState) decodable(o *decObject) bool {
-	if o.kind == objKindMap {
-		return o.mapType != nil
-	}
-	return !o.inexact || o.exact != nil
-}
-
 // decodeObject decodes the data of the object obj.
 func (ds *graphDecodeState) decodeObject(obj int32) {
 	d := &ds.in
 	o := &ds.objs[obj]
-	ti := o.ti
-	if o.exact != nil {
-		ti = o.exact
-	}
+	ti := o.decodeType
 	switch o.kind {
 	case objKindValue:
 		ds.keepZero = obj == 0
@@ -128,7 +110,7 @@ func (ds *graphDecodeState) decodeObject(obj int32) {
 			pos += count
 		}
 	case objKindMap:
-		ds.decodeMap(o.mapType, o.base, int(o.size))
+		ds.decodeMap(ti, o.base, int(o.size))
 	default:
 		Failf("unexpected object kind %d", o.kind)
 	}
@@ -267,16 +249,16 @@ func (ds *graphDecodeState) runCallbacks() {
 
 func (ds *graphDecodeState) objTypeName(obj int32) string {
 	o := &ds.objs[obj]
-	ti := o.ti
-	if o.exact != nil {
-		ti = o.exact
+	ti := o.decodeType
+	if ti == nil {
+		ti = o.ti
 	}
 	switch o.kind {
 	case objKindValue:
 		if ti == nil {
 			return "unknown value"
 		}
-		if o.inexact && o.exact == nil {
+		if o.inexact && o.decodeType == nil {
 			return fmt.Sprintf("%v (inexact layout)", ti.typ)
 		}
 		return ti.typ.String()
@@ -284,13 +266,13 @@ func (ds *graphDecodeState) objTypeName(obj int32) string {
 		if ti == nil || ti.size == 0 {
 			return "array"
 		}
-		if o.inexact && o.exact == nil {
+		if o.inexact && o.decodeType == nil {
 			return fmt.Sprintf("[%d]%v (inexact layout)", o.size/ti.size, ti.typ)
 		}
 		return fmt.Sprintf("[%d]%v", o.size/ti.size, ti.typ)
 	case objKindMap:
-		if o.mapType != nil {
-			return o.mapType.typ.String()
+		if o.decodeType != nil {
+			return o.decodeType.typ.String()
 		}
 		return fmt.Sprintf("map (%d entries)", o.size)
 	default:

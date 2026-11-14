@@ -25,16 +25,17 @@ import (
 // decObject is an object being decoded.
 type decObject struct {
 	base unsafe.Pointer
-	ti   *typeInfo
-	// size is the size of the object in bytes.
+	// ti describes the allocation layout of a value or array element.
+	ti *typeInfo
+	// decodeType is the type used to decode the payload. Maps and objects
+	// described only by layout acquire it from a reference.
+	decodeType *typeInfo
+	// size is in bytes for values and arrays, and in entries for maps.
 	size uintptr
 	kind uint8
-	// mapType is the type of map objects, known once they are referred to.
-	mapType *typeInfo
-	// inexact is true for objects whose type is only known to have the
-	// layout of ti. exact is their type, once known from a reference.
+	// inexact is the wire flag: the payload has a length prefix even after
+	// a reference has supplied decodeType.
 	inexact bool
-	exact   *typeInfo
 }
 
 // decodeCallback is a post-decode callback run once an object has been decoded
@@ -302,7 +303,7 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 				o.ti = rootType
 				o.size = o.ti.size
 				o.base = root
-				continue
+				break
 			}
 			o.ti = ds.typeAt(d.uvarint())
 			o.size = o.ti.size
@@ -338,6 +339,9 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 			o.size = uintptr(count)
 		default:
 			Failf("invalid object kind %d", o.kind)
+		}
+		if !o.inexact {
+			o.decodeType = o.ti
 		}
 	}
 }
@@ -390,7 +394,7 @@ func (ds *graphDecodeState) target(v uint64) (unsafe.Pointer, int32) {
 // which tells the exact type of inexact objects.
 func (ds *graphDecodeState) noteRef(obj int32, t unsafe.Pointer, ti *typeInfo) {
 	o := &ds.objs[obj]
-	if !o.inexact || o.exact != nil {
+	if o.decodeType != nil {
 		return
 	}
 	for o.kind == objKindArray && ti.kind == reflect.Array && ti.size > o.ti.size {
@@ -401,7 +405,7 @@ func (ds *graphDecodeState) noteRef(obj int32, t unsafe.Pointer, ti *typeInfo) {
 	}
 	off := uintptr(t) - uintptr(o.base)
 	if off == 0 || (o.kind == objKindArray && ti.size > 0 && off%ti.size == 0) {
-		o.exact = ti
+		o.decodeType = ti
 	}
 }
 
