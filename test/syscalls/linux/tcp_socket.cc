@@ -1055,6 +1055,65 @@ TEST_P(TcpSocketTest, SendUnblocksOnSendBufferIncrease) {
   send_thread.Join();
 }
 
+// Tests that a socket that holds a lot of unread data still processes the
+// ACKs for the data it sends after SO_RCVBUF and SO_SNDBUF are made small.
+TEST_P(TcpSocketTest, SendProgressesAfterRcvBufShrinkWithUnreadData) {
+  // Queue unread data on the accepted socket.
+  FillSocketBuffers(connected_.get(), accepted_.get());
+  int unread = 0;
+  ASSERT_THAT(ioctl(accepted_.get(), FIONREAD, &unread), SyscallSucceeds());
+  ASSERT_GT(unread, 128 << 10);
+
+  // Shrink the buffers of the accepted socket to their minimum values.
+  int small = 1;
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_SOCKET, SO_RCVBUF, &small, sizeof(small)),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)),
+      SyscallSucceeds());
+
+  // The accepted socket sends data to the connected socket, which reads it.
+  // This requires the accepted socket to process the ACKs it receives.
+  constexpr int kSendSize = 256 << 10;
+  ScopedThread sender([this]() {
+    std::vector<char> buf(kSendSize);
+    int sent = 0;
+    while (sent < kSendSize) {
+      struct pollfd pfd = {.fd = accepted_.get(), .events = POLLOUT};
+      int ret = RetryEINTR(poll)(&pfd, 1, kTimeoutMillis);
+      if (ret <= 0) {
+        ADD_FAILURE() << "sender: poll returned " << ret << " after " << sent
+                      << " bytes";
+        return;
+      }
+      int n = RetryEINTR(send)(accepted_.get(), buf.data() + sent,
+                               kSendSize - sent, MSG_DONTWAIT);
+      if (n < 0 && errno == EWOULDBLOCK) {
+        continue;
+      }
+      ASSERT_GT(n, 0);
+      sent += n;
+    }
+  });
+
+  std::vector<char> rbuf(kSendSize);
+  int received = 0;
+  while (received < kSendSize) {
+    struct pollfd pfd = {.fd = connected_.get(), .events = POLLIN};
+    int ret = RetryEINTR(poll)(&pfd, 1, kTimeoutMillis);
+    ASSERT_GT(ret, 0) << "receiver: no data after " << received << " bytes";
+    int n = RetryEINTR(recv)(connected_.get(), rbuf.data(),
+                             kSendSize - received, MSG_DONTWAIT);
+    if (n < 0 && errno == EWOULDBLOCK) {
+      continue;
+    }
+    ASSERT_GT(n, 0);
+    received += n;
+  }
+  sender.Join();
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
