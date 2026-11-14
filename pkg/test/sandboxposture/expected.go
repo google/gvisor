@@ -410,6 +410,13 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 		memlock = LimitUnlimited
 	}
 
+	// runsc confines the cgroup it creates; a sandbox it leaves in the
+	// reference process's cgroup inherits its device access.
+	deviceCgroup := DeviceCgroupSameAsRef
+	if opts.Cgroup {
+		deviceCgroup = DeviceCgroupConfined
+	}
+
 	uidMap, gidMap := MapSameAsRef, MapSameAsRef
 	if newUserNS {
 		if applyCaps {
@@ -430,6 +437,7 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 		UIDMap:             uidMap,
 		GIDMap:             gidMap,
 		ProcFileOwner:      OwnerSameAsProcess,
+		DeviceCgroup:       deviceCgroup,
 	}
 }
 
