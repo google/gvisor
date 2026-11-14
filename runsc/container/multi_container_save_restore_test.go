@@ -70,7 +70,7 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
-		if err := cont.Restore(conf, imagePath, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		if err := cont.Restore(conf, imagePath, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */); err != nil {
 			return nil, nil, fmt.Errorf("error restoring container: %v", err)
 		}
 
@@ -1686,6 +1686,97 @@ func TestMultiContainerCheckpointRestoreJoinCgroupNamespace(t *testing.T) {
 	}
 }
 
+// TestLazyRestoreStartSubcontainer checks that cold checkpoint pages do not
+// prevent a restored sandbox from starting another container, and that a later
+// page loading error terminates the sandbox.
+func TestLazyRestoreStartSubcontainer(t *testing.T) {
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testLazyRestoreStartSubcontainer(t, conf)
+		})
+	}
+}
+
+func testLazyRestoreStartSubcontainer(t *testing.T, conf *config.Config) {
+	setupTestRootDir(t, conf)
+	dir := checkpointDir(t)
+	ready := filepath.Join(dir, "ready")
+	command := fmt.Sprintf("dd if=/dev/urandom of=/cold/data bs=1M count=128 status=none && echo ready > %q && exec /bin/sleep 1000", ready)
+	podSpecs, ids := createSpecs([]string{"/bin/sh", "-c", command})
+	podSpecs[0].Mounts = append(podSpecs[0].Mounts, specs.Mount{Type: "tmpfs", Destination: "/cold"})
+	containers, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("starting sandbox: %v", err)
+	}
+	defer cleanup()
+	if err := testutil.Poll(func() error {
+		_, err := os.Stat(ready)
+		return err
+	}, 10*time.Second); err != nil {
+		t.Fatalf("waiting for cold pages: %v", err)
+	}
+	if err := containers[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelNone}); err != nil {
+		t.Fatalf("checkpointing sandbox: %v", err)
+	}
+	if err := containers[0].Destroy(); err != nil {
+		t.Fatalf("destroying original sandbox: %v", err)
+	}
+
+	restored := newContainer(t, conf, podSpecs[0], newBundleDir(t, podSpecs[0]), func(args *Args) {
+		args.CheckpointDirPath = dir
+	})
+	defer restored.Destroy()
+	if err := restored.Restore(conf, dir, sandbox.DirectIOOff, true /* background */, sandbox.BackgroundLoadLazy, nil /* networkArgs */); err != nil {
+		t.Fatalf("restoring sandbox: %v", err)
+	}
+	readyDone := make(chan error, 1)
+	go func() { readyDone <- restored.WaitRestore() }()
+	select {
+	case err := <-readyDone:
+		if err != nil {
+			t.Fatalf("waiting for restored sandbox: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("restore did not complete with untouched cold pages")
+	}
+
+	childSpec := testutil.NewSpecWithArgs(sleepCmd...)
+	childSpec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeContainer
+	childSpec.Annotations[specutils.ContainerdSandboxIDAnnotation] = restored.Sandbox.ID
+	_, cleanupChild, err := startContainers(conf, []*specs.Spec{childSpec}, []string{testutil.RandomContainerID()})
+	if err != nil {
+		t.Fatalf("starting new container after lazy restore: %v", err)
+	}
+	defer cleanupChild()
+
+	// The untouched tmpfs data must still depend on the checkpoint. Truncate
+	// the pages file, then read that data to fail a load after restore succeeds.
+	if err := os.Truncate(filepath.Join(dir, checkpointfiles.PagesFileName), 0); err != nil {
+		t.Fatalf("truncating checkpoint pages: %v", err)
+	}
+	failed := make(chan error, 1)
+	go func() {
+		ws, err := execute(conf, restored, "/bin/dd", "if=/cold/data", "of=/dev/null", "bs=1M", "status=none")
+		if err == nil && ws.Exited() && ws.ExitStatus() == 0 {
+			failed <- fmt.Errorf("cold pages were readable after truncating the checkpoint")
+			return
+		}
+		ws, err = restored.Wait()
+		if err == nil && !killedBySIGKILL(ws) {
+			err = fmt.Errorf("sandbox exited with %v, want SIGKILL after page loading failed", ws)
+		}
+		failed <- err
+	}()
+	select {
+	case err := <-failed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("sandbox did not terminate after page loading failed")
+	}
+}
+
 // restoreNoRootContainer restores imagePath into a new sandbox sbID with no root
 // container, then restores subSpecs in checkpoint order.
 func restoreNoRootContainer(t *testing.T, conf *config.Config, imagePath, sbID string, subSpecs []*specs.Spec) (*Container, []*Container) {
@@ -1710,7 +1801,7 @@ func restoreSandbox(t *testing.T, conf *config.Config, imagePath string, sbSpec 
 			t.Fatalf("error creating container %q: %v", id, err)
 		}
 		t.Cleanup(func() { c.Destroy() })
-		if err := c.Restore(conf, imagePath, sandbox.DirectIOOff, background, nil /* networkArgs */); err != nil {
+		if err := c.Restore(conf, imagePath, sandbox.DirectIOOff, background, sandbox.BackgroundLoadEager, nil /* networkArgs */); err != nil {
 			t.Fatalf("error restoring container %q: %v", id, err)
 		}
 		return c
@@ -1802,7 +1893,7 @@ func TestCheckpointRestoreNoRootContainer(t *testing.T) {
 		}
 		defer c.Destroy()
 		const want = "no-root-container=true cannot be restored with no-root-container=false"
-		if err := c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+		if err := c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Restore() = %v, want error containing %q", err, want)
 		}
 	})
@@ -1974,7 +2065,7 @@ func TestCheckpointRestoreRootContainerIntoNoRootContainer(t *testing.T) {
 	}
 	defer sb.Destroy()
 	const want = "no-root-container=false cannot be restored with no-root-container=true"
-	if err := sb.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+	if err := sb.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("Restore() = %v, want error containing %q", err, want)
 	}
 }
@@ -2006,7 +2097,7 @@ func TestCheckpointRestoreNoRootContainerFailedRestore(t *testing.T) {
 			t.Fatalf("error creating container %q: %v", id, err)
 		}
 		t.Cleanup(func() { c.Destroy() })
-		return c, c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */)
+		return c, c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */)
 	}
 	newSbID := testutil.RandomContainerID()
 	sb2, err := restore(noRootContainerSandboxSpec(), newSbID, true /* noRootContainer */)
