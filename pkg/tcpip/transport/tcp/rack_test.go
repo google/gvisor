@@ -326,7 +326,7 @@ func TestRACKInitialDSACKWindow(t *testing.T) {
 			// The first DSACK must expand the reordering window regardless
 			// of where the connection starts in sequence space.
 			ctx.snd.rc.DSACKSeen = true
-			ctx.snd.rc.updateRACKReorderWindow()
+			ctx.snd.rc.updateRACKReorderWindow(false /* exitedRecovery */)
 			if got, want := ctx.snd.rc.ReoWnd, 50*time.Millisecond; got != want {
 				t.Errorf("first DSACK window = %s, want %s", got, want)
 			}
@@ -336,7 +336,7 @@ func TestRACKInitialDSACKWindow(t *testing.T) {
 
 			// Another DSACK in the same round cannot expand it again.
 			ctx.snd.rc.DSACKSeen = true
-			ctx.snd.rc.updateRACKReorderWindow()
+			ctx.snd.rc.updateRACKReorderWindow(false /* exitedRecovery */)
 			if got, want := ctx.snd.rc.ReoWnd, 50*time.Millisecond; got != want {
 				t.Errorf("same-round DSACK window = %s, want %s", got, want)
 			}
@@ -345,7 +345,7 @@ func TestRACKInitialDSACKWindow(t *testing.T) {
 			// including when that boundary wraps through zero.
 			ctx.snd.SndUna = ctx.snd.SndNxt
 			ctx.snd.rc.DSACKSeen = true
-			ctx.snd.rc.updateRACKReorderWindow()
+			ctx.snd.rc.updateRACKReorderWindow(false /* exitedRecovery */)
 			if got, want := ctx.snd.rc.ReoWnd, 75*time.Millisecond; got != want {
 				t.Errorf("next-round DSACK window = %s, want %s", got, want)
 			}
