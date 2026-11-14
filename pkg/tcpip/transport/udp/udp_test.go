@@ -2462,3 +2462,83 @@ func TestMain(m *testing.M) {
 	refs.DoLeakCheck()
 	os.Exit(code)
 }
+
+// discardLinkEndpoint consumes outbound packets without queueing them.
+type discardLinkEndpoint struct {
+	*channel.Endpoint
+}
+
+func (*discardLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	return pkts.Len(), nil
+}
+
+func BenchmarkWrite(b *testing.B) {
+	// Exclude test-only reference tracking from the packet cost.
+	leakMode := refs.GetLeakMode()
+	refs.SetLeakMode(refs.NoLeakChecking)
+	defer refs.SetLeakMode(leakMode)
+	for _, test := range []struct {
+		name     string
+		protocol tcpip.NetworkProtocolNumber
+		dest     tcpip.Address
+	}{
+		{"IPv4", ipv4.ProtocolNumber, context.TestAddr},
+		{"IPv6", ipv6.ProtocolNumber, context.TestV6Addr},
+		{"IPv4Mapped", ipv6.ProtocolNumber, context.TestV4MappedAddr},
+	} {
+		for _, connected := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/Connected=%t", test.name, connected), func(b *testing.B) {
+				s := stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+					Clock:              &faketime.NullClock{},
+				})
+				defer s.Destroy()
+				link := &discardLinkEndpoint{channel.New(1, context.DefaultMTU, "")}
+				if err := s.CreateNIC(1, link); err != nil {
+					b.Fatal(err)
+				}
+				for _, addr := range []tcpip.ProtocolAddress{
+					{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: context.StackAddr.WithPrefix()},
+					{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: context.StackV6Addr.WithPrefix()},
+				} {
+					if err := s.AddProtocolAddress(1, addr, stack.AddressProperties{}); err != nil {
+						b.Fatal(err)
+					}
+				}
+				s.SetRouteTable([]tcpip.Route{
+					{Destination: header.IPv4EmptySubnet, NIC: 1},
+					{Destination: header.IPv6EmptySubnet, NIC: 1},
+				})
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					ep, err := s.NewEndpoint(udp.ProtocolNumber, test.protocol, &waiter.Queue{})
+					if err != nil {
+						b.Error(err)
+						return
+					}
+					defer ep.Close()
+					destination := tcpip.FullAddress{Addr: test.dest, Port: context.TestPort}
+					opts := tcpip.WriteOptions{To: &destination}
+					if connected {
+						if err := ep.Connect(destination); err != nil {
+							b.Error(err)
+							return
+						}
+						opts.To = nil
+					}
+					payload := make([]byte, 200)
+					var reader bytes.Reader
+					for pb.Next() {
+						reader.Reset(payload)
+						if n, err := ep.Write(&reader, opts); err != nil || n != int64(len(payload)) {
+							b.Errorf("Write = (%d, %v)", n, err)
+							return
+						}
+					}
+				})
+			})
+		}
+	}
+}
