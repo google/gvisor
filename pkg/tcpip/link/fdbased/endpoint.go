@@ -58,7 +58,7 @@ import (
 // NetworkDispatcher.
 type linkDispatcher interface {
 	Stop()
-	dispatch() (bool, tcpip.Error)
+	dispatch(*processorManager) (bool, tcpip.Error)
 	release()
 	close()
 }
@@ -134,9 +134,17 @@ type endpoint struct {
 
 	inboundDispatchers []linkDispatcher
 
+	// Each receive loop creates its own processors with these settings.
+	processorsPerChannel int
+	groEnabled           bool
+
 	mu endpointRWMutex `state:"nosave"`
+
+	// receivers holds the packet queues of each attached FD. A restored
+	// endpoint starts with no readers.
+	//
 	// +checklocks:mu
-	dispatcher stack.NetworkDispatcher
+	receivers []processorManager `state:"nosave"`
 
 	// packetDispatchMode controls the packet dispatcher used by this
 	// endpoint.
@@ -232,8 +240,10 @@ type Options struct {
 	// GRO enables generic receive offload.
 	GRO bool
 
-	// ProcessorsPerChannel is the number of goroutines used to handle packets
-	// from each FD.
+	// ProcessorsPerChannel is the number of receive processors for each FD.
+	// With one processor the receive loop delivers packets itself. With more
+	// than one it queues packets for separate goroutines. Zero chooses the
+	// count based on GOMAXPROCS and the number of FDs.
 	ProcessorsPerChannel int
 
 	// IsPacketSocket indicates whether each FD is a packet socket.
@@ -284,6 +294,13 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		return nil, fmt.Errorf("opts.MaxSyscallHeaderBytes is negative")
 	}
 
+	if opts.ProcessorsPerChannel < 0 {
+		return nil, fmt.Errorf("opts.ProcessorsPerChannel is negative")
+	}
+	if opts.ProcessorsPerChannel == 0 {
+		opts.ProcessorsPerChannel = max(1, gomaxprocs.Base()/len(opts.FDs))
+	}
+
 	e := &endpoint{
 		mtu:                   opts.MTU,
 		caps:                  caps,
@@ -291,6 +308,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		addr:                  opts.Address,
 		hdrSize:               hdrSize,
 		packetDispatchMode:    opts.PacketDispatchMode,
+		groEnabled:            opts.GRO,
+		processorsPerChannel:  opts.ProcessorsPerChannel,
 		maxSyscallHeaderBytes: uintptr(opts.MaxSyscallHeaderBytes),
 		writevMaxIovs:         rawfile.MaxIovs,
 	}
@@ -326,9 +345,6 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
 		}
-		if opts.ProcessorsPerChannel == 0 {
-			opts.ProcessorsPerChannel = max(1, gomaxprocs.Base()/len(opts.FDs))
-		}
 
 		var isPacket bool
 		if opts.PreConfigured {
@@ -357,7 +373,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 			}
 		}
 
-		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, opts)
+		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket)
 		if err != nil {
 			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
 		}
@@ -367,11 +383,11 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	return e, nil
 }
 
-func createInboundDispatcher(e *endpoint, fd int, isSocket bool, opts *Options) (linkDispatcher, error) {
+func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher, error) {
 	if isSocket {
 		switch e.packetDispatchMode {
 		case PacketMMap:
-			inboundDispatcher, err := newPacketMMapDispatcher(fd, e, opts)
+			inboundDispatcher, err := newPacketMMapDispatcher(fd, e)
 			if err != nil {
 				return nil, fmt.Errorf("newPacketMMapDispatcher(%d, %+v) = %v", fd, e, err)
 			}
@@ -380,7 +396,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, opts *Options) 
 			// If the provided FD is a socket then we optimize
 			// packet reads by using recvmmsg() instead of read() to
 			// read packets in a batch.
-			inboundDispatcher, err := newRecvMMsgDispatcher(fd, e, opts)
+			inboundDispatcher, err := newRecvMMsgDispatcher(fd, e)
 			if err != nil {
 				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %v", fd, e, err)
 			}
@@ -393,7 +409,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, opts *Options) 
 
 	// By default use the readv() dispatcher as it works with all kinds of
 	// FDs (tap/tun/unix domain sockets and af_packet).
-	inboundDispatcher, err := newReadVDispatcher(fd, e, opts)
+	inboundDispatcher, err := newReadVDispatcher(fd, e)
 	if err != nil {
 		return nil, fmt.Errorf("newReadVDispatcher(%d, %+v) = %v", fd, e, err)
 	}
@@ -492,28 +508,29 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
 
 	// nil means the NIC is being removed.
-	if dispatcher == nil && e.dispatcher != nil {
-		for _, dispatcher := range e.inboundDispatchers {
-			dispatcher.Stop()
+	if dispatcher == nil && e.receivers != nil {
+		for i, reader := range e.inboundDispatchers {
+			e.receivers[i].detach()
+			reader.Stop()
 		}
-		e.dispatcher = nil
+		e.receivers = nil
 		// NOTE(gvisor.dev/issue/11456): Unlock e.mu before e.Wait().
 		e.mu.Unlock()
 		e.Wait()
 		return
 	}
 	defer e.mu.Unlock()
-	if dispatcher != nil && e.dispatcher == nil {
-		e.dispatcher = dispatcher
-		// Link endpoints are not savable. When transportation endpoints are
-		// saved, they stop sending outgoing packets and all incoming packets
-		// are rejected.
-		for i := range e.inboundDispatchers {
-			e.wg.Add(1)
-			go func(i int) { // S/R-SAFE: See above.
-				e.dispatchLoop(e.inboundDispatchers[i])
-				e.wg.Done()
-			}(i)
+	if dispatcher != nil && e.receivers == nil {
+		e.receivers = make([]processorManager, len(e.inboundDispatchers))
+		// The stack pauses its transport protocols for a live checkpoint.
+		// These FD readers and their workers stay up for resume. On restore,
+		// network setup attaches replacement links and starts new readers here.
+		for i, reader := range e.inboundDispatchers {
+			m := &e.receivers[i]
+			m.start(e.processorsPerChannel, e.groEnabled, dispatcher)
+			e.wg.Go(func() { // S/R-SAFE: See above.
+				m.dispatchLoop(reader, e.closed)
+			})
 		}
 	}
 }
@@ -522,7 +539,7 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 func (e *endpoint) IsAttached() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.dispatcher != nil
+	return e.receivers != nil
 }
 
 // MTU implements stack.LinkEndpoint.MTU.
@@ -889,15 +906,16 @@ func (e *endpoint) InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip
 
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
 // them to the network stack.
-func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) tcpip.Error {
+func (m *processorManager) dispatchLoop(inboundDispatcher linkDispatcher, closed func(tcpip.Error)) {
+	defer m.close()
 	for {
-		cont, err := inboundDispatcher.dispatch()
+		cont, err := inboundDispatcher.dispatch(m)
 		if err != nil || !cont {
-			if e.closed != nil {
-				e.closed(err)
+			if closed != nil {
+				closed(err)
 			}
 			inboundDispatcher.release()
-			return err
+			return
 		}
 	}
 }
@@ -952,6 +970,13 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
+}
+
+// IsAttached implements stack.LinkEndpoint.IsAttached.
+func (e *InjectableEndpoint) IsAttached() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.dispatcher != nil
 }
 
 // InjectInbound injects an inbound packet. If the endpoint is not attached, the

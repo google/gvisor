@@ -128,14 +128,9 @@ type packetMMapDispatcher struct {
 	// ringOffset is the current offset into the ring buffer where the next
 	// inbound packet will be placed by the kernel.
 	ringOffset int
-
-	// mgr is the processor goroutine manager.
-	mgr *processorManager
 }
 
-func (d *packetMMapDispatcher) release() {
-	d.mgr.close()
-}
+func (*packetMMapDispatcher) release() {}
 
 func (d *packetMMapDispatcher) close() {
 	d.StopFD.Close()
@@ -180,7 +175,7 @@ func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, boo
 
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
-func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
+func (d *packetMMapDispatcher) dispatch(processors *processorManager) (bool, tcpip.Error) {
 	pkts, stopped, err := d.readMMappedPackets()
 	defer pkts.Reset()
 	if err != nil || stopped {
@@ -191,11 +186,11 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	d.e.mu.RUnlock()
 	for _, pkt := range pkts.AsSlice() {
 		if d.e.parseInboundHeader(pkt, addr) {
-			d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
+			processors.queuePacket(pkt, d.e.hdrSize > 0)
 		}
 	}
 	if pkts.Len() > 0 {
-		d.mgr.wakeReady()
+		processors.wakeReady()
 	}
 	return true, nil
 }

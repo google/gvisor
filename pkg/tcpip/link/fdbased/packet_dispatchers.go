@@ -158,12 +158,9 @@ type readVDispatcher struct {
 
 	// buf is the iovec buffer that contains the packet contents.
 	buf *iovecBuffer
-
-	// mgr is the processor goroutine manager.
-	mgr *processorManager
 }
 
-func newReadVDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, error) {
+func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	stopFD, err := stopfd.New()
 	if err != nil {
 		return nil, err
@@ -175,14 +172,11 @@ func newReadVDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, err
 	}
 	skipsVnetHdr := d.e.gsoKind == stack.HostGSOSupported
 	d.buf = newIovecBuffer(BufConfig, skipsVnetHdr)
-	d.mgr = newProcessorManager(opts, e)
-	d.mgr.start()
 	return d, nil
 }
 
 func (d *readVDispatcher) release() {
 	d.buf.release()
-	d.mgr.close()
 }
 
 func (d *readVDispatcher) close() {
@@ -190,7 +184,7 @@ func (d *readVDispatcher) close() {
 }
 
 // dispatch reads one packet from the file descriptor and dispatches it.
-func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
+func (d *readVDispatcher) dispatch(processors *processorManager) (bool, tcpip.Error) {
 	n, errno := rawfile.BlockingReadvUntilStopped(d.EFD, d.fd, d.buf.nextIovecs())
 	if n <= 0 || errno != 0 {
 		return false, tcpip.TranslateErrno(errno)
@@ -207,8 +201,8 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 	if !d.e.parseInboundHeader(pkt, addr) {
 		return true, nil
 	}
-	d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
-	d.mgr.wakeReady()
+	processors.queuePacket(pkt, d.e.hdrSize > 0)
+	processors.wakeReady()
 	return true, nil
 }
 
@@ -235,9 +229,6 @@ type recvMMsgDispatcher struct {
 
 	// pkts is reused to avoid allocations.
 	pkts stack.PacketBufferList
-
-	// mgr is the processor goroutine manager.
-	mgr *processorManager
 }
 
 const (
@@ -246,7 +237,7 @@ const (
 	MaxMsgsPerRecv = 8
 )
 
-func newRecvMMsgDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, error) {
+func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	stopFD, err := stopfd.New()
 	if err != nil {
 		return nil, err
@@ -262,8 +253,6 @@ func newRecvMMsgDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, 
 	for i := range d.bufs {
 		d.bufs[i] = newIovecBuffer(BufConfig, skipsVnetHdr)
 	}
-	d.mgr = newProcessorManager(opts, e)
-	d.mgr.start()
 
 	return d, nil
 }
@@ -272,7 +261,6 @@ func (d *recvMMsgDispatcher) release() {
 	for _, iov := range d.bufs {
 		iov.release()
 	}
-	d.mgr.close()
 }
 
 func (d *recvMMsgDispatcher) close() {
@@ -281,7 +269,7 @@ func (d *recvMMsgDispatcher) close() {
 
 // recvMMsgDispatch reads more than one packet at a time from the file
 // descriptor and dispatches it.
-func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
+func (d *recvMMsgDispatcher) dispatch(processors *processorManager) (bool, tcpip.Error) {
 	// Fill message headers.
 	for k := range d.msgHdrs {
 		if d.msgHdrs[k].Msg.Iovlen > 0 {
@@ -322,10 +310,10 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 
 		if d.e.parseInboundHeader(pkt, addr) {
 			pkt.RXChecksumValidated = d.e.caps&stack.CapabilityRXChecksumOffload != 0
-			d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
+			processors.queuePacket(pkt, d.e.hdrSize > 0)
 		}
 	}
-	d.mgr.wakeReady()
+	processors.wakeReady()
 
 	return true, nil
 }
