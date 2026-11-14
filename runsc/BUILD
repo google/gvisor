@@ -1,5 +1,4 @@
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//tools:defs.bzl", "go_binary", "go_cov")
+load("//tools:defs.bzl", "go_binary", "go_cov", "go_test")
 load("//tools:deps.bzl", "deps_test")
 
 package(
@@ -151,14 +150,6 @@ deps_test(
     ],
 )
 
-sh_test(
-    name = "version_test",
-    size = "small",
-    srcs = ["version_test.sh"],
-    args = ["$(location :runsc)"],
-    data = [":runsc"],
-)
-
 go_cov(
     name = "runsc_coverage",
     srcs = [
@@ -203,4 +194,11 @@ go_cov(
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"true\" ",
     visibility = ["//debian:__pkg__"],
+)
+
+go_test(
+    name = "runsc_test",
+    srcs = ["version_test.go"],
+    data = [":runsc"],
+    deps = ["//pkg/test/testutil"],
 )
