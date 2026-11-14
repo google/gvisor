@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -382,6 +383,14 @@ func (fs *filesystem) getInode(nid uint64) (*inode, error) {
 	ino, err := fs.image.Inode(nid)
 	if err != nil {
 		return nil, err
+	}
+	hasACL, err := ino.HasPOSIXACL()
+	if err != nil {
+		return nil, err
+	}
+	if hasACL {
+		log.Warningf("Unsupported POSIX ACL at inode (nid=%v)", nid)
+		return nil, linuxerr.EOPNOTSUPP
 	}
 	return bucket.addInode(nid, func() *inode {
 		i := &inode{
@@ -860,12 +869,12 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 
 // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
 func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
-	return nil, linuxerr.ENOTSUP
+	return fd.inode().listXattr(auth.CredentialsFromContext(ctx))
 }
 
 // GetXattr implements vfs.FileDescriptionImpl.GetXattr.
 func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
-	return "", linuxerr.ENOTSUP
+	return fd.inode().getXattr(auth.CredentialsFromContext(ctx), opts)
 }
 
 // SetXattr implements vfs.FileDescriptionImpl.SetXattr.

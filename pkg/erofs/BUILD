@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "erofs.go",
         "erofs_unsafe.go",
+        "xattr.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/erofs",
     marshal = True,
@@ -29,9 +30,13 @@ go_library(
 go_test(
     name = "erofs_test",
     size = "small",
-    srcs = ["erofs_test.go"],
+    srcs = [
+        "erofs_test.go",
+        "xattr_test.go",
+    ],
     embed = [":erofs"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
     ],
