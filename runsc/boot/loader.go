@@ -1502,6 +1502,8 @@ func (l *Loader) run() error {
 		}
 	case restoringUnstarted:
 		// If we are restoring, we do not want to create a process.
+	case restoreFailed:
+		return fmt.Errorf("cannot run sandbox after restore failed: %w", l.restoreErr)
 	default:
 		return fmt.Errorf("Loader.Run() called in unexpected state=%s", l.state)
 	}
@@ -1938,6 +1940,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 			delete(l.processes, key)
 		}
 	}
+	delete(l.failedToStart, cid)
 	// Cleanup the device gofer.
 	l.k.RemoveDevGofer(l.k.ContainerName(cid))
 	l.unregisterContainerLocked(cid)
@@ -2064,27 +2067,30 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 		return nil
 	}
 	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
+	_, failedToStart := l.failedToStart[cid]
 	l.mu.Unlock()
 	if err != nil {
 		// The container does not exist.
 		return err
 	}
 	if tg == nil {
+		if failedToStart {
+			// If start or restore failed for this container, return a non-zero exit
+			// status to indicate that the container failed and transitioned to the
+			// "stopped" state.
+			log.Warningf("Container %q failed to start or restore, returning from waitContainer with non-zero exit status", cid)
+			*waitStatus = 1
+			return nil
+		}
 		// The container has not been started.
 		switch state {
-		case created, started:
+		case created, started, restoreFailed:
 			// Note that state=started means the root container has been started,
 			// but other containers may not have started yet.
 			return fmt.Errorf("container %q not started", cid)
 		case restoringStarted, restored:
 			// The container has restored, we *should* have found the init process...
 			return fmt.Errorf("could not find init process of restored container %q in state %q", cid, state)
-		case restoreFailed:
-			// If restore failed, we should return the a non-zero exit status here to
-			// indicate that the container failed and transition to "stopped" state.
-			log.Warningf("Restore failed, returning from waitContainer with non-zero exit status")
-			*waitStatus = 1
-			return nil
 		case restoringUnstarted:
 			panic("impossible")
 		default:
@@ -2388,6 +2394,9 @@ func (l *Loader) signal(cid string, pid, signo int32, mode sentryapi.SignalDeliv
 		}
 		// Check that the container has actually started before signaling it.
 		if _, err := l.threadGroupFromID(execID{cid: cid}); err != nil {
+			if l.isContainerFailedToStart(cid) {
+				return nil
+			}
 			return err
 		}
 		if err := l.signalAllProcesses(cid, signo); err != nil {
@@ -2805,6 +2814,17 @@ func unnamedContainerNumber(containerName string) (int, bool) {
 }
 
 // +checklocksexclude:l.mu
+func (l *Loader) isContainerFailedToStart(cid string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, ok := l.processes[execID{cid: cid}]; !ok {
+		return false
+	}
+	_, failed := l.failedToStart[cid]
+	return failed
+}
+
+// +checklocksexclude:l.mu
 func (l *Loader) containerRuntimeState(cid string) sentryapi.ContainerRuntimeState {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2815,9 +2835,6 @@ func (l *Loader) containerRuntimeState(cid string) sentryapi.ContainerRuntimeSta
 		return sentryapi.RuntimeStateStopped
 	}
 	if exec.tg == nil {
-		if l.state == restoreFailed {
-			return sentryapi.RuntimeStateStopped
-		}
 		if _, ok := l.failedToStart[cid]; ok {
 			return sentryapi.RuntimeStateStopped
 		}
