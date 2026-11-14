@@ -475,6 +475,20 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen, duplicate) {
 		if segLen > 0 || s.flags.Contains(header.TCPFlagFin) {
+			// Even if the data is already queued, a FIN may still be new.
+			if r.ep.SACKPermitted && !s.flags.Contains(header.TCPFlagFin) {
+				block := header.SACKBlock{Start: segSeq, End: segSeq.Add(segLen)}
+				for _, queued := range r.ep.sack.Blocks[:r.ep.sack.NumBlocks] {
+					if queued.Contains(block) {
+						// Put the containing block immediately after the D-SACK
+						// (RFC 2883 section 4), and do not queue another copy.
+						UpdateSACKBlocks(&r.ep.sack, block.Start, block.End, r.RcvNxt)
+						r.ep.snd.sendDSACK(block)
+						return false, nil
+					}
+				}
+			}
+
 			// We only store the segment if it's within our buffer
 			// size limit.
 			//
