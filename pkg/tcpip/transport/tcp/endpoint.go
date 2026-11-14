@@ -2439,10 +2439,10 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 
 				tcpEP := transEP.(*Endpoint)
 				tcpEP.LockUser()
-				// If the endpoint is not in TIME-WAIT or if it is in TIME-WAIT but
-				// less than 1 second has elapsed since its recentTS was updated then
-				// we cannot reuse the port.
-				if tcpEP.EndpointState() != StateTimeWait || e.stack.Clock().NowMonotonic().Sub(tcpEP.recentTSTime) < 1*time.Second {
+				// Reuse requires a timestamp from the old connection, as in
+				// Linux's tcp_twsk_unique. If timestamps were not negotiated,
+				// recentTSTime was never initialized.
+				if tcpEP.EndpointState() != StateTimeWait || !tcpEP.SendTSOk || e.stack.Clock().NowMonotonic().Sub(tcpEP.recentTSTime) < time.Second {
 					tcpEP.UnlockUser()
 					return false, nil
 				}
