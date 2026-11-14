@@ -420,7 +420,7 @@ func (s *Socket) eventUnregisterTransient(e *waiter.Entry) {
 }
 
 // Connect implements socket.Socket.Connect.
-func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking, _ bool, _ ktime.Time) *syserr.Error {
 	if s.fd < 0 {
 		return syserr.ErrConnectionAborted
 	}
