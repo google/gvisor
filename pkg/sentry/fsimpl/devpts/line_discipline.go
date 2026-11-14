@@ -117,6 +117,12 @@ type lineDiscipline struct {
 	// +checklocks:termiosMu
 	numReplicas int
 
+	// masterClosed indicates that the master end of the terminal has been
+	// closed.
+	//
+	// +checklocks:termiosMu
+	masterClosed bool
+
 	// masterWaiter is used to wait on the master end of the TTY.
 	masterWaiter waiter.Queue
 
@@ -305,6 +311,9 @@ func (l *lineDiscipline) masterReadiness() waiter.EventMask {
 func (l *lineDiscipline) replicaReadiness() waiter.EventMask {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
+	if l.masterClosed {
+		return waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents
+	}
 	return l.outQueue.writeReadiness(&l.termios) | l.inQueue.readReadiness(&l.termios)
 }
 
@@ -320,6 +329,10 @@ func (l *lineDiscipline) inputQueueReadSize(t *kernel.Task, io usermem.IO, args 
 // +checklocksexclude:l.replicaWaiter.mu
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
+	if l.masterClosed {
+		l.termiosMu.RUnlock()
+		return 0, nil
+	}
 	// Replica never reads in packet mode.
 	n, pushed, notifyEcho, err := l.inQueue.read(ctx, dst, l, false /* packet */)
 	isCanon := l.termios.LEnabled(linux.ICANON)
@@ -414,6 +427,10 @@ func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequ
 // +checklocksexclude:l.masterWaiter.mu
 func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
+	if l.masterClosed {
+		l.termiosMu.RUnlock()
+		return 0, linuxerr.EIO
+	}
 	// Ignore notifyEcho, as it cannot happen when writing to the output queue.
 	n, _, err := l.outQueue.write(ctx, src, l)
 	l.termiosMu.RUnlock()
@@ -445,6 +462,21 @@ func (l *lineDiscipline) replicaClose() {
 	if notify {
 		l.masterWaiter.Notify(waiter.EventHUp)
 	}
+}
+
+// masterClose is called when the master file descriptor is closed.
+//
+// +checklocksexclude:l.termiosMu
+// +checklocksexclude:l.inQueue.mu
+// +checklocksexclude:l.outQueue.mu
+// +checklocksexclude:l.replicaWaiter.mu
+func (l *lineDiscipline) masterClose() {
+	l.termiosMu.Lock()
+	l.masterClosed = true
+	l.inQueue.flush()
+	l.outQueue.flush()
+	l.termiosMu.Unlock()
+	l.replicaWaiter.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
 // transformer is a helper interface to make it easier to stateify queue.

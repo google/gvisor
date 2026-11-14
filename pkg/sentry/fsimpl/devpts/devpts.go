@@ -360,10 +360,15 @@ func (i *rootInode) initReplicaAttrs(ctx context.Context, attrs *kernfs.InodeAtt
 // masterClose is called when the master end of t is closed.
 //
 // +checklocksexclude:i.mu
+// +checklocksexclude:t.ld.termiosMu
+// +checklocksexclude:t.ld.inQueue.mu
+// +checklocksexclude:t.ld.outQueue.mu
+// +checklocksexclude:t.ld.replicaWaiter.mu
 func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
 	// When the master is closed, hang up the slave (replica) side.
 	// This corresponds to Linux's pty_close() calling tty_vhangup(tty->link).
 	t.replicaKTTY.Hangup(ctx)
+	t.ld.masterClose()
 
 	i.mu.Lock()
 	defer i.mu.Unlock()

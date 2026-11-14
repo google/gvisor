@@ -15,9 +15,11 @@
 package devpts
 
 import (
+	"bytes"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -198,5 +200,143 @@ func TestReplicaModeAndOwner(t *testing.T) {
 				t.Errorf("root mode: got %#o, want %#o", got, rootMode)
 			}
 		})
+	}
+}
+
+func TestOutputQueueEchoRespectsWaitBufMaxBytes(t *testing.T) {
+	ctx := contexttest.Context(t)
+	termios := linux.DefaultReplicaTermios
+	termios.LocalFlags |= linux.ECHO
+	ld := newLineDiscipline(termios, nil)
+
+	// Fill outQueue.readBuf to nonCanonMaxBytes, then fill outQueue.waitBuf to
+	// waitBufMaxBytes.
+	readBufFill := bytes.Repeat([]byte("a"), nonCanonMaxBytes)
+	if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(readBufFill)); err != nil || n != int64(len(readBufFill)) {
+		t.Fatalf("outputQueueWrite(readBufFill): got (%d, %v), want (%d, nil)", n, err, len(readBufFill))
+	}
+	waitBufFill := bytes.Repeat([]byte("b"), waitBufMaxBytes)
+	if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(waitBufFill)); err != nil || n != int64(len(waitBufFill)) {
+		t.Fatalf("outputQueueWrite(waitBufFill): got (%d, %v), want (%d, nil)", n, err, len(waitBufFill))
+	}
+
+	ld.outQueue.mu.Lock()
+	gotWaitLen := ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen != waitBufMaxBytes {
+		t.Fatalf("outQueue.waitBufLen before echo: got %d, want %d", gotWaitLen, waitBufMaxBytes)
+	}
+
+	// Echoing master input onto a full output queue must not push waitBufLen
+	// past waitBufMaxBytes.
+	if _, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence([]byte("exit\r"))); err != nil {
+		t.Fatalf("inputQueueWrite: %v", err)
+	}
+
+	ld.outQueue.mu.Lock()
+	gotWaitLen = ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen > waitBufMaxBytes {
+		t.Fatalf("outQueue.waitBufLen after echo: got %d, want <= %d", gotWaitLen, waitBufMaxBytes)
+	}
+
+	// Subsequent replica writes must block instead of underflowing room.
+	n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(bytes.Repeat([]byte("c"), 4096)))
+	if !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || n != 0 {
+		t.Fatalf("outputQueueWrite on full queue after echo: got (%d, %v), want (0, ErrWouldBlock)", n, err)
+	}
+	ld.outQueue.mu.Lock()
+	gotWaitLen = ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen > waitBufMaxBytes {
+		t.Fatalf("outQueue.waitBufLen after blocked write: got %d, want <= %d", gotWaitLen, waitBufMaxBytes)
+	}
+}
+
+func TestQueueWriteWaitBufOverflowGuard(t *testing.T) {
+	ctx := contexttest.Context(t)
+	ld := newLineDiscipline(linux.DefaultReplicaTermios, nil)
+
+	ld.outQueue.mu.Lock()
+	ld.outQueue.waitBufLen = waitBufMaxBytes + 5
+	ld.outQueue.mu.Unlock()
+
+	n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence([]byte("hello")))
+	if !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || n != 0 {
+		t.Fatalf("outputQueueWrite with waitBufLen > waitBufMaxBytes: got (%d, %v), want (0, ErrWouldBlock)", n, err)
+	}
+
+	ld.outQueue.mu.Lock()
+	gotWaitLen := ld.outQueue.waitBufLen
+	ld.outQueue.mu.Unlock()
+	if gotWaitLen != waitBufMaxBytes+5 {
+		t.Fatalf("outQueue.waitBufLen changed on ErrWouldBlock: got %d, want %d", gotWaitLen, waitBufMaxBytes+5)
+	}
+
+	// Zero-length writes return (0, nil) even when waitBuf is full.
+	if n, err := ld.outputQueueWrite(ctx, usermem.BytesIOSequence(nil)); err != nil || n != 0 {
+		t.Fatalf("zero-length outputQueueWrite: got (%d, %v), want (0, nil)", n, err)
+	}
+}
+
+func TestMasterCloseFlushesAndReturnsEIO(t *testing.T) {
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+	root := &rootInode{
+		opts:     fileSystemOpts{mode: defaultReplicaMode},
+		replicas: make(map[uint32]*replicaInode),
+	}
+	root.InodeAttrs.InitWithIDs(ctx, root.opts.uid, root.opts.gid, linux.UNNAMED_MAJOR, 0 /* devMinor */, 1, linux.ModeDirectory|rootMode)
+
+	term, err := root.allocateTerminal(ctx, creds)
+	if err != nil {
+		t.Fatalf("allocateTerminal: %v", err)
+	}
+
+	// Populate both readBuf and waitBuf of outQueue.
+	data := bytes.Repeat([]byte("x"), nonCanonMaxBytes+4096)
+	if n, err := term.ld.outputQueueWrite(ctx, usermem.BytesIOSequence(data)); err != nil || n != int64(len(data)) {
+		t.Fatalf("outputQueueWrite before close: got (%d, %v), want (%d, nil)", n, err, len(data))
+	}
+
+	var notifiedEvents waiter.EventMask
+	entry := waiter.NewFunctionEntry(waiter.EventHUp|waiter.EventErr|waiter.ReadableEvents|waiter.WritableEvents, func(mask waiter.EventMask) {
+		notifiedEvents |= mask
+	})
+	term.ld.replicaWaiter.EventRegister(&entry)
+	defer term.ld.replicaWaiter.EventUnregister(&entry)
+
+	root.masterClose(ctx, term)
+
+	term.ld.outQueue.mu.Lock()
+	gotWaitLen := term.ld.outQueue.waitBufLen
+	gotReadLen := len(term.ld.outQueue.readBuf)
+	gotWaitChunks := len(term.ld.outQueue.waitBuf)
+	term.ld.outQueue.mu.Unlock()
+	if gotWaitLen != 0 || gotReadLen != 0 || gotWaitChunks != 0 {
+		t.Fatalf("outQueue not flushed after masterClose: waitBufLen=%d readBuf=%d waitBuf=%d", gotWaitLen, gotReadLen, gotWaitChunks)
+	}
+
+	wantMask := waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents
+	if notifiedEvents&wantMask != wantMask {
+		t.Fatalf("replicaWaiter notified events: got %#x, want all bits of %#x", notifiedEvents, wantMask)
+	}
+	if readiness := term.ld.replicaReadiness(); readiness&wantMask != wantMask {
+		t.Fatalf("replicaReadiness after masterClose: got %#x, want all bits of %#x", readiness, wantMask)
+	}
+
+	if n, err := term.ld.outputQueueWrite(ctx, usermem.BytesIOSequence([]byte("after close"))); !linuxerr.Equals(linuxerr.EIO, err) || n != 0 {
+		t.Fatalf("outputQueueWrite after masterClose: got (%d, %v), want (0, EIO)", n, err)
+	}
+	term.ld.outQueue.mu.Lock()
+	gotWaitLen = term.ld.outQueue.waitBufLen
+	gotReadLen = len(term.ld.outQueue.readBuf)
+	term.ld.outQueue.mu.Unlock()
+	if gotWaitLen != 0 || gotReadLen != 0 {
+		t.Fatalf("outQueue grew after masterClose write: waitBufLen=%d readBuf=%d", gotWaitLen, gotReadLen)
+	}
+
+	if n, err := term.ld.inputQueueRead(ctx, usermem.BytesIOSequence(make([]byte, 16))); err != nil || n != 0 {
+		t.Fatalf("inputQueueRead after masterClose: got (%d, %v), want (0, nil)", n, err)
 	}
 }
