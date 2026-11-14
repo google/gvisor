@@ -551,6 +551,7 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		vma1.numaPolicy != vma2.numaPolicy ||
 		vma1.numaNodemask != vma2.numaNodemask ||
 		vma1.dontfork != vma2.dontfork ||
+		vma1.dontdump != vma2.dontdump ||
 		vma1.eagerForkCopy != vma2.eagerForkCopy ||
 		vma1.sealed != vma2.sealed ||
 		vma1.id != vma2.id ||
