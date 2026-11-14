@@ -276,6 +276,8 @@ func initSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uin
 		ep: ep,
 		TCPSenderState: TCPSenderState{
 			SndWnd:           sndWnd,
+			SndCwnd:          InitialCwnd,
+			Ssthresh:         InitialSsthresh,
 			SndUna:           iss + 1,
 			SndNxt:           iss + 1,
 			RTTMeasureSeqNum: iss + 1,
@@ -343,14 +345,10 @@ func initSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uin
 }
 
 // initCongestionControl initializes the specified congestion control module and
-// returns a handle to it. It also initializes the sndCwnd and sndSsThresh to
-// their initial values.
+// returns a handle to it. Switching modules preserves the sender's window.
 //
 // +checklocks:s.ep.mu
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
-	s.SndCwnd = InitialCwnd
-	s.Ssthresh = InitialSsthresh
-
 	switch congestionControlName {
 	case ccCubic:
 		return newCubicCC(s)
