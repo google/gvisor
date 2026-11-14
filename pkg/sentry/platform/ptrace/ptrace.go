@@ -281,6 +281,16 @@ func (*PTrace) SupportsAddressSpaceIO() bool {
 	return false
 }
 
+// SupportsMapZero implements platform.Platform.SupportsMapZero.
+//
+// Note that since context.Switch can't distinguish between read and write
+// faults until a fault is repeated, the first write to memory that has not
+// yet been faulted in is first handled as a read fault, which may map zero
+// memory, and then as a write fault.
+func (*PTrace) SupportsMapZero() bool {
+	return true
+}
+
 // MapUnit implements platform.Platform.MapUnit.
 func (*PTrace) MapUnit() uint64 {
 	// The host kernel manages page tables and arbitrary-sized mappings
