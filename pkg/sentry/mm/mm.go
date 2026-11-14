@@ -72,6 +72,12 @@ type MemoryManager struct {
 	// haveASIO is immutable.
 	haveASIO bool `state:"nosave"`
 
+	// haveMapZero is the cached result of canMapZero(p). If haveMapZero is
+	// false, zero pmas are never used.
+	//
+	// haveMapZero is immutable.
+	haveMapZero bool `state:"nosave"`
+
 	// layout is the memory layout.
 	//
 	// layout is set by the binary loader before the MemoryManager can be used.
@@ -136,7 +142,8 @@ type MemoryManager struct {
 	// a copy.
 	//
 	// Inserting or removing segments from pmas should happen along with a
-	// call to mm.addRSSLocked or mm.removeRSSLocked.
+	// call to mm.addRSSLocked or mm.removeRSSLocked, except for zero pmas,
+	// which are not included in RSS.
 	//
 	// Invariants: pmas are always page-aligned. If a pma exists for a given
 	// address, a vma must also exist for that address.
@@ -144,8 +151,8 @@ type MemoryManager struct {
 	// +checklocks:activeMu
 	pmas pmaSet
 
-	// curRSS is pmas.Span(), cached to accelerate updates to maxRSS. It is
-	// reported as the MemoryManager's RSS.
+	// curRSS is the total length of all pmas except zero pmas, cached to
+	// accelerate updates to maxRSS. It is reported as the MemoryManager's RSS.
 	//
 	// curRSS should be modified only via addRSSLocked and removeRSSLocked, not
 	// directly.
@@ -422,7 +429,7 @@ type pma struct {
 	// calls to Invalidate for which memmap.InvalidateOpts.InvalidatePrivate is
 	// false should ignore the pma.
 	//
-	// If private is false, this pma caches a translation from the
+	// If private and zero are false, this pma caches a translation from the
 	// corresponding vma's memmap.Mappable.Translate.
 	private bool
 
@@ -432,6 +439,15 @@ type pma struct {
 	//
 	// Invariant: If huge == true, then private == true.
 	huge bool
+
+	// If zero is true, this pma is a zero pma, which maps zero-filled
+	// memory shared by all zero pmas in place of private anonymous memory
+	// that has not been written. It is never writable and not included in RSS.
+	//
+	// Invariants: If zero == true, then file == zeroFile{}. Off is the
+	// address at which the pma begins to enable merging.
+	// needCOW == true; private == false; huge == false
+	zero bool `state:"zerovalue"`
 
 	// If internalMappings is not empty, it is the cached return value of
 	// file.MapInternal for the memmap.FileRange mapped by this pma.

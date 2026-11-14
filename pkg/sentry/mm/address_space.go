@@ -69,7 +69,7 @@ func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar h
 	}
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.
-	mapAR := hostarch.AddrRange{0, ^hostarch.Addr(hostarch.PageSize - 1)}
+	mapAR := hostarch.AddrRange{Start: 0, End: ^hostarch.Addr(hostarch.PageSize - 1)}
 	setMapUnit := func(mapUnit uint64) {
 		mapMask := hostarch.Addr(mapUnit - 1)
 		mapAR.Start = ar.Start &^ mapMask
@@ -106,13 +106,13 @@ func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar h
 		if pma.needCOW {
 			perms.Write = false
 		}
-		if perms.Any() { // MapFile precondition
+		if perms.Any() { // MapFile and MapZero precondition
 			// If the length of the mapping exceeds singleMapThreshold, call
 			// AddressSpace.MapFile() on singleMapThreshold-aligned chunks so
 			// we can check ctx.Killed() reasonably frequently.
 			const singleMapThreshold = 1 << 30
 			if pmaMapAR.Length() <= singleMapThreshold {
-				if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
+				if err := mm.mapPMALocked(pseg, pmaMapAR, perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
 					return err
 				}
 				if ctx.Killed() {
@@ -120,9 +120,9 @@ func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar h
 				}
 			} else {
 				for windowStart := pmaMapAR.Start &^ (singleMapThreshold - 1); windowStart < pmaMapAR.End; windowStart += singleMapThreshold {
-					windowAR := hostarch.AddrRange{windowStart, windowStart + singleMapThreshold}
+					windowAR := hostarch.AddrRange{Start: windowStart, End: windowStart + singleMapThreshold}
 					thisMapAR := pmaMapAR.Intersect(windowAR)
-					if err := mm.as.MapFile(thisMapAR.Start, pma.file, pseg.fileRangeOf(thisMapAR), perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
+					if err := mm.mapPMALocked(pseg, thisMapAR, perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
 						return err
 					}
 					if ctx.Killed() {
@@ -134,6 +134,25 @@ func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar h
 		pseg = pseg.NextSegment()
 	}
 	return nil
+}
+
+// mapPMALocked maps addresses ar in the pma represented by pseg into mm.as
+// with permissions at.
+//
+// Preconditions:
+//   - mm.as != nil.
+//   - pseg.Range().IsSupersetOf(ar).
+//   - ar.Length() != 0.
+//   - at.Any().
+//   - If pseg.ValuePtr().needCOW, !at.Write.
+//
+// +checklocksread:mm.activeMu
+func (mm *MemoryManager) mapPMALocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, precommit bool) error {
+	pma := pseg.ValuePtr()
+	if pma.zero {
+		return mm.as.MapZero(ar.Start, uint64(ar.Length()), at, precommit)
+	}
+	return mm.as.MapFile(ar.Start, pma.file, pseg.fileRangeOf(ar), at, precommit)
 }
 
 // unmapASLocked removes all AddressSpace mappings for addresses in ar.
