@@ -305,13 +305,15 @@ func (s *Slice) save(w *Writer) {
 	s.Ref.save(w)
 }
 
-// Array is a homogeneous array value.
-type Array struct {
+// ObjectArray is an array of composite elements (structs, interfaces, slices,
+// maps, nested arrays, Nil).
+type ObjectArray struct {
+	arrayKind
 	Contents []Object
 }
 
 // save implements Object.save.
-func (a *Array) save(w *Writer) {
+func (a *ObjectArray) save(w *Writer) {
 	l := Uint(len(a.Contents))
 	l.save(w)
 	if l == 0 {
@@ -324,6 +326,9 @@ func (a *Array) save(w *Writer) {
 		a.Contents[i].save(w)
 	}
 }
+
+func (a *ObjectArray) Len() int             { return len(a.Contents) }
+func (a *ObjectArray) Element(i int) Object { return a.Contents[i] }
 
 // Map is a map value.
 type Map struct {
@@ -606,7 +611,7 @@ func Save(w *Writer, obj Object) {
 	case *Slice:
 		typeSlice.save(w)
 		x.save(w)
-	case *Array:
+	case Array:
 		typeArray.save(w)
 		x.save(w)
 	case *Map:

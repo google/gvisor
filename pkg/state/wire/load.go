@@ -33,7 +33,7 @@ func Load(r *Reader) Object {
 
 // loadPayload is the sole data-value grammar. Homogeneous arrays and maps
 // omit repeated tags after their first element; their payloads use this same
-// parser. Allocations check full-width counts before narrowing to int.
+// parser. Typed allocations check full-width counts before narrowing to int.
 func loadPayload(r *Reader, tag Uint) Object {
 	switch tag {
 	case typeBool:
@@ -68,19 +68,14 @@ func loadPayload(r *Reader, tag Uint) Object {
 	case typeArray:
 		count := loadUint(r)
 		// Reject a nonrepresentable length before trying to read the tag.
-		// make below also checks its element-size multiplication.
+		// Each typed make below also checks its element-size multiplication.
 		if count > Uint(^uint(0)>>1) {
 			panic(fmt.Errorf("array length %d overflows int", count)) // Escapes: error formatting.
 		}
 		if count == 0 {
-			return &Array{} // Escapes: owned empty array header.
+			return &ObjectArray{} // Escapes: owned empty array header.
 		}
-		values := make([]Object, count) // Escapes: owned array elements.
-		tag := loadUint(r)
-		for i := range values {
-			values[i] = loadPayload(r, tag)
-		}
-		return &Array{Contents: values} // Escapes: owned array header.
+		return loadArray(r, count, loadUint(r))
 	case typeMultipleObjects:
 		values := make(multipleObjects, loadUint(r)) // Escapes: owned field header and elements.
 		for i := range values {
@@ -137,6 +132,48 @@ func loadComplex64(r *Reader) Complex64 {
 func loadComplex128(r *Reader) Complex128 {
 	re, im := math.Float64frombits(uint64(loadUint(r))), math.Float64frombits(uint64(loadUint(r)))
 	return Complex128(complex(re, im))
+}
+
+// loadArray selects storage once from the wire's homogeneous element tag.
+// Payload readers are shared with loadPayload; no scalar Object is allocated
+// or boxed while filling these arrays. Integer payloads retain their full wire
+// width until restoration checks the destination's width.
+func loadArray(r *Reader, count Uint, tag Uint) Array {
+	switch tag {
+	case typeBool:
+		return &BoolArray{Contents: loadArrayValues(r, count, loadBoolValue)} // Escapes: owned homogeneous array header.
+	case typeInt:
+		return &IntArray[Int]{Contents: loadArrayValues(r, count, loadInt)} // Escapes: owned homogeneous array header.
+	case typeUint:
+		return &UintArray[Uint]{Contents: loadArrayValues(r, count, loadUint)} // Escapes: owned homogeneous array header.
+	case typeFloat32:
+		return &Float32Array[Float32]{Contents: loadArrayValues(r, count, loadFloat32)} // Escapes: owned homogeneous array header.
+	case typeFloat64:
+		return &Float64Array{Contents: loadArrayValues(r, count, loadFloat64Value)} // Escapes: owned homogeneous array header.
+	case typeComplex64:
+		return &Complex64Array{Contents: loadArrayValues(r, count, loadComplex64)} // Escapes: owned homogeneous array header.
+	case typeComplex128:
+		return &Complex128Array{Contents: loadArrayValues(r, count, loadComplex128)} // Escapes: owned homogeneous array header.
+	case typeString:
+		return &StringArray{Contents: loadArrayValues(r, count, loadStringValue)} // Escapes: owned homogeneous array header.
+	default:
+		values := loadArrayValues(r, count, func(r *Reader) Object { return loadPayload(r, tag) }) // Escapes: owned composite elements.
+		return &ObjectArray{Contents: values}                                                      // Escapes: owned homogeneous array header.
+	}
+}
+
+func loadBoolValue(r *Reader) bool { return bool(loadBool(r)) }
+
+func loadFloat64Value(r *Reader) float64 { return float64(loadFloat64(r)) }
+
+func loadStringValue(r *Reader) string { return string(loadString(r)) }
+
+func loadArrayValues[T any](r *Reader, count Uint, load func(*Reader) T) []T {
+	values := make([]T, count) // Escapes: owned typed elements; make checks the full-width size.
+	for i := range values {
+		values[i] = load(r)
+	}
+	return values
 }
 
 func loadReference(r *Reader) Ref {
