@@ -47,6 +47,10 @@ const (
 	mldQuery               = uint8(header.ICMPv6MulticastListenerQuery)
 	mldReport              = uint8(header.ICMPv6MulticastListenerReport)
 	mldDone                = uint8(header.ICMPv6MulticastListenerDone)
+	igmpv3ReportHeaderLen  = 8
+	ipv6RouterAlertHdrLen  = 8
+	mldv2ReportHeaderLen   = 4
+	mldExactFitExtraMTU    = 16 // aligns MLD payload to 20-byte records
 
 	maxUnsolicitedReports = 2
 )
@@ -1571,8 +1575,8 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 		return tcpip.AddrFromSlice(bytes[:])
 	}
 
-	calcMaxRecordsPerMessage := func(hdrLen, recordLen uint16) uint16 {
-		return (header.IPv6MinimumMTU - hdrLen) / recordLen
+	calcMaxRecordsPerMessage := func(mtu, hdrLen, recordLen uint32) uint16 {
+		return uint16((mtu - hdrLen) / recordLen)
 	}
 
 	tests := []struct {
@@ -1585,6 +1589,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 		checkStats                        func(*testing.T, *stack.Stack, uint64)
 		genAddr                           func(uint16) tcpip.Address
 		maxRecordsPerMessage              uint16
+		extraMTU                          uint32
 		rxQuery                           func(*channel.Endpoint, uint8)
 		validateReportWithMultipleRecords func(*testing.T, *channel.Endpoint, []tcpip.Address)
 	}{
@@ -1608,7 +1613,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 				bytes := [header.IPv4AddressSize]byte{224, 1, 0, 0}
 				return genAddr(bytes[:], i)
 			},
-			maxRecordsPerMessage: calcMaxRecordsPerMessage(header.IPv4MinimumSize+8 /* size of IGMPv3 report header */, igmpv3MLDv2ReportRecordHeaderLen+header.IPv4AddressSize),
+			maxRecordsPerMessage: calcMaxRecordsPerMessage(header.IPv6MinimumMTU, header.IPv4MinimumSize+header.IPv4OptionRouterAlertLength+igmpv3ReportHeaderLen, igmpv3MLDv2ReportRecordHeaderLen+header.IPv4AddressSize),
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8) {
 				createAndInjectIGMPPacket(e, igmpMembershipQuery, maxRespTime, header.IPv4Any, header.IGMPv3QueryMinimumSize-header.IGMPQueryMinimumSize /* extraLength */)
 			},
@@ -1638,7 +1643,8 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 				bytes := [header.IPv6AddressSize]byte{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0}
 				return genAddr(bytes[:], i)
 			},
-			maxRecordsPerMessage: calcMaxRecordsPerMessage(header.IPv6MinimumSize+8 /* size of MLDv2 report header */, igmpv3MLDv2ReportRecordHeaderLen+header.IPv6AddressSize),
+			maxRecordsPerMessage: calcMaxRecordsPerMessage(header.IPv6MinimumMTU+mldExactFitExtraMTU, header.IPv6MinimumSize+ipv6RouterAlertHdrLen+header.ICMPv6HeaderSize+mldv2ReportHeaderLen, igmpv3MLDv2ReportRecordHeaderLen+header.IPv6AddressSize),
+			extraMTU:             mldExactFitExtraMTU,
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8) {
 				createAndInjectMLDPacket(e, mldQuery, maxRespTime, header.IPv6Any, header.MLDv2QueryMinimumSize-header.MLDMinimumSize /* extraLength */)
 			},
@@ -1731,11 +1737,16 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 
 					// Receive a query which should send a few reports which together hold
 					// records for all the groups we joined.
+					e.SetMTU(header.IPv6MinimumMTU + test.extraMTU)
 					test.rxQuery(e, 1)
 					clock.Advance(time.Second)
 					reportV2Counter += subTest.expectedReports
 					test.checkStats(t, s, reportV2Counter)
 					test.validateReportWithMultipleRecords(t, e, addrs)
+					e.SetMTU(0)
+					test.rxQuery(e, 1)
+					clock.Advance(time.Second)
+					test.checkStats(t, s, reportV2Counter)
 				})
 			}
 		})
