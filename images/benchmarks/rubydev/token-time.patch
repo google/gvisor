@@ -1,0 +1,22 @@
+Fastlane 2.207.0 compares a token's issue time with a second reading of
+the clock. Backport the upstream fix so a tick between the two reads
+doesn't fail the benchmark. Upgrading Fastlane would change the 3,613
+examples the benchmark measures.
+
+https://github.com/fastlane/fastlane/commit/2beac83f8
+
+--- a/spaceship/lib/spaceship/connect_api/token.rb
++++ b/spaceship/lib/spaceship/connect_api/token.rb
+@@ -102,3 +102,4 @@
+           iss: issuer_id,
+-          iat: now.to_i,
++          # Reduce the issued-at-time in case our time is slighly ahead of Apple's servers, which causes the token to be rejected.
++          iat: now.to_i - 60,
+           exp: @expiration.to_i,
+--- a/spaceship/spec/connect_api/token_spec.rb
++++ b/spaceship/spec/connect_api/token_spec.rb
+@@ -217,3 +217,3 @@
+       expect(payload['iss']).to eq(issuer_id)
+-      expect(payload['iat']).to eq(Time.now.to_i)
++      expect(payload['iat']).to be < Time.now.to_i
+       expect(payload['aud']).to eq('appstoreconnect-v1')
