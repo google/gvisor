@@ -301,6 +301,15 @@ const (
 const (
 	MLX5_IB_OBJECT_UAR = 0x1008
 
+	// enum mlx5_ib_device_methods.
+	MLX5_IB_METHOD_GET_DATA_DIRECT_SYSFS_PATH = 0x1001
+
+	// enum mlx5_ib_get_data_direct_sysfs_path_attrs.
+	MLX5_IB_ATTR_GET_DATA_DIRECT_SYSFS_PATH = 0x1000
+
+	// enum mlx5_ib_reg_dmabuf_mr_attrs.
+	MLX5_IB_ATTR_REG_DMABUF_MR_ACCESS_FLAGS = 0x1000
+
 	// enum mlx5_ib_uar_obj_methods.
 	MLX5_IB_METHOD_UAR_OBJ_ALLOC   = 0x1000
 	MLX5_IB_METHOD_UAR_OBJ_DESTROY = 0x1001
