@@ -19,7 +19,6 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
-	"hash"
 	"io"
 	"time"
 
@@ -90,13 +89,6 @@ type listenContext struct {
 	// this context. Can be nil if the context is created by the forwarder.
 	listenEP *Endpoint
 
-	hasherMu hasherMutex
-
-	// hasher is the hash function used to generate a SYN cookie.
-	//
-	// +checklocks:hasherMu
-	hasher hash.Hash
-
 	// v6Only is true if listenEP is a dual stack socket and has the
 	// IPV6_V6ONLY option set.
 	v6Only bool
@@ -117,7 +109,6 @@ func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *Endpoint, 
 		stack:    stk,
 		protocol: protocol,
 		rcvWnd:   rcvWnd,
-		hasher:   sha1.New(),
 		v6Only:   v6Only,
 		netProto: netProto,
 		listenEP: listenEP,
@@ -134,39 +125,30 @@ func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *Endpoint, 
 
 // cookieHash hashes the endpoint ID and value with the selected nonce.
 // The value is the client's initial sequence number or the cookie timestamp.
-//
-// +checklocksexclude:l.hasherMu
 func (l *listenContext) cookieHash(id stack.TransportEndpointID, value uint32, nonceIndex int) uint32 {
-
 	// Initialize the block with the ports and value.
 	var payload [8]byte
 	binary.BigEndian.PutUint16(payload[0:], id.LocalPort)
 	binary.BigEndian.PutUint16(payload[2:], id.RemotePort)
 	binary.BigEndian.PutUint32(payload[4:], value)
 
-	// Feed everything to the hasher.
-	l.hasherMu.Lock()
-	l.hasher.Reset()
+	h := sha1.New()
 
 	// Per hash.Hash.Writer:
 	//
 	// It never returns an error.
-	l.hasher.Write(payload[:])
-	l.hasher.Write(l.nonce[nonceIndex][:])
-	l.hasher.Write(id.LocalAddress.AsSlice())
-	l.hasher.Write(id.RemoteAddress.AsSlice())
+	h.Write(payload[:])
+	h.Write(l.nonce[nonceIndex][:])
+	h.Write(id.LocalAddress.AsSlice())
+	h.Write(id.RemoteAddress.AsSlice())
 
 	// Finalize the calculation of the hash and return the first 4 bytes.
-	h := l.hasher.Sum(nil)
-	l.hasherMu.Unlock()
-
-	return binary.BigEndian.Uint32(h[:])
+	var sum [sha1.Size]byte
+	return binary.BigEndian.Uint32(h.Sum(sum[:0]))
 }
 
 // createCookie creates a SYN cookie for the given id and incoming sequence
 // number.
-//
-// +checklocksexclude:l.hasherMu
 func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Value, data uint32) seqnum.Value {
 	ts := timeStamp(l.stack.Clock())
 	v := l.cookieHash(id, uint32(seq), 0) + (ts << tsOffset)
@@ -177,8 +159,6 @@ func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Va
 // isCookieValid checks if the supplied cookie is valid for the given id and
 // sequence number. If it is, it also returns the data originally encoded in the
 // cookie when createCookie was called.
-//
-// +checklocksexclude:l.hasherMu
 func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnum.Value, seq seqnum.Value) (uint32, bool) {
 	ts := timeStamp(l.stack.Clock())
 	v := uint32(cookie) - l.cookieHash(id, uint32(seq), 0)
@@ -455,7 +435,6 @@ func (a *acceptQueue) isFull() bool {
 // and needs to handle it.
 //
 // +checklocks:e.mu
-// +checklocksexclude:ctx.hasherMu
 func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Error {
 	// A child may have been registered after this segment was queued on the
 	// listener. Forward it before treating a retransmitted SYN as a new
