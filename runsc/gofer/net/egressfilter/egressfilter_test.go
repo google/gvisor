@@ -190,7 +190,39 @@ func TestNilFilterRejectsAll(t *testing.T) {
 	if f.Allows(tcpip.AddrFrom4([4]byte{8, 8, 8, 8}), 80) {
 		t.Errorf("nil Filter.Allows() = true, want false")
 	}
+	if f.AllowsAddr(tcpip.AddrFrom4([4]byte{8, 8, 8, 8})) {
+		t.Errorf("nil Filter.AllowsAddr() = true, want false")
+	}
 	if f.AllowsLoopback() {
 		t.Errorf("nil Filter.AllowsLoopback() = true, want false")
+	}
+}
+
+func TestAllowsAddr(t *testing.T) {
+	localIPv4 := net.ParseIP("192.168.1.100")
+	filter, err := New(Options{LocalAddrs: []net.IP{localIPv4}})
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		addr tcpip.Address
+		want bool
+	}{
+		{name: "public_ipv4", addr: tcpip.AddrFrom4([4]byte{8, 8, 8, 8}), want: true},
+		{name: "private_ipv4", addr: tcpip.AddrFrom4([4]byte{10, 0, 2, 2}), want: true},
+		{name: "local_interface", addr: tcpip.AddrFrom4Slice(localIPv4.To4()), want: false},
+		{name: "loopback", addr: tcpip.AddrFrom4([4]byte{127, 0, 0, 1}), want: false},
+		{name: "metadata_server", addr: tcpip.AddrFrom4([4]byte{169, 254, 169, 254}), want: false},
+		{name: "multicast", addr: tcpip.AddrFrom4([4]byte{224, 0, 0, 1}), want: false},
+		{name: "broadcast", addr: header.IPv4Broadcast, want: false},
+		{name: "unspecified", addr: header.IPv4Any, want: false},
+		{name: "ipv6_link_local", addr: tcpip.AddrFrom16([16]byte{0xfe, 0x80, 15: 1}), want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := filter.AllowsAddr(tc.addr); got != tc.want {
+				t.Errorf("AllowsAddr(%s) = %t, want %t", tc.addr, got, tc.want)
+			}
+		})
 	}
 }
