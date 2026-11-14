@@ -28,7 +28,7 @@ func (e *Endpoint) Resume(s *stack.Stack) error {
 	defer e.mu.Unlock()
 
 	e.stack = s
-	for m := range e.multicastMemberships {
+	for _, m := range e.multicastMemberships {
 		proto, err := e.multicastNetProto(m.multicastAddr)
 		if err != nil {
 			return fmt.Errorf("non multicast address in an existing membership during Resume: %s", err)

@@ -148,6 +148,56 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestJoinLeaveMulticast) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
+// Wildcard IPv6 leave removes the most recently joined matching interface.
+TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, WildcardLeaveUsesJoinOrder) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto multicast_addr = V6Multicast();
+  ipv6_mreq group = {};
+  group.ipv6mr_multiaddr =
+      reinterpret_cast<sockaddr_in6*>(&multicast_addr.addr)->sin6_addr;
+
+  for (const auto& indices : {std::pair{lo_if_idx(), eth_if_idx()},
+                              std::pair{eth_if_idx(), lo_if_idx()}}) {
+    SCOPED_TRACE(indices.first);
+    group.ipv6mr_interface = indices.first;
+    ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_JOIN_GROUP, &group,
+                           sizeof(group)),
+                SyscallSucceeds());
+    group.ipv6mr_interface = 0;
+    EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_JOIN_GROUP, &group,
+                           sizeof(group)),
+                SyscallFailsWithErrno(EADDRINUSE));
+    ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_LEAVE_GROUP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+    group.ipv6mr_interface = indices.first;
+    EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_LEAVE_GROUP,
+                           &group, sizeof(group)),
+                SyscallFailsWithErrno(EADDRNOTAVAIL));
+
+    for (int index : {indices.first, indices.second}) {
+      group.ipv6mr_interface = index;
+      ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_JOIN_GROUP,
+                             &group, sizeof(group)),
+                  SyscallSucceeds());
+    }
+
+    group.ipv6mr_interface = 0;
+    ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_LEAVE_GROUP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+    group.ipv6mr_interface = indices.second;
+    EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_LEAVE_GROUP,
+                           &group, sizeof(group)),
+                SyscallFailsWithErrno(EADDRNOTAVAIL));
+
+    group.ipv6mr_interface = indices.first;
+    EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_LEAVE_GROUP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+  }
+}
+
 // Test that an AF_INET6 socket can set the IP_ADD_MEMBERSHIP socket option.
 TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, AddV4MembershipToV6Socket) {
   TestAddress send_addr = V4Multicast();
