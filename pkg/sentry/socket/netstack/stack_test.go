@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -159,5 +160,54 @@ func TestRouteTableDumpOrder(t *testing.T) {
 	// Lookups still use netstack's longest-prefix-first order.
 	if got := s.Stack.GetRouteTable()[0].Destination.Prefix(); got != 128 {
 		t.Errorf("GetRouteTable()[0] prefix = %d, want 128", got)
+	}
+}
+
+func TestRestoreNICsAndEndpointsInitializesLinuxIPTables(t *testing.T) {
+	s := netstack.NewStack(stack.New(stack.Options{}), 1)
+	defer s.Destroy()
+
+	// Simulate post-checkpoint-load state where stack.Stack.tables is nil
+	// (because tables is state:"nosave" and ConfigureNetwork/ReplaceConfig
+	// is not invoked on restored child network namespaces).
+	s.Stack.SetIPTables(nil)
+	s.RestoreNICsAndEndpoints()
+
+	tables := s.Stack.IPTables()
+	if tables == nil {
+		t.Fatal("s.Stack.IPTables() = nil, want non-nil")
+	}
+	visited := 0
+	tables.VisitTargets(func(tgt stack.Target) stack.Target {
+		visited++
+		switch tgt.(type) {
+		case *stack.AcceptTarget, *stack.DropTarget, *stack.ErrorTarget, *stack.UserChainTarget, *stack.ReturnTarget, *stack.RedirectTarget, *stack.CTTarget:
+			t.Errorf("target %T is a raw stack.Target instead of a netfilter-wrapped target", tgt)
+		}
+		return tgt
+	})
+	if visited == 0 {
+		t.Fatal("tables.VisitTargets() visited 0 targets, want > 0")
+	}
+
+	srcNilNFT := netstack.NewStack(stack.New(stack.Options{}), 1)
+	defer srcNilNFT.Destroy()
+	srcNilNFT.Stack.SetNFTablesConfigured(true)
+	s.ReplaceConfig(srcNilNFT)
+	if s.Stack.IsNFTablesConfigured() {
+		t.Fatal("s.Stack.IsNFTablesConfigured() = true when src NFTables was nil, want false")
+	}
+
+	srcWithNFT := netstack.NewStack(stack.New(stack.Options{}), 1)
+	defer srcWithNFT.Destroy()
+	nf := nftables.NewNFTables(srcWithNFT.Stack, srcWithNFT.Stack.Clock(), srcWithNFT.Stack.SecureRNG())
+	srcWithNFT.Stack.SetNFTables(nf)
+	srcWithNFT.Stack.SetNFTablesConfigured(true)
+	s.ReplaceConfig(srcWithNFT)
+	if !s.Stack.IsNFTablesConfigured() {
+		t.Fatal("s.Stack.IsNFTablesConfigured() = false, want true")
+	}
+	if s.Stack.NFTables() != nf {
+		t.Fatalf("s.Stack.NFTables() = %v, want %v", s.Stack.NFTables(), nf)
 	}
 }

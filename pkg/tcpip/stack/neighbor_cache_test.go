@@ -96,7 +96,7 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 
 	linkRes.neigh.init(&nic{
 		stack: stack,
-		id:    1,
+		id:    atomicbitops.FromInt32(1),
 		stats: makeNICStats(stack.stats.NICs),
 	}, linkRes)
 	return linkRes

@@ -15,12 +15,14 @@
 package veth_test
 
 import (
+	"bytes"
 	"os"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -189,6 +191,296 @@ func TestMTU(t *testing.T) {
 		if want, v := mtu, e.MTU(); want != v {
 			t.Errorf("MTU() = %v, want %v", v, want)
 		}
+	}
+}
+
+func TestVethSaveRestoreBacklogAndSize(t *testing.T) {
+	const (
+		localLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+		remoteLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+		netProto1      = 55
+		netProto2      = 56
+		netProto3      = 57
+		netProto4      = 58
+		nicID1         = 5
+		nicID2         = 6
+		backlogSize    = 2
+	)
+
+	veth1, veth2 := veth.NewPair(1500, backlogSize)
+	veth1.SetLinkAddress(localLinkAddr)
+	veth2.SetLinkAddress(remoteLinkAddr)
+
+	s1 := stack.New(stack.Options{})
+	if err := s1.CreateNICWithOptions(nicID1, ethernet.New(veth1), stack.NICOptions{Name: "veth1", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("s1.CreateNICWithOptions(%d, _): %s", nicID1, err)
+	}
+	s2 := stack.New(stack.Options{})
+	if err := s2.CreateNICWithOptions(nicID2, ethernet.New(veth2), stack.NICOptions{Name: "veth2", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("s2.CreateNICWithOptions(%d, _): %s", nicID2, err)
+	}
+
+	// Pause s1/s2 before queueing two packets so they remain in the backlog
+	// across save/restore.
+	s1.Pause()
+	s2.Pause()
+
+	if err := s1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto1, buffer.MakeWithData([]byte{1})); err != nil {
+		t.Fatalf("first WritePacketToRemote failed: %s", err)
+	}
+	if err := s1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto2, buffer.MakeWithData([]byte{2})); err != nil {
+		t.Fatalf("second WritePacketToRemote failed: %s", err)
+	}
+	// Queue capacity is backlogSize (2); a third packet while paused must fail
+	// with ErrNoBufferSpace, and packets written while paused must be saved
+	// directly without needing a second Pause() call.
+	if err := s1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto3, buffer.MakeWithData([]byte{3})); err == nil {
+		t.Fatalf("third WritePacketToRemote = nil, want %T", &tcpip.ErrNoBufferSpace{})
+	} else if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok {
+		t.Fatalf("third WritePacketToRemote = %T (%v), want *tcpip.ErrNoBufferSpace", err, err)
+	}
+
+	saved := [2]*stack.Stack{s1, s2}
+	var buf bytes.Buffer
+	if _, err := state.Save(t.Context(), &buf, &saved); err != nil {
+		t.Fatalf("state.Save failed: %v", err)
+	}
+
+	// Destroying the original stacks while packets remain in backlogQueue must
+	// not leak PacketBuffers.
+	s1.Destroy()
+	s2.Destroy()
+
+	var loaded [2]*stack.Stack
+	if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &loaded); err != nil {
+		t.Fatalf("state.Load failed: %v", err)
+	}
+	restored1, restored2 := loaded[0], loaded[1]
+	defer func() {
+		restored1.Destroy()
+		restored2.Destroy()
+	}()
+
+	restored1.RestoreNICsAndEndpoints()
+	restored2.RestoreNICsAndEndpoints()
+
+	// Before RestoreBackgroundWorkers resumes veth workers, loadBacklogQueue
+	// has already populated backlogQueue with netProto1 and netProto2 (2/2), so
+	// an additional write must fail immediately with ErrNoBufferSpace rather
+	// than accepting 2*backlogSize packets and dropping half on Resume.
+	if err := restored1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto3, buffer.MakeWithData([]byte{3})); err == nil {
+		t.Fatalf("WritePacketToRemote on full restored backlogQueue = nil, want %T", &tcpip.ErrNoBufferSpace{})
+	} else if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok {
+		t.Fatalf("WritePacketToRemote on full restored backlogQueue = %T (%v), want *tcpip.ErrNoBufferSpace", err, err)
+	}
+
+	var wg sync.WaitGroup
+	sink := &testNetworkDispatcher{ch: make(chan *stack.PacketBuffer, 3), wg: &wg}
+	restoredVeth2 := restored2.GetLinkEndpointByName("veth2")
+	if restoredVeth2 == nil {
+		t.Fatal("restored2.GetLinkEndpointByName(\"veth2\") = nil, want non-nil")
+	}
+	restoredVeth2.Attach(sink)
+
+	restored1.RestoreBackgroundWorkers()
+	restored2.RestoreBackgroundWorkers()
+
+	for i, wantProto := range []tcpip.NetworkProtocolNumber{netProto1, netProto2} {
+		select {
+		case pkt := <-sink.ch:
+			eth := header.Ethernet(pkt.LinkHeader().Slice())
+			gotProto := eth.Type()
+			pkt.DecRef()
+			if gotProto != wantProto {
+				t.Errorf("restored packet %d protocol = %d, want %d", i, gotProto, wantProto)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for restored packet %d", i)
+		}
+	}
+
+	// Send a sentinel packet after draining to verify normal post-restore delivery.
+	if err := restored1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto4, buffer.MakeWithData([]byte{4})); err != nil {
+		t.Fatalf("WritePacketToRemote(netProto4) failed: %s", err)
+	}
+	select {
+	case pkt := <-sink.ch:
+		eth := header.Ethernet(pkt.LinkHeader().Slice())
+		gotProto := eth.Type()
+		pkt.DecRef()
+		if gotProto != netProto4 {
+			t.Errorf("sentinel packet protocol = %d, want %d", gotProto, netProto4)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for sentinel packet")
+	}
+}
+
+func TestVethPauseResumeAndConcurrentClose(t *testing.T) {
+	const (
+		localLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+		remoteLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+		netProto1      = 55
+		netProto2      = 56
+		netProto3      = 57
+		nicID1         = 5
+		backlogSize    = 2
+	)
+
+	veth1, veth2 := veth.NewPair(1500, backlogSize)
+	veth1.SetLinkAddress(localLinkAddr)
+	veth2.SetLinkAddress(remoteLinkAddr)
+
+	s := stack.New(stack.Options{})
+	defer s.Destroy()
+	if err := s.CreateNICWithOptions(nicID1, ethernet.New(veth1), stack.NICOptions{Name: "veth1", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("s.CreateNICWithOptions(%d, _): %s", nicID1, err)
+	}
+
+	var wg sync.WaitGroup
+	sink := &testNetworkDispatcher{ch: make(chan *stack.PacketBuffer, 3), wg: &wg}
+	veth2Ethernet := ethernet.New(veth2)
+	veth2Ethernet.Attach(sink)
+
+	s.Pause()
+	if err := s.WritePacketToRemote(nicID1, remoteLinkAddr, netProto1, buffer.MakeWithData([]byte{1})); err != nil {
+		t.Fatalf("WritePacketToRemote(netProto1) failed: %s", err)
+	}
+	if err := s.WritePacketToRemote(nicID1, remoteLinkAddr, netProto2, buffer.MakeWithData([]byte{2})); err != nil {
+		t.Fatalf("WritePacketToRemote(netProto2) failed: %s", err)
+	}
+	if err := s.WritePacketToRemote(nicID1, remoteLinkAddr, netProto3, buffer.MakeWithData([]byte{3})); err == nil {
+		t.Fatalf("WritePacketToRemote(netProto3) while full = nil, want *tcpip.ErrNoBufferSpace")
+	} else if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok {
+		t.Fatalf("WritePacketToRemote(netProto3) = %T (%v), want *tcpip.ErrNoBufferSpace", err, err)
+	}
+
+	s.Resume()
+
+	for i, wantProto := range []tcpip.NetworkProtocolNumber{netProto1, netProto2} {
+		select {
+		case pkt := <-sink.ch:
+			eth := header.Ethernet(pkt.LinkHeader().Slice())
+			gotProto := eth.Type()
+			pkt.DecRef()
+			if gotProto != wantProto {
+				t.Errorf("resumed packet %d protocol = %d, want %d", i, gotProto, wantProto)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for resumed packet %d", i)
+		}
+	}
+
+	// Verify concurrent Close() on both ends waits for the worker and drains
+	// queued PacketBuffers cleanly without racing or leaking.
+	for range 16 {
+		epA, epB := veth.NewPair(1500, 8)
+		var pkts stack.PacketBufferList
+		for range 4 {
+			pkts.PushBack(stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData([]byte{1, 2, 3, 4}),
+			}))
+		}
+		_, _ = epA.WritePackets(pkts)
+		pkts.DecRef()
+
+		var closeWG sync.WaitGroup
+		closeWG.Add(2)
+		go func() {
+			defer closeWG.Done()
+			epA.Close()
+		}()
+		go func() {
+			defer closeWG.Done()
+			epB.Close()
+		}()
+		closeWG.Wait()
+	}
+}
+
+func TestVethSaveRestoreZeroBacklog(t *testing.T) {
+	const (
+		localLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
+		remoteLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
+		netProto       = 55
+		nicID1         = 5
+		nicID2         = 6
+	)
+
+	veth1, veth2 := veth.NewPair(1500, 0)
+	veth1.SetLinkAddress(localLinkAddr)
+	veth2.SetLinkAddress(remoteLinkAddr)
+
+	s1 := stack.New(stack.Options{})
+	if err := s1.CreateNICWithOptions(nicID1, ethernet.New(veth1), stack.NICOptions{Name: "veth1", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("s1.CreateNICWithOptions(%d, _): %s", nicID1, err)
+	}
+	s2 := stack.New(stack.Options{})
+	if err := s2.CreateNICWithOptions(nicID2, ethernet.New(veth2), stack.NICOptions{Name: "veth2", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("s2.CreateNICWithOptions(%d, _): %s", nicID2, err)
+	}
+
+	s1.Pause()
+	s2.Pause()
+
+	saved := [2]*stack.Stack{s1, s2}
+	var buf bytes.Buffer
+	if _, err := state.Save(t.Context(), &buf, &saved); err != nil {
+		t.Fatalf("state.Save failed: %v", err)
+	}
+	s1.Destroy()
+	s2.Destroy()
+
+	var loaded [2]*stack.Stack
+	if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &loaded); err != nil {
+		t.Fatalf("state.Load failed: %v", err)
+	}
+	restored1, restored2 := loaded[0], loaded[1]
+	restored1.RestoreNICsAndEndpoints()
+	restored2.RestoreNICsAndEndpoints()
+	defer func() {
+		restored1.Destroy()
+		restored2.Destroy()
+	}()
+
+	// Before RestoreBackgroundWorkers starts the veth worker, an unbuffered
+	// backlogQueue (capacity 0) must reject writes with ErrNoBufferSpace rather
+	// than growing to DefaultBacklogSize on load.
+	if err := restored1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto, buffer.MakeWithData([]byte{1})); err == nil {
+		t.Fatalf("WritePacketToRemote on paused zero-backlog veth = nil, want %T", &tcpip.ErrNoBufferSpace{})
+	} else if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok {
+		t.Fatalf("WritePacketToRemote on paused zero-backlog veth = %T (%v), want *tcpip.ErrNoBufferSpace", err, err)
+	}
+
+	var wg sync.WaitGroup
+	sink := &testNetworkDispatcher{ch: make(chan *stack.PacketBuffer, 1), wg: &wg}
+	restoredVeth2 := restored2.GetLinkEndpointByName("veth2")
+	if restoredVeth2 == nil {
+		t.Fatal("restored2.GetLinkEndpointByName(\"veth2\") = nil, want non-nil")
+	}
+	restoredVeth2.Attach(sink)
+
+	restored1.RestoreBackgroundWorkers()
+	restored2.RestoreBackgroundWorkers()
+
+	// Wait briefly until the unbuffered worker goroutine blocks on <-ch, then
+	// verify live packet delivery succeeds on the restored zero-backlog veth.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := restored1.WritePacketToRemote(nicID1, remoteLinkAddr, netProto, buffer.MakeWithData([]byte{1}))
+		if err == nil {
+			break
+		}
+		if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok || !time.Now().Before(deadline) {
+			t.Fatalf("WritePacketToRemote after RestoreBackgroundWorkers failed: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case pkt := <-sink.ch:
+		pkt.DecRef()
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for packet on restored zero-backlog veth")
 	}
 }
 

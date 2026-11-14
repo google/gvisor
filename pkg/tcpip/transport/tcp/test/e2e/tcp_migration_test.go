@@ -27,6 +27,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/link/veth"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -537,7 +540,7 @@ func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
 	}
 	preservedEP := channel.New(1000, e2e.DefaultMTU, "")
 	defer preservedEP.Close()
-	if err := c.Stack().CreateNICWithOptions(preservedNICID, preservedEP, stack.NICOptions{Kind: "tun"}); err != nil {
+	if err := c.Stack().CreateNICWithOptions(preservedNICID, preservedEP, stack.NICOptions{Kind: stack.NICKindTun}); err != nil {
 		t.Fatalf("CreateNICWithOptions failed: %v", err)
 	}
 	if err := c.Stack().AddProtocolAddress(preservedNICID, tcpip.ProtocolAddress{
@@ -634,4 +637,466 @@ func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
 	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Address); got != preservedNICID {
 		t.Fatalf("restoredStack2.CheckLocalAddress(IPv6) = %d, want %d", got, preservedNICID)
 	}
+}
+
+func TestTCPMigrationWithGVisorGSO(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		srcHostGSO  bool
+		dstGSO      stack.SupportedGSO
+		wantMinPkts int
+	}{
+		{
+			name:        "NoGSOToGVisorGSO",
+			srcHostGSO:  false,
+			dstGSO:      stack.GVisorGSOSupported,
+			wantMinPkts: 2,
+		},
+		{
+			name:        "HostGSOToNoGSO",
+			srcHostGSO:  true,
+			dstGSO:      stack.GSONotSupported,
+			wantMinPkts: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := testcontext.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
+			c.SetGSOEnabled(tc.srcHostGSO)
+
+			c.Stack().SetAllowLiveTCPMigration(true)
+			c.Stack().SetRemoveConf(true)
+
+			c.CreateConnected(testcontext.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+			var buf bytes.Buffer
+			if _, err := state.Save(t.Context(), &buf, c.Stack()); err != nil {
+				t.Fatalf("Save failed: %v", err)
+			}
+
+			restoredStack := stack.New(stack.Options{
+				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+			})
+			restoredStack.SetAllowLiveTCPMigration(true)
+			defer restoredStack.Destroy()
+
+			if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), restoredStack); err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+
+			ep := channel.New(1000, e2e.DefaultMTU, "")
+			ep.SupportedGSOKind = tc.dstGSO
+			defer ep.Close()
+			if err := restoredStack.CreateNIC(1, ep); err != nil {
+				t.Fatalf("CreateNIC failed: %v", err)
+			}
+			if err := restoredStack.AddProtocolAddress(1, tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: testcontext.StackAddrWithPrefix,
+			}, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress failed: %v", err)
+			}
+			restoredStack.SetRouteTable([]tcpip.Route{
+				{
+					Destination: header.IPv4EmptySubnet,
+					NIC:         1,
+				},
+			})
+
+			restoredStack.Restore()
+			eps := restoredStack.RegisteredEndpoints()
+			if len(eps) != 1 {
+				t.Fatalf("len(restoredStack.RegisteredEndpoints()) = %d, want 1", len(eps))
+			}
+			restoredEP, ok := eps[0].(tcpip.Endpoint)
+			if !ok {
+				t.Fatalf("restoredStack.RegisteredEndpoints()[0] = %T, want tcpip.Endpoint", eps[0])
+			}
+
+			payload := bytes.Repeat([]byte{'a'}, 2*int(e2e.DefaultMTU))
+			var r bytes.Reader
+			r.Reset(payload)
+			if _, err := restoredEP.Write(&r, tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("restoredEP.Write failed: %v", err)
+			}
+			if got := ep.Drain(); got < tc.wantMinPkts {
+				t.Fatalf("ep.Drain() = %d, want >= %d", got, tc.wantMinPkts)
+			}
+		})
+	}
+}
+
+func listenTCP(t *testing.T, s *stack.Stack, addr tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue) {
+	t.Helper()
+	wq := &waiter.Queue{}
+	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+	if err := ep.Bind(addr); err != nil {
+		t.Fatalf("Bind(%v) failed: %v", addr, err)
+	}
+	if err := ep.Listen(10); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	return ep, wq
+}
+
+func connectAndAcceptTCP(t *testing.T, clientStack *stack.Stack, listenEP tcpip.Endpoint, listenWQ *waiter.Queue, serverAddr tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpip.Endpoint, *waiter.Queue) {
+	t.Helper()
+	clientWQ := &waiter.Queue{}
+	clientEP, err := clientStack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, clientWQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	writeEntry, writeCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	clientWQ.EventRegister(&writeEntry)
+	defer clientWQ.EventUnregister(&writeEntry)
+
+	acceptEntry, acceptCh := waiter.NewChannelEntry(waiter.ReadableEvents)
+	listenWQ.EventRegister(&acceptEntry)
+	defer listenWQ.EventUnregister(&acceptEntry)
+
+	switch err := clientEP.Connect(serverAddr); err.(type) {
+	case nil, *tcpip.ErrConnectStarted:
+	default:
+		t.Fatalf("Connect(%v) failed: %v", serverAddr, err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	var acceptedEP tcpip.Endpoint
+	var acceptedWQ *waiter.Queue
+	for acceptedEP == nil {
+		var acceptErr tcpip.Error
+		acceptedEP, acceptedWQ, acceptErr = listenEP.Accept(nil)
+		if acceptErr == nil {
+			break
+		}
+		if _, ok := acceptErr.(*tcpip.ErrWouldBlock); !ok {
+			t.Fatalf("Accept failed: %v", acceptErr)
+		}
+		select {
+		case <-acceptCh:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for Accept on %v: %v", serverAddr, ctx.Err())
+		}
+	}
+
+	for tcp.EndpointState(clientEP.State()) != tcp.StateEstablished {
+		select {
+		case <-writeCh:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for client endpoint to reach StateEstablished (got %v): %v", tcp.EndpointState(clientEP.State()), ctx.Err())
+		}
+	}
+	return clientEP, clientWQ, acceptedEP, acceptedWQ
+}
+
+func writeAndReadAllTCP(t *testing.T, writer tcpip.Endpoint, writerWQ *waiter.Queue, reader tcpip.Endpoint, readerWQ *waiter.Queue, payload []byte) {
+	t.Helper()
+	writeEntry, writeCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	writerWQ.EventRegister(&writeEntry)
+	defer writerWQ.EventUnregister(&writeEntry)
+
+	readEntry, readCh := waiter.NewChannelEntry(waiter.ReadableEvents)
+	readerWQ.EventRegister(&readEntry)
+	defer readerWQ.EventUnregister(&readEntry)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	var r bytes.Reader
+	r.Reset(payload)
+	for r.Len() > 0 {
+		_, err := writer.Write(&r, tcpip.WriteOptions{})
+		if err == nil {
+			continue
+		}
+		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+			t.Fatalf("Write failed with %d bytes remaining: %v", r.Len(), err)
+		}
+		select {
+		case <-writeCh:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting to write (%d bytes remaining): %v", r.Len(), ctx.Err())
+		}
+	}
+
+	var got bytes.Buffer
+	for got.Len() < len(payload) {
+		_, err := reader.Read(&got, tcpip.ReadOptions{})
+		if err == nil {
+			continue
+		}
+		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+			t.Fatalf("Read failed after %d/%d bytes: %v", got.Len(), len(payload), err)
+		}
+		select {
+		case <-readCh:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting to read (%d/%d bytes read): %v", got.Len(), len(payload), ctx.Err())
+		}
+	}
+
+	if !bytes.Equal(got.Bytes(), payload) {
+		t.Fatalf("read payload len = %d, want %d matching sent payload", got.Len(), len(payload))
+	}
+}
+
+func TestMultiStackBridgeVethTCPMigration(t *testing.T) {
+	const (
+		bridgeMAC    = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x01")
+		rootVethMAC  = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x02")
+		childVethMAC = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x03")
+
+		bridgeID    = tcpip.NICID(1)
+		vethRootID  = tcpip.NICID(2)
+		loID        = tcpip.NICID(1)
+		vethChildID = tcpip.NICID(2)
+
+		rootListenPort  = uint16(8080)
+		childListenPort = uint16(9090)
+	)
+
+	rootAddr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+		PrefixLen: 24,
+	}
+	childAddr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom4([4]byte{10, 0, 0, 2}),
+		PrefixLen: 24,
+	}
+	subnet := rootAddr.Subnet()
+
+	newStack := func() *stack.Stack {
+		return stack.New(stack.Options{
+			NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
+			TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		})
+	}
+
+	rootStack := newStack()
+	childStack := newStack()
+	var preSaveEndpoints []tcpip.Endpoint
+	stacksPaused := false
+	destroyPreSave := func() {
+		if stacksPaused {
+			rootStack.Resume()
+			childStack.Resume()
+			stacksPaused = false
+		}
+		for _, ep := range preSaveEndpoints {
+			ep.Abort()
+			ep.Close()
+		}
+		preSaveEndpoints = nil
+		if rootStack != nil {
+			rootStack.Destroy()
+			rootStack = nil
+		}
+		if childStack != nil {
+			childStack.Destroy()
+			childStack = nil
+		}
+	}
+	t.Cleanup(destroyPreSave)
+
+	// Configure rootStack with a bridge (br0) and an enslaved veth port (veth0).
+	bridgeEP := stack.NewBridgeEndpoint(e2e.DefaultMTU)
+	bridgeEP.SetLinkAddress(bridgeMAC)
+	if err := rootStack.CreateNICWithOptions(bridgeID, bridgeEP, stack.NICOptions{Name: "br0", Kind: stack.NICKindBridge}); err != nil {
+		t.Fatalf("rootStack.CreateNICWithOptions(br0) failed: %v", err)
+	}
+	if err := rootStack.AddProtocolAddress(bridgeID, tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: rootAddr,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("rootStack.AddProtocolAddress(br0) failed: %v", err)
+	}
+	rootStack.SetRouteTable([]tcpip.Route{{Destination: subnet, NIC: bridgeID}})
+
+	vethRoot, vethChild := veth.NewPair(e2e.DefaultMTU, veth.DefaultBacklogSize)
+	vethRoot.SetLinkAddress(rootVethMAC)
+	vethChild.SetLinkAddress(childVethMAC)
+
+	if err := rootStack.CreateNICWithOptions(vethRootID, ethernet.New(vethRoot), stack.NICOptions{Name: "veth0", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("rootStack.CreateNICWithOptions(veth0) failed: %v", err)
+	}
+	if err := rootStack.SetNICCoordinator(vethRootID, bridgeID); err != nil {
+		t.Fatalf("rootStack.SetNICCoordinator(veth0, br0) failed: %v", err)
+	}
+
+	// Configure childStack with a preserved loopback NIC and peer veth (eth0).
+	if err := childStack.CreateNICWithOptions(loID, loopback.New(), stack.NICOptions{Name: "lo", Preserve: true}); err != nil {
+		t.Fatalf("childStack.CreateNICWithOptions(lo) failed: %v", err)
+	}
+	if err := childStack.CreateNICWithOptions(vethChildID, ethernet.New(vethChild), stack.NICOptions{Name: "eth0", Kind: stack.NICKindVeth}); err != nil {
+		t.Fatalf("childStack.CreateNICWithOptions(eth0) failed: %v", err)
+	}
+	if err := childStack.AddProtocolAddress(vethChildID, tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: childAddr,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("childStack.AddProtocolAddress(eth0) failed: %v", err)
+	}
+	childStack.SetRouteTable([]tcpip.Route{{Destination: subnet, NIC: vethChildID}})
+
+	// Create listening and connected TCP endpoints on both stacks across br0 + veth.
+	rootServerAddr := tcpip.FullAddress{Addr: rootAddr.Address, Port: rootListenPort}
+	childServerAddr := tcpip.FullAddress{Addr: childAddr.Address, Port: childListenPort}
+
+	rootListenEP, rootListenWQ := listenTCP(t, rootStack, rootServerAddr)
+	childListenEP, childListenWQ := listenTCP(t, childStack, childServerAddr)
+	childClientEP, childClientWQ, rootAcceptedEP, rootAcceptedWQ := connectAndAcceptTCP(t, childStack, rootListenEP, rootListenWQ, rootServerAddr)
+	rootClientEP, rootClientWQ, childAcceptedEP, childAcceptedWQ := connectAndAcceptTCP(t, rootStack, childListenEP, childListenWQ, childServerAddr)
+	preSaveEndpoints = []tcpip.Endpoint{
+		rootListenEP,
+		childListenEP,
+		childClientEP,
+		rootAcceptedEP,
+		rootClientEP,
+		childAcceptedEP,
+	}
+
+	writeAndReadAllTCP(t, childClientEP, childClientWQ, rootAcceptedEP, rootAcceptedWQ, []byte("pre-save-child-to-root"))
+	writeAndReadAllTCP(t, rootClientEP, rootClientWQ, childAcceptedEP, childAcceptedWQ, []byte("pre-save-root-to-child"))
+
+	if got := bridgeEP.FindFDBEntry(childVethMAC).PortLinkAddress(); got != rootVethMAC {
+		t.Fatalf("bridgeEP.FindFDBEntry(%s) before save = %s, want %s", childVethMAC, got, rootVethMAC)
+	}
+
+	// Save both stacks and their endpoints with RemoveConf=true (default
+	// AllowLiveTCPMigration=false), exercising BridgeFDBEntry serialization,
+	// veth pause/save, and native CapabilitySaveRestore TCP preservation.
+	rootStack.SetRemoveConf(true)
+	childStack.SetRemoveConf(true)
+	rootStack.Pause()
+	childStack.Pause()
+	stacksPaused = true
+
+	saved := []any{
+		rootStack,
+		childStack,
+		rootListenEP,
+		rootListenWQ,
+		childListenEP,
+		childListenWQ,
+		childClientEP,
+		childClientWQ,
+		rootAcceptedEP,
+		rootAcceptedWQ,
+		rootClientEP,
+		rootClientWQ,
+		childAcceptedEP,
+		childAcceptedWQ,
+	}
+	var buf bytes.Buffer
+	if _, err := state.Save(t.Context(), &buf, &saved); err != nil {
+		t.Fatalf("state.Save failed: %v", err)
+	}
+
+	destroyPreSave()
+
+	var loaded []any
+	if _, err := state.Load(t.Context(), bytes.NewReader(buf.Bytes()), &loaded); err != nil {
+		t.Fatalf("state.Load failed: %v", err)
+	}
+	restoredRoot := loaded[0].(*stack.Stack)
+	restoredChild := loaded[1].(*stack.Stack)
+	restoredRootListen := loaded[2].(tcpip.Endpoint)
+	restoredRootListenWQ := loaded[3].(*waiter.Queue)
+	restoredChildListen := loaded[4].(tcpip.Endpoint)
+	restoredChildListenWQ := loaded[5].(*waiter.Queue)
+	restoredChildClient := loaded[6].(tcpip.Endpoint)
+	restoredChildClientWQ := loaded[7].(*waiter.Queue)
+	restoredRootAccepted := loaded[8].(tcpip.Endpoint)
+	restoredRootAcceptedWQ := loaded[9].(*waiter.Queue)
+	restoredRootClient := loaded[10].(tcpip.Endpoint)
+	restoredRootClientWQ := loaded[11].(*waiter.Queue)
+	restoredChildAccepted := loaded[12].(tcpip.Endpoint)
+	restoredChildAcceptedWQ := loaded[13].(*waiter.Queue)
+
+	restoredEndpoints := []tcpip.Endpoint{
+		restoredRootListen,
+		restoredChildListen,
+		restoredChildClient,
+		restoredRootAccepted,
+		restoredRootClient,
+		restoredChildAccepted,
+	}
+	t.Cleanup(func() {
+		for _, ep := range restoredEndpoints {
+			ep.Abort()
+			ep.Close()
+		}
+		restoredRoot.Destroy()
+		restoredChild.Destroy()
+	})
+
+	// Restore both stacks using the two-phase sequence so every stack's
+	// connected endpoints finish synchronous restoration before any stack's
+	// listening endpoint goroutines wait on connectedLoading.
+	restoredRoot.ResetConfig()
+	restoreDone := make(chan struct{})
+	go func() {
+		restoredRoot.RestoreNICsAndEndpoints()
+		restoredChild.RestoreNICsAndEndpoints()
+		tcpip.AsyncLoading.Wait()
+		restoredRoot.RestoreBackgroundWorkers()
+		restoredChild.RestoreBackgroundWorkers()
+		close(restoreDone)
+	}()
+	select {
+	case <-restoreDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("two-phase multi-stack restore deadlocked")
+	}
+
+	restoredBridge, ok := restoredRoot.GetLinkEndpointByName("br0").(*stack.BridgeEndpoint)
+	if !ok || restoredBridge == nil {
+		t.Fatalf("restoredRoot.GetLinkEndpointByName(\"br0\") = %T, want *stack.BridgeEndpoint", restoredRoot.GetLinkEndpointByName("br0"))
+	}
+	if got := restoredBridge.FindFDBEntry(childVethMAC).PortLinkAddress(); got != rootVethMAC {
+		t.Fatalf("restoredBridge.FindFDBEntry(%s) = %s, want %s", childVethMAC, got, rootVethMAC)
+	}
+	if !restoredChild.HasNIC(loID) {
+		t.Fatalf("restoredChild.HasNIC(%d) = false, want true", loID)
+	}
+
+	for _, tc := range []struct {
+		name string
+		ep   tcpip.Endpoint
+		want tcp.EndpointState
+	}{
+		{name: "restoredRootListen", ep: restoredRootListen, want: tcp.StateListen},
+		{name: "restoredChildListen", ep: restoredChildListen, want: tcp.StateListen},
+		{name: "restoredChildClient", ep: restoredChildClient, want: tcp.StateEstablished},
+		{name: "restoredRootAccepted", ep: restoredRootAccepted, want: tcp.StateEstablished},
+		{name: "restoredRootClient", ep: restoredRootClient, want: tcp.StateEstablished},
+		{name: "restoredChildAccepted", ep: restoredChildAccepted, want: tcp.StateEstablished},
+	} {
+		if got := tcp.EndpointState(tc.ep.State()); got != tc.want {
+			t.Fatalf("%s.State() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+
+	// Send >1-MTU payloads on both pre-existing connected TCP pairs to verify
+	// restored veth GVisorGSO segmentation (non-zero e.gso.MSS) across br0.
+	gsoPayloadChildToRoot := bytes.Repeat([]byte{'c'}, 2*int(e2e.DefaultMTU))
+	gsoPayloadRootToChild := bytes.Repeat([]byte{'r'}, 2*int(e2e.DefaultMTU))
+	writeAndReadAllTCP(t, restoredChildClient, restoredChildClientWQ, restoredRootAccepted, restoredRootAcceptedWQ, gsoPayloadChildToRoot)
+	writeAndReadAllTCP(t, restoredRootClient, restoredRootClientWQ, restoredChildAccepted, restoredChildAcceptedWQ, gsoPayloadRootToChild)
+
+	// Verify both restored listening endpoints accept new connections after restore.
+	newChildClient, newChildClientWQ, newRootAccepted, newRootAcceptedWQ := connectAndAcceptTCP(t, restoredChild, restoredRootListen, restoredRootListenWQ, rootServerAddr)
+	restoredEndpoints = append(restoredEndpoints, newChildClient, newRootAccepted)
+	writeAndReadAllTCP(t, newChildClient, newChildClientWQ, newRootAccepted, newRootAcceptedWQ, []byte("post-restore-new-conn-to-root"))
+
+	newRootClient, newRootClientWQ, newChildAccepted, newChildAcceptedWQ := connectAndAcceptTCP(t, restoredRoot, restoredChildListen, restoredChildListenWQ, childServerAddr)
+	restoredEndpoints = append(restoredEndpoints, newRootClient, newChildAccepted)
+	writeAndReadAllTCP(t, newRootClient, newRootClientWQ, newChildAccepted, newChildAcceptedWQ, []byte("post-restore-new-conn-to-child"))
 }

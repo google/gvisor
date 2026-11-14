@@ -108,7 +108,7 @@ func (r *Route) Loop() PacketLooping {
 
 // OutgoingNIC returns the route's outgoing NIC.
 func (r *Route) OutgoingNIC() tcpip.NICID {
-	return r.outgoingNIC.id
+	return r.outgoingNIC.ID()
 }
 
 // RouteInfo contains all of Route's exported fields.

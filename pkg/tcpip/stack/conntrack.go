@@ -989,6 +989,20 @@ func NewConnTrackWithReaper(clock tcpip.Clock, rng connTrackRNG, seed *uint32) (
 	return ct, reaper
 }
 
+// RebindClock updates ct's clock and RNG and starts a new reaper timer on clock.
+func (ct *ConnTrack) RebindClock(clock tcpip.Clock, rng connTrackRNG) tcpip.Timer {
+	ct.clock = clock
+	ct.rng = rng
+	var reaper tcpip.Timer
+	bucket := 0
+	interval := 1 * time.Second
+	reaper = ct.clock.AfterFunc(interval, func() {
+		bucket, interval = ct.reapUnused(bucket, interval)
+		reaper.Reset(interval)
+	})
+	return reaper
+}
+
 // NfConnTrackPriority returns the priority of the conntrack hook.
 // Check `ipv4/ipv6_conntrack_ops` in nf_conntrack_proto.c.
 func NfConnTrackPriority(hook NFHook) (int, bool) {

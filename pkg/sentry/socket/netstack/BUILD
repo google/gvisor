@@ -69,6 +69,7 @@ go_library(
         "//pkg/tcpip/link/veth",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/nftables",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport",
         "//pkg/tcpip/transport/tcp",
@@ -91,6 +92,7 @@ go_test(
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",
         "//pkg/tcpip",
+        "//pkg/tcpip/nftables",
         "//pkg/tcpip/stack",
     ],
 )

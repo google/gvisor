@@ -33,6 +33,7 @@ type NFTablesInterface interface {
 	CheckPostrouting(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, af AddressFamily) bool
 	CheckIngress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 	CheckEgress(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, af AddressFamily) bool
+	RebindStack(s *Stack)
 }
 
 // NFHook describes specific points in the pipeline where chains can be attached.

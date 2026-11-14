@@ -1321,6 +1321,24 @@ type InjectableLinkEndpoint interface {
 	InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip.Error
 }
 
+// PausableLinkEndpoint is a LinkEndpoint with background workers that can be
+// paused before save and resumed after save or restore.
+//
+// Implementations must ensure that:
+//   - Pause blocks until all background packet-processing workers have exited.
+//   - Pause and Resume are both idempotent, since Stack calls them per NIC
+//     (including on shared pair endpoints and wrapper endpoints).
+type PausableLinkEndpoint interface {
+	LinkEndpoint
+
+	// Pause pauses background packet processing on the endpoint and waits for
+	// workers to exit.
+	Pause()
+
+	// Resume resumes background packet processing on the endpoint.
+	Resume()
+}
+
 // DADResult is a marker interface for the result of a duplicate address
 // detection process.
 type DADResult interface {

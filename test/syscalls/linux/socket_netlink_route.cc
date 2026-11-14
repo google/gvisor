@@ -4085,8 +4085,6 @@ PosixError WaitBindable(const struct sockaddr_in6& addr) {
 TEST(NetlinkRouteTest, VethLinkLocalAddrOnUpDown) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
-  const DisableSave ds;
 
   const FileDescriptor curr_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
@@ -4167,7 +4165,6 @@ TEST(NetlinkRouteTest, BridgeAddUnnamed) {
 TEST(NetlinkRouteTest, LinkInfoKind) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  const DisableSave ds;
 
   const FileDescriptor curr_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
@@ -4294,8 +4291,6 @@ TEST(NetlinkRouteTest, NewRouteGatewayNotOnLink) {
 TEST(NetlinkRouteTest, NewRouteGatewayOnLink) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
-  const DisableSave ds;
 
   const FileDescriptor curr_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
@@ -4726,8 +4721,6 @@ struct NetNSRequest GetNetNSRequest(uint32_t seq, int if_index, int ns_fd) {
 TEST(NetlinkRouteTest, ChangeNetnsAndOtherAttrsTogether) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
-  const DisableSave ds;
 
   // Running the test in an ephemeral netns allows it to not interfere with
   // other tests that also want to create veth pairs with the same names.
@@ -5447,8 +5440,6 @@ TEST_P(NetlinkRouteIpInvariantTest, RouteMulticastGroupReplace) {
 TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
-  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
-  const DisableSave ds;
 
   // Running the test in an ephemeral netns allows it to not interfere with
   // other tests that also want to create veth pairs with the same names.

@@ -29,6 +29,9 @@ func (e *Endpoint) Resume(s *stack.Stack) error {
 
 	e.stack = s
 	for m := range e.multicastMemberships {
+		if e.stack.IsNICPreserved(m.nicID) {
+			continue
+		}
 		proto, err := e.multicastNetProto(m.multicastAddr)
 		if err != nil {
 			return fmt.Errorf("non multicast address in an existing membership during Resume: %s", err)

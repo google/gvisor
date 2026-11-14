@@ -43,7 +43,7 @@ type nic struct {
 	NetworkLinkEndpoint
 
 	stack   *Stack
-	id      tcpip.NICID
+	id      atomicbitops.Int32
 	name    string
 	kind    string
 	context NICContext
@@ -56,6 +56,10 @@ type nic struct {
 	// multicast indicates whether the interface reports multicast support.
 	// It is immutable.
 	multicast bool
+
+	// preserve indicates whether the NIC is explicitly preserved across save and
+	// restore regardless of kind.
+	preserve bool
 
 	stats sharedStats
 
@@ -210,13 +214,10 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 	nic := &nic{
 		NetworkLinkEndpoint:              ep,
 		stack:                            stack,
-		id:                               id,
+		id:                               atomicbitops.FromInt32(int32(id)),
 		name:                             opts.Name,
 		context:                          opts.Context,
 		stats:                            makeNICStats(stack.Stats().NICs),
-		networkEndpoints:                 make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
-		linkAddrResolvers:                make(map[tcpip.NetworkProtocolNumber]*linkResolver),
-		duplicateAddressDetectors:        make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 		packetEPs:                        make(map[tcpip.NetworkProtocolNumber]*packetEndpointList),
 		qDisc:                            qDisc,
 		deliverLinkPackets:               opts.DeliverLinkPackets,
@@ -226,33 +227,40 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		minMTU:                           opts.MinMTU,
 		maxMTU:                           opts.MaxMTU,
 		multicast:                        opts.Multicast,
+		preserve:                         opts.Preserve,
 		adminDown:                        atomicbitops.FromBool(opts.Disabled),
 	}
 	nic.linkResQueue.init(nic)
-
-	resolutionRequired := ep.Capabilities()&CapabilityResolutionRequired != 0
-
-	for _, netProto := range stack.networkProtocols {
-		netNum := netProto.Number()
-		netEP := netProto.NewEndpoint(nic, nic)
-		nic.networkEndpoints[netNum] = netEP
-
-		if resolutionRequired {
-			if r, ok := netEP.(LinkAddressResolver); ok {
-				l := &linkResolver{resolver: r}
-				l.neigh.init(nic, r)
-				nic.linkAddrResolvers[r.LinkAddressProtocol()] = l
-			}
-		}
-
-		if d, ok := netEP.(DuplicateAddressDetector); ok {
-			nic.duplicateAddressDetectors[d.DuplicateAddressProtocol()] = d
-		}
-	}
+	nic.initNetworkEndpoints()
 
 	nic.NetworkLinkEndpoint.Attach(nic)
 
 	return nic
+}
+
+func (n *nic) initNetworkEndpoints() {
+	n.networkEndpoints = make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint)
+	n.linkAddrResolvers = make(map[tcpip.NetworkProtocolNumber]*linkResolver)
+	n.duplicateAddressDetectors = make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector)
+
+	resolutionRequired := n.NetworkLinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0
+	for _, netProto := range n.stack.networkProtocols {
+		netNum := netProto.Number()
+		netEP := netProto.NewEndpoint(n, n)
+		n.networkEndpoints[netNum] = netEP
+
+		if resolutionRequired {
+			if r, ok := netEP.(LinkAddressResolver); ok {
+				l := &linkResolver{resolver: r}
+				l.neigh.init(n, r)
+				n.linkAddrResolvers[r.LinkAddressProtocol()] = l
+			}
+		}
+
+		if d, ok := netEP.(DuplicateAddressDetector); ok {
+			n.duplicateAddressDetectors[d.DuplicateAddressProtocol()] = d
+		}
+	}
 }
 
 func (n *nic) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpoint {
@@ -665,8 +673,15 @@ func (n *nic) addAddress(protocolAddress tcpip.ProtocolAddress, properties Addre
 // this NIC.
 func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
 	var addrs []tcpip.ProtocolAddress
-	for p, ep := range n.networkEndpoints {
-		addressableEndpoint, ok := ep.(AddressableEndpoint)
+	protocolNumbers := make([]tcpip.NetworkProtocolNumber, 0, len(n.networkEndpoints))
+	for p := range n.networkEndpoints {
+		protocolNumbers = append(protocolNumbers, p)
+	}
+	sort.Slice(protocolNumbers, func(i, j int) bool {
+		return protocolNumbers[i] < protocolNumbers[j]
+	})
+	for _, p := range protocolNumbers {
+		addressableEndpoint, ok := n.networkEndpoints[p].(AddressableEndpoint)
 		if !ok {
 			continue
 		}
@@ -948,7 +963,7 @@ func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *Packe
 
 		clone := packetEPPkt.Clone()
 		defer clone.DecRef()
-		ep.HandlePacket(n.id, protocol, clone)
+		ep.HandlePacket(n.ID(), protocol, clone)
 	}
 
 	n.packetEPsMu.Lock()
@@ -1080,7 +1095,11 @@ func (n *nic) DeliverRawPacket(protocol tcpip.TransportProtocolNumber, pkt *Pack
 
 // ID implements NetworkInterface.
 func (n *nic) ID() tcpip.NICID {
-	return n.id
+	return tcpip.NICID(n.id.Load())
+}
+
+func (n *nic) setID(id tcpip.NICID) {
+	n.id.Store(int32(id))
 }
 
 // Name implements NetworkInterface.
