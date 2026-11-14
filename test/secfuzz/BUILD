@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "go_library")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -27,25 +28,21 @@ go_library(
     ],
 )
 
-genrule(
+go_test(
+    name = "secfuzz_test",
+    size = "small",
+    srcs = ["coverage_test.go"],
+    embed = [":secfuzz"],
+    deps = ["//pkg/bpf"],
+)
+
+run_binary(
     name = "secfuzz_covermeup",
-    srcs = ["secfuzz_covermeup.tmpl.go"],
+    srcs = ["secfuzz_covermeup.tmpl"],
     outs = ["secfuzz_covermeup.go"],
-    cmd = (
-        "  while IFS= read -r line; do" +
-        "    if echo \"$$line\" | grep -q 'GENERATED_LINES_INSERTED_HERE_THIS_IS_A_LOAD_BEARING_COMMENT'; then" +
-        "      while IFS= read -r i; do" +
-        "        echo -e \"\\\\tcase $$(( $$i + 1 )):\";" +
-        "        echo -e \"\\\\t\\\\tif covered[$$i] {\";" +
-        "        echo -e \"\\\\t\\\\t\\\\tfuzzee.coverage[$$i].Store(true)\";" +
-        "        echo -e \"\\\\t\\\\t}\";" +
-        "        echo -e \"\\\\t\\\\tfallthrough\";" +
-        "      done < <(awk 'BEGIN{for (i = 4095; i >= 1; i --) print i}');" +
-        "    else" +
-        "      echo \"$$line\";" +
-        "    fi;" +
-        "  done" +
-        "  < $(location :secfuzz_covermeup.tmpl.go)" +
-        "  > $@"
-    ),
+    args = [
+        "$(location secfuzz_covermeup.tmpl)",
+        "$(location secfuzz_covermeup.go)",
+    ],
+    tool = "//test/secfuzz/coveragegen",
 )
