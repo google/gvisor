@@ -1175,6 +1175,73 @@ func TestRemoveNIC(t *testing.T) {
 	}
 }
 
+// detachWaitsForStackEndpoint is a link endpoint whose Attach(nil) waits for a
+// goroutine that takes the stack lock, like a goroutine delivering a packet.
+type detachWaitsForStackEndpoint struct {
+	stack.LinkEndpoint
+	s *stack.Stack
+}
+
+// Attach implements stack.LinkEndpoint.Attach.
+func (e *detachWaitsForStackEndpoint) Attach(d stack.NetworkDispatcher) {
+	if d == nil {
+		done := make(chan struct{})
+		go func() {
+			e.s.NICInfo()
+			close(done)
+		}()
+		<-done
+	}
+	e.LinkEndpoint.Attach(d)
+}
+
+// TestDetachWithoutStackLock checks that link endpoints are detached without
+// the stack lock held.
+func TestDetachWithoutStackLock(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		remove func(s *stack.Stack, id tcpip.NICID) tcpip.Error
+	}{
+		{
+			name:   "RemoveNIC",
+			remove: (*stack.Stack).RemoveNIC,
+		},
+		{
+			name: "SetNICStack",
+			remove: func(s *stack.Stack, id tcpip.NICID) tcpip.Error {
+				_, err := s.SetNICStack(id, stack.New(stack.Options{}))
+				return err
+			},
+		},
+		{
+			name: "Destroy",
+			remove: func(s *stack.Stack, _ tcpip.NICID) tcpip.Error {
+				s.Destroy()
+				return nil
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const nicID = 1
+			s := stack.New(stack.Options{})
+			ep := &detachWaitsForStackEndpoint{LinkEndpoint: channel.New(0, defaultMTU, ""), s: s}
+			if err := s.CreateNIC(nicID, ep); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			done := make(chan tcpip.Error, 1)
+			go func() { done <- test.remove(s, nicID) }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("%s = %s", test.name, err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatalf("%s did not return", test.name)
+			}
+		})
+	}
+}
+
 func TestRouteWithDownNIC(t *testing.T) {
 	tests := []struct {
 		name   string

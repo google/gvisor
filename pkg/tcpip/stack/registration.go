@@ -1242,7 +1242,8 @@ type NetworkLinkEndpoint interface {
 	// dispatcher of the stack.
 	//
 	// Attach is called with a nil dispatcher when the endpoint's NIC is being
-	// removed.
+	// removed. That call is made without holding netstack locks, so it may
+	// wait for goroutines that deliver packets.
 	Attach(dispatcher NetworkDispatcher)
 
 	// IsAttached returns whether a NetworkDispatcher is attached to the

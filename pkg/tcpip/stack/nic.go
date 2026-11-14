@@ -415,12 +415,11 @@ func (n *nic) setAdminState(up, paused bool) tcpip.Error {
 	return n.enableLocked()
 }
 
-// remove detaches NIC from the link endpoint and releases network endpoint
-// resources. This guarantees no packets between this NIC and the network
-// stack.
+// remove releases network endpoint resources. This guarantees no packets
+// between this NIC and the network stack.
 //
-// It returns an action that has to be executed after releasing the Stack lock
-// and any error encountered.
+// It returns an action that detaches NIC from the link endpoint and has to be
+// executed after releasing the Stack lock, and any error encountered.
 func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 	n.enableDisableMu.Lock()
 
@@ -436,20 +435,22 @@ func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 	// We must not hold n.enableDisableMu here.
 	n.linkResQueue.cancel()
 
-	var deferAct func()
 	// Prevent packets from going down to the link before shutting the link down.
 	n.qDisc.Close()
-	n.NetworkLinkEndpoint.Attach(nil)
+	ep := n.NetworkLinkEndpoint
 	if closeLinkEndpoint {
-		ep := n.NetworkLinkEndpoint
 		ep.SetOnCloseAction(nil)
-		// The link endpoint has to be closed without holding a
-		// netstack lock, because it can trigger other netstack
-		// operations.
-		deferAct = ep.Close
 	}
-
-	return deferAct, nil
+	// The link endpoint has to be detached and closed without holding a
+	// netstack lock: detaching can wait for goroutines that deliver packets
+	// into the stack, and closing can trigger other netstack operations.
+	// Packets delivered before the detach are dropped, as n is disabled.
+	return func() {
+		ep.Attach(nil)
+		if closeLinkEndpoint {
+			ep.Close()
+		}
+	}, nil
 }
 
 // setPromiscuousMode enables or disables promiscuous mode.

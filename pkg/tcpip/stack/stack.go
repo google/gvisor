@@ -2266,22 +2266,30 @@ func (s *Stack) Wait() {
 		p.Wait()
 	}
 
-	deferActs := make([]func(), 0)
+	type removedNIC struct {
+		ep     NetworkLinkEndpoint
+		detach func()
+	}
+	var removed []removedNIC
 
 	s.mu.Lock()
 	for id, n := range s.nics {
 		// Remove NIC to ensure that qDisc goroutines are correctly
 		// terminated on stack teardown.
-		act, _ := s.removeNICLocked(id, true /* closeLinkEndpoint */)
-		n.NetworkLinkEndpoint.Wait()
-		if act != nil {
-			deferActs = append(deferActs, act)
-		}
+		detach, _ := s.removeNICLocked(id, false /* closeLinkEndpoint */)
+		n.NetworkLinkEndpoint.SetOnCloseAction(nil)
+		removed = append(removed, removedNIC{ep: n.NetworkLinkEndpoint, detach: detach})
 	}
 	s.mu.Unlock()
 
-	for _, act := range deferActs {
-		act()
+	for _, r := range removed {
+		if r.detach != nil {
+			r.detach()
+		}
+		r.ep.Wait()
+		if r.detach != nil {
+			r.ep.Close()
+		}
 	}
 }
 
