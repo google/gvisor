@@ -70,6 +70,9 @@ var redirects = map[string]string{
 
 	// Code search root.
 	"/cs": "https://cs.opensource.google/gvisor/gvisor",
+
+	// Self-service invite to the CNCF Slack workspace.
+	"/slack": "https://slack.cncf.io",
 }
 
 type prefixInfo struct {
