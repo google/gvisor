@@ -52,7 +52,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"runtime"
+	"runtime/debug"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/gohacks"
@@ -396,40 +396,24 @@ func Failf(fmtStr string, v ...any) {
 // that you'd like to handle, you should add appropriate functionality to
 // objects themselves prior to calling Save() and Load().
 func safely(fn func()) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if es, ok := r.(*ErrState); ok {
-				err = es // Propagate.
-				return
-			}
-
-			// Build a new state error.
-			es := new(ErrState)
-			if e, ok := r.(error); ok {
-				es.err = e
-			} else {
-				es.err = fmt.Errorf("%v", r)
-			}
-
-			// Make a stack. We don't know how big it will be ahead
-			// of time, but want to make sure we get the whole
-			// thing. So we just do a stupid brute force approach.
-			var stack []byte
-			for sz := 1024; ; sz *= 2 {
-				stack = make([]byte, sz)
-				n := runtime.Stack(stack, false)
-				if n < sz {
-					es.trace = string(stack[:n])
-					break
-				}
-			}
-
-			// Set the error.
-			err = es
-		}
-	}()
-
-	// Execute the function.
+	defer recoverState(&err)
 	fn()
 	return nil
+}
+
+// recoverState converts panics from state operations and reflection into errors.
+func recoverState(err *error) {
+	switch r := recover().(type) {
+	case nil:
+	case *ErrState:
+		*err = r
+	case error:
+		*err = stateError(r)
+	default:
+		*err = stateError(fmt.Errorf("%v", r))
+	}
+}
+
+func stateError(err error) *ErrState {
+	return &ErrState{err: err, trace: string(debug.Stack())}
 }
