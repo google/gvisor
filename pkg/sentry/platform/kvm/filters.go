@@ -22,7 +22,13 @@ import (
 )
 
 // SeccompInfo returns seccomp information for the KVM platform.
+//
+// The filters don't allow creating vCPUs, so SeccompInfo waits until all
+// machines have created their vCPUs.
 func (k *KVM) SeccompInfo() platform.SeccompInfo {
+	if k != nil {
+		waitAllVCPUs()
+	}
 	return platform.StaticSeccompInfo{
 		PlatformName: "kvm",
 		Filters: k.archSyscallFilters().Merge(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{

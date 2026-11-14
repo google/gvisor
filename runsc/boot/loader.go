@@ -1256,18 +1256,28 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 	if err != nil {
 		return nil, err
 	}
-	// Sentry timekeeping must run in the same TSC domain as the guest, so
-	// publish the offset the platform actually applied. Platforms that cannot
-	// offset the guest TSC leave the sentry in the host TSC domain, and the
-	// caller is responsible for warning about the resulting time jump.
+	if err := setPlatformTSCOffset(platformName, plat); err != nil {
+		return nil, err
+	}
+	return plat, nil
+}
+
+// setPlatformTSCOffset publishes the guest TSC offset of plat to Sentry
+// timekeeping.
+//
+// Sentry timekeeping must run in the same TSC domain as the guest, so
+// publish the offset the platform actually applied. Platforms that cannot
+// offset the guest TSC leave the sentry in the host TSC domain, and the
+// caller is responsible for warning about the resulting time jump.
+func setPlatformTSCOffset(platformName string, plat platform.Platform) error {
 	var offset int64
 	if top, ok := plat.(platform.TSCAdjustablePlatform); ok {
 		offset = int64(top.TSCOffset())
 	}
 	if err := time.SetTSCOffset(offset); err != nil {
-		return nil, fmt.Errorf("platform %q: %w", platformName, err)
+		return fmt.Errorf("platform %q: %w", platformName, err)
 	}
-	return plat, nil
+	return nil
 }
 
 func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {

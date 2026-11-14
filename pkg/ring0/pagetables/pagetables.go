@@ -182,6 +182,34 @@ func (p *PageTables) Map(addr hostarch.Addr, length uintptr, opts MapOpts, physi
 	return w.visitor.prev
 }
 
+// RemapReadOnlyShared is Map for page tables that are marked read-only shared
+// (see MarkReadOnlyShared). The change applies to all PageTables that share p,
+// as long as it does not require new top-level entries, e.g. because the range
+// is already mapped.
+//
+// Preconditions:
+//   - p is marked read-only shared.
+//   - No CPU has used p or any PageTables that share it, since the replaced
+//     entries may be cached in TLBs (including global entries).
+//   - addr & length must be page-aligned, their sum must not overflow.
+func (p *PageTables) RemapReadOnlyShared(addr hostarch.Addr, length uintptr, opts MapOpts, physical uintptr) {
+	if !p.readOnlyShared {
+		panic("RemapReadOnlyShared called on page tables that are not read-only shared")
+	}
+	if uintptr(addr)+length < uintptr(addr) {
+		panic("addr & length overflow")
+	}
+	w := mapWalker{
+		pageTables: p,
+		visitor: mapVisitor{
+			target:   uintptr(addr),
+			physical: physical,
+			opts:     opts,
+		},
+	}
+	w.iterateRange(uintptr(addr), uintptr(addr)+length)
+}
+
 // unmapVisitor is used for unmap.
 type unmapVisitor struct {
 	count int
