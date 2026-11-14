@@ -102,7 +102,11 @@ type encObject struct {
 	hasCov bool
 	hasCh  bool
 
-	// x holds the state of arrays and of objects that absorbed others.
+	// A container with just one absorbed object keeps its index inline.
+	hasChild bool
+	child    [1]int32
+
+	// x holds additional array state and lists of multiple children.
 	x *objExtra
 
 	// stamp deduplicates query results.
@@ -113,7 +117,7 @@ type encObject struct {
 
 // objExtra is the state of arrays and of objects that absorbed others.
 type objExtra struct {
-	// children are the objects absorbed by this object.
+	// children are the objects absorbed by a container with multiple children.
 	children []int32
 	// covered are the non-overlapping, non-adjacent element index ranges of
 	// arrays that are encoded or queued, sorted by ascending start index.
@@ -130,6 +134,9 @@ func (o *encObject) extra() *objExtra {
 }
 
 func (o *encObject) childList() []int32 {
+	if o.hasChild {
+		return o.child[:]
+	}
 	if o.x == nil {
 		return nil
 	}
@@ -293,10 +300,8 @@ type graphEncodeState struct {
 
 	mapSlots map[*typeInfo]mapSlots
 
-	// coverBuf and absorbBuf are scratch slices reused across cover and
-	// newContainer calls.
-	coverBuf  []elemRange
-	absorbBuf []int32
+	// coverBuf is scratch space for cover.
+	coverBuf []elemRange
 	// tmpRange and tmpChunk are 1-element arrays sliced via [:] in coveredList
 	// and chunkList to return a 1-element slice for inline single-range arrays
 	// (o.cov / o.ch) without heap allocation or taking a slice into movable
@@ -472,7 +477,6 @@ func (es *graphEncodeState) release() {
 	es.types.reset()
 	es.binaryBuf = es.binaryBuf[:0]
 	es.coverBuf = es.coverBuf[:0]
-	es.absorbBuf = es.absorbBuf[:0]
 	for _, sc := range es.mapSlots {
 		sc.k.SetZero()
 		sc.e.SetZero()
