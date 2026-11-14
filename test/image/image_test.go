@@ -656,20 +656,9 @@ func writeFileInContainer(ctx context.Context, d *dockerutil.Container, filePath
 }
 
 func dockerInGvisorExecOutput(ctx context.Context, d *dockerutil.Container, cmd []string) (string, error) {
-	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
 	if err != nil {
-		return "", fmt.Errorf("docker exec failed: %v", err)
-	}
-	output, err := execProc.Logs()
-	if err != nil {
-		return "", fmt.Errorf("docker logs failed: %v", err)
-	}
-	status, err := execProc.WaitExitStatus(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get exit code: %v", err)
-	}
-	if status != 0 {
-		return output, fmt.Errorf("command %v failed with status %d, output: %q", cmd, status, output)
+		return output, fmt.Errorf("command %v: %w, output: %q", cmd, err, output)
 	}
 	return output, nil
 }
