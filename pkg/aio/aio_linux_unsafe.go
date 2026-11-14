@@ -112,13 +112,16 @@ func (q *LinuxQueue) Add(r Request) {
 
 // Wait implements Queue.Wait.
 func (q *LinuxQueue) Wait(cs []Completion, minCompletions int) ([]Completion, error) {
-	if len(q.iocbs) != 0 {
-		_, _, e := unix.Syscall(unix.SYS_IO_SUBMIT, q.ctxID, uintptr(len(q.iocbs)), uintptr(unsafe.Pointer(unsafe.SliceData(q.iocbPtrs))))
-		q.iocbs = q.iocbs[:0]
+	// io_submit returns the number of accepted requests, even if a later
+	// request fails. Submit the remainder before waiting for its completions.
+	for pending := q.iocbPtrs[:len(q.iocbs)]; len(pending) > 0; {
+		n, _, e := unix.Syscall(unix.SYS_IO_SUBMIT, q.ctxID, uintptr(len(pending)), uintptr(unsafe.Pointer(unsafe.SliceData(pending))))
 		if e != 0 {
 			return cs, e
 		}
+		pending = pending[n:]
 	}
+	q.iocbs = q.iocbs[:0]
 	for {
 		if ring := q.ring(); ring.Magic == linux.AIO_RING_MAGIC {
 			nr := ring.Nr
