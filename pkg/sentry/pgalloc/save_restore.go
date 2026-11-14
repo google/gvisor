@@ -159,6 +159,12 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 	for _, s := range pb.UnwasteHuge {
 		f.unwasteHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
 	}
+	f.wasteBytes = 0
+	for _, unwaste := range []*unwasteSet{&f.unwasteSmall, &f.unwasteHuge} {
+		for gap := unwaste.FirstGap(); gap.Ok(); gap = gap.NextGap() {
+			f.wasteBytes += gap.Range().Length()
+		}
+	}
 	return nil
 }
 
