@@ -2204,6 +2204,8 @@ func TestNATICMPError(t *testing.T) {
 		name       string
 		proto      tcpip.TransportProtocolNumber
 		buf        []byte
+		extensions []byte
+		next       uint8
 		checkNATed func(*testing.T, *buffer.View)
 	}
 
@@ -2457,7 +2459,39 @@ func TestNATICMPError(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			for _, transportType := range test.transportTypes {
+			transportTypes := test.transportTypes
+			if test.netProto == header.IPv6ProtocolNumber {
+				for _, transport := range test.transportTypes {
+					for _, extension := range []struct {
+						name string
+						next uint8
+						data []byte
+					}{
+						{
+							name: "DestinationOptions",
+							next: uint8(header.IPv6DestinationOptionsExtHdrIdentifier),
+							data: []byte{uint8(transport.proto), 0, 0, 0, 0, 0, 0, 0},
+						},
+						{
+							name: "ExtensionChain",
+							next: uint8(header.IPv6HopByHopOptionsExtHdrIdentifier),
+							data: []byte{
+								uint8(header.IPv6RoutingExtHdrIdentifier), 0, 0, 0, 0, 0, 0, 0,
+								uint8(header.IPv6FragmentExtHdrIdentifier), 0, 0, 0, 0, 0, 0, 0,
+								uint8(header.IPv6DestinationOptionsExtHdrIdentifier), 0, 0, 0, 1, 2, 3, 4,
+								uint8(transport.proto), 0, 0, 0, 0, 0, 0, 0,
+							},
+						},
+					} {
+						extended := transport
+						extended.name += "/" + extension.name
+						extended.extensions = extension.data
+						extended.next = extension.next
+						transportTypes = append(transportTypes, extended)
+					}
+				}
+			}
+			for _, transportType := range transportTypes {
 				t.Run(transportType.name, func(t *testing.T) {
 					for _, icmpType := range test.icmpTypes {
 						t.Run(icmpType.name, func(t *testing.T) {
@@ -2530,7 +2564,7 @@ func TestNATICMPError(t *testing.T) {
 
 									ipt.ForceReplaceTable(stack.NATID, table, ipv6)
 
-									buf := transportType.buf
+									buf := append([]byte(nil), transportType.buf...)
 
 									ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
 										Payload: buffer.MakeWithData(append([]byte{}, buf...)),
@@ -2549,7 +2583,23 @@ func TestNATICMPError(t *testing.T) {
 											t.FailNow()
 										}
 
-										pktSlice := pktView.AsSlice()[:pktView.Size()-trimTest.trimLen]
+										pktSlice := pktView.AsSlice()
+										if len(transportType.extensions) != 0 {
+											// Establish the flow using an ordinary packet, then exercise
+											// extension parsing specifically in the ICMP quote.
+											addExtensions := func(packet []byte) []byte {
+												extended := append([]byte(nil), packet[:header.IPv6MinimumSize]...)
+												extended = append(extended, transportType.extensions...)
+												extended = append(extended, packet[header.IPv6MinimumSize:]...)
+												ip := header.IPv6(extended)
+												ip.SetNextHeader(transportType.next)
+												ip.SetPayloadLength(uint16(len(extended) - header.IPv6MinimumSize))
+												return extended
+											}
+											pktSlice = addExtensions(pktSlice)
+											buf = addExtensions(buf)
+										}
+										pktSlice = pktSlice[:len(pktSlice)-trimTest.trimLen]
 										buf = buf[:len(buf)-trimTest.trimLen]
 
 										ep1.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
