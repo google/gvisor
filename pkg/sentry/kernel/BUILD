@@ -440,6 +440,7 @@ go_test(
         "kernel_idle_test.go",
         "kernel_restore_test.go",
         "pending_signals_test.go",
+        "ptrace_mode_test.go",
         "seccomp_cache_test.go",
         "table_test.go",
         "task_signals_test.go",
