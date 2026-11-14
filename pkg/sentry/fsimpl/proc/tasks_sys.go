@@ -629,6 +629,22 @@ func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return err
 }
 
+// SetTCPBufferSize applies a tcp_rmem or tcp_wmem sysctl to a network stack
+// during sandbox setup, before any application can access it.
+func SetTCPBufferSize(ctx context.Context, stack inet.Stack, name, value string) error {
+	d := tcpMemData{stack: stack}
+	switch name {
+	case "tcp_rmem":
+		d.dir = tcpRMem
+	case "tcp_wmem":
+		d.dir = tcpWMem
+	default:
+		return fmt.Errorf("unknown TCP buffer sysctl %q", name)
+	}
+	_, err := d.write(ctx, usermem.BytesIOSequence([]byte(value)), true)
+	return err
+}
+
 // Write implements vfs.WritableDynamicBytesSource.Write.
 //
 // +checklocksexclude:d.mu
@@ -637,6 +653,11 @@ func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
+	return d.write(ctx, src, false)
+}
+
+// +checklocksexclude:d.mu
+func (d *tcpMemData) write(ctx context.Context, src usermem.IOSequence, requireFullValue bool) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	size, err := d.readSizeLocked()
@@ -647,6 +668,9 @@ func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	n, err := ParseInt32Vec(ctx, src, buf)
 	if err != nil || n == 0 {
 		return 0, err
+	}
+	if requireFullValue && n != src.NumBytes() {
+		return 0, fmt.Errorf("consumed %d of %d bytes", n, src.NumBytes())
 	}
 	newSize := inet.TCPBufferSize{
 		Min:     int(buf[0]),
