@@ -63,7 +63,7 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, parent.VFSDentry()); err != nil {
+		if err := rp.CheckMount(ctx, nil, parent.VFSDentry()); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
@@ -76,7 +76,7 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 	if err != nil {
 		return nil, false, err
 	}
-	if err := rp.CheckMount(ctx, next.VFSDentry()); err != nil {
+	if err := rp.CheckMount(ctx, d.VFSDentry(), next.VFSDentry()); err != nil {
 		return nil, false, err
 	}
 	// Resolve any symlink at current path component.
