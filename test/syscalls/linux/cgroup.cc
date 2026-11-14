@@ -428,7 +428,8 @@ TEST(Cgroup, CantRenameControlFile) {
   SKIP_IF(!CgroupsAvailable());
   Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
 
-  const std::string control_file_path = c.Relpath("cgroup.procs");
+  [[maybe_unused]] const std::string control_file_path =
+      c.Relpath("cgroup.procs");
   EXPECT_THAT(
       rename(c.Relpath("cgroup.procs").c_str(), c.Relpath("foo").c_str()),
       SyscallFailsWithErrno(ENOTDIR));

@@ -2254,7 +2254,7 @@ TEST(MountTest, SlavePropagationEvent) {
   auto const child =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dst_master.path()));
 
-  const std::string master_child_path =
+  [[maybe_unused]] const std::string master_child_path =
       JoinPath(dst_master.path(), Basename(child.path()));
   const std::string slave_child_path =
       JoinPath(dst.path(), Basename(child.path()));
