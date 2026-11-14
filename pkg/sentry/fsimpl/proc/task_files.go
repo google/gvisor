@@ -885,7 +885,7 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "0 ")
 
 	// Start time is relative to boot time, expressed in clock ticks.
-	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(s.task.StartTime().Sub(s.task.Kernel().Timekeeper().BootTime())))
+	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(s.task.StartTimeSinceBoot()))
 
 	var vss, rss uint64
 	if mm := getMM(s.task); mm != nil {
