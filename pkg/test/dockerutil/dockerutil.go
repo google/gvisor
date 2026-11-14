@@ -33,6 +33,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
+	runscconfig "gvisor.dev/gvisor/runsc/config"
 )
 
 var (
@@ -180,6 +181,22 @@ func RuntimeArgs() ([]string, error) {
 		args = append(args, arg)
 	}
 	return args, nil
+}
+
+// RuntimeConfig returns the runsc configuration that the current runtime's
+// arguments select, parsed with runsc's own flags.
+func RuntimeConfig() (*runscconfig.Config, error) {
+	args, err := RuntimeArgs()
+	if err != nil {
+		return nil, err
+	}
+	flagSet := flag.NewFlagSet("runtime", flag.ContinueOnError)
+	flagSet.SetOutput(io.Discard)
+	runscconfig.RegisterFlags(flagSet)
+	if err := flagSet.Parse(args); err != nil {
+		return nil, fmt.Errorf("failed to parse runtime arguments %q: %w", args, err)
+	}
+	return runscconfig.NewFromFlags(flagSet)
 }
 
 // IsGVisorRuntime returns whether the default container runtime used by

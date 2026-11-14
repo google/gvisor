@@ -31,6 +31,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -112,6 +113,19 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		GroupName: "nvidiactl",
 	}); err != nil {
 		return nil, err
+	}
+
+	if opts.DriverCaps&nvconf.CapDisplay != 0 {
+		for minor := uint32(drmRenderMinorBase); minor <= drmRenderMinorMax; minor++ {
+			if err := vfsObj.RegisterDevice(vfs.CharDevice, drmMajor, minor, &drmRenderDevice{
+				nvp:   nvp,
+				minor: minor,
+			}, &vfs.RegisterDeviceOptions{
+				GroupName: "render",
+			}); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	uvmDevMajor, err := vfsObj.GetDynamicCharDevMajor()
@@ -250,6 +264,17 @@ type nvproxy struct {
 
 	clientsMu sync.RWMutex `state:"nosave"`
 	clients   map[nvgpu.Handle]*rootClient
+
+	// drmFileIDs numbers the sandbox's render node opens, for
+	// DRM_NVIDIA_GET_DRM_FILE_UNIQUE_ID.
+	drmFileIDs atomicbitops.Uint64
+}
+
+// nextDRMFileID returns the unique ID of a new render node open. IDs count
+// from 1 within the sandbox, so they reveal nothing about opens elsewhere on
+// the host.
+func (nvp *nvproxy) nextDRMFileID() uint64 {
+	return nvp.drmFileIDs.Add(1)
 }
 
 func nvproxyFromVFS(vfsObj *vfs.VirtualFilesystem) *nvproxy {

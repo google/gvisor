@@ -111,11 +111,13 @@ type driverABIEntry struct {
 //     set are not versioned.
 //  4. allocation classes within NV_ESC_RM_ALLOC in frontend device (based on
 //     NVOS64_PARAMETERS.HClass).
+//  5. nvidia-drm render node ioctls (see drmABI).
 type driverABI struct {
 	frontendIoctl   map[uint32]frontendIoctlHandler
 	uvmIoctl        map[uint32]uvmIoctlHandler
 	controlCmd      map[uint32]controlCmdHandler
 	allocationClass map[nvgpu.ClassID]allocationClassHandler
+	drm             drmABI
 
 	getInfo driverABIInfoFunc // lazy constructor for the DriverABIInfo
 }
@@ -549,6 +551,11 @@ func Init() {
 					nvgpu.NV20_SUBDEVICE_DIAG:        allocHandler(rmAllocNoParams, compUtil),
 				},
 
+				drm: drmABI{
+					devInfoSize:        20,
+					devInfoModesetOnly: 8, // generic_page_kind
+				},
+
 				getInfo: func() *DriverABIInfo {
 					return &DriverABIInfo{
 						FrontendInfos: map[uint32]IoctlInfo{
@@ -933,6 +940,7 @@ func Init() {
 		// 545.23.06 is an intermediate unqualified version from the main branch.
 		v545_23_06 := addUnsupportedDriverABI(545, 23, 06, func() *driverABI {
 			abi := v535_113_01()
+			abi.drm.devInfoSize = 28 // Adds supports_sync_fd and supports_semsurf.
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ctrlHandler(ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545], compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV00DE_CTRL_CMD_REQUEST_DATA_POLL] = ctrlHandler(rmControlSimple, compUtil)
@@ -974,6 +982,7 @@ func Init() {
 		// 550.40.07 is an intermediate unqualified version from the main branch.
 		v550_40_07 := addUnsupportedDriverABI(550, 40, 07, func() *driverABI {
 			abi := v545_23_06()
+			abi.drm.devInfoSize = 32 // Adds supports_alloc at offset 8.
 			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = feHandler(frontendIoctlSimple[nvgpu.IoctlWaitOpenComplete], compUtil)
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS47_PARAMETERS_V550], nvconf.CapGraphics|nvconf.CapVideo)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
@@ -1068,6 +1077,7 @@ func Init() {
 		// 555.42.02 is an intermediate unqualified version.
 		v555_42_02 := addUnsupportedDriverABI(555, 42, 02, func() *driverABI {
 			abi := v550_90_07()
+			abi.drm.fileUniqueID = true
 			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555], nvconf.CapVideo)
 			abi.controlCmd[nvgpu.NV90E7_CTRL_CMD_BBX_GET_LAST_FLUSH_TIME] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 			abi.controlCmd[nvgpu.NV00FE_CTRL_CMD_RESIZE_QUEUE] = ctrlHandler(rmControlSimple, compUtil)
@@ -1240,6 +1250,8 @@ func Init() {
 		// 575.51.02 is an intermediate unqualified version from the main branch.
 		v575_51_02 := addUnsupportedDriverABI(575, 51, 02, func() *driverABI {
 			abi := v570_133_20()
+			abi.drm.devInfoSize = 36        // Adds mig_device at offset 4.
+			abi.drm.devInfoModesetOnly = 12 // supports_alloc
 			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT)
 			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT_V575] = ctrlHandler(rmControlSimple, compUtil)
