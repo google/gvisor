@@ -1,3 +1,4 @@
+load("@bazel_lib//lib:run_binary.bzl", "run_binary")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
@@ -277,6 +278,48 @@ toolchain(
     ],
     toolchain = "@crosstool//:cc-compiler-aarch64",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+filegroup(
+    name = "go_export_srcs",
+    srcs = [
+        "AUTHORS",
+        "LICENSE",
+        "go.sum",
+        "//runsc:go_export_sources",
+        "//runsc/checkpointgofer:go_export_sources",
+        "//runsc/cmd/metricserver:go_export_sources",
+        "//runsc/cmd/netgofer:go_export_sources",
+        "//runsc/cmd/sentry:go_export_sources",
+        "//runsc/fdparking:fdparking.c",
+        "//runsc/prewarmer:prewarmer.c",
+        "//runsc/procumounter:procumounter.c",
+        "//shim:go_export_sources",
+        "//tools/checklocks/cmd/checklocks:go_export_sources",
+        "//webhook:go_export_sources",
+    ],
+)
+
+run_binary(
+    name = "go_export",
+    srcs = [
+        "go.mod",
+        ":go_export_srcs",
+        ":gopath",
+    ],
+    outs = ["go_export.zip"],
+    args = [
+        "--gopath",
+        "$(execpath :gopath)",
+        "--output",
+        "$@",
+        "--go-mod",
+        "$(execpath go.mod)",
+        "$(execpaths :go_export_srcs)",
+    ],
+    mnemonic = "GoExport",
+    tool = "//tools/go_export:assemble",
+    visibility = ["//visibility:public"],
 )
 
 # gazelle generates Go BUILD rules from sources.
