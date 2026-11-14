@@ -805,7 +805,6 @@ steps:
 
   # Bwrap tests.
   - <<: *common
-    <<: *docker
     <<: *source_test
     label: ":package: bwrap tests (AMD64)"
     command: make bwrap-tests
@@ -813,7 +812,6 @@ steps:
       arch: "amd64"
       queue: "default"
   - <<: *common
-    <<: *docker
     <<: *source_test
     label: ":package: bwrap tests (ARM64)"
     command: make bwrap-tests
