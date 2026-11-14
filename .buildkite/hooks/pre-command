@@ -182,3 +182,27 @@ if [[ "${BUILDKITE_COMMAND:-}" =~ "pipeline upload" ]]; then
     pipeline_add_env SKIP_GPU_TESTS 1
   fi
 fi
+
+# The job and its post-command cleanup must use the same Bazel server.
+install_bazelisk() {
+  local dir="$1" bazelisk
+  if bazelisk="$(command -v bazelisk)"; then
+    ln -s -- "$bazelisk" "$dir/bazel"
+  else
+    GOBIN="$dir" go install github.com/bazelbuild/bazelisk@v1.30.0 &&
+      mv -- "$dir/bazelisk" "$dir/bazel"
+  fi
+}
+
+if [[ "${DOCKER_BUILD:-}" == false ]]; then
+  BUILDKITE_BAZEL_DIRECTORY="$(mktemp -d)"
+  if ! install_bazelisk "$BUILDKITE_BAZEL_DIRECTORY"; then
+    rm -f -- "$BUILDKITE_BAZEL_DIRECTORY"/{bazel,bazelisk}
+    rmdir -- "$BUILDKITE_BAZEL_DIRECTORY"
+    exit 1
+  fi
+  export BUILDKITE_BAZEL_DIRECTORY
+  export PATH="$BUILDKITE_BAZEL_DIRECTORY:$PATH"
+  USE_BAZEL_VERSION="$(<.bazelversion)"
+  export USE_BAZEL_VERSION USE_BAZEL_FALLBACK_VERSION=error:
+fi
