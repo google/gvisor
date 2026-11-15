@@ -305,35 +305,27 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					t.Fatalf("did not receive message from DUT: %s", err)
 				}
 
+				if wantErrno != 0 {
+					// If the DUT drops the ICMP error, no datagram will wake the first recv.
+					dut.SetSockOptTimeval(t, remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 10})
+				}
 				var wg sync.WaitGroup
-				wg.Add(2)
-				go func() {
-					defer wg.Done()
-
-					if wantErrno != unix.Errno(0) {
-						ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
-						if ret != -1 {
-							t.Errorf("recv during ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", wantErrno)
-							return
+				wg.Go(func() {
+					ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
+					if wantErrno != 0 {
+						if ret != -1 || err != wantErrno {
+							t.Errorf("recv during ICMP error = (%d, %v), want (-1, %v)", ret, err, wantErrno)
 						}
-						if err != wantErrno {
-							t.Errorf("recv during ICMP error resulted in error (%[1]d) %[1]v, expected (%[2]d) %[2]v", err, wantErrno)
-							return
-						}
+					} else if ret == -1 {
+						t.Errorf("recv after ICMP error failed with (%[1]d) %[1]v", err)
 					}
+				})
 
-					if ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0); ret == -1 {
-						t.Errorf("recv after ICMP error failed with (%[1]d) %[1]", err)
-					}
-				}()
-
-				go func() {
-					defer wg.Done()
-
+				wg.Go(func() {
 					if ret, _, err := dut.RecvWithErrno(context.Background(), t, cleanFD, 100, 0); ret == -1 {
-						t.Errorf("recv on clean socket failed with (%[1]d) %[1]", err)
+						t.Errorf("recv on clean socket failed with (%[1]d) %[1]v", err)
 					}
-				}()
+				})
 
 				// TODO(b/155684889) This sleep is to allow time for the DUT to
 				// actually call recv since we want the ICMP error to arrive during the
@@ -344,8 +336,19 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				sendICMPError(t, &conn, icmpErr, udp)
 
 				conn.Send(t, testbench.UDP{DstPort: &cleanPort})
-				conn.Send(t, testbench.UDP{})
+				if wantErrno == 0 {
+					conn.Send(t, testbench.UDP{})
+					wg.Wait()
+					return
+				}
+
+				// Let the blocked recv observe the error before a datagram can satisfy it.
 				wg.Wait()
+				if t.Failed() {
+					return
+				}
+				conn.Send(t, testbench.UDP{})
+				dut.Recv(t, remoteFD, 100, 0)
 			})
 		}
 	}
