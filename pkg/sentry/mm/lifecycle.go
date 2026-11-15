@@ -114,13 +114,14 @@ func (mm *MemoryManager) abortForkLocked(ctx context.Context, droppedIDs []memma
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
-	// Systrap cares about the GS register: see systrap.go/NewAddressSpace.
+	// Systrap syscall patching state is address-space state, but the platform
+	// address space is recreated by Fork.
 	mm.activeMu.RLock()
-	gsInUse := mm.gsInUse
+	syscallPatchingDisabled := mm.syscallPatchingDisabled
 	mm.activeMu.RUnlock()
 
 	as, err := mm.p.NewAddressSpace(platform.AddressSpaceOptions{
-		DisableSyscallPatching: gsInUse,
+		DisableSyscallPatching: syscallPatchingDisabled,
 	})
 	if err != nil {
 		return nil, err
@@ -220,7 +221,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.activeMu.Unlock()
 	mm2.activeMu.NestedLock(activeLockForked)
 	defer mm2.activeMu.NestedUnlock(activeLockForked)
-	mm2.gsInUse = gsInUse
+	mm2.syscallPatchingDisabled = syscallPatchingDisabled
 	if dontforks || mm.hasPinned {
 		defer mm.pmas.MergeInsideRange(mm.applicationAddrRange())
 	}

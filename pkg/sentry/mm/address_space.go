@@ -32,6 +32,21 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 	return mm.as
 }
 
+// PrepareForPtrace prepares mm for ptrace access, preserving this state
+// across fork and restore.
+//
+// Preconditions: The caller must hold a user reference on mm.
+func (mm *MemoryManager) PrepareForPtrace(ctx context.Context) error {
+	if err := mm.AddressSpace().PrepareForPtrace(ctx, mm); err != nil {
+		return err
+	}
+
+	mm.activeMu.Lock()
+	mm.syscallPatchingDisabled = true
+	mm.activeMu.Unlock()
+	return nil
+}
+
 // UserModifiedGS notifies the address space that the user has modified the GS
 // register.
 func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
@@ -41,7 +56,7 @@ func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
 	}
 
 	mm.activeMu.Lock()
-	mm.gsInUse = true
+	mm.syscallPatchingDisabled = true
 	mm.activeMu.Unlock()
 	return nil
 }
