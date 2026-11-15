@@ -242,6 +242,35 @@ func TestFDTableRemoveDoesNotGrow(t *testing.T) {
 	}
 }
 
+func TestFDTableKeepClosedFDs(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, file *vfs.FileDescription, _ *limits.LimitSet) {
+		defer fdTable.DecRef(ctx)
+		for fd := int32(0); fd < 2; fd++ {
+			if _, err := fdTable.NewFDAt(ctx, fd, file, FDFlags{}); err != nil {
+				t.Fatalf("NewFDAt(%d): %v", fd, err)
+			}
+		}
+		fdTable.KeepClosedFDs(func(f *vfs.FileDescription) bool { return f == file })
+		fdTable.Remove(ctx, 0).DecRef(ctx)
+		if got := fdTable.Remove(ctx, 0); got != nil {
+			t.Errorf("second Remove(0): got a file, want nil")
+		}
+		// close_range must skip kept FD 0 and still close FD 1.
+		if fd, got := fdTable.RemoveNextInRange(ctx, 0, 1); fd != 1 || got == nil {
+			t.Fatalf("RemoveNextInRange(0, 1): got FD %d, want 1", fd)
+		} else {
+			got.DecRef(ctx)
+		}
+		if fds, err := fdTable.NewFDs(ctx, 0, []*vfs.FileDescription{file}, FDFlags{}); err != nil || fds[0] != 2 {
+			t.Fatalf("NewFDs while kept: got %v, %v, want [2]", fds, err)
+		}
+		fdTable.ReleaseKeptFDs()
+		if fds, err := fdTable.NewFDs(ctx, 0, []*vfs.FileDescription{file}, FDFlags{}); err != nil || fds[0] != 0 {
+			t.Fatalf("NewFDs after ReleaseKeptFDs: got %v, %v, want [0]", fds, err)
+		}
+	})
+}
+
 func TestDescriptorFlags(t *testing.T) {
 	runTest(t, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
 		if df, err := fdTable.NewFDAt(ctx, 2, fd, FDFlags{CloseOnExec: true}); err != nil {
