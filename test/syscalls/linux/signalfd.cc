@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -40,6 +41,7 @@
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -278,11 +280,20 @@ TEST_P(SignalfdTest, SetMask) {
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallFailsWithErrno(EWOULDBLOCK));
 
+  // The pending signal is not yet readable through the signalfd.
+  FileDescriptor epfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd.get(), fd.get(), EPOLLIN, 0));
+  struct epoll_event event = {};
+  EXPECT_THAT(epoll_wait(epfd.get(), &event, 1, 0),
+              SyscallSucceedsWithValue(0));
+
   // Change the signal mask.
   sigaddset(&mask, signo);
   ASSERT_THAT(signalfd(fd.get(), &mask, 0), SyscallSucceeds());
 
-  // We should now have the signal.
+  // The mask change alone must wake the existing epoll interest.
+  EXPECT_THAT(epoll_wait(epfd.get(), &event, 1, 0),
+              SyscallSucceedsWithValue(1));
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
   EXPECT_EQ(rbuf.ssi_signo, signo);
