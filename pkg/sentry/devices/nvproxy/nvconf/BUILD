@@ -8,6 +8,7 @@ go_library(
     name = "nvconf",
     srcs = [
         "caps.go",
+        "devroot.go",
         "hostdriver_unsafe.go",
         "hostsettings.go",
         "nvconf.go",
@@ -29,6 +30,13 @@ go_library(
 go_test(
     name = "nvconf_test",
     size = "small",
-    srcs = ["caps_test.go"],
+    srcs = [
+        "caps_test.go",
+        "devroot_test.go",
+    ],
     embed = [":nvconf"],
+    deps = [
+        "//pkg/abi/nvgpu",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

@@ -15,7 +15,12 @@
 package sandboxsetup
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func TestShouldExposeNvidiaDevice(t *testing.T) {
@@ -84,6 +89,59 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 			got := ShouldExposeTpuDevice(tst.path)
 			if got != tst.want {
 				t.Errorf("ShouldExposeTpuDevice(%q) = %v, want %v", tst.path, got, tst.want)
+			}
+		})
+	}
+}
+
+func TestOpenCharDevice(t *testing.T) {
+	// /dev/null stands in for an NVIDIA device: a test can create no device
+	// files, but /dev/null is a character device, 1:3, on any Linux host.
+	const nullMajor, nullMinor = 1, 3
+
+	dir := t.TempDir()
+	regular := filepath.Join(dir, "regular")
+	if err := os.WriteFile(regular, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink("/dev/null", link); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		src     string
+		dev     specs.LinuxDevice
+		wantErr string
+	}{
+		{name: "matching device", src: "/dev/null", dev: specs.LinuxDevice{Major: nullMajor, Minor: nullMinor}},
+		{name: "other minor", src: "/dev/null", dev: specs.LinuxDevice{Major: nullMajor, Minor: nullMinor + 1}, wantErr: "is device 1:3, but the spec says 1:4"},
+		{name: "other major", src: "/dev/null", dev: specs.LinuxDevice{Major: nullMajor + 1, Minor: nullMinor}, wantErr: "is device 1:3, but the spec says 2:3"},
+		{name: "regular file", src: regular, dev: specs.LinuxDevice{Major: nullMajor, Minor: nullMinor}, wantErr: "is not a character device"},
+		{name: "symlink to the device", src: link, dev: specs.LinuxDevice{Major: nullMajor, Minor: nullMinor}, wantErr: "is not a character device"},
+		{name: "directory", src: dir, dev: specs.LinuxDevice{Major: nullMajor, Minor: nullMinor}, wantErr: "is not a character device"},
+		{name: "missing", src: filepath.Join(dir, "missing"), dev: specs.LinuxDevice{Major: nullMajor, Minor: nullMinor}, wantErr: "no such file or directory"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := openCharDevice(tc.src, tc.dev, "/proc")
+			if f != nil {
+				defer f.Close()
+			}
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("openCharDevice(%q, %+v) failed: %v", tc.src, tc.dev, err)
+				}
+				if !strings.HasPrefix(f.Name(), "/proc/self/fd/") {
+					t.Errorf("openCharDevice(%q, %+v) returned a file named %q, want one named by its path under /proc/self/fd", tc.src, tc.dev, f.Name())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("openCharDevice(%q, %+v) error = %v, want it to contain %q", tc.src, tc.dev, err, tc.wantErr)
+			}
+			if f != nil {
+				t.Errorf("openCharDevice(%q, %+v) returned a file along with an error", tc.src, tc.dev)
 			}
 		})
 	}

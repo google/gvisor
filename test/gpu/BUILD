@@ -20,6 +20,24 @@ go_test(
 )
 
 go_test(
+    name = "devroot_test",
+    srcs = ["devroot_test.go"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "@com_github_docker_docker//api/types/container:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
     name = "pytorch_test",
     srcs = ["pytorch_test.go"],
     # Needed to invalidate the bazel cache in case of any code changes.
