@@ -899,8 +899,8 @@ func TestFSCheckpointAnnotation(t *testing.T) {
 				t.Fatalf("Error saving filesystem checkpoint from container 1, ws: %v, err: %v", ws, err)
 			}
 
-			// The annotation resumes execution after saving. Destroy the whole
-			// sandbox instead of signaling sub-containers after the root exits.
+			// The annotation resumes execution after saving, so stop and reap the
+			// sandbox before restoring it.
 			if err := conts[0].Destroy(); err != nil {
 				t.Fatalf("Error destroying checkpointed sandbox: %v", err)
 			}
