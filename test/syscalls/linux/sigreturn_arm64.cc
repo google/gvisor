@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <execinfo.h>
 #include <linux/unistd.h>
 #include <signal.h>
 #include <stdint.h>
@@ -19,6 +20,8 @@
 #include <sys/types.h>
 #include <sys/ucontext.h>
 #include <unistd.h>
+
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
@@ -92,6 +95,82 @@ TEST(SigreturnTest, CheckX7) {
   // The following check verifies that %x7 was not clobbered
   // when returning from the signal handler (via sigreturn(2)).
   EXPECT_EQ(x7, ~kOrigX7);
+}
+
+// Values recorded by sigframeHandler.
+uintptr_t handler_cfa;
+uintptr_t handler_info;
+uintptr_t handler_uc;
+uint64_t handler_pc;
+int backtrace_size;
+bool backtrace_has_pc;
+
+void sigframeHandler(int sig, siginfo_t* siginfo, void* _uc) {
+  ucontext_t* uc = reinterpret_cast<ucontext_t*>(_uc);
+  // The CFA of the signal handler is the stack pointer at handler entry.
+  handler_cfa = reinterpret_cast<uintptr_t>(__builtin_dwarf_cfa());
+  handler_info = reinterpret_cast<uintptr_t>(siginfo);
+  handler_uc = reinterpret_cast<uintptr_t>(uc);
+  handler_pc = uc->uc_mcontext.pc;
+
+  // Unwind through the signal frame. The unwinder finds the interrupted
+  // context at a fixed offset from the stack pointer.
+  void* pcs[32];
+  backtrace_size = backtrace(pcs, 32);
+  backtrace_has_pc = false;
+  for (int i = 0; i < backtrace_size; i++) {
+    if (reinterpret_cast<uint64_t>(pcs[i]) == handler_pc) {
+      backtrace_has_pc = true;
+    }
+  }
+}
+
+// Sends SIGUSR1 to the current thread and checks that the signal frame has
+// siginfo at the stack pointer, followed by the ucontext.
+void CheckSignalFrameLayout(int sa_flags) {
+  // backtrace() can allocate memory on its first call. Call it before the
+  // signal handler does.
+  void* pcs[1];
+  backtrace(pcs, 1);
+
+  struct sigaction sa = {};
+  sigfillset(&sa.sa_mask);
+  sa.sa_sigaction = sigframeHandler;
+  sa.sa_flags = SA_SIGINFO | sa_flags;
+  auto const action_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+  auto const mask_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, SIGUSR1));
+
+  handler_cfa = 0;
+  ASSERT_THAT(syscall(__NR_tgkill, getpid(), syscall(__NR_gettid), SIGUSR1),
+              SyscallSucceeds());
+  ASSERT_NE(handler_cfa, 0u);
+
+  EXPECT_EQ(handler_cfa % 16, 0u);
+  EXPECT_EQ(handler_info, handler_cfa);
+  EXPECT_EQ(handler_uc, handler_cfa + sizeof(siginfo_t));
+  EXPECT_TRUE(backtrace_has_pc)
+      << "backtrace() returned " << backtrace_size
+      << " frames, none at the interrupted pc " << handler_pc;
+}
+
+TEST(SigreturnTest, SignalFrameLayout) { CheckSignalFrameLayout(0); }
+
+TEST(SigreturnTest, SignalFrameLayoutOnAltStack) {
+  std::vector<char> altstack(64 * 1024);
+  stack_t ss = {};
+  ss.ss_sp = altstack.data();
+  ss.ss_size = altstack.size();
+  stack_t old_ss;
+  ASSERT_THAT(sigaltstack(&ss, &old_ss), SyscallSucceeds());
+
+  CheckSignalFrameLayout(SA_ONSTACK);
+  EXPECT_GE(handler_cfa, reinterpret_cast<uintptr_t>(altstack.data()));
+  EXPECT_LT(handler_cfa,
+            reinterpret_cast<uintptr_t>(altstack.data()) + altstack.size());
+
+  ASSERT_THAT(sigaltstack(&old_ss, nullptr), SyscallSucceeds());
 }
 
 }  // namespace
