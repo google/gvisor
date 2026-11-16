@@ -1152,7 +1152,12 @@ TEST_F(OverlayCopyUpTest, Chown) {
 
 // Changing the timestamps of a file causes it to be copied up.
 TEST_F(OverlayCopyUpTest, Utimes) {
-  ASSERT_NO_ERRNO(CreateWithContents(LowerPath("file"), ""));
+  // Span several 32 KiB copy-up buffers and end with a partial one.
+  std::string contents(2 * 32 * 1024 + 17, '\0');
+  for (size_t i = 0; i < contents.size(); ++i) {
+    contents[i] = static_cast<char>(i % 251);
+  }
+  ASSERT_NO_ERRNO(CreateWithContents(LowerPath("file"), contents));
   ASSERT_NO_ERRNO(MountOverlay());
 
   const std::string overlay_path = MergedPath("file");
@@ -1163,6 +1168,7 @@ TEST_F(OverlayCopyUpTest, Utimes) {
   auto st = ASSERT_NO_ERRNO_AND_VALUE(Stat(overlay_path));
   EXPECT_EQ(1, st.st_atime);
   EXPECT_EQ(2, st.st_mtime);
+  EXPECT_THAT(GetContents(overlay_path), IsPosixErrorOkAndHolds(contents));
 }
 
 // Inode attributes are preserved across copy up.
