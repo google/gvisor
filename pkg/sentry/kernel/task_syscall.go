@@ -233,35 +233,45 @@ func (t *Task) doSyscall() taskRunState {
 	tmp := uintptr(unix.ENOSYS)
 	t.Arch().SetReturn(-tmp)
 
+	if next, ok := t.ptraceSyscallEnter(); ok {
+		return next
+	}
+	if next, ok := t.doSyscallSeccomp(sysno, args, false /* recheckAfterTrace */); !ok {
+		return next
+	}
+	syscallCounter.Increment()
+	return t.doSyscallInvoke(sysno, args)
+}
+
+func (t *Task) doSyscallSeccomp(sysno uintptr, args arch.SyscallArguments, recheckAfterTrace bool) (taskRunState, bool) {
 	// Check seccomp filters. The nil check is for performance (as seccomp use
 	// is rare), not needed for correctness.
 	if t.seccomp.Load() != nil && !t.consumeSeccompRestartSyscallBypass(sysno) {
-		switch r := t.checkSeccompSyscall(int32(sysno), args, hostarch.Addr(t.Arch().IP())); r {
+		switch r := t.checkSeccompSyscall(int32(sysno), args, hostarch.Addr(t.Arch().IP()), recheckAfterTrace); r {
 		case linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_TRAP:
 			t.Debugf("Syscall %d: denied by seccomp", sysno)
-			return (*runSyscallExit)(nil)
+			return (*runSyscallExit)(nil), false
 		case linux.SECCOMP_RET_ALLOW:
 			// ok
 		case linux.SECCOMP_RET_KILL_PROCESS:
 			t.Debugf("Syscall %d: killed by seccomp (process)", sysno)
 			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
-			return (*runExit)(nil)
+			return (*runExit)(nil), false
 		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("Syscall %d: killed by seccomp", sysno)
 			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
-			return (*runExit)(nil)
+			return (*runExit)(nil), false
 		case linux.SECCOMP_RET_TRACE:
 			t.Debugf("Syscall %d: stopping for PTRACE_EVENT_SECCOMP", sysno)
-			return (*runSyscallAfterPtraceEventSeccomp)(nil)
+			return (*runSyscallAfterPtraceEventSeccomp)(nil), false
 		default:
 			panic(fmt.Sprintf("Unknown seccomp result %d", r))
 		}
 	}
-
-	syscallCounter.Increment()
-	return t.doSyscallEnter(sysno, args)
+	return nil, true
 }
 
+// +stateify savable
 type runSyscallAfterPtraceEventSeccomp struct{}
 
 func (*runSyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
@@ -273,17 +283,14 @@ func (*runSyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
 	sysno := t.Arch().SyscallNo()
 	// "The tracer can skip the system call by changing the syscall number to
 	// -1." - Documentation/prctl/seccomp_filter.txt
-	if sysno == ^uintptr(0) {
+	if int32(sysno) < 0 {
 		return (*runSyscallExit)(nil).execute(t)
 	}
 	args := t.Arch().SyscallArgs()
-	return t.doSyscallEnter(sysno, args)
-}
-
-func (t *Task) doSyscallEnter(sysno uintptr, args arch.SyscallArguments) taskRunState {
-	if next, ok := t.ptraceSyscallEnter(); ok {
+	if next, ok := t.doSyscallSeccomp(sysno, args, true /* recheckAfterTrace */); !ok {
 		return next
 	}
+	syscallCounter.Increment()
 	return t.doSyscallInvoke(sysno, args)
 }
 
@@ -300,11 +307,15 @@ func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 	sysno := t.Arch().SyscallNo()
+	args := t.Arch().SyscallArgs()
+
+	if next, ok := t.doSyscallSeccomp(sysno, args, false /* recheckAfterTrace */); !ok {
+		return next
+	}
 	if sysno == ^uintptr(0) {
 		return (*runSyscallExit)(nil)
 	}
-	args := t.Arch().SyscallArgs()
-
+	syscallCounter.Increment()
 	return t.doSyscallInvoke(sysno, args)
 }
 
@@ -394,7 +405,7 @@ func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
 	// arguments and none of the vsyscalls uses more than two arguments.
 	args := t.Arch().SyscallArgs()
 	if t.seccomp.Load() != nil && !t.consumeSeccompRestartSyscallBypass(sysno) {
-		switch r := t.checkSeccompSyscall(int32(sysno), args, addr); r {
+		switch r := t.checkSeccompSyscall(int32(sysno), args, addr, false /* recheckAfterTrace */); r {
 		case linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_TRAP:
 			t.Debugf("vsyscall %d, caller %x: denied by seccomp", sysno, t.Arch().Value(caller))
 			return (*runApp)(nil)
