@@ -579,6 +579,10 @@ TEST(ArchPrctlTest, UnpatchSyscallsOnArchSetGS) {
   munmap(page, kPageSize);
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI pid_t CallStub(pid_t (*stub)()) {
+  return stub();
+}
+
 TEST(ArchPrctlTest, UnpatchSyscallsSkipsStaleSites) {
   SKIP_IF(GvisorPlatform() != Platform::kSystrap);
 
@@ -616,8 +620,8 @@ TEST(ArchPrctlTest, UnpatchSyscallsSkipsStaleSites) {
   uint8_t* reused_code = static_cast<uint8_t*>(reused_page) + 16;
   memcpy(unmapped_code, kSyscallStub, sizeof(kSyscallStub));
   memcpy(reused_code, kSyscallStub, sizeof(kSyscallStub));
-  ASSERT_EQ(reinterpret_cast<pid_t (*)()>(unmapped_code)(), getpid());
-  ASSERT_EQ(reinterpret_cast<pid_t (*)()>(reused_code)(), getpid());
+  ASSERT_EQ(CallStub(reinterpret_cast<pid_t (*)()>(unmapped_code)), getpid());
+  ASSERT_EQ(CallStub(reinterpret_cast<pid_t (*)()>(reused_code)), getpid());
   if (unmapped_code[0] != kJmpOpcode || reused_code[0] != kJmpOpcode) {
     GTEST_SKIP() << "Syscall patching is disabled";
   }
@@ -639,7 +643,7 @@ TEST(ArchPrctlTest, UnpatchSyscallsSkipsStaleSites) {
       mincore(reinterpret_cast<void*>(unmapped_addr), kPageSize, &resident),
       SyscallFailsWithErrno(ENOMEM));
   EXPECT_EQ(memcmp(reused_code, kReplacement, sizeof(kReplacement)), 0);
-  EXPECT_EQ(reinterpret_cast<pid_t (*)()>(reused_code)(), 42);
+  EXPECT_EQ(CallStub(reinterpret_cast<pid_t (*)()>(reused_code)), 42);
 }
 
 // Tests that multithreaded applications calling syscalls are safely interrupted
@@ -1061,7 +1065,7 @@ TEST(ArchPrctlTest, SigillAtRevertedPatchSiteIsDelivered) {
   // Systrap patches the stub the first time it runs.
   memcpy(code, kSyscallStub, sizeof(kSyscallStub));
   const pid_t pid = getpid();
-  ASSERT_EQ(stub(), pid);
+  ASSERT_EQ(CallStub(stub), pid);
   if (code[0] != kJmpOpcode) {
     GTEST_SKIP() << "Syscall patching is disabled";
   }
@@ -1070,7 +1074,7 @@ TEST(ArchPrctlTest, SigillAtRevertedPatchSiteIsDelivered) {
   ASSERT_THAT(arch_prctl(ARCH_SET_GS, reinterpret_cast<uintptr_t>(gs_page)),
               SyscallSucceeds());
   ASSERT_EQ(memcmp(code, kSyscallStub, sizeof(kSyscallStub)), 0);
-  ASSERT_EQ(stub(), pid);
+  ASSERT_EQ(CallStub(stub), pid);
 
   // Signal handler setup
   struct sigaction sa = {};
@@ -1096,7 +1100,7 @@ TEST(ArchPrctlTest, SigillAtRevertedPatchSiteIsDelivered) {
     if (sigsetjmp(reverted_patch_site_env, 1) == 0) {
       // SIGALRM ends the test if the fault is restarted forever.
       alarm(5);
-      stub();
+      CallStub(stub);
     }
     alarm(0);
 
