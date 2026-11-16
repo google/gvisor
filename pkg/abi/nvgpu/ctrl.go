@@ -889,7 +889,8 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080unix.h:
 const (
-	NV2080_CTRL_CMD_OS_UNIX_VIDMEM_PERSISTENCE_STATUS = 0x20803d07
+	NV2080_CTRL_CMD_OS_UNIX_VIDMEM_PERSISTENCE_STATUS     = 0x20803d07
+	NV2080_CTRL_CMD_OS_UNIX_GET_PCIE_PEER_MMIO_REMAP_INFO = 0x20803d09
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl503c.h:
