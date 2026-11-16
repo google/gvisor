@@ -235,6 +235,7 @@ type Boot struct {
 	// here because nvconf.HostSettings.FabricIMEXManagementDevMinor in
 	// particular is uint32 and there is no flag.Uint32Var().
 	procDriverNvidiaParams             string
+	procDriverNvidiaVersion            string
 	nvidiaFabricIMEXManagementDevMinor int64
 	nvidiaMNCCManagementDevMinor       int64
 
@@ -328,8 +329,35 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	// Nvidia driver properties.
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver ABI version to use, or 'latest' for the newest supported one")
 	f.StringVar(&b.procDriverNvidiaParams, "nvidia-host-params", "", "value of /proc/driver/nvidia/params on the host")
+	f.StringVar(&b.procDriverNvidiaVersion, "nvidia-host-version", "", "value of /proc/driver/nvidia/version on the host, or empty if the host has none")
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
 	f.Int64Var(&b.nvidiaMNCCManagementDevMinor, "nvidia-mncc-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/mncc-mgmt on the host")
+}
+
+func (b *Boot) applyNvidiaHostSettings(nvhs *nvconf.HostSettings, argOverride map[string]string) {
+	b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
+	argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
+	b.procDriverNvidiaVersion = nvhs.ProcDriverNvidiaVersion
+	argOverride["nvidia-host-version"] = nvhs.ProcDriverNvidiaVersion
+	if nvhs.HaveFabricIMEXManagement {
+		b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
+		argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
+	}
+	if nvhs.HaveMNCCManagement {
+		b.nvidiaMNCCManagementDevMinor = int64(nvhs.MNCCManagementDevMinor)
+		argOverride["nvidia-mncc-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.MNCCManagementDevMinor), 10)
+	}
+}
+
+func (b *Boot) nvidiaHostSettings() *nvconf.HostSettings {
+	return &nvconf.HostSettings{
+		ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
+		ProcDriverNvidiaVersion:      b.procDriverNvidiaVersion,
+		HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
+		FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
+		HaveMNCCManagement:           b.nvidiaMNCCManagementDevMinor >= 0,
+		MNCCManagementDevMinor:       uint32(b.nvidiaMNCCManagementDevMinor),
+	}
 }
 
 // willReexec returns true if this boot process will re-execute itself to
@@ -462,16 +490,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			if err != nil {
 				log.Warningf("Failed to get nvconf.HostSettings: %v", err)
 			} else {
-				b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
-				argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
-				if nvhs.HaveFabricIMEXManagement {
-					b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
-					argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
-				}
-				if nvhs.HaveMNCCManagement {
-					b.nvidiaMNCCManagementDevMinor = int64(nvhs.MNCCManagementDevMinor)
-					argOverride["nvidia-mncc-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.MNCCManagementDevMinor), 10)
-				}
+				b.applyNvidiaHostSettings(nvhs, argOverride)
 			}
 		}
 		timer.Reached("set nvproxy flags")
@@ -718,41 +737,35 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Create the loader.
 	bootArgs := boot.Args{
-		ID:                  f.Arg(0),
-		Spec:                spec,
-		Conf:                conf,
-		ControllerFD:        b.controllerFD,
-		Device:              fd.New(b.deviceFD),
-		PinRingFD:           b.pinRingFD,
-		CPUDMALatencyFD:     b.cpuDMALatencyFD,
-		GoferFDs:            b.ioFDs.GetArray(),
-		DevGoferFD:          b.devIoFD,
-		StdioFDs:            b.stdioFDs.GetArray(),
-		PassFDs:             b.passFDs.GetArray(),
-		ExecFD:              b.execFD,
-		ProcSelfFD:          procSelfFD,
-		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
-		GoferMountConfs:     b.goferMountConfs.GetArray(),
-		NumCPU:              b.cpuNum,
-		LifecycleNumCPU:     b.lifecycleCPUNum,
-		CPUQuota:            b.cpuQuota,
-		CPUPeriod:           b.cpuPeriod,
-		TotalMem:            b.totalMem,
-		TotalHostMem:        b.totalHostMem,
-		UserLogFD:           b.userLogFD,
-		RDMASysfs:           rdmaSnap,
-		ProductName:         b.productName,
-		PodInitConfigFD:     b.podInitConfigFD,
-		SinkFDs:             b.sinkFDs.GetArray(),
-		ProfileOpts:         profile.MakeOpts(&b.profileFDs, conf.ProfileGCInterval),
-		NvidiaDriverVersion: nvidiaDriverVersion,
-		NvidiaHostSettings: &nvconf.HostSettings{
-			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
-			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
-			FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
-			HaveMNCCManagement:           b.nvidiaMNCCManagementDevMinor >= 0,
-			MNCCManagementDevMinor:       uint32(b.nvidiaMNCCManagementDevMinor),
-		},
+		ID:                       f.Arg(0),
+		Spec:                     spec,
+		Conf:                     conf,
+		ControllerFD:             b.controllerFD,
+		Device:                   fd.New(b.deviceFD),
+		PinRingFD:                b.pinRingFD,
+		CPUDMALatencyFD:          b.cpuDMALatencyFD,
+		GoferFDs:                 b.ioFDs.GetArray(),
+		DevGoferFD:               b.devIoFD,
+		StdioFDs:                 b.stdioFDs.GetArray(),
+		PassFDs:                  b.passFDs.GetArray(),
+		ExecFD:                   b.execFD,
+		ProcSelfFD:               procSelfFD,
+		GoferFilestoreFDs:        b.goferFilestoreFDs.GetArray(),
+		GoferMountConfs:          b.goferMountConfs.GetArray(),
+		NumCPU:                   b.cpuNum,
+		LifecycleNumCPU:          b.lifecycleCPUNum,
+		CPUQuota:                 b.cpuQuota,
+		CPUPeriod:                b.cpuPeriod,
+		TotalMem:                 b.totalMem,
+		TotalHostMem:             b.totalHostMem,
+		UserLogFD:                b.userLogFD,
+		RDMASysfs:                rdmaSnap,
+		ProductName:              b.productName,
+		PodInitConfigFD:          b.podInitConfigFD,
+		SinkFDs:                  b.sinkFDs.GetArray(),
+		ProfileOpts:              profile.MakeOpts(&b.profileFDs, conf.ProfileGCInterval),
+		NvidiaDriverVersion:      nvidiaDriverVersion,
+		NvidiaHostSettings:       b.nvidiaHostSettings(),
 		HostTHP:                  b.hostTHP,
 		SaveFDs:                  b.saveFDs.GetFDs(),
 		SaveCheckpointGofer:      b.saveCheckpointGofer,

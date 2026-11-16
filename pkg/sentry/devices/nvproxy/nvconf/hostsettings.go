@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 
@@ -29,6 +30,10 @@ import (
 type HostSettings struct {
 	// ProcDriverNvidiaParams is the contents of /proc/driver/nvidia/params.
 	ProcDriverNvidiaParams string
+
+	// ProcDriverNvidiaVersion is the contents of /proc/driver/nvidia/version,
+	// or empty if the host has no such file or it cannot be read.
+	ProcDriverNvidiaVersion string
 
 	// If HaveFabricIMEXManagement is true, FabricIMEXManagementDevMinor is the
 	// device minor number advertised in
@@ -52,23 +57,36 @@ type HostSettingsOptions struct {
 
 // GetHostSettings returns HostSettings.
 func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
+	return getHostSettingsFrom("/proc/driver/nvidia", opts)
+}
+
+func getHostSettingsFrom(nvidiaProcDir string, opts HostSettingsOptions) (*HostSettings, error) {
 	settings := &HostSettings{}
 
-	params, err := os.ReadFile("/proc/driver/nvidia/params")
+	paramsPath := filepath.Join(nvidiaProcDir, "params")
+	params, err := os.ReadFile(paramsPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read /proc/driver/nvidia/params: %w", err)
+		return nil, fmt.Errorf("failed to read %s: %w", paramsPath, err)
 	}
 	settings.ProcDriverNvidiaParams = string(params)
 
+	versionPath := filepath.Join(nvidiaProcDir, "version")
+	version, err := readFileIfExists(versionPath)
+	if err != nil {
+		log.Warningf("Not serving %s: %v", versionPath, err)
+	}
+	settings.ProcDriverNvidiaVersion = version
+
 	if opts.WantFabricIMEXManagement {
-		fabricImexMgmt, err := os.ReadFile("/proc/driver/nvidia/capabilities/fabric-imex-mgmt")
+		fabricImexPath := filepath.Join(nvidiaProcDir, "capabilities", "fabric-imex-mgmt")
+		fabricImexMgmt, err := os.ReadFile(fabricImexPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read /proc/driver/nvidia/capabilities/fabric-imex-mgmt: %w", err)
+			return nil, fmt.Errorf("failed to read %s: %w", fabricImexPath, err)
 		}
 		minorRe := regexp.MustCompile(`DeviceFileMinor: (\d+)`)
 		m := minorRe.FindSubmatch(fabricImexMgmt)
 		if m == nil {
-			return nil, fmt.Errorf("failed to find DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt")
+			return nil, fmt.Errorf("failed to find DeviceFileMinor in %s", fabricImexPath)
 		}
 		minor, err := strconv.ParseUint(string(m[1]), 10, 32)
 		if err != nil {
@@ -77,10 +95,11 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 		settings.HaveFabricIMEXManagement = true
 		settings.FabricIMEXManagementDevMinor = uint32(minor)
 
-		if mnccMgmt, err := os.ReadFile("/proc/driver/nvidia/capabilities/mncc-mgmt"); err == nil {
+		mnccPath := filepath.Join(nvidiaProcDir, "capabilities", "mncc-mgmt")
+		if mnccMgmt, err := os.ReadFile(mnccPath); err == nil {
 			m := minorRe.FindSubmatch(mnccMgmt)
 			if m == nil {
-				return nil, fmt.Errorf("failed to find DeviceFileMinor in /proc/driver/nvidia/capabilities/mncc-mgmt")
+				return nil, fmt.Errorf("failed to find DeviceFileMinor in %s", mnccPath)
 			}
 			mnccMinor, err := strconv.ParseUint(string(m[1]), 10, 32)
 			if err != nil {
@@ -89,11 +108,24 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 			settings.HaveMNCCManagement = true
 			settings.MNCCManagementDevMinor = uint32(mnccMinor)
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("failed to read /proc/driver/nvidia/capabilities/mncc-mgmt: %w", err)
+			return nil, fmt.Errorf("failed to read %s: %w", mnccPath, err)
 		}
 	}
 
 	return settings, nil
+}
+
+// readFileIfExists returns the contents of the file at path, or an empty
+// string if no file exists at path.
+func readFileIfExists(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	return string(data), nil
 }
 
 // IMEXChannelCount returns the number of IMEX channels indicated by

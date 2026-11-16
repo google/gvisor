@@ -56,10 +56,15 @@ go_library(
 go_test(
     name = "sentrycmd_test",
     size = "small",
-    srcs = ["chroot_test.go"],
+    srcs = [
+        "boot_test.go",
+        "chroot_test.go",
+    ],
     embed = [":sentrycmd"],
     deps = [
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/config",
+        "//runsc/flag",
         "//runsc/specutils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
