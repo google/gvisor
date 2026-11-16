@@ -395,6 +395,15 @@ func (c *cgroupV2) CPUUsage() (uint64, error) {
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
 func (c *cgroupV2) NumCPU() (int, error) {
 	cpuset, err := getValue(c.MakePath(""), "cpuset.cpus.effective")
+	if errors.Is(err, os.ErrNotExist) {
+		// The cpuset controller isn't enabled here, e.g. because it isn't
+		// delegated to a rootless user, so it doesn't restrict the CPUs.
+		var set unix.CPUSet
+		if err := unix.SchedGetaffinity(0, &set); err != nil {
+			return 0, err
+		}
+		return set.Count(), nil
+	}
 	if err != nil {
 		return 0, err
 	}

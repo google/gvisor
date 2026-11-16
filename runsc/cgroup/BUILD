@@ -24,6 +24,7 @@ go_library(
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_coreos_go_systemd_v22//dbus:go_default_library",
         "@com_github_godbus_dbus_v5//:go_default_library",
+        "@com_github_moby_sys_userns//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

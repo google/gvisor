@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -810,4 +811,25 @@ func TestNewSelf(t *testing.T) {
 			t.Errorf("MakePath(cpu) = %q, want %q", got, want)
 		}
 	})
+}
+
+func TestNumCPU(t *testing.T) {
+	dir := t.TempDir()
+	cg := &cgroupV2{Mountpoint: dir}
+
+	// Without the cpuset controller, the CPU affinity applies.
+	var set unix.CPUSet
+	if err := unix.SchedGetaffinity(0, &set); err != nil {
+		t.Fatalf("SchedGetaffinity: %v", err)
+	}
+	if got, err := cg.NumCPU(); err != nil || got != set.Count() {
+		t.Errorf("NumCPU() without cpuset = %d, %v, want %d, nil", got, err, set.Count())
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus.effective"), []byte("0-2,5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cg.NumCPU(); err != nil || got != 4 {
+		t.Errorf("NumCPU() with cpuset = %d, %v, want 4, nil", got, err)
+	}
 }
