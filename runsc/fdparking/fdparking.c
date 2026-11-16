@@ -24,6 +24,8 @@
 // This makes sandbox teardown faster, because the Sentry process isn't the
 // last ref holder of these FDs, so its memory can be released earlier.
 // This `fdparking` process's purpose is to be the ring's last ref holder.
+// Once the sandbox has exited, it releases those FDs itself (see the end of
+// `fdparking_main`).
 //
 // Because this process must outlive the sentry, it tries its hardest to
 // minimize its runtime CPU and memory usage.
@@ -43,11 +45,12 @@
 // page-table pages, roughly halving the page-table cost and the anonymous
 // memory of the process.
 
-#include <asm/poll.h>     // POLLIN, POLLNVAL, struct pollfd.
-#include <asm/unistd.h>   // __NR_* syscall numbers for the target arch.
-#include <linux/errno.h>  // EBADF, EBADFD, EINTR.
-#include <linux/prctl.h>  // PR_SET_MM, PR_SET_TIMERSLACK.
-#include <linux/sched.h>  // SCHED_IDLE.
+#include <asm/poll.h>        // POLLIN, POLLNVAL, struct pollfd.
+#include <asm/unistd.h>      // __NR_* syscall numbers for the target arch.
+#include <linux/errno.h>     // EBADF, EBADFD, EINTR.
+#include <linux/io_uring.h>  // IORING_UNREGISTER_FILES.
+#include <linux/prctl.h>     // PR_SET_MM, PR_SET_TIMERSLACK.
+#include <linux/sched.h>     // SCHED_IDLE, SCHED_NORMAL.
 
 // The pidfd (see pidfd_open(2)) of the sandbox process.
 // Polls readable once the sandbox has exited.
@@ -205,6 +208,18 @@ __attribute__((noreturn, used)) void fdparking_main(void) {
     // Long-term parking.
     n = park(&pfd, 0);
   }
+  // The sandbox has exited. Release the pinned FDs now, from this process,
+  // rather than by exiting: the ring would then release them from a kernel
+  // worker, and the kernel releases files dropped by its workers one at a
+  // time, from a single queue. Each KVM VM FD waits out an RCU grace period
+  // as it is released, so sandboxes that exit faster than that leave their
+  // VMs, and the memory each one holds, queued behind each other. Released
+  // here, each sandbox's FDs are released by its own parking process, in
+  // parallel with every other's. Do it at normal priority, as the kernel
+  // worker would.
+  int normal_prio = 0;
+  sys5(__NR_sched_setscheduler, 0, SCHED_NORMAL, (long)&normal_prio, 0, 0);
+  sys5(__NR_io_uring_register, PIN_RING_FD, IORING_UNREGISTER_FILES, 0, 0, 0);
   sys_exit(n < 0 || (pfd.revents & POLLNVAL));
 }
 
