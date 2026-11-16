@@ -239,6 +239,7 @@ func (i *inode) afterLoad(goContext.Context) {
 
 // afterLoad is invoked by stateify.
 func (d *dentry) afterLoad(goContext.Context) {
+	d.aliasEntry.d = d
 	if d.refs.Load() != -1 {
 		refs.Register(d)
 	}

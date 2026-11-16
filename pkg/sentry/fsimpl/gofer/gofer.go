@@ -1100,6 +1100,23 @@ type inode struct {
 	// it points to. rsfs is protected by fs.inodeMu.
 	refs inodeRefs
 
+	// If this inode is not a directory, aliases lists the dentries that hold
+	// a reference on it, i.e. its cached names (hard links). It is used to
+	// find a surviving name for the file when one of its names is removed;
+	// see directfsInode.rebindHostFDs(). aliases is protected by fs.inodeMu.
+	aliases dentryList `state:"nosave"`
+
+	// hostFDsAlias is the dentry in aliases via whose name a directfs inode's
+	// host FDs were opened, or nil if that is unknown. The host FDs keep
+	// referring to that name even after the dentry is evicted, so when it is
+	// destroyed while other aliases remain, the FDs are moved to one of them.
+	// If it is nil, the next removal of an alias while others remain does
+	// the same. It also lets directfsInode.rebindHostFDs() skip removals of
+	// other names. See dentry.removeAliasLocked().
+	// hostFDsAlias is protected by fs.inodeMu. rebindHostFDs() also holds
+	// handleMu while it checks and updates hostFDsAlias.
+	hostFDsAlias *dentry `state:"nosave"`
+
 	// impl is the specific inode implementation for non-synthetic dentries.
 	// impl is immutable.
 	//
@@ -1121,6 +1138,77 @@ func (i *inode) init(impl any) {
 // whether the inode can be destroyed and removed from the inode cache.
 func (i *inode) incRef() {
 	i.refs.IncRef()
+}
+
+// addAlias records d in d.inode.aliases. It must be called once for each
+// non-synthetic dentry that holds a reference on its inode, after d.init().
+// If ownsHostFDs is true, d is also recorded as the dentry via whose name the
+// inode's host FDs were opened. Directory inodes are never shared between
+// dentries, so they are not tracked.
+func (d *dentry) addAlias(ownsHostFDs bool) {
+	if d.inode.isSynthetic() || d.isDir() {
+		return
+	}
+	d.inode.fs.inodeMu.Lock()
+	if d.aliasEntry.Prev() == nil && d.inode.aliases.Front() != &d.aliasEntry {
+		d.inode.aliases.PushBack(&d.aliasEntry)
+	}
+	if ownsHostFDs {
+		d.inode.hostFDsAlias = d
+	}
+	d.inode.fs.inodeMu.Unlock()
+}
+
+// removeAliasLocked removes d from d.inode.aliases.
+//
+// Ownership of a directfs inode's host FDs (hostFDsAlias) must not be lost
+// silently while other aliases remain, or a later removal of the name the
+// FDs refer to would not rebind them. hostFDsAlias == nil means that the name
+// is unknown. So:
+//
+//   - If d owns the FDs and sameName is a cached dentry for the same parent
+//     and name as d, looked up after d's host FDs were opened via that name
+//     (e.g. d lost a race to insert itself into its parent's children), and
+//     it shares d's inode, then the FDs already refer to its name, so
+//     ownership is transferred to it without reopening anything.
+//   - Otherwise, if d owns the FDs or the owner is unknown, and other aliases
+//     remain, removeAliasLocked clears hostFDsAlias and returns true. The
+//     caller must then call d.inode.rebindHostFDs(ctx, d), which moves the
+//     FDs to a remaining alias and records it as the owner.
+//
+// Precondition: d.inode.fs.inodeMu is locked.
+func (d *dentry) removeAliasLocked(sameName *dentry) bool {
+	i := d.inode
+	i.aliases.Remove(&d.aliasEntry)
+	if _, ok := i.impl.(*directfsInode); !ok {
+		// Only directfs inodes track or rebind host FDs.
+		return false
+	}
+	switch i.hostFDsAlias {
+	case d:
+		if sameName != nil && sameName.inode == i && !sameName.hostFDsDisowned {
+			i.hostFDsAlias = sameName
+			return false
+		}
+		i.hostFDsAlias = nil
+	case nil:
+	default:
+		return false
+	}
+	return !i.aliases.Empty()
+}
+
+// disownHostFDs records that d has been invalidated, so that its name may no
+// longer refer to its inode, e.g. because the file was renamed on the host.
+// If d owned its inode's host FDs, the owner becomes unknown, and the next
+// removal of an alias rebinds the FDs. d can't become the owner again.
+func (d *dentry) disownHostFDs() {
+	d.inode.fs.inodeMu.Lock()
+	d.hostFDsDisowned = true
+	if d.inode.hostFDsAlias == d {
+		d.inode.hostFDsAlias = nil
+	}
+	d.inode.fs.inodeMu.Unlock()
 }
 
 func (i *inode) isSynthetic() bool {
@@ -1225,6 +1313,16 @@ type dentry struct {
 	// syncableListEntry links dentry into filesystem.syncableDentries. It is
 	// protected by filesystem.syncMu.
 	syncableListEntry dentryListElem
+
+	// aliasEntry links dentry into dentry.inode.aliases. It is protected by
+	// filesystem.inodeMu.
+	aliasEntry dentryListElem `state:"nosave"`
+
+	// hostFDsDisowned is true if this dentry has been invalidated, so that
+	// its name may no longer refer to its inode. Such a dentry is never
+	// recorded as inode.hostFDsAlias, or used as a target for rebinding host
+	// FDs. It is protected by filesystem.inodeMu.
+	hostFDsDisowned bool `state:"nosave"`
 
 	// opMu synchronizes operations on this dentry. Operations that mutate
 	// the dentry tree must hold this lock for writing. Operations that
@@ -1426,6 +1524,7 @@ func (fs *filesystem) nextIno() uint64 {
 func (d *dentry) init() {
 	d.cacheEntry.d = d
 	d.syncableListEntry.d = d
+	d.aliasEntry.d = d
 	d.vfsd.Init(d)
 	refs.Register(d)
 }
@@ -2208,6 +2307,7 @@ func (d *dentry) destroyLocked(ctx context.Context, keepRenameMu bool) {
 	destroyInode := false
 	// Remove the inode from the inode map.
 	d.inode.fs.inodeMu.Lock()
+	rebind := d.removeAliasLocked(nil /* sameName */)
 	d.inode.refs.DecRef(func() {
 		destroyInode = true
 		if !d.isDir() && d.inode.fs.inodeByKey[d.inode.inoKey] == d.inode {
@@ -2218,6 +2318,18 @@ func (d *dentry) destroyLocked(ctx context.Context, keepRenameMu bool) {
 		}
 	})
 	d.inode.fs.inodeMu.Unlock()
+
+	if rebind && d.inode.fs.released.Load() == 0 {
+		// The inode's host FDs were opened via d's name (or via an unknown
+		// name), and other dentries keep the inode alive. If d is being
+		// evicted, its name still exists
+		// on the host, but once d is gone, unlinking that name finds no
+		// cached dentry to trigger a rebind (see fs.unlinkAt()). So move the
+		// FDs to a remaining alias now, while fs.renameMu is still locked so
+		// that the aliases and their parents can't be destroyed. This locks
+		// handleMu after renameMu, as ensureSharedHandle() does.
+		d.inode.rebindHostFDs(ctx, d)
+	}
 
 	if keepRenameMu {
 		d.destroyDisconnected(ctx, destroyInode)

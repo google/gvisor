@@ -266,6 +266,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 // so.
 //
 // Preconditions:
+//   - fs.renameMu must be locked.
 //   - If checkForRace is false, then parent.opMu must be held for writing.
 //   - Otherwise, parent.opMu must be held for reading.
 //
@@ -284,6 +285,19 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 		return nil, err
 	}
 
+	if getRemoteChildTestHook != nil {
+		getRemoteChildTestHook(parent, name)
+	}
+
+	// If a discarded child's inode needs its host FDs rebound (see below),
+	// do so after parent.childrenMu is unlocked.
+	var rebind *dentry
+	defer func() {
+		if rebind != nil {
+			rebind.inode.rebindHostFDs(ctx, rebind)
+		}
+	}()
+
 	parent.childrenMu.Lock()
 	defer parent.childrenMu.Unlock()
 
@@ -296,6 +310,13 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 			// been cached, so destruction is quick and painless.
 			destroyInode := false
 			fs.inodeMu.Lock()
+			// If child created the inode, the inode's host FDs were opened
+			// via this name, and cachedChild (for the same name) may have
+			// adopted the inode, in which case ownership of the FDs passes to
+			// it. If cachedChild has a different inode (the name was replaced
+			// on the host between the two lookups) and other aliases keep
+			// child's inode alive, move the FDs to one of them.
+			needRebind := child.removeAliasLocked(cachedChild)
 			child.inode.refs.DecRef(func() {
 				destroyInode = true
 				if !child.isDir() && fs.inodeByKey[child.inode.inoKey] == child.inode {
@@ -305,6 +326,9 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 			})
 			fs.inodeMu.Unlock()
 			child.destroyDisconnected(ctx, destroyInode)
+			if needRebind {
+				rebind = child
+			}
 
 			// All good. Return the cached child.
 			return cachedChild, nil
@@ -315,6 +339,11 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 	appendNewChildDentry(ds, parent, child)
 	return child, nil
 }
+
+// getRemoteChildTestHook, if not nil, is called by getRemoteChildLocked after
+// the child has been looked up on the host, before it is inserted into the
+// dentry tree. It is used by tests to force insertion races.
+var getRemoteChildTestHook func(parent *dentry, name string)
 
 // getChildAndWalkPathLocked is the same as getChildLocked, except that it
 // may prefetch the entire path represented by rp.
@@ -615,6 +644,16 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	parent.opMu.Lock()
 	defer parent.opMu.Unlock()
 
+	// If a non-directory child is unlinked, its inode's host FDs may need to
+	// be moved to another of its links. This is done after the dentry locks
+	// below are released, but while parent.opMu and fs.renameMu are held.
+	var rebind *dentry
+	defer func() {
+		if rebind != nil {
+			rebind.inode.rebindHostFDs(ctx, rebind)
+		}
+	}()
+
 	parent.childrenMu.Lock()
 	if parent.childrenSet != nil {
 		if _, ok := parent.childrenSet[name]; !ok {
@@ -726,6 +765,12 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			}
 			return err
+		}
+		// If child is nil, no host FDs need to be moved: if the inode was
+		// still cached via another name when child's dentry was destroyed,
+		// dentry.destroyLocked() moved the FDs to that name.
+		if child != nil && !dir {
+			rebind = child
 		}
 	}
 
@@ -1550,6 +1595,13 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		newParent.opMu.Lock()
 		defer newParent.opMu.Unlock()
 	}
+	// See the comment for rebind in fs.unlinkAt().
+	var rebind *dentry
+	defer func() {
+		if rebind != nil {
+			rebind.inode.rebindHostFDs(ctx, rebind)
+		}
+	}()
 	if oldParent.isDeleted() || newParent.isDeleted() {
 		return linuxerr.ENOENT
 	}
@@ -1620,6 +1672,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 			return err
 		}
+		rebind = rebindAfterRename(renamed, replaced, exchange)
 	} else if replaced != nil && !replaced.inode.isSynthetic() && !exchange {
 		// We are replacing an existing real file with a synthetic one, so we
 		// need to unlink the former.
@@ -1631,6 +1684,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 			return err
 		}
+		rebind = rebindAfterRename(renamed, replaced, exchange)
 	}
 
 	// Update the dentry tree.
@@ -1751,6 +1805,17 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	vfs.InotifyRename(withCheckCachingList(ctx, &ds), &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
 	return nil
+}
+
+// rebindAfterRename returns the dentry whose inode's host FDs must be moved to
+// another link after renamed has replaced replaced on the host (by a host
+// rename, or by unlinking replaced when renamed is synthetic), or nil if there
+// is none. See directfsInode.rebindHostFDs().
+func rebindAfterRename(renamed, replaced *dentry, exchange bool) *dentry {
+	if replaced == nil || exchange || replaced.isDir() || replaced.inode.isSynthetic() || replaced.inode == renamed.inode {
+		return nil
+	}
+	return replaced
 }
 
 // RmdirAt implements vfs.FilesystemImpl.RmdirAt.

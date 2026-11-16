@@ -236,6 +236,10 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		// this, take a dentry reference first, then drop it while
 		// deferring the call to dentry.checkCachingLocked().
 		d.IncRef()
+		// d may stay alive while its name now refers to a different file,
+		// or the file may have been renamed on the host, so d's name may no
+		// longer be the one its inode's host FDs refer to.
+		d.disownHostFDs()
 		rcs := vfsObj.InvalidateDentry(ctx, &d.vfsd)
 		for _, rc := range rcs {
 			rc.DecRef(ctx)

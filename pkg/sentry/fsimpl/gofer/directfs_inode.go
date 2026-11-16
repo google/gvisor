@@ -196,6 +196,14 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 				},
 				controlFD: controlFD,
 			}
+			if !isDir {
+				// The inode's control FD was opened via this dentry's name.
+				// Record this before the inode is published in
+				// fs.inodeByKey (getOrCreateInode() holds fs.inodeMu), so
+				// that a rebind by a concurrent lookup that adopts the inode
+				// can't be overwritten later.
+				temp.i.inode.hostFDsAlias = &temp.d
+			}
 			temp.i.inode.init(&temp.i)
 			inode := &temp.i.inode
 			if stat.Mask&linux.STATX_UID != 0 {
@@ -248,7 +256,13 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		i.metadataMu.Unlock()
 	}
 
+	if newDirectfsDentryTestHook != nil {
+		newDirectfsDentryTestHook()
+	}
 	temp.d.init()
+	// If this dentry created the inode, it was recorded as the owner of the
+	// inode's host FDs above.
+	temp.d.addAlias(false /* ownsHostFDs */)
 	// If this dentry adopted a cached inode that already carries a bound-socket
 	// endpoint (a hard link to, or re-walk of, an existing bound socket), hold
 	// the extra reference that dentry.refs keeps for endpoint-bearing dentries.
@@ -262,6 +276,11 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 	return &temp.d, nil
 
 }
+
+// newDirectfsDentryTestHook, if not nil, is called by newDirectfsDentry after
+// the dentry's inode has been found or created, before the dentry is
+// registered as one of its aliases. It is used by tests to force races.
+var newDirectfsDentryTestHook func()
 
 func (i *directfsInode) openHandle(flags uint32) (handle, error) {
 	openFD, err := reopenFD(i.controlFD, int(flags))
@@ -520,6 +539,241 @@ func fchown(fd int, uid auth.KUID, gid auth.KGID) error {
 		g = int(gid)
 	}
 	return unix.Fchownat(fd, "", u, g, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
+}
+
+// rebindHostFDs is called after the host name represented by removed has been
+// unlinked (or replaced by a rename), while other dentries may still refer to
+// the same inode via other hard links. It is also called when removed is
+// destroyed (e.g. evicted from the dentry cache) while its name holds the
+// inode's host FDs, since its name can't be found to rebind them once it is
+// no longer cached.
+//
+// All dentries for a hard-linked file share one inode, and the inode's host
+// FDs (controlFD, readFD, writeFD) were opened via whichever name first
+// instantiated or opened the file, which may be the name that was just
+// removed. Holding a host FD on a removed name is observable on some host
+// filesystems. Notably, an NFS client "silly-renames" a file that is unlinked
+// while open to .nfsXXXX in the same directory, and only removes it once the
+// last FD on that name is closed; until then rmdir(2) on the directory fails
+// with ENOTEMPTY. Without this, the sentry keeps those FDs open for as long as
+// any other name of the file remains cached, which is unbounded.
+//
+// rebindHostFDs reopens the inode's host FDs via a surviving name with the
+// same flags, and uses dup3(2) to make the existing FD numbers refer to the
+// new file descriptions. FD numbers are thus unchanged and remain valid for
+// concurrent users, and they continue to refer to the same file, so open
+// application FDs are unaffected. Existing host memory mappings keep a
+// reference on the old file description until they are unmapped.
+//
+// If the host FDs are known to have been opened via another alias
+// (inode.hostFDsAlias) that has not been deleted, nothing needs to be done. If no other cached name
+// exists, the file's host FDs are left untouched: either no other dentry
+// references the inode, in which case the FDs are closed when removed is
+// destroyed, or the file is still open via removed, which is the POSIX
+// "unlinked but open" case.
+//
+// This is best-effort; failures are logged and leave the old FDs in place.
+//
+// Preconditions:
+//   - i.fs.renameMu is locked.
+//   - removed.inode == &i.inode.
+//   - removed is not a directory.
+func (i *directfsInode) rebindHostFDs(ctx context.Context, removed *dentry) {
+	// Collect other dentries for this inode. Cached dentries cannot be
+	// destroyed concurrently, since that requires fs.renameMu to be locked
+	// for writing.
+	var aliases []*dentry
+	i.fs.inodeMu.Lock()
+	for e := i.aliases.Front(); e != nil; e = e.Next() {
+		if d := e.d; d != removed && !d.isDeleted() && !d.hostFDsDisowned {
+			aliases = append(aliases, d)
+		}
+	}
+	i.fs.inodeMu.Unlock()
+	if len(aliases) == 0 {
+		return
+	}
+	links := make([]rebindLink, 0, len(aliases))
+	for _, d := range aliases {
+		// A dentry's parent and name are stable while fs.renameMu is locked
+		// once it has been inserted into the dentry tree, but a new dentry may
+		// be concurrently inserted. Read both consistently.
+		i.fs.ancestryMu.Lock()
+		parent, name := d.parent.Load(), d.name
+		i.fs.ancestryMu.Unlock()
+		if parent == nil {
+			// d is a mount root, or has not been inserted into the tree.
+			continue
+		}
+		if pi, ok := parent.inode.impl.(*directfsInode); ok {
+			links = append(links, rebindLink{d, pi.controlFD, name})
+		}
+	}
+	if len(links) == 0 {
+		return
+	}
+	for _, f := range i.rebindHostFDsToFirst(removed, links) {
+		ctx.Debugf("gofer.directfsInode.rebindHostFDs: failed to rebind host FDs of %q via sibling link %q: %v", genericDebugPathname(i.fs, removed), f.name, f.err)
+	}
+}
+
+// rebindLink is a cached name of a file, used by rebindHostFDs.
+type rebindLink struct {
+	d     *dentry
+	dirFD int
+	name  string
+}
+
+// rebindFailure records a failed attempt to rebind host FDs via a link.
+type rebindFailure struct {
+	name string
+	err  error
+}
+
+// rebindHostFDsToFirst rebinds the inode's host FDs via the first of links
+// that works, and records it in i.hostFDsAlias. It returns the attempts that
+// failed.
+//
+// i.hostFDsAlias is checked and updated with i.handleMu locked, so that
+// concurrent rebinds of the same inode (e.g. unlinks of two of its names in
+// different directories) are serialized and each observes the result of the
+// other.
+func (i *directfsInode) rebindHostFDsToFirst(removed *dentry, links []rebindLink) []rebindFailure {
+	i.handleMu.Lock()
+	defer i.handleMu.Unlock()
+	if i.controlFD < 0 {
+		return nil
+	}
+	i.fs.inodeMu.Lock()
+	owner := i.hostFDsAlias
+	i.fs.inodeMu.Unlock()
+	if owner != nil && owner != removed && !owner.isDeleted() {
+		// The host FDs were opened via another name, which is unaffected.
+		return nil
+	}
+	// Can use RacyLoad() because handleMu is locked. mmapFile.FD() is either
+	// -1 or i.readFD, so rebinding readFD also rebinds the FD used for host
+	// memory mappings.
+	fds := []int{i.controlFD}
+	if readFD := int(i.readFD.RacyLoad()); readFD >= 0 {
+		fds = append(fds, readFD)
+	}
+	if writeFD := int(i.writeFD.RacyLoad()); writeFD >= 0 && writeFD != int(i.readFD.RacyLoad()) {
+		fds = append(fds, writeFD)
+	}
+	var failures []rebindFailure
+	for _, l := range links {
+		if l.d.isDeleted() {
+			// Removed since aliases were collected.
+			continue
+		}
+		if err := i.rebindHostFDsVia(l.dirFD, l.name, fds); err != nil {
+			failures = append(failures, rebindFailure{l.name, err})
+			continue
+		}
+		i.fs.inodeMu.Lock()
+		// l.d may have been invalidated concurrently (by revalidation,
+		// which doesn't lock handleMu). If so, the FDs refer to its name,
+		// but the owner is unknown.
+		if l.d.hostFDsDisowned {
+			i.hostFDsAlias = nil
+		} else {
+			i.hostFDsAlias = l.d
+		}
+		i.fs.inodeMu.Unlock()
+		break
+	}
+	return failures
+}
+
+// rebindHostFDsTestHook, if not nil, is called by rebindHostFDsVia after the
+// surviving name has been validated, before each FD in fds is reopened, with
+// that FD. It is used by tests to swap the name for a different file.
+var rebindHostFDsTestHook func(fd int)
+
+// rebindFlagsMask is the set of file status flags that fcntl(F_SETFL) can
+// change on Linux.
+const rebindFlagsMask = unix.O_APPEND | unix.O_ASYNC | unix.O_DIRECT | unix.O_NOATIME | unix.O_NONBLOCK
+
+// rebindHostFDsVia reopens each of fds via name in the directory dirFD, with
+// the same file status flags, and replaces each FD's file description with the
+// new one. If any FD cannot be reopened, or any reopened FD does not refer to
+// i, none are replaced.
+//
+// name is opened only once, with O_PATH, which has no side effects for any
+// file type, and checked to still refer to i. Other FDs are reopened from
+// that O_PATH FD via its procfs magic link, so they refer to the same file
+// even if name is concurrently replaced. They are opened with O_NONBLOCK
+// added, as a precaution against blocking opens, and each is checked to refer
+// to i before its original flags are restored.
+//
+// Precondition: i.handleMu is locked for writing.
+func (i *directfsInode) rebindHostFDsVia(dirFD int, name string, fds []int) error {
+	var newFDsArr [4]int
+	newFDs := newFDsArr[:0]
+	defer func() {
+		for _, fd := range newFDs {
+			_ = unix.Close(fd)
+		}
+	}()
+	pathFD, err := unix.Openat(dirFD, name, unix.O_PATH|hostOpenFlags, 0)
+	if err != nil {
+		return err
+	}
+	newFDs = append(newFDs, pathFD)
+	if err := i.checkRebindFD(pathFD); err != nil {
+		return err
+	}
+	var replacementsArr [3]int
+	replacements := replacementsArr[:0]
+	for _, fd := range fds {
+		flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
+		if err != nil {
+			return err
+		}
+		if flags&unix.O_PATH != 0 {
+			replacements = append(replacements, pathFD)
+			continue
+		}
+		if rebindHostFDsTestHook != nil {
+			rebindHostFDsTestHook(fd)
+		}
+		newFD, err := reopenFD(pathFD, (flags|unix.O_NONBLOCK)&^(unix.O_CREAT|unix.O_EXCL|unix.O_TRUNC))
+		if err != nil {
+			return err
+		}
+		newFDs = append(newFDs, newFD)
+		if err := i.checkRebindFD(newFD); err != nil {
+			return err
+		}
+		if flags&unix.O_NONBLOCK == 0 {
+			if _, err := unix.FcntlInt(uintptr(newFD), unix.F_SETFL, flags&rebindFlagsMask); err != nil {
+				return err
+			}
+		}
+		replacements = append(replacements, newFD)
+	}
+	for j, fd := range fds {
+		if err := unix.Dup3(replacements[j], fd, unix.O_CLOEXEC); err != nil {
+			// FDs before j have been rebound, which is harmless: they still
+			// refer to the same file.
+			return err
+		}
+	}
+	return nil
+}
+
+// checkRebindFD returns nil if fd refers to the same file as i.
+func (i *directfsInode) checkRebindFD(fd int) error {
+	var stat unix.Statx_t
+	if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_TYPE|unix.STATX_INO, &stat); err != nil {
+		return err
+	}
+	if inoKeyFromUnixStatx(&stat) != i.inoKey || uint32(stat.Mode)&unix.S_IFMT != i.fileType() {
+		// The name has been replaced by a different file.
+		return unix.ESTALE
+	}
+	return nil
 }
 
 // Precondition: i.handleMu must be locked.
