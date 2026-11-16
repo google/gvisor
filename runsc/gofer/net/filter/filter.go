@@ -25,6 +25,15 @@ import (
 // Options is a re-export of the config Options type under this package.
 type Options = config.Options
 
+// Mode is a re-export of the config Mode type under this package.
+type Mode = config.Mode
+
+// Re-exports of the config Mode values under this package.
+const (
+	ProxyMode = config.ProxyMode
+	PasstMode = config.PasstMode
+)
+
 // Install installs seccomp filters.
 func Install(opt Options) error {
 	return goferfilter.Install(opt, GetPrecompiled, ListPrecompiled)

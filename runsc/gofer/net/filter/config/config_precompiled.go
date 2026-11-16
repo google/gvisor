@@ -43,6 +43,15 @@ func optionsToPrecompile() []Options {
 			noProfile.ProfileEnabled = false
 			return []Options{noProfile}
 		},
+
+		// proxy mode and passt mode.
+		func(opt Options) []Options {
+			proxy := opt
+			proxy.Mode = ProxyMode
+			passt := opt
+			passt.Mode = PasstMode
+			return []Options{proxy, passt}
+		},
 	} {
 		var newOpts []Options
 		for _, opt := range opts {

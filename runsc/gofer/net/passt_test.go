@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/runsc/config"
 	egressfilter "gvisor.dev/gvisor/runsc/gofer/net/egressfilter"
+	netgoferfilter "gvisor.dev/gvisor/runsc/gofer/net/filter"
 )
 
 // testIPv4Pkt returns an IPv4 packet from the sandbox to dst with the given
@@ -526,7 +528,8 @@ func waitForStartupGoroutines() {
 }
 
 func TestRunPasstModeWithSeccomp(t *testing.T) {
-	if os.Getenv("NETGOFER_PASST_SECCOMP_CHILD") == "1" {
+	switch os.Getenv("NETGOFER_PASST_SECCOMP_CHILD") {
+	case "1":
 		log.SetLevel(log.Info)
 		waitForStartupGoroutines()
 		n := &Netgofer{
@@ -534,6 +537,36 @@ func TestRunPasstModeWithSeccomp(t *testing.T) {
 			passtFD: 4,
 		}
 		os.Exit(int(n.runPasstMode(&config.Config{})))
+	case "try-socket":
+		log.SetLevel(log.Info)
+		waitForStartupGoroutines()
+		ready := make(chan struct{})
+		n := &Netgofer{
+			udsFD:   3,
+			passtFD: 4,
+			ready:   ready,
+		}
+		go func() {
+			os.Exit(int(n.runPasstMode(&config.Config{})))
+		}()
+		<-ready
+		_, _, _ = unix.RawSyscall(unix.SYS_SOCKET, unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+		os.Exit(0)
+	case "proxy-control-socket":
+		log.SetLevel(log.Info)
+		waitForStartupGoroutines()
+		if err := netgoferfilter.Install(netgoferfilter.Options{
+			CgoEnabled: config.CgoEnabled,
+			Mode:       netgoferfilter.ProxyMode,
+		}); err != nil {
+			os.Exit(2)
+		}
+		fd, _, errno := unix.RawSyscall(unix.SYS_SOCKET, unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+		if errno != 0 {
+			os.Exit(3)
+		}
+		_, _, _ = unix.RawSyscall(unix.SYS_CLOSE, fd, 0, 0)
+		os.Exit(0)
 	}
 
 	udsFD, passtFD, peers := newPasstSocketPairs(t)
@@ -575,4 +608,33 @@ func TestRunPasstModeWithSeccomp(t *testing.T) {
 		}
 		t.Fatalf("cmd.Wait() failed: %v", err)
 	}
+
+	t.Run("blocks_socket_syscall", func(t *testing.T) {
+		// Control: the proxy mode allowlist permits socket(AF_INET, SOCK_STREAM|...).
+		ctrl := exec.Command(os.Args[0], "-test.run=^TestRunPasstModeWithSeccomp$")
+		ctrl.Env = append(os.Environ(), "NETGOFER_PASST_SECCOMP_CHILD=proxy-control-socket", "GOTRACEBACK=system")
+		if out, err := ctrl.CombinedOutput(); err != nil {
+			t.Fatalf("proxy control child failed: %v; output:\n%s", err, out)
+		}
+
+		// runPasstMode must install the passt mode allowlist, which kills the
+		// child with SIGSYS when it invokes socket().
+		udsFD, passtFD, _ := newPasstSocketPairs(t)
+		udsFile := os.NewFile(uintptr(udsFD), "uds")
+		passtFile := os.NewFile(uintptr(passtFD), "passt")
+		child := exec.Command(os.Args[0], "-test.run=^TestRunPasstModeWithSeccomp$")
+		child.Env = append(os.Environ(), "NETGOFER_PASST_SECCOMP_CHILD=try-socket", "GOTRACEBACK=system")
+		child.ExtraFiles = []*os.File{udsFile, passtFile}
+		out, err := child.CombinedOutput()
+		_ = udsFile.Close()
+		_ = passtFile.Close()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("try-socket child err = %v, want SIGSYS ExitError; output:\n%s", err, out)
+		}
+		ws := exitErr.Sys().(syscall.WaitStatus)
+		if !ws.Signaled() || ws.Signal() != syscall.SIGSYS {
+			t.Fatalf("try-socket child status = %v (signal %v), want SIGSYS; output:\n%s", ws, ws.Signal(), out)
+		}
+	})
 }

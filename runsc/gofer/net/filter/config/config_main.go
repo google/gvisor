@@ -20,6 +20,22 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
+// proxyOnlySyscalls are the syscalls that only proxy mode uses: to open and
+// use host sockets, and (recvmmsg, sendmmsg) for the fdbased endpoint on the
+// sentry socket. passt mode does not need them: passt opens the host sockets,
+// and netgofer uses read and write on both inherited sockets.
+var proxyOnlySyscalls = []uintptr{
+	unix.SYS_CONNECT,
+	unix.SYS_GETPEERNAME,
+	unix.SYS_GETSOCKNAME,
+	unix.SYS_GETSOCKOPT,
+	unix.SYS_RECVMMSG,
+	unix.SYS_SENDMMSG,
+	unix.SYS_SETSOCKOPT,
+	unix.SYS_SHUTDOWN,
+	unix.SYS_SOCKET,
+}
+
 // allowedSyscalls is the set of syscalls executed by the netgofer.
 var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_CLOCK_GETTIME: seccomp.MatchAll{},
