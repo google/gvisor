@@ -15,15 +15,22 @@
 package systrap
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"reflect"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/pool"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -180,5 +187,117 @@ func TestSpinningQueueLayout(t *testing.T) {
 	queueStart := stubContextQueueRegion + stubContextQueueRegionLen
 	if stubSpinningThreadQueueAddr < queueStart || stubSpinningThreadQueueAddr+sysmsg.SpinningQueueMemSize > stubContextRegion {
 		t.Errorf("spinning queue %#x not in [%#x, %#x)", stubSpinningThreadQueueAddr, queueStart, stubContextRegion)
+	}
+}
+
+func TestCreateInitialSysmsgThreadDiscardsUnstartedSubprocess(t *testing.T) {
+	s, err := New(platform.Options{DisableSyscallPatching: true, DisableFastPath: true})
+	if err != nil {
+		t.Fatalf("failed to create Systrap platform: %v", err)
+	}
+	if s.memoryFile != globalPool.source.memoryFile {
+		t.Cleanup(s.memoryFile.Destroy)
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	stub, err := globalPool.source.createStub()
+	if err != nil {
+		t.Fatalf("createStub: %v", err)
+	}
+	sp := &subprocess{
+		requests:        make(chan any),
+		memoryFile:      s.memoryFile,
+		sysmsgStackPool: pool.Pool{Start: 0, Limit: 1},
+	}
+	if err := sp.initSyscallThread(stub, true); err != nil {
+		t.Fatalf("initSyscallThread: %v", err)
+	}
+	sp.unmap()
+	queueFR, contextFR := sp.mapSharedRegions()
+	notify := sp.syscallThread.seccompNotify
+	mappings := [...]struct {
+		addr uintptr
+		fr   memmap.FileRange
+	}{
+		{reflect.ValueOf(sp.contextQueue).Pointer(), queueFR},
+		{sp.threadContextRegion, contextFR},
+		{sp.syscallThread.sentryAddr, sp.syscallThread.stackRange},
+	}
+	for _, m := range mappings {
+		s.memoryFile.IncRef(m.fr, 0)
+		defer s.memoryFile.DecRef(m.fr)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(s.memoryFile.FD()), &stat); err != nil {
+		t.Fatalf("fstat memory file: %v", err)
+	}
+	device := fmt.Sprintf("%02x:%02x", unix.Major(stat.Dev), unix.Minor(stat.Dev))
+	inode := strconv.FormatUint(stat.Ino, 10)
+	checkMappings := func(wantMapped bool) {
+		t.Helper()
+		data, err := os.ReadFile("/proc/self/maps")
+		if err != nil {
+			t.Fatalf("read /proc/self/maps: %v", err)
+		}
+		var found [len(mappings)]bool
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 5 || fields[3] != device || fields[4] != inode {
+				continue
+			}
+			first, last, _ := strings.Cut(fields[0], "-")
+			start, startErr := strconv.ParseUint(first, 16, 64)
+			end, endErr := strconv.ParseUint(last, 16, 64)
+			offset, offsetErr := strconv.ParseUint(fields[2], 16, 64)
+			if startErr != nil || endErr != nil || offsetErr != nil {
+				t.Fatalf("invalid mapping in /proc/self/maps: %q", line)
+			}
+			for i, m := range mappings {
+				addr := uint64(m.addr)
+				overlap := max(start, addr)
+				if overlap < min(end, addr+m.fr.Length()) && offset+(overlap-start) == m.fr.Start+(overlap-addr) {
+					found[i] = true
+				}
+			}
+		}
+		for i, m := range mappings {
+			if found[i] != wantMapped {
+				t.Errorf("memory file mapping at %#x present = %t, want %t", m.addr, found[i], wantMapped)
+			}
+		}
+	}
+	checkMappings(true)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		req := (<-sp.requests).(requestThread)
+		sp.syscallThreadMu.Lock()
+		sendPtraceSyscallRequestResult(req, threadResult{err: rejectedSysmsgClone(unix.EAGAIN)})
+		sp.syscallThreadMu.Unlock()
+		sp.servePtraceSyscallRequests()
+	}()
+
+	if err := sp.createInitialSysmsgThread(queueFR, contextFR); err != unix.EAGAIN {
+		t.Errorf("createInitialSysmsgThread got %v, want %v", err, unix.EAGAIN)
+	}
+
+	select {
+	case <-workerDone:
+	case <-time.After(5 * time.Second):
+		t.Error("ptrace request worker did not exit")
+	}
+	if pid, err := unix.Wait4(int(stub.tid), nil, unix.WALL|unix.WNOHANG, nil); err != unix.ECHILD {
+		t.Errorf("Wait4 after discarding stub got (%d, %v), want ECHILD", pid, err)
+	}
+	if notify != nil {
+		if _, err := notify.Stat(); !errors.Is(err, os.ErrClosed) {
+			t.Errorf("seccomp notification FD after discarding stub: %v, want %v", err, os.ErrClosed)
+		}
+	}
+	checkMappings(false)
+	for _, m := range mappings {
+		if !s.memoryFile.HasUniqueRef(m.fr) {
+			t.Errorf("discarded stub retained a reference to %v", m.fr)
+		}
 	}
 }

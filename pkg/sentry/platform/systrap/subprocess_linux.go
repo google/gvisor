@@ -187,7 +187,8 @@ func (t *thread) createStub() (*thread, error) {
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0})
 	if err != nil {
-		return nil, fmt.Errorf("creating stub process: %v", err)
+		// The Sentry's syscall return path expects a bare errno.
+		return nil, err
 	}
 
 	// Wait for child to enter group-stop, so we don't stop its
@@ -210,14 +211,14 @@ func (t *thread) createStub() (*thread, error) {
 }
 
 func (s *subprocess) createStub() (*thread, error) {
-	req := requestStub{}
-	req.done = make(chan *thread, 1)
+	req := requestStub{result: make(chan threadResult, 1)}
 	s.requests <- req
 
-	childT := <-req.done
-	if childT == nil {
-		return nil, fmt.Errorf("createStub: failed to get clone")
+	result := <-req.result
+	if result.err != nil {
+		return nil, result.err
 	}
+	childT := result.thread
 	if err := childT.attach(); err != nil {
 		return nil, err
 	}

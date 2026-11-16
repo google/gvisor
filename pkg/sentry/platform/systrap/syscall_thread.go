@@ -128,6 +128,21 @@ func (t *syscallThread) init(seccompNotify bool) error {
 }
 
 func (t *syscallThread) destroy() {
+	if t.stubAddr != 0 {
+		_, err := t.thread.syscallIgnoreInterrupt(&t.thread.initRegs, unix.SYS_MUNMAP,
+			arch.SyscallArgument{Value: t.stubAddr},
+			arch.SyscallArgument{Value: syscallThreadMessageSize})
+		if err != nil {
+			t.thread.Warningf("munmap failed: %v", err)
+		}
+	}
+	t.releaseSentryResources()
+}
+
+func (t *syscallThread) releaseSentryResources() {
+	if t.seccompNotify != nil {
+		t.seccompNotify.Close()
+	}
 	if t.sentryAddr != 0 {
 		errno := hostsyscall.RawSyscallErrno(
 			unix.SYS_MUNMAP,
@@ -135,15 +150,7 @@ func (t *syscallThread) destroy() {
 			syscallThreadMessageSize,
 			0)
 		if errno != 0 {
-			panic(fmt.Sprintf("mumap failed: %v", errno))
-		}
-	}
-	if t.stubAddr != 0 {
-		_, err := t.thread.syscallIgnoreInterrupt(&t.thread.initRegs, unix.SYS_MUNMAP,
-			arch.SyscallArgument{Value: t.stubAddr},
-			arch.SyscallArgument{Value: syscallThreadMessageSize})
-		if err != nil {
-			t.thread.Warningf("munmap failed: %v", err)
+			panic(fmt.Sprintf("munmap failed: %v", errno))
 		}
 	}
 	t.subproc.memoryFile.DecRef(t.stackRange)
