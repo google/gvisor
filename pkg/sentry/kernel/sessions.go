@@ -351,13 +351,13 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 	// Leave the current group, and assign the new one.
 	if tg.processGroup != nil {
 		oldParentPG := tg.parentPG()
+		oldPG := tg.processGroup
 		tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 			childTG.processGroup.incRefWithParent(pg)
-			childTG.processGroup.decRefWithParent(oldParentPG)
+			childTG.processGroup.decRefWithParent(oldPG)
 		})
 		// Reassign before decRef so tg isn't signaled as a member of the
 		// old group if it becomes orphaned.
-		oldPG := tg.processGroup
 		tg.processGroup = pg
 		oldPG.decRefWithParent(oldParentPG)
 	} else {
@@ -437,11 +437,12 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 
 	// Assign the new process group; adjust children.
 	oldParentPG := tg.parentPG()
+	oldPG := tg.processGroup
 	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 		childTG.processGroup.incRefWithParent(&pg)
-		childTG.processGroup.decRefWithParent(oldParentPG)
+		childTG.processGroup.decRefWithParent(oldPG)
 	})
-	tg.processGroup.decRefWithParent(oldParentPG)
+	oldPG.decRefWithParent(oldParentPG)
 	tg.processGroup = &pg
 
 	// Add the new process group to the session.
