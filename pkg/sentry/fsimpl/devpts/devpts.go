@@ -361,22 +361,32 @@ func (i *rootInode) initReplicaAttrs(ctx context.Context, attrs *kernfs.InodeAtt
 //
 // +checklocksexclude:i.mu
 func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
-	// When the master is closed, hang up the slave (replica) side.
-	// This corresponds to Linux's pty_close() calling tty_vhangup(tty->link).
-	t.replicaKTTY.Hangup(ctx)
-
+	// Remove the replica from i.replicas before hanging up the terminal,
+	// matching Linux's pty_close() ordering. Release i.mu before
+	// t.ld.masterClose and Hangup to preserve lock order; t.ld.replicaOpen
+	// also checks masterClosed so concurrent Terminal.OpenTTY calls cannot
+	// finish opening a replica after hangup.
 	i.mu.Lock()
-	defer i.mu.Unlock()
-
 	// Sanity check that replica with idx exists.
 	ri, ok := i.replicas[t.n]
 	if !ok {
+		i.mu.Unlock()
 		panic(fmt.Sprintf("pty with index %d does not exist", t.n))
 	}
 
 	// Drop the ref on replica inode taken during rootInode.allocateTerminal.
 	ri.DecRef(ctx)
 	delete(i.replicas, t.n)
+	i.mu.Unlock()
+
+	// Mark the line discipline closed, flush both queues, and wake replica
+	// waiters before delivering SIGHUP/SIGCONT via Hangup so signal handlers
+	// cannot observe stale queued data, succeed on writes, or miss POLLHUP.
+	t.ld.masterClose()
+
+	// When the master is closed, hang up the slave (replica) side.
+	// This corresponds to Linux's pty_close() calling tty_vhangup(tty->link).
+	t.replicaKTTY.Hangup(ctx)
 }
 
 // Open implements kernfs.Inode.Open.

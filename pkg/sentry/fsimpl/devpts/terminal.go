@@ -69,6 +69,9 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 	if !ok {
 		return nil, linuxerr.EIO
 	}
+	if err := ri.t.ld.replicaOpen(); err != nil {
+		return nil, err
+	}
 	fd := &replicaFileDescription{
 		inode: ri,
 	}
@@ -78,6 +81,7 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		DenyPWrite:  true,
 		SpecialFile: true,
 	}); err != nil {
+		ri.t.ld.replicaClose()
 		return nil, err
 	}
 	if opts.Flags&linux.O_NOCTTY == 0 {
@@ -86,6 +90,5 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		// ignored silently. See Linux tty_open().
 		_ = tsk.ThreadGroup().SetControllingTTY(ctx, t.replicaKTTY, false /* steal */, fd.vfsfd.IsReadable())
 	}
-	ri.t.ld.replicaOpen()
 	return &fd.vfsfd, nil
 }

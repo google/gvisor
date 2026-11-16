@@ -3125,6 +3125,104 @@ TEST_F(PtyTest, PositionalIO) {
               SyscallFailsWithErrno(ESPIPE));
 }
 
+// Closing the master FD wakes a blocked replica writer with EIO, causes replica
+// reads to return EOF, and reports hangup and error readiness via poll.
+TEST_F(PtyTest, MasterCloseWakesBlockedReplicaWriteAndReturnsEIO) {
+  DisableCanonicalAndEcho();
+
+  // Enqueue input data to verify it is flushed on master close.
+  constexpr char kInput[] = "pending";
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput) - 1));
+
+  // Fill the output queue until replica writes block.
+  FillUntilBlocked(replica_);
+
+  absl::Notification notify;
+  int sfd = replica_.get();
+  ScopedThread th([sfd, &notify]() {
+    // Clear O_NONBLOCK so write() blocks on the full output queue.
+    int flags = fcntl(sfd, F_GETFL);
+    ASSERT_GE(flags, 0);
+    ASSERT_EQ(fcntl(sfd, F_SETFL, flags & ~O_NONBLOCK), 0);
+
+    notify.Notify();
+
+    constexpr char kByte = 'w';
+    EXPECT_THAT(RetryEINTR(write)(sfd, &kByte, 1), SyscallFailsWithErrno(EIO));
+  });
+
+  notify.WaitForNotification();
+  absl::SleepFor(absl::Seconds(1));
+
+  // Closing the master must wake the blocked replica writer with EIO.
+  master_.reset();
+  th.Join();
+
+  // Subsequent replica writes must fail with EIO.
+  constexpr char kByte = 'x';
+  EXPECT_THAT(RetryEINTR(write)(replica_.get(), &kByte, 1),
+              SyscallFailsWithErrno(EIO));
+
+  // Replica reads must return EOF (0) rather than pending data or EAGAIN.
+  char buf[16];
+  EXPECT_THAT(RetryEINTR(read)(replica_.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(0));
+
+  // poll on the replica must report POLLHUP|POLLERR|POLLIN|POLLOUT.
+  struct pollfd pfd = {replica_.get(), POLLIN | POLLOUT, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(pfd.revents, POLLHUP | POLLERR | POLLIN | POLLOUT);
+
+  // Post-close ioctls on the hung-up replica must match Linux
+  // hung_up_tty_ioctl(): ENOTTY for TIOCSPGRP and EIO for other commands.
+  struct kernel_termios t = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallFailsWithErrno(EIO));
+  EXPECT_THAT(ioctl(replica_.get(), TIOCSCTTY, 0), SyscallFailsWithErrno(EIO));
+  pid_t pgid = getpid();
+  EXPECT_THAT(ioctl(replica_.get(), TIOCSPGRP, &pgid),
+              SyscallFailsWithErrno(ENOTTY));
+}
+
+// Closing the master FD wakes a blocked replica reader.
+//
+// In Linux, a reader already sleeping in drivers/tty/n_tty.c:n_tty_read() sees
+// TTY_OTHER_CLOSED before tty_hung_up_p() and returns EIO (whereas post-close
+// reads hit hung_up_tty_read() and return 0). In gVisor, VFS retries
+// inputQueueRead() on wakeup and returns EOF (0).
+TEST_F(PtyTest, MasterCloseWakesBlockedReplicaRead) {
+  DisableCanonicalAndEcho();
+
+  absl::Notification notify;
+  int sfd = replica_.get();
+  ScopedThread th([sfd, &notify]() {
+    // Clear O_NONBLOCK so read() blocks waiting for input.
+    int flags = fcntl(sfd, F_GETFL);
+    ASSERT_GE(flags, 0);
+    ASSERT_EQ(fcntl(sfd, F_SETFL, flags & ~O_NONBLOCK), 0);
+
+    notify.Notify();
+
+    char buf[16];
+    if (IsRunningOnGvisor()) {
+      EXPECT_THAT(RetryEINTR(read)(sfd, buf, sizeof(buf)),
+                  SyscallSucceedsWithValue(0));
+    } else {
+      EXPECT_THAT(
+          RetryEINTR(read)(sfd, buf, sizeof(buf)),
+          AnyOf(SyscallSucceedsWithValue(0), SyscallFailsWithErrno(EIO)));
+    }
+  });
+
+  notify.WaitForNotification();
+  absl::SleepFor(absl::Seconds(1));
+
+  // Closing the master must wake the blocked replica reader.
+  master_.reset();
+  th.Join();
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

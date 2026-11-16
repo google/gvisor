@@ -141,7 +141,16 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		return 0, linuxerr.ENOTTY
 	}
 
-	switch cmd := args[1].Uint(); cmd {
+	cmd := args[1].Uint()
+	if rfd.inode.t.ld.isMasterClosed() {
+		// Match Linux's drivers/tty/tty_io.c:hung_up_tty_ioctl().
+		if cmd == linux.TIOCSPGRP {
+			return 0, linuxerr.ENOTTY
+		}
+		return 0, linuxerr.EIO
+	}
+
+	switch cmd {
 	case linux.FIONREAD: // linux.FIONREAD == linux.TIOCINQ
 		// Get the number of bytes in the input queue read buffer.
 		return 0, rfd.inode.t.ld.inputQueueReadSize(t, io, args)
