@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -885,7 +886,7 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "0 ")
 
 	// Start time is relative to boot time, expressed in clock ticks.
-	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(s.task.StartTime().Sub(s.task.Kernel().Timekeeper().BootTime())))
+	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(s.task.StartTimeSinceBoot().Sub(ktime.Time{})))
 
 	var vss, rss uint64
 	if mm := getMM(s.task); mm != nil {

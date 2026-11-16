@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -197,7 +198,7 @@ func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cpu := k.CPUStats()
 
 	cores := k.ApplicationCores()
-	uptime := ktime.NowFromContext(ctx).Sub(k.Timekeeper().BootTime())
+	uptime := k.BoottimeClock().Now().Sub(ktime.Time{})
 
 	userTicks := uint64(linux.ClockTFromDuration(cpu.UserTime))
 	sysTicks := uint64(linux.ClockTFromDuration(cpu.SysTime))
@@ -360,10 +361,13 @@ var _ dynamicInode = (*uptimeData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*uptimeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	k := kernel.KernelFromContext(ctx)
-	now := ktime.NowFromContext(ctx)
+	uptimeDuration := k.BoottimeClock().Now().Sub(ktime.Time{})
+	// Sub returns a time.Duration. Convert it to floating-point seconds so
+	// /proc/uptime retains its fractional seconds when formatted with %.2f.
+	uptimeSeconds := float64(uptimeDuration) / float64(time.Second)
 
 	// Pretend that we've spent zero time sleeping (second number).
-	fmt.Fprintf(buf, "%.2f 0.00\n", now.Sub(k.Timekeeper().BootTime()).Seconds())
+	fmt.Fprintf(buf, "%.2f 0.00\n", uptimeSeconds)
 	return nil
 }
 

@@ -427,10 +427,12 @@ func (t *Task) promoteLocked() {
 		// update ns.tgids.
 	}
 
-	// Inherit the old leader's start time.
+	// Inherit the old leader's start times.
 	oldStartTime := oldLeader.StartTime()
+	oldStartTimeSinceBoot := oldLeader.StartTimeSinceBoot()
 	t.mu.Lock()
 	t.startTime = oldStartTime
+	t.startTimeSinceBoot = oldStartTimeSinceBoot
 	t.mu.Unlock()
 
 	t.tg.leader = t

@@ -686,6 +686,12 @@ type Task struct {
 	// startTime is protected by mu.
 	startTime ktime.Time
 
+	// startTimeSinceBoot is the task's start time measured by CLOCK_BOOTTIME.
+	// It is used for the starttime field in /proc/[pid]/stat.
+	//
+	// startTimeSinceBoot is protected by mu.
+	startTimeSinceBoot ktime.Time
+
 	// kcov is the kcov instance providing code coverage owned by this task.
 	//
 	// kcov is exclusive to the task goroutine.
