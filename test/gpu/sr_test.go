@@ -16,6 +16,7 @@
 package sr_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,15 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	if output, err := c.Exec(ctx, dockerutil.ExecOpts{}, vectorAddCmd...); err != nil {
 		t.Fatalf("docker exec failed: %v; output: %v", err, strings.TrimSpace(output))
 	}
+	listGPUsCmd := []string{"find", "/proc/driver/nvidia/gpus", "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-printf", "%f\n"}
+	gpusBefore, err := c.Exec(ctx, dockerutil.ExecOpts{NoWrap: true}, listGPUsCmd...)
+	if err != nil {
+		t.Fatalf("failed to list NVIDIA GPU procfs directories before checkpoint: %v", err)
+	}
+	if gpusBefore == "" {
+		t.Fatal("no NVIDIA GPU procfs directories found before checkpoint")
+	}
+	gpusBefore = strings.Join(slices.Sorted(strings.FieldsSeq(gpusBefore)), "\n")
 
 	// Create a snapshot.
 	const ckptName = "test"
@@ -73,6 +83,15 @@ func TestGPUCheckpointRestore(t *testing.T) {
 
 	// Restore the snapshot.
 	c.RestoreInTest(ctx, t, ckptName)
+
+	gpusAfter, err := c.Exec(ctx, dockerutil.ExecOpts{NoWrap: true}, listGPUsCmd...)
+	if err != nil {
+		t.Fatalf("failed to list NVIDIA GPU procfs directories after restore: %v", err)
+	}
+	gpusAfter = strings.Join(slices.Sorted(strings.FieldsSeq(gpusAfter)), "\n")
+	if gpusAfter != gpusBefore {
+		t.Fatalf("NVIDIA GPU procfs directories changed across restore: before %q, after %q", gpusBefore, gpusAfter)
+	}
 
 	// Run the vector add program again to ensure GPUs are functional.
 	if _, err := c.Exec(ctx, dockerutil.ExecOpts{}, vectorAddCmd...); err != nil {

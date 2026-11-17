@@ -52,8 +52,8 @@ func FillDeviceRemapIDsFromMinor(ctx context.Context, ctlDevClient *devutil.Gofe
 
 	// Minor => PCIVendorID, PCIDeviceID, GPUID
 	var cardInfos [nvgpu.NV_MAX_DEVICES]nvgpu.IoctlCardInfo
-	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, ctlFD, frontendIoctlCmd(nvgpu.NV_ESC_CARD_INFO, uint32(unsafe.Sizeof(cardInfos))), uintptr(unsafe.Pointer(&cardInfos))); errno != 0 {
-		return fmt.Errorf("NV_ESC_CARD_INFO failed: %w", errno)
+	if err := queryCardInfo(ctlFD, &cardInfos); err != nil {
+		return err
 	}
 	cardInfoFromMinor := make(map[uint32]*nvgpu.IoctlCardInfo)
 	for i := range cardInfos {
