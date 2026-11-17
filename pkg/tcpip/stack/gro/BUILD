@@ -41,7 +41,9 @@ go_test(
     ],
     embed = [":gro"],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )

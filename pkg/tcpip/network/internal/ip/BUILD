@@ -12,6 +12,7 @@ go_library(
         "errors.go",
         "generic_multicast_protocol.go",
         "reject_with_reset.go",
+        "segment.go",
         "stats.go",
     ],
     visibility = [
@@ -23,6 +24,7 @@ go_library(
         "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
@@ -34,11 +36,14 @@ go_test(
     srcs = [
         "duplicate_address_detection_test.go",
         "generic_multicast_protocol_test.go",
+        "segment_test.go",
     ],
     deps = [
         ":ip",
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

@@ -3569,6 +3569,225 @@ func TestForwarding(t *testing.T) {
 	}
 }
 
+const (
+	groSeqNum   = 1000
+	groHopLimit = 2
+	groTCPFlags = header.TCPFlagAck | header.TCPFlagPsh | header.TCPFlagFin | header.TCPFlagCwr
+)
+
+// groTCPOptions is a TCP timestamp option, padded to 12 bytes.
+var groTCPOptions = []byte{header.TCPOptionNOP, header.TCPOptionNOP, header.TCPOptionTS, header.TCPOptionTSLength, 0, 0, 0, 1, 0, 0, 0, 2}
+
+// groHopByHopHeader is a Hop-by-Hop Options header holding a PadN option,
+// followed by a TCP header.
+var groHopByHopHeader = []byte{uint8(header.TCPProtocolNumber), 0, 1, 4, 0, 0, 0, 0}
+
+// newCoalescedTCPPacket returns an IPv6 TCP packet carrying payload, marked as
+// coalesced by receive offload from segments of groSegmentSize bytes. If
+// hopByHop is set, a Hop-by-Hop Options header precedes the TCP header.
+func newCoalescedTCPPacket(t *testing.T, payload []byte, groSegmentSize uint16, hopByHop bool) *stack.PacketBuffer {
+	t.Helper()
+	tcpLen := header.TCPMinimumSize + len(groTCPOptions) + len(payload)
+	extHdrLen := 0
+	if hopByHop {
+		extHdrLen = len(groHopByHopHeader)
+	}
+	hdr := prependable.New(header.IPv6MinimumSize + extHdrLen + tcpLen)
+	copy(hdr.Prepend(len(payload)), payload)
+	copy(hdr.Prepend(len(groTCPOptions)), groTCPOptions)
+	header.TCP(hdr.Prepend(header.TCPMinimumSize)).Encode(&header.TCPFields{
+		SrcPort:    1234,
+		DstPort:    80,
+		SeqNum:     groSeqNum,
+		AckNum:     1,
+		DataOffset: uint8(header.TCPMinimumSize + len(groTCPOptions)),
+		Flags:      groTCPFlags,
+		WindowSize: 65535,
+	})
+	tcpHdr := header.TCP(hdr.View())
+	xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, remoteIPv6Addr1, remoteIPv6Addr2, uint16(tcpLen))
+	xsum = checksum.Checksum(payload, xsum)
+	tcpHdr.SetChecksum(^tcpHdr.CalculateChecksum(xsum))
+	nextHdr := header.TCPProtocolNumber
+	if hopByHop {
+		copy(hdr.Prepend(extHdrLen), groHopByHopHeader)
+		nextHdr = tcpip.TransportProtocolNumber(header.IPv6HopByHopOptionsExtHdrIdentifier)
+	}
+	header.IPv6(hdr.Prepend(header.IPv6MinimumSize)).Encode(&header.IPv6Fields{
+		PayloadLength:     uint16(extHdrLen + tcpLen),
+		TransportProtocol: nextHdr,
+		HopLimit:          groHopLimit,
+		SrcAddr:           remoteIPv6Addr1,
+		DstAddr:           remoteIPv6Addr2,
+	})
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	pkt.GROSegmentSize = groSegmentSize
+	return pkt
+}
+
+func TestForwardingGROPacket(t *testing.T) {
+	const (
+		mtu    = header.IPv6MinimumMTU
+		tcpLen = header.TCPMinimumSize + 12
+		mss    = mtu - header.IPv6MinimumSize - tcpLen
+	)
+
+	tests := []struct {
+		name           string
+		groSegmentSize uint16
+		payloadLen     int
+		hopByHop       bool
+		// wantSegments holds the payload size of each forwarded packet.
+		wantSegments     []int
+		wantPacketTooBig uint64
+	}{
+		{
+			name:           "segments fit",
+			groSegmentSize: mss,
+			payloadLen:     3*mss + 100,
+			wantSegments:   []int{mss, mss, mss, 100},
+		},
+		{
+			name:           "smaller segments than MTU allows",
+			groSegmentSize: 500,
+			payloadLen:     1700,
+			wantSegments:   []int{500, 500, 500, 200},
+		},
+		{
+			name:           "coalesced packet fits MTU",
+			groSegmentSize: 300,
+			payloadLen:     600,
+			wantSegments:   []int{600},
+		},
+		{
+			name:             "segments do not fit",
+			groSegmentSize:   mss + 1,
+			payloadLen:       2 * (mss + 1),
+			wantPacketTooBig: 1,
+		},
+		{
+			name:             "not coalesced",
+			payloadLen:       2 * mss,
+			wantPacketTooBig: 1,
+		},
+		{
+			name:             "extension header before TCP",
+			groSegmentSize:   mss - 8,
+			payloadLen:       2 * mss,
+			hopByHop:         true,
+			wantPacketTooBig: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
+			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+			for nicID, addr := range defaultEndpointConfigs {
+				ep := channel.New(len(test.wantSegments)+1, mtu, "")
+				defer ep.Close()
+				if err := s.CreateNIC(nicID, ep); err != nil {
+					t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+				}
+				addr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: addr}
+				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+				}
+				endpoints[nicID] = ep
+			}
+			s.SetRouteTable([]tcpip.Route{
+				{Destination: incomingIPv6Addr.Subnet(), NIC: incomingNICID},
+				{Destination: outgoingIPv6Addr.Subnet(), NIC: outgoingNICID},
+			})
+			if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
+				t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
+			}
+
+			payload := make([]byte, test.payloadLen)
+			for i := range payload {
+				payload[i] = byte(i)
+			}
+			requestPkt := newCoalescedTCPPacket(t, payload, test.groSegmentSize, test.hopByHop)
+			defer requestPkt.DecRef()
+			endpoints[incomingNICID].InjectInbound(ProtocolNumber, requestPkt)
+
+			reply := endpoints[incomingNICID].Read()
+			if test.wantPacketTooBig != 0 {
+				if reply == nil {
+					t.Fatal("expected an ICMPv6 Packet Too Big packet through the incoming NIC")
+				}
+				defer reply.DecRef()
+				replyPayload := stack.PayloadSince(reply.NetworkHeader())
+				defer replyPayload.Release()
+				checker.IPv6(t, replyPayload,
+					checker.DstAddr(remoteIPv6Addr1),
+					checker.ICMPv6(checker.ICMPv6Type(header.ICMPv6PacketTooBig)),
+				)
+			} else if reply != nil {
+				reply.DecRef()
+				t.Fatal("got a packet through the incoming NIC, want none")
+			}
+
+			off := 0
+			for i, n := range test.wantSegments {
+				pkt := endpoints[outgoingNICID].Read()
+				if pkt == nil {
+					t.Fatalf("got %d packets through the outgoing NIC, want %d", i, len(test.wantSegments))
+				}
+				defer pkt.DecRef()
+				v := stack.PayloadSince(pkt.NetworkHeader())
+				defer v.Release()
+				wantFlags := header.TCPFlags(groTCPFlags)
+				if i != 0 {
+					wantFlags &^= header.TCPFlagCwr
+				}
+				if i != len(test.wantSegments)-1 {
+					wantFlags &^= header.TCPFlagFin | header.TCPFlagPsh
+				}
+				checker.IPv6(t, v,
+					checker.SrcAddr(remoteIPv6Addr1),
+					checker.DstAddr(remoteIPv6Addr2),
+					checker.TTL(groHopLimit-1),
+					checker.PayloadLen(tcpLen+n),
+					checker.TCP(
+						checker.TCPSeqNum(uint32(groSeqNum+off)),
+						checker.TCPFlags(wantFlags),
+					),
+				)
+				tcpHdr := header.TCP(header.IPv6(v.AsSlice()).Payload())
+				if got := []byte(tcpHdr[header.TCPMinimumSize:tcpHdr.DataOffset()]); !bytes.Equal(got, groTCPOptions) {
+					t.Errorf("packet %d: got TCP options = %x, want = %x", i, got, groTCPOptions)
+				}
+				if got, want := tcpHdr.Payload(), payload[off:off+n]; !bytes.Equal(got, want) {
+					t.Errorf("packet %d: TCP payload mismatch, got %d bytes, want %d bytes", i, len(got), len(want))
+				}
+				off += n
+			}
+			if pkt := endpoints[outgoingNICID].Read(); pkt != nil {
+				pkt.DecRef()
+				t.Errorf("got more than %d packets through the outgoing NIC", len(test.wantSegments))
+			}
+
+			if got := s.Stats().IP.Forwarding.PacketTooBig.Value(); got != test.wantPacketTooBig {
+				t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, test.wantPacketTooBig)
+			}
+			if test.wantPacketTooBig == 0 {
+				if got, want := s.Stats().IP.PacketsSent.Value(), uint64(len(test.wantSegments)); got != want {
+					t.Errorf("s.Stats().IP.PacketsSent.Value() = %d, want = %d", got, want)
+				}
+				if got := s.Stats().IP.OutgoingPacketErrors.Value(); got != 0 {
+					t.Errorf("s.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
+				}
+			}
+		})
+	}
+}
+
 func TestMulticastForwarding(t *testing.T) {
 	const (
 		multicastRouteMinTTL = 2

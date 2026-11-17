@@ -143,6 +143,12 @@ type PacketBuffer struct {
 	EgressRoute RouteInfo
 	GSOOptions  GSO
 
+	// GROSegmentSize is the TCP payload size of the segments that receive
+	// offload coalesced into this packet, either on the host (reported in the
+	// virtio-net header) or in gVisor GRO. It is zero if the packet was not
+	// coalesced.
+	GROSegmentSize uint16
+
 	// snatDone indicates if the packet's source has been manipulated as per
 	// iptables NAT table.
 	snatDone bool
@@ -394,6 +400,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.Owner = pk.Owner
 	newPk.Mark = pk.Mark
 	newPk.GSOOptions = pk.GSOOptions
+	newPk.GROSegmentSize = pk.GROSegmentSize
 	newPk.EgressRoute = pk.EgressRoute
 	newPk.NetworkProtocolNumber = pk.NetworkProtocolNumber
 	newPk.dnatDone = pk.dnatDone
@@ -483,6 +490,7 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	newPk.tuple = pk.tuple
 	newPk.Mark = pk.Mark
 	newPk.InputNICID = pk.InputNICID
+	newPk.GROSegmentSize = pk.GROSegmentSize
 
 	return newPk
 }

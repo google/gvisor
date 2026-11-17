@@ -597,6 +597,128 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 	}
 }
 
+func TestIovecBufferGROSegmentSize(t *testing.T) {
+	for _, test := range []struct {
+		desc string
+		hdr  virtioNetHdr
+		want uint16
+	}{
+		{
+			desc: "not coalesced",
+			want: 0,
+		},
+		{
+			desc: "TCPv4",
+			hdr:  virtioNetHdr{gsoType: _VIRTIO_NET_HDR_GSO_TCPV4, gsoSize: 1448},
+			want: 1448,
+		},
+		{
+			desc: "TCPv6 with ECN",
+			hdr:  virtioNetHdr{gsoType: _VIRTIO_NET_HDR_GSO_TCPV6 | _VIRTIO_NET_HDR_GSO_ECN, gsoSize: 1428},
+			want: 1428,
+		},
+		{
+			desc: "UDP",
+			// VIRTIO_NET_HDR_GSO_UDP_L4.
+			hdr:  virtioNetHdr{gsoType: 5, gsoSize: 1400},
+			want: 0,
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			b := newIovecBuffer([]int{128, 256, 512, 1024}, true)
+			defer b.release()
+			// Pretend the kernel read a packet with this vnet header.
+			iovecs := b.nextIovecs()
+			copy(unsafe.Slice(iovecs[0].Base, iovecs[0].Len), test.hdr.marshal())
+			if got := b.groSegmentSize(); got != test.want {
+				t.Errorf("b.groSegmentSize() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDispatchGROSegmentSize(t *testing.T) {
+	ethHdr := []byte{
+		1, 2, 3, 4, 5, 60,
+		1, 2, 3, 4, 5, 61,
+		8, 0,
+	}
+	netHdr := []byte{0x40, 0, 0, 0}
+	for _, test := range []struct {
+		name          string
+		newDispatcher func(fd int, e *endpoint, opts *Options) (linkDispatcher, error)
+		hdr           virtioNetHdr
+		want          uint16
+	}{
+		{
+			name:          "readVDispatcher coalesced",
+			newDispatcher: newReadVDispatcher,
+			hdr:           virtioNetHdr{gsoType: _VIRTIO_NET_HDR_GSO_TCPV4, gsoSize: 1448},
+			want:          1448,
+		},
+		{
+			name:          "readVDispatcher not coalesced",
+			newDispatcher: newReadVDispatcher,
+			want:          0,
+		},
+		{
+			name:          "recvMMsgDispatcher coalesced",
+			newDispatcher: newRecvMMsgDispatcher,
+			hdr:           virtioNetHdr{gsoType: _VIRTIO_NET_HDR_GSO_TCPV4, gsoSize: 1448},
+			want:          1448,
+		},
+		{
+			name:          "recvMMsgDispatcher not coalesced",
+			newDispatcher: newRecvMMsgDispatcher,
+			want:          0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Close(fds[0])
+			defer unix.Close(fds[1])
+
+			var data []byte
+			data = append(data, test.hdr.marshal()...)
+			data = append(data, ethHdr...)
+			data = append(data, netHdr...)
+			if err := unix.Sendmsg(fds[1], data, nil, nil, 0); err != nil {
+				t.Fatal(err)
+			}
+
+			sink := &fakeNetworkDispatcher{}
+			d, err := test.newDispatcher(fds[0], &endpoint{
+				addr:       tcpip.LinkAddress(ethHdr[:header.EthernetAddressSize]),
+				hdrSize:    len(ethHdr),
+				dispatcher: sink,
+				gsoKind:    stack.HostGSOSupported,
+			}, &Options{ProcessorsPerChannel: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer d.release()
+			if ok, err := d.dispatch(); !ok || err != nil {
+				t.Fatalf("d.dispatch() = %v, %v", ok, err)
+			}
+
+			if got, want := len(sink.pkts), 1; got != want {
+				t.Fatalf("len(sink.pkts) = %d, want %d", got, want)
+			}
+			pkt := sink.pkts[0]
+			defer pkt.DecRef()
+			if got, want := pkt.Data().Size(), len(netHdr); got != want {
+				t.Errorf("pkt.Data().Size() = %d, want %d", got, want)
+			}
+			if got := pkt.GROSegmentSize; got != test.want {
+				t.Errorf("pkt.GROSegmentSize = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
 // fakeNetworkDispatcher delivers packets to pkts.
 type fakeNetworkDispatcher struct {
 	pkts []*stack.PacketBuffer

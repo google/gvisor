@@ -205,6 +205,12 @@ func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *st
 	flags := tcpHdr.Flags()
 	dataOff := tcpHdr.DataOffset()
 	tcpPayloadSize := pkt.Data().Size() - len(ipHdr) - int(dataOff)
+	// A packet larger than the first one in groPkt is not merged, so that
+	// all segments in a GRO packet are the first one's size, except possibly
+	// a smaller last one.
+	if groPkt != nil && pktSize > groPkt.initialLength {
+		flushGROPkt = true
+	}
 	if flushGROPkt {
 		// Flush the existing GRO packet.
 		pkt := groPkt.pkt
@@ -220,6 +226,9 @@ func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *st
 		updateIPHdr(groPkt.ipHdr, tcpPayloadSize)
 		// Add flags from the packet to the GRO packet.
 		groPkt.tcpHdr.SetFlags(uint8(groPkt.tcpHdr.Flags() | (flags & (header.TCPFlagFin | header.TCPFlagPsh))))
+		if groPkt.pkt.GROSegmentSize == 0 {
+			groPkt.pkt.GROSegmentSize = uint16(groPkt.initialLength - len(groPkt.ipHdr) - int(groPkt.tcpHdr.DataOffset()))
+		}
 
 		pkt = nil
 	}
@@ -229,9 +238,9 @@ func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *st
 	// - If the packet is smaller than the others, this is likely the end
 	//   of some message. Peers will send MSS-sized packets until they have
 	//   insufficient data to do so.
-	// - If the packet is larger than the others, this packet is either
-	//   malformed, a local GSO packet, or has already been handled by host
-	//   GRO.
+	// - If the packet is larger than the others, it was not merged above:
+	//   it is either malformed, a local GSO packet, or has already been
+	//   handled by host GRO.
 	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
 	flush = flush || tcpPayloadSize == 0
 	if groPkt != nil {
