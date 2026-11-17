@@ -29,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
-func TestStateSaveGraphEngineOverride(t *testing.T) {
+func TestSaveGraphEngineOverride(t *testing.T) {
 	prevEngine := pkgstate.GraphEngineEnabled()
 	defer pkgstate.EnableGraphEngine(prevEngine)
 
@@ -80,9 +80,16 @@ func TestStateSaveGraphEngineOverride(t *testing.T) {
 				GraphEngine: &override,
 			}
 
-			s := &State{Kernel: k, Watchdog: w}
-			if err := s.Save(opts, &struct{}{}); err != nil {
-				t.Fatalf("State.Save() failed: %v", err)
+			saveOpts, err := ConvertToStateSaveOpts(opts)
+			if err != nil {
+				t.Fatalf("ConvertToStateSaveOpts() failed: %v", err)
+			}
+			defer saveOpts.Close()
+			if err := Save(k, w, saveOpts, &opts.ExecOpts); err != nil {
+				t.Fatalf("Save() failed: %v", err)
+			}
+			if err := PostResume(k, nil /* timeline */); err != nil {
+				t.Fatalf("PostResume() failed: %v", err)
 			}
 
 			if got := pkgstate.GraphEngineEnabled(); got != tc.processDefault {

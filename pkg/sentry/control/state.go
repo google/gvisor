@@ -54,15 +54,9 @@ const (
 	saveRestoreExecEnvVar = "GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE"
 )
 
-// ErrInvalidFiles is returned when the urpc call to Save does not include an
-// appropriate file payload (e.g. there is no output file!).
+// ErrInvalidFiles is returned when the file payload of an RPC does not hold
+// exactly one file.
 var ErrInvalidFiles = errors.New("exactly one file must be provided")
-
-// State includes state-related functions.
-type State struct {
-	Kernel   *kernel.Kernel
-	Watchdog *watchdog.Watchdog
-}
 
 // ConvertToStateSaveOpts converts a control.SaveOpts to a state.SaveOpts.
 // state.SaveOpts.Close() must be called when the state.SaveOpts is no longer
@@ -215,36 +209,13 @@ func setSaveOptsForCheckpointGofer(o *controlapi.SaveOpts, saveOpts *state.SaveO
 	return nil
 }
 
-// Save saves the running system.
-func (s *State) Save(o *controlapi.SaveOpts, _ *struct{}) (err error) {
-	if len(o.SplitFSCheckpointPaths) > 0 {
-		defer func() {
-			s.Kernel.SignalAllFSSaveWaiters(err)
-		}()
-	}
-
-	saveOpts, err := ConvertToStateSaveOpts(o)
-	if err != nil {
+// Save saves the running system with the given options. If saveOpts.Resume is
+// true, the caller must call PostResume afterwards.
+func Save(k *kernel.Kernel, w *watchdog.Watchdog, saveOpts *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) error {
+	if err := preSave(k, saveOpts, execOpts); err != nil {
 		return err
 	}
-	defer saveOpts.Close()
-
-	if err := s.SaveWithOpts(saveOpts, &o.ExecOpts); err != nil {
-		return err
-	}
-	if saveOpts.Resume {
-		return PostResume(s.Kernel, nil)
-	}
-	return nil
-}
-
-// SaveWithOpts saves the running system with the given options. If
-// saveOpts.Resume is true, the caller must call PostResume afterwards.
-func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) error {
-	if err := preSave(s.Kernel, saveOpts, execOpts); err != nil {
-		return err
-	}
-	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
+	return saveOpts.Save(k.SupervisorContext(), k, w)
 }
 
 // preSave is called before saving the kernel.

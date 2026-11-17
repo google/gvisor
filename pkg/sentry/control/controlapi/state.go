@@ -25,7 +25,7 @@ import (
 // binary.
 const DefaultSaveRestoreExecTimeout = 10 * time.Minute
 
-// SaveOpts contains options for the Save RPC call.
+// SaveOpts contains the options of a checkpoint.
 type SaveOpts struct {
 	// Key is used to enable state integrity check.
 	Key []byte `json:"key"`

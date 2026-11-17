@@ -98,7 +98,6 @@ func (c *controller) registerHandlers() {
 	c.srv.Register(&control.Lifecycle{Kernel: l.k})
 	c.srv.Register(&control.Logging{})
 	c.srv.Register(&control.Proc{Kernel: l.k})
-	c.srv.Register(&control.State{Kernel: l.k})
 	c.srv.Register(&control.Usage{Kernel: l.k})
 	c.srv.Register(&control.Metrics{})
 	c.srv.Register(&debug{})
