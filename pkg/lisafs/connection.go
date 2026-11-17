@@ -21,6 +21,7 @@ import (
 	"slices"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -55,6 +56,9 @@ type Connection struct {
 	// mountPath is trusted because it is configured by the server (trusted) as
 	// per the user's sandbox configuration. mountPath is immutable.
 	mountPath string
+
+	// mounted is true during a Mount RPC and after a successful one.
+	mounted atomicbitops.Bool
 
 	// maxMessageSize is the cached value of impl.MaxMessageSize().
 	maxMessageSize uint32
