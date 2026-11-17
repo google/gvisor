@@ -187,7 +187,9 @@ func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) err
 		return fmt.Errorf("error configuring chroot for RDMA sysfs: %w", err)
 	}
 
-	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
+	if err := specutils.SafeMount("", chroot, "",
+		unix.MS_REMOUNT|unix.MS_BIND|unix.MS_RDONLY|unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC,
+		"", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
 	timer.Reached("chroot sealed read-only")
