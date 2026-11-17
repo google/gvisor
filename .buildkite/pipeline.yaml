@@ -81,32 +81,18 @@ env:
 
 priority: ${PRIORITY:-0}
 steps:
-  # Run basic AMD64 smoke tests before preceding to other tests.
+  # PR builds run first-pass.yaml in a separate pipeline.
+  # For branch builds, make sure we run them here too.
   - <<: *common
-    <<: *source_test
-    label: ":fire: Smoke tests (AMD64)"
-    command: make smoke-tests
-    agents:
-      arch: "amd64"
-      queue: "default"
-  - <<: *common
-    <<: *source_test
-    env:
-      GLIBC_TUNABLES: glibc.pthread.rseq=0
-    label: ":fire: Smoke race tests"
-    command: make smoke-race-tests
+    label: ":buildkite: Upload first-pass steps"
+    if: build.pull_request.id == null
+    command: buildkite-agent pipeline upload .buildkite/first-pass.yaml
     agents:
       queue: "default"
 
-  # Run the remaining tests only if the smoke tests pass, so that a change
-  # that does not build or start does not use the other agents (presubmits
-  # only).
-  - wait: ~
-    if: build.branch != "master"
-
-  # Run ARM64 smoke tests alongside the other tests. Ideally, we would
-  # run this before the rest of the tests as with AMD64 smoke tests, but
-  # we are severely limited in ARM64 agent capacity.
+  # Run ARM64 smoke tests alongside the other tests. Ideally, this would run
+  # in first-pass.yaml with the AMD64 smoke tests, but ARM64 agent capacity is
+  # severely limited.
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (ARM64)"
@@ -338,44 +324,8 @@ steps:
     agents:
       arch: "arm64"
       queue: "arm64"
-  - <<: *common
-    <<: *source_test
-    label: ":broom: Lint"
-    command: make lint
-    agents:
-      arch: "amd64"
-  - <<: *common
-    <<: *source_test
-    label: ":soap: Lint (C++)"
-    command: make lint-cc
-    agents:
-      arch: "amd64"
-  - <<: *common
-    <<: *source_test
-    label: ":scroll: Governance file sync check"
-    command: make governance-check
-    agents:
-      arch: "amd64"
-  - <<: *common
-    <<: *source_test
-    label: ":building_construction: Gazelle BUILD file check"
-    command: make gazelle-check
-    agents:
-      arch: "amd64"
-  - <<: *common
-    <<: *source_test
-    label: ":scales: Dependency license check"
-    command: make license-check
-    agents:
-      arch: "amd64"
 
   # Basic unit tests.
-  - <<: *common
-    <<: *source_test
-    label: ":golang: Nogo tests"
-    command: make nogo-tests
-    agents:
-      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":test_tube: Unit tests (cgroupv1)"
@@ -384,14 +334,6 @@ steps:
       cgroup: "v1"
       arch: "amd64"
       queue: "cgroupv1"
-  - <<: *common
-    <<: *source_test
-    label: ":test_tube: Unit tests (cgroupv2)"
-    command: make unit-tests
-    agents:
-      cgroup: "v2"
-      arch: "amd64"
-      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":test_tube: Unit tests (ARM64)"
@@ -409,30 +351,8 @@ steps:
       cgroup: "v1"
       arch: "amd64"
       queue: "cgroupv1"
-  - <<: *common
-    <<: *docker
-    # This variant is not really a source test, but we annotate it as such to
-    # avoid running binary-only tests for all variants of cgroups. It is
-    # sufficient to run cgroupv2 variants only for source changes.
-    <<: *source_test
-    label: ":test_tube: Container tests (cgroupv2)"
-    command: make container-tests
-    agents:
-      <<: *kvm_agents
-      cgroup: "v2"
-      arch: "amd64"
-      queue: "default"
 
   # All system call tests.
-  - <<: *common
-    label: ":toolbox: System call tests (AMD64)"
-    command: make OPTIONS=--config=syscalls-amd64 syscall-tests
-    parallelism: 20
-    agents:
-      <<: *platform_specific_agents
-      <<: *kvm_agents
-      arch: "amd64"
-      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
@@ -513,7 +433,9 @@ steps:
       queue: "cgroupv1"
   - <<: *common
     <<: *docker
-    # See above: not truly a source test.
+    # This variant is not really a source test, but we annotate it as such to
+    # avoid running binary-only tests for all variants of cgroups. It is
+    # sufficient to run cgroupv2 variants only for source changes.
     <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
     parallelism: 8
@@ -608,15 +530,6 @@ steps:
     <<: *source_test
     label: ":lock: Sandbox posture tests"
     command: make sandbox-posture-tests
-    agents:
-      arch: "amd64"
-      kernel: "modern"
-      queue: "default"
-  - <<: *common
-    <<: *docker
-    <<: *source_test
-    label: ":lock: Root tests"
-    command: make root-tests
     agents:
       arch: "amd64"
       kernel: "modern"
