@@ -122,6 +122,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
 	flagSet.Var(leakModePtr(refs.NoLeakChecking), "ref-leak-mode", "sets reference leak check mode: disabled (default), log-names, log-traces.")
 	flagSet.Bool("cpu-num-from-quota", true, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
+	flagSet.Var(AMXAuto.Ptr(), "amx", "controls whether Intel AMX is exposed to the application: auto (default) exposes it if the host, the platform and the CPU features annotation allow it; disabled never exposes it, e.g. so that checkpoints can be restored on hosts without AMX.")
 	flagSet.Bool(flagOCISeccomp, false, "Enables loading OCI seccomp filters inside the sandbox.")
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
 	flagSet.Var(SignalUnkillableNone.Ptr(), "signal-unkillable-policy", "controls protection of PID namespace init processes from signals under Linux SIGNAL_UNKILLABLE semantics: none (default) or linux.")

@@ -80,6 +80,7 @@ var (
 	nftables         = flag.Bool("nftables", false, "enables nftables")
 	kvmUseCPUNums    = flag.Bool("kvm-use-cpu-nums", false, "use cpu numbers in kvm platform")
 	inSandboxCgroup  = flag.String("in-sandbox-cgroup", "v1", "cgroup setup to use inside the sandbox (v1 or v2)")
+	amx              = flag.String("amx", "auto", "value of runsc's --amx flag")
 )
 
 const (
@@ -486,6 +487,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *inSandboxCgroup != "" {
 		args = append(args, "-in-sandbox-cgroup="+*inSandboxCgroup)
+	}
+	if *amx != "auto" {
+		args = append(args, "-amx="+*amx)
 	}
 
 	testLogDir := ""

@@ -101,6 +101,7 @@ def _syscall_test(
         in_sandbox_cgroup = "v1",
         requires_atime = False,
         add_host_random = False,
+        amx = "auto",
         **kwargs):
     limit_ephemeral_ports = limit_ephemeral_ports and (network == "host" or platform == "native")
     if limit_ephemeral_ports:
@@ -127,6 +128,8 @@ def _syscall_test(
         name += "_save_resume"
     if nftables:
         name += "_nftables"
+    if amx != "auto":
+        name += "_amx_" + amx
 
     # Apply all tags.
     if tags == None:
@@ -201,6 +204,7 @@ def _syscall_test(
         "--save-resume=" + str(save_resume),
         "--nftables=" + str(nftables),
         "--kvm-use-cpu-nums=" + str(kvm_use_cpu_nums),
+        "--amx=" + amx,
     ]
 
     if in_sandbox_cgroup:
@@ -446,6 +450,7 @@ def syscall_test(
         perf = False,
         kvm_use_cpu_nums = False,
         in_sandbox_cgroup = "v1",
+        add_amx_disabled = False,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -474,6 +479,7 @@ def syscall_test(
       perf: test is a benchmark.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
+      add_amx_disabled: add systrap and kvm tests with --amx=disabled.
       **kwargs: Additional test arguments; requires_atime enables host atime updates.
         add_host_random binds the host random device at /dev/random.
     """
@@ -597,3 +603,21 @@ def syscall_test(
             in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
+
+    if add_amx_disabled:
+        for platform, platform_tags in all_platforms():
+            if platform not in ("systrap", "kvm"):
+                continue
+            _syscall_test(
+                test = test,
+                platform = platform,
+                use_tmpfs = use_tmpfs,
+                tags = platform_tags + tags,
+                debug = debug,
+                container = container,
+                one_sandbox = one_sandbox,
+                kvm_use_cpu_nums = kvm_use_cpu_nums,
+                in_sandbox_cgroup = in_sandbox_cgroup,
+                amx = "disabled",
+                **kwargs
+            )

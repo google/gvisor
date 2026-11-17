@@ -301,7 +301,7 @@ func New(opts platform.Options) (*Systrap, error) {
 
 	if maxSysmsgThreads == 0 {
 		// CPUID information has been initialized at this point.
-		amxEnabled = cpuid.HostAMXEnabled()
+		amxEnabled = !opts.DisableAMX && cpuid.HostAMXEnabled()
 		archState.Init(amxEnabled)
 		// Base GOMAXPROCS has been set at this point.
 		maxSysmsgThreads = gomaxprocs.Base()

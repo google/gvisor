@@ -87,7 +87,7 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	// Ensure global initialization is done.
 	initIoeventfdMMIO()
 	globalOnce.Do(func() {
-		globalErr = updateGlobalOnce(int(fd))
+		globalErr = updateGlobalOnce(int(fd), &config)
 	})
 	if globalErr != nil {
 		return nil, globalErr
@@ -249,6 +249,7 @@ func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 		StartupTimer:     opts.StartupTimer,
 		PinRing:          opts.PinRing,
 		TSCOffset:        opts.TSCOffset,
+		DisableAMX:       opts.DisableAMX,
 	})
 }
 

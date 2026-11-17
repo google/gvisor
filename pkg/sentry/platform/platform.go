@@ -625,6 +625,9 @@ type Options struct {
 	// DisableFastPath, if true, completely disables the Systrap fast path.
 	DisableFastPath bool
 
+	// DisableAMX hides AMX from the application even if the host supports it.
+	DisableAMX bool
+
 	// ApplicationCores is used by KVM to determine the correct amount of
 	// vCPUs to create.
 	ApplicationCores int
