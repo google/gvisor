@@ -410,6 +410,35 @@ func verifyUDPEchoRoundTripProto(t *testing.T, clientStack *stack.Stack, targetA
 	}
 }
 
+// TestRunProxyModeExitsWhenPeerClosedBeforeStart verifies that runProxyMode
+// exits cleanly when the sandbox end of the UDS is already closed at startup.
+func TestRunProxyModeExitsWhenPeerClosedBeforeStart(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("unix.Socketpair() failed: %v", err)
+	}
+	_ = unix.Close(fds[1])
+
+	n := &Netgofer{
+		udsFD:          fds[0],
+		mtu:            DefaultMTU,
+		applyCaps:      false,
+		disableSeccomp: true,
+	}
+	proxyExit := make(chan subcommands.ExitStatus, 1)
+	go func() {
+		proxyExit <- n.runProxyMode(&config.Config{RXChecksumOffload: true})
+	}()
+	select {
+	case status := <-proxyExit:
+		if status != subcommands.ExitSuccess {
+			t.Errorf("runProxyMode() = %v, want %v", status, subcommands.ExitSuccess)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("runProxyMode() did not exit with the UDS peer already closed")
+	}
+}
+
 func TestRunProxyModeEndToEnd(t *testing.T) {
 	wantReq := []byte("ping from sandbox over UDS proxy")
 	wantResp := []byte("pong from host TCP server")

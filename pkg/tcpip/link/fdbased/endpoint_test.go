@@ -781,6 +781,103 @@ func TestCloseReleasesStopFDs(t *testing.T) {
 	}
 }
 
+// chanDispatcher delivers each packet to a channel.
+type chanDispatcher struct {
+	ch chan *stack.PacketBuffer
+}
+
+func (d *chanDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	d.ch <- pkt.Clone()
+}
+
+func (d *chanDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {}
+
+// TestRecvMMsgPeerClose verifies that the RecvMMsg dispatcher delivers
+// queued packets and stops when the peer of a SOCK_SEQPACKET socket closes.
+func TestRecvMMsgPeerClose(t *testing.T) {
+	for _, closeBeforeAttach := range []bool{true, false} {
+		t.Run(fmt.Sprintf("closeBeforeAttach=%t", closeBeforeAttach), func(t *testing.T) {
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+			if err != nil {
+				t.Fatalf("Socketpair = %v", err)
+			}
+			defer unix.Close(fds[0])
+			peerClosed := false
+			closePeer := func() {
+				if !peerClosed {
+					peerClosed = true
+					_ = unix.Close(fds[1])
+				}
+			}
+			defer closePeer()
+
+			closed := make(chan tcpip.Error, 1)
+			ep, err := New(&Options{
+				FDs:                  []int{fds[0]},
+				MTU:                  mtu,
+				PacketDispatchMode:   RecvMMsg,
+				ProcessorsPerChannel: 1,
+				ClosedFunc:           func(err tcpip.Error) { closed <- err },
+			})
+			if err != nil {
+				t.Fatalf("New = %v", err)
+			}
+
+			// Queue two IPv4 packets before closing the peer.
+			const numPkts = 2
+			pkt := make([]byte, 40)
+			pkt[0] = 0x45
+			for i := 0; i < numPkts; i++ {
+				if _, err := unix.Write(fds[1], pkt); err != nil {
+					t.Fatalf("Write(%d) = %v", i, err)
+				}
+			}
+			if closeBeforeAttach {
+				closePeer()
+			}
+			sink := &chanDispatcher{ch: make(chan *stack.PacketBuffer, 10)}
+			ep.Attach(sink)
+
+			for i := 0; i < numPkts; i++ {
+				select {
+				case got := <-sink.ch:
+					if got.Size() != len(pkt) {
+						t.Errorf("packet %d: delivered size = %d, want %d", i, got.Size(), len(pkt))
+					}
+					got.DecRef()
+				case <-time.After(10 * time.Second):
+					t.Fatalf("timed out waiting for packet %d sent before the peer closed", i)
+				}
+			}
+			if !closeBeforeAttach {
+				closePeer()
+			}
+
+			select {
+			case err := <-closed:
+				switch err.(type) {
+				case *tcpip.ErrClosedForReceive, *tcpip.ErrConnectionReset:
+				default:
+					t.Errorf("ClosedFunc got %v, want ErrClosedForReceive or ErrConnectionReset", err)
+				}
+				// When the peer closes before Attach, the first recvmmsg call
+				// reads the queued packets followed by a zero-length EOF message,
+				// and the next recvmmsg call returns ErrClosedForReceive without
+				// blocking in poll.
+				if _, ok := err.(*tcpip.ErrClosedForReceive); closeBeforeAttach && !ok {
+					t.Errorf("ClosedFunc got %v, want ErrClosedForReceive", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("dispatcher did not stop after the peer closed")
+			}
+
+			// Attach(nil) waits for the dispatch goroutine to finish.
+			ep.Attach(nil)
+			ep.Close()
+		})
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

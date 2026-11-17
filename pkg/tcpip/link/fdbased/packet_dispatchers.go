@@ -312,6 +312,14 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
+		if n == 0 {
+			// A zero-length message indicates end of stream on a
+			// connection-oriented socket (such as SOCK_SEQPACKET).
+			if k == 0 {
+				return false, &tcpip.ErrClosedForReceive{}
+			}
+			break
+		}
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: d.bufs[k].pullBuffer(n),
 		})
