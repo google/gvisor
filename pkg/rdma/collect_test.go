@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -98,5 +99,126 @@ func TestCollectNCCLMergePaths(t *testing.T) {
 	}
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Errorf("PCI node paths = %v, want %v", paths, wantPaths)
+	}
+}
+
+func TestCollectGPUs(t *testing.T) {
+	sysRoot := t.TempDir()
+	const (
+		bridge     = "devices/pci0000:16/0000:16:01.0"
+		gpu        = bridge + "/0000:17:00.0"
+		gpu2       = bridge + "/0000:17:01.0"
+		nvswitch   = "devices/pci0000:16/0000:16:02.0"
+		vfioGPU    = "devices/pci0000:80/0000:80:01.0/0000:81:00.0"
+		unboundGPU = "devices/pci0000:80/0000:80:02.0/0000:82:00.0"
+		bmcVGA     = "devices/pci0000:00/0000:00:1c.0/0000:02:00.0"
+	)
+	config := strings.Repeat("c", 256)
+	bridgeConfig := strings.Repeat("b", 4096)
+	wantGPUAttrs := map[string]string{
+		"class":            "0x030200\n",
+		"vendor":           "0x10de\n",
+		"device":           "0x2329\n",
+		"subsystem_vendor": "0x10de\n",
+		"subsystem_device": "0x198b\n",
+		"revision":         "0xa1\n",
+		"numa_node":        "1\n",
+		"local_cpus":       "ffff0000\n",
+		"local_cpulist":    "16-31\n",
+		"max_link_speed":   "8.0 GT/s PCIe\n",
+		"max_link_width":   "16\n",
+		"modalias":         "pci:v000010DEd00002329sv000010DEsd0000198Bbc03sc02i00\n",
+		"resource":         "0x0000000000000000 0x0000000000000000 0x0000000000000000\n",
+	}
+	// No class/infiniband_verbs: collecting GPU topology reads no RDMA state.
+	files := map[string]string{
+		bridge + "/class":                        "0x060400\n",
+		bridge + "/config":                       bridgeConfig,
+		gpu + "/config":                          config,
+		gpu + "/uevent":                          "DRIVER=nvidia\n",
+		gpu + "/current_link_speed":              "2.5 GT/s PCIe\n",
+		gpu + "/current_link_width":              "16\n",
+		gpu2 + "/class":                          "0x030000\n",
+		gpu2 + "/vendor":                         "0x10de\n",
+		nvswitch + "/class":                      "0x068000\n",
+		nvswitch + "/vendor":                     "0x10de\n",
+		vfioGPU + "/class":                       "0x030200\n",
+		vfioGPU + "/vendor":                      "0x10de\n",
+		unboundGPU + "/class":                    "0x030200\n",
+		unboundGPU + "/vendor":                   "0x10de\n",
+		bmcVGA + "/class":                        "0x030000\n",
+		bmcVGA + "/vendor":                       "0x1a03\n",
+		"devices/pci0000:16/uevent":              "",
+		"bus/pci/drivers/nvidia/bind":            "",
+		"bus/pci/drivers/nvidia-nvswitch/new_id": "",
+		"devices/system/node/has_cpu":            "0-1\n",
+		"devices/system/node/online":             "0-1\n",
+	}
+	for name, val := range wantGPUAttrs {
+		files[gpu+"/"+name] = val
+	}
+	writeTestFiles(t, sysRoot, files)
+	for driver, fns := range map[string][]string{
+		"nvidia":               {gpu, gpu2, bmcVGA},
+		"nvidia-nvswitch":      {nvswitch},
+		"nvgrace_gpu_vfio_pci": {vfioGPU},
+	} {
+		dir := filepath.Join(sysRoot, "bus/pci/drivers", driver)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		for _, fn := range fns {
+			if err := os.Symlink(filepath.Join(sysRoot, fn), filepath.Join(dir, filepath.Base(fn))); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// A function that was unbound after its driver directory was listed.
+	if err := os.Symlink(filepath.Join(sysRoot, "devices/pci0000:16/0000:16:03.0"), filepath.Join(sysRoot, "bus/pci/drivers/nvidia/0000:16:03.0")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only the NVIDIA GPUs and NVSwitch that are bound to an NVIDIA driver
+	// are leaves, and the GPUs share their ancestors.
+	snap, err := CollectGPUs(sysRoot, "0x10de", []string{"nvidia", "nvidia-nvswitch"})
+	if err != nil {
+		t.Fatalf("CollectGPUs failed: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("CollectGPUs returned no snapshot")
+	}
+	var paths []string
+	for _, n := range snap.PCINodes {
+		paths = append(paths, n.Path)
+		switch n.Path {
+		case "devices/pci0000:16":
+			if len(n.Attrs) != 0 || n.Config != nil {
+				t.Errorf("root complex has attributes %v and config %q, want none", n.Attrs, n.Config)
+			}
+		case bridge:
+			if string(n.Config) != bridgeConfig[:64] {
+				t.Errorf("bridge config = %q, want its header", n.Config)
+			}
+		case gpu:
+			if string(n.Config) != config[:64] {
+				t.Errorf("GPU config = %q, want its header", n.Config)
+			}
+			if !reflect.DeepEqual(n.Attrs, wantGPUAttrs) {
+				t.Errorf("GPU attributes = %v, want %v", n.Attrs, wantGPUAttrs)
+			}
+		}
+	}
+	if want := []string{"devices/pci0000:16", bridge, gpu, gpu2, nvswitch}; !reflect.DeepEqual(paths, want) {
+		t.Errorf("PCI node paths = %v, want %v", paths, want)
+	}
+	if snap.VerbsABIVersion != "" || len(snap.Devices) != 0 {
+		t.Errorf("got verbs ABI version %q and %d devices, want none", snap.VerbsABIVersion, len(snap.Devices))
+	}
+	if snap.NUMA == nil || !reflect.DeepEqual(snap.NUMA.Aggregate, map[string]string{"has_cpu": "0-1\n", "online": "0-1\n"}) {
+		t.Errorf("NUMA = %+v, want the host's NUMA nodes", snap.NUMA)
+	}
+
+	if snap, err := CollectGPUs(sysRoot, "0x1002", []string{"amdgpu"}); snap != nil || err != nil {
+		t.Errorf("CollectGPUs for a vendor without GPUs = %+v, %v, want nil, nil", snap, err)
 	}
 }

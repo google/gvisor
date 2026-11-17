@@ -566,10 +566,25 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		IsRootfsUpperTarFilePresent: rootfsUpperTarFile != nil,
 		FilePayload:                 payload,
 	}
+	if specutils.GPUSysfsSnapshotEnabled(spec, conf) && !s.hasSysfsSnapshot() {
+		args.GPUSysfs = specutils.TakeGPUSysfsSnapshot("/sys")
+	}
 	if err := s.call(sentryapi.ContMgrStartSubcontainer, &args, nil); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
 	}
 	return nil
+}
+
+// hasSysfsSnapshot returns whether the sandbox has a host sysfs snapshot. It
+// returns true if it cannot tell: sandboxes that do not implement
+// ContMgrHasSysfsSnapshot also ignore StartArgs.GPUSysfs.
+func (s *Sandbox) hasSysfsSnapshot() bool {
+	var has bool
+	if err := s.call(sentryapi.ContMgrHasSysfsSnapshot, nil, &has); err != nil {
+		log.Warningf("Cannot tell whether sandbox %q has a sysfs snapshot: %v", s.ID, err)
+		return true
+	}
+	return has
 }
 
 // DirectIO controls whether the checkpoint pages file is read with O_DIRECT.

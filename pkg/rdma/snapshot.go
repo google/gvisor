@@ -43,7 +43,8 @@ type PCINode struct {
 	// Config is the raw PCI config space ("config" file), or nil if absent.
 	// hwloc (used by aws-ofi-nccl for NCCL topology) reads it to recover the
 	// PCI-bridge bus-number registers and PCIe link attributes; without it
-	// hwloc cannot reconstruct the bridge hierarchy.
+	// hwloc cannot reconstruct the bridge hierarchy. A snapshot without
+	// Devices only holds the configuration space header.
 	Config []byte `json:"config,omitempty"`
 }
 
@@ -111,8 +112,10 @@ type Snapshot struct {
 	// ancestor bridges/roots. Sorted by Path, which places parents before
 	// children.
 	PCINodes []PCINode `json:"pci_nodes"`
-	Devices  []Device  `json:"devices"`
-	NUMA     *NUMA     `json:"numa,omitempty"`
+	// Devices is empty if the snapshot only holds GPU topology (see
+	// CollectGPUs).
+	Devices []Device `json:"devices"`
+	NUMA    *NUMA    `json:"numa,omitempty"`
 }
 
 // safeName matches names we are willing to reproduce inside the sandbox or

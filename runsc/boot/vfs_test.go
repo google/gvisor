@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
@@ -146,6 +147,68 @@ func TestNUMATopologyBootGate(t *testing.T) {
 			got := opts.GetFilesystemOptions.InternalData.(*sys.InternalData).EnableNUMATopology
 			if got != tc.want {
 				t.Errorf("EnableNUMATopology = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSysfsSnapshotContainerGate(t *testing.T) {
+	gpuSnap := &rdma.Snapshot{PCINodes: []rdma.PCINode{{Path: "devices/pci0000:00"}}}
+	rdmaSnap := &rdma.Snapshot{Devices: []rdma.Device{{Uverbs: "uverbs0"}}}
+	gpuSpec := &specs.Spec{Linux: &specs.Linux{Devices: []specs.LinuxDevice{{Path: "/dev/nvidiactl"}}}}
+	gpuRDMASpec := &specs.Spec{Linux: &specs.Linux{Devices: []specs.LinuxDevice{{Path: "/dev/nvidiactl"}, {Path: "/dev/infiniband/uverbs0"}}}}
+	for _, tc := range []struct {
+		name string
+		spec *specs.Spec
+		conf config.Config
+		snap *rdma.Snapshot
+		want bool
+	}{
+		{
+			name: "GPU topology, container with GPUs",
+			spec: gpuSpec,
+			snap: gpuSnap,
+			want: true,
+		},
+		{
+			name: "GPU topology, container without GPUs",
+			spec: &specs.Spec{},
+			snap: gpuSnap,
+		},
+		{
+			name: "GPU topology, container with GPUs and TPU proxy",
+			spec: gpuSpec,
+			conf: config.Config{TPUProxy: true},
+			snap: gpuSnap,
+		},
+		{
+			name: "GPU topology, container with GPUs and RDMA",
+			spec: gpuRDMASpec,
+			conf: config.Config{RDMAProxy: true},
+			snap: gpuSnap,
+		},
+		{
+			name: "RDMA topology",
+			spec: &specs.Spec{},
+			snap: rdmaSnap,
+			want: true,
+		},
+		{
+			name: "no snapshot",
+			spec: gpuSpec,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &mountInfo{mount: &specs.Mount{Type: sys.Name}}
+			conf := tc.conf
+			conf.NVProxy = true
+			_, opts, err := getMountNameAndOptions(tc.spec, &conf, m, "", "", "", nil, tc.snap)
+			if err != nil {
+				t.Fatalf("getMountNameAndOptions failed: %v", err)
+			}
+			got := opts.GetFilesystemOptions.InternalData.(*sys.InternalData).RDMASysfs != nil
+			if got != tc.want {
+				t.Errorf("RDMASysfs set = %t, want %t", got, tc.want)
 			}
 		})
 	}

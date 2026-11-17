@@ -310,6 +310,7 @@ func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *stru
 		}
 	}()
 
+	cm.l.useGPUSysfsSnapshot(args.GPUSysfs)
 	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs, rootfsUpperTarFD); err != nil {
 		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
@@ -962,6 +963,15 @@ func (cm *containerManager) GetSavings(_ *struct{}, s *sentryapi.Savings) error 
 	log.Debugf("containerManager.GetSavings")
 	cm.l.mu.Lock()
 	*s = cm.l.savings
+	cm.l.mu.Unlock()
+	return nil
+}
+
+// HasSysfsSnapshot returns whether the sandbox has a host sysfs snapshot.
+func (cm *containerManager) HasSysfsSnapshot(_ *struct{}, has *bool) error {
+	log.Debugf("containerManager.HasSysfsSnapshot")
+	cm.l.mu.Lock()
+	*has = cm.l.rdmaSysfs != nil
 	cm.l.mu.Unlock()
 	return nil
 }

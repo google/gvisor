@@ -34,6 +34,7 @@ go_library(
     deps = [
         "//pkg/fsutil",
         "//pkg/log",
+        "//pkg/rdma",
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/sinks/null",

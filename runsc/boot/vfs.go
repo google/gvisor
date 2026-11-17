@@ -490,6 +490,9 @@ type containerMounter struct {
 	// annotation.
 	sharedMounts map[string]*vfs.Mount
 
+	// rdmaSysfs is l.rdmaSysfs when the mounter was created.
+	rdmaSysfs *rdma.Snapshot
+
 	// containerID is the ID for the container.
 	containerID   string
 	containerName string
@@ -515,6 +518,7 @@ func (l *Loader) newContainerMounter(info *containerInfo) *containerMounter {
 		devGoferFD:        info.devGoferFD,
 		goferMountConfs:   info.goferMountConfs,
 		sharedMounts:      l.sharedMounts,
+		rdmaSysfs:         l.rdmaSysfs,
 		containerID:       info.cid,
 		containerName:     info.containerName,
 		rootfsUpperTarFD:  info.rootfsUpperTarFD,
@@ -985,7 +989,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.rdmaSysfs)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -1079,7 +1083,11 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		sysData := &sys.InternalData{
 			EnableTPUProxyPaths: specutils.TPUProxyEnabled(spec, conf),
 			EnableNUMATopology:  specutils.RDMAEnabled(spec, conf) || specutils.NVProxyEnabled(spec, conf),
-			RDMASysfs:           rdmaSysfs,
+		}
+		// A snapshot without RDMA devices only holds GPU topology, which only
+		// containers that runsc would take it for get.
+		if rdmaSysfs != nil && (len(rdmaSysfs.Devices) > 0 || specutils.GPUSysfsSnapshotEnabled(spec, conf)) {
+			sysData.RDMASysfs = rdmaSysfs
 		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
@@ -1650,7 +1658,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.rdmaSysfs)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err

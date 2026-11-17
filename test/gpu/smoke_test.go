@@ -17,6 +17,7 @@ package smoke_test
 
 import (
 	"context"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -45,6 +46,101 @@ func TestNvidiaSmi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not run %q: %v", cmd, err)
 	}
+}
+
+// TestNvidiaSmiTopology checks that NVML finds the GPUs in the PCI topology as
+// on the host.
+func TestNvidiaSmiTopology(t *testing.T) {
+	ctx := context.Background()
+	// run runs cmd in a new container with GPUs, natively if native is set.
+	run := func(native bool, cmd ...string) string {
+		t.Helper()
+		sniff := dockerutil.SniffGPUOpts{Capabilities: "all"}
+		var c *dockerutil.Container
+		if native {
+			// The sniffer would only allow the ioctls that nvproxy supports.
+			sniff.DisableSnifferReason = "native reference run"
+			c = dockerutil.MakeNativeContainer(ctx, t)
+		} else {
+			c = dockerutil.MakeContainer(ctx, t)
+		}
+		defer c.CleanUp(ctx)
+		// Cleaning up a container deletes the files of its GPU run options,
+		// so every container needs new ones.
+		opts, err := dockerutil.GPURunOpts(sniff)
+		if err != nil {
+			t.Fatalf("failed to get GPU run options: %v", err)
+		}
+		opts.Image = "gpu/cuda-tests"
+		out, err := c.Run(ctx, opts, cmd...)
+		t.Logf("%q output:\n%s", cmd, out)
+		if err != nil {
+			t.Fatalf("could not run %q: %v", cmd, err)
+		}
+		return out
+	}
+
+	// The PCI addresses of the GPUs resolve to the same sysfs paths as on the
+	// host. NVML prints PCI domains with 8 digits, sysfs with 4.
+	readlink := []string{"readlink", "-f"}
+	for _, busID := range strings.Fields(run(false, "nvidia-smi", "--query-gpu=pci.bus_id", "--format=csv,noheader")) {
+		readlink = append(readlink, "/sys/bus/pci/devices/"+strings.ToLower(strings.TrimPrefix(busID, "0000")))
+	}
+	if len(readlink) == 2 {
+		t.Fatal("nvidia-smi found no GPUs")
+	}
+	if got, want := run(false, readlink...), run(true, readlink...); got != want {
+		t.Errorf("%q returned %q, want %q as on the host", readlink, got, want)
+	}
+
+	// GPU pairs have the same topology as on the host, except that pairs on
+	// different host NUMA nodes may show as NODE instead of SYS, since the
+	// sandbox has a single NUMA node.
+	got, want := gpuPairs(run(false, "nvidia-smi", "topo", "-m")), gpuPairs(run(true, "nvidia-smi", "topo", "-m"))
+	if len(got) != len(want) {
+		t.Fatalf("nvidia-smi topo -m shows %d GPU pairs, want %d as on the host", len(got), len(want))
+	}
+	for pair, w := range want {
+		if g := got[pair]; g != w && (w != "SYS" || g != "NODE") {
+			t.Errorf("%s has topology %q, want %q as on the host", pair, g, w)
+		}
+	}
+}
+
+var (
+	// ansiEscapeRE matches the terminal escape sequences that nvidia-smi uses
+	// to underline the topology header.
+	ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	gpuNameRE    = regexp.MustCompile(`^GPU[0-9]+$`)
+)
+
+// gpuPairs returns the topology of each pair of GPUs, keyed by "GPUi-GPUj", in
+// the matrix that `nvidia-smi topo -m` prints.
+func gpuPairs(out string) map[string]string {
+	pairs := make(map[string]string)
+	var gpus []string
+	for _, line := range strings.Split(ansiEscapeRE.ReplaceAllString(out, ""), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !gpuNameRE.MatchString(fields[0]) {
+			continue
+		}
+		if gpus == nil {
+			// The header names the GPU columns first.
+			for _, f := range fields {
+				if !gpuNameRE.MatchString(f) {
+					break
+				}
+				gpus = append(gpus, f)
+			}
+			continue
+		}
+		for i, gpu := range gpus {
+			if i+1 < len(fields) {
+				pairs[fields[0]+"-"+gpu] = fields[i+1]
+			}
+		}
+	}
+	return pairs
 }
 
 func TestGPUHello(t *testing.T) {
