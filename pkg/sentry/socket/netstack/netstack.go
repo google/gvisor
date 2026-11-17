@@ -745,7 +745,15 @@ func (s *sock) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *s
 	case linux.SOL_PACKET:
 		return s.setSockOptPacket(t, s.Endpoint, name, optVal)
 
-	case linux.SOL_UDP, linux.SOL_RAW:
+	case linux.SOL_UDP:
+		// UDP socket options require an int-sized value. No SOL_UDP options
+		// are implemented.
+		if socket.IsUDP(s) && len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.ErrProtocolNotAvailable
+
+	case linux.SOL_RAW:
 		// Not supported.
 	}
 
