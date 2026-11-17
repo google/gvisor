@@ -31,11 +31,11 @@ import (
 
 var redirects = map[string]string{
 	// GitHub redirects.
-	"/change":    "https://github.com/google/gvisor",
-	"/issue":     "https://github.com/google/gvisor/issues",
-	"/issues":    "https://github.com/google/gvisor/issues",
-	"/issue/new": "https://github.com/google/gvisor/issues/new/choose",
-	"/pr":        "https://github.com/google/gvisor/pulls",
+	"/change":    "https://github.com/gvisor/gvisor",
+	"/issue":     "https://github.com/gvisor/gvisor/issues",
+	"/issues":    "https://github.com/gvisor/gvisor/issues",
+	"/issue/new": "https://github.com/gvisor/gvisor/issues/new/choose",
+	"/pr":        "https://github.com/gvisor/gvisor/pulls",
 
 	// For links.
 	"/faq": "/docs/user_guide/faq/",
@@ -79,10 +79,10 @@ type prefixInfo struct {
 }
 
 var prefixHelpers = map[string]prefixInfo{
-	"change": {baseURL: "https://github.com/google/gvisor/commit/%s", checkValidID: true},
-	"issue":  {baseURL: "https://github.com/google/gvisor/issues/%s", checkValidID: true},
-	"issues": {baseURL: "https://github.com/google/gvisor/issues/%s", checkValidID: true},
-	"pr":     {baseURL: "https://github.com/google/gvisor/pull/%s", checkValidID: true},
+	"change": {baseURL: "https://github.com/gvisor/gvisor/commit/%s", checkValidID: true},
+	"issue":  {baseURL: "https://github.com/gvisor/gvisor/issues/%s", checkValidID: true},
+	"issues": {baseURL: "https://github.com/gvisor/gvisor/issues/%s", checkValidID: true},
+	"pr":     {baseURL: "https://github.com/gvisor/gvisor/pull/%s", checkValidID: true},
 
 	// Redirects to compatibility docs.
 	"c/linux/amd64": {baseURL: "/docs/user_guide/compatibility/linux/amd64/#%s", checkValidID: true},
@@ -100,8 +100,7 @@ var prefixHelpers = map[string]prefixInfo{
 var (
 	validID    = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
 	goGetHTML5 = `<!doctype html><html><head><meta charset=utf-8>
-<meta name="go-import" content="gvisor.dev/gvisor git https://github.com/google/gvisor">
-<meta name="go-import" content="gvisor.dev/website git https://github.com/google/gvisor-website">
+<meta name="go-import" content="gvisor.dev/gvisor git https://github.com/gvisor/gvisor">
 <title>Go-get</title></head><body></html>`
 )
 

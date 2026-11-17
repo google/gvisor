@@ -80,8 +80,8 @@ kernel-dependent failure, use the job's Environment and Timeline tabs to
 identify its worker, and record that worker's kernel release (`uname -r`) with
 the test result.
 
-[syscall-jobs]: https://github.com/google/gvisor/blob/783e129aa/.buildkite/pipeline.yaml#L409-L453
-[syscall-filters]: https://github.com/google/gvisor/blob/783e129aa/.bazelrc#L48-L51
+[syscall-jobs]: https://github.com/gvisor/gvisor/blob/783e129aa/.buildkite/pipeline.yaml#L409-L453
+[syscall-filters]: https://github.com/gvisor/gvisor/blob/783e129aa/.bazelrc#L48-L51
 [mainline-kernels]: https://kernel.ubuntu.com/mainline/
 [master-runs]: https://buildkite.com/gvisor/pipeline?branch=master
 

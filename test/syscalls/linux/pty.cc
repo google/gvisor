@@ -2673,7 +2673,7 @@ TEST_F(JobControlTest, OrphanRegression) {
 // Test setting a controlling tty, then exiting, then re-using the same tty in a
 // different process.
 //
-// Regression test for https://github.com/google/gvisor/issues/9642.
+// Regression test for https://github.com/gvisor/gvisor/issues/9642.
 TEST_F(JobControlTest, ReuseControllingTTYAfterExit) {
   auto res = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);

@@ -105,7 +105,7 @@ func loadConfig(ctx context.Context) (config, error) {
 		}
 		trustedAuthors[id] = struct{}{}
 	}
-	githubRepo, err := parseGitHubRepository(envOr("GITHUB_REPOSITORY", "github.com/google/gvisor"))
+	githubRepo, err := parseGitHubRepository(envOr("GITHUB_REPOSITORY", "github.com/gvisor/gvisor"))
 	if err != nil {
 		return config{}, fmt.Errorf("GITHUB_REPOSITORY: %w", err)
 	}

@@ -58,7 +58,7 @@ the container, internal procfs state access, and many more.
 If you would like to explore it further, there is a
 [design document](https://docs.google.com/document/d/1RQQKzeFpO-zOoBHZLA-tr5Ed_bvAOLDqgGgKhqUff2A)
 and
-[documentation](https://github.com/google/gvisor/tree/master/pkg/sentry/seccheck/README.md)
+[documentation](https://github.com/gvisor/gvisor/tree/master/pkg/sentry/seccheck/README.md)
 with more details about the configuration and communication protocol. In
 addition, the [tutorial using Falco](https://gvisor.dev/docs/tutorials/falco/)
 is a great way to see it in action.

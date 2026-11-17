@@ -7,4 +7,4 @@ repository. The new functionally equivalent
 In the future, these will be automatically posted to a cloud storage bucket and
 loaded dynamically. At that point, this directory will be removed.
 
-[benchmark-tools]: https://github.com/google/gvisor/tree/master/test/benchmarks
+[benchmark-tools]: https://github.com/gvisor/gvisor/tree/master/test/benchmarks

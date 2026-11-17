@@ -1152,7 +1152,7 @@ func TestBundleValidate(t *testing.T) {
 			bundle: Bundle(map[string]string{"debug": "invalid"}),
 			verify: func(err error) error {
 				// Error differs in open-source version, and internally at Google
-				// https://github.com/google/gvisor/pull/11722#issuecomment-2877847616
+				// https://github.com/gvisor/gvisor/pull/11722#issuecomment-2877847616
 				wantOss := "parse error"
 				wantInternal := `parsing "invalid": invalid syntax`
 				if !strings.Contains(err.Error(), wantOss) && !strings.Contains(err.Error(), wantInternal) {

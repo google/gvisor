@@ -48,7 +48,7 @@ You can see gVisor's
     Buildkite
 -   Google's internal gVisor test infrastructure will no longer block PRs.
 -   The gVisor project's governance model will transition to a
-    [maintainers-based model](https://github.com/google/gvisor/blob/master/MAINTAINERS.md).
+    [maintainers-based model](https://github.com/gvisor/gvisor/blob/master/MAINTAINERS.md).
 -   Non-Google maintainers will be added and given merge permissions.
 
 **Over the next few months**:

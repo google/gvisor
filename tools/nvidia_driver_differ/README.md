@@ -56,4 +56,4 @@ struct MODIFIED_FIELD_EXAMPLE
   }
 ```
 
-[A deeper dive into how this tool works can be found here.](https://github.com/google/gvisor/blob/master/g3doc/proposals/nvidia_driver_differ.md)
+[A deeper dive into how this tool works can be found here.](https://github.com/gvisor/gvisor/blob/master/g3doc/proposals/nvidia_driver_differ.md)

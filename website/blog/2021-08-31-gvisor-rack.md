@@ -100,7 +100,7 @@ blocks, which will be used to detect and retransmit the lost packets.
 In gVisor, we have support for
 [NewReno](https://datatracker.ietf.org/doc/html/rfc6582) and SACK loss recovery
 methods. We
-[added support for RACK](https://github.com/google/gvisor/issues/5243) recently,
+[added support for RACK](https://github.com/gvisor/gvisor/issues/5243) recently,
 and it is the default when SACK is enabled. After enabling RACK, our internal
 benchmarks in the presence of reordering and tail losses and the data we took
 from internal users inside Google have shown ~50% reduction in the number of
@@ -119,4 +119,4 @@ also get involved with the gVisor community via our
 [Gitter channel](https://gitter.im/gvisor/community),
 [email list](https://groups.google.com/forum/#!forum/gvisor-users),
 [issue tracker](https://gvisor.dev/issue/new), and
-[Github repository](https://github.com/google/gvisor).
+[Github repository](https://github.com/gvisor/gvisor).

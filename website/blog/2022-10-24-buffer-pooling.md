@@ -60,9 +60,9 @@ our `make()`s with `pool.Get()`s.
 
 Netstack uses a few different types of buffers under the hood. Some of these are
 specific to protocols, like
-[`segment`](https://github.com/google/gvisor/blob/master/pkg/tcpip/transport/tcp/segment.go)
+[`segment`](https://github.com/gvisor/gvisor/blob/master/pkg/tcpip/transport/tcp/segment.go)
 for TCP, and others are more widely shared, like
-[`PacketBuffer`](https://github.com/google/gvisor/blob/master/pkg/tcpip/stack/packet_buffer.go),
+[`PacketBuffer`](https://github.com/gvisor/gvisor/blob/master/pkg/tcpip/stack/packet_buffer.go),
 which is used for IP, ICMP, UDP, etc. Although each of these buffer types are
 slightly different, they generally share a few common traits that made it
 difficult to use `sync.Pool` out of the box:
@@ -93,7 +93,7 @@ changing any intermediate buffer processing logic.
 ## Introducing bufferv2
 
 Our solution was
-[bufferv2](https://github.com/google/gvisor/tree/1ceb81454444981448ad57612139adfc0def1b85/pkg/bufferv2).
+[bufferv2](https://github.com/gvisor/gvisor/tree/1ceb81454444981448ad57612139adfc0def1b85/pkg/bufferv2).
 Bufferv2 is a non-contiguous, reference counted, pooled, copy-on-write,
 buffer-like data structure.
 
@@ -161,13 +161,13 @@ break them. They are as follows:
 ## Give it a Try
 
 Bufferv2 is enabled by default as of
-[gVisor 20221017](https://github.com/google/gvisor/releases/tag/release-20221017.0),
+[gVisor 20221017](https://github.com/gvisor/gvisor/releases/tag/release-20221017.0),
 and will be rolling out to
 [GKE Sandbox](https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods)
 soon, so no action is required to see a performance boost. Network-bound
 workloads, such as web servers or databases like Redis, are the most likely to
 see benefits. All the code implementing bufferv2 is public
-[here](https://github.com/google/gvisor/tree/master/pkg/bufferv2), and
+[here](https://github.com/gvisor/gvisor/tree/master/pkg/bufferv2), and
 contributions are welcome! If you’d like to run the iperf benchmark for
 yourself, you can run:
 
@@ -177,4 +177,4 @@ make run-benchmark BENCHMARKS_TARGETS=//test/benchmarks/network:iperf_test \
 ```
 
 in the base gVisor directory. If you experience any issues, please feel free to
-let us know at [gvisor.dev/issues](https://github.com/google/gvisor/issues).
+let us know at [gvisor.dev/issues](https://github.com/gvisor/gvisor/issues).

@@ -19,7 +19,7 @@
 
 set -euxo pipefail
 
-repo_url="https://github.com/google/gvisor.git"
+repo_url="https://github.com/gvisor/gvisor.git"
 corpus_branch="fscheckpoint-compat-testing"
 head_hash="$(git rev-parse --short=8 HEAD)"
 

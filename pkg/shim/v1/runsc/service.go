@@ -627,7 +627,7 @@ func (s *runscService) Stats(ctx context.Context, r *task.StatsRequest) (*task.S
 	// using the cgroups.Metrics structure so we're returning the same type
 	// as runc.
 	//
-	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
+	// [0]: https://github.com/gvisor/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
 	return c.Stats(ctx)
 }
 
