@@ -43,6 +43,7 @@ type HostFSAccess = config.HostFSAccess
 // Re-exports of the config HostFSAccess values under this package.
 const (
 	HostFSNone      = config.HostFSNone
+	HostFSReadOnly  = config.HostFSReadOnly
 	HostFSReadWrite = config.HostFSReadWrite
 )
 

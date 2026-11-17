@@ -399,16 +399,96 @@ func cpuProfilerFilters() seccomp.SyscallRules {
 	})
 }
 
-// hostFilesystemFilters contains syscalls that are needed by directfs.
-func hostFilesystemFilters(vars precompiledseccomp.Values) seccomp.SyscallRules {
+// hostFilesystemFilters returns the syscalls that directfs needs for the given
+// access to the host filesystem.
+func hostFilesystemFilters(access HostFSAccess, vars precompiledseccomp.Values) seccomp.SyscallRules {
 	// procSelfFD is the directory FD through which directfs reopens host FDs
 	// by following their magic links (see gofer.SetProcSelfFD).
 	procSelfFD := vars[procSelfFDVarName]
+	// Below HostFSReadWrite, openat(2) on a directory FD can only look up a
+	// file that exists.
+	openChildFlags := seccomp.MaskedEqual(
+		unix.O_ACCMODE|unix.O_CREAT|unix.O_TRUNC|(unix.O_TMPFILE&^unix.O_DIRECTORY)|unix.O_NOFOLLOW,
+		unix.O_RDONLY|unix.O_NOFOLLOW,
+	)
+	if access >= HostFSReadWrite {
+		openChildFlags = seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW)
+	}
 	// Directfs allows FD-based filesystem syscalls. We deny these syscalls with
 	// negative FD values (like AT_FDCWD or invalid FD numbers). We try to be as
 	// restrictive as possible because any restriction here improves security. We
 	// don't know what set of arguments will trigger a future vulnerability.
-	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+	rules := seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_GETDENTS64: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_OPENAT: seccomp.Or{
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.AnyValue{},
+				openChildFlags,
+				seccomp.AnyValue{},
+			},
+			// Magic links must be followed to reopen host FDs; nothing is
+			// created through them. The access mode is not restricted: the
+			// Sentry reopens a file for writing before it checks that the
+			// mount is writable, and it can write to a special file on a
+			// read-only mount.
+			seccomp.PerArg{
+				seccomp.EqualTo(procSelfFD),
+				seccomp.AnyValue{},
+				seccomp.MaskedEqual(unix.O_CREAT|(unix.O_TMPFILE&^unix.O_DIRECTORY), 0),
+				seccomp.AnyValue{},
+			},
+		},
+		unix.SYS_READLINKAT: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_STATX: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.EqualTo(unix.AT_SYMLINK_NOFOLLOW | unix.AT_NO_AUTOMOUNT),
+		},
+		archFstatAtSysNo(): seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_FGETXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_FLISTXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		// The Sentry does not check that a mount is writable before it
+		// changes an extended attribute.
+		unix.SYS_FREMOVEXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_FSETXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+	})
+	if access < HostFSReadWrite {
+		return rules
+	}
+	return rules.Merge(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_FCHOWNAT: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
@@ -425,31 +505,16 @@ func hostFilesystemFilters(vars precompiledseccomp.Values) seccomp.SyscallRules 
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
+		unix.SYS_UTIMENSAT: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
 		unix.SYS_UNLINKAT: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
-		},
-		unix.SYS_GETDENTS64: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_OPENAT: seccomp.Or{
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.AnyValue{},
-				seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW),
-				seccomp.AnyValue{},
-			},
-			// Magic links must be followed to reopen host FDs; nothing is
-			// created through them.
-			seccomp.PerArg{
-				seccomp.EqualTo(procSelfFD),
-				seccomp.AnyValue{},
-				seccomp.MaskedEqual(unix.O_CREAT|(unix.O_TMPFILE&^unix.O_DIRECTORY), 0),
-				seccomp.AnyValue{},
-			},
 		},
 		unix.SYS_LINKAT: seccomp.PerArg{
 			seccomp.EqualTo(procSelfFD),
@@ -484,23 +549,6 @@ func hostFilesystemFilters(vars precompiledseccomp.Values) seccomp.SyscallRules 
 			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 		},
-		unix.SYS_READLINKAT: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_STATX: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.EqualTo(unix.AT_SYMLINK_NOFOLLOW | unix.AT_NO_AUTOMOUNT),
-		},
-		unix.SYS_UTIMENSAT: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
 		unix.SYS_RENAMEAT2: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
@@ -508,33 +556,5 @@ func hostFilesystemFilters(vars precompiledseccomp.Values) seccomp.SyscallRules 
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
-		archFstatAtSysNo(): seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_FGETXATTR: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_FLISTXATTR: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_FREMOVEXATTR: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_FSETXATTR: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-	})
+	}))
 }
