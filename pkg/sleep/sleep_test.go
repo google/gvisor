@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -686,4 +687,47 @@ func BenchmarkGoWaitOnMultiSelect(b *testing.B) {
 		case <-ch[3]:
 		}
 	}
+}
+
+// TestFetchInSynctest tests that a goroutine blocked in Sleeper.Fetch is
+// durably blocked as far as testing/synctest is concerned, so that code using
+// Sleepers (such as an idle netstack) can be tested with a fake clock.
+//
+// If it is not, this test hangs until the test binary times out: synctest.Wait
+// never returns and the bubble's clock never advances.
+func TestFetchInSynctest(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var (
+			s Sleeper
+			w Waker
+		)
+		s.AddWaker(&w)
+		defer s.Done()
+
+		fetched := make(chan *Waker, 1)
+		go func() {
+			fetched <- s.Fetch(true)
+		}()
+
+		// Wait returns once every other goroutine in the bubble is durably
+		// blocked.
+		synctest.Wait()
+		select {
+		case <-fetched:
+			t.Fatal("Fetch returned without an asserted waker")
+		default:
+		}
+
+		// The fake clock only advances while the bubble is idle.
+		start := time.Now()
+		time.Sleep(time.Hour)
+		if got := time.Since(start); got != time.Hour {
+			t.Errorf("slept for %v of fake time, want %v", got, time.Hour)
+		}
+
+		w.Assert()
+		if got := <-fetched; got != &w {
+			t.Errorf("Fetch returned %p, want %p", got, &w)
+		}
+	})
 }

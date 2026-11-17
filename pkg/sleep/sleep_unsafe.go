@@ -204,10 +204,13 @@ func (s *Sleeper) nextWaker(block, wakepOrSleep bool) *Waker {
 			// commitSleep to decide whether to immediately
 			// wake the caller up or to leave it sleeping.
 			const traceEvGoBlockSelect = 24
-			// See:runtime2.go in the go runtime package for
-			// the values to pass as the waitReason here.
-			const waitReasonSelect = 9
-			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSelect, sync.TraceBlockSelect, 0)
+			// The wait reason is that of sync.Cond.Wait, even
+			// though this isn't one, so that testing/synctest
+			// treats sleepers as durably blocked. With the
+			// reason of a select, an idle Sleeper keeps a
+			// synctest bubble's fake clock from ever advancing.
+			// See sync.WaitReasonSyncCondWait.
+			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSyncCondWait, sync.TraceBlockSelect, 0)
 		}
 
 		// Pull the shared list out and reverse it in the local
