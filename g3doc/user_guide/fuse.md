@@ -133,4 +133,4 @@ application mounts a FUSE filesystem using the resulting file descriptor. This
 works the same as FUSE on a regular Linux system, with the gVisor kernel
 handling the FUSE protocol internally.
 
-[FUSE]: https://www.kernel.org/doc/html/latest/filesystems/fuse.html
+[FUSE]: https://www.kernel.org/doc/html/latest/filesystems/fuse/fuse.html

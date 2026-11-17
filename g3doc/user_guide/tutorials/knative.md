@@ -13,7 +13,7 @@ enabled cluster on Google Cloud Platform or one you have set up yourself using
 [containerd Quick Start](https://gvisor.dev/docs/user_guide/containerd/quick_start/).
 
 Follow the
-[Knative installation guide](https://knative.dev/docs/install/install-serving-with-yaml/)
+[Knative installation guide](https://knative.dev/docs/install/yaml-install/serving/install-serving-with-yaml/)
 to install Knative.
 
 ## Enable the RuntimeClassName deployment config
