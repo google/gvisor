@@ -3528,14 +3528,25 @@ func setCloExeOnAllFDs() error {
 	return nil
 }
 
-var setCloseExecOnce sync.Once
+var setCloExeOnAllFDsState struct {
+	mu sync.Mutex
+	// +checklocks:mu
+	done bool
+}
 
 // SetCloExeOnAllFDs sets CLOEXEC on all FDs in /proc/self/fd. This avoids
 // leaking inherited FDs from the parent (caller) to subprocesses created.
-func SetCloExeOnAllFDs() (retErr error) {
-	// Sufficient to do this only once per runsc invocation. Avoid double work.
-	setCloseExecOnce.Do(func() { retErr = setCloExeOnAllFDs() })
-	return
+func SetCloExeOnAllFDs() error {
+	setCloExeOnAllFDsState.mu.Lock()
+	defer setCloExeOnAllFDsState.mu.Unlock()
+	if setCloExeOnAllFDsState.done {
+		return nil
+	}
+	if err := setCloExeOnAllFDs(); err != nil {
+		return err
+	}
+	setCloExeOnAllFDsState.done = true
+	return nil
 }
 
 // GetNetworkConfig returns the network links and routes config applied during
