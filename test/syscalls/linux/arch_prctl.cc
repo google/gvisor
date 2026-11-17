@@ -16,6 +16,7 @@
 #include <cpuid.h>
 #include <setjmp.h>  // IWYU pragma: keep
 #include <signal.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
@@ -1192,6 +1193,127 @@ TEST(ArchPrctlTest, AmxReqXcompPermEnablesTileData) {
       << std::hex << perm;
 }
 
+// KernelSupportsAMX returns true if CPUID advertises AMX-TILE and the kernel
+// supports AMX permission requests. gVisor advertises AMX only if it supports
+// it, so on gVisor it fails the test if CPUID advertises AMX-TILE but
+// ARCH_GET_XCOMP_SUPP fails.
+bool KernelSupportsAMX() {
+  if (!CpuidHasAMXTile()) {
+    return false;
+  }
+  unsigned long supp = 0;
+  if (arch_prctl(ARCH_GET_XCOMP_SUPP, reinterpret_cast<uintptr_t>(&supp)) !=
+      0) {
+    if (IsRunningOnGvisor()) {
+      ADD_FAILURE() << "CPUID advertises AMX-TILE, but ARCH_GET_XCOMP_SUPP "
+                       "failed: "
+                    << strerror(errno);
+    }
+    return false;
+  }
+  return true;
+}
+
+// HasAMXPermission returns true if the process has XTILEDATA permission.
+bool HasAMXPermission() {
+  unsigned long perm = 0;
+  TEST_PCHECK(
+      arch_prctl(ARCH_GET_XCOMP_PERM, reinterpret_cast<uintptr_t>(&perm)) == 0);
+  return perm & (1UL << XFEATURE_XTILEDATA);
+}
+
+// An alternate signal stack too small for a signal frame with AMX state, and
+// one large enough for it.
+constexpr size_t kSmallAltStackSize = 8 << 10;
+constexpr size_t kLargeAltStackSize = 64 << 10;
+
+// SetAltStack sets the calling thread's alternate signal stack to size bytes
+// of stack, or disables it if size is 0.
+int SetAltStack(std::vector<char>& stack, size_t size) {
+  stack_t ss = {};
+  if (size == 0) {
+    ss.ss_flags = SS_DISABLE;
+  } else {
+    stack.resize(size);
+    ss.ss_sp = stack.data();
+    ss.ss_size = size;
+  }
+  return sigaltstack(&ss, nullptr);
+}
+
+TEST(ArchPrctlTest, AmxReqXcompPermChecksOwnSigaltstack) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  stack_t old = {};
+  ASSERT_THAT(sigaltstack(nullptr, &old), SyscallSucceeds());
+  std::vector<char> stack;
+  ASSERT_THAT(SetAltStack(stack, kSmallAltStackSize), SyscallSucceeds());
+  auto cleanup = Cleanup([&old] { sigaltstack(&old, nullptr); });
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallFailsWithErrno(ENOSPC));
+  EXPECT_FALSE(HasAMXPermission());
+
+  ASSERT_THAT(SetAltStack(stack, kLargeAltStackSize), SyscallSucceeds());
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  EXPECT_TRUE(HasAMXPermission());
+}
+
+TEST(ArchPrctlTest, AmxReqXcompPermChecksOtherThreadSigaltstack) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  std::atomic<bool> installed(false);
+  std::atomic<bool> done(false);
+  ScopedThread thread([&] {
+    std::vector<char> stack;
+    TEST_PCHECK(SetAltStack(stack, kSmallAltStackSize) == 0);
+    installed.store(true);
+    while (!done.load()) {
+      absl::SleepFor(absl::Milliseconds(1));
+    }
+    TEST_PCHECK(SetAltStack(stack, 0) == 0);
+  });
+  while (!installed.load()) {
+    absl::SleepFor(absl::Milliseconds(1));
+  }
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallFailsWithErrno(ENOSPC));
+  EXPECT_FALSE(HasAMXPermission());
+
+  done.store(true);
+  thread.Join();
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  EXPECT_TRUE(HasAMXPermission());
+}
+
+TEST(ArchPrctlTest, AmxSigaltstackSizeCheckedAfterReqXcompPerm) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  stack_t old = {};
+  ASSERT_THAT(sigaltstack(nullptr, &old), SyscallSucceeds());
+  std::vector<char> stack;
+  auto cleanup = Cleanup([&old] { sigaltstack(&old, nullptr); });
+
+  // A small alternate signal stack is allowed without AMX permission.
+  ASSERT_THAT(SetAltStack(stack, kSmallAltStackSize), SyscallSucceeds());
+  ASSERT_THAT(SetAltStack(stack, 0), SyscallSucceeds());
+
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  EXPECT_THAT(SetAltStack(stack, kSmallAltStackSize),
+              SyscallFailsWithErrno(ENOMEM));
+  stack_t cur = {};
+  ASSERT_THAT(sigaltstack(nullptr, &cur), SyscallSucceeds());
+  EXPECT_EQ(cur.ss_flags, SS_DISABLE);
+
+  ASSERT_THAT(SetAltStack(stack, kLargeAltStackSize), SyscallSucceeds());
+  EXPECT_THAT(SetAltStack(stack, 0), SyscallSucceeds());
+}
+
 // Tile configuration with palette 1, and %tmm0 holding kTileRows rows of
 // kTileRowBytes bytes.
 constexpr int kTileRows = 16;
@@ -1255,6 +1377,35 @@ TEST(ArchPrctlTest, AmxHiddenConsistently) {
                   ZeroTile();
                   _exit(1);
                 }
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+void NopHandler(int) {}
+
+// A signal frame fits an alternate signal stack of AT_MINSIGSTKSZ bytes.
+TEST(ArchPrctlTest, SignalFrameFitsMinSigstkszSigaltstack) {
+  const unsigned long min_size = getauxval(AT_MINSIGSTKSZ);
+  SKIP_IF(min_size == 0 && !IsRunningOnGvisor());
+  ASSERT_NE(min_size, 0UL);
+
+  EXPECT_THAT(InForkedProcess([min_size] {
+                const size_t page = getpagesize();
+                const size_t map_len = page + min_size;
+                void* m = mmap(nullptr, map_len, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                TEST_PCHECK(m != MAP_FAILED);
+                // A frame that doesn't fit faults on the guard page.
+                TEST_PCHECK(mprotect(m, page, PROT_NONE) == 0);
+                stack_t ss = {};
+                ss.ss_sp = static_cast<char*>(m) + page;
+                ss.ss_size = min_size;
+                TEST_PCHECK(sigaltstack(&ss, nullptr) == 0);
+                struct sigaction sa = {};
+                sa.sa_handler = NopHandler;
+                sa.sa_flags = SA_ONSTACK;
+                TEST_PCHECK(sigaction(SIGUSR1, &sa, nullptr) == 0);
+                TEST_PCHECK(raise(SIGUSR1) == 0);
               }),
               IsPosixErrorOkAndHolds(0));
 }

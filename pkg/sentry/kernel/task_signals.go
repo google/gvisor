@@ -376,9 +376,7 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 	}
 
 	// Attempt to record the given signal stack. Note that we silently
-	// ignore failures here, as does Linux. Only an EFAULT may be
-	// generated, but SignalRestore has already deserialized the entire
-	// frame successfully.
+	// ignore failures here, as does Linux.
 	t.SetSignalStack(alt)
 
 	// Restore our signal mask. SIGKILL and SIGSTOP should not be blocked.
@@ -879,11 +877,11 @@ func (t *Task) SigaltStack(setaddr hostarch.Addr, oldaddr hostarch.Addr) (*Sysca
 			return nil, err
 		}
 		// The signal stack cannot be changed if the task is currently
-		// on the stack. This is enforced at the lowest level because
-		// these semantics apply to changing the signal stack via a
-		// ucontext during a signal handler.
-		if !t.SetSignalStack(alt) {
-			return nil, linuxerr.EPERM
+		// on the stack, or to one that is too small. This is enforced at
+		// the lowest level because these semantics apply to changing the
+		// signal stack via a ucontext during a signal handler.
+		if err := t.SetSignalStack(alt); err != nil {
+			return nil, err
 		}
 	}
 	return nil, nil
@@ -899,24 +897,33 @@ func (t *Task) onSignalStack(alt linux.SignalStack) bool {
 //
 // This value may not be changed if the task is currently executing on the
 // signal stack, i.e. if t.onSignalStack returns true. In this case, this
-// function will return false. Otherwise, true is returned.
-func (t *Task) SetSignalStack(alt linux.SignalStack) bool {
+// function returns EPERM. If alt is too small for the task's signal frames,
+// it returns ENOMEM.
+func (t *Task) SetSignalStack(alt linux.SignalStack) error {
 	// Check that we're not executing on the stack.
 	if t.onSignalStack(t.signalStack) {
-		return false
+		return linuxerr.EPERM
 	}
 
 	if alt.Flags&linux.SS_DISABLE != 0 {
 		// Don't record anything beyond the flags.
-		t.signalStack = linux.SignalStack{
+		alt = linux.SignalStack{
 			Flags: linux.SS_DISABLE,
 		}
 	} else {
 		// Mask out irrelevant parts: only disable matters.
 		alt.Flags &= linux.SS_DISABLE
-		t.signalStack = alt
 	}
-	return true
+	if alt == t.signalStack {
+		return nil
+	}
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	if t.k.signalStackTooSmall(alt, t.tg.xcompPerm.Load()) {
+		return linuxerr.ENOMEM
+	}
+	t.signalStack = alt
+	return nil
 }
 
 // IgnoredAndCaughtSignals returns the sets of signals that tg ignores and

@@ -20,6 +20,8 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // syncFPStateSize grows t's FP state once its thread group has been granted
@@ -54,4 +56,39 @@ func (t *Task) syncFPStateSizeAMX() bool {
 // fpStateNeedsResize returns true if syncFPStateSize will grow t's FP state.
 func (t *Task) fpStateNeedsResize() bool {
 	return t.tg.xcompPerm.Load()&cpuid.XCR0AmxDataMask != 0 && !t.Arch().FloatingPointData().HasAMX()
+}
+
+// RequestXcompPerm grants the dynamic XSAVE features in mask to t's thread
+// group. It returns ENOSPC if a task in the thread group has an alternate
+// signal stack that is too small for the signal frames that the features
+// require.
+func (t *Task) RequestXcompPerm(mask uint64) error {
+	if t.tg.xcompPerm.Load()&mask == mask {
+		return nil
+	}
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	perm := t.tg.xcompPerm.Load() | mask
+	for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
+		if t.k.signalStackTooSmall(ot.signalStack, perm) {
+			return linuxerr.ENOSPC
+		}
+	}
+	t.tg.xcompPerm.Store(perm)
+	// Make the other tasks that are running application code grow their FP
+	// state.
+	for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
+		if ot != t {
+			ot.p.Interrupt()
+		}
+	}
+	return nil
+}
+
+// signalStackTooSmall returns true if alt is enabled and too small for the
+// signal frames of a thread group granted the dynamic XSAVE features in perm.
+func (k *Kernel) signalStackTooSmall(alt linux.SignalStack, perm uint64) bool {
+	return perm&cpuid.XCR0AmxDataMask != 0 && alt.IsEnabled() && alt.Size < arch.AMXSignalFrameSize(k.featureSet)
 }

@@ -202,3 +202,9 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 
 	return uc.Sigset, uc.Stack, nil
 }
+
+// MinSignalStackSize returns 0 on arm64, which has no dynamic signal frame
+// size.
+func MinSignalStackSize(cpuid.FeatureSet) uint64 {
+	return 0
+}

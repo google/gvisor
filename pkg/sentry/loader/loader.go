@@ -409,6 +409,9 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		arch.AuxEntry{linux.AT_HWCAP, hostarch.Addr(args.Features.AllowedHWCap1())},
 		arch.AuxEntry{linux.AT_HWCAP2, hostarch.Addr(args.Features.AllowedHWCap2())},
 	}...)
+	if size := arch.MinSignalStackSize(args.Features); size != 0 {
+		auxv = append(auxv, arch.AuxEntry{linux.AT_MINSIGSTKSZ, hostarch.Addr(size)})
+	}
 
 	sl, err := stack.Load(newArgv, args.Envv, auxv)
 	if err != nil {

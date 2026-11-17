@@ -86,7 +86,9 @@ func ArchPrctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		if t.Kernel().FeatureSet().ValidXCR0Mask()&cpuid.XCR0AmxDataMask == 0 {
 			return 0, nil, linuxerr.EOPNOTSUPP
 		}
-		t.GrantXcompPerm(cpuid.XCR0AmxDataMask)
+		if err := t.RequestXcompPerm(cpuid.XCR0AmxDataMask); err != nil {
+			return 0, nil, err
+		}
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}

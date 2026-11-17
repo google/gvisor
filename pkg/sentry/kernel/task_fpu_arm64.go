@@ -17,6 +17,8 @@
 
 package kernel
 
+import "gvisor.dev/gvisor/pkg/abi/linux"
+
 // syncFPStateSize is a no-op on arm64, which has no dynamic XSAVE features.
 func (t *Task) syncFPStateSize() bool {
 	return true
@@ -25,5 +27,11 @@ func (t *Task) syncFPStateSize() bool {
 // fpStateNeedsResize returns false on arm64, which has no dynamic XSAVE
 // features.
 func (t *Task) fpStateNeedsResize() bool {
+	return false
+}
+
+// signalStackTooSmall returns false on arm64, which has no dynamic XSAVE
+// features.
+func (k *Kernel) signalStackTooSmall(alt linux.SignalStack, perm uint64) bool {
 	return false
 }

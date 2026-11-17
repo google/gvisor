@@ -148,11 +148,17 @@ func AMXStateLen() int {
 	return amxStateLen()
 }
 
-// defaultStateLen returns the length of a State that doesn't hold AMX tile
-// data state, which is the offset of tile data in a State that holds it.
+// defaultStateLen caches DefaultStateLen.
 var defaultStateLen = sync.OnceValue(func() int {
 	return len(newX86FPStateSlice())
 })
+
+// DefaultStateLen returns the length of a State that doesn't hold AMX tile
+// data state. Tile data starts FP_XSTATE_MAGIC2_SIZE bytes earlier in a State
+// that holds it.
+func DefaultStateLen() int {
+	return defaultStateLen()
+}
 
 // ClearUnusedTileData clears the tile data of s if s holds tile data state
 // but XSTATE_BV says that tile data is in its initial configuration.
