@@ -222,7 +222,8 @@ func (r *remote) write(msg proto.Message, msgType pb.MessageType) {
 
 	backoff := r.initialBackoff
 	for i := 0; ; i++ {
-		_, err := unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out})
+		// The flags must match the sendmsg(2) rule of the sentry's seccomp filters.
+		_, err := unix.SendmsgBuffers(r.endpoint.FD(), [][]byte{hdrOut[:], out}, nil /* oob */, nil /* to */, unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL)
 		if err == nil {
 			// Write succeeded, we're done!
 			return
