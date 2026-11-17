@@ -17,8 +17,6 @@ allowed.
 
 To submit a blog post, follow the steps below.
 
-1.  [Sign the Contributor License Agreements](https://gvisor.dev/contributing/)
-    if you have not yet done so.
 1.  Familiarize yourself with the Markdown format for the
     [existing blog posts](https://github.com/google/gvisor/tree/master/website/blog).
 1.  Write your blog post in a text editor of your choice.
@@ -31,6 +29,14 @@ To submit a blog post, follow the steps below.
     following way: *[BLOG] Your proposed title* , but don’t put the date in the
     file name. The blog reviewers will work with you on the final file name, and
     the date on which the blog will be published.
+1.  In the **Commit changes** dialog, sign off on your commit as described in
+    the
+    [Developer Certificate of Origin](https://gvisor.dev/contributing/#developer-certificate-of-origin)
+    section: add a `Signed-off-by: Your Name <email>` line to the extended
+    description. The email must be the commit author email. If the dialog shows
+    an email selector, use the selected email. If not, use the primary email in
+    your GitHub email settings. If you keep your email private, use your
+    `@users.noreply.github.com` email from the same page.
 1.  When you save the file, GitHub will walk you through the pull request (PR)
     process.
 1.  Send us a message on the
