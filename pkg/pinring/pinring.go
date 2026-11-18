@@ -68,7 +68,7 @@ func (r *PinRing) Add(fd int) {
 	}
 	dup, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil {
-		log.Warningf("Pin ring: cannot dup FD %d, not pinning it: %v", fd, err)
+		log.Warningf("PERF: Pin ring: cannot dup FD %d, not pinning it: %v", fd, err)
 		return
 	}
 	r.mu.Lock()

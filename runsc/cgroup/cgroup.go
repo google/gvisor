@@ -1206,7 +1206,7 @@ func RunInCgroup(cg Cgroup, fn func(cloneIntoCgroupFD *os.File) error) error {
 		defer cgroupFD.Close()
 		return fn(cgroupFD)
 	}
-	log.Warningf("Cannot clone children directly into cgroup %q: %v. Joining it instead. This slows down gVisor startup and checkpoint/restore.", cg.MakePath(""), err)
+	log.Warningf("PERF: Cannot clone children directly into cgroup %q: %v. Joining it instead. This slows down gVisor startup and checkpoint/restore.", cg.MakePath(""), err)
 	restore, err := cg.Join()
 	if err != nil {
 		return err

@@ -51,7 +51,7 @@ func MaybeCapCPUIdleStates() int {
 	}
 	fd, err := unix.Open(cpuDMALatencyPath, unix.O_WRONLY, 0)
 	if err != nil {
-		log.Infof("Not capping host CPU idle states: open(%s): %v", cpuDMALatencyPath, err)
+		log.Infof("PERF: Not capping host CPU idle states: open(%s): %v", cpuDMALatencyPath, err)
 		return -1
 	}
 	// The kernel expects a raw native-endian integer, not ASCII.
@@ -59,7 +59,7 @@ func MaybeCapCPUIdleStates() int {
 	var buf [4]byte
 	usec.MarshalUnsafe(buf[:])
 	if _, err := unix.Write(fd, buf[:]); err != nil {
-		log.Infof("Not capping host CPU idle states: write(%s): %v", cpuDMALatencyPath, err)
+		log.Infof("PERF: Not capping host CPU idle states: write(%s): %v", cpuDMALatencyPath, err)
 		unix.Close(fd)
 		return -1
 	}

@@ -90,7 +90,7 @@ func updateGlobalOnce(fd int) error {
 	excludeVvarRegion = vvarMemslotUnusable(fd)
 	if excludeVvarRegion {
 		// Not a warning to make tests pass that match on not getting any warnings.
-		log.Infof("[vvar] region will not be mapped into the KVM guest! Performance will suffer!")
+		log.Infof("PERF: [vvar] region will not be mapped into the KVM guest! Performance will suffer!")
 	}
 	physicalInit()
 

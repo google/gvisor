@@ -579,9 +579,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 		if b.willReexec() {
 			if config.CgoEnabled {
-				log.Warningf("Need to re-exec in order to drop capabilities, due to cgo build. This slows down gVisor startup. Use a pure-Go gVisor build for faster startup.")
+				log.Warningf("PERF: Need to re-exec in order to drop capabilities, due to cgo build. This slows down gVisor startup. Use a pure-Go gVisor build for faster startup.")
 			} else {
-				log.Infof("Re-execing. FYI, this step isn't necessary when running with root. gVisor will start up faster (and is just as secure) when started as root, as it has to do fewer hoops to get to its as-sandboxed-as-possible state.")
+				log.Infof("PERF: Re-execing. FYI, this step isn't necessary when running with root. gVisor will start up faster (and is just as secure) when started as root, as it has to do fewer hoops to get to its as-sandboxed-as-possible state.")
 			}
 			argOverride["apply-caps"] = "false"
 

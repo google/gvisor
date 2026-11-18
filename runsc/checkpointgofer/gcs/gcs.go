@@ -366,7 +366,7 @@ func (s *FileServer) OpenWrite(path string) (stateio.AsyncWriter, error) {
 			if err == nil {
 				return w, nil
 			}
-			log.Warningf("NewParallelWriter failed: %v; falling back to Writer", err)
+			log.Warningf("PERF: NewParallelWriter failed: %v; falling back to Writer", err)
 		}
 		return NewWriter(s.ctx, obj, pagesFileMaxWriteBytes, maxRanges, pagesFileMaxWriteParallel), nil
 
@@ -390,19 +390,19 @@ func (s *FileServer) getParallelCompositeUploadEnabled() bool {
 			name := s.bucket.BucketName()
 			attrs, err := s.bucket.Attrs(s.ctx)
 			if err != nil {
-				log.Warningf("Disabling parallel composite upload: bucket %s attributes not available: %v", name, err)
+				log.Warningf("PERF: Disabling parallel composite upload: bucket %s attributes not available: %v", name, err)
 				return false
 			}
 			if attrs.StorageClass != "STANDARD" {
-				log.Infof("Disabling parallel composite upload: bucket %s has non-standard default storage class", name)
+				log.Infof("PERF: Disabling parallel composite upload: bucket %s has non-standard default storage class", name)
 				return false
 			}
 			if attrs.RetentionPolicy != nil {
-				log.Infof("Disabling parallel composite upload: bucket %s has retention policy", name)
+				log.Infof("PERF: Disabling parallel composite upload: bucket %s has retention policy", name)
 				return false
 			}
 			if attrs.DefaultEventBasedHold {
-				log.Infof("Disabling parallel composite upload: bucket %s has default event-based holds enabled", name)
+				log.Infof("PERF: Disabling parallel composite upload: bucket %s has default event-based holds enabled", name)
 				return false
 			}
 			// `gcloud storage cp`'s
@@ -415,7 +415,7 @@ func (s *FileServer) getParallelCompositeUploadEnabled() bool {
 			// recursively, resulting in temporary storage overhead that is
 			// superlinear in file size.
 			if attrs.SoftDeletePolicy != nil && attrs.SoftDeletePolicy.RetentionDuration != 0 {
-				log.Infof("Disabling parallel composite upload: bucket %s has soft deletion enabled", name)
+				log.Infof("PERF: Disabling parallel composite upload: bucket %s has soft deletion enabled", name)
 				return false
 			}
 			log.Infof("Enabling parallel composite upload: bucket %s passed safety checks", name)

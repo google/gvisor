@@ -43,7 +43,7 @@ func Handle(conf *config.Config) error {
 				return fmt.Errorf("host setting %q (currently: %q) is not supported (%s); must change it to %q for runsc to work", delta.Name, delta.FromValue, delta.Purpose, delta.ToValue)
 			}
 			if conf.HostSettings == config.HostSettingsCheck {
-				log.Warningf("Host setting %q (currently: %q) is not optimal (%s); it is recommended to change it to %q", delta.Name, delta.FromValue, delta.Purpose, delta.ToValue)
+				log.Warningf("%sHost setting %q (currently: %q) is not optimal (%s); it is recommended to change it to %q", delta.logPrefix(), delta.Name, delta.FromValue, delta.Purpose, delta.ToValue)
 			}
 		}
 	case config.HostSettingsAdjust, config.HostSettingsEnforce:
@@ -65,7 +65,7 @@ func Handle(conf *config.Config) error {
 			if conf.HostSettings == config.HostSettingsEnforce {
 				return fmt.Errorf("failed to adjust %s to %q: %w", delta.Name, delta.ToValue, err)
 			}
-			log.Warningf("Host settings: failed to adjust %s to %q: %v; continuing anyway.", delta.Name, delta.ToValue, err)
+			log.Warningf("%sHost settings: failed to adjust %s to %q (%s): %v; continuing anyway.", delta.logPrefix(), delta.Name, delta.ToValue, delta.Purpose, err)
 		}
 	default:
 		return fmt.Errorf("invalid host settings policy %d", conf.HostSettings)
@@ -102,11 +102,22 @@ type Delta struct {
 	// if the delta is not applied.
 	Mandatory bool
 
+	// Perf indicates that gVisor is slower if the delta is not applied.
+	Perf bool
+
 	// Purpose achieved by applying the delta.
 	Purpose string
 
 	// Apply applies the delta.
 	Apply func() error
+}
+
+// logPrefix returns the prefix of log messages about d not being applied.
+func (d *Delta) logPrefix() string {
+	if d.Perf {
+		return "PERF: "
+	}
+	return ""
 }
 
 // pathSetting implements `Setting` for kernel settings controlled via files.
@@ -123,6 +134,9 @@ type pathSetting struct {
 	// in rootless mode, a message is logged but no delta is returned for this
 	// setting.
 	mightLackReadPerm bool
+
+	// perf indicates that runsc is slower if the value is not optimal.
+	perf bool
 
 	// purpose describes the intent behind setting this value.
 	purpose string
@@ -165,6 +179,7 @@ func (s pathSetting) Delta(conf *config.Config) (*Delta, error) {
 		FromValue: currentValue,
 		ToValue:   newValue,
 		Mandatory: mandatory,
+		Perf:      s.perf,
 		Purpose:   s.purpose,
 		Apply: func() error {
 			if err := os.WriteFile(s.path, []byte(newValue), 0644); err != nil {
@@ -190,6 +205,7 @@ func check(conf *config.Config) ([]*Delta, []error) {
 	settings := []pathSetting{
 		{
 			path:    "/sys/kernel/mm/transparent_hugepage/shmem_enabled",
+			perf:    true,
 			purpose: "turning on transparent hugepages support in shmem increases memory allocation performance",
 			delta: func(conf *config.Config, current string) (string, bool, error) {
 				cur, err := hostmm.GetTransparentHugepageEnum(current)
@@ -215,6 +231,7 @@ func check(conf *config.Config) ([]*Delta, []error) {
 		},
 		{
 			path:    "/sys/kernel/mm/transparent_hugepage/defrag",
+			perf:    true,
 			purpose: "deferring compaction to kcompactd improves page fault latency when hugepages are not immediately available",
 			delta: func(conf *config.Config, current string) (string, bool, error) {
 				cur, err := hostmm.GetTransparentHugepageEnum(current)

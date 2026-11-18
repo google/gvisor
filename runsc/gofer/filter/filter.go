@@ -73,14 +73,14 @@ func Install[Opts ConfigOptions](
 		if !errors.Is(err, precompiledseccomp.ErrSyscallVarsNotRenderable) {
 			return fmt.Errorf("cannot render precompiled program for options %v / vars %v: %w", key, vars, err)
 		}
-		log.Warningf("Cannot use precompiled program for config options %v (%v), building seccomp program from scratch. This slows down gofer startup.", key, err)
+		log.Warningf("PERF: Cannot use precompiled program for config options %v (%v), building seccomp program from scratch. This slows down gofer startup.", key, err)
 	}
 	var seccompOpts seccomp.ProgramOptions
 	if debugFilter {
 		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
 		seccompOpts.DefaultAction = seccomp.Trap
 	} else if !usePrecompiled {
-		log.Warningf("No precompiled program found for config options %v, building seccomp program from scratch. This slows down gofer startup.", key)
+		log.Warningf("PERF: No precompiled program found for config options %v, building seccomp program from scratch. This slows down gofer startup.", key)
 		if log.IsLogging(log.Debug) {
 			precompiledKeys := listPrecompiled()
 			log.Debugf("Precompiled seccomp-bpf program configuration option variants (%d):", len(precompiledKeys))

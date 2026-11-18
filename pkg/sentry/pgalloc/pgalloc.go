@@ -992,7 +992,7 @@ func (f *MemoryFile) madviseChunkMapping(addr, len uintptr, huge bool) {
 			_, _, errno := unix.Syscall(unix.SYS_MADVISE, addr, len, unix.MADV_HUGEPAGE)
 			if errno != 0 {
 				// Log this failure but continue.
-				log.Warningf("madvise(%#x, %d, MADV_HUGEPAGE) failed: %s", addr, len, errno)
+				log.Warningf("PERF: madvise(%#x, %d, MADV_HUGEPAGE) failed: %s", addr, len, errno)
 			}
 		}
 	} else {
@@ -1027,9 +1027,9 @@ func tryPopulateMadv(b safemem.Block) bool {
 	if errno != 0 {
 		if errno == unix.EINVAL {
 			// EINVAL is expected if MADV_POPULATE_WRITE is not supported (Linux <5.14).
-			log.Infof("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: madvise failed: %s", errno)
+			log.Infof("PERF: Disabling pgalloc.MemoryFile.AllocateAndFill pre-population by MADV_POPULATE_WRITE: madvise failed: %s", errno)
 		} else {
-			log.Warningf("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: madvise failed: %s", errno)
+			log.Warningf("PERF: Disabling pgalloc.MemoryFile.AllocateAndFill pre-population by MADV_POPULATE_WRITE: madvise failed: %s", errno)
 		}
 		madvPopulateWriteDisabled.Store(1)
 		return false
@@ -1061,9 +1061,9 @@ func tryPopulateMlock(b safemem.Block) bool {
 		if errno == unix.ENOMEM || errno == unix.EPERM {
 			// These errors are expected from hitting non-zero RLIMIT_MEMLOCK, or
 			// hitting zero RLIMIT_MEMLOCK without CAP_IPC_LOCK, respectively.
-			log.Infof("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: mlock failed: %s", errno)
+			log.Infof("PERF: Disabling pgalloc.MemoryFile.AllocateAndFill pre-population by mlock: mlock failed: %s", errno)
 		} else {
-			log.Warningf("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: mlock failed: %s", errno)
+			log.Warningf("PERF: Disabling pgalloc.MemoryFile.AllocateAndFill pre-population by mlock: mlock failed: %s", errno)
 		}
 		mlockDisabled.Store(1)
 		return false
@@ -1197,7 +1197,7 @@ func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
 
 func (f *MemoryFile) decommitOrManuallyZero(fr memmap.FileRange) {
 	if err := f.decommitFile(fr); err != nil {
-		log.Warningf("Failed to decommit %v: %v", fr, err)
+		log.Warningf("PERF: Failed to decommit %v: %v; zeroing manually", fr, err)
 		// Zero the pages manually. This won't reduce memory usage, but at
 		// least ensures that the pages will be zeroed when reallocated.
 		f.manuallyZero(fr)

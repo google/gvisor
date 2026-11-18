@@ -141,7 +141,7 @@ func (c *Client) StartChannels() error {
 				if err == unix.ENOMEM {
 					log.Debugf("channel creation failed because server hit max channels limit")
 				} else {
-					log.Warningf("channel creation failed: %v", err)
+					log.Warningf("PERF: channel creation failed: %v", err)
 				}
 				return
 			}

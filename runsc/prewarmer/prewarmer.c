@@ -168,20 +168,20 @@ static void prewarm_fdtable(void) {
   if (fd < 0) {
     // FD 0 may not be open. Fall back to duplicating an FD we open ourselves.
     long base = sys3(__NR_openat, AT_FDCWD, (long)"/", O_RDONLY | O_CLOEXEC);
-    if (base < 0) {
-      // OK, whatever is going on is weird. We will hit the RCU stall, but not
-      // worth failing on.
-      write_stderr(
-          "gvisor-sentry-prewarmer: failed to prewarm the FD table. This slows "
-          "down gVisor startup.\n");
-      return;
+    if (base >= 0) {
+      fd = sys3(__NR_fcntl, base, F_DUPFD_CLOEXEC, PREWARM_MIN_FD);
+      sys3(__NR_close, base, 0, 0);
     }
-    fd = sys3(__NR_fcntl, base, F_DUPFD_CLOEXEC, PREWARM_MIN_FD);
-    sys3(__NR_close, base, 0, 0);
   }
-  if (fd >= 0) {
-    sys3(__NR_close, fd, 0, 0);
+  if (fd < 0) {
+    // OK, whatever is going on is weird. We will hit the RCU stall, but not
+    // worth failing on.
+    write_stderr(
+        "gvisor-sentry-prewarmer: PERF: failed to prewarm the FD table. This "
+        "slows down gVisor startup.\n");
+    return;
   }
+  sys3(__NR_close, fd, 0, 0);
 }
 
 static int streq(const char* a, const char* b) {

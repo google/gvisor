@@ -61,7 +61,7 @@ func NewCPULimits(creation, lifecycle config.SandboxCPUPolicy, res *specs.LinuxR
 	if cpuMax, ok := res.Unified["cpu.max"]; ok {
 		unifiedQuota, unifiedPeriod, err := cgroup.ParseCPUMax(cpuMax)
 		if err != nil {
-			log.Warningf("Not applying --sandbox-creation-cpu-policy=%v and --sandbox-lifecycle-cpu-policy=%v: cannot parse unified cpu.max: %v", creation, lifecycle, err)
+			log.Warningf("PERF: [Lifecycle CPU] Not applying --sandbox-creation-cpu-policy=%v and --sandbox-lifecycle-cpu-policy=%v: cannot parse unified cpu.max: %v", creation, lifecycle, err)
 			return nil
 		}
 		quota, period = unifiedQuota, uint64(unifiedPeriod)

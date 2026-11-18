@@ -182,12 +182,12 @@ func setUDSBufSizes(fd int) {
 	const bufSize = 4 << 20 // 4MB.
 	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, bufSize); err != nil {
 		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufSize); err != nil {
-			log.Warningf("Failed to set UDS receive buffer to %d: %v", bufSize, err)
+			log.Warningf("PERF: Failed to set UDS receive buffer to %d: %v", bufSize, err)
 		}
 	}
 	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUFFORCE, bufSize); err != nil {
 		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize); err != nil {
-			log.Warningf("Failed to set UDS send buffer to %d: %v", bufSize, err)
+			log.Warningf("PERF: Failed to set UDS send buffer to %d: %v", bufSize, err)
 		}
 	}
 }
@@ -874,7 +874,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 			}
 			gsoMaxSize = ifaceLink.Attrs().GSOMaxSize
 		} else {
-			log.Infof("GSO not available in host.")
+			log.Infof("PERF: GSO not available in host.")
 		}
 	}
 
@@ -890,7 +890,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 		sz, _ := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF)
 
 		if sz < bufSize {
-			log.Warningf("Failed to increase rcv buffer to %d on SOCK_RAW on %s. Current buffer %d: %v", bufSize, iface.Name, sz, err)
+			log.Warningf("PERF: Failed to increase rcv buffer to %d on SOCK_RAW on %s. Current buffer %d: %v", bufSize, iface.Name, sz, err)
 		}
 	}
 
@@ -898,7 +898,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize)
 		sz, _ := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF)
 		if sz < bufSize {
-			log.Warningf("Failed to increase snd buffer to %d on SOCK_RAW on %s. Current buffer %d: %v", bufSize, iface.Name, sz, err)
+			log.Warningf("PERF: Failed to increase snd buffer to %d on SOCK_RAW on %s. Current buffer %d: %v", bufSize, iface.Name, sz, err)
 		}
 	}
 

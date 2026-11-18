@@ -605,7 +605,7 @@ func (f *MemoryFile) newHostFileDataSeeker() *hostFileDataSeeker {
 func (f *MemoryFile) seekDataReportsDirtyPages() bool {
 	var statfs unix.Statfs_t
 	if err := unix.Fstatfs(f.FD(), &statfs); err != nil {
-		log.Warningf("MemoryFile(%p): fstatfs failed, scanning all possibly committed pages: %v", f, err)
+		log.Warningf("PERF: MemoryFile(%p): fstatfs failed, scanning all possibly committed pages: %v", f, err)
 		return false
 	}
 	switch statfs.Type {
