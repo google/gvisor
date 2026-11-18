@@ -14,16 +14,19 @@
 
 #include <asm/prctl.h>
 #include <cpuid.h>
+#include <sched.h>
 #include <setjmp.h>  // IWYU pragma: keep
 #include <signal.h>
 #include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <ucontext.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <csignal>
@@ -37,6 +40,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/attributes.h"
+#include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
@@ -44,6 +48,7 @@
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -1332,6 +1337,8 @@ TileConfig MakeTileConfig() {
 
 const TileConfig kTileConfig = MakeTileConfig();
 
+using TileData = std::array<uint8_t, kTileRows * kTileRowBytes>;
+
 // AMX tile instructions, for assemblers that don't know them. All of them use
 // %tmm0 and a stride of kTileRowBytes.
 
@@ -1342,13 +1349,438 @@ void LoadTileConfig(const TileConfig& cfg) {
                : "memory");
 }
 
+void LoadTile(const TileData& data) {
+  asm volatile(".byte 0xc4, 0xe2, 0x7b, 0x4b, 0x04, 0x08"  // tileloadd
+                                                           // (%rax,%rcx), %tmm0
+               :
+               : "a"(data.data()), "c"(static_cast<int64_t>(kTileRowBytes))
+               : "memory");
+}
+
+void StoreTile(TileData& data) {
+  asm volatile(".byte 0xc4, 0xe2, 0x7a, 0x4b, 0x04, 0x08"  // tilestored %tmm0,
+                                                           // (%rax,%rcx)
+               :
+               : "a"(data.data()), "c"(static_cast<int64_t>(kTileRowBytes))
+               : "memory");
+}
+
 void ZeroTile() {
   asm volatile(".byte 0xc4, 0xe2, 0x7b, 0x49, 0xc0" ::: "memory");  // tilezero
+}
+
+void ReleaseTiles() {
+  asm volatile(".byte 0xc4, 0xe2, 0x78, 0x49, 0xc0" ::
+                   : "memory");  // tilerelease
+}
+
+TileData TilePattern(uint8_t b) {
+  TileData d;
+  d.fill(b);
+  return d;
+}
+
+TEST(ArchPrctlTest, AmxGetXcompPermBeforeRequest) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  unsigned long supp = 0, perm = 0;
+  ASSERT_THAT(
+      arch_prctl(ARCH_GET_XCOMP_SUPP, reinterpret_cast<uintptr_t>(&supp)),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      arch_prctl(ARCH_GET_XCOMP_PERM, reinterpret_cast<uintptr_t>(&perm)),
+      SyscallSucceeds());
+  EXPECT_EQ(perm, supp & ~(1UL << XFEATURE_XTILEDATA));
+}
+
+TEST(ArchPrctlTest, AmxReqXcompPermBadFeature) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  // Features that are not dynamic.
+  for (unsigned long idx : {0, 1, 2, XFEATURE_XTILECFG}) {
+    EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, idx),
+                SyscallFailsWithErrno(EOPNOTSUPP))
+        << "idx=" << idx;
+  }
+  // Features that don't exist.
+  for (unsigned long idx : {64UL, 1000UL, ~0UL}) {
+    EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, idx),
+                SyscallFailsWithErrno(EINVAL))
+        << "idx=" << idx;
+  }
+  EXPECT_FALSE(HasAMXPermission());
+
+  // Requesting granted permission again succeeds, and XTILECFG is still not
+  // dynamic.
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILECFG),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+  EXPECT_TRUE(HasAMXPermission());
+}
+
+TEST(ArchPrctlTest, AmxGetXcompBadAddress) {
+  SKIP_IF(!KernelSupportsAMX());
+
+  constexpr uintptr_t kBadAddr = 8;
+  EXPECT_THAT(arch_prctl(ARCH_GET_XCOMP_SUPP, kBadAddr),
+              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(arch_prctl(ARCH_GET_XCOMP_PERM, kBadAddr),
+              SyscallFailsWithErrno(EFAULT));
+}
+
+constexpr char kAmxExecHelperEnv[] = "ARCH_PRCTL_TEST_AMX_EXEC_HELPER";
+
+// AmxExecHelper checks that a process started by execve has no AMX
+// permission. It runs only if kAmxExecHelperEnv is set.
+TEST(ArchPrctlTest, AmxExecHelper) {
+  SKIP_IF(getenv(kAmxExecHelperEnv) == nullptr);
+  EXPECT_FALSE(HasAMXPermission());
+}
+
+TEST(ArchPrctlTest, AmxPermissionInheritedByForkResetByExec) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+
+  EXPECT_THAT(InForkedProcess([] { TEST_CHECK(HasAMXPermission()); }),
+              IsPosixErrorOkAndHolds(0));
+
+  pid_t child;
+  int execve_errno;
+  auto kill = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+      "/proc/self/exe",
+      {"/proc/self/exe", "--gtest_filter=ArchPrctlTest.AmxExecHelper"},
+      {absl::StrCat(kAmxExecHelperEnv, "=1")}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status=" << status;
+}
+
+void ClobberTilesHandler(int, siginfo_t*, void*) {
+  LoadTileConfig(kTileConfig);
+  ZeroTile();
+}
+
+// TileDataSurvives loads a tile, then does things that switch, save and
+// restore FP state, and checks that the tile is unchanged.
+void TileDataSurvives(uint8_t b, bool save) {
+  const TileData want = TilePattern(b);
+  LoadTileConfig(kTileConfig);
+  LoadTile(want);
+  for (int i = 0; i < 100; i++) {
+    sched_yield();
+    syscall(SYS_getpid);
+    // The handler clobbers the tiles, which sigreturn must restore.
+    TEST_PCHECK(syscall(SYS_tgkill, getpid(), syscall(SYS_gettid), SIGUSR1) ==
+                0);
+    if (save && i % 25 == 0) {
+      MaybeSave();
+    }
+  }
+  TileData got = {};
+  StoreTile(got);
+  ReleaseTiles();
+  TEST_CHECK(got == want);
+}
+
+TEST(ArchPrctlTest, AmxTileDataPreserved) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  struct sigaction sa = {};
+  sa.sa_sigaction = ClobberTilesHandler;
+  sa.sa_flags = SA_SIGINFO;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+
+  std::vector<std::unique_ptr<ScopedThread>> threads;
+  for (uint8_t b = 1; b <= 4; b++) {
+    threads.push_back(
+        std::make_unique<ScopedThread>([b] { TileDataSurvives(b, false); }));
+  }
+  TileDataSurvives(0x5a, true);
+}
+
+// The tile patterns that ReplaceFrameTileDataHandler expects in %tmm0 in the
+// signal frame, and writes there.
+uint8_t frame_tile_old, frame_tile_new;
+std::atomic<bool> frame_tile_found;
+
+void ReplaceFrameTileDataHandler(int, siginfo_t*, void* uc) {
+  uint8_t* fp = reinterpret_cast<uint8_t*>(
+      reinterpret_cast<ucontext_t*>(uc)->uc_mcontext.fpregs);
+  // struct _fpx_sw_bytes is at offset 464; xfeatures is at offset 8 in it,
+  // and xstate_size at offset 16. XSTATE_BV is at offset 512.
+  uint64_t xfeatures, xstate_bv;
+  uint32_t xstate_size;
+  memcpy(&xfeatures, fp + 464 + 8, sizeof(xfeatures));
+  memcpy(&xstate_size, fp + 464 + 16, sizeof(xstate_size));
+  memcpy(&xstate_bv, fp + 512, sizeof(xstate_bv));
+  // CPUID leaf 0xD subleaf 18 gives the size and offset of tile data, which
+  // starts with %tmm0.
+  uint32_t size, offset, ecx, edx;
+  TEST_CHECK(
+      __get_cpuid_count(0xd, XFEATURE_XTILEDATA, &size, &offset, &ecx, &edx));
+  constexpr uint64_t kTileDataBit = 1UL << XFEATURE_XTILEDATA;
+  if ((xfeatures & kTileDataBit) == 0 || (xstate_bv & kTileDataBit) == 0 ||
+      xstate_size < offset + size) {
+    frame_tile_found = false;
+    return;
+  }
+  const TileData old_tile = TilePattern(frame_tile_old);
+  frame_tile_found = memcmp(fp + offset, old_tile.data(), old_tile.size()) == 0;
+  const TileData new_tile = TilePattern(frame_tile_new);
+  memcpy(fp + offset, new_tile.data(), new_tile.size());
+}
+
+// sigreturn restores tile data from the signal frame.
+TEST(ArchPrctlTest, AmxSigreturnRestoresFrameTileData) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  struct sigaction sa = {};
+  sa.sa_sigaction = ReplaceFrameTileDataHandler;
+  sa.sa_flags = SA_SIGINFO;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+
+  LoadTileConfig(kTileConfig);
+  for (uint8_t i = 0; i < 4; i++) {
+    frame_tile_old = 0x10 + i;
+    frame_tile_new = 0x20 + i;
+    LoadTile(TilePattern(frame_tile_old));
+    if (i % 2 == 1) {
+      MaybeSave();
+    }
+    frame_tile_found = false;
+    ASSERT_THAT(syscall(SYS_tgkill, getpid(), syscall(SYS_gettid), SIGUSR1),
+                SyscallSucceeds());
+    TileData got = {};
+    StoreTile(got);
+    EXPECT_TRUE(frame_tile_found.load()) << "i=" << static_cast<int>(i);
+    EXPECT_TRUE(got == TilePattern(frame_tile_new))
+        << "i=" << static_cast<int>(i);
+  }
+  ReleaseTiles();
+}
+
+alignas(16) char small_uc_stack[kSmallAltStackSize];
+
+void SetSmallUcStackHandler(int, siginfo_t*, void* uc) {
+  stack_t& ss = reinterpret_cast<ucontext_t*>(uc)->uc_stack;
+  ss.ss_sp = small_uc_stack;
+  ss.ss_size = sizeof(small_uc_stack);
+  ss.ss_flags = 0;
+}
+
+// sigreturn doesn't install an alternate signal stack from the signal frame
+// that is too small for AMX state.
+TEST(ArchPrctlTest, AmxSigreturnKeepsSigaltstackIfFrameStackTooSmall) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+  stack_t old = {};
+  ASSERT_THAT(sigaltstack(nullptr, &old), SyscallSucceeds());
+  struct sigaction sa = {};
+  sa.sa_sigaction = SetSmallUcStackHandler;
+  sa.sa_flags = SA_SIGINFO;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+
+  ASSERT_THAT(syscall(SYS_tgkill, getpid(), syscall(SYS_gettid), SIGUSR1),
+              SyscallSucceeds());
+  stack_t cur = {};
+  ASSERT_THAT(sigaltstack(nullptr, &cur), SyscallSucceeds());
+  EXPECT_EQ(cur.ss_sp, old.ss_sp);
+  EXPECT_EQ(cur.ss_size, old.ss_size);
+  EXPECT_EQ(cur.ss_flags, old.ss_flags);
+}
+
+// A thread that was running when another thread was granted AMX can use it.
+TEST(ArchPrctlTest, AmxRunningThreadCanUseGrantedPermission) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  std::atomic<bool> granted(false);
+  std::atomic<bool> ok(false);
+  ScopedThread thread([&] {
+    // Spin without system calls.
+    while (!granted.load()) {
+    }
+    if (!ok.load()) {
+      return;
+    }
+    const TileData want = TilePattern(0x3c);
+    LoadTileConfig(kTileConfig);
+    LoadTile(want);
+    for (int i = 0; i < 100; i++) {
+      syscall(SYS_getpid);
+    }
+    TileData got = {};
+    StoreTile(got);
+    ReleaseTiles();
+    TEST_CHECK(got == want);
+  });
+  absl::SleepFor(absl::Milliseconds(100));
+  const int ret = arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA);
+  ok.store(ret == 0);
+  granted.store(true);
+  EXPECT_THAT(ret, SyscallSucceeds());
 }
 
 sigjmp_buf tile_read_jmp;
 
 void TileReadSigillHandler(int) { siglongjmp(tile_read_jmp, 1); }
+
+// ReadTile returns true and stores the tile in got if the caller can read its
+// tile registers.
+bool ReadTile(TileData& got) {
+  if (sigsetjmp(tile_read_jmp, 1) != 0) {
+    return false;
+  }
+  StoreTile(got);
+  return true;
+}
+
+constexpr uint8_t kSecretTileByte = 0xa5;
+
+// LoadSecretTile loads a tile that other processes must not see, and keeps it
+// loaded while yielding.
+void LoadSecretTile(int yields) {
+  TEST_PCHECK(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA) == 0);
+  LoadTileConfig(kTileConfig);
+  LoadTile(TilePattern(kSecretTileByte));
+  for (int i = 0; i < yields; i++) {
+    sched_yield();
+  }
+}
+
+TEST(ArchPrctlTest, AmxNoTileLeakToThreadGroupSharingMemory) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  // Run both thread groups on one CPU, so that they switch often.
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  CPU_SET(0, &set);
+  ASSERT_THAT(sched_setaffinity(0, sizeof(set), &set), SyscallSucceeds());
+
+  constexpr int kReads = 2000;
+  static std::atomic<bool> loaded, done;
+  static std::atomic<int> leaks;
+  loaded = false;
+  done = false;
+  leaks = 0;
+  // The child has its own thread group without AMX permission, and shares
+  // memory with the parent.
+  std::vector<char> stack(1 << 20);
+  pid_t child = clone(
+      +[](void*) {
+        TEST_PCHECK(signal(SIGILL, TileReadSigillHandler) != SIG_ERR);
+        while (!loaded.load()) {
+          sched_yield();
+        }
+        for (int i = 0; i < kReads; i++) {
+          sched_yield();
+          TileData got = {};
+          if (ReadTile(got) && got == TilePattern(kSecretTileByte)) {
+            leaks++;
+          }
+        }
+        done = true;
+        return 0;
+      },
+      stack.data() + stack.size(), CLONE_VM | SIGCHLD, nullptr);
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  // An ASSERT here would leave the child waiting forever.
+  LoadSecretTile(0);
+  loaded = true;
+  while (!done.load()) {
+    sched_yield();
+  }
+  ReleaseTiles();
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status=" << status;
+  EXPECT_EQ(leaks.load(), 0);
+}
+
+std::atomic<int> signal_frame_leaks;
+std::atomic<int> signal_frames_without_tile_data;
+
+void CheckSignalFrameTileDataHandler(int, siginfo_t*, void* uc) {
+  const uint8_t* fp = reinterpret_cast<const uint8_t*>(
+      reinterpret_cast<ucontext_t*>(uc)->uc_mcontext.fpregs);
+  // struct _fpx_sw_bytes is at offset 464; xfeatures is at offset 8 in it,
+  // and xstate_size at offset 16.
+  uint64_t xfeatures;
+  memcpy(&xfeatures, fp + 464 + 8, sizeof(xfeatures));
+  uint32_t xstate_size;
+  memcpy(&xstate_size, fp + 464 + 16, sizeof(xstate_size));
+  // CPUID leaf 0xD subleaf 18 gives the size and offset of tile data.
+  uint32_t size, offset, ecx, edx;
+  TEST_CHECK(
+      __get_cpuid_count(0xd, XFEATURE_XTILEDATA, &size, &offset, &ecx, &edx));
+  if ((xfeatures & (1UL << XFEATURE_XTILEDATA)) == 0 ||
+      xstate_size < offset + size) {
+    signal_frames_without_tile_data++;
+  }
+  const TileData secret = TilePattern(kSecretTileByte);
+  for (uint32_t off = 512; off + kTileRowBytes <= xstate_size;
+       off += kTileRowBytes) {
+    if (memcmp(fp + off, secret.data(), kTileRowBytes) == 0) {
+      signal_frame_leaks++;
+      return;
+    }
+  }
+}
+
+TEST(ArchPrctlTest, AmxNoTileLeakToLaterProcess) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  for (int round = 0; round < 5; round++) {
+    // The first process uses a tile, then exits.
+    EXPECT_THAT(InForkedProcess([] {
+                  LoadSecretTile(100);
+                  ReleaseTiles();
+                  for (int i = 0; i < 100; i++) {
+                    sched_yield();
+                  }
+                }),
+                IsPosixErrorOkAndHolds(0));
+    // The next process gets AMX-sized signal frames, and must not see the
+    // tile in them.
+    EXPECT_THAT(
+        InForkedProcess([] {
+          struct sigaction sa = {};
+          sa.sa_sigaction = CheckSignalFrameTileDataHandler;
+          sa.sa_flags = SA_SIGINFO;
+          TEST_PCHECK(sigaction(SIGUSR1, &sa, nullptr) == 0);
+          TEST_PCHECK(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA) == 0);
+          // Use tile data once, so that signal frames have room for it.
+          LoadTileConfig(kTileConfig);
+          ZeroTile();
+          for (int i = 0; i < 10; i++) {
+            ReleaseTiles();
+            TEST_PCHECK(raise(SIGUSR1) == 0);
+          }
+          TEST_CHECK(signal_frame_leaks.load() == 0);
+          // The frames have room for tile data, so the check above is
+          // meaningful.
+          TEST_CHECK(signal_frames_without_tile_data.load() == 0);
+        }),
+        IsPosixErrorOkAndHolds(0));
+  }
+}
 
 // Where gVisor hides AMX, it hides all of it.
 TEST(ArchPrctlTest, AmxHiddenConsistently) {
@@ -1382,6 +1814,120 @@ TEST(ArchPrctlTest, AmxHiddenConsistently) {
 }
 
 void NopHandler(int) {}
+
+// A signal frame with AMX state fits in the smallest alternate signal stack
+// that sigaltstack accepts.
+TEST(ArchPrctlTest, AmxSignalFrameFitsSmallestSigaltstack) {
+  SKIP_IF(!KernelSupportsAMX());
+
+  EXPECT_THAT(
+      InForkedProcess([] {
+        TEST_PCHECK(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA) == 0);
+        // Find the smallest size that sigaltstack accepts.
+        constexpr size_t kMaxSize = 64 << 10;
+        const size_t page = getpagesize();
+        const size_t map_len = page + kMaxSize;
+        void* m = mmap(nullptr, map_len, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        TEST_PCHECK(m != MAP_FAILED);
+        // Put the stack right above a guard page, so that a frame
+        // that doesn't fit faults.
+        char* base = static_cast<char*>(m) + page;
+        TEST_PCHECK(mprotect(m, page, PROT_NONE) == 0);
+        size_t lo = 1, hi = kMaxSize;
+        while (lo < hi) {
+          size_t mid = lo + (hi - lo) / 2;
+          stack_t ss = {};
+          ss.ss_sp = base;
+          ss.ss_size = mid;
+          if (sigaltstack(&ss, nullptr) == 0) {
+            hi = mid;
+          } else {
+            TEST_CHECK(errno == ENOMEM);
+            lo = mid + 1;
+          }
+        }
+        stack_t ss = {};
+        ss.ss_sp = base;
+        ss.ss_size = lo;
+        TEST_PCHECK(sigaltstack(&ss, nullptr) == 0);
+
+        struct sigaction sa = {};
+        sa.sa_handler = NopHandler;
+        sa.sa_flags = SA_ONSTACK;
+        TEST_PCHECK(sigaction(SIGUSR1, &sa, nullptr) == 0);
+        const TileData want = TilePattern(0x77);
+        LoadTileConfig(kTileConfig);
+        LoadTile(want);
+        TEST_PCHECK(raise(SIGUSR1) == 0);
+        TileData got = {};
+        StoreTile(got);
+        ReleaseTiles();
+        TEST_CHECK(got == want);
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
+// An alternate signal stack of AT_MINSIGSTKSZ bytes, as some runtimes allocate,
+// is large enough for AMX.
+TEST(ArchPrctlTest, AmxReqXcompPermWithMinSigstkszSigaltstack) {
+  SKIP_IF(!KernelSupportsAMX());
+  ASSERT_FALSE(HasAMXPermission());
+
+  const unsigned long min_size = getauxval(AT_MINSIGSTKSZ);
+  ASSERT_NE(min_size, 0UL);
+  stack_t old = {};
+  ASSERT_THAT(sigaltstack(nullptr, &old), SyscallSucceeds());
+  std::vector<char> stack;
+  auto cleanup = Cleanup([&old] { sigaltstack(&old, nullptr); });
+  ASSERT_THAT(SetAltStack(stack, min_size), SyscallSucceeds());
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallSucceeds());
+}
+
+// The XSTATE_BV bits that SetXstateBVInFrameHandler sets.
+uint64_t frame_xstate_bv_bits;
+
+void SetXstateBVInFrameHandler(int, siginfo_t*, void* uc) {
+  uint8_t* fp = reinterpret_cast<uint8_t*>(
+      reinterpret_cast<ucontext_t*>(uc)->uc_mcontext.fpregs);
+  // XSTATE_BV is at offset 512 of the XSAVE area.
+  uint64_t xstate_bv;
+  memcpy(&xstate_bv, fp + 512, sizeof(xstate_bv));
+  xstate_bv |= frame_xstate_bv_bits;
+  memcpy(fp + 512, &xstate_bv, sizeof(xstate_bv));
+}
+
+// Returning from a signal handler that set AMX bits in XSTATE_BV succeeds
+// where CPUID advertises AMX. Elsewhere, it either succeeds or kills the
+// process with SIGSEGV.
+void AmxSigreturnWithXstateBV(uint64_t bits) {
+  frame_xstate_bv_bits = bits;
+  const int status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([] {
+    struct sigaction sa = {};
+    sa.sa_sigaction = SetXstateBVInFrameHandler;
+    sa.sa_flags = SA_SIGINFO;
+    TEST_PCHECK(sigaction(SIGUSR1, &sa, nullptr) == 0);
+    TEST_PCHECK(raise(SIGUSR1) == 0);
+  }));
+  if (CpuidHasAMXTile()) {
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        << "status=" << status;
+  } else {
+    EXPECT_TRUE((WIFEXITED(status) && WEXITSTATUS(status) == 0) ||
+                (WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV))
+        << "status=" << status;
+  }
+}
+
+TEST(ArchPrctlTest, AmxSigreturnWithXtilecfg) {
+  AmxSigreturnWithXstateBV(1UL << XFEATURE_XTILECFG);
+}
+
+TEST(ArchPrctlTest, AmxSigreturnWithXtiledata) {
+  AmxSigreturnWithXstateBV((1UL << XFEATURE_XTILECFG) |
+                           (1UL << XFEATURE_XTILEDATA));
+}
 
 // A signal frame fits an alternate signal stack of AT_MINSIGSTKSZ bytes.
 TEST(ArchPrctlTest, SignalFrameFitsMinSigstkszSigaltstack) {
