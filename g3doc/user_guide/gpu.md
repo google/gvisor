@@ -88,16 +88,24 @@ instance (CI) on the host before starting the sandbox.
 
 Supply the parent `/dev/nvidia#`, `/dev/nvidiactl`, `/dev/nvidia-uvm`, and the
 assigned GI and CI `/dev/nvidia-caps/nvidia-cap#` devices in the sandbox root
-container's OCI `linux.devices` entries. A CDI-aware runtime can supply these
-entries. Each capability device's path, major, and minor must match the host
-device. Set `CUDA_VISIBLE_DEVICES` to the assigned MIG UUID when selecting a
-single instance.
+container's OCI `linux.devices` entries. Each CI requires an explicit grant
+for both its own capability device and its parent GI's. A CDI-aware runtime can
+supply these entries. Each capability device's path, major, and minor must match
+the host device. Set `CUDA_VISIBLE_DEVICES` to the assigned MIG UUID when
+selecting a single instance.
 
 `nvproxy` exposes the assigned instance access metadata in
 `/proc/driver/nvidia/capabilities` and registers the capability devices in
 `/proc/devices`. Host procfs bind mounts are not required. Unassigned instance
 capabilities and global MIG configuration and monitoring capabilities are not
 exposed.
+
+CIs in the same GI have dedicated streaming multiprocessors (SMs) and share GPU
+memory resources and some engines. The NVIDIA driver controls authorization and
+GPU memory mappings, including access to individual allocations. Host
+orchestration controls GI placement. Use separate GIs for workloads that require
+hardware partitioning of GPU memory resources. See
+[NVIDIA's MIG concepts guide](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/latest/concepts.html).
 
 MIG checkpoint/restore, adding MIG devices through a workload subcontainer,
 and MIG selection through the legacy `NVIDIA_VISIBLE_DEVICES` hook path are
@@ -132,9 +140,9 @@ Before deploying a driver upgrade:
     numerical checks, training, CUDA graphs, compiled kernels, memory pressure,
     process termination, and recovery. Exercise two assigned instances
     concurrently, including failure on one while the other continues work.
-4.  Recheck denial of sibling instance access, invalid or wrong-type capability
-    descriptors, device-wide profiling, and MIG administration. Verify that
-    only assigned device nodes and procfs access metadata are visible.
+4.  Recheck denial of access to a CI in an unassigned GI, invalid or wrong-type
+    capability descriptors, device-wide profiling, and MIG administration.
+    Verify that only assigned device nodes and procfs access metadata are visible.
 5.  Preserve the exact source and release hashes, driver and framework versions,
     GPU and instance profiles, and test results. Repeat this qualification for
     a new GPU architecture or host UVM configuration.
