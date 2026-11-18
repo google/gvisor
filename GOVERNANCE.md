@@ -201,15 +201,11 @@ The project maintains the following channels:
     Slack channel in the CNCF workspace, for development discussion.
 *   [GitHub issues](https://github.com/gvisor/gvisor/issues): public bug reports
     and feature requests.
-*   [gvisor-security](mailto:gvisor-security@googlegroups.com): **private**
-    security list. Access is restricted to maintainers of the core gVisor
-    project, subject to the [security disclosure](#security-disclosure) policy
-    below. It is private so that vulnerabilities can be fixed before they are
-    disclosed publicly.
 *   [GitHub security advisories](https://github.com/gvisor/gvisor/security/advisories):
     **private** vulnerability reporting via GitHub. Reports are visible only to
     the reporter and the Security Response Team until disclosed, subject to the
-    [security disclosure](#security-disclosure) policy below.
+    [security disclosure](#security-disclosure) policy below. They are private
+    so that vulnerabilities can be fixed before they are disclosed publicly.
 *   [gvisor-syzkaller](mailto:gvisor-syzkaller@googlegroups.com): **private**
     syzkaller bug tracking list. It is private because automated fuzzing reports
     may contain undisclosed vulnerabilities. Access is not limited to
@@ -234,10 +230,11 @@ maintainers to resolve it.
 ## Security Response Team
 
 The maintainers appoint a Security Response Team to handle security reports. It
-currently consists of those maintainers subscribed to the
-[gvisor-security](mailto:gvisor-security@googlegroups.com) list; individual
-maintainers opt to participate based on need and expertise. The maintainers will
-review who is assigned to this at least once a year.
+currently consists of those maintainers with access to the non-public
+[GitHub security advisories](https://github.com/gvisor/gvisor/security/advisories)
+of the project; individual maintainers opt to participate based on need and
+expertise. The maintainers will review who is assigned to this at least once a
+year.
 
 The Security Response Team is responsible for handling all reports of security
 holes and breaches according to the [security policy](SECURITY.md), and for the
@@ -245,10 +242,9 @@ disclosure process described below.
 
 ### Security disclosure
 
-Security issues reach the team either through external reports to the security
-list or GitHub security advisories, or through internal project audits. Access
-to the list, to non-public advisories, and to audit results is limited to the
-Security Response Team.
+Security issues reach the team either through external reports filed as GitHub
+security advisories, or through internal project audits. Access to non-public
+advisories and to audit results is limited to the Security Response Team.
 
 Once the team becomes aware of a potential security issue, they will assess the
 scope and potential impact. If reported externally, they will determine a
