@@ -1,94 +1,79 @@
 _templates:
-  retry_settings: &retry_settings
-    automatic:
-      - exit_status: 80
-        limit: 0
-      - signal_reason: cancel
-        limit: 0
-      - exit_status: -1
-        limit: 3
-      - exit_status: "*"
-        limit: 2
-  common: &common
-    timeout_in_minutes: 55
-    retry:
-      <<: *retry_settings
-  source_test: &source_test
-    if: build.env("STAGED_BINARIES") == null
-  docker: &docker
-    env:
-      BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
-env:
-  # Optional filter for syscall tests.
-  SYSCALL_TEST_FILTERS: ''
+  print: &print |
+    env | grep -E '^(BUILDKITE_(COMMIT|PULL_REQUEST|SOURCE|BRANCH|BUILD_ID|GITHUB_EVENT|GITHUB_REVIEW_ID)|OVERRIDE_TEST_[A-Z_]+)=' | sort
 
-priority: ${PRIORITY:-0}
+agents:
+  queue: "untrusted"
+
+env:
+  BUILDKITE_COMMIT: "1111111111111111111111111111111111111111"
+  BUILDKITE_PULL_REQUEST: "false"
+  BUILDKITE_SOURCE: "schedule"
+  BUILDKITE_BRANCH: "master"
+  BUILDKITE_GITHUB_REVIEW_ID: "111"
+  OVERRIDE_TEST_PIPELINE_VAR: "pipeline-level env was applied"
 
 steps:
-  # Run smoke tests before the other tests.
-  - <<: *common
-    <<: *source_test
-    label: ":fire: Smoke tests (AMD64)"
-    command: make smoke-tests
-  - <<: *common
-    <<: *source_test
+  - label: "1: pipeline-level env only"
+    key: "pipeline-env"
+    checkout:
+      skip: true
+    command: *print
+
+  - label: "2: step-level env"
+    key: "step-env"
+    checkout:
+      skip: true
     env:
-      GLIBC_TUNABLES: glibc.pthread.rseq=0
-    label: ":fire: Smoke race tests"
-    command: make smoke-race-tests
+      BUILDKITE_COMMIT: "2222222222222222222222222222222222222222"
+      BUILDKITE_PULL_REQUEST: "2"
+      BUILDKITE_SOURCE: "ui"
+      BUILDKITE_BRANCH: "master"
+      BUILDKITE_GITHUB_REVIEW_ID: "222"
+      OVERRIDE_TEST_STEP_VAR: "step-level env was applied"
+    command: *print
 
-  # On PRs, run the remaining tests only if the smoke tests pass, so that a
-  # change that does not build or start does not use the other agents.
-  - wait: ~
-    if: build.pull_request.id != null
+  - label: "3: step-level env + checkout"
+    key: "step-env-checkout"
+    env:
+      BUILDKITE_COMMIT: "b29c8320a862a77f4c55894d00c56eb5850c8066"
+      OVERRIDE_TEST_STEP_VAR: "step-level env was applied"
+    command: |
+      env | grep -E '^(BUILDKITE_(COMMIT|PULL_REQUEST|SOURCE|BRANCH|BUILD_ID|GITHUB_EVENT|GITHUB_REVIEW_ID)|OVERRIDE_TEST_[A-Z_]+)=' | sort
+      echo "Checked out: $$(git rev-parse HEAD)"
 
-  - <<: *common
-    <<: *source_test
-    label: ":broom: Lint"
-    command: make lint
-  - <<: *common
-    <<: *source_test
-    label: ":soap: Lint (C++)"
-    command: make lint-cc
-  - <<: *common
-    <<: *source_test
-    label: ":scroll: Governance file sync check"
-    command: make governance-check
-  - <<: *common
-    <<: *source_test
-    label: ":building_construction: Gazelle BUILD file check"
-    command: make gazelle-check
-  - <<: *common
-    <<: *source_test
-    label: ":scales: Dependency license check"
-    command: make license-check
+  - label: "4: job uploads a step with env"
+    key: "dynamic-upload"
+    checkout:
+      skip: true
+    command: |
+      buildkite-agent pipeline upload <<'YAML'
+      steps:
+        - label: "4b: step uploaded by a job"
+          key: "dynamic-step"
+          checkout:
+            skip: true
+          env:
+            BUILDKITE_COMMIT: "4444444444444444444444444444444444444444"
+            BUILDKITE_PULL_REQUEST: "4"
+            BUILDKITE_SOURCE: "api"
+            OVERRIDE_TEST_DYNAMIC_VAR: "dynamic step env was applied"
+          command: "env | grep -E '^(BUILDKITE_(COMMIT|PULL_REQUEST|SOURCE|BRANCH|BUILD_ID)|OVERRIDE_TEST_[A-Z_]+)=' | sort"
+      YAML
 
-  # Basic unit tests.
-  - <<: *common
-    <<: *source_test
-    label: ":golang: Nogo tests"
-    command: make nogo-tests
-  - <<: *common
-    <<: *source_test
-    label: ":test_tube: Unit tests (cgroupv2)"
-    command: make unit-tests
-  - <<: *common
-    <<: *docker
-    # This variant is not really a source test, but we annotate it as such to
-    # avoid running binary-only tests for all variants of cgroups. It is
-    # sufficient to run cgroupv2 variants only for source changes.
-    <<: *source_test
-    label: ":test_tube: Container tests (cgroupv2)"
-    command: make container-tests
+  - label: "5: job sets buildkite:git:commit meta-data"
+    key: "git-metadata"
+    checkout:
+      skip: true
+    command: |
+      buildkite-agent meta-data set "buildkite:git:commit" \
+        "commit 5555555555555555555555555555555555555555"
+      buildkite-agent meta-data get "buildkite:git:commit"
 
-  # System call tests.
-  - <<: *common
-    label: ":toolbox: System call tests (AMD64)"
-    command: make OPTIONS=--config=syscalls-amd64 syscall-tests
-    parallelism: 20
+  - wait
 
-  - <<: *common
-    <<: *docker
-    <<: *source_test
-    label: ":lock: Root tests"
-    command: make root-tests
+  - label: "6: after the meta-data change"
+    key: "after-metadata"
+    checkout:
+      skip: true
+    command: *print
