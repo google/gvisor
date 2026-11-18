@@ -2250,6 +2250,9 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	if opts.Resume {
 		return s.applyAppCPULimit(cpuPhaseLifecycle)
 	}
+	if err := s.waitForStopped(); err != nil {
+		return fmt.Errorf("waiting for checkpointed sandbox %q to exit: %w", s.ID, err)
+	}
 	return nil
 }
 
