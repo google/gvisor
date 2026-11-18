@@ -124,7 +124,7 @@ maintainers:
     github_id: 1330673
     affiliation: Google
     started: 2020-11-18
-    status: HIATUS_SINCE:2026-10-28
+    status: ACTIVE
     areas: [benchmarks, kubernetes, metrics, oci, release_pipeline, runsc, seccomp, website]
   - name: Lucas Manning
     github: manninglucas
