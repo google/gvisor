@@ -257,9 +257,11 @@ type uverbsFD struct {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *uverbsFD) Release(ctx context.Context) {
-	fd.pinned.releaseAll(ctx)
 	fdnotifier.RemoveFD(fd.hostFD)
+	// Closing the host FD destroys the context's objects, after which the
+	// device no longer accesses the mirrored pages.
 	unix.Close(int(fd.hostFD))
+	fd.pinned.releaseAll(ctx)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
