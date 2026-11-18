@@ -1,0 +1,116 @@
+<svg viewBox="0 0 720 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ov-h" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+  </defs>
+
+  <!-- outside the worker -->
+  <rect x="40" y="20" width="160" height="48" rx="8" class="d-box"/>
+  <text x="54" y="41" class="d-name">orchestrator</text>
+  <text x="54" y="57" class="d-note">queue and claims</text>
+
+  <rect x="540" y="20" width="140" height="48" rx="8" class="d-box"/>
+  <text x="554" y="41" class="d-name">upstreams</text>
+  <text x="554" y="57" class="d-note">APIs, registries</text>
+
+  <!-- the worker -->
+  <rect x="12" y="92" width="696" height="300" rx="12" class="d-ghost"/>
+  <text x="40" y="114" class="d-tag">WORKER</text>
+
+  <rect x="40" y="128" width="160" height="50" rx="8" class="d-box"/>
+  <text x="54" y="149" class="d-name">sandboxd</text>
+  <text x="54" y="165" class="d-note">claims, pool, output</text>
+
+  <rect x="40" y="318" width="160" height="50" rx="8" class="d-box"/>
+  <text x="54" y="339" class="d-name">storage gateway</text>
+  <text x="54" y="355" class="d-note">images and volumes</text>
+
+  <rect x="540" y="128" width="140" height="50" rx="8" class="d-box"/>
+  <text x="554" y="149" class="d-name">Pony</text>
+  <text x="554" y="165" class="d-note">egress proxy</text>
+
+  <!-- the worker's other slots -->
+  <rect x="512" y="230" width="170" height="80" rx="10" class="d-ghost"/>
+  <rect x="502" y="220" width="170" height="80" rx="10" class="d-ghost"/>
+  <text x="518" y="244" class="d-tag">OTHER SLOTS</text>
+  <text x="518" y="264" class="d-note">one run per</text>
+  <text x="518" y="279" class="d-note">sandbox</text>
+
+  <!-- the sandbox -->
+  <rect x="280" y="108" width="190" height="270" rx="10" class="d-zone"/>
+  <text x="296" y="127" class="d-tag">GVISOR SANDBOX</text>
+
+  <rect x="296" y="142" width="158" height="46" rx="8" class="d-box-hot"/>
+  <text x="310" y="162" class="d-name">step</text>
+  <text x="310" y="178" class="d-note">python script.py</text>
+
+  <rect x="296" y="222" width="158" height="46" rx="8" class="d-box"/>
+  <text x="310" y="242" class="d-name">sentry</text>
+  <text x="310" y="258" class="d-note">a kernel, in Go</text>
+
+  <rect x="296" y="300" width="158" height="62" rx="8" class="d-box"/>
+  <text x="310" y="320" class="d-name">gofer</text>
+  <text x="310" y="336" class="d-note">selected host files</text>
+  <text x="310" y="351" class="d-note">Nest: /storage</text>
+
+  <!-- below the worker -->
+  <rect x="40" y="420" width="640" height="44" rx="8" class="d-box"/>
+  <text x="54" y="447" class="d-name">Spongeblob</text>
+  <text x="150" y="447" class="d-note">images, volumes, step output</text>
+
+  <!-- connections -->
+  <path id="ov-a" d="M120 68 V126" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="128" y="84" class="d-note">claim, complete</text>
+
+  <path id="ov-b" d="M200 158 H294" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="212" y="151" class="d-note">job</text>
+
+  <path id="ov-c" d="M454 158 H538" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="466" y="151" class="d-note">TCP, DNS</text>
+
+  <path id="ov-d" d="M610 128 V70" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="618" y="104" class="d-note">credentials</text>
+
+  <path id="ov-e" d="M375 188 V220" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="384" y="208" class="d-note">syscalls</text>
+
+  <path id="ov-f" d="M375 268 V298" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="384" y="287" class="d-note">LisaFS</text>
+
+  <path id="ov-g" d="M296 245 H120 V316" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="134" y="238" class="d-note">image ranges</text>
+
+  <path id="ov-h2" d="M296 343 H202" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="212" y="336" class="d-note">volumes</text>
+
+  <path id="ov-i" d="M120 368 V418" class="d-line" marker-end="url(#ov-h)"/>
+  <text x="128" y="410" class="d-note">ranges, blocks</text>
+
+  <path id="ov-j" d="M40 162 H28 V442 H38" class="d-line" marker-end="url(#ov-h)"/>
+  <text transform="translate(23 300) rotate(-90)" text-anchor="middle" class="d-note">step output</text>
+
+  <!-- traffic -->
+  <g class="d-moving">
+    <circle r="3.5" class="d-pulse">
+      <animateMotion dur="5s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.2;1" calcMode="linear"><mpath href="#ov-a"/></animateMotion>
+      <animate attributeName="opacity" dur="5s" repeatCount="indefinite" values="1;1;0;0" keyTimes="0;0.2;0.21;1"/>
+    </circle>
+    <circle r="3.5" class="d-pulse">
+      <animateMotion dur="5s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.22;0.4;1" calcMode="linear"><mpath href="#ov-b"/></animateMotion>
+      <animate attributeName="opacity" dur="5s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.219;0.22;0.4;0.41;1"/>
+    </circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="1.4s" begin="-0.2s" repeatCount="indefinite"><mpath href="#ov-e"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="1.4s" begin="-0.9s" repeatCount="indefinite"><mpath href="#ov-e"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="2.2s" begin="-0.5s" repeatCount="indefinite"><mpath href="#ov-f"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="3.2s" begin="-1.6s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#ov-g"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="2.6s" begin="-1.1s" repeatCount="indefinite"><mpath href="#ov-h2"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="2.4s" begin="-0.6s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#ov-i"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="2.2s" begin="-0.3s" repeatCount="indefinite"><mpath href="#ov-c"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="2.2s" begin="-1.4s" repeatCount="indefinite"><mpath href="#ov-d"/></animateMotion></circle>
+    <circle r="3.5" class="d-pulse">
+      <animateMotion dur="5s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.72;0.98;1" calcMode="linear"><mpath href="#ov-j"/></animateMotion>
+      <animate attributeName="opacity" dur="5s" repeatCount="indefinite" values="0;0;1;1;0" keyTimes="0;0.719;0.72;0.98;1"/>
+    </circle>
+  </g>
+</svg>

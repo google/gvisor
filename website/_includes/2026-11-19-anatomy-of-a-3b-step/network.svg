@@ -1,0 +1,75 @@
+<svg viewBox="0 0 720 384" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="nw-h" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+  </defs>
+
+  <!-- the sandbox's namespace -->
+  <rect x="20" y="40" width="190" height="250" rx="12" class="d-zone"/>
+  <text x="34" y="62" class="d-tag">SANDBOX NETNS</text>
+  <rect x="34" y="70" width="162" height="44" rx="8" class="d-box-hot"/>
+  <text x="48" y="89" class="d-name">step</text>
+  <text x="48" y="105" class="d-note">connect(api, 443)</text>
+  <rect x="34" y="138" width="162" height="24" rx="5" class="d-cell"/>
+  <text x="44" y="154">eth0  100.64.0.9</text>
+  <rect x="34" y="200" width="162" height="24" rx="5" class="d-cell"/>
+  <text x="44" y="216">dns   100.64.1.9</text>
+  <text x="34" y="254" class="d-note">connector key</text>
+  <text x="34" y="269" class="d-note">stays in Pony</text>
+
+  <!-- sandboxd's namespace -->
+  <rect x="236" y="40" width="226" height="250" rx="12" class="d-ghost"/>
+  <text x="250" y="62" class="d-tag">SANDBOXD NETNS</text>
+  <rect x="264" y="110" width="172" height="130" rx="8" class="d-box"/>
+  <text x="278" y="132" class="d-name">nftables</text>
+  <text x="278" y="180" class="d-note">src → TPROXY :20007</text>
+  <text x="278" y="196" class="d-note">spoofed source: drop</text>
+  <text x="278" y="212" class="d-note">wrong resolver: drop</text>
+  <text x="278" y="228" class="d-note">no listener: drop</text>
+  <text x="212" y="143" class="d-note">veth</text>
+  <text x="264" y="258" class="d-note">hands each sandbox’s</text>
+  <text x="264" y="271" class="d-note">sockets to Pony</text>
+  <text x="264" y="284" class="d-note">with SCM_RIGHTS</text>
+  <path d="M384 280 H486" class="d-line d-dash" marker-end="url(#nw-h)"/>
+
+  <!-- Pony -->
+  <rect x="490" y="40" width="210" height="250" rx="12" class="d-ghost"/>
+  <text x="504" y="62" class="d-tag">PONY</text>
+  <rect x="504" y="100" width="182" height="24" rx="5" class="d-cell-hot"/>
+  <text x="514" y="116" class="d-name">listener :20007</text>
+  <rect x="504" y="130" width="182" height="24" rx="5" class="d-cell"/>
+  <text x="514" y="146">destination policy</text>
+  <rect x="504" y="160" width="182" height="24" rx="5" class="d-cell"/>
+  <text x="514" y="176">terminate TLS</text>
+  <rect x="504" y="190" width="182" height="24" rx="5" class="d-cell-hot"/>
+  <text x="514" y="206" class="d-name">add credential</text>
+  <rect x="504" y="222" width="182" height="24" rx="5" class="d-cell"/>
+  <text x="514" y="238">DNS socket</text>
+
+  <!-- upstream -->
+  <rect x="490" y="322" width="210" height="46" rx="8" class="d-box"/>
+  <text x="504" y="342" class="d-name">threat intel API</text>
+  <text x="504" y="358" class="d-note">the request has the key</text>
+
+  <!-- wiring -->
+  <path d="M115 114 V136" class="d-line" marker-end="url(#nw-h)"/>
+  <path d="M196 150 H262" class="d-line" marker-end="url(#nw-h)"/>
+  <path d="M436 150 H470 V112 H502" class="d-line" marker-end="url(#nw-h)"/>
+  <path d="M196 212 H262" class="d-line" marker-end="url(#nw-h)"/>
+  <path d="M436 212 H478 V234 H502" class="d-line" marker-end="url(#nw-h)"/>
+  <path d="M497 112 V202" class="d-line"/>
+  <path d="M686 202 H710 V345 H702" class="d-line" marker-end="url(#nw-h)"/>
+
+  <path id="nw-tcp" d="M196 150 H470 V112 H497 V202 H710 V345 H700" fill="none" stroke="none"/>
+  <g class="d-moving">
+    <circle r="4.5" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.85;1" calcMode="linear"><mpath href="#nw-tcp"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="1;1;0;0" keyTimes="0;0.85;0.851;1"/>
+    </circle>
+    <circle r="6.5" class="d-cell-hot">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.85;1" calcMode="linear"><mpath href="#nw-tcp"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.54;0.545;0.85;0.851;1"/>
+    </circle>
+  </g>
+</svg>

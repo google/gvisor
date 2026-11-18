@@ -8,3 +8,6 @@ layout: blog
 <div class="blog-content">
   {{ content }}
 </div>
+{% if content contains 'class="diagram"' %}
+<script src="/assets/js/diagrams.js" defer></script>
+{% endif %}

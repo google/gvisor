@@ -215,6 +215,17 @@ doc(
     permalink = "/blog/2026/11/12/checkpoint-restore/",
 )
 
+doc(
+    name = "anatomy_of_a_3b_step",
+    src = "2026-11-19-anatomy-of-a-3b-step.md",
+    authors = [
+        "shayonj",
+    ],
+    description = "From building the image to tearing down the sandbox, how Tines gives each 3B step a fresh Linux environment.",
+    layout = "post",
+    permalink = "/blog/2026/11/19/anatomy-of-a-3b-step/",
+)
+
 docs(
     name = "posts",
     deps = [
