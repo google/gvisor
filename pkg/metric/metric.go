@@ -285,7 +285,7 @@ type FieldValue struct {
 
 // fieldMapperSearchThreshold is the number of field values after which we
 // switch from linear to binary search when looking up field values.
-// The benchmarks described in https://github.com/google/gvisor/commit/79b38029d
+// The benchmarks described in https://github.com/gvisor/gvisor/commit/79b38029d
 // found linear search faster than map and binary search up to 48 values.
 const fieldMapperSearchThreshold = 48
 

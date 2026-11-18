@@ -7,7 +7,7 @@ name: "Issue reviver"
 
 jobs:
   issue_reviver:
-    if: (github.repository == 'google/gvisor' || github.repository == 'gvisor/gvisor')
+    if: github.repository == 'gvisor/gvisor'
     runs-on: ubuntu-latest
     permissions:
       issues: write

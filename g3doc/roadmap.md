@@ -40,10 +40,10 @@ Releases are available on [GitHub][releases].
 As a convenience, binary packages are also published. Instructions for their use
 are available via the [Installation instructions](./user_guide/install.md).
 
-[issues]: https://github.com/google/gvisor/issues
-[milestones]: https://github.com/google/gvisor/milestones
-[releases]: https://github.com/google/gvisor/releases
-[performance]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+performance%22
-[integration]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+integration%22
-[compatibility]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+compatibility%22
-[infrastructure]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+tooling%22
+[issues]: https://github.com/gvisor/gvisor/issues
+[milestones]: https://github.com/gvisor/gvisor/milestones
+[releases]: https://github.com/gvisor/gvisor/releases
+[performance]: https://github.com/gvisor/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+performance%22
+[integration]: https://github.com/gvisor/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+integration%22
+[compatibility]: https://github.com/gvisor/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+compatibility%22
+[infrastructure]: https://github.com/gvisor/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+tooling%22

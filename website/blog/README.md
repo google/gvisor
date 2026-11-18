@@ -18,7 +18,7 @@ allowed.
 To submit a blog post, follow the steps below.
 
 1.  Familiarize yourself with the Markdown format for the
-    [existing blog posts](https://github.com/google/gvisor/tree/master/website/blog).
+    [existing blog posts](https://github.com/gvisor/gvisor/tree/master/website/blog).
 1.  Write your blog post in a text editor of your choice.
 1.  (Optional) If you need help with markdown, check out
     [StakEdit](https://stackedit.io/app#) or read

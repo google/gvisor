@@ -74,5 +74,5 @@ near-parity with Linux, it will never be perfect. Notably:
 
 <!-- mdformat on -->
 
-[bug]: https://github.com/google/gvisor/issues/new?title=Compatibility%20Issue:
-[issues]: https://github.com/google/gvisor/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+compatibility%22
+[bug]: https://github.com/gvisor/gvisor/issues/new?title=Compatibility%20Issue:
+[issues]: https://github.com/gvisor/gvisor/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+compatibility%22

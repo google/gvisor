@@ -233,7 +233,7 @@ bazel run //:gazelle -- update-repos -from_file=go.mod
 ```
 
 [dco]: https://developercertificate.org/
-[github]: https://github.com/google/gvisor/compare
+[github]: https://github.com/gvisor/gvisor/compare
 [cncf-slack-invite]: https://slack.cncf.io/
 [slack-gvisor-dev]: https://cloud-native.slack.com/archives/C0CCZ4S4V62
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev

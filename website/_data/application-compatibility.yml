@@ -86,7 +86,7 @@ apps:
     category: "CI/CD & developer tooling"
     verdict: "partial"
     version: "4.9.3"
-    notes: "Rootless mode is supported with caveats; tracking progress in [#13944](https://github.com/google/gvisor/issues/13944)."
+    notes: "Rootless mode is supported with caveats; tracking progress in [#13944](https://github.com/gvisor/gvisor/issues/13944)."
 
   - name: "WordPress"
     category: "Applications & platforms"

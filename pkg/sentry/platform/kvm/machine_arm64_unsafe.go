@@ -70,7 +70,7 @@ func (m *machine) initArchState() error {
 	// mechanism).
 	// If we create vCPU dynamically on ARM64, the timer for vCPU would mess
 	// up for a short time.
-	// For more detail, please refer to https://github.com/google/gvisor/issues/5739
+	// For more detail, please refer to https://github.com/gvisor/gvisor/issues/5739
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := 0; i < m.maxVCPUs; i++ {

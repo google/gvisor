@@ -37,7 +37,7 @@ weekly release.
 
 The Google Cloud Storage release bucket (`gs://gvisor/releases/`) and the apt
 repository are the canonical channels. The
-[GitHub releases](https://github.com/google/gvisor/releases) page mirrors these
+[GitHub releases](https://github.com/gvisor/gvisor/releases) page mirrors these
 artifacts. See [Installation](./user_guide/install.md) for the channels (latest,
 specific release, point release, nightly, and HEAD) and the install commands.
 
@@ -134,7 +134,7 @@ Before the embargo date:
 
 -   Do the work only in the private fork of the advisory.
 -   Do not push a branch, open a pull request, or run a release workflow in
-    `google/gvisor`. All of these are public.
+    `gvisor/gvisor`. All of these are public.
 
 On the embargo date:
 
@@ -200,7 +200,7 @@ workflow from** branch is the target branch.
 ### Playbook B: Command line
 
 Use this playbook only if GitHub Actions is not available. You must have push
-access to `google/gvisor`, and `origin` must point to it. These steps do not run
+access to `gvisor/gvisor`, and `origin` must point to it. These steps do not run
 the workflow checks, so do each check yourself.
 
 ```bash
@@ -236,7 +236,7 @@ You can push the cherry-pick branch to your fork.
 git switch -c "cherry-pick/${date}-<topic>" "origin/release/${date}"
 git cherry-pick -x <sha>                      # Add "-m 1" for a merge commit.
 git push <your-remote> HEAD
-gh pr create --repo google/gvisor --base "release/${date}" \
+gh pr create --repo gvisor/gvisor --base "release/${date}" \
   --head "<you>:cherry-pick/${date}-<topic>"
 ```
 
@@ -320,4 +320,4 @@ git push origin 'release-20260928.0^{commit}:refs/heads/release/20260928'
 -   Do not backport a fix that is not a security fix.
 -   Do not use another release process at the same time as this one.
 
-[security]: https://github.com/google/gvisor/blob/master/SECURITY.md
+[security]: https://github.com/gvisor/gvisor/blob/master/SECURITY.md

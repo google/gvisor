@@ -48,11 +48,11 @@ latency and CPU consumption. Here are the syscall paths in gVisor.
 ### Path 1: User-space vDSO
 
 Sentry provides a
-[vDSO library](https://github.com/google/gvisor/tree/master/vdso) for its
+[vDSO library](https://github.com/gvisor/gvisor/tree/master/vdso) for its
 sandboxed processes. Several syscalls are short circuited and implemented in
 user space. These syscalls cost almost as much as native Linux. But note that
 the vDSO library is partially implemented. We once noticed some
-[syscalls](https://github.com/google/gvisor/issues/3101) in our environment are
+[syscalls](https://github.com/gvisor/gvisor/issues/3101) in our environment are
 not properly terminated in user space. We create some additional implementations
 to the vDSO, and aim to push these improvements upstream when possible.
 
@@ -112,7 +112,7 @@ sandboxed applications.
 
 Here's the benchmark result on the structural cost of syscall. We got the data
 on a Intel(R) Xeon(R) CPU E5-2650 v2 platform, using
-[getpid benchmark](https://github.com/google/gvisor/blob/master/test/perf/linux/getpid_benchmark.cc).
+[getpid benchmark](https://github.com/gvisor/gvisor/blob/master/test/perf/linux/getpid_benchmark.cc).
 As we can see, for KVM platform, the syscall interception costs more than 10x
 than a native Linux syscall.
 
@@ -126,7 +126,7 @@ runsc-ptrace | 6249
 \* "Native" stands for using vanilla linux kernel.
 
 To understand the structural cost of syscall interception, we did a
-[quantitative analysis](https://github.com/google/gvisor/issues/2354) on kvm
+[quantitative analysis](https://github.com/gvisor/gvisor/issues/2354) on kvm
 platform. According to the analysis, the overhead mainly comes from:
 
 1.  KPTI-like CR3 switches: to maintain the address equation of Sentry running
@@ -301,7 +301,7 @@ Now we can get clear information like:
     already upgrade to newer Go version). Another optimization is: after we find
     that append write of shared volume spends a lot of time querying gofer for
     current file length in the flame graph, we propose to add
-    [an handle only for append write](https://github.com/google/gvisor/issues/1792).
+    [an handle only for append write](https://github.com/gvisor/gvisor/issues/1792).
 
 2.  If GC is a real problem: we can barely see sample related to GC in this
     case. But if we do, we can further search <code>mallocgc()</code> to see
@@ -310,7 +310,7 @@ Now we can get clear information like:
     [GC percent](https://golang.org/pkg/runtime/debug/#SetGCPercent), 100% by
     default, to sacrifice memory for less CPU utilization. We once found that
     allocating a object > 32 KB also triggers GC, referring to
-    [this](https://github.com/google/gvisor/commit/f697d1a33e4e7cefb4164ec977c38ccc2a228099).
+    [this](https://github.com/gvisor/gvisor/commit/f697d1a33e4e7cefb4164ec977c38ccc2a228099).
 
 3.  Percentage of time spent in GR3 app and Sentry: We can determine if it
     worths to continue the optimization. If most of the samples are in GR3, then

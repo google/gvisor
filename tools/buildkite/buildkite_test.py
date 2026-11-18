@@ -207,33 +207,36 @@ class ParseRefTest(unittest.TestCase):
 
   def test_pull_request(self):
     resolve_pull_request = lambda owner, repo, number: {
-        ("google", "gvisor", 17121): "test/cl1",
+        ("gvisor", "gvisor", 17121): "test/cl1",
         # A branch name that looks like a build number.
-        ("google", "gvisor", 7): "123",
+        ("gvisor", "gvisor", 7): "123",
+        ("someowner", "gvisor", 5): "fix",
     }[(owner, repo, number)]
     resolve = lambda org, pipeline, branch: {
         ("gvisor", "pipeline", "test/cl1"): 53747,
         ("gvisor", "release", "test/cl1"): 9,
         ("gvisor", "pipeline", "123"): 8,
+        ("gvisor", "pipeline", "fix"): 10,
     }[(org, pipeline, branch)]
     for url, pipeline, want in [
-        ("https://github.com/google/gvisor/pull/17121", "pipeline", 53747),
-        ("https://github.com/google/gvisor/pull/17121/files", "release", 9),
-        ("github.com/google/gvisor/pull/17121#issue-1", "pipeline", 53747),
-        ("https://github.com/google/gvisor/pull/7", "pipeline", 8),
+        ("https://github.com/gvisor/gvisor/pull/17121", "pipeline", 53747),
+        ("https://github.com/gvisor/gvisor/pull/17121/files", "release", 9),
+        ("github.com/gvisor/gvisor/pull/17121#issue-1", "pipeline", 53747),
+        ("https://github.com/gvisor/gvisor/pull/7", "pipeline", 8),
+        ("https://github.com/someowner/gvisor/pull/5", "pipeline", 10),
     ]:
       with self.subTest(url=url, pipeline=pipeline):
         build = self.parse(url, pipeline, resolve, resolve_pull_request)
         self.assertEqual(build.number, want)
 
   def test_pull_request_branch(self):
-    pulls = "https://api.github.com/repos/google/gvisor/pulls"
+    pulls = "https://api.github.com/repos/someowner/gvisor/pulls"
     fetch = FakeFetch({
         f"{pulls}/1": {
             "head": {
                 "ref": "test/cl1",
-                "label": "google:test/cl1",
-                "repo": {"full_name": "google/gvisor"},
+                "label": "someowner:test/cl1",
+                "repo": {"full_name": "someowner/gvisor"},
             }
         },
         f"{pulls}/2": {
@@ -256,14 +259,14 @@ class ParseRefTest(unittest.TestCase):
       ]:
         with self.subTest(number=number):
           self.assertEqual(
-              buildkite._pull_request_branch("google", "gvisor", number), want
+              buildkite._pull_request_branch("someowner", "gvisor", number), want
           )
       with self.assertRaisesRegex(buildkite.Error, "60 API requests"):
-        buildkite._pull_request_branch("google", "gvisor", 4)
+        buildkite._pull_request_branch("someowner", "gvisor", 4)
 
   def test_errors(self):
     with self.assertRaises(buildkite.Error):
-      self.parse("https://github.com/google/gvisor/issues/1")
+      self.parse("https://github.com/gvisor/gvisor/issues/1")
     for pipeline in ["", "gvisor/", "/pipeline", "a/b/c"]:
       with self.subTest(pipeline=pipeline):
         with self.assertRaises(buildkite.Error):

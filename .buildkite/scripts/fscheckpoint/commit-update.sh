@@ -16,7 +16,7 @@
 
 set -euxo pipefail
 
-readonly REPO_URL="https://github.com/google/gvisor.git"
+readonly REPO_URL="https://github.com/gvisor/gvisor.git"
 readonly CORPUS_BRANCH="fscheckpoint-compat-testing"
 
 # Prunes compatibility_testing/ snapshots:
