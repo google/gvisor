@@ -579,6 +579,13 @@ func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
 	return igmp.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
 
+// joinedGroups returns the locally joined groups and their join counts.
+//
+// +checklocksread:igmp.ep.mu
+func (igmp *igmpState) joinedGroups() map[tcpip.Address]uint64 {
+	return igmp.genericMulticastProtocol.JoinedGroupsRLocked()
+}
+
 // leaveGroup handles removing the group from the membership map, cancels any
 // delay timers associated with that group, and sends the Leave Group message
 // if required.

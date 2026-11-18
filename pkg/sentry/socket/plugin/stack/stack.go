@@ -84,6 +84,11 @@ func (s *Stack) SupportsIPv6() bool {
 	return true
 }
 
+// MulticastGroups implements inet.Stack.MulticastGroups.
+func (*Stack) MulticastGroups(int) map[int32][]inet.MulticastGroup {
+	return nil
+}
+
 // Destroy implements inet.Stack.Destroy.
 func (*Stack) Destroy() {
 }

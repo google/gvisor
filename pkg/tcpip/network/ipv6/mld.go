@@ -297,6 +297,13 @@ func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
 	return mld.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
 
+// joinedGroups returns the locally joined groups and their join counts.
+//
+// +checklocksread:mld.ep.mu.RWMutex
+func (mld *mldState) joinedGroups() map[tcpip.Address]uint64 {
+	return mld.genericMulticastProtocol.JoinedGroupsRLocked()
+}
+
 // leaveGroup handles removing the group from the membership map, cancels any
 // delay timers associated with that group, and sends the Done message, if
 // required.
