@@ -91,6 +91,52 @@ func (g *githubClient) prAuthor(ctx context.Context, prNumber int) (authorID, er
 	return authorID(id), nil
 }
 
+// isFullCommitSHA returns whether s is a full, lowercase hexadecimal Git
+// commit SHA-1.
+func isFullCommitSHA(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// prApprovers returns the set of GitHub reviewers who have approved the given
+// commit.
+func (g *githubClient) prApprovers(ctx context.Context, prNumber int, commit string) (map[authorID]struct{}, error) {
+	ctx = context.WithValue(ctx, github.SleepUntilPrimaryRateLimitResetWhenRateLimited, true)
+	approvers := make(map[authorID]struct{})
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		reviews, resp, err := g.client.PullRequests.ListReviews(ctx, g.repo.owner, g.repo.name, prNumber, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list reviews of pull request %d: %w", prNumber, err)
+		}
+		// GitHub specifies that reviews will be listed chronologically in this list
+		for _, r := range reviews {
+			id := authorID(r.GetUser().GetID())
+			switch state := r.GetState(); {
+			case state == "COMMENTED" || state == "PENDING":
+				// Doesn't change the reviewer's opinion.
+			case state == "APPROVED" && r.GetCommitID() == commit:
+				approvers[id] = struct{}{}
+			default:
+				// Changes requested, a dismissal, approval of another commit, etc.
+				delete(approvers, id)
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return approvers, nil
+}
+
 // fileContents returns the contents of the file at the given path on the
 // repository's default branch.
 func (g *githubClient) fileContents(ctx context.Context, path string) ([]byte, error) {
