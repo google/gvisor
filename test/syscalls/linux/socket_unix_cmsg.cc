@@ -158,6 +158,23 @@ TEST_P(UnixSocketPairCmsgTest, BadFDPass) {
               SyscallFailsWithErrno(EBADF));
 }
 
+TEST_P(UnixSocketPairCmsgTest, FDPassReceiverClose) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  Cleanup close_read_end([&] { close(pipe_fds[0]); });
+
+  char sent_data = 'a';
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), pipe_fds[1],
+                                       &sent_data, sizeof(sent_data)));
+  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
+
+  char c;
+  EXPECT_THAT(ReadFd(pipe_fds[0], &c, 1), SyscallFailsWithErrno(EAGAIN));
+  ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+  EXPECT_THAT(ReadFd(pipe_fds[0], &c, 1), SyscallSucceedsWithValue(0));
+}
+
 // A receive that fails with EFAULT doesn't leak the passed FDs.
 TEST_P(UnixSocketPairCmsgTest, FDPassRecvEFAULT) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());

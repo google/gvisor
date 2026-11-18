@@ -542,6 +542,9 @@ func (q *queueReceiver) RecvMaxQueueSize() int64 {
 
 // Release implements Receiver.Release.
 func (q *queueReceiver) Release(ctx context.Context) {
+	// No one can receive these messages after the receiver is released.
+	// The peer may still hold a reference to the queue.
+	q.readQueue.Reset(ctx)
 	q.readQueue.DecRef(ctx)
 }
 

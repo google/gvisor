@@ -25,6 +25,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include <cstring>
 #include <ctime>
@@ -207,6 +208,24 @@ TEST_P(UnixSocketPairTest, TIOCOUTQSucceeds) {
       SyscallSucceeds());
   EXPECT_THAT(ioctl(sockets->second_fd(), TIOCOUTQ, &size), SyscallSucceeds());
   EXPECT_EQ(size, sizeof(some_data) * 2);
+}
+
+TEST_P(UnixSocketPairTest, TIOCOUTQAfterPeerClose) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int size = -1;
+  int ret = ioctl(sockets->second_fd(), TIOCOUTQ, &size);
+  SKIP_IF(IsRunningOnGvisor() && ret == -1 && errno == ENOTTY);
+  ASSERT_THAT(ret, SyscallSucceeds());
+
+  constexpr char kData[] = "queued data";
+  ASSERT_THAT(RetryEINTR(send)(sockets->second_fd(), kData, sizeof(kData), 0),
+              SyscallSucceedsWithValue(sizeof(kData)));
+  ASSERT_THAT(ioctl(sockets->second_fd(), TIOCOUTQ, &size), SyscallSucceeds());
+  ASSERT_GT(size, 0);
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+  ASSERT_THAT(ioctl(sockets->second_fd(), TIOCOUTQ, &size), SyscallSucceeds());
+  EXPECT_EQ(size, 0);
 }
 
 TEST_P(UnixSocketPairTest, NetdeviceIoctlsSucceed) {
