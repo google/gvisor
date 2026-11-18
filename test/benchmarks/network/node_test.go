@@ -114,19 +114,11 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	// the client should run on Native.
 	client := clientMachine.GetNativeContainer(ctx, b)
 	defer client.CleanUp(ctx)
-	b.ResetTimer()
-	out, err := client.Run(ctx, dockerutil.RunOpts{
+	runHey(b, ctx, client, dockerutil.RunOpts{
 		Image:      "benchmarks/hey",
 		Links:      []string{nodeApp.MakeLink("node")},
 		CpusetCpus: harness.ClientCPUSet(),
-	}, heyCmd...)
-	if err != nil {
-		b.Fatalf("hey container failed: %v logs: %s", err, out)
-	}
-
-	// Stop the timer to parse the data and report stats.
-	b.StopTimer()
-	hey.Report(b, out)
+	}, hey, heyCmd...)
 }
 
 func TestMain(m *testing.M) {

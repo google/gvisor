@@ -1,5 +1,5 @@
 FROM golang:1.25 AS build
-RUN CGO_ENABLED=0 go install github.com/rakyll/hey@latest
+RUN CGO_ENABLED=0 go install github.com/rakyll/hey@v0.1.5
 RUN cp /go/bin/hey /hey
 
 FROM ubuntu:jammy

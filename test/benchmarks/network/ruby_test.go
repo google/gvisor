@@ -113,19 +113,13 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	heyCmd := hey.MakeCmd("ruby", port)
 
 	// the client should run on Native.
-	b.ResetTimer()
 	client := clientMachine.GetNativeContainer(ctx, b)
 	defer client.CleanUp(ctx)
-	out, err := client.Run(ctx, dockerutil.RunOpts{
+	runHey(b, ctx, client, dockerutil.RunOpts{
 		Image:      "benchmarks/hey",
 		Links:      []string{rubyApp.MakeLink("ruby")},
 		CpusetCpus: harness.ClientCPUSet(),
-	}, heyCmd...)
-	if err != nil {
-		b.Fatalf("hey container failed: %v logs: %s", err, out)
-	}
-	b.StopTimer()
-	hey.Report(b, out)
+	}, hey, heyCmd...)
 }
 
 func TestMain(m *testing.M) {

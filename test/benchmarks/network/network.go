@@ -64,16 +64,31 @@ func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []st
 		b.Fatalf("server readiness failed: %v", err)
 	}
 
-	// Run the client.
-	b.ResetTimer()
-	out, err := client.Run(ctx, dockerutil.RunOpts{
+	runHey(b, ctx, client, dockerutil.RunOpts{
 		Image:      "benchmarks/hey",
 		Links:      []string{server.MakeLink("server")},
 		CpusetCpus: harness.ClientCPUSet(),
-	}, hey.MakeCmd("server", port)...)
-	if err != nil {
-		b.Fatalf("run failed with: %v", err)
+	}, hey, hey.MakeCmd("server", port)...)
+}
+
+// runHey stops timing before reading and reporting the client's output.
+func runHey(b *testing.B, ctx context.Context, client *dockerutil.Container, opts dockerutil.RunOpts, hey *tools.Hey, args ...string) {
+	b.Helper()
+	b.ResetTimer()
+	if err := client.Spawn(ctx, opts, args...); err != nil {
+		b.Fatalf("failed to start hey: %v", err)
 	}
+	waitErr := client.Wait(ctx)
 	b.StopTimer()
-	hey.Report(b, out)
+	stdout, stderr, err := client.OutputStreams(ctx)
+	if err != nil {
+		b.Fatalf("failed to read hey output: %v", err)
+	}
+	if stderr.Len() != 0 {
+		b.Logf("hey stderr: %s", stderr)
+	}
+	if waitErr != nil {
+		b.Fatalf("hey failed: %v\nstdout: %s", waitErr, stdout)
+	}
+	hey.Report(b, stdout.Bytes())
 }
