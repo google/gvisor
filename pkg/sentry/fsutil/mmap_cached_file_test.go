@@ -89,18 +89,21 @@ func (f *testMmapFile) checkMappings(t *testing.T, offsets ...uint64) {
 
 func TestMmapCachedFileEvictsLeastRecentlyUnreferenced(t *testing.T) {
 	chunkCache.mu.Lock()
-	oldMax := chunkCache.max
-	chunkCache.max = 3
+	oldMax := chunkCache.maxBytes
+	chunkCache.maxBytes = 3 * chunkSize()
 	chunkCache.mu.Unlock()
 	defer func() {
 		chunkCache.mu.Lock()
-		chunkCache.max = oldMax
+		chunkCache.maxBytes = oldMax
 		chunkCache.mu.Unlock()
 	}()
 
 	page := memmap.FileRange{End: hostarch.PageSize}
 	a, b := newTestMmapFile(t, page.End), newTestMmapFile(t, page.End)
 	c, d := newTestMmapFile(t, page.End), newTestMmapFile(t, page.End)
+	for _, f := range []*testMmapFile{a, b, c, d} {
+		f.KeepUnreferencedMappings()
+	}
 	addr := a.mapAndDrop(t, page)
 	_ = b.mapAndDrop(t, page)
 	_ = c.mapAndDrop(t, page)
@@ -113,6 +116,11 @@ func TestMmapCachedFileEvictsLeastRecentlyUnreferenced(t *testing.T) {
 	b.checkMappings(t)
 	c.checkMappings(t)
 	d.checkMappings(t, 0)
+
+	// A file that was not asked to keep unreferenced mappings does not.
+	e := newTestMmapFile(t, page.End)
+	_ = e.mapAndDrop(t, page)
+	e.checkMappings(t)
 }
 
 func TestMmapCachedFileUnmapsAfterRelease(t *testing.T) {
@@ -121,6 +129,7 @@ func TestMmapCachedFileUnmapsAfterRelease(t *testing.T) {
 	}
 	pinned := memmap.FileRange{Start: chunkSize(), End: chunkSize() + hostarch.PageSize}
 	f := newTestMmapFile(t, pinned.End)
+	f.KeepUnreferencedMappings()
 	func() {
 		f.IncRef(pinned, 0)
 		defer f.DecRef(pinned)

@@ -1096,6 +1096,9 @@ type inode struct {
 func (i *inode) init(impl any) {
 	i.refs.InitRefs()
 	i.mmapFile.SetFD(-1)
+	if i.isRegularFile() {
+		i.mmapFile.KeepUnreferencedMappings()
+	}
 	// Nested impl-inheritance pattern. In memory it looks like:
 	// [[ inode ] inodeImpl ]
 	i.impl = impl
