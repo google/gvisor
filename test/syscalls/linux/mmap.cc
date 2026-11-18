@@ -40,6 +40,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/base/attributes.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_split.h"
 #include "test/util/cleanup.h"
@@ -715,6 +716,10 @@ const uint8_t machine_code[] = {
 };
 #endif
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI uint32_t CallFunc(uint32_t (*func)(void)) {
+  return func();
+}
+
 // PROT_EXEC allows code execution
 TEST_F(MMapTest, ProtExec) {
   uintptr_t addr;
@@ -734,7 +739,7 @@ TEST_F(MMapTest, ProtExec) {
 
   func = reinterpret_cast<uint32_t (*)(void)>(addr);
 
-  EXPECT_EQ(42, func());
+  EXPECT_EQ(42, CallFunc(func));
 }
 
 // No PROT_EXEC disallows code execution
@@ -752,7 +757,7 @@ TEST_F(MMapTest, NoProtExecDeath) {
 
   func = reinterpret_cast<uint32_t (*)(void)>(addr);
 
-  EXPECT_EXIT(func(), ::testing::KilledBySignal(SIGSEGV), "");
+  EXPECT_EXIT(CallFunc(func), ::testing::KilledBySignal(SIGSEGV), "");
 }
 
 TEST_F(MMapTest, NoExceedLimitData) {
