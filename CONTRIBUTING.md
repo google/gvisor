@@ -44,7 +44,8 @@ quality, and maintainability. **AI should augment your abilities, not replace
 your critical judgment.** Contributors should ensure their work meets a high
 standard before seeking review, respecting maintainers' time, and must be
 **prepared to discuss and justify their contributions** during the review
-process.
+process. AI tools must not add `Signed-off-by` lines: only a human can certify
+the [Developer Certificate of Origin](#developer-certificate-of-origin).
 
 ## Editor Setup
 
