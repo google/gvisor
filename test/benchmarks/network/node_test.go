@@ -110,8 +110,9 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	heyCmd := hey.MakeCmd("node", port)
 
 	// the client should run on Native.
-	b.ResetTimer()
 	client := clientMachine.GetNativeContainer(ctx, b)
+	defer client.CleanUp(ctx)
+	b.ResetTimer()
 	out, err := client.Run(ctx, dockerutil.RunOpts{
 		Image:      "benchmarks/hey",
 		Links:      []string{nodeApp.MakeLink("node")},
@@ -122,6 +123,7 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	}
 
 	// Stop the timer to parse the data and report stats.
+	b.StopTimer()
 	hey.Report(b, out)
 }
 
