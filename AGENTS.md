@@ -233,6 +233,14 @@ Before sending PRs, check the following:
     skip it (see "Adversarial review" section).
 -   Test-only changes that improve stability/flakiness are very much welcome.
 
+### Signed-off-by and Developer Certificate of Origin
+
+Do not add `Signed-off-by` lines to commits. Only a human can certify the
+Developer Certificate of Origin (see `CONTRIBUTING.md`). The human must review
+each commit and sign it off after your last change to it, including when you
+amend a commit that is already signed off. Do not push commits for review
+before then.
+
 ### Buildkite CI results
 
 CI runs on Buildkite. The main pipeline is
