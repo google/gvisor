@@ -57,61 +57,67 @@ type MmapCachedFile struct {
 	// +checklocks:refsMu
 	memAcct FrameRefSet
 
+	// cached indexes the mappings whose last page reference has been dropped.
+	// +checklocks:refsMu
+	cached map[uint64]*cachedChunk `state:"nosave"`
+
 	mapsMu mapsMutex `state:"nosave"`
 
 	// mappings maps chunk start offsets to mappings of those chunks.
 	// +checklocks:mapsMu
 	mappings map[uint64]mapping `state:"nosave"`
 
-	// cached maps start offsets of chunks in mappings with no referenced pages
-	// to their entries in chunkCache.
+	// After a failed remap, discard mappings at their last reference until
+	// all mappings have been regenerated or removed.
 	// +checklocks:mapsMu
-	cached map[uint64]*cachedChunk `state:"nosave"`
+	remapFailed bool `state:"nosave"`
 }
 
 // chunkCache holds chunk mappings with no referenced pages, across all
 // MmapCachedFiles, so that mapping the same pages again reuses them. On the
-// KVM platform, a new mapping must also be faulted into the guest one page at
-// a time.
-var chunkCache struct {
+// KVM platform, retaining the host mapping can also avoid guest faults.
+// Lock order is MmapCachedFile.refsMu, MmapCachedFile.mapsMu, chunkCache.mu.
+var chunkCache = struct {
 	mu chunkCacheMutex
 
 	// chunks is ordered from most to least recently unreferenced.
+	// +checklocks:mu
 	chunks chunkList
 
+	// +checklocks:mu
 	len int
-}
 
-var (
-	// maxCachedChunks is the maximum length of chunkCache.chunks.
-	maxCachedChunks = 4096
+	// Overflow evicts to three quarters of max.
+	// +checklocks:mu
+	max int
 
-	// chunkCacheEvictBatch is how far below maxCachedChunks an overflow
-	// evicts chunkCache.chunks.
-	chunkCacheEvictBatch = 1024
-)
+	// trimming is true from overflow until the cache reaches its low watermark.
+	// +checklocks:mu
+	trimming bool
+}{max: 4096}
 
 // cachedChunk is an entry in chunkCache.chunks.
 type cachedChunk struct {
+	// chunkCache.mu protects the list links.
 	chunkEntry
 
 	file       *MmapCachedFile
 	chunkStart uint64
 
-	// inList is true while the chunk is in chunkCache.chunks. inList is
-	// protected by chunkCache.mu.
-	inList bool
+	// removed means the entry has already been unlinked, possibly by an evictor.
+	// +checklocks:chunkCache.mu
+	removed bool
 }
 
 // chunkShift returns the binary log of the chunk size, which is the huge page
 // size. It is not a constant since the huge page size is only known at runtime
 // on some architectures.
 //
-// TODO: This small chunk size may contribute to host VMA exhaustion.
-// Consider increasing chunkShift. (But note that larger values of chunkShift
-// increase the speed with which applications can consume sentry's address
-// space, since only one byte per chunk needs to be touched to cause the whole
-// chunk to be mapped.)
+// TODO: The small chunk size may contribute
+// to host VMA exhaustion. Consider increasing chunkShift. (But note that
+// larger values of chunkShift increase the speed with which applications
+// can consume sentry's address space, since only one byte per chunk needs
+// to be touched to cause the whole chunk to be mapped.)
 func chunkShift() uint {
 	return hostarch.HugePageShift
 }
@@ -145,12 +151,8 @@ func (f *MmapCachedFile) SetFD(fd int) {
 	f.fd.Store(int32(fd))
 }
 
+// +checklocks:f.refsMu
 func (f *MmapCachedFile) close() {
-	f.mapsMu.Lock()
-	for chunkStart, m := range f.mappings {
-		f.unmapAndRemove(chunkStart, m)
-	}
-	f.mapsMu.Unlock()
 	if fd := f.fd.RacyLoad(); fd >= 0 {
 		unix.Close(int(fd))
 		f.fd.RacyStore(-1)
@@ -165,6 +167,11 @@ func (f *MmapCachedFile) MappableRelease() {
 		return
 	}
 	f.mappableReleased = true
+	if len(f.cached) != 0 {
+		f.mapsMu.Lock()
+		f.dropCachedMappingsLocked()
+		f.mapsMu.Unlock()
+	}
 	if len(f.refs) == 0 {
 		f.close()
 	}
@@ -213,9 +220,9 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 			panic(fmt.Sprintf("fsutil.MmapCachedFile.IncRef(%v): adding %d page references to chunk %#x, which has %d page references", fr, pgs, chunkStart, refs))
 		}
 		if refs == 0 {
-			f.mapsMu.Lock()
-			f.uncacheChunkLocked(chunkStart)
-			f.mapsMu.Unlock()
+			if c := f.cached[chunkStart]; c != nil {
+				f.uncacheChunkLocked(c)
+			}
 		}
 		f.refs[chunkStart] = refs + pgs
 		chunkStart += chunkSize()
@@ -227,13 +234,7 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 
 // DecRef implements memmap.File.DecRef.
 func (f *MmapCachedFile) DecRef(fr memmap.FileRange) {
-	f.refsMu.Lock()
-	evict := f.decRefUnaccounted(fr)
-	f.memAcct.DecRefAndAccount(fr)
-	f.refsMu.Unlock()
-	if evict {
-		evictCachedChunks()
-	}
+	f.decRef(fr, true /* account */)
 }
 
 // RemoveMapping is called by implementations of memmap.Mappable.RemoveMapping
@@ -241,22 +242,14 @@ func (f *MmapCachedFile) DecRef(fr memmap.FileRange) {
 //
 // Preconditions: As for memmap.Mappable.RemoveMapping.
 func (f *MmapCachedFile) RemoveMapping(ar hostarch.AddrRange, offset uint64) {
-	f.refsMu.Lock()
-	evict := f.decRefUnaccounted(memmap.FileRange{offset, offset + uint64(ar.Length())})
-	f.refsMu.Unlock()
-	if evict {
-		evictCachedChunks()
-	}
+	f.decRef(memmap.FileRange{offset, offset + uint64(ar.Length())}, false /* account */)
 }
 
-// decRefUnaccounted returns true if chunkCache needs eviction.
-//
 // Preconditions:
 //   - fr.Length() != 0.
 //   - fr.Start and fr.End must be page-aligned.
-//
-// +checklocks:f.refsMu
-func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) bool {
+func (f *MmapCachedFile) decRef(fr memmap.FileRange, account bool) {
+	f.refsMu.Lock()
 	evict := false
 	chunkStart := fr.Start &^ chunkMask()
 	for {
@@ -269,7 +262,7 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) bool {
 			delete(f.refs, chunkStart)
 			f.mapsMu.Lock()
 			if m, ok := f.mappings[chunkStart]; ok {
-				if f.mappableReleased {
+				if f.mappableReleased || f.remapFailed {
 					f.unmapAndRemove(chunkStart, m)
 				} else if f.cacheChunkLocked(chunkStart) {
 					evict = true
@@ -287,15 +280,20 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) bool {
 	if f.mappableReleased && len(f.refs) == 0 {
 		f.close()
 	}
-	return evict
+	if account {
+		f.memAcct.DecRefAndAccount(fr)
+	}
+	f.refsMu.Unlock()
+	if evict {
+		evictCachedChunks()
+	}
 }
 
-// cacheChunkLocked adds the mapping of the chunk at chunkStart to chunkCache,
-// and returns true if chunkCache needs eviction.
+// cacheChunkLocked returns true if the caller should evict after unlocking f.
 //
-// +checklocks:f.mapsMu
+// +checklocks:f.refsMu
 func (f *MmapCachedFile) cacheChunkLocked(chunkStart uint64) bool {
-	c := &cachedChunk{file: f, chunkStart: chunkStart, inList: true}
+	c := &cachedChunk{file: f, chunkStart: chunkStart}
 	if f.cached == nil {
 		f.cached = make(map[uint64]*cachedChunk)
 	}
@@ -304,52 +302,68 @@ func (f *MmapCachedFile) cacheChunkLocked(chunkStart uint64) bool {
 	defer chunkCache.mu.Unlock()
 	chunkCache.chunks.PushFront(c)
 	chunkCache.len++
-	return chunkCache.len > maxCachedChunks
+	if chunkCache.len > chunkCache.max {
+		chunkCache.trimming = true
+		return true
+	}
+	return false
 }
 
-// uncacheChunkLocked removes the chunk at chunkStart from chunkCache, if it is
-// there.
-//
-// +checklocks:f.mapsMu
-func (f *MmapCachedFile) uncacheChunkLocked(chunkStart uint64) {
-	c, ok := f.cached[chunkStart]
-	if !ok {
+// +checklocks:f.refsMu
+func (f *MmapCachedFile) uncacheChunkLocked(c *cachedChunk) {
+	delete(f.cached, c.chunkStart)
+	chunkCache.mu.Lock()
+	c.removeLocked()
+	chunkCache.mu.Unlock()
+}
+
+// +checklocks:chunkCache.mu
+func (c *cachedChunk) removeLocked() {
+	if c.removed {
 		return
 	}
-	delete(f.cached, chunkStart)
-	chunkCache.mu.Lock()
-	defer chunkCache.mu.Unlock()
-	if c.inList {
-		chunkCache.chunks.Remove(c)
-		chunkCache.len--
-		c.inList = false
+	chunkCache.chunks.Remove(c)
+	c.removed = true
+	chunkCache.len--
+	if chunkCache.len <= 3*chunkCache.max/4 {
+		chunkCache.trimming = false
 	}
 }
 
-// evictCachedChunks unmaps the least recently unreferenced chunks in
-// chunkCache until chunkCache.len is at most maxCachedChunks -
-// chunkCacheEvictBatch.
+// +checklocks:f.refsMu
+// +checklocks:f.mapsMu
+func (f *MmapCachedFile) dropCachedMappingsLocked() {
+	for chunkStart, c := range f.cached {
+		f.uncacheChunkLocked(c)
+		f.unmapAndRemove(chunkStart, f.mappings[chunkStart])
+	}
+}
+
+// evictCachedChunks must be called without any MmapCachedFile locks.
+//
+// +checklocksexclude:chunkCache.mu
 func evictCachedChunks() {
 	for {
 		chunkCache.mu.Lock()
-		if chunkCache.len <= maxCachedChunks-chunkCacheEvictBatch {
+		if !chunkCache.trimming {
 			chunkCache.mu.Unlock()
 			return
 		}
 		c := chunkCache.chunks.Back()
-		chunkCache.chunks.Remove(c)
-		chunkCache.len--
-		c.inList = false
+		c.removeLocked()
 		chunkCache.mu.Unlock()
 
-		// c's pages may have been referenced again after c was removed from
-		// chunkCache.chunks, in which case c is no longer in f.cached.
+		// Reuse, including reuse followed by another last reference, cancels
+		// eviction of this entry.
 		f := c.file
-		f.mapsMu.Lock()
+		f.refsMu.Lock()
 		if f.cached[c.chunkStart] == c {
+			delete(f.cached, c.chunkStart)
+			f.mapsMu.Lock()
 			f.unmapAndRemove(c.chunkStart, f.mappings[c.chunkStart])
+			f.mapsMu.Unlock()
 		}
-		f.mapsMu.Unlock()
+		f.refsMu.Unlock()
 	}
 }
 
@@ -364,7 +378,9 @@ func (f *MmapCachedFile) unmapAndRemove(chunkStart uint64, m mapping) {
 		log.Warningf("fsutil.MmapCachedFile: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
 	}
 	delete(f.mappings, chunkStart)
-	f.uncacheChunkLocked(chunkStart)
+	if len(f.mappings) == 0 {
+		f.remapFailed = false
+	}
 }
 
 // MapInternal implements memmap.File.MapInternal.
@@ -427,6 +443,7 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 				uintptr(fd),
 				uintptr(chunkStart))
 			if errno != 0 {
+				f.remapFailed = true
 				return errno
 			}
 			m = mapping{addr, write}
@@ -462,8 +479,13 @@ func (f *MmapCachedFile) RegenerateMappings() error {
 		return nil
 	}
 
+	// Only referenced chunks need to keep their host addresses across the
+	// change of file description.
+	f.refsMu.Lock()
+	defer f.refsMu.Unlock()
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
+	f.dropCachedMappingsLocked()
 
 	for chunkStart, m := range f.mappings {
 		prot := unix.PROT_READ
@@ -479,9 +501,11 @@ func (f *MmapCachedFile) RegenerateMappings() error {
 			uintptr(fd),
 			uintptr(chunkStart))
 		if errno != 0 {
+			f.remapFailed = true
 			return errno
 		}
 	}
+	f.remapFailed = false
 	return nil
 }
 

@@ -16,153 +16,120 @@ package fsutil
 
 import (
 	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
-// newTestMmapCachedFile returns a MmapCachedFile for a temporary file of the
-// given number of chunks.
-func newTestMmapCachedFile(t *testing.T, chunks uint64) *MmapCachedFile {
-	t.Helper()
-	tmp, err := os.CreateTemp(t.TempDir(), "mmap")
-	if err != nil {
-		t.Fatalf("CreateTemp: %v", err)
-	}
-	defer tmp.Close()
-	if err := tmp.Truncate(int64(chunks * chunkSize())); err != nil {
-		t.Fatalf("Truncate: %v", err)
-	}
-	fd, err := unix.Dup(int(tmp.Fd()))
-	if err != nil {
-		t.Fatalf("Dup: %v", err)
-	}
-	var f MmapCachedFile
-	f.SetFD(fd)
-	return &f
+type testMmapFile struct {
+	MmapCachedFile
+	path string
 }
 
-// mapChunk adds an application mapping of the chunk at chunkStart and returns
-// the address of its internal mapping.
-func mapChunk(t *testing.T, f *MmapCachedFile, chunkStart uint64) uintptr {
+func newTestMmapFile(t *testing.T, size uint64) *testMmapFile {
 	t.Helper()
-	f.AddMapping(hostarch.AddrRange{Start: 0, End: hostarch.Addr(chunkSize())}, chunkStart)
-	bs, err := f.MapInternal(memmap.FileRange{Start: chunkStart, End: chunkStart + hostarch.PageSize}, hostarch.Read)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
-		t.Fatalf("MapInternal: %v", err)
+		t.Fatal(err)
+	}
+	f := &testMmapFile{path: filepath.Join(dir, "mmap")}
+	fd, err := unix.Open(f.path, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetFD(fd)
+	t.Cleanup(f.MappableRelease)
+	if err := unix.Ftruncate(fd, int64(size)); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// mapAndDrop returns the first host address for comparison across mappings.
+func (f *testMmapFile) mapAndDrop(t *testing.T, fr memmap.FileRange) uintptr {
+	t.Helper()
+	ar := hostarch.AddrRange{End: hostarch.Addr(fr.Length())}
+	f.AddMapping(ar, fr.Start)
+	defer f.RemoveMapping(ar, fr.Start)
+	bs, err := f.MapInternal(fr, hostarch.Read)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return bs.Head().Addr()
 }
 
-func unmapChunk(f *MmapCachedFile, chunkStart uint64) {
-	f.RemoveMapping(hostarch.AddrRange{Start: 0, End: hostarch.Addr(chunkSize())}, chunkStart)
-}
-
-func numMappings(f *MmapCachedFile) int {
-	f.mapsMu.Lock()
-	defer f.mapsMu.Unlock()
-	return len(f.mappings)
-}
-
-func isMapped(f *MmapCachedFile, chunkStart uint64) bool {
-	f.mapsMu.Lock()
-	defer f.mapsMu.Unlock()
-	_, ok := f.mappings[chunkStart]
-	return ok
-}
-
-func chunkCacheLen() int {
-	chunkCache.mu.Lock()
-	defer chunkCache.mu.Unlock()
-	return chunkCache.len
-}
-
-func TestMmapCachedFileReusesUnreferencedMapping(t *testing.T) {
-	f := newTestMmapCachedFile(t, 1)
-	before := chunkCacheLen()
-
-	addr := mapChunk(t, f, 0)
-	unmapChunk(f, 0)
-	if got := chunkCacheLen() - before; got != 1 {
-		t.Errorf("cached chunks after unmap: got %d, want 1", got)
+// checkMappings checks the starting file offsets of all host VMAs of f.
+func (f *testMmapFile) checkMappings(t *testing.T, offsets ...uint64) {
+	t.Helper()
+	maps, err := os.ReadFile("/proc/self/maps")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := mapChunk(t, f, 0); got != addr {
-		t.Errorf("remapped chunk address: got %#x, want %#x", got, addr)
+	var got []uint64
+	for _, line := range strings.Split(string(maps), "\n") {
+		if strings.HasSuffix(line, " "+f.path) {
+			off, err := strconv.ParseUint(strings.Fields(line)[2], 16, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, off)
+		}
 	}
-	if got := chunkCacheLen() - before; got != 0 {
-		t.Errorf("cached chunks after remap: got %d, want 0", got)
-	}
-
-	unmapChunk(f, 0)
-	f.MappableRelease()
-	if got := numMappings(f); got != 0 {
-		t.Errorf("mappings after release: got %d, want 0", got)
-	}
-	if got := chunkCacheLen() - before; got != 0 {
-		t.Errorf("cached chunks after release: got %d, want 0", got)
+	if !slices.Equal(got, offsets) {
+		t.Errorf("%s mapped offsets: got %v, want %v", f.path, got, offsets)
 	}
 }
 
 func TestMmapCachedFileEvictsLeastRecentlyUnreferenced(t *testing.T) {
-	oldMax, oldBatch := maxCachedChunks, chunkCacheEvictBatch
-	maxCachedChunks, chunkCacheEvictBatch = chunkCacheLen()+2, 0
-	defer func() { maxCachedChunks, chunkCacheEvictBatch = oldMax, oldBatch }()
-	f := newTestMmapCachedFile(t, 3)
-	a, b, c := uint64(0), chunkSize(), 2*chunkSize()
+	chunkCache.mu.Lock()
+	oldMax := chunkCache.max
+	chunkCache.max = 3
+	chunkCache.mu.Unlock()
+	defer func() {
+		chunkCache.mu.Lock()
+		chunkCache.max = oldMax
+		chunkCache.mu.Unlock()
+	}()
 
-	mapChunk(t, f, a)
-	mapChunk(t, f, b)
-	mapChunk(t, f, c)
-	unmapChunk(f, a)
-	unmapChunk(f, b)
-	mapChunk(t, f, a)
-	unmapChunk(f, a)
-	unmapChunk(f, c)
-	if !isMapped(f, a) || isMapped(f, b) || !isMapped(f, c) {
-		t.Errorf("mapped chunks: got a=%t b=%t c=%t, want a=true b=false c=true", isMapped(f, a), isMapped(f, b), isMapped(f, c))
+	page := memmap.FileRange{End: hostarch.PageSize}
+	a, b := newTestMmapFile(t, page.End), newTestMmapFile(t, page.End)
+	c, d := newTestMmapFile(t, page.End), newTestMmapFile(t, page.End)
+	addr := a.mapAndDrop(t, page)
+	_ = b.mapAndDrop(t, page)
+	_ = c.mapAndDrop(t, page)
+	a.checkMappings(t, 0) // The oldest mapping survives at exactly the cap.
+	if got := a.mapAndDrop(t, page); got != addr {
+		t.Errorf("reused mapping address: got %#x, want %#x", got, addr)
 	}
-
-	f.MappableRelease()
-	if got := numMappings(f); got != 0 {
-		t.Errorf("mappings after release: got %d, want 0", got)
-	}
-}
-
-func TestMmapCachedFileEvictsInBatches(t *testing.T) {
-	oldMax, oldBatch := maxCachedChunks, chunkCacheEvictBatch
-	maxCachedChunks, chunkCacheEvictBatch = chunkCacheLen()+2, 1
-	defer func() { maxCachedChunks, chunkCacheEvictBatch = oldMax, oldBatch }()
-	f := newTestMmapCachedFile(t, 3)
-
-	for i := uint64(0); i < 3; i++ {
-		mapChunk(t, f, i*chunkSize())
-	}
-	for i := uint64(0); i < 3; i++ {
-		unmapChunk(f, i*chunkSize())
-	}
-	if got := numMappings(f); got != 1 {
-		t.Errorf("mappings after overflow: got %d, want 1", got)
-	}
-
-	f.MappableRelease()
-	if got := numMappings(f); got != 0 {
-		t.Errorf("mappings after release: got %d, want 0", got)
-	}
+	_ = d.mapAndDrop(t, page)
+	a.checkMappings(t, 0)
+	b.checkMappings(t)
+	c.checkMappings(t)
+	d.checkMappings(t, 0)
 }
 
 func TestMmapCachedFileUnmapsAfterRelease(t *testing.T) {
-	f := newTestMmapCachedFile(t, 1)
-	before := chunkCacheLen()
-
-	mapChunk(t, f, 0)
-	f.MappableRelease()
-	unmapChunk(f, 0)
-	if got := numMappings(f); got != 0 {
-		t.Errorf("mappings: got %d, want 0", got)
+	if err := usage.Init(); err != nil {
+		t.Fatal(err)
 	}
-	if got := chunkCacheLen() - before; got != 0 {
-		t.Errorf("cached chunks: got %d, want 0", got)
-	}
+	pinned := memmap.FileRange{Start: chunkSize(), End: chunkSize() + hostarch.PageSize}
+	f := newTestMmapFile(t, pinned.End)
+	func() {
+		f.IncRef(pinned, 0)
+		defer f.DecRef(pinned)
+		_ = f.mapAndDrop(t, memmap.FileRange{Start: chunkSize() - hostarch.PageSize, End: pinned.End})
+		f.MappableRelease()
+		f.checkMappings(t, pinned.Start)
+		if _, err := f.DataFD(pinned); err != nil {
+			t.Errorf("DataFD with outstanding reference: %v", err)
+		}
+	}()
+	f.checkMappings(t)
 }
