@@ -1280,3 +1280,62 @@ type FUSEFlushIn struct {
 	_         uint32 // padding
 	LockOwner uint64
 }
+
+// FUSE_IOCTL_RETRY in FUSEIoctlOut.Flags requests a retry in unrestricted mode
+// (include/uapi/linux/fuse.h).
+const FUSE_IOCTL_RETRY = 1 << 2
+
+// FUSEIoctlIn is the fixed header of the request sent by the kernel to the
+// daemon for FUSE_IOCTL.
+//
+// +marshal
+type FUSEIoctlIn struct {
+	_       structs.HostLayout
+	Fh      uint64
+	Flags   uint32
+	Cmd     uint32
+	Arg     uint64
+	InSize  uint32
+	OutSize uint32
+}
+
+// FUSEIoctlPayloadIn combines FUSEIoctlIn and the input payload for FUSE_IOCTL.
+//
+// +marshal dynamic
+type FUSEIoctlPayloadIn struct {
+	_       structs.HostLayout
+	Header  FUSEIoctlIn
+	Payload primitive.ByteSlice `hostlayout:"ignore"`
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSEIoctlPayloadIn) SizeBytes() int {
+	if r == nil {
+		return (*FUSEIoctlIn)(nil).SizeBytes()
+	}
+	return r.Header.SizeBytes() + r.Payload.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSEIoctlPayloadIn) MarshalBytes(dst []byte) []byte {
+	dst = r.Header.MarshalUnsafe(dst)
+	dst = r.Payload.MarshalUnsafe(dst)
+	return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEIoctlPayloadIn) UnmarshalBytes(src []byte) []byte {
+	panic("Unimplemented, FUSEIoctlPayloadIn is never unmarshalled")
+}
+
+// FUSEIoctlOut is the fixed header of the reply sent by the daemon to the
+// kernel for FUSE_IOCTL, followed by up to OutSize payload bytes.
+//
+// +marshal
+type FUSEIoctlOut struct {
+	_       structs.HostLayout
+	Result  int32
+	Flags   uint32
+	InIovs  uint32
+	OutIovs uint32
+}

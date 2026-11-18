@@ -19,12 +19,16 @@ import (
 	"math"
 	"sync"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -283,4 +287,102 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return linuxerr.ENOSYS
+}
+
+// ttyIoctlSizes returns the input and output payload sizes for the narrow
+// whitelist of termios/winsize tty ioctls forwarded via FUSE_IOCTL so FUSE
+// regular files can emulate terminals. All other ioctl commands delegate to
+// vfs.FileDescriptionDefaultImpl.Ioctl unchanged.
+//
+// Linux sizes FUSE_IOCTL buffers on regular files from _IOC_SIZE(cmd)
+// (fs/fuse/ioctl.c:fuse_do_ioctl), which is 0 for the unencoded TCGETS,
+// TCSETS* and TIOCGWINSZ, so a daemon can't emulate them there. Sizes here
+// come from the ioctl ABI instead, so both TCGETS (older libcs) and TCGETS2
+// (newer glibc) callers work.
+func ttyIoctlSizes(cmd uint32) (inSize, outSize uint32, ok bool) {
+	switch cmd {
+	case linux.TCGETS:
+		return 0, uint32((*linux.Termios)(nil).SizeBytes()), true
+	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
+		return uint32((*linux.Termios)(nil).SizeBytes()), 0, true
+	case linux.TCGETS2:
+		return 0, uint32((*linux.KernelTermios)(nil).SizeBytes()), true
+	case linux.TCSETS2, linux.TCSETSW2, linux.TCSETSF2:
+		return uint32((*linux.KernelTermios)(nil).SizeBytes()), 0, true
+	case linux.TIOCGWINSZ:
+		return 0, uint32((*linux.Winsize)(nil).SizeBytes()), true
+	default:
+		return 0, 0, false
+	}
+}
+
+// ioctlErrno maps ENOSYS to ENOTTY, matching Linux fs/fuse/ioctl.c:fuse_send_ioctl.
+func ioctlErrno(err error) error {
+	if linuxerr.Equals(linuxerr.ENOSYS, err) {
+		return linuxerr.ENOTTY
+	}
+	return err
+}
+
+// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
+func (fd *regularFileFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	cmd := args[1].Uint()
+	inSize, outSize, ok := ttyIoctlSizes(cmd)
+	if !ok {
+		return fd.FileDescriptionDefaultImpl.Ioctl(ctx, uio, sysno, args)
+	}
+	if !fd.inode().allowCredentials(auth.CredentialsFromContext(ctx)) {
+		return 0, linuxerr.EACCES
+	}
+
+	var inBuf []byte
+	if inSize > 0 {
+		inBuf = make([]byte, inSize)
+		if _, err := uio.CopyIn(ctx, args[2].Pointer(), inBuf, usermem.IOOpts{}); err != nil {
+			return 0, err
+		}
+	}
+
+	in := linux.FUSEIoctlPayloadIn{
+		Header: linux.FUSEIoctlIn{
+			Fh:      fd.Fh,
+			Cmd:     cmd,
+			Arg:     args[2].Uint64(),
+			InSize:  inSize,
+			OutSize: outSize,
+		},
+		Payload: inBuf,
+	}
+	res, err := fd.inode().callRaw(ctx, linux.FUSE_IOCTL, &in)
+	if err != nil {
+		return 0, err
+	}
+	if err := res.Error(); err != nil {
+		return 0, ioctlErrno(err)
+	}
+
+	var out linux.FUSEIoctlOut
+	if err := res.UnmarshalPayload(&out); err != nil {
+		return 0, err
+	}
+	if out.Flags&linux.FUSE_IOCTL_RETRY != 0 {
+		return 0, linuxerr.EIO
+	}
+	payload := res.data[res.hdr.SizeBytes()+out.SizeBytes():]
+	if uint32(len(payload)) > outSize {
+		return 0, linuxerr.EIO
+	}
+	if len(payload) > 0 {
+		if _, err := uio.CopyOut(ctx, args[2].Pointer(), payload, usermem.IOOpts{}); err != nil {
+			return 0, err
+		}
+	}
+	if out.Result < 0 {
+		errno := unix.Errno(-int64(out.Result))
+		if !syserr.IsValid(errno) {
+			return 0, linuxerr.EINVAL
+		}
+		return 0, ioctlErrno(linuxerr.ErrorFromUnix(errno))
+	}
+	return uintptr(out.Result), nil
 }
