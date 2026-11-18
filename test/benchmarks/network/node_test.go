@@ -105,7 +105,9 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	defer nodeApp.CleanUp(ctx)
 
 	// Wait until the Client sees the server as up.
-	harness.WaitUntilContainerServing(ctx, clientMachine, nodeApp, port)
+	if err := harness.WaitUntilContainerServing(ctx, clientMachine, nodeApp, port); err != nil {
+		b.Fatalf("server readiness failed: %v", err)
+	}
 
 	heyCmd := hey.MakeCmd("node", port)
 

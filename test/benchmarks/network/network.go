@@ -60,7 +60,9 @@ func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []st
 	}
 
 	// Make sure the server is serving.
-	harness.WaitUntilContainerServing(ctx, clientMachine, server, port)
+	if err := harness.WaitUntilContainerServing(ctx, clientMachine, server, port); err != nil {
+		b.Fatalf("server readiness failed: %v", err)
+	}
 
 	// Run the client.
 	b.ResetTimer()
