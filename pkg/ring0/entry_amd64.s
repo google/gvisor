@@ -103,7 +103,10 @@
 #define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
 #define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
-#define XCR0_EAX 231 // +checkconst fpu DefaultXFeatureStates
+// x87, SSE, AVX, AVX-512 (opmask, ZMM_Hi256, Hi16_ZMM), XTILECFG and
+// XTILEDATA (0x600e7). AMX is included so that restoring a task's state also
+// resets tiles that another task left behind.
+#define XCR0_EAX 393447 // +checkconst fpu SupportedXFeatureStates
 #define XCR0_EDX 0
 
 // Saves a register set.
