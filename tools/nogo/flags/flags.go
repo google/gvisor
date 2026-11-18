@@ -58,8 +58,17 @@ var (
 	// MSAN indicates that this is an -msan build
 	MSAN bool
 
-	// ImportMap defines all binary input files.
+	// ImportMap maps canonical package paths to Nogo export data files.
 	ImportMap = StringMap{}
+
+	// CompilerImports maps binary-only imports to archives produced by the Go SDK.
+	CompilerImports = StringMap{}
+
+	// ImportPaths maps source import paths to canonical package paths.
+	ImportPaths = StringMap{}
+
+	// Stdlib is the directory containing standard library export data.
+	Stdlib string
 
 	// ArchiveMap defines all binary archive files.
 	ArchiveMap = StringMap{}
@@ -81,7 +90,10 @@ func init() {
 	flag.StringVar(&BuildTags, "tags", "", "comma-separated build tags")
 	flag.BoolVar(&Race, "race", false, "-race build")
 	flag.BoolVar(&MSAN, "msan", false, "-msan build")
-	flag.Var(&ImportMap, "import", "map of import paths to binaries")
+	flag.Var(&ImportMap, "import", "map of package paths to export data")
+	flag.Var(&CompilerImports, "compiler-import", "map of package paths to compiler export archives")
+	flag.Var(&ImportPaths, "import-map", "map of import paths to package paths")
+	flag.StringVar(&Stdlib, "stdlib", "", "standard library export data directory")
 	flag.Var(&ArchiveMap, "archive", "map of import paths to archives")
 	flag.Var(&FactMap, "facts", "map of import paths to facts")
 	flag.Var(&Bundles, "bundle", "list of fact bundles")

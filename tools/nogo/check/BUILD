@@ -1,4 +1,5 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/nogo:defs.bzl", "nogo_compiler_export")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -61,16 +62,22 @@ go_library(
     ],
 )
 
+nogo_compiler_export(
+    name = "flags_compiler_export",
+    testonly = True,
+    dep = "//tools/nogo/flags",
+)
+
 go_test(
     name = "check_test",
     size = "small",
     srcs = ["check_test.go"],
+    data = [":flags_compiler_export"],
     embed = [":check"],
     deps = [
+        "//pkg/test/testutil",
         "//pkg/zip",
-        "//tools/nogo/facts",
         "//tools/nogo/flags",
         "@org_golang_x_tools//go/analysis:go_default_library",
-        "@org_golang_x_tools//go/gcexportdata:go_default_library",
     ],
 )
