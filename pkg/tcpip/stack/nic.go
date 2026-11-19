@@ -1178,6 +1178,18 @@ func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip
 	return false
 }
 
+// ownsAddress returns true if addr is assigned to the NIC with kind Permanent.
+// Note that AddressEndpoint.Temporary() is also true for IPv6 privacy
+// addresses, which the NIC does own.
+func (n *nic) ownsAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+	ep, ok := n.getNetworkEndpoint(protocol).(AddressableEndpoint)
+	if !ok {
+		return false
+	}
+	addressEndpoint := ep.AcquireAssignedAddress(addr, false /* allowTemp */, NeverPrimaryEndpoint, true /* readOnly */)
+	return addressEndpoint != nil && addressEndpoint.GetKind() == Permanent
+}
+
 func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
 	d, ok := n.duplicateAddressDetectors[protocol]
 	if !ok {

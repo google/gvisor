@@ -5166,6 +5166,87 @@ func TestFindRoutePrefersLocalAddrOnlyForLocallyGeneratedTraffic(t *testing.T) {
 	}
 }
 
+// TestCheckLocalAddressIgnoresLoopbackTemporaryAddress tests that the temporary
+// address added to loopback by a local route doesn't hide the NIC that owns it.
+func TestCheckLocalAddressIgnoresLoopbackTemporaryAddress(t *testing.T) {
+	const (
+		loopbackNICID = 1
+		externalNICID = 2
+	)
+
+	tests := []struct {
+		name         string
+		netProto     tcpip.NetworkProtocolNumber
+		localAddr    tcpip.AddressWithPrefix
+		remoteAddr   tcpip.Address
+		defaultRoute tcpip.Subnet
+		properties   stack.AddressProperties
+	}{
+		{
+			name:         "IPv4",
+			netProto:     ipv4.ProtocolNumber,
+			localAddr:    tcpip.AddressWithPrefix{Address: testutil.MustParse4("10.0.0.2"), PrefixLen: 24},
+			remoteAddr:   testutil.MustParse4("8.8.8.8"),
+			defaultRoute: header.IPv4EmptySubnet,
+		},
+		{
+			// Privacy addresses have the Temporary property but are owned by the NIC.
+			name:         "IPv6 privacy address",
+			netProto:     ipv6.ProtocolNumber,
+			localAddr:    tcpip.AddressWithPrefix{Address: testutil.MustParse6("2001:db8::2"), PrefixLen: 64},
+			remoteAddr:   testutil.MustParse6("2001:4860:4860::8888"),
+			defaultRoute: header.IPv6EmptySubnet,
+			properties:   stack.AddressProperties{Temporary: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				HandleLocal:      true,
+			})
+			defer s.Destroy()
+			if err := s.CreateNIC(loopbackNICID, loopback.New()); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", loopbackNICID, err)
+			}
+			if err := s.CreateNIC(externalNICID, channel.New(0, defaultMTU, "")); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", externalNICID, err)
+			}
+			protocolAddr := tcpip.ProtocolAddress{Protocol: test.netProto, AddressWithPrefix: test.localAddr}
+			if err := s.AddProtocolAddress(externalNICID, protocolAddr, test.properties); err != nil {
+				t.Fatalf("s.AddProtocolAddress(%d, %+v, %+v): %s", externalNICID, protocolAddr, test.properties, err)
+			}
+			s.SetRouteTable([]tcpip.Route{{Destination: test.defaultRoute, NIC: externalNICID}})
+			localAddr := test.localAddr.Address
+
+			// Holding a route to a local address keeps a temporary copy on loopback.
+			r, err := s.FindRoute(0, tcpip.Address{}, localAddr, test.netProto, false /* multicastLoop */)
+			if err != nil {
+				t.Fatalf("s.FindRoute(0, '', %s, %d, false): %s", localAddr, test.netProto, err)
+			}
+			defer r.Release()
+			if got := r.OutgoingNIC(); got != loopbackNICID {
+				t.Fatalf("got r.OutgoingNIC() = %d, want = %d", got, loopbackNICID)
+			}
+
+			// NIC iteration order is random.
+			for i := 0; i < 100; i++ {
+				nicID := s.CheckLocalAddress(0, test.netProto, localAddr)
+				if nicID != externalNICID {
+					t.Fatalf("got s.CheckLocalAddress(0, %d, %s) = %d, want = %d", test.netProto, localAddr, nicID, externalNICID)
+				}
+				// As sendto() on a bound, unconnected UDP endpoint does.
+				r, err := s.FindRoute(nicID, localAddr, test.remoteAddr, test.netProto, false /* multicastLoop */)
+				if err != nil {
+					t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, localAddr, test.remoteAddr, test.netProto, err)
+				}
+				r.Release()
+			}
+		})
+	}
+}
+
 func TestAddMulticastRoute(t *testing.T) {
 	const (
 		incomingNICID = 1
