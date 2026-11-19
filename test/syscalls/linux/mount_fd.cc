@@ -1156,6 +1156,24 @@ TEST(MoveMountTest, MoveMountFileOntoDirFails) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// A mount of a mount namespace file must not be attached in the namespace that
+// it refers to, or in a namespace newer than that one.
+TEST(MoveMountTest, MoveMountNamespaceFileIntoSameNamespaceFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "target", 0644));
+
+  int treefd = open_tree(AT_FDCWD, "/proc/self/ns/mnt",
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(move_mount(treefd, "", AT_FDCWD, dst.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallFailsWithErrno(ELOOP));
+}
+
 TEST(MoveMountTest, MoveMountDirOntoFileFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

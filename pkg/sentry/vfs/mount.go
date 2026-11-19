@@ -493,8 +493,11 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 // The target's mountpoint may or may not be connected.
 // The path lookups for source and target checks traversal permissions against creds.
 //
+// mntnsOf returns the mount namespace referred to by a mount of a mount
+// namespace file, or nil for any other mount.
+//
 // Roughly analogous to Linux fs/namespace.c:do_move_mount().
-func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Credentials, taskMountNs *MountNamespace, source *PathOperation, target *PathOperation) error {
+func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Credentials, taskMountNs *MountNamespace, source *PathOperation, target *PathOperation, mntnsOf func(*Mount) *MountNamespace) error {
 	// Lookup the source path
 	sourceVd, err := vfs.GetDentryAt(ctx, creds, source, &GetDentryOptions{})
 	if err != nil {
@@ -597,6 +600,15 @@ func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Crede
 	// Verify that source is not an ancestor of destination
 	for p := mp.mount; p != nil; p = p.parent() {
 		if p == sourceMnt {
+			return linuxerr.ELOOP
+		}
+	}
+
+	// A mount namespace file may only be attached in a mount namespace that is
+	// older than the one it refers to. Otherwise, namespaces could hold a
+	// reference to each other through their mounts and never be released.
+	for _, m := range sourceMnt.submountsLocked() {
+		if ref := mntnsOf(m); ref != nil && ref.ID <= mp.mount.ns.ID {
 			return linuxerr.ELOOP
 		}
 	}

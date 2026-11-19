@@ -299,7 +299,7 @@ func MoveMount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 
 	// Re-attach the mount to the destination mountpoint
 	vfsObj := t.Kernel().VFS()
-	err = vfsObj.MoveMountAt(t, creds, t.MountNamespace(), &from.pop, &to.pop)
+	err = vfsObj.MoveMountAt(t, creds, t.MountNamespace(), &from.pop, &to.pop, kernel.MountNamespaceOf)
 	if err != nil {
 		return 0, nil, err
 	}

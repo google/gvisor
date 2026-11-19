@@ -123,7 +123,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 			return 0, nil, err
 		}
 		defer sourceTpop.Release(t)
-		return 0, nil, t.Kernel().VFS().MoveMountAt(t, creds, t.MountNamespace(), &sourceTpop.pop, &target.pop)
+		return 0, nil, t.Kernel().VFS().MoveMountAt(t, creds, t.MountNamespace(), &sourceTpop.pop, &target.pop, kernel.MountNamespaceOf)
 	}
 
 	// Only copy in source, fstype, and data if we are doing a normal mount.
