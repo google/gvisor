@@ -160,6 +160,7 @@ func newABSLPod(namespace *testcluster.Namespace, name, image string, volume *v1
 	command := []string{
 		"bazel",
 		"build",
+		"--enable_bzlmod=false",
 		"//absl/base",
 		"//absl/algorithm",
 		"//absl/container/...",
