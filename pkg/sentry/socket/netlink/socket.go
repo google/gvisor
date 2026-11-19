@@ -161,14 +161,15 @@ func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *sy
 		return nil, err
 	}
 
+	netns := t.GetNetworkNamespace()
 	fd := &Socket{
-		ports:          t.Kernel().NetlinkPorts(),
+		ports:          netns.NetlinkPorts(),
 		protocol:       protocol,
 		skType:         skType,
 		ep:             ep,
 		connection:     connection,
 		sendBufferSize: defaultSendBufferSize,
-		netns:          t.GetNetworkNamespace(),
+		netns:          netns,
 	}
 	fd.LockFD.Init(&vfs.FileLocks{})
 	return fd, nil
