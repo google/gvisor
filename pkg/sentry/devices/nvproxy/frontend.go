@@ -634,19 +634,25 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 			// !FLD_TEST_DRF(OS02, _FLAGS, _MAPPING, _NO_MAP, flags))
 			((ioctlParams.Params.Flags>>nvgpu.NVOS02_FLAGS_MAPPING_SHIFT)&nvgpu.NVOS02_FLAGS_MAPPING_MASK) != nvgpu.NVOS02_FLAGS_MAPPING_NO_MAP
 
+	// mmapMu must not be held while copying to or from application memory:
+	// MemoryManager calls frontendFDMemmapFile.MapInternal(), which locks
+	// mmapMu, with MemoryManager.activeMu held.
+	unlockMmap := func() {}
 	if createMmapCtx {
 		mapFile.memmapFile.mmapMu.Lock()
-		defer mapFile.memmapFile.mmapMu.Unlock()
 		if mapFile.memmapFile.mmapLength != 0 {
+			mapFile.memmapFile.mmapMu.Unlock()
 			fi.ctx.Warningf("nvproxy: attempted to reuse FD %d for NV_ESC_RM_MAP_MEMORY", ioctlParams.FD)
 			return 0, linuxerr.EINVAL
 		}
+		unlockMmap = mapFile.memmapFile.mmapMu.Unlock
 	}
 
 	origFD := ioctlParams.FD
 	ioctlParams.FD = mapFile.hostFD
 	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.Params.HRoot)
 	if client == nil {
+		unlockMmap()
 		ioctlParams.FD = origFD
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
 	}
@@ -659,6 +665,7 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 		}
 	}
 	unlock()
+	unlockMmap()
 	ioctlParams.FD = origFD
 	if err != nil {
 		return n, err
@@ -1902,9 +1909,12 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 		return 0, linuxerr.EINVAL
 	}
 
+	// mmapMu must not be held while copying to or from application memory:
+	// MemoryManager calls frontendFDMemmapFile.MapInternal(), which locks
+	// mmapMu, with MemoryManager.activeMu held.
 	mapFile.memmapFile.mmapMu.Lock()
-	defer mapFile.memmapFile.mmapMu.Unlock()
 	if mapFile.memmapFile.mmapLength != 0 {
+		mapFile.memmapFile.mmapMu.Unlock()
 		fi.ctx.Warningf("nvproxy: attempted to reuse FD %d for NV_ESC_RM_MAP_MEMORY", ioctlParams.FD)
 		return 0, linuxerr.EINVAL
 	}
@@ -1913,6 +1923,7 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	ioctlParams.FD = mapFile.hostFD
 	n, err := frontendIoctlInvoke(fi, &ioctlParams)
 	if err != nil {
+		mapFile.memmapFile.mmapMu.Unlock()
 		return n, err
 	}
 	if ioctlParams.Params.Status == nvgpu.NV_OK {
@@ -1927,6 +1938,7 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 		// caching type from the updated ioctl params.
 		mapFile.memmapFile.memType = getMemoryType(fi.ctx, mapFile.dev, (ioctlParams.Params.Flags>>nvgpu.NVOS33_FLAGS_CACHING_TYPE_SHIFT)&nvgpu.NVOS33_FLAGS_CACHING_TYPE_MASK)
 	}
+	mapFile.memmapFile.mmapMu.Unlock()
 
 	ioctlParams.FD = origFD
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
