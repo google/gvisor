@@ -371,3 +371,90 @@ func TestProxyCloseOrdersCancellationBeforeCleanup(t *testing.T) {
 		}
 	})
 }
+
+// partialProgressRW models an imported host Unix socket returning progress
+// together with ErrWouldBlock or a short successful write.
+type partialProgressRW struct {
+	readerWriter
+	writes     int
+	firstBytes int64
+	firstError error
+	notify     bool
+}
+
+func (rw *partialProgressRW) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	rw.writes++
+	if rw.writes == 1 {
+		n, err := rw.readerWriter.Write(ctx, src.TakeFirst64(rw.firstBytes), opts)
+		if err != nil {
+			return n, err
+		}
+		return n, rw.firstError
+	}
+	return rw.readerWriter.Write(ctx, src, opts)
+}
+
+func (rw *partialProgressRW) EventRegister(e *waiter.Entry) error {
+	if rw.notify {
+		e.NotifyEvent(waiter.WritableEvents)
+	}
+	return nil
+}
+
+func (rw *partialProgressRW) EventUnregister(*waiter.Entry) {}
+
+func TestFileDescriptionWritePreservesPartialProgress(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		firstBytes int64
+		firstError error
+		notify     bool
+		want       string
+		wantError  error
+	}{
+		{
+			name:       "WouldBlockWithNotification",
+			firstBytes: 3,
+			firstError: linuxerr.ErrWouldBlock,
+			notify:     true,
+			want:       "abcdef",
+		},
+		{
+			name:       "WouldBlockReadyBeforeRegistration",
+			firstBytes: 3,
+			firstError: linuxerr.ErrWouldBlock,
+			want:       "abcdef",
+		},
+		{
+			name:       "ShortSuccessfulWrite",
+			firstBytes: 3,
+			want:       "abcdef",
+		},
+		{
+			name:       "ErrorAfterPartialWrite",
+			firstBytes: 3,
+			firstError: io.ErrClosedPipe,
+			want:       "abc",
+			wantError:  io.ErrClosedPipe,
+		},
+		{
+			name:      "NoProgress",
+			wantError: io.ErrNoProgress,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			impl := &partialProgressRW{firstBytes: tc.firstBytes, firstError: tc.firstError, notify: tc.notify}
+			conn := newMockFileDescriptionConn(t, ctx, impl)
+			cancel := make(chan struct{})
+			defer close(cancel)
+			n, err := conn.Write(ctx, []byte("abcdef"), cancel)
+			if n != len(tc.want) || err != tc.wantError {
+				t.Fatalf("Write = (%d, %v), want (%d, %v)", n, err, len(tc.want), tc.wantError)
+			}
+			if got := impl.buf.String(); got != tc.want {
+				t.Fatalf("forwarded %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
