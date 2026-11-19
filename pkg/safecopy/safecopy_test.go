@@ -186,6 +186,61 @@ func TestSwapUint64AlignmentError(t *testing.T) {
 	}
 }
 
+func TestStoreUint64Success(t *testing.T) {
+	// Test that StoreUint64 does not return an error when the page is
+	// accessible.
+	after := uint64(rand.Int63())
+	// "The first word in ... an allocated struct or slice can be relied upon
+	// to be 64-bit aligned." - sync/atomic docs
+	data := new(struct{ val uint64 })
+
+	if err := StoreUint64(unsafe.Pointer(&data.val), after); err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if data.val != after {
+		t.Errorf("Unexpected value: got %v, want %v", data.val, after)
+	}
+}
+
+func TestStoreUint64AlignmentError(t *testing.T) {
+	// Test that StoreUint64 returns an AlignmentError when passed an unaligned
+	// address.
+	data := make([]byte, 16) // 2 * sizeof(uint64).
+	alignedIndex := uintptr(0)
+	if offset := uintptr(unsafe.Pointer(&data[0])) % 8; offset != 0 {
+		alignedIndex = 8 - offset
+	}
+	ptr := unsafe.Pointer(&data[alignedIndex+1])
+	want := AlignmentError{Addr: uintptr(ptr), Alignment: 8}
+	if err := StoreUint64(ptr, 1); err != want {
+		t.Errorf("Unexpected error: got %v, want %v", err, want)
+	}
+}
+
+func TestStoreUint64SegvError(t *testing.T) {
+	// Test that StoreUint64 returns a SegvError when reaching a page that
+	// signals SIGSEGV.
+	withSegvErrorTestMapping(t, func(mapping []byte) {
+		secondPage := uintptr(unsafe.Pointer(&mapping[pageSize]))
+		err := StoreUint64(unsafe.Pointer(secondPage), 1)
+		if want := (SegvError{secondPage}); err != want {
+			t.Errorf("Unexpected error: got %v, want %v", err, want)
+		}
+	})
+}
+
+func TestStoreUint64BusError(t *testing.T) {
+	// Test that StoreUint64 returns a BusError when reaching a page that
+	// signals SIGBUS.
+	withBusErrorTestMapping(t, func(mapping []byte) {
+		secondPage := uintptr(unsafe.Pointer(&mapping[pageSize]))
+		err := StoreUint64(unsafe.Pointer(secondPage), 1)
+		if want := (BusError{secondPage}); err != want {
+			t.Errorf("Unexpected error: got %v, want %v", err, want)
+		}
+	})
+}
+
 func TestCompareAndSwapUint32Success(t *testing.T) {
 	// Test that CompareAndSwapUint32 does not return an error when the page is
 	// accessible.
