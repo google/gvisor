@@ -9,6 +9,8 @@ _templates:
     timeout_in_minutes: 55
     retry:
       <<: *retry_settings
+    concurrency: ${BUILDKITE_DYNAMIC_CONCURRENCY:-75}
+    concurrency_group: "build-$BUILDKITE_BUILD_ID"
   source_test: &source_test
     if: build.env("STAGED_BINARIES") == null
   source_test_presubmit: &source_test_presubmit
