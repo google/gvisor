@@ -114,6 +114,12 @@ yaml_test(
     schema = "//tools/nogo/config:schema.json",
 )
 
+yaml_test(
+    name = "governance_bots_test",
+    srcs = ["//governance:bots.yaml"],
+    schema = "//governance:bots.schema.json",
+)
+
 GITHUB_WORKFLOWS = glob(
     [
         ".github/workflows/**/*.yaml",

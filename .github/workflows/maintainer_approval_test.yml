@@ -1,0 +1,100 @@
+# Tests maintainer_approval.js, and checks that the rosters are valid. See
+# maintainer_approval.yml.
+name: Maintainer Approval Test
+
+"on":
+  pull_request:
+    paths:
+      - .github/workflows/maintainer_approval*
+      - governance/bots.yaml
+      - governance/maintainers.yaml
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/maintainer_approval*
+      - governance/bots.yaml
+      - governance/maintainers.yaml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The image of maintainer_approval.yml.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        sparse-checkout: |
+          .github/workflows
+          governance
+
+    - run: node --test .github/workflows/maintainer_approval_test.js
+
+  # Evaluates the open pull requests of the repository, and sets no status.
+  # This finds errors in the queries, which the unit tests do not send to
+  # GitHub. It reads the branch rules, but it does not use their contents.
+  # The script also makes sure that each roster entry has the username and the
+  # type of the account with its ID.
+  dry-run:
+    if: github.repository == 'gvisor/gvisor'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        sparse-checkout: |
+          .github/workflows
+          governance
+
+    - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        retries: 3
+        script: |-
+            const maintainerApproval =
+                require('./.github/workflows/maintainer_approval.js');
+            const result = await maintainerApproval({
+              github: {
+                graphql: github.graphql,
+                request: async (route, parameters) => {
+                  const response = await github.request(route, parameters);
+                  if (route.endsWith('/rules/branches/{branch}')) {
+                    response.data = [{
+                      type: 'pull_request',
+                      parameters: {
+                        dismiss_stale_reviews_on_push: true,
+                        require_last_push_approval: true,
+                        required_approving_review_count: 2,
+                      },
+                    }];
+                  }
+                  return response;
+                },
+                rest: {
+                  repos: {
+                    createCommitStatus: async () => ({data: {}}),
+                  },
+                },
+              },
+              context,
+              core,
+              // No status is from this app, thus all statuses are out of date.
+              appSlug: 'dry-run',
+              appID: 1,
+              sleep: async () => {},
+            });
+            if (result.commits === 0) {
+              core.setFailed('the script examined no pull request');
+            }

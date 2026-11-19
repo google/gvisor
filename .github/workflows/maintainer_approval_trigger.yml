@@ -1,0 +1,37 @@
+# This workflow does nothing. Each run of it starts the "Maintainer Approval"
+# workflow, which evaluates the open pull requests.
+#
+# The indirection is necessary because GitHub runs a pull_request_review
+# workflow from the pull request branch. The evaluation must run from the
+# master branch.
+#
+# The result of this workflow shows on each pull request. The names say that
+# it is not the result of the evaluation.
+name: Pull Request Change
+
+"on":
+  # A new, reopened or closed pull request, a pull request that becomes a
+  # draft or ready for review, a new head commit, or an edit, which includes a
+  # new base branch.
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - closed
+      - converted_to_draft
+      - ready_for_review
+      - synchronize
+      - edited
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions: {}
+
+jobs:
+  notify:
+    if: github.repository == 'gvisor/gvisor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Do nothing
+      run: "true"

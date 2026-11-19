@@ -1,0 +1,17 @@
+# gVisor trusted bots.
+#
+# A pull request of a trusted bot needs the approval of one maintainer instead
+# of two, if the bot pushed the head commit, and if no other account made the
+# last change of the pull request that selects the base branch, opens the pull
+# request again, or marks it as ready for review.
+#
+# A bot belongs here only if no person can act as the bot. For example, a bot
+# account whose token is a repository secret does not qualify, because a
+# workflow on a branch can read that secret.
+#
+# Bot fields:
+#   github:     GitHub username.
+#   github_id:  GitHub user ID.
+bots:
+  - github: dependabot[bot]
+    github_id: 49699333
