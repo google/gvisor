@@ -448,13 +448,24 @@ function cleanup {
 set +e
 trap cleanup EXIT
 
-# Run the benchmark, recording the results file.
-while ${nsjoin_binary} /tmp/client.netns ${iperf_binary_name} \\
-    ${iperf_version_arg} -p ${proxy_port} -c ${client_addr} -t ${duration} -f m -P ${num_client_threads} 2>&1 \\
-    | tee \$results_file \\
-    | grep -E "connect failed|unable to connect" >/dev/null; do
-  sleep 0.1 # Wait for all services.
+# The client proxy listens only after connecting to the server proxy.
+# Probing it with a connection would consume the socket reserved for iperf.
+while :; do
+  for pid in "\$client_pid" "\$server_pid" "\$iperf_pid"; do
+    kill -0 "\$pid" || exit 1
+  done
+  listeners=\$("${nsjoin_binary}" /tmp/client.netns ss -Hltn "sport = :${proxy_port}") || exit 1
+  [[ -n "\$listeners" ]] && break
+  sleep 0.1
 done
+
+${nsjoin_binary} /tmp/client.netns ${iperf_binary_name} \\
+    ${iperf_version_arg} -p ${proxy_port} -c ${client_addr} -t ${duration} -f m -P ${num_client_threads} > "\$results_file" 2>&1
+iperf_status=\$?
+if (( iperf_status != 0 )); then
+  cat "\$results_file" >&2
+  exit "\$iperf_status"
+fi
 
 # Unlink all relevant devices from the bridge. This is because when the bridge
 # is deleted, the kernel may hang. It appears that this problem is fixed in
@@ -467,9 +478,25 @@ ip link set wan.1 nomaster
 # Emit raw results.
 cat \$results_file >&2
 
-# Emit a useful result (final throughput).
-mbits=\$(grep Mbits/sec \$results_file \\
-  | grep 'sender' | awk '{print \$7};')
+# The final sender row is the aggregate when iperf runs parallel streams.
+if ! mbits=\$(awk -v streams="${num_client_threads}" '
+  \$NF == "sender" {
+    rate = ""
+    if (streams > 1 && \$1 != "[SUM]") next
+    for (i = 2; i < NF; i++) {
+      if (\$i == "Mbits/sec") {
+        rate = \$(i - 1)
+        break
+      }
+    }
+  }
+  END {
+    if (rate !~ /^[0-9]+([.][0-9]+)?$/) exit 1
+    print rate
+  }' "\$results_file"); then
+  echo "iperf did not report a sender rate in Mbits/sec" >&2
+  exit 1
+fi
 client_cpu_ticks=\$(cat /proc/\$client_pid/stat \\
   | awk '{print (\$14+\$15);}')
 server_cpu_ticks=\$(cat /proc/\$server_pid/stat \\
