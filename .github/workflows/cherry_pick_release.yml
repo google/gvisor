@@ -1,10 +1,10 @@
 # This workflow cherry-picks commits from master onto a release branch.
 #
-# Run it on release/<yyyymmdd> (see cut_release.yml) with the commits to pick,
-# oldest first. It pushes the result to a cherry-pick/* branch and opens a pull
-# request against the release branch; the pull request still needs a review.
-# If a commit does not apply cleanly, the workflow stops and the cherry-pick
-# must be done by hand.
+# Run it on master, with the release/<yyyymmdd> branch (see cut_release.yml)
+# and the commits to pick, oldest first. It pushes the result to a
+# cherry-pick/* branch and opens a pull request against the release branch;
+# the pull request still needs a review. If a commit does not apply cleanly,
+# the workflow stops and the cherry-pick must be done by hand.
 #
 # The pull request is opened as gvisor-bot (the GVISOR_BOT_TOKEN secret).
 #
@@ -15,40 +15,74 @@ name: "Cherry-pick to Release Branch"
 "on":
   workflow_dispatch:
     inputs:
+      branch:
+        description: 'Release branch to cherry-pick onto: release/<yyyymmdd>'
+        required: true
+        type: string
       commits:
         description: 'Commits on master to cherry-pick, oldest first, separated by spaces'
         required: true
         type: string
 
 concurrency:
-  group: cherry-pick-${{ github.ref_name }}
+  group: cherry-pick-${{ inputs.branch }}
   cancel-in-progress: false
 
-jobs:
-  cherry-pick:
-    name: Cherry-pick to release branch
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
+permissions: {}
 
+jobs:
+  # Fails before anything is pushed.
+  check:
+    name: Check the gvisor-bot token
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: release-bot
+      deployment: false
+    permissions: {}
     steps:
-      # Fail before anything is pushed.
       - name: Check the gvisor-bot token
         env:
-          GVISOR_BOT_TOKEN: ${{ secrets.GVISOR_BOT_TOKEN }}
+          HAS_GVISOR_BOT_TOKEN: ${{ secrets.GVISOR_BOT_TOKEN != '' }}
         run: |
-          set +x
-          if [[ -z "${GVISOR_BOT_TOKEN}" ]]; then
+          if [[ "${HAS_GVISOR_BOT_TOKEN}" != "true" ]]; then
             echo "::error::The GVISOR_BOT_TOKEN secret is not set; it is needed to open the pull request as gvisor-bot."
             exit 1
           fi
 
-      - name: Checkout
-        # Do not set ref: github.sha is the release branch head when the run
-        # was created, and the pull request is computed against it.
+  # This job reads the content of the release branch, thus it does not have
+  # the gvisor-bot token.
+  cherry-pick:
+    name: Cherry-pick to release branch
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      head: ${{ steps.pick.outputs.head }}
+      commit: ${{ steps.pick.outputs.commit }}
+      body: ${{ steps.pick.outputs.body }}
+
+    steps:
+      - name: Check the release branch name
+        id: base
+        env:
+          BASE: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          # The digits of the pattern are ASCII digits only.
+          export LC_ALL=C
+          if ! [[ "${BASE}" =~ ^release/(20[0-9]{6})$ ]]; then
+            echo "::error::The branch must be a release/<yyyymmdd> branch, not '${BASE}'."
+            exit 1
+          fi
+          echo "date=${BASH_REMATCH[1]}" >>"${GITHUB_OUTPUT}"
+
+      - name: Checkout the release branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/heads/${{ inputs.branch }}
           # Full history is required to check and cherry-pick the commits.
           fetch-depth: 0
 
@@ -56,16 +90,19 @@ jobs:
         id: pick
         env:
           COMMITS: ${{ inputs.commits }}
-          BASE: ${{ github.ref_name }}
+          BASE: ${{ inputs.branch }}
+          BASE_DATE: ${{ steps.base.outputs.date }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
 
-          if ! [[ "${BASE}" =~ ^release/(20[0-9]{6})$ ]]; then
-            echo "::error::Run this workflow from a release/<yyyymmdd> branch, not ${BASE}."
-            exit 1
-          fi
-          head="cherry-pick/${BASH_REMATCH[1]}-${RUN_ID}"
+          head="cherry-pick/${BASE_DATE}-${RUN_ID}-${RUN_ATTEMPT}"
+
+          # The tags are not necessary, and a tag can have the name of another
+          # ref, for example "HEAD".
+          git for-each-ref --format='delete %(refname)' refs/tags |
+            git update-ref --stdin
 
           git config user.name "gVisor bot"
           git config user.email "gvisor-bot@google.com"
@@ -83,12 +120,13 @@ jobs:
               echo "::error::Unknown commit: '${c}'"
               exit 1
             fi
-            if ! git merge-base --is-ancestor "${sha}" origin/master; then
+
+            if ! git merge-base --is-ancestor "${sha}" refs/remotes/origin/master; then
               echo "::error::${sha} is not on master. Merge the fix to master first."
               exit 1
             fi
             if git merge-base --is-ancestor "${sha}" HEAD ||
-               [[ -n "$(git log -1 --format=%H -F --grep="(cherry picked from commit ${sha})" HEAD "origin/${BASE}")" ]]; then
+               [[ -n "$(git log -1 --format=%H -F --grep="(cherry picked from commit ${sha})" HEAD "refs/remotes/origin/${BASE}")" ]]; then
               echo "::error::${sha} is already on ${BASE}."
               exit 1
             fi
@@ -111,28 +149,77 @@ jobs:
             picked+=("${sha}")
           done
 
-          git push origin "HEAD:refs/heads/${head}"
+          # The commit ID: a tag can have the name "HEAD". This job pushes
+          # the commit to a staging branch. The job that has the gvisor-bot
+          # token creates the branch of the pull request from the commit ID.
+          commit="$(git rev-parse --verify 'HEAD^{commit}')"
+          git push origin "${commit}:refs/heads/cherry-pick-staging/${BASE_DATE}-${RUN_ID}-${RUN_ATTEMPT}"
 
+          # The delimiter cannot be in the text of a commit.
+          delimiter="$(openssl rand -hex 16)"
           {
+            echo "head=${head}"
+            echo "commit=${commit}"
+            echo "body<<${delimiter}"
             echo "Cherry-picks onto \`${BASE}\` from master:"
             echo
             for sha in "${picked[@]}"; do
               echo "- ${sha} $(git log -1 --format=%s "${sha}")"
             done
-          } >"${RUNNER_TEMP}/body"
-          echo "head=${head}" >>"${GITHUB_OUTPUT}"
+            echo "${delimiter}"
+          } >>"${GITHUB_OUTPUT}"
 
+  # This job has the gvisor-bot token, thus it reads no content of the
+  # repository.
+  pull-request:
+    name: Open the pull request
+    needs: cherry-pick
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: release-bot
+      deployment: false
+    permissions: {}
+    steps:
       - name: Open the pull request
         env:
           GH_TOKEN: ${{ secrets.GVISOR_BOT_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          BASE: ${{ github.ref_name }}
-          HEAD_BRANCH: ${{ steps.pick.outputs.head }}
+          BASE: ${{ inputs.branch }}
+          HEAD_BRANCH: ${{ needs.cherry-pick.outputs.head }}
+          COMMIT: ${{ needs.cherry-pick.outputs.commit }}
+          BODY: ${{ needs.cherry-pick.outputs.body }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          # The digits of the patterns are ASCII digits only.
+          export LC_ALL=C
+          # The result must be from this attempt.
+          if ! [[ "${BASE}" =~ ^release/(20[0-9]{6})$ ]] ||
+             [[ "${HEAD_BRANCH}" != "cherry-pick/${BASH_REMATCH[1]}-${RUN_ID}-${RUN_ATTEMPT}" ]] ||
+             ! [[ "${COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The result of the cherry-pick job is not valid, or it is from an earlier attempt. Run all jobs again."
+            exit 1
+          fi
+          printf '%s\n' "${BODY}" >"${RUNNER_TEMP}/body"
+          # The branch must not exist: this step creates it with the commit of
+          # this run.
+          gh api --silent --method POST "repos/${GH_REPO}/git/refs" \
+            -f ref="refs/heads/${HEAD_BRANCH}" -f sha="${COMMIT}"
+          gh api --silent --method DELETE \
+            "repos/${GH_REPO}/git/refs/heads/cherry-pick-staging/${HEAD_BRANCH#cherry-pick/}" || true
           url="$(gh pr create \
             --base "${BASE}" \
             --head "${HEAD_BRANCH}" \
             --title "[${BASE}] Cherry-pick from master" \
             --body-file "${RUNNER_TEMP}/body")"
+          # If the branch rules let another account push to the branch, the
+          # pull request can have another commit.
+          if ! head="$(gh pr view "${url}" --json headRefOid --jq .headRefOid)" ||
+             [[ "${head}" != "${COMMIT}" ]]; then
+            gh pr close "${url}" --comment "The head commit is not the commit that the cherry-pick workflow pushed (${COMMIT}). Do not open this pull request again." || true
+            echo "::error::The head commit of ${url} is '${head}', not ${COMMIT}. The pull request is closed. Do not open it again."
+            exit 1
+          fi
           echo "Opened ${url}" >>"${GITHUB_STEP_SUMMARY}"

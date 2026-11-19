@@ -16,19 +16,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   generate:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       statuses: write
     steps:
-    - id: setup
-      run: |
-        if ! [[ -z "${{ secrets.GO_TOKEN }}" ]]; then
-          echo has_token=true >> "$GITHUB_OUTPUT"
-        else
-          echo has_token=false >> "$GITHUB_OUTPUT"
-        fi
     - run: |
         jq -nc '{"state": "pending", "context": "go tests"}' | \
         curl -sL -X POST -d @- \
@@ -37,26 +33,16 @@ jobs:
             "$STATUSES_URL"
       env:
         STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
-      if: github.event_name == 'pull_request'
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      if: github.event_name == 'push' && steps.setup.outputs.has_token == 'true'
       with:
         fetch-depth: 0
-        token: '${{ secrets.GO_TOKEN }}'
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
-      with:
-        fetch-depth: 0
+        persist-credentials: false
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: 'go.mod'
     - run: tools/go_branch.sh
     - run: git checkout go && git clean -xf . && go build ./...
-    - if: github.event_name == 'push'
-      run: |
-        git remote add upstream "https://github.com/${{ github.repository }}"
-        git push upstream go:go
-    - if: ${{ success() && github.event_name == 'pull_request' }}
+    - if: ${{ success() }}
       run: |
         jq -nc '{"state": "success", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
@@ -65,7 +51,7 @@ jobs:
             "$STATUSES_URL"
       env:
         STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
-    - if: ${{ failure() && github.event_name == 'pull_request' }}
+    - if: ${{ failure() }}
       run: |
         jq -nc '{"state": "failure", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
@@ -74,3 +60,102 @@ jobs:
             "$STATUSES_URL"
       env:
         STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
+
+  build:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: 'go.mod'
+    - run: tools/go_branch.sh
+    - run: git checkout go && git clean -xf . && go build ./...
+    # The commits of the Go branch that are not in the repository.
+    - run: git bundle create "${RUNNER_TEMP}/go.bundle" refs/remotes/origin/go..refs/heads/go
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: go-branch
+        path: ${{ runner.temp }}/go.bundle
+        retention-days: 1
+
+  # Pushes the Go branch. This job has the token, thus it runs no code of the
+  # build.
+  push:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: go-branch
+      deployment: false
+    permissions: {}
+    steps:
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: go-branch
+        path: ${{ runner.temp }}/go-branch
+    # This step does not have the token.
+    - id: commit
+      run: |
+        set -euo pipefail
+        export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+        bundle="${RUNNER_TEMP}/go-branch/go.bundle"
+        # A bundle file only: git fetch also accepts a repository.
+        if [[ -L "${bundle}" || ! -f "${bundle}" ]] ||
+           ! git bundle list-heads "${bundle}" >/dev/null; then
+          echo "::error::The artifact is not a git bundle."
+          exit 1
+        fi
+        # The repository has no tags and only the two refs below: a tag or a
+        # branch cannot have the name of a ref that this job uses.
+        if [[ -e "${RUNNER_TEMP}/go" ]]; then
+          echo "::error::${RUNNER_TEMP}/go exists."
+          exit 1
+        fi
+        git init --quiet "${RUNNER_TEMP}/go"
+        cd "${RUNNER_TEMP}/go"
+        git fetch --quiet --no-tags "https://github.com/${GITHUB_REPOSITORY}" \
+          "+refs/heads/go:refs/remotes/origin/go"
+        # The objects of the bundle must be valid: the checks below read them.
+        git -c fetch.fsckObjects=true fetch --quiet --no-tags "${bundle}" \
+          "+refs/heads/go:refs/bundle/go"
+        commit="$(git rev-parse --verify 'refs/bundle/go^{commit}')"
+        # The commit must merge the commit of this run into the Go branch.
+        parents="$(git rev-list --parents --max-count=1 "${commit}")"
+        want="${commit} $(git rev-parse --verify refs/remotes/origin/go) ${GITHUB_SHA}"
+        if [[ "${parents}" != "${want}" ]]; then
+          echo "::error::The commit of the build and its parents are '${parents}'. They must be '${want}': the head of the go branch, then the commit of this run. If the go branch moved after the build, run all jobs again."
+          exit 1
+        fi
+        if git ls-tree --name-only -z "${commit}" | grep -zqxF .github; then
+          echo "::error::The commit of the build contains .github."
+          exit 1
+        fi
+        echo "commit=${commit}" >>"${GITHUB_OUTPUT}"
+    - env:
+        GO_TOKEN: ${{ secrets.GO_TOKEN }}
+        COMMIT: ${{ steps.commit.outputs.commit }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${GO_TOKEN}" ]]; then
+          echo "::error::The GO_TOKEN secret of the go-branch environment is not set; it is needed to push the go branch."
+          exit 1
+        fi
+        export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+        # An empty source deletes the branch.
+        if ! [[ "${COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::There is no commit to push."
+          exit 1
+        fi
+        cd "${RUNNER_TEMP}/go"
+        # The helper reads the token from the environment, for github.com
+        # only. The token is not in the git configuration or in a command
+        # line.
+        git -c credential.helper= -c core.hooksPath=/dev/null \
+          -c 'credential.https://github.com.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GO_TOKEN}"; }; f' \
+          push "https://github.com/${GITHUB_REPOSITORY}" "${COMMIT}:refs/heads/go"
