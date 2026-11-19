@@ -1,0 +1,81 @@
+<svg viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="mn-h" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+    <marker id="mn-hh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head-hot"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="22" class="d-tag">THE STEP SEES</text>
+  <text x="254" y="22" class="d-tag">SERVED BY</text>
+  <text x="534" y="22" class="d-tag">BACKED BY</text>
+
+  <!-- paths -->
+  <g class="d-name">
+    <text x="24" y="88">/</text>
+    <text x="24" y="148">/tmp</text>
+    <text x="24" y="178">/proc</text>
+    <text x="24" y="278">/storage/alerts</text>
+    <text x="24" y="308">/etc/resolv.conf</text>
+  </g>
+  <g>
+    <path d="M150 84 H252" class="d-line" marker-end="url(#mn-h)"/>
+    <path d="M150 144 H252" class="d-line" marker-end="url(#mn-h)"/>
+    <path d="M150 174 H252" class="d-line" marker-end="url(#mn-h)"/>
+    <path d="M150 274 H252" class="d-line" marker-end="url(#mn-h)"/>
+    <path d="M150 304 H252" class="d-line" marker-end="url(#mn-h)"/>
+  </g>
+
+  <!-- sentry -->
+  <rect x="240" y="40" width="220" height="162" rx="8" class="d-box-hot"/>
+  <text x="254" y="61" class="d-name">sentry</text>
+  <rect x="254" y="72" width="192" height="24" rx="5" class="d-cell"/>
+  <text x="264" y="88">overlay: image + tmpfs</text>
+  <rect x="254" y="102" width="192" height="24" rx="5" class="d-cell-hot"/>
+  <text x="264" y="118" class="d-name">EROFS image reader</text>
+  <rect x="254" y="132" width="192" height="24" rx="5" class="d-cell"/>
+  <text x="264" y="148">tmpfs</text>
+  <rect x="254" y="162" width="192" height="24" rx="5" class="d-cell"/>
+  <text x="264" y="178">procfs</text>
+
+  <!-- sentry to gofer -->
+  <path id="mn-lisa" d="M350 202 V226" class="d-line"/>
+  <text x="360" y="219" class="d-note">LisaFS</text>
+
+  <!-- gofer -->
+  <rect x="240" y="226" width="220" height="104" rx="8" class="d-box"/>
+  <text x="254" y="247" class="d-name">gofer</text>
+  <text x="304" y="247" class="d-note">chroot, no AF_INET</text>
+  <rect x="254" y="262" width="192" height="24" rx="5" class="d-cell"/>
+  <text x="264" y="278">Nest: volumes</text>
+  <rect x="254" y="292" width="192" height="24" rx="5" class="d-cell"/>
+  <text x="264" y="308">fsgofer: host files</text>
+
+  <!-- backends -->
+  <rect x="520" y="84" width="180" height="60" rx="8" class="d-box"/>
+  <text x="534" y="106" class="d-name">storage gateway</text>
+  <text x="534" y="122" class="d-note">verify, cache, relay</text>
+
+  <rect x="520" y="281" width="130" height="46" rx="8" class="d-box"/>
+  <text x="534" y="301" class="d-name">worker disk</text>
+  <text x="534" y="317" class="d-note">rootfs, /work</text>
+
+  <rect x="240" y="364" width="460" height="40" rx="8" class="d-box"/>
+  <text x="254" y="389" class="d-name">Spongeblob</text>
+
+  <path id="mn-img" d="M446 114 H518" class="d-line-hot" marker-end="url(#mn-hh)"/>
+  <text x="462" y="107" class="d-note">ranges</text>
+  <path id="mn-nest" d="M446 274 H490 V134 H518" class="d-line" marker-end="url(#mn-h)"/>
+  <text x="498" y="228" class="d-note">relay</text>
+  <path d="M446 304 H518" class="d-line" marker-end="url(#mn-h)"/>
+  <path id="mn-blob" d="M680 144 V362" class="d-line" marker-end="url(#mn-h)"/>
+
+  <g class="d-moving">
+    <circle r="3" class="d-pulse"><animateMotion dur="2.4s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#mn-img"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="3.6s" begin="-0.8s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#mn-nest"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="3s" begin="-0.3s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#mn-blob"/></animateMotion></circle>
+    <circle r="3" class="d-pulse"><animateMotion dur="1.8s" begin="-0.5s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#mn-lisa"/></animateMotion></circle>
+  </g>
+</svg>

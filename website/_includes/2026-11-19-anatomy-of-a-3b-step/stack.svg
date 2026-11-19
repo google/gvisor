@@ -1,0 +1,84 @@
+<svg viewBox="0 0 840 508" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="sk-h" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+    <marker id="sk-hh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head-hot"/>
+    </marker>
+  </defs>
+  <text x="24" y="18" class="d-tag">GUEST</text>
+  <rect x="24" y="26" width="168" height="48" rx="8" class="d-box"/>
+  <text x="38" y="46" class="d-name">python script.py</text>
+  <text x="38" y="62" class="d-note">image user, no caps</text>
+  <text x="232" y="18" class="d-tag">GUEST KERNEL</text>
+  <rect x="232" y="26" width="196" height="48" rx="8" class="d-box-hot"/>
+  <text x="246" y="46" class="d-name">sentry</text>
+  <text x="246" y="62" class="d-note">Linux, in Go, as a process</text>
+  <text x="478" y="18" class="d-tag">HOST PROCESS</text>
+  <rect x="478" y="26" width="144" height="48" rx="8" class="d-box"/>
+  <text x="492" y="46" class="d-name">gofer</text>
+  <text x="492" y="62" class="d-note">file server</text>
+  <text x="664" y="18" class="d-tag">HOST KERNEL</text>
+  <rect x="664" y="26" width="152" height="48" rx="8" class="d-box"/>
+  <text x="678" y="46" class="d-name">Linux kernel</text>
+  <text x="678" y="62" class="d-note">host syscalls</text>
+  <path d="M96 74 V418" class="d-line d-dash"/>
+  <path d="M322 74 V418" class="d-line d-dash"/>
+  <path d="M550 74 V418" class="d-line d-dash"/>
+  <path d="M740 74 V418" class="d-line d-dash"/>
+  <rect x="368" y="92" width="22" height="316" rx="6" class="d-zone"/>
+  <text x="379" y="430" text-anchor="middle" class="d-note">seccomp allowlist,</text>
+  <text x="379" y="444" text-anchor="middle" class="d-note">namespaces, cgroup</text>
+  <text x="108" y="111">getpid()</text>
+  <text x="108" y="133" class="d-note">from the sentry’s task table</text>
+  <path id="sk-a0" d="M96 118 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="118" r="2.5" class="d-head-hot"/>
+  <text x="108" y="155">futex(FUTEX_WAIT)</text>
+  <text x="108" y="177" class="d-note">the thread parks in the sentry</text>
+  <path id="sk-a1" d="M96 162 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="162" r="2.5" class="d-head-hot"/>
+  <text x="108" y="199">write(pipe)</text>
+  <text x="108" y="221" class="d-note">into a sentry pipe buffer</text>
+  <path id="sk-a2" d="M96 206 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="206" r="2.5" class="d-head-hot"/>
+  <text x="108" y="243">mmap(anonymous)</text>
+  <text x="108" y="265" class="d-note">its own memory manager</text>
+  <path id="sk-a3" d="M96 250 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="250" r="2.5" class="d-head-hot"/>
+  <path id="sk-b3" d="M322 250 H738" class="d-line d-dash" marker-end="url(#sk-h)"/>
+  <text x="732" y="243" text-anchor="end" class="d-note">backing pages, when needed</text>
+  <text x="108" y="287">openat("/etc/resolv.conf")</text>
+  <text x="108" y="309" class="d-note">a gofer file</text>
+  <path id="sk-a4" d="M96 294 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="294" r="2.5" class="d-head-hot"/>
+  <path id="sk-b4" d="M322 294 H548" class="d-line d-dash" marker-end="url(#sk-h)"/>
+  <text x="542" y="287" text-anchor="end" class="d-note">LisaFS request</text>
+  <text x="108" y="331">connect(api:443)</text>
+  <text x="108" y="353" class="d-note">a host socket in its netns</text>
+  <path id="sk-a5" d="M96 338 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="338" r="2.5" class="d-head-hot"/>
+  <path id="sk-b5" d="M322 338 H738" class="d-line d-dash" marker-end="url(#sk-h)"/>
+  <text x="732" y="331" text-anchor="end" class="d-note">its own connect()</text>
+  <text x="108" y="375">unshare(CLONE_NEWNS)</text>
+  <text x="108" y="397" class="d-note">the step’s filter says no</text>
+  <path id="sk-a6" d="M96 382 H320" class="d-line-hot" marker-end="url(#sk-hh)"/>
+  <circle cx="96" cy="382" r="2.5" class="d-head-hot"/>
+  <text x="334" y="386" class="d-hot">EPERM</text>
+  <path d="M24 474 H52" class="d-line-hot"/>
+  <text x="60" y="478" class="d-note">the step’s syscall, handled by the sentry</text>
+  <path d="M24 496 H52" class="d-line d-dash"/>
+  <text x="60" y="500" class="d-note">a host syscall or a request to the gofer</text>
+  <g class="d-moving">
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.0227;0.0636;0.0773;0.1182;1"><mpath href="#sk-a0"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0218;0.0227;0.1182;0.1191;1"/></circle>
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.1591;0.2000;0.2136;0.2545;1"><mpath href="#sk-a1"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.1582;0.1591;0.2545;0.2555;1"/></circle>
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.2955;0.3364;0.3500;0.3909;1"><mpath href="#sk-a2"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2945;0.2955;0.3909;0.3918;1"/></circle>
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.4318;0.4727;0.5591;0.6000;1"><mpath href="#sk-a3"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.4309;0.4318;0.6000;0.6009;1"/></circle>
+    <circle r="3" class="d-head"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;0;0" keyTimes="0;0.4773;0.5136;0.5500;1"><mpath href="#sk-b3"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.4764;0.4773;0.5500;0.5509;1"/></circle>
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.5682;0.6091;0.6955;0.7364;1"><mpath href="#sk-a4"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.5673;0.5682;0.7364;0.7373;1"/></circle>
+    <circle r="3" class="d-head"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;0;0" keyTimes="0;0.6136;0.6500;0.6864;1"><mpath href="#sk-b4"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.6127;0.6136;0.6864;0.6873;1"/></circle>
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.7045;0.7455;0.8318;0.8727;1"><mpath href="#sk-a5"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7036;0.7045;0.8727;0.8736;1"/></circle>
+    <circle r="3" class="d-head"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;0;0" keyTimes="0;0.7500;0.7864;0.8227;1"><mpath href="#sk-b5"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7491;0.7500;0.8227;0.8236;1"/></circle>
+    <circle r="3.5" class="d-pulse"><animateMotion dur="11.0s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1;0;0" keyTimes="0;0.8409;0.8818;0.8955;0.9364;1"><mpath href="#sk-a6"/></animateMotion><animate attributeName="opacity" dur="11.0s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.8400;0.8409;0.9364;0.9373;1"/></circle>
+  </g>
+</svg>

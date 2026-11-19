@@ -1,0 +1,67 @@
+<svg viewBox="0 0 720 330" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="pool-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+    <marker id="pool-head-hot" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head-hot"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="32" class="d-tag">ONE WORKER, N SLOTS</text>
+  <text x="696" y="32" text-anchor="end" class="d-note">each dot is one sandbox</text>
+
+  <!-- claim arriving -->
+  <text x="288" y="58" text-anchor="middle" class="d-note">job arrives</text>
+  <path d="M288 64 V84" class="d-line-hot" marker-end="url(#pool-head-hot)"/>
+
+  <!-- columns -->
+  <rect x="68" y="90" width="140" height="176" rx="8" class="d-box"/>
+  <rect x="218" y="90" width="140" height="176" rx="8" class="d-box-hot"/>
+  <rect x="368" y="90" width="140" height="176" rx="8" class="d-box"/>
+  <rect x="518" y="90" width="140" height="176" rx="8" class="d-box"/>
+
+  <text x="80" y="111" class="d-name">preparing</text>
+  <text x="80" y="127" class="d-note">boots a sandbox</text>
+  <text x="230" y="111" class="d-name">ready</text>
+  <text x="230" y="127" class="d-note">has run no step</text>
+  <text x="380" y="111" class="d-name">running</text>
+  <text x="380" y="127" class="d-note">exactly one step</text>
+  <text x="530" y="111" class="d-name">retirement</text>
+  <text x="530" y="127" class="d-note">kill and clean up</text>
+
+  <!-- slot lanes -->
+  <g class="d-note">
+    <text x="24" y="156">slot 0</text>
+    <text x="24" y="184">slot 1</text>
+    <text x="24" y="212">slot 2</text>
+    <text x="24" y="240">slot 3</text>
+  </g>
+  <g>
+    <path d="M78 152 H648 M78 180 H648 M78 208 H648 M78 236 H648" class="d-line d-dash"/>
+  </g>
+
+  <!-- the dots: hold in each state, jump back to preparing as a new sandbox -->
+  <g class="d-moving">
+    <circle cy="152" r="5" class="d-pulse">
+      <animate attributeName="cx" dur="9s" begin="0s" repeatCount="indefinite"
+        values="138;138;288;288;438;438;588;588;138" keyTimes="0;0.16;0.24;0.42;0.5;0.76;0.84;0.99;1"/>
+    </circle>
+    <circle cy="180" r="5" class="d-pulse">
+      <animate attributeName="cx" dur="9s" begin="-2.6s" repeatCount="indefinite"
+        values="138;138;288;288;438;438;588;588;138" keyTimes="0;0.16;0.24;0.42;0.5;0.76;0.84;0.99;1"/>
+    </circle>
+    <circle cy="208" r="5" class="d-pulse">
+      <animate attributeName="cx" dur="11s" begin="-6.1s" repeatCount="indefinite"
+        values="138;138;288;288;438;438;588;588;138" keyTimes="0;0.12;0.2;0.3;0.38;0.8;0.88;0.99;1"/>
+    </circle>
+    <circle cy="236" r="5" class="d-pulse">
+      <animate attributeName="cx" dur="9.5s" begin="-4.4s" repeatCount="indefinite"
+        values="138;138;288;288;438;438;588;588;138" keyTimes="0;0.16;0.24;0.5;0.58;0.74;0.82;0.99;1"/>
+    </circle>
+  </g>
+
+  <!-- the way back -->
+  <path d="M588 268 V290 Q588 300 578 300 H148 Q138 300 138 290 V272" class="d-line" marker-end="url(#pool-head)"/>
+  <text x="363" y="318" text-anchor="middle" class="d-note">a new sandbox in the same slot, only after the old one is gone</text>
+</svg>
