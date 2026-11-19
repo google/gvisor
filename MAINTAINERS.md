@@ -8,6 +8,7 @@ Name                 | GitHub ID                                                
 Fabricio Voznika     | [@fvoznika](https://github.com/fvoznika)                     | Google
 Jamie Liu            | [@nixprime](https://github.com/nixprime)                     | Google
 Zach Koopmans        | [@zkoopmans](https://github.com/zkoopmans)                   | Google
+Ayush Ranjan         | [@ayushr2](https://github.com/ayushr2)                       | Modal
 Nayana Bidari        | [@nybidari](https://github.com/nybidari)                     | Google
 Etienne Perot        | [@etienneperot](https://github.com/etienneperot)             | Google
 Lucas Manning        | [@manninglucas](https://github.com/manninglucas)             | Google
@@ -46,6 +47,5 @@ Rahat Mahmood        | [@mrahatm](https://github.com/mrahatm)               | 20
 Andrei Vagin         | [@avagin](https://github.com/avagin)                 | 2026-02-12
 Tamir Duberstein     | [@tamird](https://github.com/tamird)                 | 2022-07-12
 Ian Lewis            | [@ianlewis](https://github.com/ianlewis)             | 2023-07-17
-Ayush Ranjan         | [@ayushr2](https://github.com/ayushr2)               | 2026-06-24
 Ghanan Gowripalan    | [@ghananigans](https://github.com/ghananigans)       | 2023-10-16
 Shambhavi Srivastava | [@sshambhavi-252](https://github.com/sshambhavi-252) | 2023-10-10
