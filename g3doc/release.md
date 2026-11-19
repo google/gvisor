@@ -152,8 +152,8 @@ release maintainers are granted the security manager role.
 
 ### Playbook A: GitHub Actions
 
-Start each workflow from **Actions → *workflow name* → Run workflow**. The **Use
-workflow from** branch is the target branch.
+Start each workflow from **Actions → *workflow name* → Run workflow**. Each
+procedure gives the **Use workflow from** branch.
 
 #### A1. Cut
 
@@ -167,12 +167,13 @@ workflow from** branch is the target branch.
 
 1.  Merge each fix to master first.
 2.  Open **Cherry-pick to Release Branch**.
-3.  Set **Use workflow from** to `release/<yyyymmdd>`.
-4.  In `commits`, enter the master commits, oldest first, separated by spaces.
-5.  Click **Run workflow**. Open the pull request link in the run summary.
-6.  Review the pull request and merge it. Use "Create a merge commit" or "Rebase
+3.  Set **Use workflow from** to `master`. A run from another branch fails.
+4.  In `branch`, enter `release/<yyyymmdd>`.
+5.  In `commits`, enter the master commits, oldest first, separated by spaces.
+6.  Click **Run workflow**. Open the pull request link in the run summary.
+7.  Review the pull request and merge it. Use "Create a merge commit" or "Rebase
     and merge", not "Squash and merge".
-7.  If a commit has conflicts, the run stops and lists the files. Do that
+8.  If a commit has conflicts, the run stops and lists the files. Do that
     cherry-pick by hand ([B2](#b2-cherry-pick-optional)).
 
 #### A3. Stage
@@ -276,8 +277,8 @@ it. For an embargoed fix, start on the embargo date.
 
 1.  Merge the fix to master.
 2.  Find the releases that need the fix:
-    -   The newest release. Run cherry-pick on its branch. If the branch already
-        has the fix, the run stops with "already on release/...".
+    -   The newest release. Run cherry-pick for its branch. If the branch
+        already has the fix, the run stops with "already on release/...".
     -   Older releases, only for an issue that crosses the sandbox boundary, and
         only if users pin them.
 3.  For each branch, do [A2](#a2-cherry-pick-optional) and merge the pull
@@ -304,6 +305,7 @@ git push origin 'release-20260928.0^{commit}:refs/heads/release/20260928'
 | --- | --- | --- |
 | Cut: `release-X is not older than <date>` | This date has a release, or a newer release exists | Wait for the next week. To fix the existing release, use [Playbook C](#playbook-c-security-backport). |
 | "Workflow does not exist or does not have a `workflow_dispatch` trigger in this branch" | The selected branch does not contain the workflow | Use a branch that was cut from master after the workflows were added. |
+| Cherry-pick: the form has no `branch` field, or the run fails with `Branch "..." is not allowed to deploy to release-bot` or `The GVISOR_BOT_TOKEN secret is not set` | The run started from a release branch, or the `release-bot` environment does not have the secret | Set **Use workflow from** to `master`, and enter the release branch in `branch`. Do not add a repository secret. |
 | Stage: `already released as ...` | There is no new commit since the last release | Merge the cherry-pick pull request first. |
 | No Buildkite build after stage | The webhook did not start a build for the tag | Examine the Buildkite webhook. As a fallback, do [B3](#b3-stage). |
 | The Buildkite build failed | A build or upload error | Fix the problem. Then stage again with the same version. This replaces the staging tag. |

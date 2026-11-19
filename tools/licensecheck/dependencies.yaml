@@ -783,10 +783,10 @@
   sha256: 55c8ce068257aa0d263aad7470113dafcd50f955ee754fc853c2fdcd31ad096f
   license: Apache-2.0
 - dependency: github_workflow_schema
-  version: https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json
-  retrieved: "2026-08-27"
-  commit: 166136b96a14f103a948053903e9339e63ad9170
-  sha256: 7499ccb3e75975504ea1ee7c70291e0c9f6c1f684678091d013061fe263e3ddb
+  version: https://raw.githubusercontent.com/SchemaStore/schemastore/498a42a4f41f467d8cdc36a5b5c546605a8935c3/src/schemas/json/github-workflow.json
+  retrieved: "2026-11-19"
+  commit: 498a42a4f41f467d8cdc36a5b5c546605a8935c3
+  sha256: 0528a890c1a6f4209444c421dbb752888a934a540f2a677146d78ed7f2321cbf
   license: Apache-2.0
 - dependency: go.opencensus.io
   version: v0.24.0
