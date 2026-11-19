@@ -1611,6 +1611,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 		}
 	}
 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
+	productName, err := specutils.ProductName(args.Spec)
+	if err != nil {
+		return err
+	}
+	if productName != "" {
+		cmd.Args = append(cmd.Args, "--product-name", productName)
+	}
 
 	if args.Attached {
 		// Kill sandbox if parent process exits in attached mode.
