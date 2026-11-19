@@ -1427,7 +1427,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 	return false, false
 }
 
-// precondition: s.mu is held.
+// +checklocksread:s.mu
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
 		Up:          !nic.adminDown.Load(),
