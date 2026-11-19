@@ -362,6 +362,7 @@ go_library(
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/fspath",
+        "//pkg/gohacks",
         "//pkg/goid",
         "//pkg/hostarch",
         "//pkg/log",

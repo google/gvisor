@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
@@ -110,6 +111,7 @@ func (t *Task) accountTaskGoroutineEnter(state TaskGoroutineState) {
 	if state != TaskGoroutineRunningApp {
 		// Task is blocking/stopping.
 		t.k.decRunningTasks()
+		t.stopRunTime()
 	}
 	if state == TaskGoroutineBlockedUninterruptible {
 		// Task is entering uninterruptible sleep.
@@ -125,6 +127,7 @@ func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 	if state != TaskGoroutineRunningApp {
 		// Task is unblocking/continuing.
 		t.k.incRunningTasks()
+		t.startRunTime()
 	}
 	if state == TaskGoroutineBlockedUninterruptible {
 		// Task is leaving uninterruptible sleep.
@@ -134,6 +137,54 @@ func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 		panic(fmt.Sprintf("Task goroutine switching from state %v (expected %v) to %v", oldState, state, TaskGoroutineRunningSys))
 	}
 	t.setGostate(TaskGoroutineRunningSys)
+}
+
+// startRunTime and stopRunTime bracket an interval of running. They are called
+// only on transitions to and from blocked, stopped and nonexistent states, so
+// the syscall path (TaskGoroutineRunningSys <-> TaskGoroutineRunningApp) does
+// not read the clock.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) startRunTime() {
+	t.runSeq.BeginWrite()
+	t.runStart.Store(gohacks.Nanotime())
+	t.runCount.Add(1)
+	t.runSeq.EndWrite()
+}
+
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) stopRunTime() {
+	start := t.runStart.RacyLoad()
+	if start == 0 {
+		return
+	}
+	t.runSeq.BeginWrite()
+	t.runTime.Add(gohacks.Nanotime() - start)
+	t.runStart.Store(0)
+	t.runSeq.EndWrite()
+}
+
+// RunTime returns the time t's task goroutine has spent running application
+// or sentry code, measured at nanosecond resolution, and the number of
+// intervals of running it is made of. Time the host did not schedule a running
+// task goroutine is included, since gVisor cannot observe it.
+func (t *Task) RunTime() (time.Duration, uint64) {
+	for {
+		epoch := t.runSeq.BeginRead()
+		start := t.runStart.Load()
+		total := t.runTime.Load()
+		count := t.runCount.Load()
+		// Read the clock before ReadOk, so that an interval that stopRunTime
+		// closes after ReadOk is not extended past its end.
+		now := gohacks.Nanotime()
+		if !t.runSeq.ReadOk(epoch) {
+			continue
+		}
+		if start != 0 {
+			total += now - start
+		}
+		return time.Duration(total), count
+	}
 }
 
 // touchGostateTime refreshes the timestamp of the current task goroutine state.
