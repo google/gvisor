@@ -126,6 +126,13 @@ maintainers:
     started: 2020-11-18
     status: ACTIVE
     areas: [benchmarks, kubernetes, metrics, oci, release_pipeline, runsc, seccomp, website]
+  - name: Steve Silva
+    github: stevems
+    github_id: 2355354
+    affiliation: Google
+    started: 2021-05-06
+    status: ACTIVE
+    areas: [website]
   - name: Lucas Manning
     github: manninglucas
     github_id: 6645699

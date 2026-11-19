@@ -10,6 +10,7 @@ Jamie Liu            | [@nixprime](https://github.com/nixprime)                 
 Zach Koopmans        | [@zkoopmans](https://github.com/zkoopmans)                   | Google
 Nayana Bidari        | [@nybidari](https://github.com/nybidari)                     | Google
 Etienne Perot        | [@etienneperot](https://github.com/etienneperot)             | Google
+Steve Silva          | [@stevems](https://github.com/stevems)                       | Google
 Lucas Manning        | [@manninglucas](https://github.com/manninglucas)             | Google
 Jing Chen            | [@milantracy](https://github.com/milantracy)                 | Google
 Konstantin Bogomolov | [@konstantin-s-bogom](https://github.com/konstantin-s-bogom) | Google
