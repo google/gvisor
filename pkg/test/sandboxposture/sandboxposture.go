@@ -173,6 +173,9 @@ const (
 	FDSymlink   = "symlink"
 	FDUnknown   = "unknown"
 
+	// FDErrorLog is an FD to the error log (`--log`) of the process.
+	FDErrorLog = "error-log"
+
 	// FDAnonPrefix prefixes anonymous inode FDs, e.g. "anon:eventfd".
 	FDAnonPrefix = "anon:"
 
@@ -474,7 +477,7 @@ func Collect(opts Opts) (*Posture, error) {
 	if posture.FS, err = collectFilesystem(p, ref); err != nil {
 		return nil, fmt.Errorf("collecting filesystem view: %w", err)
 	}
-	if posture.FDs, err = collectFDs(p); err != nil {
+	if posture.FDs, err = collectFDs(p, ref); err != nil {
 		return nil, fmt.Errorf("collecting FD table: %w", err)
 	}
 	if posture.Attrs, err = collectAttrs(p, ref, status, refStatus, posture.Namespaces.User); err != nil {
@@ -1042,8 +1045,40 @@ var inodeRE = regexp.MustCompile(`\[\d+\]`)
 // been unlinked.
 const deletedSuffix = " (deleted)"
 
-func collectFDs(p *proc) (FDTable, error) {
+// errorLogFlag is the `runsc` for the error log.
+const errorLogFlag = "--log="
+
+// errorLogStat returns the metadata of the error log that `p` was started
+// with. The path is resolved in the root directory of `ref`.
+// `ok` is false if `p` has no error log.
+func errorLogStat(p, ref *proc) (st unix.Stat_t, ok bool, err error) {
+	argv, err := p.readNUL("cmdline")
+	if err != nil {
+		return st, false, fmt.Errorf("reading cmdline: %w", err)
+	}
+	for _, arg := range argv {
+		path, found := strings.CutPrefix(arg, errorLogFlag)
+		if !found {
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			return st, false, fmt.Errorf("error log path %q is not absolute", path)
+		}
+		path = filepath.Join(ref.path("root"), path)
+		if err := unix.Stat(path, &st); err != nil {
+			return st, false, fmt.Errorf("stat %s: %w", path, err)
+		}
+		return st, true, nil
+	}
+	return st, false, nil
+}
+
+func collectFDs(p, ref *proc) (FDTable, error) {
 	var t FDTable
+	errorLog, hasErrorLog, err := errorLogStat(p, ref)
+	if err != nil {
+		return t, fmt.Errorf("finding error log: %w", err)
+	}
 	fdDir := p.path("fd")
 	ents, err := os.ReadDir(fdDir)
 	if err != nil {
@@ -1063,10 +1098,15 @@ func collectFDs(p *proc) (FDTable, error) {
 		}
 		var st unix.Stat_t
 		mode := uint32(0)
+		isErrorLog := false
 		if err := unix.Stat(full, &st); err == nil {
 			mode = st.Mode
+			isErrorLog = hasErrorLog && st.Dev == errorLog.Dev && st.Ino == errorLog.Ino
 		}
 		class := classifyFD(link, mode)
+		if isErrorLog {
+			class = FDErrorLog
+		}
 		classes[class]++
 		links[inodeRE.ReplaceAllString(link, "[N]")] = true
 		if class == FDDirectory {
