@@ -25,7 +25,6 @@ env:
 priority: ${PRIORITY:-0}
 
 steps:
-  # Run smoke tests before the other tests.
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (AMD64)"
@@ -36,12 +35,6 @@ steps:
       GLIBC_TUNABLES: glibc.pthread.rseq=0
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
-
-  # On PRs, run the remaining tests only if the smoke tests pass, so that a
-  # change that does not build or start does not use the other agents.
-  - wait: ~
-    if: build.pull_request.id != null
-
   - <<: *common
     <<: *source_test
     label: ":broom: Lint"
