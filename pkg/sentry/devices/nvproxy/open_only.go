@@ -52,6 +52,8 @@ func (dev *openOnlyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 }
 
 // openOnlyFD implements vfs.FileDescriptionImpl for openOnlyDevice.
+//
+// +stateify savable
 type openOnlyFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
