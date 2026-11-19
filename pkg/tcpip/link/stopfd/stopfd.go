@@ -64,6 +64,25 @@ func (sf *StopFD) Stop() {
 	}
 }
 
+// Reset clears a pending stop notification. It must not be called
+// while a dispatcher may still be polling the eventfd, as that
+// dispatcher could then miss its stop notification.
+func (sf *StopFD) Reset() {
+	if sf.EFD < 0 {
+		return
+	}
+	var buf [8]byte
+	// The eventfd is non-blocking, so we expect to read the Stop
+	// event if its there.
+	n, err := unix.Read(sf.EFD, buf[:])
+	switch {
+	case err == unix.EAGAIN:
+		// No stop pending.
+	case err != nil || n != len(buf):
+		panic(fmt.Sprintf("read(EFD) = (%d, %v), want (%d, nil) or (_, EAGAIN)", n, err, len(buf)))
+	}
+}
+
 // Close releases the eventfd. It must not be called while a dispatcher may
 // still be polling the eventfd. Calling it more than once is a no-op.
 func (sf *StopFD) Close() {

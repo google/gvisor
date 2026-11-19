@@ -133,6 +133,11 @@ type packetMMapDispatcher struct {
 	mgr *processorManager
 }
 
+func (d *packetMMapDispatcher) prepare() {
+	d.StopFD.Reset()
+	d.mgr.start()
+}
+
 func (d *packetMMapDispatcher) release() {
 	d.mgr.close()
 }
