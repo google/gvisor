@@ -111,7 +111,9 @@ const (
 )
 
 const (
-	VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP = 1
+	VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP = 1 << iota
+	VFIO_DMA_UNMAP_FLAG_ALL
+	VFIO_DMA_UNMAP_FLAG_VADDR
 )
 
 // IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.

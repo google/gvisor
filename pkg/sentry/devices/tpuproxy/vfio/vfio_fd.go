@@ -256,21 +256,24 @@ func (fd *vfioFD) iommuUnmapDma(ctx context.Context, t *kernel.Task, arg hostarc
 	if _, err := dmaUnmap.CopyIn(t, arg); err != nil {
 		return 0, err
 	}
-	if dmaUnmap.Flags&linux.VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP != 0 {
-		// VFIO_DMA_UNMAP_FALGS_GET_DIRTY_BITMAP is not used by libtpu for
-		// gVisor working with TPU.
+	if dmaUnmap.Flags&(linux.VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP|linux.VFIO_DMA_UNMAP_FLAG_VADDR) != 0 {
+		// VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP and VFIO_DMA_UNMAP_FLAG_VADDR
+		// are not used by libtpu for gVisor working with TPU.
 		return 0, linuxerr.ENOSYS
 	}
 	n, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_UNMAP_DMA, &dmaUnmap)
 	if err != nil {
-		return 0, nil
-	}
-	if _, err := dmaUnmap.CopyOut(t, arg); err != nil {
-		return 0, err
+		return n, err
 	}
 
 	r := DevAddrRange{Start: dmaUnmap.IOVa, End: dmaUnmap.IOVa + dmaUnmap.Size}
+	if dmaUnmap.Flags&linux.VFIO_DMA_UNMAP_FLAG_ALL != 0 {
+		r = DevAddrRange{Start: 0, End: ^uint64(0)}
+	}
 	fd.unpinRange(r)
+	if _, err := dmaUnmap.CopyOut(t, arg); err != nil {
+		return 0, err
+	}
 	return n, nil
 }
 
