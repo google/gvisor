@@ -1309,6 +1309,154 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreEROFSRebuilt restores a container onto a rebuild of the
+// EROFS image that is its rootfs, which is at another path and has its files
+// elsewhere, and checks that it carries on from that image.
+func TestCheckpointRestoreEROFSRebuilt(t *testing.T) {
+	// Skip this test if mkfs.erofs or busybox are not available.
+	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
+
+	// Skip overlay because test requires writing to host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_rebuilt_test_")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			t.Cleanup(func() { os.RemoveAll(dir) })
+			if err := os.Chmod(dir, 0777); err != nil {
+				t.Fatalf("error chmoding file: %q, %v", dir, err)
+			}
+			// Files only keep their times across builds in extended inodes.
+			const extended = "-E force-inode-extended"
+			rootfsDir, rootfsImage, err := createRootfsEROFS(dir, extended)
+			if err != nil {
+				t.Fatalf("failed to create EROFS rootfs image: %v", err)
+			}
+
+			// The application lists a directory, so that the listing is cached
+			// when it is checkpointed, and then counts.
+			outputPath := filepath.Join(dir, "output")
+			outputFile, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile.Close()
+			script := fmt.Sprintf("/busybox ls / > /dev/null || exit 1; i=0; while true; do echo $i >> %q; /busybox sleep 1; i=$((i+1)); done", outputPath)
+			spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
+			spec.Root = &specs.Root{Path: rootfsDir}
+			spec.Annotations[sentryapi.RootfsPrefix+"type"] = erofs.Name
+			spec.Annotations[sentryapi.RootfsPrefix+"source"] = rootfsImage
+			// See TestCheckpointRestoreEROFS.
+			spec.Annotations[sentryapi.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			t.Cleanup(cleanup)
+			cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			t.Cleanup(func() { cont.Destroy() })
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+			if err := waitForFileNotEmpty(outputFile); err != nil {
+				t.Fatalf("Failed to wait for output file: %v", err)
+			}
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+				t.Fatalf("error checkpointing container: %v", err)
+			}
+			lastNum, err := readOutputNum(outputPath, -1)
+			if err != nil {
+				t.Fatalf("error with outputFile: %v", err)
+			}
+			if err := os.Remove(outputPath); err != nil {
+				t.Fatalf("error removing file")
+			}
+			outputFile2, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile2.Close()
+
+			// restore builds the image again at another path, and restores the
+			// container with it.
+			restore := func(image, options string) (*Container, error) {
+				t.Helper()
+				image = filepath.Join(dir, image)
+				if err := createImageEROFS(image, rootfsDir, "-E noinline_data", extended, options); err != nil {
+					t.Fatalf("error creating EROFS image: %v", err)
+				}
+				spec.Annotations[sentryapi.RootfsPrefix+"source"] = image
+				bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
+				if err != nil {
+					t.Fatalf("error setting up bundle: %v", err)
+				}
+				t.Cleanup(cleanup)
+				cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				t.Cleanup(func() { cont.Destroy() })
+				return cont, cont.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */)
+			}
+			// busyboxOffset returns where an image has the program that the
+			// application runs.
+			busybox := filepath.Join(rootfsDir, "busybox")
+			busyboxOffset := func(image string) int {
+				t.Helper()
+				data, err := os.ReadFile(busybox)
+				if err != nil {
+					t.Fatalf("error reading busybox: %v", err)
+				}
+				contents, err := os.ReadFile(image)
+				if err != nil {
+					t.Fatalf("error reading EROFS image: %v", err)
+				}
+				offset := bytes.Index(contents, data[:unix.Getpagesize()])
+				if offset < 0 {
+					t.Fatalf("EROFS image %s does not have busybox", image)
+				}
+				return offset
+			}
+
+			// Rebuild the image with another layout and a file that comes
+			// before the program in it.
+			if err := os.WriteFile(filepath.Join(rootfsDir, "added"), make([]byte, 1<<20), 0644); err != nil {
+				t.Fatalf("error writing file: %v", err)
+			}
+			cont2, err := restore("rebuilt.img", "--chunksize=8192 -E force-chunk-indexes")
+			if err != nil {
+				t.Fatalf("error restoring container: %v", err)
+			}
+			if offset := busyboxOffset(rootfsImage); offset == busyboxOffset(filepath.Join(dir, "rebuilt.img")) {
+				t.Fatalf("busybox is at offset %d of the image before and after the rebuild", offset)
+			}
+			if firstNum, err := readOutputNum(outputPath, 0); err != nil {
+				t.Fatalf("error with outputFile: %v", err)
+			} else if lastNum+1 != firstNum {
+				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+			}
+			if got, err := executeCombinedOutput(conf, cont2, nil, "/busybox", "ls", "/"); err != nil {
+				t.Fatalf("error listing the root directory: %v", err)
+			} else if !strings.Contains(string(got), "added\n") {
+				t.Errorf("root directory lists %q, want it to list the file that the rebuild added", got)
+			}
+
+			// The application has the program mapped, so it cannot be restored
+			// onto an image in which the program is another file.
+			if err := os.Chtimes(busybox, time.Now(), time.Now()); err != nil {
+				t.Fatalf("error changing file times: %v", err)
+			}
+			if _, err := restore("changed.img", ""); err == nil || !strings.Contains(err.Error(), `erofs.dentry("busybox"`) {
+				t.Errorf("restoring onto an image that changed a file in use: got %v, want an error that names the file", err)
+			}
+		})
+	}
+}
+
 func TestCheckpointResume(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {

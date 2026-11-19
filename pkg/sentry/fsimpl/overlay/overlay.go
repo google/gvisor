@@ -705,7 +705,7 @@ type dentry struct {
 	// dirMu.
 	dirMu    dirMutex `state:"nosave"`
 	children map[string]*dentry
-	dirents  []vfs.Dirent
+	dirents  []vfs.Dirent `state:"nosave"`
 
 	// upperVD and lowerVDs are the files from the overlay filesystem's layers
 	// that comprise the file on the overlay filesystem.
