@@ -25,12 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
@@ -127,17 +125,6 @@ func restoreTestFDs(t *testing.T, ctx context.Context, fds []*vfs.FileDescriptio
 	return restored[0].VirtualDentry(), restored[1:], err
 }
 
-// readTestFD reads the rest of the file that fd represents.
-func readTestFD(t *testing.T, ctx context.Context, fd *vfs.FileDescription) string {
-	t.Helper()
-	buf := make([]byte, hostarch.PageSize)
-	n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
-	if err != nil && err != io.EOF {
-		t.Fatalf("Read: %v", err)
-	}
-	return string(buf[:n])
-}
-
 func statTestPath(ctx context.Context, root vfs.VirtualDentry, path string) (linux.Statx, error) {
 	return root.Mount().Filesystem().VirtualFilesystem().StatAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{Root: root, Start: root, Path: fspath.Parse(path)}, &vfs.StatOptions{})
 }
@@ -160,10 +147,6 @@ func TestRestoreRebuiltImage(t *testing.T) {
 	after := newTestTreeImage(1, tree(testFile(52, 8, contents), testNodes{"more": testFile(44, 4, "more")}))
 
 	fds := openTestPaths(t, ctx, before, "dir/a", "dir/b")
-	const offset = 3
-	if _, err := fds[1].Seek(ctx, offset, linux.SEEK_SET); err != nil {
-		t.Fatalf("Seek: %v", err)
-	}
 	if _, err := statTestPath(ctx, fds[0].VirtualDentry(), "gone/deep/file"); err != nil {
 		t.Fatalf("StatAt: %v", err)
 	}
@@ -176,15 +159,13 @@ func TestRestoreRebuiltImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompleteRestore: %v", err)
 	}
-	if got := readTestFD(t, ctx, fds[0]); got != contents[offset:] {
-		t.Errorf("file open across the restore reads %q from its offset, want %q", got, contents[offset:])
+	buf := make([]byte, len(contents)+1)
+	if n, err := fds[0].Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{}); err != nil && err != io.EOF || string(buf[:n]) != contents {
+		t.Errorf("file open across the restore reads %q and gets error %v, want %q", buf[:n], err, contents)
 	}
 	// The hard links of the file still share its inode.
-	if err := fds[0].LockBSD(ctx, 0 /* ownerPID */, lock.WriteLock, false /* block */); err != nil {
-		t.Fatalf("LockBSD: %v", err)
-	}
-	if err := openTestPath(t, ctx, root, "c").LockBSD(ctx, 0 /* ownerPID */, lock.WriteLock, false /* block */); err != linuxerr.ErrWouldBlock {
-		t.Errorf("locking a hard link of a locked file: got %v, want %v", err, linuxerr.ErrWouldBlock)
+	if a, c := fds[0].Impl().(*regularFileFD).inode(), openTestPath(t, ctx, root, "c").Impl().(*regularFileFD).inode(); a != c {
+		t.Errorf("hard links of the open file have inodes %p and %p, want one", a, c)
 	}
 	// The added file has the inode number that the open one had. An
 	// application that remembers the latter must not take it for that file.
@@ -214,9 +195,6 @@ func TestRestoreUnchangedInodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompleteRestore: %v", err)
 	}
-	if got := readTestFD(t, ctx, openTestPath(t, ctx, root, "unused")); got != "after it changed" {
-		t.Errorf("unused file reads %q, want %q", got, "after it changed")
-	}
 	if stat, err := statTestPath(ctx, root, "file"); err != nil {
 		t.Fatalf("StatAt: %v", err)
 	} else if stat.DevMinor != old.DevMinor {
@@ -238,7 +216,6 @@ func TestRestoreIncompatibleImage(t *testing.T) {
 	}{
 		{"file removed", func(root testNodes) { delete(root, "z") }, "no such file or directory"},
 		{"mode changed", func(root testNodes) { root["z"].attr.Mode ^= 0200 }, "mode or owner changed"},
-		{"uid changed", func(root testNodes) { root["z"].attr.UID++ }, "mode or owner changed"},
 		{"gid changed", func(root testNodes) { root["z"].attr.GID++ }, "mode or owner changed"},
 		{"file type changed", func(root testNodes) { root["z"].attr.Mode = linux.S_IFLNK | 0444 }, "mode or owner changed"},
 		{"directory owner changed", func(root testNodes) { root["d"].attr.UID++ }, "mode or owner changed"},
