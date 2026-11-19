@@ -91,6 +91,10 @@ go_test(
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",
         "//pkg/tcpip",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/loopback",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
     ],
 )

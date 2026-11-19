@@ -568,6 +568,58 @@ func TestWriteLinkInfoLoopback(t *testing.T) {
 	}
 }
 
+// IFLA_OPERSTATE follows IFF_RUNNING: an interface that is up but has no
+// carrier is operationally down.
+func TestWriteLinkInfoOperState(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags uint32
+		want  uint8
+	}{
+		{"down", 0, linux.IF_OPER_DOWN},
+		{"up without carrier", linux.IFF_UP, linux.IF_OPER_DOWN},
+		{"up and running", linux.IFF_UP | linux.IFF_RUNNING | linux.IFF_LOWER_UP, linux.IF_OPER_UP},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ms := nlmsg.NewMessageSet(0, 12345)
+			p := &Protocol{}
+			p.AddNewLinkMessage(ms, 2, inet.Interface{
+				DeviceType: linux.ARPHRD_ETHER,
+				Flags:      tc.flags,
+				Name:       "eth0",
+				Addr:       []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+				MTU:        1500,
+			})
+			if len(ms.Messages) != 1 {
+				t.Fatalf("got %d messages, want 1", len(ms.Messages))
+			}
+			var ifi linux.InterfaceInfoMessage
+			attrs, ok := ms.Messages[0].GetData(&ifi)
+			if !ok {
+				t.Fatalf("GetData failed")
+			}
+			found := false
+			for !attrs.Empty() {
+				ahdr, val, rest, ok := attrs.ParseFirst()
+				if !ok {
+					break
+				}
+				attrs = rest
+				if ahdr.Type != linux.IFLA_OPERSTATE {
+					continue
+				}
+				found = true
+				if len(val) != 1 || val[0] != tc.want {
+					t.Errorf("got IFLA_OPERSTATE = %v, want %d", val, tc.want)
+				}
+			}
+			if !found {
+				t.Errorf("IFLA_OPERSTATE not found")
+			}
+		})
+	}
+}
+
 func TestProcessMessageMissingFamily(t *testing.T) {
 	p := &Protocol{}
 	ms := nlmsg.NewMessageSet(0, 12345)

@@ -488,6 +488,32 @@ func combineLinkFlags(cur stack.NICStateFlags, flags, change uint32) (uint32, *s
 	return flags, nil
 }
 
+// SetInterfaceFlags sets the interface flags of interface id, like
+// SIOCSIFFLAGS. flags is the complete set of interface flags. Flags that
+// userspace cannot change, such as IFF_RUNNING and IFF_LOWER_UP, are ignored;
+// see combineLinkFlags for the others.
+func (s *Stack) SetInterfaceFlags(ctx context.Context, id tcpip.NICID, flags uint32) *syserr.Error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
+	nicInfo, ok := s.Stack.SingleNICInfo(id)
+	if !ok {
+		return syserr.ErrNoDevice
+	}
+	want, err := combineLinkFlags(nicInfo.Flags, flags, 0 /* change */)
+	if err != nil {
+		ctx.Debugf("Unsupported interface flag change: flags %#x", flags)
+		return err
+	}
+	if up := want&linux.IFF_UP != 0; up != nicInfo.Flags.Up {
+		if err := s.setUpLocked(ctx, id, up); err != nil {
+			return err
+		}
+		s.sendChangeEvent(ctx, id)
+	}
+	return nil
+}
+
 // setUpLocked brings interface id administratively up or down, like Linux's
 // dev_open and dev_close.
 //
