@@ -15,6 +15,7 @@
 package nvproxy
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -29,6 +30,32 @@ func TestInit(t *testing.T) {
 	Init()
 	for _, abi := range abis {
 		abi.cons()
+	}
+}
+
+// TestExecRegOpsHandler tests that NVB0CC_CTRL_CMD_EXEC_REG_OPS and
+// NV2080_CTRL_CMD_GPU_EXEC_REG_OPS use the deep-copying ctrlGpuExecRegOps handler.
+func TestExecRegOpsHandler(t *testing.T) {
+	Init()
+	for version, abiEntry := range abis {
+		t.Run(version.String(), func(t *testing.T) {
+			abi := abiEntry.cons()
+			handlerB0CC, ok := abi.controlCmd[nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS]
+			if !ok {
+				t.Fatalf("version %s: missing NVB0CC_CTRL_CMD_EXEC_REG_OPS handler", version)
+			}
+			if reflect.ValueOf(handlerB0CC.handler).Pointer() != reflect.ValueOf(ctrlGpuExecRegOps).Pointer() {
+				t.Errorf("version %s: NVB0CC_CTRL_CMD_EXEC_REG_OPS handler is not ctrlGpuExecRegOps", version)
+			}
+
+			handler2080, ok := abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_EXEC_REG_OPS]
+			if !ok {
+				t.Fatalf("version %s: missing NV2080_CTRL_CMD_GPU_EXEC_REG_OPS handler", version)
+			}
+			if reflect.ValueOf(handler2080.handler).Pointer() != reflect.ValueOf(ctrlGpuExecRegOps).Pointer() {
+				t.Errorf("version %s: NV2080_CTRL_CMD_GPU_EXEC_REG_OPS handler is not ctrlGpuExecRegOps", version)
+			}
+		})
 	}
 }
 
