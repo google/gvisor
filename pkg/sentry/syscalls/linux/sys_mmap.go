@@ -229,8 +229,9 @@ func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 		// no-ops.
 		fallthrough
 	case linux.MADV_NORMAL, linux.MADV_RANDOM, linux.MADV_SEQUENTIAL, linux.MADV_WILLNEED:
-		// Do nothing, we totally ignore the suggestions above.
-		return 0, nil, nil
+		// We ignore the suggestions above, but still validate the range
+		// as Linux does.
+		return 0, nil, t.MemoryManager().CheckMadviseRange(addr, length)
 	case linux.MADV_REMOVE:
 		// These "suggestions" have application-visible side effects, so we
 		// have to indicate that we don't support them.
