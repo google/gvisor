@@ -1,0 +1,6 @@
+code_review_policy {
+  readability_policy {
+    human_readability: REQUIRED
+    all_languages: true
+  }
+}
