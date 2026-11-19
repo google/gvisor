@@ -34,6 +34,10 @@ func IoSetup(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	nrEvents := args[0].Int()
 	idAddr := args[1].Pointer()
 
+	if nrEvents <= 0 || nrEvents > 65536 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	// Linux uses the native long as the aio ID.
 	//
 	// The context pointer _must_ be zero initially.
