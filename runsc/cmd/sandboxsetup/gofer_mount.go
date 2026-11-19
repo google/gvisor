@@ -512,7 +512,15 @@ func ShouldExposeNvidiaDevice(path string) bool {
 		return true
 	}
 	nvidiaDevPathReg := regexp.MustCompile(`^/dev/nvidia(\d+)$`)
-	return nvidiaDevPathReg.MatchString(path)
+	if nvidiaDevPathReg.MatchString(path) {
+		return true
+	}
+	// nvproxy also opens capability and IMEX channel devices through the dev
+	// gofer (see nvproxy.Register()), and the sentry creates their device
+	// files from the spec (see boot.createDeviceFile()).
+	nvidiaCapPathReg := regexp.MustCompile(`^/dev/nvidia-caps/nvidia-cap(\d+)$`)
+	nvidiaIMEXChannelPathReg := regexp.MustCompile(`^/dev/nvidia-caps-imex-channels/channel(\d+)$`)
+	return nvidiaCapPathReg.MatchString(path) || nvidiaIMEXChannelPathReg.MatchString(path)
 }
 
 // ShouldExposeVFIODevice returns true if path refers to a VFIO device
