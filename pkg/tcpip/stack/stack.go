@@ -1997,10 +1997,14 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	// a temporary copy of it, e.g. loopback while routing local traffic.
 	var fallback tcpip.NICID
 	for _, nic := range s.nics {
-		if !nic.CheckLocalAddress(protocol, addr) {
+		if nic.Spoofing() {
+			return nic.id
+		}
+		kind, ok := nic.localAddressKind(protocol, addr)
+		if !ok {
 			continue
 		}
-		if nic.Spoofing() || nic.ownsAddress(protocol, addr) {
+		if kind == Permanent {
 			return nic.id
 		}
 		if fallback == 0 {
