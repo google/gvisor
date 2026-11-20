@@ -26,6 +26,7 @@ const (
 	// From kernel-open/common/inc/nv-chardev-numbers.h:
 	NV_MAJOR_DEVICE_NUMBER                = 195
 	NV_MINOR_DEVICE_NUMBER_REGULAR_MAX    = 247
+	NV_MINOR_DEVICE_NUMBER_MODESET_DEVICE = 254
 	NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE = 255
 
 	// From kernel-open/nvidia-uvm/uvm_common.h:

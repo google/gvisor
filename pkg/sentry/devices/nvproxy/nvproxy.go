@@ -114,6 +114,23 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		return nil, err
 	}
 
+	if opts.DriverCaps&nvconf.CapDisplay != 0 {
+		// NVIDIA's X driver and userspace libraries open /dev/nvidia-modeset,
+		// and continue when its NVKMS ioctls fail. nvproxy emulates the device
+		// as an open-only device that does not open the host device, so no
+		// NVKMS ioctl reaches the host.
+		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, nvgpu.NV_MINOR_DEVICE_NUMBER_MODESET_DEVICE, &openOnlyDevice{
+			nvp:      nvp,
+			relpath:  "nvidia-modeset",
+			caps:     nvconf.CapDisplay,
+			hostless: true,
+		}, &vfs.RegisterDeviceOptions{
+			GroupName: "nvidia-modeset",
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	uvmDevMajor, err := vfsObj.GetDynamicCharDevMajor()
 	if err != nil {
 		return nil, fmt.Errorf("allocating device major number for nvidia-uvm: %w", err)
