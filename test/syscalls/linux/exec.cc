@@ -101,6 +101,8 @@ constexpr char kProcExeWorkload[] =
 constexpr char kAssertClosedWorkload[] =
     "test/syscalls/linux/exec_assert_closed_workload";
 constexpr char kPriorityWorkload[] = "test/syscalls/linux/priority_execve";
+constexpr char kLargeStackWorkload[] =
+    "test/syscalls/linux/exec_large_stack_workload";
 
 constexpr char kExit42[] = "--exec_exit_42";
 constexpr char kExecWithThread[] = "--exec_exec_with_thread";
@@ -426,6 +428,31 @@ TEST(ExecTest, WithSiblingThread) {
 TEST(ExecTest, FromSiblingThread) {
   CheckExec("/proc/self/exe", {"/proc/self/exe", kExecFromThread}, {},
             W_EXITCODE(42, 0), "");
+}
+
+// A process that is started with an unlimited RLIMIT_STACK can use more stack
+// than the default 8 MiB soft limit.
+TEST(ExecTest, UnlimitedStackRlimit) {
+  struct rlimit rl;
+  ASSERT_THAT(getrlimit(RLIMIT_STACK, &rl), SyscallSucceeds());
+  SKIP_IF(rl.rlim_max != RLIM_INFINITY);
+
+  const auto set_unlimited_stack = [] {
+    struct rlimit rl = {RLIM_INFINITY, RLIM_INFINITY};
+    TEST_PCHECK(setrlimit(RLIMIT_STACK, &rl) == 0);
+  };
+
+  pid_t child;
+  int execve_errno;
+  const std::string path = RunfilePath(kLargeStackWorkload);
+  auto kill = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+      path, {path}, {}, set_unlimited_stack, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0), SyscallSucceeds());
+  kill.Release();
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
 }
 
 TEST(ExecTest, NotFound) {

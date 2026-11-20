@@ -280,8 +280,9 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 	r, ok := hostarch.Addr(stackSize.Cur).RoundUp()
 	sz := uint64(r)
 	if !ok {
-		// RLIM_INFINITY rounds up to 0.
-		sz = linux.DefaultStackSoftLimit
+		// RLIM_INFINITY rounds up to 0. On Linux, an unlimited stack can grow
+		// until it reaches another mapping, so use the largest supported size.
+		sz = maxStackSize
 	} else if sz > maxStackSize {
 		ctx.Warningf("Capping stack size from RLIMIT_STACK of %v down to %v.", sz, maxStackSize)
 		sz = maxStackSize
