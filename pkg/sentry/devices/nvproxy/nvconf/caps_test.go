@@ -66,3 +66,38 @@ func TestNVIDIAFlagsSkipsPrivilegedCaps(t *testing.T) {
 		})
 	}
 }
+
+// TestNVIDIAFlagsSkipsDisplay checks that NVIDIAFlags() never passes --display,
+// which only makes nvidia-container-cli mount the host's /dev/nvidia-modeset.
+func TestNVIDIAFlagsSkipsDisplay(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		caps DriverCaps
+		want []string
+	}{
+		{
+			name: "display_only",
+			caps: CapDisplay,
+			want: nil,
+		},
+		{
+			name: "graphics_and_display",
+			caps: CapGraphics | CapDisplay,
+			want: []string{"--graphics"},
+		},
+		{
+			name: "all_plus_display",
+			caps: AllContainerDriverCaps | CapDisplay,
+			want: []string{"--compute", "--graphics", "--ngx", "--utility", "--video"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.caps.NVIDIAFlags()
+			slices.Sort(got)
+			slices.Sort(tc.want)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("NVIDIAFlags() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
