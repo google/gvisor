@@ -61,12 +61,19 @@ const (
 	// maxBufferSize is the largest size a send buffer can grow to.
 	maxSendBufferSize = 4 << 20 // 4MB
 
-	// supportedGroups is the set of multicast groups that are supported.
+	// supportedGroups is the set of multicast groups for which the kernel may
+	// deliver events. Other groups can still be joined with bind(), as on
+	// Linux: the membership is recorded, but nothing is delivered for it.
 	supportedGroups = 1<<(linux.RTNLGRP_LINK-1) |
 		1<<(linux.RTNLGRP_IPV4_IFADDR-1) |
 		1<<(linux.RTNLGRP_IPV4_ROUTE-1) |
 		1<<(linux.RTNLGRP_IPV6_IFADDR-1) |
 		1<<(linux.RTNLGRP_IPV6_ROUTE-1)
+
+	// privilegedGroups is the set of multicast groups that require
+	// CAP_NET_ADMIN in the network namespace, as rtnetlink_bind() requires.
+	privilegedGroups = 1<<(linux.RTNLGRP_IPV4_MROUTE_R-1) |
+		1<<(linux.RTNLGRP_IPV6_MROUTE_R-1)
 )
 
 var errNoFilter = syserr.New("no filter attached", errno.ENOENT)
@@ -354,9 +361,6 @@ func (s *Socket) checkMcastSupport() *syserr.Error {
 
 // preconditions: the netlink multicast table is locked.
 func (s *Socket) joinGroups(groups uint64) *syserr.Error {
-	if groups&supportedGroups != groups {
-		return syserr.ErrNotSupported
-	}
 	if err := s.checkMcastSupport(); err != nil {
 		return err
 	}
@@ -495,9 +499,16 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	}
 
 	if a.Groups != 0 {
+		// rtnetlink_bind() requires CAP_NET_ADMIN for the multicast routing
+		// notification groups.
+		groups := uint64(a.Groups)
+		if groups&privilegedGroups != 0 &&
+			!s.netns.HasCapability(t, linux.CAP_NET_ADMIN) {
+			return syserr.ErrNotPermitted
+		}
 		var err *syserr.Error
 		s.netns.NetlinkMcastTable().WithTableLocked(func() {
-			err = s.joinGroups(uint64(a.Groups))
+			err = s.joinGroups(groups)
 		})
 		if err != nil {
 			return err
