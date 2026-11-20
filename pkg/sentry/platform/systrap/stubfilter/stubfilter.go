@@ -109,6 +109,11 @@ func StubProcess(vars precompiledseccomp.Values) *seccomp.Program {
 			// Injected to support the address space operations.
 			unix.SYS_MMAP:   seccomp.MatchAll{},
 			unix.SYS_MUNMAP: seccomp.MatchAll{},
+			unix.SYS_MADVISE: seccomp.PerArg{
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+				seccomp.EqualTo(unix.MADV_NOHUGEPAGE),
+			},
 
 			// For sysmsg threads. Look at sysmsg/sighandler.c for more details.
 			unix.SYS_RT_SIGRETURN: seccomp.MatchAll{},

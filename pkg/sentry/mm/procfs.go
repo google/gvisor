@@ -183,6 +183,11 @@ func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIt
 	var anon uint64
 	vsegAR := vseg.Range()
 	for pseg := mm.pmas.LowerBoundSegment(vsegAR.Start); pseg.Ok() && pseg.Start() < vsegAR.End; pseg = pseg.NextSegment() {
+		// Linux doesn't show the zero page in smaps.
+		// See fs/proc/task_mmu.c:smaps_pte_entry() => vm_normal_page().
+		if pseg.ValuePtr().zero {
+			continue
+		}
 		psegAR := pseg.Range().Intersect(vsegAR)
 		size := uint64(psegAR.Length())
 		rss += size

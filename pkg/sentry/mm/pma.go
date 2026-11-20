@@ -270,6 +270,15 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 		// Get pmas for this vma.
 		vsegAR := vseg.Range().Intersect(ar)
 		vma := vseg.ValuePtr()
+		// Determine if private anonymous memory in this vma may be
+		// represented by (non-writable) zero pmas. It cannot for:
+		//
+		// - Pinned memory: Can be read and written to directly,
+		// no page tables or mm interaction required.
+		//
+		// - !at.Any() accesses that populate memory in advance.
+		//   See Linux's mm/gup.c:populate_vma_page_range()
+		mayMapZero := mm.haveMapZero && !at.Write && !forPin && (at.Any() || !vma.effectivePerms.Write)
 	pmaLoop:
 		for {
 			switch {
@@ -281,7 +290,19 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						panic(fmt.Sprintf("vseg %v and pgap %v do not overlap", vseg, pgap))
 					}
 				}
-				if vma.mappable == nil {
+				if vma.mappable == nil && mayMapZero {
+					// Private anonymous mappings that aren't being written
+					// get zero pmas, which don't allocate memory.
+					// The zero pma has certain constraints: it is limited to ar
+					// (rounded up to hugepage alignment to reduce page faults),
+					// and maxZeroPMALength.
+					zeroAR := optAR.Intersect(hugeMaskAR)
+					if zeroAR.Length() > maxZeroPMALength {
+						zeroAR.End = zeroAR.Start + maxZeroPMALength
+					}
+					pseg, pgap = mm.pmas.Insert(pgap, zeroAR, newZeroPMA(zeroAR, vma)).NextNonEmpty()
+					pstart = pmaIterator{} // iterators invalidated
+				} else if vma.mappable == nil {
 					// Private anonymous mappings get pmas by allocating.
 					// The allocated range is limited to ar, expanded to
 					// hugepage alignment. This is done even if the allocation
@@ -421,7 +442,62 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 
 			case pseg.Ok() && pseg.Start() < vsegAR.End:
 				oldpma := pseg.ValuePtr()
-				if (at.Write || forPin) && mm.isPMACopyOnWriteLocked(vseg, pseg) {
+				if oldpma.zero && !mayMapZero {
+					// Replace the required part of the zero pma, expanded
+					// to zeroPageWriteWindow alignment, with newly-allocated
+					// memory. Since newly-allocated memory is already zero-filled,
+					// this requires no copying. The replaced range is also
+					// limited to the vma, since a zero pma may span vmas
+					// with different permissions.
+					replAR := zeroPageWriteWindowAR(ar).Intersect(pseg.Range()).Intersect(vseg.Range())
+					huge := mm.mf.HugepagesEnabled() && !vma.growsDown && !vma.isStack && replAR.IsHugePageAligned()
+					allocOpts := pgalloc.AllocOpts{
+						Kind:    usage.Anonymous,
+						MemCgID: memCgID,
+						Mode:    pgalloc.AllocateUncommitted,
+						Huge:    huge,
+						Dir:     allocDir,
+					}
+					// See the equivalent condition for allocations above.
+					if callerIndirectCommit && (huge || replAR.Length() == hostarch.PageSize) {
+						allocOpts.Mode = pgalloc.AllocateCallerIndirectCommit
+					}
+					fr, err := mm.mf.Allocate(uint64(replAR.Length()), allocOpts)
+					if err != nil {
+						return pstart, pseg.PrevGap(), err
+					}
+					if checkInvariants {
+						if !fr.WellFormed() || fr.Length() != uint64(replAR.Length()) {
+							panic(fmt.Sprintf("Allocate(%v) returned invalid FileRange %v", replAR.Length(), fr))
+						}
+					}
+					if replAR != pseg.Range() {
+						pseg = mm.pmas.Isolate(pseg, replAR)
+						pstart = pmaIterator{} // iterators invalidated
+					}
+					// The new memory may be written through internal
+					// mappings rather than AddressSpace mappings, so
+					// remove the zero pma's AddressSpace mappings to
+					// avoid stale page table entries.
+					unmapAR = joinAddrRanges(unmapAR, replAR)
+					mm.addRSSLocked(replAR)
+					// Don't try to merge the new pma with its neighbors.
+					// Since mapASLocked may map entire pmas, merging pmas
+					// that replace zero pmas in small increments would
+					// cause each fault to remap a pma that grows with the
+					// number of preceding faults. The cost is an
+					// additional pma for each replaced range.
+					*pseg.ValuePtr() = pma{
+						file:           mm.mf,
+						off:            fr.Start,
+						translatePerms: hostarch.AnyAccess,
+						effectivePerms: vma.effectivePerms,
+						maxPerms:       vma.maxPerms,
+						private:        true,
+						huge:           huge,
+					}
+					pseg, pgap = pseg.NextNonEmpty()
+				} else if (at.Write || forPin) && mm.isPMACopyOnWriteLocked(vseg, pseg) {
 					// Break copy-on-write by copying.
 					if checkInvariants {
 						if !oldpma.maxPerms.Read {
@@ -556,7 +632,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					if len(ts) == 0 {
 						return pstart, pseg.PrevGap(), err
 					}
-					transMR := memmap.MappableRange{ts[0].Source.Start, ts[len(ts)-1].Source.End}
+					transMR := memmap.MappableRange{Start: ts[0].Source.Start, End: ts[len(ts)-1].Source.End}
 					transAR := vseg.addrRangeOf(transMR)
 					pseg = mm.pmas.Isolate(pseg, transAR)
 					unmapAR = joinAddrRanges(unmapAR, transAR)
@@ -728,7 +804,9 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 				mm.unmapASLocked(unmapAR)
 				didUnmapAS = true
 			}
-			mm.removeRSSLocked(pseg.Range())
+			if !pma.zero {
+				mm.removeRSSLocked(pseg.Range())
+			}
 			pma.file.DecRef(pseg.fileRange())
 			pseg = mm.pmas.Remove(pseg).NextSegment()
 		} else {
@@ -883,7 +961,12 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR hostarch.AddrRange) {
 	pgap := mm.pmas.FindGap(newAR.Start)
 	for i := range movedPMAs {
 		mpma := &movedPMAs[i]
-		pmaNewAR := hostarch.AddrRange{mpma.oldAR.Start + off, mpma.oldAR.End + off}
+		pmaNewAR := hostarch.AddrRange{Start: mpma.oldAR.Start + off, End: mpma.oldAR.End + off}
+		if mpma.pma.zero {
+			// Maintain the invariant that zero pmas' offsets are their
+			// addresses.
+			mpma.pma.off = uint64(pmaNewAR.Start)
+		}
 		pgap = mm.pmas.Insert(pgap, pmaNewAR, mpma.pma).NextGap()
 	}
 
@@ -1001,7 +1084,11 @@ func (pmaSetFunctions) Merge(ar1 hostarch.AddrRange, pma1 pma, ar2 hostarch.Addr
 		pma1.maxPerms != pma2.maxPerms ||
 		pma1.needCOW != pma2.needCOW ||
 		pma1.private != pma2.private ||
-		pma1.huge != pma2.huge {
+		pma1.huge != pma2.huge ||
+		pma1.zero != pma2.zero {
+		return pma{}, false
+	}
+	if pma1.zero && uint64(ar1.Length())+uint64(ar2.Length()) > maxZeroPMALength {
 		return pma{}, false
 	}
 

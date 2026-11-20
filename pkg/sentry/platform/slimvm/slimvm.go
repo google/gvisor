@@ -89,6 +89,11 @@ func (*SlimVM) SupportsAddressSpaceIO() bool {
 	return false
 }
 
+// SupportsMapZero implements platform.Platform.SupportsMapZero.
+func (*SlimVM) SupportsMapZero() bool {
+	return false
+}
+
 // CooperativelySchedulesAddressSpace implements platform.Platform.CooperativelySchedulesAddressSpace.
 func (*SlimVM) CooperativelySchedulesAddressSpace() bool {
 	return false

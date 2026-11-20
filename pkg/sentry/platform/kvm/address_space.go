@@ -68,6 +68,7 @@ func (ds *dirtySet) mark(c *vCPU) bool {
 // addressSpace is a wrapper for PageTables.
 type addressSpace struct {
 	platform.NoAddressSpaceIO
+	platform.NoMapZero
 
 	// mu is the lock for modifications to the address space.
 	//

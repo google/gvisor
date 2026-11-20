@@ -146,6 +146,7 @@ go_library(
         "syscalls.go",
         "vma.go",
         "vma_set.go",
+        "zero.go",
     ],
     imports = [
         "gvisor.dev/gvisor/pkg/sentry/checkpoint",
@@ -176,13 +177,17 @@ go_library(
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
 go_test(
     name = "mm_test",
     size = "small",
-    srcs = ["mm_test.go"],
+    srcs = [
+        "mm_test.go",
+        "zero_test.go",
+    ],
     embed = [":mm"],
     deps = [
         "//pkg/context",
