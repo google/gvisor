@@ -175,3 +175,22 @@ func TestCommandWaitDelayUnblocksWait(t *testing.T) {
 		t.Fatalf("cmdOutput returned after %v, want between waitDelay and the child lifetime", elapsed)
 	}
 }
+
+// TestFormatShimLogPath verifies that %ID% tags are replaced with the ID, and
+// that a directory path gets the default log file name.
+func TestFormatShimLogPath(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{path: "/var/log/shim.log", want: "/var/log/shim.log"},
+		{path: "/var/log/", want: "/var/log/runsc-shim-cid-1.log"},
+		{path: "/var/log/%ID%/shim.log", want: "/var/log/cid-1/shim.log"},
+		{path: "/var/log/%ID%/", want: "/var/log/cid-1/runsc-shim-cid-1.log"},
+		{path: "/var/log/%ID%/%ID%.log", want: "/var/log/cid-1/cid-1.log"},
+	} {
+		if got := FormatShimLogPath(tc.path, "cid-1"); got != tc.want {
+			t.Errorf("FormatShimLogPath(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
