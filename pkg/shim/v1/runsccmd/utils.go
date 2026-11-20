@@ -45,5 +45,5 @@ func FormatShimLogPath(path string, id string) string {
 		// Default format: <path>/runsc-shim-<ID>.log
 		path += fmt.Sprintf("runsc-shim-%s.log", id)
 	}
-	return path
+	return strings.ReplaceAll(path, "%ID%", id)
 }
