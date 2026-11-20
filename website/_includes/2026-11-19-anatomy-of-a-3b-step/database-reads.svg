@@ -1,0 +1,32 @@
+<svg viewBox="0 0 720 368" xmlns="http://www.w3.org/2000/svg">
+  <text x="24" y="30" class="d-tag" text-anchor="start">NEST DATABASE READS</text>
+  <text x="696" y="30" class="d-note" text-anchor="end">median · seconds</text>
+  <rect x="78" y="53" width="10" height="10" rx="1" class="d-cell"/>
+  <text x="98" y="62" class="d-note" text-anchor="start">before</text>
+  <rect x="204" y="53" width="10" height="10" rx="1" class="d-cell-hot"/>
+  <text x="224" y="62" class="d-note d-hot" text-anchor="start">after</text>
+  <path d="M78 103 L78 174" class="d-line d-dash"/>
+  <path d="M78 223 L78 290" class="d-line d-dash"/>
+  <text x="78" y="316" class="d-note" text-anchor="middle">0</text>
+  <path d="M266 103 L266 174" class="d-line d-dash"/>
+  <path d="M266 223 L266 290" class="d-line d-dash"/>
+  <text x="266" y="316" class="d-note" text-anchor="middle">5</text>
+  <path d="M454 103 L454 174" class="d-line d-dash"/>
+  <path d="M454 223 L454 290" class="d-line d-dash"/>
+  <text x="454" y="316" class="d-note" text-anchor="middle">10</text>
+  <path d="M642 103 L642 174" class="d-line d-dash"/>
+  <path d="M642 223 L642 290" class="d-line d-dash"/>
+  <text x="642" y="316" class="d-note" text-anchor="middle">15</text>
+  <text x="78" y="88" class="d-name" text-anchor="start">200 lookups</text>
+  <rect x="78" y="104" width="316.63" height="24" rx="3" class="d-cell"/>
+  <text x="406.63" y="121" class="d-name" text-anchor="start">8.42</text>
+  <rect x="78" y="139" width="85.3896" height="24" rx="3" class="d-cell-hot"/>
+  <text x="175.39" y="156" class="d-name d-hot" text-anchor="start">2.27</text>
+  <text x="78" y="208" class="d-name" text-anchor="start">SQL scan</text>
+  <rect x="78" y="224" width="488.762" height="24" rx="3" class="d-cell"/>
+  <text x="578.762" y="241" class="d-name" text-anchor="start">13.00</text>
+  <rect x="78" y="259" width="117.65" height="24" rx="3" class="d-cell-hot"/>
+  <text x="207.65" y="276" class="d-name d-hot" text-anchor="start">3.13</text>
+  <path d="M78 290 L642 290" class="d-line"/>
+  <text x="360" y="348" class="d-note" text-anchor="middle">900 MB database · cold reads</text>
+</svg>

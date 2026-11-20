@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	gax "github.com/googleapis/gax-go/v2"
@@ -86,6 +87,10 @@ const (
 	// expiryMetadataKey is the metadata key recording when an agent's current
 	// job times out, as an RFC 3339 timestamp.
 	expiryMetadataKey = "buildkite-agent-expiry"
+
+	// createdByMetadataKey is the metadata key that Compute Engine sets for
+	// instances created by a managed instance group.
+	createdByMetadataKey = "created-by"
 )
 
 // metadata fetches the instance's metadata key/value pairs from the Compute
@@ -218,31 +223,64 @@ func (id *instanceIdentity) setExpiryTime(ctx context.Context, svc *compute.Serv
 	return id.setMetadata(ctx, svc, expiryMetadataKey, expiry.UTC().Format(time.RFC3339), true /* replace */)
 }
 
+// groupDeletionPollInterval is how often forceDelete checks whether the group
+// deleted the instance.
+const groupDeletionPollInterval = 5 * time.Second
+
 // forceDelete deletes the instance without a graceful shutdown, and waits for
 // the deletion to finish.
+//
+// forceDelete deletes the instance through the managed instance group that
+// created it so that the group's target size shrinks.
 func (id *instanceIdentity) forceDelete(ctx context.Context, svc *compute.Service) error {
-	op, err := svc.Instances.Delete(id.projectID, id.zone, id.instanceID).Context(ctx).
-		Do(googleapi.QueryParameter("noGracefulShutdown", "true"))
+	md, err := id.metadata(ctx, svc)
 	if err != nil {
 		var gerr *googleapi.Error
 		if errors.As(err, &gerr) && gerr.Code == http.StatusNotFound {
 			// Instance already doesn't exist, which is fine.
 			return nil
 		}
-		return fmt.Errorf("failed to delete %v: %w", id, err)
+		return err
+	}
+	// The group must be a zonal one, in the instance's zone.
+	createdBy := md[createdByMetadataKey]
+	_, group, ok := strings.Cut(createdBy, "zones/"+id.zone+"/instanceGroupManagers/")
+	if !ok {
+		return fmt.Errorf("%v was created by %q, which is not a managed instance group in its zone", id, createdBy)
 	}
 
-	// Delete is asynchronous; wait for it to succeed
+	op, err := svc.InstanceGroupManagers.DeleteInstances(id.projectID, id.zone, group, &compute.InstanceGroupManagersDeleteInstancesRequest{
+		Instances: []string{fmt.Sprintf("zones/%s/instances/%s", id.zone, id.instanceName)},
+		// Don't fail if the group is already deleting the instance.
+		SkipInstancesOnValidationError: true,
+	}).Context(ctx).Do(googleapi.QueryParameter("noGracefulShutdown", "true"))
+	if err != nil {
+		return fmt.Errorf("failed to delete %v from group %s: %w", id, group, err)
+	}
 	for op.Status != "DONE" {
 		op, err = svc.ZoneOperations.Wait(id.projectID, id.zone, op.Name).Context(ctx).Do()
 		if err != nil {
-			return fmt.Errorf("failed to wait for deletion of %v: %w", id, err)
+			return fmt.Errorf("failed to wait for deletion of %v from group %s: %w", id, group, err)
 		}
 	}
 	if op.Error != nil && len(op.Error.Errors) > 0 {
-		return fmt.Errorf("deletion of %v failed: %s", id, op.Error.Errors[0].Message)
+		return fmt.Errorf("deletion of %v from group %s failed: %s", id, group, op.Error.Errors[0].Message)
 	}
-	return nil
+
+	// The operation is done once the group schedules the deletion, so wait for
+	// the instance itself to be gone.
+	for ctx.Err() == nil {
+		_, err := svc.Instances.Get(id.projectID, id.zone, id.instanceID).Context(ctx).Do()
+		if err != nil {
+			var gerr *googleapi.Error
+			if errors.As(err, &gerr) && gerr.Code == http.StatusNotFound {
+				return nil
+			}
+			return fmt.Errorf("failed to get %v: %w", id, err)
+		}
+		time.Sleep(groupDeletionPollInterval)
+	}
+	return fmt.Errorf("failed to wait for deletion of %v from group %s: %w", id, group, ctx.Err())
 }
 
 // listAllInstances returns every instance in the project that runs as the

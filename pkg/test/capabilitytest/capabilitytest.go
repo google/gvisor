@@ -13,6 +13,9 @@
 // limitations under the License.
 
 // Package capabilitytest controls the capabilities of a test's thread.
+//
+// Importing it locks the main goroutine to the initial OS thread so tests
+// that change capabilities run on threads that can be discarded.
 package capabilitytest
 
 import (

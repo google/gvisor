@@ -4339,7 +4339,7 @@ TEST(NetlinkNetfilterTest, AddRuleToEndOfRuleList) {
 
 TEST(NetlinkNetfilterTest, AddDropRuleBeforeAcceptRule) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
+  [[maybe_unused]] std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string table_name = GetUniqueTestTableName();
@@ -4394,7 +4394,7 @@ TEST(NetlinkNetfilterTest, AddDropRuleBeforeAcceptRule) {
 
 TEST(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
+  [[maybe_unused]] std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string table_name = GetUniqueTestTableName();
@@ -4449,7 +4449,7 @@ TEST(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
 
 TEST(NetlinkNetfilterTest, GetRule) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
+  [[maybe_unused]] std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string table_name = GetUniqueTestTableName();
@@ -4970,6 +4970,12 @@ std::vector<RuleWithExprTestParams> GetMetaRuleTestParams() {
           .expr_attrs = NlNestedAttr()
                             .U32Attr(NFTA_META_DREG, NFT_REG32_00)
                             .U32Attr(NFTA_META_KEY, NFT_META_MARK)},
+      RuleWithExprTestParams{
+          .test_name = "GetOifValid",
+          .expr_name = "meta",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_META_DREG, NFT_REG32_00)
+                            .U32Attr(NFTA_META_KEY, NFT_META_OIF)},
       RuleWithExprTestParams{
           .test_name = "SetValid",
           .expr_name = "meta",

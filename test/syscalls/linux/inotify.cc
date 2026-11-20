@@ -2368,7 +2368,7 @@ TEST(Inotify, OneShot) {
 
 // The event that fires an IN_ONESHOT watch also removes the watch while the
 // filesystem is still inside the operation that generated the event.
-// Regression tests for github.com/google/gvisor/issues/14680.
+// Regression tests for github.com/gvisor/gvisor/issues/14680.
 TEST(Inotify, OneShotDirWatchRemovedByMkdir) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string dir = NewTempAbsPathInDir(root.path());

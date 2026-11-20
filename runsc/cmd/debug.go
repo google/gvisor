@@ -53,6 +53,7 @@ type Debug struct {
 	duration     time.Duration
 	ps           bool
 	mount        string
+	drainDcache  string
 }
 
 // Name implements subcommands.Command.
@@ -87,6 +88,7 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.logPackets, "log-packets", "", "A boolean value to enable or disable packet logging: true or false.")
 	f.BoolVar(&d.ps, "ps", false, "lists processes")
 	f.StringVar(&d.mount, "mount", "", "Mount a filesystem (-mount fstype:source:destination).")
+	f.StringVar(&d.drainDcache, "drain-dcache", "", "Drain unused dentries for the filesystem containing this absolute container path.")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -249,6 +251,12 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		dest := opts[2]
 		if err := c.Sandbox.Mount(c.ID, fstype, src, dest); err != nil {
 			util.Fatalf("%s", err.Error())
+		}
+	}
+
+	if d.drainDcache != "" {
+		if err := c.Sandbox.DrainDentryCache(c.ID, d.drainDcache); err != nil {
+			return util.Errorf("draining dentry cache: %v", err)
 		}
 	}
 

@@ -15,7 +15,7 @@ filesystem on behalf of the sandbox. The sandbox process is considered untrusted
 in gVisor’s
 [security model](https://gvisor.dev/docs/architecture_guide/security/). As a
 result, it is not given direct access to the container filesystem and
-[its seccomp filters](https://github.com/google/gvisor/tree/master/runsc/boot/filter)
+[its seccomp filters](https://github.com/gvisor/gvisor/tree/master/runsc/boot/filter)
 do not allow filesystem syscalls.
 
 In gVisor, the container rootfs and
@@ -33,7 +33,7 @@ expensive due to:
     [IPC](https://en.wikipedia.org/wiki/Inter-process_communication) system
     calls.
     *   To ameliorate this, gVisor recently developed a purpose-built protocol
-        called [LISAFS](https://github.com/google/gvisor/tree/master/pkg/lisafs)
+        called [LISAFS](https://github.com/gvisor/gvisor/tree/master/pkg/lisafs)
         which is much more efficient than its predecessor.
     *   gVisor is also
         [experimenting](https://groups.google.com/g/gvisor-users/c/v-ODHzCrIjE)
@@ -134,13 +134,13 @@ then the host upper layer is empty and the kubelet will not be able to enforce
 these limits.
 
 To address this issue, we
-[introduced “self-backed” overlays](https://github.com/google/gvisor/commit/a53b22ad5283b00b766178eff847c3193c1293b7),
+[introduced “self-backed” overlays](https://github.com/gvisor/gvisor/commit/a53b22ad5283b00b766178eff847c3193c1293b7),
 which create the filestore in the host upper layer. This way, when the kubelet
 scans the host upper layer, the filestore will be detected and its
 `stat.st_blocks` should be representative of the total file usage in the
 sandbox-internal upper layer. It is also important to hide this filestore from
 the containerized application to avoid confusing it. We do so by
-[creating a whiteout](https://github.com/google/gvisor/commit/09459b203a532c24fbb76cc88484d533356b8b91)
+[creating a whiteout](https://github.com/gvisor/gvisor/commit/09459b203a532c24fbb76cc88484d533356b8b91)
 in the sandbox-internal upper layer, which blocks this file from appearing in
 the merged directory.
 
@@ -203,6 +203,6 @@ abseil build!
 Rootfs overlay in gVisor substantially improves performance for many
 filesystem-intensive workloads, so that developers no longer have to make large
 tradeoffs between performance and security. We recently made this optimization
-[the default](https://github.com/google/gvisor/commit/38750cdedcce19a3039da10e515f5852565d2c7e)
+[the default](https://github.com/gvisor/gvisor/commit/38750cdedcce19a3039da10e515f5852565d2c7e)
 in runsc. This is part of our ongoing efforts to improve gVisor performance. You
 can use gVisor in GKE with GKE Sandbox. Happy sandboxing!

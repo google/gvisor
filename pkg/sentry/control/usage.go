@@ -62,7 +62,14 @@ func (u *Usage) Collect(opts *controlapi.MemoryUsageOpts, out *controlapi.Memory
 
 		// Copy out a snapshot.
 		snapshot, total := usage.MemoryAccounting.Copy()
+		// Pages that no scan for committed pages has seen are in no memory
+		// kind and not in Total, but still use memory. Report them as Unknown.
+		unknown, err := u.Kernel.MemoryFile().UnaccountedUsage()
+		if err != nil {
+			return err
+		}
 		*out = controlapi.MemoryUsage{
+			Unknown:   unknown,
 			System:    snapshot.System,
 			Anonymous: snapshot.Anonymous,
 			PageCache: snapshot.PageCache,

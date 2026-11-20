@@ -64,11 +64,11 @@ func (vp *VFSPipe) ReaderWriterPair(ctx context.Context, mnt *vfs.Mount, vfsd *v
 	vp.pipe.rOpen()
 	w, err := vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags, locks, creds)
 	if err != nil {
-		r.DecRef(ctx)
+		r.vfsfd.DecRef(ctx)
 		return nil, nil, err
 	}
 	vp.pipe.wOpen()
-	return r, w, nil
+	return &r.vfsfd, &w.vfsfd, nil
 }
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
@@ -82,6 +82,13 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	writable := vfs.MayWriteFileWithOpenFlags(statusFlags)
 	if !readable && !writable {
 		return nil, linuxerr.EINVAL
+	}
+
+	nonblocking := statusFlags&linux.O_NONBLOCK != 0
+	if vp.pipe.isNamed && writable && !readable && nonblocking && !vp.pipe.HasReaders() {
+		// A failed open must neither wake readers nor advance their writer
+		// generation.
+		return nil, linuxerr.ENXIO
 	}
 
 	fd, err := vp.newFD(mnt, vfsd, statusFlags, locks, auth.CredentialsFromContext(ctx))
@@ -106,14 +113,16 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		// Pipes opened for read-write always succeed without blocking.
 
 	case readable:
-		tWriters := vp.pipe.totalWriters.Load()
-		vp.pipe.rOpen()
+		generation, hasWriter := vp.pipe.rOpen()
+		if vp.pipe.isNamed && nonblocking && !hasWriter {
+			fd.initialWriters = generation
+		}
 		// If this pipe is being opened as blocking and there's no
 		// writer, we have to wait for a writer to open the other end.
-		for vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() &&
-			tWriters == vp.pipe.totalWriters.Load() {
+		for vp.pipe.isNamed && !nonblocking && !hasWriter && !vp.pipe.HasWriters() &&
+			generation == vp.pipe.writerGeneration.Load() {
 			if !ctx.BlockOn((*waitWriters)(&vp.pipe), waiter.EventInternal) {
-				fd.DecRef(ctx)
+				fd.vfsfd.DecRef(ctx)
 				return nil, linuxerr.EINTR
 			}
 		}
@@ -121,16 +130,10 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	case writable:
 		tReaders := vp.pipe.totalReaders.Load()
 		vp.pipe.wOpen()
-		for vp.pipe.isNamed && !vp.pipe.HasReaders() &&
+		for vp.pipe.isNamed && !nonblocking && !vp.pipe.HasReaders() &&
 			tReaders == vp.pipe.totalReaders.Load() {
-			// Non-blocking, write-only opens fail with ENXIO when the read
-			// side isn't open yet.
-			if statusFlags&linux.O_NONBLOCK != 0 {
-				fd.DecRef(ctx)
-				return nil, linuxerr.ENXIO
-			}
 			if !ctx.BlockOn((*waitReaders)(&vp.pipe), waiter.EventInternal) {
-				fd.DecRef(ctx)
+				fd.vfsfd.DecRef(ctx)
 				return nil, linuxerr.EINTR
 			}
 		}
@@ -139,11 +142,10 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		panic("invalid pipe flags: must be readable, writable, or both")
 	}
 
-	return fd, nil
+	return &fd.vfsfd, nil
 }
 
-// Preconditions: vp.mu must be held.
-func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks, creds *auth.Credentials) (*vfs.FileDescription, error) {
+func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks, creds *auth.Credentials) (*VFSPipeFD, error) {
 	fd := &VFSPipeFD{
 		pipe: &vp.pipe,
 	}
@@ -157,7 +159,7 @@ func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, l
 		return nil, err
 	}
 
-	return &fd.vfsfd, nil
+	return fd, nil
 }
 
 // VFSPipeFD implements vfs.FileDescriptionImpl for pipes. It also implements
@@ -172,6 +174,12 @@ type VFSPipeFD struct {
 	vfs.LockFD
 
 	pipe *Pipe
+
+	// initialWriters records the writer generation when a nonblocking FIFO
+	// reader opens without a writer. As with filp->f_pipe in Linux's
+	// fifo_open and pipe_poll, POLLHUP is suppressed while that generation
+	// is unchanged. Immutable after open.
+	initialWriters int32
 
 	// lastAddr is the last hostarch.Addr at which a call to a
 	// VFSPipeFD.(usermem.IO) method ended.
@@ -212,7 +220,7 @@ func (fd *VFSPipeFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	case fd.vfsfd.IsReadable() && fd.vfsfd.IsWritable():
 		return fd.pipe.rwReadiness()
 	case fd.vfsfd.IsReadable():
-		return fd.pipe.rReadiness()
+		return fd.pipe.rReadiness(fd.initialWriters)
 	case fd.vfsfd.IsWritable():
 		return fd.pipe.wReadiness()
 	default:

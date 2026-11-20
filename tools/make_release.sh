@@ -129,7 +129,7 @@ else
       # https://gvisor.dev/docs/user_guide/install/#latest-release
       # A separate assignment, so that a failed lookup stops the release.
       published="$(git ls-remote --tags --refs \
-        https://github.com/google/gvisor.git 'refs/tags/release-*')"
+        https://github.com/gvisor/gvisor.git 'refs/tags/release-*')"
       newest="$( (echo "${published}" | cut -f2 | sed 's|^refs/tags/||' |
         awk '!/-staging$/'; echo "${tag}") | sort -V | tail -n 1)"
       if [[ "${newest}" != "${tag}" ]]; then

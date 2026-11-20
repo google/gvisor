@@ -117,6 +117,10 @@ type nic struct {
 	// experimentIPOptionEnabled indicates whether the NIC supports the
 	// experiment IP option.
 	experimentIPOptionEnabled bool
+
+	// allowExternalIPv4LoopbackTraffic indicates whether IPv4 loopback packets
+	// should be accepted from external networks on this NIC.
+	allowExternalIPv4LoopbackTraffic bool
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -204,24 +208,25 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 	// observe an MTU of at least 1280 bytes. Ensure that this requirement
 	// of IPv6 is supported on this endpoint's LinkEndpoint.
 	nic := &nic{
-		NetworkLinkEndpoint:       ep,
-		stack:                     stack,
-		id:                        id,
-		name:                      opts.Name,
-		context:                   opts.Context,
-		stats:                     makeNICStats(stack.Stats().NICs),
-		networkEndpoints:          make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
-		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
-		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
-		packetEPs:                 make(map[tcpip.NetworkProtocolNumber]*packetEndpointList),
-		qDisc:                     qDisc,
-		deliverLinkPackets:        opts.DeliverLinkPackets,
-		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
-		kind:                      opts.Kind,
-		minMTU:                    opts.MinMTU,
-		maxMTU:                    opts.MaxMTU,
-		multicast:                 opts.Multicast,
-		adminDown:                 atomicbitops.FromBool(opts.Disabled),
+		NetworkLinkEndpoint:              ep,
+		stack:                            stack,
+		id:                               id,
+		name:                             opts.Name,
+		context:                          opts.Context,
+		stats:                            makeNICStats(stack.Stats().NICs),
+		networkEndpoints:                 make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
+		linkAddrResolvers:                make(map[tcpip.NetworkProtocolNumber]*linkResolver),
+		duplicateAddressDetectors:        make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
+		packetEPs:                        make(map[tcpip.NetworkProtocolNumber]*packetEndpointList),
+		qDisc:                            qDisc,
+		deliverLinkPackets:               opts.DeliverLinkPackets,
+		experimentIPOptionEnabled:        opts.EnableExperimentIPOption,
+		allowExternalIPv4LoopbackTraffic: opts.AllowExternalIPv4LoopbackTraffic,
+		kind:                             opts.Kind,
+		minMTU:                           opts.MinMTU,
+		maxMTU:                           opts.MaxMTU,
+		multicast:                        opts.Multicast,
+		adminDown:                        atomicbitops.FromBool(opts.Disabled),
 	}
 	nic.linkResQueue.init(nic)
 
@@ -460,6 +465,11 @@ func (n *nic) Promiscuous() bool {
 // IsLoopback implements NetworkInterface.
 func (n *nic) IsLoopback() bool {
 	return n.NetworkLinkEndpoint.Capabilities()&CapabilityLoopback != 0
+}
+
+// AllowExternalIPv4LoopbackTraffic implements NetworkInterface.
+func (n *nic) AllowExternalIPv4LoopbackTraffic() bool {
+	return n.allowExternalIPv4LoopbackTraffic
 }
 
 // WritePacket implements NetworkEndpoint.
@@ -1168,6 +1178,19 @@ func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip
 	return false
 }
 
+// localAddressKind returns the kind of addr on the NIC, if it is assigned.
+func (n *nic) localAddressKind(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) (AddressKind, bool) {
+	ep, ok := n.getNetworkEndpoint(protocol).(AddressableEndpoint)
+	if !ok {
+		return 0, false
+	}
+	addressEndpoint := ep.AcquireAssignedAddress(addr, false /* allowTemp */, NeverPrimaryEndpoint, true /* readOnly */)
+	if addressEndpoint == nil {
+		return 0, false
+	}
+	return addressEndpoint.GetKind(), true
+}
+
 func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
 	d, ok := n.duplicateAddressDetectors[protocol]
 	if !ok {
@@ -1249,4 +1272,7 @@ type CoordinatorNIC interface {
 	AddNIC(n *nic) tcpip.Error
 	// DelNIC deletes the specified NIC device.
 	DelNIC(n *nic) tcpip.Error
+	// NICAddressChanged is called after the link address of the specified
+	// NIC device changed.
+	NICAddressChanged(n *nic)
 }

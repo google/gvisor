@@ -545,6 +545,14 @@ func (fs FeatureSet) UseFSGSBASE() bool {
 	return fs.HasFeature(X86FeatureFSGSBase) && ((fs.hwCap.hwCap2 & HWCAP2_FSGSBASE) != 0)
 }
 
+// archIgnoredFeatures is the list of features ignored during host
+// compatibility checks because they do not affect user-mode execution and may
+// differ between machines (e.g., when nested virtualization is enabled).
+var archIgnoredFeatures = []Feature{
+	X86FeatureVMX,
+	X86FeatureSVM,
+}
+
 // archCheckHostCompatible checks for compatibility.
 func (fs FeatureSet) archCheckHostCompatible(hfs FeatureSet) error {
 	// The size of a cache line must match, as it is critical to correctly

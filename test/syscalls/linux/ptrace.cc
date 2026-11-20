@@ -35,6 +35,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -1728,7 +1729,10 @@ TEST(PtraceTest, ChangeRegSetInOptSyscall) {
 }
 #endif
 
-TEST(PtraceTest, AttachingConvertsGroupStopToPtraceStop) {
+using PtraceAttachTest = ::testing::TestWithParam<bool>;
+
+TEST_P(PtraceAttachTest, AttachingConvertsGroupStopToPtraceStop) {
+  const bool seize = GetParam();
   pid_t const child_pid = fork();
   if (child_pid == 0) {
     // In child process.
@@ -1749,7 +1753,8 @@ TEST(PtraceTest, AttachingConvertsGroupStopToPtraceStop) {
 
   // Attach to the child and expect it to re-enter a traced group-stop despite
   // already being stopped.
-  ASSERT_THAT(ptrace(PTRACE_ATTACH, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(ptrace(seize ? PTRACE_SEIZE : PTRACE_ATTACH, child_pid, 0, 0),
+              SyscallSucceeds());
   ASSERT_THAT(waitpid(child_pid, &status, 0),
               SyscallSucceedsWithValue(child_pid));
   EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
@@ -1759,11 +1764,15 @@ TEST(PtraceTest, AttachingConvertsGroupStopToPtraceStop) {
   // ptrace commands requiring a ptrace-stop.
   EXPECT_THAT(ptrace(PTRACE_SETOPTIONS, child_pid, 0, 0), SyscallSucceeds());
 
-  // Group-stop is distinguished from signal-delivery-stop by PTRACE_GETSIGINFO
-  // failing with EINVAL.
-  siginfo_t siginfo = {};
-  EXPECT_THAT(ptrace(PTRACE_GETSIGINFO, child_pid, 0, &siginfo),
-              SyscallFailsWithErrno(EINVAL));
+  if (seize) {
+    EXPECT_EQ(kPtraceEventStop, status >> 16);
+  } else {
+    // PTRACE_ATTACH distinguishes a group-stop from a signal-delivery-stop by
+    // PTRACE_GETSIGINFO failing with EINVAL.
+    siginfo_t siginfo = {};
+    EXPECT_THAT(ptrace(PTRACE_GETSIGINFO, child_pid, 0, &siginfo),
+                SyscallFailsWithErrno(EINVAL));
+  }
 
   // Detach from the child and expect it to stay stopped without a notification.
   ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
@@ -1783,6 +1792,94 @@ TEST(PtraceTest, AttachingConvertsGroupStopToPtraceStop) {
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
       << " status " << status;
 }
+
+INSTANTIATE_TEST_SUITE_P(Seize, PtraceAttachTest, ::testing::Bool());
+
+#if defined(__x86_64__)
+using PtracePatchRollbackTest = ::testing::TestWithParam<__ptrace_request>;
+
+TEST_P(PtracePatchRollbackTest, RestoresSyscallPatchOnTracing) {
+  constexpr uint8_t kSyscallStub[] = {0xb8, SYS_getpid, 0x00, 0x00,
+                                      0x00, 0x0f,       0x05, 0xc3};
+  void* page = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(page, MAP_FAILED);
+  const auto unmap_page = Cleanup([&] { munmap(page, kPageSize); });
+  uint8_t* code = static_cast<uint8_t*>(page) + 16;
+  memcpy(code, kSyscallStub, sizeof(kSyscallStub));
+  auto syscall_stub = reinterpret_cast<pid_t (*)()>(code);
+  ASSERT_EQ(syscall_stub(), getpid());
+  if (GvisorPlatform() == Platform::kSystrap && code[0] != 0xff) {
+    GTEST_SKIP() << "Syscall patching is disabled";
+  }
+
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+  const auto close_sockets = Cleanup([&] {
+    close(sockets[0]);
+    if (sockets[1] >= 0) {
+      close(sockets[1]);
+    }
+  });
+
+  const auto request = GetParam();
+  const pid_t child_pid = fork();
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  if (child_pid == 0) {
+    close(sockets[0]);
+    if (GvisorPlatform() == Platform::kSystrap) {
+      TEST_CHECK(code[0] == 0xff);
+    }
+    const char ready = 1;
+    TEST_PCHECK(write(sockets[1], &ready, 1) == 1);
+    if (request == PTRACE_TRACEME) {
+      TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    } else {
+      char go;
+      ssize_t n;
+      do {
+        n = read(sockets[1], &go, 1);
+      } while (n < 0 && errno == EINTR);
+      TEST_CHECK(n == 1);
+    }
+
+    TEST_CHECK(memcmp(code, kSyscallStub, sizeof(kSyscallStub)) == 0);
+    TEST_CHECK(syscall_stub() == getpid());
+    TEST_CHECK(memcmp(code, kSyscallStub, sizeof(kSyscallStub)) == 0);
+    if (request == PTRACE_TRACEME) {
+      TEST_PCHECK(raise(SIGSTOP) == 0);
+    }
+    _exit(0);
+  }
+
+  close(sockets[1]);
+  sockets[1] = -1;
+  char ready;
+  ASSERT_EQ(read(sockets[0], &ready, 1), 1);
+  int status;
+  if (request != PTRACE_TRACEME) {
+    ASSERT_THAT(ptrace(request, child_pid, 0, 0), SyscallSucceeds());
+  }
+  if (request != PTRACE_SEIZE) {
+    ASSERT_THAT(waitpid(child_pid, &status, 0),
+                SyscallSucceedsWithValue(child_pid));
+    ASSERT_TRUE(WIFSTOPPED(status)) << " status " << status;
+    ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  }
+  if (request != PTRACE_TRACEME) {
+    const char go = 1;
+    ASSERT_EQ(write(sockets[0], &go, 1), 1);
+  }
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+
+INSTANTIATE_TEST_SUITE_P(TracingMethods, PtracePatchRollbackTest,
+                         ::testing::Values(PTRACE_TRACEME, PTRACE_ATTACH,
+                                           PTRACE_SEIZE));
+#endif
 
 // Fixture for tests parameterized by whether or not to use PTRACE_O_TRACEEXEC.
 class PtraceExecveTest : public ::testing::TestWithParam<bool> {

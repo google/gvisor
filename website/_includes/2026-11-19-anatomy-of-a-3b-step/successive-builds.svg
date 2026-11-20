@@ -1,0 +1,43 @@
+<svg viewBox="0 0 720 355" xmlns="http://www.w3.org/2000/svg">
+  <text x="24" y="30" class="d-tag" text-anchor="start">SUCCESSIVE BUILDS</text>
+  <text x="696" y="30" class="d-note" text-anchor="end">individual builds · seconds</text>
+  <path d="M78 58 L106 58" class="d-line d-dash"/>
+  <circle cx="92" cy="58" r="3.5" class="d-box"/>
+  <text x="116" y="62" class="d-note" text-anchor="start">before</text>
+  <path d="M204 58 L232 58" class="d-line-hot"/>
+  <rect x="214.5" y="54.5" width="7" height="7" rx="1" class="d-cell-hot"/>
+  <text x="242" y="62" class="d-note d-hot" text-anchor="start">after</text>
+  <path d="M78 290 L642 290" class="d-line"/>
+  <text x="64" y="294" class="d-note" text-anchor="end">0</text>
+  <path d="M78 240 L642 240" class="d-line d-dash"/>
+  <text x="64" y="244" class="d-note" text-anchor="end">30</text>
+  <path d="M78 190 L642 190" class="d-line d-dash"/>
+  <text x="64" y="194" class="d-note" text-anchor="end">60</text>
+  <path d="M78 140 L642 140" class="d-line d-dash"/>
+  <text x="64" y="144" class="d-note" text-anchor="end">90</text>
+  <path d="M78 90 L642 90" class="d-line d-dash"/>
+  <text x="64" y="94" class="d-note" text-anchor="end">120</text>
+  <text x="78" y="311" class="d-note" text-anchor="middle">1</text>
+  <text x="219" y="311" class="d-note" text-anchor="middle">2</text>
+  <text x="360" y="311" class="d-note" text-anchor="middle">3</text>
+  <text x="501" y="311" class="d-note" text-anchor="middle">4</text>
+  <text x="642" y="311" class="d-note" text-anchor="middle">5</text>
+  <path d="M78 101.667 L219 271.667 L360 205 L501 275.833 L642 205" class="d-line d-dash"/>
+  <circle cx="78" cy="101.667" r="4" class="d-box"/>
+  <circle cx="219" cy="271.667" r="4" class="d-box"/>
+  <circle cx="360" cy="205" r="4" class="d-box"/>
+  <text x="370" y="195" class="d-name" text-anchor="start">51</text>
+  <circle cx="501" cy="275.833" r="4" class="d-box"/>
+  <circle cx="642" cy="205" r="4" class="d-box"/>
+  <text x="652" y="195" class="d-name" text-anchor="start">51</text>
+  <path d="M78 103.333 L219 270.667 L360 276.833 L501 275 L642 276.833" class="d-line-hot"/>
+  <rect x="74.5" y="99.8333" width="7" height="7" rx="1" class="d-cell-hot"/>
+  <rect x="215.5" y="267.167" width="7" height="7" rx="1" class="d-cell-hot"/>
+  <rect x="356.5" y="273.333" width="7" height="7" rx="1" class="d-cell-hot"/>
+  <text x="370" y="266.833" class="d-name d-hot" text-anchor="start">7.9</text>
+  <rect x="497.5" y="271.5" width="7" height="7" rx="1" class="d-cell-hot"/>
+  <rect x="638.5" y="273.333" width="7" height="7" rx="1" class="d-cell-hot"/>
+  <text x="652" y="266.833" class="d-name d-hot" text-anchor="start">7.9</text>
+  <text x="90" y="81.6667" class="d-note" text-anchor="start">113 / 112 s</text>
+  <text x="360" y="337" class="d-note" text-anchor="middle">build in sequence</text>
+</svg>

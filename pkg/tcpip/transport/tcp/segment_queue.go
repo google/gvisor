@@ -57,7 +57,7 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 
 	// Allow zero sized segments (ACK/FIN/RSTs etc even if the segment queue
 	// is currently full).
-	allow := (used <= int(bufSz) || s.payloadSize() == 0) && !q.frozen
+	allow := (used <= bufSz || s.payloadSize() == 0) && !q.frozen
 
 	if allow {
 		s.IncRef()

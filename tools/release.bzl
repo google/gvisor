@@ -1,6 +1,6 @@
 """Rules assembling the gVisor release binaries in their installed layout."""
 
-load("//tools:defs.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action", "cov_available", "pkg_tar")
+load("//tools:defs.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action", "cov_available", "tar")
 
 # FLAVORS are the instrumentation flavors of gVisor binaries.
 FLAVORS = [
@@ -130,36 +130,44 @@ release_files = rule(
     toolchains = COPY_FILE_TOOLCHAINS,
 )
 
-def instrumented_release_tars(name, flavor, bins = [], visibility = None):
-    """Defines release tarballs of gVisor built with the given instrumentation flavor.
-
-    Defines `<name>-tar-bz2` and `<name>-tar-zstd` targets.
+def release_tars(name, flavor, bins, basename = None, visibility = None):
+    """Builds the two downloadable release archives for an instrumentation flavor.
 
     Args:
-      name: prefix of the tarball target names and of the tarball file names.
-      flavor: one of FLAVORS.
-      bins: additional top-level binaries, e.g. the containerd shim.
-      visibility: visibility of the tarball targets.
+      name: Prefix of the two Bazel target names.
+      flavor: One of FLAVORS.
+      bins: Additional top-level binary labels mapped to installed filenames.
+      basename: Filename prefix of the downloads. Defaults to name.
+      visibility: Visibility of the archive targets.
     """
-    if not cov_available and ("coverage" in flavor):
+    if not cov_available and "coverage" in flavor:
         return
-    runsc = RUNSC[flavor]
-    gvisor_bin = name + "-gvisor-bin"
-    pkg_tar(
-        name = gvisor_bin,
-        files = sidecars(flavor),
-        mode = "0755",
-        package_dir = "gvisor-bin",
-    )
-    for extension, compressor in (("tar.bz2", None), ("tar.zstd", "//tools/zstd:compressor")):
-        pkg_tar(
-            name = "%s-%s" % (name, extension.replace(".", "-")),
-            srcs = bins,
+    files = {RUNSC[flavor]: "runsc"}
+    files.update(bins)
+    files.update({src: "gvisor-bin/" + path for src, path in sidecars(flavor).items()})
+
+    # A fixed timestamp, numeric root ownership and executable modes make the
+    # archive independent of the worker that built it.
+    mtree = [
+        "/set uid=0 gid=0 time=946684800 mode=0755",
+        "./gvisor-bin type=dir",
+    ] + [
+        "./%s type=file content=$(location %s)" % (path, src)
+        for src, path in files.items()
+    ]
+    for suffix, compress, compressor in (
+        ("bz2", "bzip2", None),
+        ("zstd", "zstd", "//tools/zstd:compressor"),
+    ):
+        tar(
+            name = name + "-tar-" + suffix,
+            srcs = files.keys(),
+            # mtree uses full paths prefixed with "./". The publisher extracts
+            # the member named exactly "runsc" from each archive.
+            args = ["-s", ",^[.]/,,", "--uname", "", "--gname", ""],
+            compress = compress,
             compressor = compressor,
-            extension = extension,
-            files = {runsc: "runsc"},
-            mode = "0755",
-            package_file_name = "%s.%s" % (name, extension),
+            mtree = mtree,
+            out = (basename or name) + ".tar." + suffix,
             visibility = visibility,
-            deps = [":" + gvisor_bin],
         )

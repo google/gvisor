@@ -155,6 +155,11 @@ func (c *Context64) SetStack(value uintptr) {
 	c.Regs.Rsp = uint64(value)
 }
 
+// FramePointer returns the current frame pointer.
+func (c *Context64) FramePointer() uintptr {
+	return uintptr(c.Regs.Rbp)
+}
+
 // TLS returns the current TLS pointer.
 func (c *Context64) TLS() uintptr {
 	return uintptr(c.Regs.Fs_base)

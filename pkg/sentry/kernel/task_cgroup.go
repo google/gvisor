@@ -411,11 +411,15 @@ func (t *Task) chargeLocked(target *Task, ctl CgroupControllerType, res CgroupRe
 	// Due to the uniqueness of controllers on hierarchies, at most one cgroup
 	// in t.cgroups will match.
 	for c := range t.cgroups {
-		err := c.Charge(target, c.Dentry, ctl, res, value)
-		if err == nil {
-			c.IncRef()
+		for _, cctl := range c.Controllers() {
+			if cctl.Type() == ctl {
+				err := c.Charge(target, ctl, res, value)
+				if err == nil {
+					c.IncRef()
+				}
+				return err == nil, c, err
+			}
 		}
-		return err == nil, c, err
 	}
 	return false, Cgroup{}, nil
 }

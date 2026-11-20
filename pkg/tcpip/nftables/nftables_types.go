@@ -744,6 +744,7 @@ type opEvalCtx struct {
 	hook     stack.NFHook
 	rule     *Rule
 	route    *stack.Route
+	outNICID tcpip.NICID // Output interface (nf_hook_state.out), or 0.
 	nftState *NFTables
 }
 

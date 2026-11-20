@@ -25,6 +25,12 @@ defaults:
       path: ""
     values:
       layout: default
+  - scope:
+      path: "_posts/2026-11-19-anatomy-of-a-3b-step.md"
+    values:
+      # The diagrams need the article's stylesheet and animation controls.
+      feed:
+        excerpt_only: true
 analytics: "UA-150193582-1"
 authors:
   almet:
@@ -37,7 +43,7 @@ authors:
     url: https://freedom.press/people/alex-p
   ayushranjan:
     name: Ayush Ranjan
-    email: ayushranjan@google.com
+    email: ayushr@modal.com
   bogomolov:
     name: Konstantin Bogomolov
     email: bogomolov@google.com
@@ -95,3 +101,10 @@ authors:
   shailend:
     name: Shailend Chand
     email: shailend@google.com
+  jamieliu:
+    name: Jamie Liu
+    email: jamieliu@google.com
+  shayonj:
+    name: Shayon Mukherjee
+    email: shayon@tines.com
+    url: https://github.com/shayonj

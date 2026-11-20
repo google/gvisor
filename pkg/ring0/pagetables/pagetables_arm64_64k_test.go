@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && pagesize_64k
-// +build arm64,pagesize_64k
+//go:build arm64
+// +build arm64
 
 package pagetables
 
@@ -25,80 +25,139 @@ import (
 
 // Test512MAnd64K tests mapping of 512MB sect pages and 64K pages.
 func Test512MAnd64K(t *testing.T) {
+	use64KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map a small page (64K) and a huge page (512MB).
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite, User: true}, pteSize*42)
-	pt.Map(0x0000ff0000000000, pmdSize, MapOpts{AccessType: hostarch.Read, User: true}, pmdSize*47)
+	pt.Map(0x400000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite, User: true}, pteSize64K*42)
+	pt.Map(0x0000ff0000000000, pmdSize64K, MapOpts{AccessType: hostarch.Read, User: true}, pmdSize64K*47)
 
-	pt.Map(0xffff000000400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite, User: false}, pteSize*42)
-	pt.Map(0xffffff0000000000, pmdSize, MapOpts{AccessType: hostarch.Read, User: false}, pmdSize*47)
+	pt.Map(0xffff000000400000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite, User: false}, pteSize64K*42)
+	pt.Map(0xffffff0000000000, pmdSize64K, MapOpts{AccessType: hostarch.Read, User: false}, pmdSize64K*47)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.ReadWrite, User: true}},
-		{0x0000ff0000000000, pmdSize, pmdSize * 47, MapOpts{AccessType: hostarch.Read, User: true}},
-		{0xffff000000400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.ReadWrite, User: false}},
-		{0xffffff0000000000, pmdSize, pmdSize * 47, MapOpts{AccessType: hostarch.Read, User: false}},
+		{0x400000, pteSize64K, pteSize64K * 42, MapOpts{AccessType: hostarch.ReadWrite, User: true}},
+		{0x0000ff0000000000, pmdSize64K, pmdSize64K * 47, MapOpts{AccessType: hostarch.Read, User: true}},
+		{0xffff000000400000, pteSize64K, pteSize64K * 42, MapOpts{AccessType: hostarch.ReadWrite, User: false}},
+		{0xffffff0000000000, pmdSize64K, pmdSize64K * 47, MapOpts{AccessType: hostarch.Read, User: false}},
 	})
 }
 
 // TestSplit512MPage tests splitting a 512MB sect page.
 func TestSplit512MPage(t *testing.T) {
+	use64KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map a sect page (512MB) and knock out the middle.
-	pt.Map(0x0000ff0000000000, pmdSize, MapOpts{AccessType: hostarch.Read, User: true}, pmdSize*42)
-	pt.Unmap(hostarch.Addr(0x0000ff0000000000+pteSize), pmdSize-(2*pteSize))
+	pt.Map(0x0000ff0000000000, pmdSize64K, MapOpts{AccessType: hostarch.Read, User: true}, pmdSize64K*42)
+	pt.Unmap(hostarch.Addr(0x0000ff0000000000+pteSize64K), pmdSize64K-(2*pteSize64K))
 
 	checkMappings(t, pt, []mapping{
-		{0x0000ff0000000000, pteSize, pmdSize * 42, MapOpts{AccessType: hostarch.Read, User: true}},
-		{0x0000ff0000000000 + pmdSize - pteSize, pteSize, pmdSize*42 + pmdSize - pteSize, MapOpts{AccessType: hostarch.Read, User: true}},
+		{0x0000ff0000000000, pteSize64K, pmdSize64K * 42, MapOpts{AccessType: hostarch.Read, User: true}},
+		{0x0000ff0000000000 + pmdSize64K - pteSize64K, pteSize64K, pmdSize64K*42 + pmdSize64K - pteSize64K, MapOpts{AccessType: hostarch.Read, User: true}},
 	})
 }
 
-func TestNumMemoryTypes(t *testing.T) {
-	// MAIR accommodates up to 8 entries.
-	if hostarch.NumMemoryTypes > 8 {
-		t.Errorf("PTE.Set() and PTE.Opts() must be altered to map %d MemoryTypes to a smaller set of MAIR entries", hostarch.NumMemoryTypes)
+// The tests below are the 64K granule equivalents of the generic tests in
+// pagetables_test.go.
+
+func TestUnmap64K(t *testing.T) {
+	use64KPagesForTest(t)
+
+	pt := New(NewRuntimeAllocator())
+
+	// Map and unmap one entry.
+	pt.Map(0x400000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite}, pteSize64K*42)
+	pt.Unmap(0x400000, pteSize64K)
+
+	checkMappings(t, pt, nil)
+}
+
+func TestReadOnly64K(t *testing.T) {
+	use64KPagesForTest(t)
+
+	pt := New(NewRuntimeAllocator())
+
+	// Map one entry.
+	pt.Map(0x400000, pteSize64K, MapOpts{AccessType: hostarch.Read}, pteSize64K*42)
+
+	checkMappings(t, pt, []mapping{
+		{0x400000, pteSize64K, pteSize64K * 42, MapOpts{AccessType: hostarch.Read}},
+	})
+}
+
+func TestSerialEntries64K(t *testing.T) {
+	use64KPagesForTest(t)
+
+	pt := New(NewRuntimeAllocator())
+
+	// Map two sequential entries.
+	pt.Map(0x400000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite}, pteSize64K*42)
+	pt.Map(0x410000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite}, pteSize64K*47)
+
+	checkMappings(t, pt, []mapping{
+		{0x400000, pteSize64K, pteSize64K * 42, MapOpts{AccessType: hostarch.ReadWrite}},
+		{0x410000, pteSize64K, pteSize64K * 47, MapOpts{AccessType: hostarch.ReadWrite}},
+	})
+}
+
+func TestSpanningEntries64K(t *testing.T) {
+	use64KPagesForTest(t)
+
+	pt := New(NewRuntimeAllocator())
+
+	// Span a pgd with two pages.
+	pt.Map(0x00007bffffff0000, 2*pteSize64K, MapOpts{AccessType: hostarch.Read}, pteSize64K*42)
+
+	checkMappings(t, pt, []mapping{
+		{0x00007bffffff0000, pteSize64K, pteSize64K * 42, MapOpts{AccessType: hostarch.Read}},
+		{0x00007c0000000000, pteSize64K, pteSize64K * 43, MapOpts{AccessType: hostarch.Read}},
+	})
+}
+
+func TestSparseEntries64K(t *testing.T) {
+	use64KPagesForTest(t)
+
+	pt := New(NewRuntimeAllocator())
+
+	// Map two entries in different pgds.
+	pt.Map(0x400000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite}, pteSize64K*42)
+	pt.Map(0x00007c0000000000, pteSize64K, MapOpts{AccessType: hostarch.Read}, pteSize64K*47)
+
+	checkMappings(t, pt, []mapping{
+		{0x400000, pteSize64K, pteSize64K * 42, MapOpts{AccessType: hostarch.ReadWrite}},
+		{0x00007c0000000000, pteSize64K, pteSize64K * 47, MapOpts{AccessType: hostarch.Read}},
+	})
+}
+
+// TestLookup64K verifies that Lookup rounds addresses down to 64K pages.
+func TestLookup64K(t *testing.T) {
+	use64KPagesForTest(t)
+
+	pt := New(NewRuntimeAllocator())
+	pt.Map(0x400000, pteSize64K, MapOpts{AccessType: hostarch.ReadWrite}, pteSize64K*42)
+
+	// Lookup must round down to the 64K page.
+	virtual, physical, size, opts := pt.Lookup(0x400000+0x1234, false /* findFirst */)
+	if virtual != 0x400000 || physical != pteSize64K*42 || size != pteSize64K || opts.AccessType != hostarch.ReadWrite {
+		t.Errorf("Lookup(0x401234) = (%#x, %#x, %#x, %+v), want (0x400000, %#x, %#x, ReadWrite)", virtual, physical, size, opts, pteSize64K*42, pteSize64K)
 	}
 }
 
-func TestPXN(t *testing.T) {
-	testCases := []struct {
-		name      string
-		opts      MapOpts
-		expectPXN bool
-	}{
-		{
-			name:      "User Non-Executable",
-			opts:      MapOpts{AccessType: hostarch.ReadWrite, User: true},
-			expectPXN: true,
-		},
-		{
-			name:      "User Executable",
-			opts:      MapOpts{AccessType: hostarch.ReadExecute, User: true},
-			expectPXN: true,
-		},
-		{
-			name:      "Kernel Non-Executable",
-			opts:      MapOpts{AccessType: hostarch.ReadWrite, User: false},
-			expectPXN: true,
-		},
-		{
-			name:      "Kernel Executable",
-			opts:      MapOpts{AccessType: hostarch.ReadExecute, User: false},
-			expectPXN: false,
-		},
-	}
+// TestAllocatorAlignment64K verifies that page table pages are allocated
+// with the size and alignment of the 64K granule.
+func TestAllocatorAlignment64K(t *testing.T) {
+	use64KPagesForTest(t)
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			var p PTE
-			p.Set(0x1000, tc.opts)
-			hasPXN := (uintptr(p) & pxn) != 0
-			if hasPXN != tc.expectPXN {
-				t.Errorf("PTE.Set(%v) PXN bit got %v, wanted %v", tc.opts, hasPXN, tc.expectPXN)
-			}
-		})
+	a := NewRuntimeAllocator()
+	for i := 0; i < 16; i++ {
+		ptes := a.NewPTEs()
+		if addr := a.PhysicalFor(ptes); addr%pteSize64K != 0 {
+			t.Fatalf("NewPTEs() = %#x, not aligned to %#x", addr, pteSize64K)
+		}
+		// All entries must be addressable.
+		ptes.as64K()[entriesPerPage64K-1].Clear()
 	}
 }

@@ -4,6 +4,8 @@
 /bazel-*
 # Generated build event file.
 /.build_events.json
+# Local fscheckpoint compatibility corpus checkout.
+/.fscheckpoint_corpus
 # Generated repository.
 /repo
 /repo.key

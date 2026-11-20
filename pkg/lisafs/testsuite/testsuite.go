@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moby/sys/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -69,6 +68,7 @@ var localFSTests = map[string]TestFunc{
 	"Stat":            testStat,
 	"RegularFileIO":   testRegularFileIO,
 	"RegularFileOpen": testRegularFileOpen,
+	"FlushCloses":     testFlushCloses,
 	"SetStat":         testSetStat,
 	"Allocate":        testAllocate,
 	"StatFS":          testStatFS,
@@ -322,17 +322,6 @@ func cmpStatx(t *testing.T, want, got lisafs.Statx) {
 	}
 }
 
-func hasCapability(c capability.Cap) bool {
-	caps, err := capability.NewPid2(os.Getpid())
-	if err != nil {
-		return false
-	}
-	if err := caps.Load(); err != nil {
-		return false
-	}
-	return caps.Get(capability.EFFECTIVE, c)
-}
-
 func testStat(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {
 	var rootStat lisafs.Statx
 	statTo(ctx, t, root, &rootStat)
@@ -371,6 +360,32 @@ func testRegularFileIO(ctx context.Context, t *testing.T, tester Tester, root li
 	// Test syncing the writable FD.
 	if err := fd.Sync(ctx); err != nil {
 		t.Errorf("syncing the FD failed: %v", err)
+	}
+}
+
+func testFlushCloses(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {
+	client := root.Client()
+	if err := client.FlushCloses(ctx); err != nil {
+		t.Fatalf("flushing an empty queue: %v", err)
+	}
+	controlFile, _, fd, hostFD := openCreateFile(ctx, t, root, "tempFile")
+	defer unix.Close(hostFD)
+	// Keep the ID to check whether the server has processed the queued close.
+	closedFile := controlFile
+	fd.Close(ctx, false /* flush */)
+	controlFile.Close(ctx, false /* flush */)
+	var stat lisafs.Statx
+	if err := closedFile.StatTo(ctx, &stat); err != nil {
+		t.Fatalf("FD closed before flushing the queue: %v", err)
+	}
+	if err := client.FlushCloses(ctx); err != nil {
+		t.Fatalf("flushing queued closes: %v", err)
+	}
+	if err := closedFile.StatTo(ctx, &stat); err != unix.EBADF {
+		t.Fatalf("stat after flushing closes: got %v, want EBADF", err)
+	}
+	if err := client.FlushCloses(ctx); err != nil {
+		t.Fatalf("flushing the queue again: %v", err)
 	}
 }
 
@@ -487,9 +502,6 @@ func testSymlink(ctx context.Context, t *testing.T, tester Tester, root lisafs.C
 func testHardLink(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {
 	if !tester.LinkSupported() {
 		t.Skipf("server does not support LinkAt RPC")
-	}
-	if !hasCapability(capability.CAP_DAC_READ_SEARCH) {
-		t.Skipf("TestHardLink requires CAP_DAC_READ_SEARCH, running as %d", unix.Getuid())
 	}
 	name := "tempFile"
 	controlFile, fileIno, fd, hostFD := openCreateFile(ctx, t, root, name)

@@ -3,21 +3,25 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", version = "0.65.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "gazelle", version = "0.51.3", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "bazel_lib", version = "3.4.0")
 bazel_dep(name = "yq.bzl", version = "0.4.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "tar.bzl", version = "0.10.9")
 bazel_dep(name = "rules_img", version = "0.3.23")
 bazel_dep(name = "rules_cc", version = "0.2.25")
-bazel_dep(name = "llvm", version = "0.8.24")
+bazel_dep(name = "llvm", version = "0.8.26")
 bazel_dep(name = "libbpf", version = "1.7.0.bcr.1")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_qemu", version = "0.3.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.16.0")
 bazel_dep(name = "grpc", version = "1.84.0", repo_name = "com_github_grpc_grpc")
+
+# Select gRPC's c-ares configuration header without a shell.
+bazel_dep(name = "c-ares", version = "1.34.9.bcr.1", repo_name = None)
 
 # gRPC's older minimum imports a removed Google APIs extension repository.
 bazel_dep(name = "envoy_api", version = "0.0.0-20260130-84e8436")
@@ -40,11 +44,10 @@ single_version_override(
     module_name = "rules_go",
     patch_strip = 1,
     patches = [
-        "//tools:rules_go_symbols.patch",
         "//tools:rules_cgo.patch",
         "//tools:rules_go_export.patch",
     ],
-    version = "0.63.0",
+    version = "0.65.0",
 )
 
 single_version_override(
@@ -53,30 +56,23 @@ single_version_override(
     patches = ["//tools:benchmark-umbrella-exports.patch"],
 )
 
-# Drop the backport when the llvm module includes kernel_headers.configure.
+# Drop these backports when the llvm module includes the header default and
+# requests only AArch64 and X86 for downstream builds.
 single_version_override(
     module_name = "llvm",
     patch_strip = 1,
-    patches = ["//tools:llvm-linux-header-default.patch"],
+    patches = [
+        "//tools:llvm-linux-header-default.patch",
+        "//tools:llvm-dev-backends.patch",
+    ],
 )
 
 ### LLVM
-# TODO: try using "llvm-raw" from BCR
+# The NVIDIA ABI parser only inspects gVisor's supported CPU architectures.
+llvm_source = use_extension("@llvm//extensions:llvm.bzl", "llvm")
+use_repo(llvm_source, "llvm-project")
+
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
-    name = "llvm-raw",
-    build_file_content = "# empty",
-    patch_args = ["-p1"],
-    patches = ["//tools:llvm-bazel9.patch"],
-    sha256 = "e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69",
-    strip_prefix = "llvm-project-cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f",
-    urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = "cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f")],
-)
-
-llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
-
-llvm_configure(name = "llvm-project")
 
 http_archive(
     name = "kythe_release",
@@ -104,11 +100,6 @@ use_repo(crosstool, "crosstool")
 kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers")
 kernel_headers.configure(default_version = "6.18")
 use_repo(kernel_headers, "kernel_headers")
-
-### zlib-ng
-# TODO: try using "zlib-ng" from BCR
-llvm_zlib = use_extension("//tools/bazeldefs:extensions/llvm_zlib.bzl", "llvm_zlib_extension")
-use_repo(llvm_zlib, "llvm_zlib")
 
 ### Repo rules
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
@@ -233,8 +224,8 @@ http_archive(
 
 http_file(
     name = "github_workflow_schema",
-    sha256 = "7499ccb3e75975504ea1ee7c70291e0c9f6c1f684678091d013061fe263e3ddb",
-    urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json"],
+    sha256 = "0528a890c1a6f4209444c421dbb752888a934a540f2a677146d78ed7f2321cbf",
+    urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/498a42a4f41f467d8cdc36a5b5c546605a8935c3/src/schemas/json/github-workflow.json"],
 )
 
 # Statically-linked QEMU user-mode emulators.
@@ -363,6 +354,19 @@ img_pull(
 )
 
 img_pull(
+    name = "test_nginx",
+    digest = "sha256:bc4cad49969aaf95eb4eecec5572846f86e59f1e8332aba36ed64b91aff8b724",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/nginx",
+    tag = "1.31.7",
+)
+
+img_pull(
     name = "test_python",
     digest = "sha256:c5075348770d14159b316d99a4f65f3771d227710877021833119b014cd1a803",
     layer_handling = "eager",
@@ -373,6 +377,19 @@ img_pull(
     registries = DOCKER_HUB_REGISTRIES,
     repository = "library/python",
     tag = "3.15.1-trixie",
+)
+
+img_pull(
+    name = "test_redis",
+    digest = "sha256:a030024d2b65447fba04de1e3b440226d78dfe6e4fbc8ab0ca9a44ca6eed0acd",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/redis",
+    tag = "7.0.12",
 )
 
 ### Toolchains

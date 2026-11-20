@@ -5,8 +5,8 @@ its glibc 2.28 default. gVisor needs newer declarations without changing
 libc or execution-platform constraints. Add a root-module default while
 preserving explicit kernel constraints and the unset libc-derived fallback.
 
-Backport of the Linux header default for llvm releases that predate:
-https://github.com/hermeticbuild/hermetic-llvm/commit/3dd710dd9cb57adc0a8baf4220f5bc1e38ebd9bc
+Remove this backport when the llvm module includes the header default
+from https://github.com/hermeticbuild/hermetic-llvm/commit/3dd710dd9.
 
 diff --git a/kernel/extension/kernel_headers.bzl b/kernel/extension/kernel_headers.bzl
 --- a/kernel/extension/kernel_headers.bzl

@@ -12,8 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Run 4x HOST_CPUS worth of parallel jobs.
+build --jobs=HOST_CPUS*4
+
 # Ensure a strong hash function.
 startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
+
+# With a private registry, pass --module_mirrors= to skip this public mirror.
+common --module_mirrors=https://bcr.cloudflaremirrors.com
 
 # Start Python programs with the declared interpreter, without requiring a host
 # Python interpreter to bootstrap it.
@@ -52,8 +58,9 @@ build --build_tag_filters=-nogo
 # Select the ordinary syscall tests used by public CI.
 test:syscalls-amd64 --test_tag_filters=-allsave,-runsc_slimvm
 test:syscalls-arm64 --test_tag_filters=-allsave,runsc_ptrace,runsc_systrap
-build:syscalls-arm64-64k --test_tag_filters=-allsave,runsc_systrap
-build:syscalls-arm64-64k --//tools/bazeldefs:page_size=64k
+# ARM64 binaries support both 4K and 64K pages, so 64K page hosts run the same
+# binaries as 4K page hosts; only the selected platforms differ.
+test:syscalls-arm64-64k --test_tag_filters=-allsave,runsc_systrap
 
 # Set flags for x86_64.
 build:x86_64 --crosstool_top=@crosstool//:toolchains

@@ -17,7 +17,6 @@
 #ifdef __linux__
 #include <asm/unistd.h>
 #include <linux/prctl.h>
-#include <sys/prctl.h>
 #endif  // __linux__
 #include <errno.h>
 #include <fcntl.h>
@@ -85,7 +84,7 @@ PosixErrorOr<Cleanup> ForkAndExecHelper(const std::function<void()>& exec_fn,
 
     // Clean ourself up in case the parent doesn't.
 #ifdef __linux__
-    if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
+    if (syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0L, 0L, 0L)) {
       _exit(3);
     }
 #endif  // __linux__

@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -68,4 +69,38 @@ func TestSegmentMerge(t *testing.T) {
 		DataSize:   0,
 		SegMemSize: trueSegSize,
 	})
+}
+
+func TestReceiveMemoryAtBufferLimit(t *testing.T) {
+	const budget = math.MaxInt32 - 1
+	var ep Endpoint
+	ep.ops.SetReceiveBufferSize(budget, false)
+	// Leave one byte for a segment. Charge the existing data directly to
+	// avoid allocating a two-GiB socket buffer in the test.
+	ep.updateReceiveMemUsed(budget - 1)
+	q := segmentQueue{ep: &ep}
+	defer func() {
+		for s := q.dequeue(); s != nil; s = q.dequeue() {
+			s.DecRef()
+		}
+	}()
+	var clock faketime.NullClock
+	enqueue := func() bool {
+		s := newOutgoingSegment(stack.TransportEndpointID{}, &clock, buffer.MakeWithData([]byte{1}), 0)
+		defer s.DecRef()
+		return q.enqueue(s)
+	}
+	if !enqueue() {
+		t.Fatal("segment with one byte of payload did not fit")
+	}
+	if got, want := ep.receiveBufferAvailable(), 0; got != want {
+		t.Errorf("available after charging segment overhead: got %d, want %d", got, want)
+	}
+	if enqueue() {
+		t.Fatal("accepted another data segment with a full receive buffer")
+	}
+	q.dequeue().DecRef()
+	if got, want := ep.receiveBufferAvailable(), 1; got != want {
+		t.Errorf("available after releasing the segment: got %d, want %d", got, want)
+	}
 }

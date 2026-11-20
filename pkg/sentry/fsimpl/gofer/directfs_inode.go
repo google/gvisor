@@ -149,7 +149,8 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	isDir := uint32(stat.Mode)&linux.FileTypeMask == linux.ModeDirectory
+	fileType := uint32(stat.Mode) & linux.FileTypeMask
+	isDir := fileType == linux.ModeDirectory
 	inoKey := inoKeyFromUnixStatx(&stat)
 	devMinor, err := fs.devMinorFromKey(inoKey)
 	if err != nil {
@@ -171,7 +172,7 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 	// different paths (e.g., /mnt/ and /mnt/a/b/c if /mnt/a/b/c is a bind mount of /mnt/)
 	// can return the same device ID and inode number from a stat call.
 	var cacheHit bool
-	temp.d.inode = fs.getOrCreateInode(inoKey /* dontCache = */, isDir,
+	temp.d.inode = fs.getOrCreateInode(inoKey, fileType, isDir, /* dontCache */
 		func() {
 			cacheHit = true
 			_ = unix.Close(controlFD)

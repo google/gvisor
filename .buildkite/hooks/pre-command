@@ -22,38 +22,27 @@ fi
 # Kill the agent if clearing docker containers fails
 clear_docker_containers kill_agent
 
-if [[ "${BUILDKITE_PIPELINE_NAME:-}" == "Pipeline" ]]; then
-  # Check that the target branch exists.
-  git fetch origin "${BUILDKITE_BRANCH}" || {
-    echo "Branch ${BUILDKITE_BRANCH} no longer exists; it was probably deleted by the time we got to it." >&2
-    exit 1
-  }
-fi
-
 # Download any build-specific configuration that has been uploaded.
 # This allows top-level steps to override all subsequent steps.
 buildkite-agent artifact download 'tools/bazeldefs/*' . || true
 
 # Install packages we need. Docker must be installed and configured,
 # as should Go itself. We just install some extra bits and pieces.
-function install_pkgs() {
-  export DEBIAN_FRONTEND=noninteractive
-  while true; do
-    if sudo -E apt-get update -q && sudo -E apt-get install -qy "$@"; then
-      break
-    fi
-  done
-}
-install_pkgs make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent \
-  gcc pkg-config apt-transport-https ca-certificates \
+export DEBIAN_FRONTEND=noninteractive
+sudo -E apt-get update -q
+packages=(
+  make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent
+  gcc pkg-config apt-transport-https ca-certificates
   software-properties-common rsync kmod systemd unzip
+)
 
 # Install headers, only if available.
 if test -n "$(apt-cache search --names-only "^linux-headers-$(uname -r)$")"; then
-  install_pkgs "linux-headers-$(uname -r)"
+  packages+=("linux-headers-$(uname -r)")
 elif test -n "$(apt-cache search --names-only "^linux-gcp-headers-$(uname -r | cut -d- -f1-2)$")"; then
-  install_pkgs "linux-gcp-headers-$(uname -r | cut -d- -f1-2)"
+  packages+=("linux-gcp-headers-$(uname -r | cut -d- -f1-2)")
 fi
+sudo -E apt-get -o DPkg::Lock::Timeout=120 install -qy "${packages[@]}"
 
 set -x
 
@@ -92,19 +81,17 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
   echo 'Current Docker daemon configuration:' >&2
   cat /etc/docker/daemon.json >&2
   HAD_EXPERIMENTAL="$(cat /etc/docker/daemon.json | jq '.experimental')"
+  export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
   if [[ -n "${STAGED_BINARIES:-}" ]]; then
-    # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
-    export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
     gcloud storage cat "$STAGED_BINARIES" \
       | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf -
     chmod -R +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY"
-    sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
-      --experimental=true --runtime="${RUNTIME}" \
-      -- "${RUNTIME_ARGS:-}"
   else
-    make sudo TARGETS=//runsc:runsc \
-      ARGS="install --experimental=true --runtime=${RUNTIME} -- ${RUNTIME_ARGS:-}"
+    make copy TARGETS=//:release DESTINATION="$BUILDKITE_STAGED_BINARIES_DIRECTORY"
   fi
+  read -r -a runtime_args <<< "${RUNTIME_ARGS:-}"
+  sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
+    --experimental=true --runtime="${RUNTIME}" -- "${runtime_args[@]}"
   if [[ "$HAD_EXPERIMENTAL" != true ]]; then
     # WARNING: We may be running in a container when this command executes.
     # This only makes sense if Docker's `live-restore` feature is enabled.

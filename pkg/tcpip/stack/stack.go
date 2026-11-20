@@ -1075,6 +1075,11 @@ type NICOptions struct {
 	// passing the experiment IP option.
 	EnableExperimentIPOption bool
 
+	// AllowExternalIPv4LoopbackTraffic indicates whether IPv4 loopback packets
+	// (source or destination in 127.0.0.0/8) should be accepted from external
+	// networks on this NIC.
+	AllowExternalIPv4LoopbackTraffic bool
+
 	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
 	Kind string
 
@@ -1322,6 +1327,9 @@ func (s *Stack) SetNICAddress(id tcpip.NICID, addr tcpip.LinkAddress) tcpip.Erro
 		return &tcpip.ErrUnknownNICID{}
 	}
 	nic.NetworkLinkEndpoint.SetLinkAddress(addr)
+	if nic.Primary != nil {
+		nic.Primary.NetworkLinkEndpoint.(CoordinatorNIC).NICAddressChanged(nic)
+	}
 	return nil
 }
 
@@ -1419,7 +1427,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 	return false, false
 }
 
-// precondition: s.mu is held.
+// +checklocksread:s.mu
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
 		Up:          !nic.adminDown.Load(),
@@ -1985,14 +1993,26 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 		return 0
 	}
 
-	// Go through all the NICs.
+	// Go through all the NICs. Prefer a NIC that owns the address over one with
+	// a temporary copy of it, e.g. loopback while routing local traffic.
+	var fallback tcpip.NICID
 	for _, nic := range s.nics {
-		if nic.CheckLocalAddress(protocol, addr) {
+		if nic.Spoofing() {
 			return nic.id
+		}
+		kind, ok := nic.localAddressKind(protocol, addr)
+		if !ok {
+			continue
+		}
+		if kind == Permanent {
+			return nic.id
+		}
+		if fallback == 0 {
+			fallback = nic.id
 		}
 	}
 
-	return 0
+	return fallback
 }
 
 // SetPromiscuousMode enables or disables promiscuous mode in the given NIC.

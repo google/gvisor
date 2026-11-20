@@ -2001,6 +2001,42 @@ TEST_P(SimpleTcpSocketTest, SetMaxSeg) {
   // in CLOSE/LISTEN state if user_mss set"). With this change, user_mss is
   // returned if set for unconnected sockets. So allow both.
   EXPECT_THAT(optval, AnyOf(kDefaultMSS, kTCPMaxSeg));
+
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+  const FileDescriptor listener =
+      ASSERT_NO_ERRNO_AND_VALUE(ReserveLocalPort(GetParam(), addr, addrlen));
+  ASSERT_THAT(setsockopt(listener.get(), IPPROTO_TCP, TCP_MAXSEG, &kTCPMaxSeg,
+                         sizeof(kTCPMaxSeg)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listener.get(), 1), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+  const FileDescriptor accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listener.get(), nullptr, nullptr));
+
+  for (int fd : {s.get(), accepted.get()}) {
+    SCOPED_TRACE(fd == s.get() ? "active" : "accepted");
+    struct tcp_info info = {};
+    socklen_t len = sizeof(info);
+    ASSERT_THAT(getsockopt(fd, IPPROTO_TCP, TCP_INFO, &info, &len),
+                SyscallSucceeds());
+    // The effective send MSS can be smaller than the advertised MSS to
+    // allow for TCP options.
+    EXPECT_GT(info.tcpi_snd_mss, kDefaultMSS);
+    EXPECT_LE(info.tcpi_snd_mss, kTCPMaxSeg);
+
+    // Changing the preference does not renegotiate an established connection.
+    constexpr int kNewMSS = 2048;
+    ASSERT_THAT(
+        setsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &kNewMSS, sizeof(kNewMSS)),
+        SyscallSucceeds());
+    optlen = sizeof(optval);
+    ASSERT_THAT(getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &optval, &optlen),
+                SyscallSucceeds());
+    EXPECT_EQ(optval, info.tcpi_snd_mss);
+  }
 }
 
 TEST_P(SimpleTcpSocketTest, SetMaxSegFailsForInvalidMSSValues) {

@@ -847,6 +847,10 @@ type NetworkInterface interface {
 	// assigned to it.
 	Spoofing() bool
 
+	// AllowExternalIPv4LoopbackTraffic returns true if IPv4 loopback packets
+	// should be accepted from external networks on this interface.
+	AllowExternalIPv4LoopbackTraffic() bool
+
 	// PrimaryAddress returns the primary address associated with the interface.
 	//
 	// PrimaryAddress will return the first non-deprecated address if such an

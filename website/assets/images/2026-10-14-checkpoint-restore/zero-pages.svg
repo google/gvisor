@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 346" width="960" height="346" role="img" aria-label="Snapshot size: 512 MiB of data + 2 GiB of zeros: Not monitored --exclude-committed-zero-pages=false 518 MiB, Monitored --exclude-committed-zero-pages=false 2566 MiB, Monitored --exclude-committed-zero-pages=true 518 MiB" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>Snapshot size: 512 MiB of data + 2 GiB of zeros: Not monitored --exclude-committed-zero-pages=false 518 MiB, Monitored --exclude-committed-zero-pages=false 2566 MiB, Monitored --exclude-committed-zero-pages=true 518 MiB</title>
+<rect width="960" height="346" rx="12" fill="#fcfcfb"/>
+<text x="40" y="40" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Snapshot size: 512 MiB of data + 2 GiB of zeros</text>
+<text x="40" y="62" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >MiB on disk, lower is better</text>
+<text x="40" y="106" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Not monitored</text>
+<text x="40" y="126" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">--exclude-committed-zero-pages=false</text>
+<rect x="420" y="92" width="76.65928569008238" height="36" rx="4" fill="#1baf7a" />
+<text x="506.65928569008236" y="108" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >518 MiB</text>
+<text x="506.65928569008236" y="126" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >zeros skipped for free</text>
+<text x="40" y="170" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Monitored</text>
+<text x="40" y="190" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">--exclude-committed-zero-pages=false</text>
+<rect x="420" y="156" width="380.0" height="36" rx="4" fill="#8a8984" />
+<text x="810.0" y="180" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2,566 MiB</text>
+<text x="790.0" y="179" font-size="12" fill="#fff" text-anchor="end" font-weight="bold" >save 1.0 s, restore 6.3 s, sandbox 2,600 MiB</text>
+<text x="40" y="234" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Monitored</text>
+<text x="40" y="254" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">--exclude-committed-zero-pages=true</text>
+<rect x="420" y="220" width="76.65928865586885" height="36" rx="4" fill="#1baf7a" />
+<text x="506.65928865586886" y="236" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >518 MiB</text>
+<text x="506.65928865586886" y="254" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >save 0.3 s, restore 1.5 s, sandbox 551 MiB</text>
+<text x="40" y="302" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >&quot;Monitored&quot; = something read the sandbox's memory stats (here, /proc/meminfo) before the save.</text>
+<text x="40" y="324" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >Container runtimes collect these stats for metrics, so in production this is the normal case.</text>
+</svg>

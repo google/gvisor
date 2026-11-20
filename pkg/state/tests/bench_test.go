@@ -20,6 +20,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
@@ -54,9 +55,9 @@ func buildSliceObject(n int) any {
 	return &s
 }
 
-// buildAdoptionObject controls whether the enclosing array is discovered before
-// or after its children's save hooks. Pointer-array capture queues the children;
-// one additional intermediary delays array discovery until those children save.
+// buildAdoptionObject builds a graph in which the encoder reaches the array
+// elements through pointers first. If captured is true, an extra link delays
+// discovery of the array until after its elements have been saved.
 func buildAdoptionObject(n int, captured bool) *benchAdoption {
 	values := make([]benchAdopted, n)
 	pointers := make([]*benchAdopted, n)
@@ -187,8 +188,12 @@ func BenchmarkDecoding(b *testing.B) {
 					b.Errorf("save failed: %v", err)
 				}
 				b.ReportAllocs()
+				dst := reflect.ValueOf(v).Elem()
 				var r bytes.Reader
 				for b.Loop() {
+					// A restored kernel starts without the saved objects. A populated
+					// destination lets gob reuse the previous pointer chain or slice.
+					dst.SetZero()
 					r.Reset(buf.Bytes())
 					if _, err := algoInfo.Load(context.Background(), &r, v); err != nil {
 						b.Errorf("load failed: %v", err)

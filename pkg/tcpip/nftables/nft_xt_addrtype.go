@@ -82,8 +82,8 @@ func (op *compatAddrtypeMatch) match(evalCtx opEvalCtx) bool {
 	nicID := tcpip.NICID(0)
 	if opInfo.limitIfaceIn {
 		nicID = pkt.InputNICID
-	} else if opInfo.limitIfaceOut && route != nil {
-		nicID = route.OutgoingNIC()
+	} else if opInfo.limitIfaceOut {
+		nicID = evalCtx.outNICID
 	}
 
 	if opInfo.checkSrc {

@@ -46,6 +46,8 @@ syscall_test(
 )
 
 syscall_test(
+    # ARCH_SET_GS permanently disables patching in the address space.
+    one_sandbox = False,
     test = "//test/syscalls/linux:arch_prctl_test",
 )
 
@@ -59,6 +61,10 @@ syscall_test(
     add_overlay = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:bind_test",
+)
+
+syscall_test(
+    test = "//test/syscalls/linux:bridge_test",
 )
 
 syscall_test(
@@ -210,6 +216,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_host_random = True,
     test = "//test/syscalls/linux:epoll_test",
 )
 
@@ -284,6 +291,10 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:fpsig_nested_test",
+)
+
+syscall_test(
+    test = "//test/syscalls/linux:fpstate_stop_test",
 )
 
 syscall_test(
@@ -676,6 +687,8 @@ syscall_test(
 )
 
 syscall_test(
+    # Tracing disables syscall patching for the tracee's address space.
+    one_sandbox = False,
     test = "//test/syscalls/linux:ptrace_test",
 )
 
@@ -859,6 +872,13 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:socket_capability_test",
+)
+
+syscall_test(
+    size = "large",
+    add_hostinet = True,
+    save = False,
+    test = "//test/syscalls/linux:socket_data_transfer_stress_test",
 )
 
 syscall_test(
@@ -1108,6 +1128,7 @@ syscall_test(
 syscall_test(
     size = "large",
     add_hostinet = True,
+    limit_ephemeral_ports = True,
     # Takes too long to run with S/R.
     save = False,
     shard_count = most_shards,
@@ -1159,9 +1180,6 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    # TODO(b/323000153): Test fails with S/R enabled during restore of abstract
-    # sockets. Fix this and then enable S/R.
-    save = False,
     test = "//test/syscalls/linux:socket_unix_unbound_abstract_test",
 )
 
@@ -1232,6 +1250,10 @@ syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:sync_file_range_test",
+)
+
+syscall_test(
+    test = "//test/syscalls/linux:sysfs_cpu_topology_test",
 )
 
 syscall_test(

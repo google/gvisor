@@ -9,6 +9,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "devices.go",
         "gofer_to_host_rpc.go",
         "null_netns.go",
         "state_file.go",
@@ -20,10 +21,12 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/nvgpu",
         "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/hostmm",
+        "//pkg/sentry/platform/platformdesc",
         "//pkg/sighandling",
         "//pkg/sync",
         "//pkg/unet",
@@ -50,6 +53,8 @@ go_test(
         "console_test.go",
         "container_save_restore_test.go",
         "container_test.go",
+        "devices_test.go",
+        "fscheckpoint_cordon_test.go",
         "metric_server_test.go",
         "multi_container_save_restore_test.go",
         "multi_container_test.go",
@@ -111,6 +116,66 @@ go_test(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_google_protobuf//types/known/emptypb:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "destroy_test",
+    srcs = ["destroy_test.go"],
+    embed = [":container"],
+    deps = [
+        "//runsc/boot/sentryapi",
+        "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+go_test(
+    name = "fscheckpoint_compat_test",
+    size = "large",
+    srcs = [
+        "container_test.go",
+        "fscheckpoint_compat_test.go",
+        "multi_container_test.go",
+    ],
+    args = [
+        "--test_platforms=%s" % default_platform,
+    ],
+    data = [
+        "//:release",
+        "//test/cmd/test_app",
+    ],
+    embed = [":container"],
+    tags = [
+        "manual",
+        "notap",
+        "requires-kvm",
+    ],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/cleanup",
+        "//pkg/hostos",
+        "//pkg/log",
+        "//pkg/sentry/control/controlapi",
+        "//pkg/sentry/fscheckpoint",
+        "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
+        "//pkg/sentry/fsimpl/erofs",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/platform/platformdesc",
+        "//pkg/sentry/state/checkpointfiles",
+        "//pkg/state/statefile",
+        "//pkg/sync",
+        "//pkg/test/testutil",
+        "//runsc/boot/sentryapi",
+        "//runsc/cgroup",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/sandbox",
+        "//runsc/specutils",
+        "@com_github_cenkalti_backoff//:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

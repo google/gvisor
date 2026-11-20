@@ -16,13 +16,16 @@ package specutils
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -30,7 +33,14 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
+
+func init() {
+	// Pin main to the initial thread so tests that lock an OS thread run on
+	// non-leader threads.
+	runtime.LockOSThread()
+}
 
 const testProcessEnv = "SPECUTILS_TEST_PROCESS"
 
@@ -55,6 +65,65 @@ func testProcess(mode string) *exec.Cmd {
 	cmd.Env = append(os.Environ(), testProcessEnv+"="+mode)
 	cmd.Stderr = os.Stderr
 	return cmd
+}
+
+func TestFixConfigBundleValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		wantErr     string
+	}{
+		{
+			name: "flag annotation overrides incompatible bundle",
+			annotations: map[string]string{
+				"dev.gvisor.bundle.experimental-high-performance": "true",
+				"dev.gvisor.flag.overlay2":                        "none",
+			},
+		},
+		{
+			name: "incompatible bundle without override",
+			annotations: map[string]string{
+				"dev.gvisor.bundle.experimental-high-performance": "true",
+			},
+			wantErr: "overlay flag is incompatible with shared file access for rootfs",
+		},
+		{
+			name: "flag annotation leaves configuration invalid",
+			annotations: map[string]string{
+				"dev.gvisor.bundle.experimental-high-performance": "true",
+				"dev.gvisor.flag.overlay2":                        "root:memory",
+			},
+			wantErr: "overlay flag is incompatible with shared file access for rootfs",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flagSet := flag.NewFlagSet(t.Name(), flag.ContinueOnError)
+			config.RegisterFlags(flagSet)
+			if err := flagSet.Parse([]string{"--file-access=shared", "--overlay2=none"}); err != nil {
+				t.Fatal(err)
+			}
+			conf, err := config.NewFromFlags(flagSet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldFlags := flag.CommandLine
+			flag.CommandLine = flagSet
+			t.Cleanup(func() { flag.CommandLine = oldFlags })
+
+			if err := FixConfig(conf, &specs.Spec{Annotations: tc.annotations}); tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("FixConfig() got error %v, want %q", err, tc.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("FixConfig() failed: %v", err)
+				}
+				if got := conf.Overlay2.String(); got != "none" {
+					t.Errorf("overlay2 = %q, want none", got)
+				}
+			}
+		})
+	}
 }
 
 func TestIsProcessRunning(t *testing.T) {
@@ -1277,5 +1346,121 @@ func TestValidateSpecForContainerMountAnnotationOptionsSize(t *testing.T) {
 				t.Errorf("validateSpecForContainer(%v, %v) = %v, wantErr %t", tc.old.Annotations, tc.new.Annotations, err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestNSPath(t *testing.T) {
+	for _, ns := range KnownNamespaces() {
+		p := nsPath(specs.LinuxNamespaceType(ns))
+		if !strings.HasPrefix(p, "/proc/thread-self/ns/") {
+			t.Errorf("nsPath(%q) = %q, want prefix /proc/thread-self/ns/", ns, p)
+		}
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("os.Stat(%q) failed: %v", p, err)
+		}
+	}
+}
+
+func TestApplyNSRestoresThreadNamespace(t *testing.T) {
+	if os.Getuid() != 0 {
+		cmd := exec.Command("/proc/self/exe", "-test.run=^TestApplyNSRestoresThreadNamespace$", "-test.v")
+		for _, env := range os.Environ() {
+			if strings.HasPrefix(env, "TEST_PREMATURE_EXIT_FILE=") ||
+				strings.HasPrefix(env, "XML_OUTPUT_FILE=") ||
+				strings.HasPrefix(env, "GUNIT_OUTPUT=") {
+				continue
+			}
+			cmd.Env = append(cmd.Env, env)
+		}
+		cmd.SysProcAttr = &unix.SysProcAttr{
+			Cloneflags: unix.CLONE_NEWUSER | unix.CLONE_NEWNET,
+			UidMappings: []syscall.SysProcIDMap{
+				{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+			},
+			GidMappings: []syscall.SysProcIDMap{
+				{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+			},
+			GidMappingsEnableSetgroups: false,
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.ENOSYS) {
+				t.Skipf("user namespace unsupported: %v", err)
+			}
+			t.Fatalf("subtest in userns failed (%v):\n%s", err, out)
+		}
+		return
+	}
+
+	runtime.LockOSThread()
+	restoreFailed := false
+	defer func() {
+		if !restoreFailed {
+			runtime.UnlockOSThread()
+		}
+	}()
+	if unix.Gettid() == os.Getpid() {
+		t.Fatalf("test goroutine ran on thread group leader (tid=%d)", unix.Gettid())
+	}
+
+	origNS, err := unix.Open("/proc/thread-self/ns/net", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("opening original netns: %v", err)
+	}
+	defer unix.Close(origNS)
+	defer func() {
+		if err := unix.Setns(origNS, unix.CLONE_NEWNET); err != nil {
+			restoreFailed = true
+			t.Errorf("restoring original netns: %v", err)
+		}
+	}()
+
+	// Put this thread into its own network namespace, distinct from the
+	// thread group leader's namespace at /proc/self/ns/net.
+	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
+		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.ENOSYS) {
+			t.Skipf("unshare(CLONE_NEWNET): %v", err)
+		}
+		t.Fatalf("unshare(CLONE_NEWNET): %v", err)
+	}
+
+	leaderNS, err := os.Readlink("/proc/self/ns/net")
+	if err != nil {
+		t.Fatalf("readlink(/proc/self/ns/net): %v", err)
+	}
+	threadNS, err := os.Readlink("/proc/thread-self/ns/net")
+	if err != nil {
+		t.Fatalf("readlink(/proc/thread-self/ns/net): %v", err)
+	}
+	if threadNS == leaderNS {
+		t.Fatalf("thread netns %q equals leader netns %q after unshare", threadNS, leaderNS)
+	}
+
+	// Join the leader's network namespace via ApplyNS, then restore.
+	restore, err := ApplyNS(specs.LinuxNamespace{
+		Type: specs.NetworkNamespace,
+		Path: "/proc/self/ns/net",
+	})
+	if err != nil {
+		t.Fatalf("ApplyNS: %v", err)
+	}
+	joinedNS, err := os.Readlink("/proc/thread-self/ns/net")
+	if err != nil {
+		t.Fatalf("readlink(/proc/thread-self/ns/net): %v", err)
+	}
+	if joinedNS != leaderNS {
+		t.Errorf("after ApplyNS, thread netns = %q, want %q", joinedNS, leaderNS)
+	}
+
+	if err := restore(); err != nil {
+		restoreFailed = true
+		t.Fatalf("restore: %v", err)
+	}
+	restoredNS, err := os.Readlink("/proc/thread-self/ns/net")
+	if err != nil {
+		t.Fatalf("readlink(/proc/thread-self/ns/net): %v", err)
+	}
+	if restoredNS != threadNS {
+		t.Errorf("after restore, thread netns = %q, want %q (leader netns is %q)", restoredNS, threadNS, leaderNS)
 	}
 }

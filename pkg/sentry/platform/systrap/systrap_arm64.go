@@ -20,8 +20,10 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -52,6 +54,13 @@ func cputicksFreq() uint64 {
 
 func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
+}
+
+// initStubArchGlobals initializes arch-specific stub globals: the per-thread
+// memory layout, which depends on the host page size.
+func initStubArchGlobals(stubSysmsg []byte) {
+	*stubGlobal(stubSysmsg, sysmsg.Sighandler_blob_offset____export_per_thread_mem_size) = uint64(sysmsg.PerThreadMemSize)
+	*stubGlobal(stubSysmsg, sysmsg.Sighandler_blob_offset____export_page_size) = uint64(hostarch.PageSize)
 }
 
 // pointerAuthWarnOnce is used to ensure a warning about disabling PAC failing is only printed

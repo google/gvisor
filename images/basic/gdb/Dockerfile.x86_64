@@ -1,0 +1,10 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc gdb libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /test
+COPY tracee.c test.gdb test.sh ./
+RUN gcc -g -O0 -Wall -Wextra -o tracee tracee.c
+
+CMD ["/bin/sh", "/test/test.sh"]

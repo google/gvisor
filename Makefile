@@ -266,7 +266,7 @@ nogo-tests:
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/runner/... test/trace/...)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-nogo$(COMMA)-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/runner/... test/trace/...)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
@@ -496,6 +496,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
 	@$(call install_runtime_noreload,$(RUNTIME)-net-uds,--network-proxy-path=$(NET_PROXY_SOCKET)) # Used by TestExternalUDSProxy*.
 	@$(call install_runtime_noreload,$(RUNTIME)-netgofer-proxy,--netgofer=proxy) # Used by TestNetgoferProxy*.
+	@$(call install_runtime_noreload,$(RUNTIME)-netgofer-proxy-loopback,--netgofer=proxy-loopback) # Used by TestNetgoferProxy*.
 	@$(call install_runtime,$(RUNTIME)-cgroupv2,--in-sandbox-cgroup=v2) # Used by TestSystemd* and TestPIDFDSelftests.
 	@$(call test_runtime_cached,$(RUNTIME),-- $(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test //test/e2e:uds_proxy_test)
 .PHONY: docker-tests
@@ -752,6 +753,15 @@ run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends dat
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
 
+moby-benchmarks: BENCHMARKS_SUITE = ding
+moby-benchmarks: BENCHMARKS_TARGETS = //test/benchmarks/ding:moby_test
+moby-benchmarks: load-moby load-basic_alpine $(if $(filter-out runc,$(RUNTIME)),$(RUNTIME_BIN)) ## Runs Docker-in-gVisor (DING) benchmarks.
+ifneq ($(RUNTIME),runc)
+	@$(call install_runtime,$(RUNTIME),--net-raw --allow-packet-socket-write --TESTONLY-nftables --profile)
+endif
+	@$(call run_benchmark,$(RUNTIME))
+.PHONY: moby-benchmarks
+
 # For benchmarking seccheck, use setup-seccheck and run-benchmark-seccheck.
 # Default seccheck benchmark config.
 SECCHECK_BENCH_CONFIG ?= $(CURDIR)/test/benchmarks/seccheck/null_bench_config.json
@@ -844,6 +854,26 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 seccomp-sentry-filters:  # Dumps seccomp-bpf program for the Sentry binary.
 	@$(call run,//runsc/boot/filter/dumpfilter,$(ARGS))
 .PHONY: seccomp-sentry-filters
+
+##
+## Compatibility testing.
+##
+FSCHECKPOINT_CORPUS_DIR ?= $(CURDIR)/.fscheckpoint_corpus/compatibility_testing
+
+fscheckpoint-corpus-generate: $(RUNTIME_BIN) ## Generate a fscheckpoint compatibility corpus snapshot.
+	@set -e; \
+	CORPUS_OUT="$${FSCHECKPOINT_GENERATE_CORPUS_DIR:-$(CURDIR)/compatibility_testing}"; \
+	HEAD_HASH="$$(git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)"; \
+	TIMESTAMP="$$(date +%Y%m%d-%H%M%S)"; \
+	OUT_DIR="$${CORPUS_OUT}/$${TIMESTAMP}_$${HEAD_HASH}"; \
+	mkdir -p "$${OUT_DIR}"; \
+	$(call sudo,//runsc/container:fscheckpoint_compat_test,-test.v -test.run=TestFSCheckpointCorpusGenerate -fscheckpoint-generate-dir="$${OUT_DIR}" $(if $(FSCHECKPOINT_RUNSC_BIN),-fscheckpoint-runsc-bin="$(FSCHECKPOINT_RUNSC_BIN)")); \
+	echo "Generated fscheckpoint corpus snapshot at $${OUT_DIR}"
+.PHONY: fscheckpoint-corpus-generate
+
+fscheckpoint-compat-tests: ## Run fscheckpoint backward compatibility tests against corpus.
+	@$(call test,--sandbox_add_mount_pair=$(FSCHECKPOINT_CORPUS_DIR) --test_env=FSCHECKPOINT_CORPUS_DIR=$(FSCHECKPOINT_CORPUS_DIR) //runsc/container:fscheckpoint_compat_test -- -test.v -test.run=TestFSCheckpointCompatibility)
+.PHONY: fscheckpoint-compat-tests
 
 ##
 ## Website & documentation helpers.
@@ -1038,14 +1068,16 @@ tag: ## Stages a release tag; the release pipeline publishes it once the artifac
 ##   These run source-level formatting and lint checks.
 ##   Deep Go analysis is owned by gVisor nogo.
 ##
+
+lint_sh = $(call wrapper,tools/lint.sh --bazel="$(BAZEL)" --bazel-options="$(BASE_OPTIONS) $(BAZEL_OPTIONS)" $(1))
 lint: ensure-bazel-server ## Runs the source linters.
-	@$(call wrapper,tools/lint.sh)
+	@$(call lint_sh)
 .PHONY: lint
 
 lint-fix: ensure-bazel-server ## Reformats sources in place.
-	@$(call wrapper,tools/lint.sh --fix)
+	@$(call lint_sh,--fix)
 .PHONY: lint-fix
 
-lint-cc: ensure-bazel-server ## Runs clang-tidy over the C++ sources; needs bazel for compile_commands.json.
-	@$(call wrapper,tools/lint.sh clang-tidy)
+lint-cc: ensure-bazel-server ## Runs clang-tidy over the C++ sources.
+	@$(call lint_sh,clang-tidy)
 .PHONY: lint-cc

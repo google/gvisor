@@ -462,7 +462,7 @@ func (fd *uverbsFD) copyInPtr(t *kernel.Task, guestPtr uint64, length uint16) ([
 // is no longer needed.
 func (fd *uverbsFD) translateInputFD(t *kernel.Task, appFD int32) (int, *vfs.FileDescription, error) {
 	if appFD < 0 {
-		return 0, nil, linuxerr.EINVAL
+		return 0, nil, linuxerr.EBADF
 	}
 	file := t.GetFile(appFD)
 	if file == nil {
@@ -483,7 +483,7 @@ func (fd *uverbsFD) translateInputFD(t *kernel.Task, appFD int32) (int, *vfs.Fil
 // no longer needed.
 func (fd *uverbsFD) translateHostBackedFD(t *kernel.Task, appFD int32) (int, *vfs.FileDescription, error) {
 	if appFD < 0 {
-		return 0, nil, linuxerr.EINVAL
+		return 0, nil, linuxerr.EBADF
 	}
 	file := t.GetFile(appFD)
 	if file == nil {

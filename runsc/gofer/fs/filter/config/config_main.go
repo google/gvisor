@@ -22,7 +22,6 @@ import (
 
 // allowedSyscalls is the set of syscalls executed by the gofer.
 var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-	unix.SYS_ACCEPT:        seccomp.MatchAll{},
 	unix.SYS_CLOCK_GETTIME: seccomp.MatchAll{},
 	unix.SYS_CLOSE:         seccomp.MatchAll{},
 	unix.SYS_DUP:           seccomp.MatchAll{},

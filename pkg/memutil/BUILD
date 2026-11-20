@@ -14,5 +14,7 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/pkg/memutil",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_x_sys//unix:go_default_library"],
+    deps = [
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

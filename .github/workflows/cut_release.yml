@@ -59,7 +59,8 @@ jobs:
             echo "::error::Unknown commit: '${COMMIT}'"
             exit 1
           fi
-          if ! git merge-base --is-ancestor "${commit}" origin/master; then
+          # The full ref name: a tag can have the name "origin/master".
+          if ! git merge-base --is-ancestor "${commit}" refs/remotes/origin/master; then
             echo "::error::${commit} is not on master."
             exit 1
           fi

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !pagesize_64k
-
 package pgalloc
 
 import (
@@ -24,11 +22,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-)
-
-const (
-	page     = hostarch.PageSize
-	hugepage = hostarch.HugePageSize
 )
 
 // existingSegment represents a range of pages in a test MemoryFile that is not
@@ -47,7 +40,11 @@ const (
 	existingReleasing // or sub-releasing
 )
 
+// TestFindAllocatable tests allocation for 4K page size. See
+// TestFindAllocatable64K for 64K page size.
 func TestFindAllocatable(t *testing.T) {
+	use4KPagesForTest(t)
+	page, hugepage := uint64(hostarch.PageSize), uint64(hostarch.HugePageSize)
 	for _, test := range []struct {
 		name string
 		// Initial state:
@@ -691,6 +688,7 @@ func mapFileWithReadOnlyPage(t *testing.T, b byte) (int, []byte) {
 		t.Fatalf("CreateTemp failed: %v", err)
 	}
 	t.Cleanup(func() { f.Close() })
+	page := int(hostarch.PageSize)
 	data := make([]byte, 3*page)
 	for i := range data {
 		data[i] = 1
@@ -716,7 +714,8 @@ func TestZeroDiskBackedSkipsZeroUnwritablePage(t *testing.T) {
 	fd, m := mapFileWithReadOnlyPage(t, 0)
 	// Start at the second page, so that file offsets differ from offsets in
 	// the zeroed slice.
-	if zeroDiskBacked(fd, page, m[page:]) {
+	page := int(hostarch.PageSize)
+	if zeroDiskBacked(fd, uint64(page), m[page:]) {
 		t.Errorf("zeroDiskBacked returned true after skipping a page")
 	}
 	if i := slices.IndexFunc(m[page:], func(b byte) bool { return b != 0 }); i >= 0 {

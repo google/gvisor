@@ -783,10 +783,10 @@
   sha256: 55c8ce068257aa0d263aad7470113dafcd50f955ee754fc853c2fdcd31ad096f
   license: Apache-2.0
 - dependency: github_workflow_schema
-  version: https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json
-  retrieved: "2026-08-27"
-  commit: 166136b96a14f103a948053903e9339e63ad9170
-  sha256: 7499ccb3e75975504ea1ee7c70291e0c9f6c1f684678091d013061fe263e3ddb
+  version: https://raw.githubusercontent.com/SchemaStore/schemastore/498a42a4f41f467d8cdc36a5b5c546605a8935c3/src/schemas/json/github-workflow.json
+  retrieved: "2026-11-19"
+  commit: 498a42a4f41f467d8cdc36a5b5c546605a8935c3
+  sha256: 0528a890c1a6f4209444c421dbb752888a934a540f2a677146d78ed7f2321cbf
   license: Apache-2.0
 - dependency: go.opencensus.io
   version: v0.24.0
@@ -1119,19 +1119,22 @@
     - BSD-3-Clause
     - CC0-1.0
 - dependency: llvm
-  version: https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.24/hermetic-llvm-v0.8.24.tar.gz
-  retrieved: "2026-10-02"
-  commit: 39e71f9391895169b05ccd62cbb1956ae5322ff3
-  sha256: 64d421959bba30cb3bcdd1e57a01b8ef2f12b93db3d1ab4a34fe5f4d2ca78aa4
+  version: https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.26/hermetic-llvm-v0.8.26.tar.gz
+  retrieved: "2026-11-12"
+  commit: 53ff474eae0a3e617ce615dec635c4b38db495c8
+  sha256: b00dbcf7fdfa111ee9ea763b76b775e627696c27bc552cf63e74e0ea8e2ddfb7
   license: MIT
-- dependency: llvm-raw
-  version: https://github.com/llvm/llvm-project/archive/cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f.tar.gz
-  retrieved: "2026-08-27"
-  commit: cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f
-  sha256: e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69
+- dependency: llvm-project
+  version: https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst
+  retrieved: "2026-11-05"
+  commit: 85ac560262434c9ccfc0c183ec22d4138ed647fb
+  sha256: 271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56
   license:
     - Apache-2.0 WITH LLVM-exception
-    - MIT
+    - BSD-3-Clause
+    - CC0-1.0
+    - NCSA
+    - Spencer-94
 - dependency: ltp
   version: https://github.com/linux-test-project/ltp/releases/download/20260930/ltp-full-20260930.tar.xz
   retrieved: "2026-10-22"
@@ -1323,10 +1326,10 @@
   sha256: 327b3fcacde97b9665424db2b6c37e6f8da59ecc783dc5b8683c69396f820a12
   license: Apache-2.0
 - dependency: rules_go
-  version: https://github.com/bazel-contrib/rules_go/releases/download/v0.63.0/rules_go-v0.63.0.zip
-  retrieved: "2026-09-29"
-  commit: 9792f1c079a7602347e0fd966542b6d6b35a6c64
-  sha256: c3e253237109ab2e2a8d3cb075688b98a6e6fce43d849849648e8e3a84f20d6f
+  version: https://github.com/bazel-contrib/rules_go/releases/download/v0.65.0/rules_go-v0.65.0.zip
+  retrieved: "2026-10-27"
+  commit: fb591bc876354b939ef767887e772c15f679a283
+  sha256: d4a6e93dc63944172bc3b915a11bfa8d7391c9f1fdc11d7e43724f497617f0e5
   license: Apache-2.0
 - dependency: rules_img
   version: https://github.com/bazel-contrib/rules_img/releases/download/v0.3.23/rules_img-v0.3.23.tar.gz
@@ -1387,6 +1390,12 @@
     - Apache-2.0
     - BSD-3-Clause
     - MIT
+- dependency: tar.bzl
+  version: https://github.com/bazel-contrib/tar.bzl/releases/download/v0.10.9/tar.bzl-v0.10.9.tar.gz
+  retrieved: "2026-11-07"
+  commit: 00abfca5723f527a2651c36d059188f702bbd392
+  sha256: 8a3b78120510962fc74b577aaaf52412537cfbc25c88a596a375bd409e66b98a
+  license: Apache-2.0
 - dependency: xds
   version: https://github.com/cncf/xds/archive/ee656c7534f5d7dc23d44dd611689568f72017a6.tar.gz
   retrieved: "2026-08-27"

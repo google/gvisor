@@ -12,29 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && !pagesize_64k
+//go:build arm64
 
 package pagetables
 
-// Page table constants for 4K page size (4-level page tables).
+// Page table constants for the 4K translation granule (4-level page tables).
 const (
-	pteShift = 12
-	pmdShift = 21
-	pudShift = 30
-	pgdShift = 39
+	pteShift4K = 12
+	pmdShift4K = 21
+	pudShift4K = 30
+	pgdShift4K = 39
 
-	pteMask = 0x1ff << pteShift
-	pmdMask = 0x1ff << pmdShift
-	pudMask = 0x1ff << pudShift
-	pgdMask = 0x1ff << pgdShift
+	pteMask4K = 0x1ff << pteShift4K
+	pmdMask4K = 0x1ff << pmdShift4K
+	pudMask4K = 0x1ff << pudShift4K
+	pgdMask4K = 0x1ff << pgdShift4K
 
-	pteSize = 1 << pteShift
-	pmdSize = 1 << pmdShift
-	pudSize = 1 << pudShift
-	pgdSize = 1 << pgdShift
+	pteSize4K = 1 << pteShift4K
+	pmdSize4K = 1 << pmdShift4K
+	pudSize4K = 1 << pudShift4K
+	pgdSize4K = 1 << pgdShift4K
 
-	entriesPerPage = 512
+	entriesPerPage4K = 512
 )
 
-// PTEs is a collection of entries.
-type PTEs [entriesPerPage]PTE
+// PTEs is a collection of entries. With the 64K granule, use as64K to access
+// all entries of a page table page.
+type PTEs [entriesPerPage4K]PTE

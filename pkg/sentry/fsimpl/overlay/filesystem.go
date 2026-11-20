@@ -35,6 +35,11 @@ func isWhiteout(stat *linux.Statx) bool {
 	return stat.Mode&linux.S_IFMT == linux.S_IFCHR && stat.RdevMajor == 0 && stat.RdevMinor == 0
 }
 
+// DrainDentryCache implements vfs.FilesystemImpl.DrainDentryCache.
+func (fs *filesystem) DrainDentryCache(ctx context.Context) error {
+	return linuxerr.EOPNOTSUPP
+}
+
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {
 	if fs.opts.UpperRoot.Ok() {
@@ -835,6 +840,11 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 		if mustCreate {
 			return nil, linuxerr.EEXIST
+		}
+		// The start is a file if the path ends at the root of a file bind
+		// mount or at a magic link to a file.
+		if rp.MustBeDir() && !start.isDir() {
+			return nil, linuxerr.ENOTDIR
 		}
 		// ensureOpenableLocked may release renameMu, so pin the dentry first.
 		start.IncRef()
@@ -1683,12 +1693,31 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 	// Changes to d's attributes are serialized by d.copyMu.
 	d.copyMu.Lock()
 	defer d.copyMu.Unlock()
-	if err := d.fs.vfsfs.VirtualFilesystem().SetStatAt(ctx, d.fs.creds, &vfs.PathOperation{
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	upperPop := vfs.PathOperation{
 		Root:  d.upperVD,
 		Start: d.upperVD,
-	}, &opts); err != nil {
+	}
+	if err := vfsObj.SetStatAt(ctx, d.fs.creds, &upperPop, &opts); err != nil {
 		return err
 	}
+
+	// Changing owners or truncating may clear one or both of the setuid and
+	// setgid bits, so we may have to update opts before setting d.mode.
+	hadSetid := d.mode.Load()&(linux.S_ISUID|linux.S_ISGID) != 0
+	setsMode := opts.Stat.Mask&linux.STATX_MODE != 0
+	mayClearSetid := opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID|linux.STATX_SIZE) != 0
+	if (hadSetid || setsMode) && mayClearSetid {
+		stat, err := vfsObj.StatAt(ctx, d.fs.creds, &upperPop, &vfs.StatOptions{
+			Mask: linux.STATX_MODE,
+		})
+		if err != nil {
+			return err
+		}
+		opts.Stat.Mode = stat.Mode
+		opts.Stat.Mask |= linux.STATX_MODE
+	}
+
 	d.updateAfterSetStatLocked(&opts)
 	return nil
 }

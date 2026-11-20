@@ -20,6 +20,9 @@ go_library(
 
 go_test(
     name = "rdma_test",
-    srcs = ["snapshot_test.go"],
+    srcs = [
+        "collect_test.go",
+        "snapshot_test.go",
+    ],
     embed = [":rdma"],
 )

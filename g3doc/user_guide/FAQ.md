@@ -196,6 +196,6 @@ within another container (e.g., Docker or Podman).
 [filesystem]: /docs/user_guide/filesystem/
 [docker]: /docs/user_guide/quick_start/docker/
 [k8s]: /docs/user_guide/quick_start/kubernetes/
-[issue-7469]: https://github.com/google/gvisor/issues/7469
+[issue-7469]: https://github.com/gvisor/gvisor/issues/7469
 [Production guide]: /docs/user_guide/production/
 [CVE-2020-15257]: https://github.com/containerd/containerd/security/advisories/GHSA-36xw-fx78-c5r4

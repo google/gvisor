@@ -70,6 +70,18 @@ image_outputs(
 )
 
 image_manifest(
+    name = "nginx",
+    base = "@test_nginx",
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "nginx",
+    image = ":nginx",
+    image_name = "basic/nginx",
+)
+
+image_manifest(
     name = "python",
     base = "@test_python",
     entrypoint = [
@@ -85,6 +97,24 @@ image_outputs(
     name = "python",
     image = ":python",
     image_name = "basic/python",
+)
+
+image_manifest(
+    name = "redis",
+    base = "@test_redis",
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "redis",
+    image = ":redis",
+    image_name = "basic/redis",
+)
+
+image_outputs(
+    name = "benchmark_redis",
+    image = ":redis",
+    image_name = "benchmarks/redis",
 )
 
 # Exercise containerd's resolver mounts through a symlink in the image.

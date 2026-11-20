@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reproduction case for https://github.com/google/gvisor/issues/9827."""
+"""Reproduction case for https://github.com/gvisor/gvisor/issues/9827."""
 
 import os
 import time

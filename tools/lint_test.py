@@ -36,10 +36,13 @@ class LintTest(unittest.TestCase):
     self.root = pathlib.Path(self.temp.name)
     self.cache = self.root / "cache"
     self.bin = self.root / "bin"
+    self.execroot = self.root / "execroot"
+    self.bazel_log = self.root / "bazel.log"
     self.env = dict(os.environ, LINT_CACHE_DIR=str(self.cache))
     self.env["PATH"] = str(self.bin) + os.pathsep + self.env["PATH"]
     self.cache.mkdir()
     self.bin.mkdir()
+    self.execroot.mkdir()
     self.versions = dict(
         re.findall(
             r'^declare -r ([A-Z_]+)_VERSION="([^"]+)"$',
@@ -49,6 +52,16 @@ class LintTest(unittest.TestCase):
     )
     self.tool(self.bin / "git", "printf 'tracked source\\0'")
     self.tool(self.bin / "curl", "echo unexpected-download >&2; exit 42")
+    # goimports is built with Bazel, then found at the execroot-relative path
+    # that cquery prints.
+    self.tool(
+        self.bin / "bazel",
+        f'echo "$*" >> "{self.bazel_log}"\n'
+        'case " $* " in\n'
+        f'  *" info "*) echo "{self.execroot}" ;;\n'
+        '  *" cquery "*) echo "goimports goimports" ;;\n'
+        "esac",
+    )
     for name in ("goimports", "clang-format", "buildifier"):
       self.tool(self.formatter(name), "exit 0")
 
@@ -58,7 +71,7 @@ class LintTest(unittest.TestCase):
 
   def formatter(self, name: str) -> pathlib.Path:
     if name == "goimports":
-      return self.bin / "bazel"
+      return self.execroot / "goimports"
     version = self.versions[name.upper().replace("-", "_")]
     return self.cache / f"{name}-{version}"
 
@@ -96,6 +109,29 @@ class LintTest(unittest.TestCase):
         self.tool(self.formatter(name), "exit 7")
         self.assert_failed(self.lint(*args), name)
         self.tool(self.formatter(name), "exit 0")
+
+  def test_bazel_options(self) -> None:
+    result = self.lint(
+        "--bazel=bazel --startup=1",
+        "--bazel-options=--opt=1 --opt=2",
+        "goimports",
+    )
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertIn("PASS  goimports", result.stderr)
+    commands = [c.split() for c in self.bazel_log.read_text().splitlines()]
+    self.assertEqual(
+        [c[:4] for c in commands],
+        [
+            ["--startup=1", command, "--opt=1", "--opt=2"]
+            for command in ("build", "info", "cquery")
+        ],
+    )
+
+  def test_bazel_failure(self) -> None:
+    self.tool(self.bin / "bazel", "echo bazel-build-failed >&2; exit 7")
+    result = self.lint("goimports")
+    self.assert_failed(result, "goimports")
+    self.assertIn("bazel-build-failed", result.stderr)
 
   def test_diagnostics_and_continuation(self) -> None:
     self.tool(

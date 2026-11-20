@@ -160,6 +160,51 @@ func TestDataASUpdates(t *testing.T) {
 	}
 }
 
+// TestMRemapCopyOntoSource checks mremap(addr, 0, n, MREMAP_MAYMOVE |
+// MREMAP_FIXED, addr): unmapping the destination removes the source vma, so
+// MRemap must fail with EFAULT. Linux returns EFAULT here for shared mappings;
+// for private mappings it returns EINVAL from mm/mremap.c:check_prep_vma().
+func TestMRemapCopyOntoSource(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		oldSize uint64
+	}{
+		{
+			name:    "zero",
+			oldSize: 0,
+		},
+		{
+			// Rounds up to 0, as in Linux.
+			name:    "rounds up to zero",
+			oldSize: 0xfffffffffffff001,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManager(ctx, t)
+			defer mm.DecUsers(ctx)
+
+			addr, err := mm.MMap(ctx, memmap.MMapOpts{
+				Length:   pageSize,
+				Private:  true,
+				Perms:    hostarch.ReadWrite,
+				MaxPerms: hostarch.AnyAccess,
+			})
+			if err != nil {
+				t.Fatalf("MMap got err %v want nil", err)
+			}
+
+			newAddr, err := mm.MRemap(ctx, addr, test.oldSize, pageSize, MRemapOpts{
+				Move:    MRemapMustMove,
+				NewAddr: addr,
+			})
+			if !linuxerr.Equals(linuxerr.EFAULT, err) {
+				t.Errorf("MRemap got (%#x, %v), want (_, EFAULT)", newAddr, err)
+			}
+		})
+	}
+}
+
 func TestBrkDataLimitUpdates(t *testing.T) {
 	limitSet := limits.NewLimitSet()
 	limitSet.Set(limits.Data, limits.Limit{}, true /* privileged */) // zero RLIMIT_DATA
@@ -1217,5 +1262,124 @@ func TestIODuringAsyncPageLoad(t *testing.T) {
 	}
 	if want := bytes.Repeat([]byte{1}, len(b)); !bytes.Equal(b, want) {
 		t.Errorf("CopyIn got %v want %v", b, want)
+	}
+}
+
+type bufferedIOFallbackFile struct {
+	*pgalloc.MemoryFile
+}
+
+func (f *bufferedIOFallbackFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	return safemem.BlockSeq{}, memmap.BufferedIOFallbackErr{}
+}
+
+func (f *bufferedIOFallbackFile) BufferReadAt(off uint64, dst []byte) (uint64, error) {
+	ims, err := f.MemoryFile.MapInternal(memmap.FileRange{Start: off, End: off + uint64(len(dst))}, hostarch.Read)
+	if err != nil {
+		return 0, err
+	}
+	return safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
+}
+
+func (f *bufferedIOFallbackFile) BufferWriteAt(off uint64, src []byte) (uint64, error) {
+	ims, err := f.MemoryFile.MapInternal(memmap.FileRange{Start: off, End: off + uint64(len(src))}, hostarch.Write)
+	if err != nil {
+		return 0, err
+	}
+	return safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
+}
+
+type bufferedIOFallbackMappable struct {
+	*SpecialMappable
+	file *bufferedIOFallbackFile
+}
+
+func (m *bufferedIOFallbackMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	ts, err := m.SpecialMappable.Translate(ctx, required, optional, at)
+	for i := range ts {
+		ts[i].File = m.file
+	}
+	return ts, err
+}
+
+// TestEnsurePMAsExistBufferedIOFallback tests that EnsurePMAsExist doesn't
+// modify the contents of a mapping whose memmap.File requires buffered I/O.
+func TestEnsurePMAsExistBufferedIOFallback(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(pageSize, pgalloc.AllocOpts{})
+	if err != nil {
+		t.Fatalf("failed to allocate memory file range: %v", err)
+	}
+	want := bytes.Repeat([]byte{0xa5}, pageSizeInt)
+	ims, err := mf.MapInternal(fr, hostarch.Write)
+	if err != nil {
+		t.Fatalf("MapInternal got err %v want nil", err)
+	}
+	if _, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(want))); err != nil {
+		t.Fatalf("failed to fill memory file range: %v", err)
+	}
+
+	mappable := &bufferedIOFallbackMappable{
+		SpecialMappable: NewSpecialMappable("buffered_fallback", mf, fr),
+		file:            &bufferedIOFallbackFile{MemoryFile: mf},
+	}
+	defer mappable.DecRef(ctx)
+
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:          pageSize,
+		MappingIdentity: mappable,
+		Mappable:        mappable,
+		Private:         false,
+		Perms:           hostarch.ReadWrite,
+		MaxPerms:        hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+
+	n, err := mm.EnsurePMAsExist(ctx, addr, int64(pageSize), usermem.IOOpts{})
+	if err != nil || n != int64(pageSize) {
+		t.Fatalf("EnsurePMAsExist(%d) got (%d, %v), want (%d, nil)", pageSize, n, err, pageSize)
+	}
+
+	got := make([]byte, pageSizeInt)
+	ims, err = mf.MapInternal(fr, hostarch.Read)
+	if err != nil {
+		t.Fatalf("MapInternal got err %v want nil", err)
+	}
+	if _, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(got)), ims); err != nil {
+		t.Fatalf("failed to read memory file range: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("EnsurePMAsExist modified mapped file contents: got %#x..., want %#x...", got[:4], want[:4])
+	}
+}
+
+// TestGetByteSlicePtrZeroed tests that getByteSlicePtr returns zero-filled
+// slices, including when it recycles a slice passed to putByteSlicePtr.
+//
+// sync.Pool doesn't guarantee that Get returns a slice that was just Put (for
+// example, it randomly drops items when the race detector is enabled), so this
+// test may not exercise recycling on every iteration. It never fails spuriously.
+func TestGetByteSlicePtrZeroed(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		dirty := getByteSlicePtr(pageSizeInt)
+		for j := range *dirty {
+			(*dirty)[j] = 0xfe
+		}
+		putByteSlicePtr(dirty)
+
+		s := getByteSlicePtr(pageSizeInt)
+		for j, b := range *s {
+			if b != 0 {
+				putByteSlicePtr(s)
+				t.Fatalf("getByteSlicePtr returned non-zero byte %#x at index %d", b, j)
+			}
+		}
+		putByteSlicePtr(s)
 	}
 }

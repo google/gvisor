@@ -517,6 +517,7 @@ func (b *Buffer) WriteFromReaderAndLimitedReader(r io.Reader, count int64, lr *i
 		lr.R = r
 		lr.N = vsize
 		n, err := io.Copy(v, lr)
+		lr.R = nil
 		b.Append(v)
 		done += n
 		if err == io.EOF {

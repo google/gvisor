@@ -1,53 +1,81 @@
-"""Tools for testing yaml files against schemas."""
+"""Tools for testing YAML files against schemas."""
 
-def _yaml_test_impl(ctx):
-    """Implementation for yaml_test."""
-    runner = ctx.actions.declare_file(ctx.label.name)
-    ctx.actions.write(runner, "\n".join([
-        "#!/bin/bash",
-        "set -euo pipefail",
-        "%s '-schema=%s' -strict=%s -disallow_comments=%s -- %s" % (
-            ctx.files._tool[0].short_path,
-            ctx.files.schema[0].short_path,
-            "true" if ctx.attr.strict else "false",
-            "true" if ctx.attr.disallow_comments else "false",
-            " ".join([f.short_path for f in ctx.files.srcs]),
-        ),
-    ]), is_executable = True)
-    return [DefaultInfo(
-        runfiles = ctx.runfiles(files = ctx.files._tool + ctx.files.schema + ctx.files.srcs),
-        executable = runner,
-    )]
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 
-yaml_test = rule(
-    implementation = _yaml_test_impl,
-    doc = "Tests a yaml file against a schema.",
+def _yaml_test_options_impl(ctx):
+    # Resolve select() on the flags and schema before Bazel expands the test args.
+    return [
+        DefaultInfo(files = depset([ctx.file.schema])),
+        platform_common.TemplateVariableInfo({
+            "YAMLTEST_STRICT": "true" if ctx.attr.strict else "false",
+            "YAMLTEST_DISALLOW_COMMENTS": "true" if ctx.attr.disallow_comments else "false",
+        }),
+    ]
+
+_yaml_test_options = rule(
+    implementation = _yaml_test_options_impl,
     attrs = {
-        "srcs": attr.label_list(
-            doc = "The input yaml files.",
-            mandatory = True,
-            allow_files = True,
-        ),
-        "schema": attr.label(
-            doc = "The schema file in JSON schema format.",
-            allow_single_file = True,
-            mandatory = True,
-        ),
-        "strict": attr.bool(
-            doc = "Whether to use strict mode for YAML decoding.",
-            mandatory = False,
-            default = True,
-        ),
-        "disallow_comments": attr.bool(
-            doc = "Whether to disallow comments in the YAML file.",
-            mandatory = False,
-            default = False,
-        ),
-        "_tool": attr.label(
-            executable = True,
-            cfg = "target",
-            default = Label("//tools/yamltest:yamltest"),
-        ),
+        "schema": attr.label(allow_single_file = True, mandatory = True),
+        "strict": attr.bool(mandatory = True),
+        "disallow_comments": attr.bool(mandatory = True),
     },
-    test = True,
 )
+
+def yaml_test(
+        name,
+        srcs,
+        schema,
+        strict = True,
+        disallow_comments = False,
+        *,
+        args = [],
+        data = [],
+        toolchains = [],
+        **kwargs):
+    """Tests YAML files against a JSON schema.
+
+    Args:
+        name: Test target name.
+        srcs: Input YAML files or filegroups.
+        schema: JSON schema file.
+        strict: Whether to use strict mode for YAML decoding.
+        disallow_comments: Whether to disallow comments in the YAML files.
+        args: Additional arguments passed to the validator after the source files.
+        data: Additional files available to the test at runtime.
+        toolchains: Additional toolchains providing variables for test arguments.
+        **kwargs: Additional test attributes.
+    """
+    sources = name + "_srcs"
+    options = name + "_options"
+    native.filegroup(
+        name = sources,
+        srcs = srcs,
+        tags = ["manual"],
+        testonly = True,
+        visibility = ["//visibility:private"],
+    )
+    _yaml_test_options(
+        name = options,
+        schema = schema,
+        strict = strict,
+        disallow_comments = disallow_comments,
+        tags = ["manual"],
+        testonly = True,
+        visibility = ["//visibility:private"],
+    )
+    native_test(
+        name = name,
+        src = Label("//tools/yamltest:yamltest"),
+        out = name,
+        args = [
+            "-schema",
+            "$(rootpath :%s)" % options,
+            "-strict=$(YAMLTEST_STRICT)",
+            "-disallow_comments=$(YAMLTEST_DISALLOW_COMMENTS)",
+            "--",
+            "$(rootpaths :%s)" % sources,
+        ] + args,
+        data = [":" + options, ":" + sources] + data,
+        toolchains = [":" + options] + toolchains,
+        **kwargs
+    )

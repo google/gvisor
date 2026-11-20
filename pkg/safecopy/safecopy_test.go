@@ -495,6 +495,131 @@ func TestZeroOutBusError(t *testing.T) {
 	}
 }
 
+// zeroOutCases are lengths that memclr zeroes with each of its loops: ordinary
+// stores, REP STOSB or DC ZVA if the CPU supports them, and non-temporal stores
+// on amd64. faultOffs are offsets at which to test faults, rounded up to the
+// page size.
+var zeroOutCases = []struct {
+	length    int
+	faultOffs []int
+}{
+	{2000, []int{pageSize}},
+	{64 << 10, []int{pageSize, 32 << 10}},
+	{33 << 20, []int{pageSize, 16 << 20, 32 << 20}},
+}
+
+func TestZeroOutLengths(t *testing.T) {
+	// Test that ZeroOut zeroes exactly the requested bytes, for various
+	// alignments of both ends.
+	for _, c := range zeroOutCases {
+		b := make([]byte, c.length+64)
+		ones := bytes.Repeat([]byte{0xff}, len(b))
+		zeros := make([]byte, len(b))
+		for _, start := range []int{0, 1, 15, 48, 63} {
+			for end := start + c.length - 256; end < start+c.length; end += 8 {
+				copy(b, ones)
+				n, err := ZeroOut(unsafe.Pointer(&b[start]), uintptr(end-start))
+				if n != uintptr(end-start) || err != nil {
+					t.Errorf("ZeroOut([%d, %d)): got (%v, %v), want (%v, nil)", start, end, n, err, end-start)
+				}
+				if !bytes.Equal(b[start:end], zeros[start:end]) {
+					t.Errorf("ZeroOut([%d, %d)) left non-zero bytes", start, end)
+				}
+				if !bytes.Equal(b[:start], ones[:start]) || !bytes.Equal(b[end:], ones[end:]) {
+					t.Errorf("ZeroOut([%d, %d)) wrote outside the range", start, end)
+				}
+			}
+		}
+	}
+}
+
+func TestZeroOutLengthsFault(t *testing.T) {
+	// Test that ZeroOut zeroes everything before a SIGSEGV or SIGBUS at
+	// various points in a range.
+	ps := unix.Getpagesize()
+	for _, c := range zeroOutCases {
+		size := (2*ps + c.length + ps - 1) &^ (ps - 1)
+		ones := bytes.Repeat([]byte{0xff}, size)
+		zeros := make([]byte, size)
+		for _, sig := range []unix.Signal{unix.SIGSEGV, unix.SIGBUS} {
+			for _, off := range c.faultOffs {
+				faultOff := (off + ps - 1) &^ (ps - 1)
+				for _, start := range []int{0, 1, 15, ps - 1500, ps - 16, ps - 15, ps - 1, ps + 1} {
+					faultAt := max(faultOff, start)
+					if faultAt-start >= c.length {
+						continue
+					}
+					t.Run(fmt.Sprintf("%v at %#x from %#x in %#x", sig, faultOff, start, c.length), func(t *testing.T) {
+						var m []byte
+						var err error
+						if sig == unix.SIGSEGV {
+							m, err = unix.Mmap(-1, 0, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_PRIVATE)
+							if err != nil {
+								t.Fatalf("Mmap failed: %v", err)
+							}
+							defer unix.Munmap(m)
+							if err := unix.Mprotect(m[faultOff:], unix.PROT_NONE); err != nil {
+								t.Fatalf("Mprotect failed: %v", err)
+							}
+						} else {
+							fd, err := unix.MemfdCreate("safecopy_test", 0)
+							if err != nil {
+								t.Fatalf("MemfdCreate failed: %v", err)
+							}
+							defer unix.Close(fd)
+							if err := unix.Ftruncate(fd, int64(faultOff)); err != nil {
+								t.Fatalf("Ftruncate failed: %v", err)
+							}
+							m, err = unix.Mmap(fd, 0, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+							if err != nil {
+								t.Fatalf("Mmap failed: %v", err)
+							}
+							defer unix.Munmap(m)
+							// A huge page could extend past EOF. Kernels
+							// without THP reject this advice.
+							if err := unix.Madvise(m, unix.MADV_NOHUGEPAGE); err != nil && err != unix.EINVAL {
+								t.Fatalf("Madvise failed: %v", err)
+							}
+						}
+						dst := uintptr(unsafe.Pointer(&m[start]))
+						fault := uintptr(unsafe.Pointer(&m[faultAt]))
+						if f, _ := memclr(dst, uintptr(c.length), true); f != fault {
+							t.Errorf("memclr: got fault %#x, want %#x", f, fault)
+						}
+						copy(m[start:faultAt], ones)
+						n, err := ZeroOut(unsafe.Pointer(dst), uintptr(c.length))
+						if want := uintptr(faultAt - start); n != want {
+							t.Errorf("Unexpected write length: got %v, want %v", n, want)
+						}
+						var want error = SegvError{fault}
+						if sig == unix.SIGBUS {
+							want = BusError{fault}
+						}
+						if err != want {
+							t.Errorf("Unexpected error: got %v, want %v", err, want)
+						}
+						if !bytes.Equal(m[start:faultAt], zeros[start:faultAt]) {
+							t.Errorf("Non-zero bytes before the fault")
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func BenchmarkZeroOut(b *testing.B) {
+	for _, size := range []int{4 << 10, 64 << 10, 2 << 20, 64 << 20, 128 << 20} {
+		b.Run(fmt.Sprintf("%dKiB", size>>10), func(b *testing.B) {
+			buf := make([]byte, size)
+			b.SetBytes(int64(size))
+			for b.Loop() {
+				ZeroOut(unsafe.Pointer(&buf[0]), uintptr(size))
+			}
+		})
+	}
+}
+
 func TestSwapUint32SegvError(t *testing.T) {
 	// Test that SwapUint32 returns a SegvError when reaching a page that
 	// signals SIGSEGV.

@@ -326,6 +326,7 @@ go_test(
     name = "stack_test",
     size = "small",
     srcs = [
+        "bridge_internal_test.go",
         "conntrack_test.go",
         "forwarding_test.go",
         "iptables_test.go",
@@ -364,6 +365,8 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/veth",
+        "//pkg/tcpip/network/arp",
+        "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
     ],
 )

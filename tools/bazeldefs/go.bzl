@@ -9,10 +9,25 @@ load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 
 gazelle = _gazelle
 
-go_path = _go_path
 go_reset_target = _go_reset_target
 go_cov = native.genrule
 cov_available = True
+
+def _go_source_export_config(_settings, _attr):
+    return {"//tools:export_go_sources": True}
+
+def _go_path_impl(ctx):
+    return ctx.super()
+
+go_path = rule(
+    parent = _go_path,
+    implementation = _go_path_impl,
+    cfg = transition(
+        implementation = _go_source_export_config,
+        inputs = [],
+        outputs = ["//tools:export_go_sources"],
+    ),
+)
 
 def _go_proto_or_grpc_library(go_library_func, name, **kwargs):
     if "importpath" in kwargs:
@@ -75,7 +90,6 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
     })
     base_gotags = kwargs.pop("gotags", [])
     kwargs["gotags"] = select({
-        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
         "//tools:debug": base_gotags + ["debug"],
         "//conditions:default": base_gotags,
     }) + select({
@@ -162,7 +176,6 @@ def go_test(name, static = False, pure = False, library = None, **kwargs):
         kwargs["embed"] = [library]
     base_gotags = kwargs.pop("gotags", [])
     kwargs["gotags"] = select({
-        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
         "//tools:debug": base_gotags + ["debug"],
         "//conditions:default": base_gotags,
     }) + select({

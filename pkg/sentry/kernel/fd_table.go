@@ -429,9 +429,6 @@ func (f *FDTable) Get(fd int32) (*vfs.FileDescription, FDFlags) {
 }
 
 // GetFDs returns a sorted list of valid fds.
-//
-// Precondition: The caller must be running on the task goroutine, or Task.mu
-// must be locked.
 func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 	f.mu.Lock()
 	defer f.mu.Unlock()

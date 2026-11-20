@@ -1183,7 +1183,7 @@ func zeroDiskBacked(fd int, off uint64, bs []byte) bool {
 		}
 		wroteAll = false
 		start := hostarch.PageRoundDown(n)
-		end := start + hostarch.PageSize
+		end := start + uint64(hostarch.PageSize)
 		buf := make([]byte, hostarch.PageSize)
 		rn, rerr := unix.Pread(fd, buf, int64(off+start))
 		if rerr != nil || rn != len(buf) || slices.ContainsFunc(buf, func(b byte) bool { return b != 0 }) {
@@ -1891,6 +1891,24 @@ func (f *MemoryFile) TotalUsage() (uint64, error) {
 		return 0, err
 	}
 	return uint64(stat.Blocks * 512), nil
+}
+
+// UnaccountedUsage returns the number of bytes used by the backing file that
+// are not known to be committed, and so are not counted in
+// usage.MemoryAccounting: pages committed since the last scan for committed
+// pages, and waste pages that were committed before any scan saw them.
+func (f *MemoryFile) UnaccountedUsage() (uint64, error) {
+	total, err := f.TotalUsage()
+	if err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	known := f.knownCommittedBytes
+	f.mu.Unlock()
+	if total < known {
+		return 0, nil
+	}
+	return total - known, nil
 }
 
 // TotalSize returns the current size of the backing file in bytes, which is an

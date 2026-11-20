@@ -27,6 +27,7 @@ go_library(
         "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/sighandling",
+        "@org_golang_x_sys//cpu:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -34,6 +35,8 @@ go_library(
 go_test(
     name = "safecopy_test",
     srcs = [
+        "memclr_amd64_test.go",
+        "memclr_arm64_test.go",
         "safecopy_test.go",
     ],
     embed = [":safecopy"],

@@ -22,7 +22,7 @@
 set -euxo pipefail
 
 today="$(date +"%Y-%m-%d")"
-repo_url="https://github.com/google/gvisor.git"
+repo_url="https://github.com/gvisor/gvisor.git"
 pgo_branch_name="pgo/update-${today}"
 
 tolerate_no_profile_changes=false

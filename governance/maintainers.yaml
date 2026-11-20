@@ -104,8 +104,8 @@ maintainers:
       - affiliation: Google
         until: 2026-07-04
     started: 2019-05-23
-    status: EMERITUS_SINCE:2026-06-24
-    # areas: [checkpointing, erofs, gpu, mm, rdma, runsc, sentry, vfs]
+    status: ACTIVE
+    areas: [checkpointing, erofs, gpu, mm, rdma, runsc, sentry, vfs]
   - name: Ghanan Gowripalan
     github: ghananigans
     github_id: 7963952
@@ -124,7 +124,7 @@ maintainers:
     github_id: 1330673
     affiliation: Google
     started: 2020-11-18
-    status: HIATUS_SINCE:2026-10-28
+    status: ACTIVE
     areas: [benchmarks, kubernetes, metrics, oci, release_pipeline, runsc, seccomp, website]
   - name: Lucas Manning
     github: manninglucas

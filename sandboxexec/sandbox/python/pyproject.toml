@@ -27,8 +27,8 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://gvisor.dev"
-Bug-Tracker = "https://github.com/google/gvisor/issues"
-Repository = "https://github.com/google/gvisor"
+Bug-Tracker = "https://github.com/gvisor/gvisor/issues"
+Repository = "https://github.com/gvisor/gvisor"
 
 [tool.setuptools]
 packages = ["gvisor"]

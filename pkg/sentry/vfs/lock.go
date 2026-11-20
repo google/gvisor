@@ -75,7 +75,7 @@ func (fl *FileLocks) peek() *fileLocks {
 
 // LockBSD tries to acquire a BSD-style lock on the entire file.
 func (fl *FileLocks) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerID int32, t fslock.LockType, block bool) error {
-	if err := fl.get().bsd.LockRegion(ctx, uid, ownerID, t, fslock.LockRange{0, fslock.LockEOF}, false, block); err == nil || err == linuxerr.ErrWouldBlock {
+	if err := fl.get().bsd.LockRegion(ctx, uid, ownerID, t, fslock.LockRange{0, fslock.LockEOF}, block); err == nil || err == linuxerr.ErrWouldBlock {
 		return err
 	}
 	return linuxerr.ERESTARTSYS
@@ -93,8 +93,7 @@ func (fl *FileLocks) UnlockBSD(uid fslock.UniqueID) {
 
 // LockPOSIX tries to acquire a POSIX-style lock on a file region.
 func (fl *FileLocks) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block bool) error {
-	_, ofd := uid.(*FileDescription)
-	if err := fl.get().posix.LockRegion(ctx, uid, ownerPID, t, r, ofd, block); err == nil || err == linuxerr.ErrWouldBlock {
+	if err := fl.get().posix.LockRegion(ctx, uid, ownerPID, t, r, block); err == nil || err == linuxerr.ErrWouldBlock {
 		return err
 	}
 	return linuxerr.ERESTARTSYS
@@ -117,6 +116,5 @@ func (fl *FileLocks) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fsloc
 	if l == nil {
 		return linux.Flock{Type: linux.F_UNLCK}, nil
 	}
-	_, ofd := uid.(*FileDescription)
-	return l.posix.TestRegion(ctx, uid, t, r, ofd), nil
+	return l.posix.TestRegion(ctx, uid, t, r), nil
 }

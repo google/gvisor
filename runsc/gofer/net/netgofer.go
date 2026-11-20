@@ -78,6 +78,10 @@ var netgoferCaps = &specs.LinuxCapabilities{}
 // intercepts traffic from the sandbox and forwards it to the host network via
 // host sockets (translating source IP to host/pod IP).
 //
+// If --passt-fd is set, netgofer runs in passt mode instead: it copies packets
+// between the sandbox and a passt process, which opens the host sockets. See
+// passt.go.
+//
 // Limitations:
 //   - Only outbound TCP and UDP traffic is supported. ICMP and inbound
 //     connections are not supported.
@@ -90,8 +94,10 @@ type Netgofer struct {
 	util.InternalSubCommand
 
 	udsFD          int
+	passtFD        int
 	mtu            int
 	applyCaps      bool
+	allowLoopback  bool
 	disableSeccomp bool
 	maxActiveConns int
 	udpIdleTimeout time.Duration
@@ -121,22 +127,25 @@ func (*Netgofer) Usage() string {
 // SetFlags implements subcommands.Command.
 func (n *Netgofer) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&n.udsFD, "uds-fd", -1, "FD of the host side UDS")
+	f.IntVar(&n.passtFD, "passt-fd", -1, "FD of a connected SOCK_STREAM socket to passt. If set, netgofer runs in passt mode")
 	f.IntVar(&n.mtu, "mtu", DefaultMTU, "MTU for the network interface")
 	f.BoolVar(&n.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the netgofer process can do")
 	f.IntVar(&n.maxActiveConns, "max-active-conns", defaultMaxActiveConns, "maximum number of concurrent active connections")
 	n.profileFDs.SetFromFlags(f)
+	f.BoolVar(&n.allowLoopback, "allow-loopback", false, "if true, allow forwarding traffic destined to loopback addresses in the netgofer network namespace")
 }
 
 // Execute implements subcommands.Command.
 func (n *Netgofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if n.udsFD < 0 {
+		n.closeFDs()
 		if f.Usage != nil {
 			f.Usage()
 		}
 		return subcommands.ExitUsageError
 	}
 	if f.NArg() != 1 {
-		_ = unix.Close(n.udsFD)
+		n.closeFDs()
 		if f.Usage != nil {
 			f.Usage()
 		}
@@ -145,12 +154,12 @@ func (n *Netgofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 	sandboxID := f.Arg(0)
 
 	if len(args) == 0 {
-		_ = unix.Close(n.udsFD)
+		n.closeFDs()
 		return util.Errorf("missing config")
 	}
 	conf, ok := args[0].(*config.Config)
 	if !ok {
-		_ = unix.Close(n.udsFD)
+		n.closeFDs()
 		return util.Errorf("first argument must be *config.Config, got %T", args[0])
 	}
 
@@ -162,17 +171,23 @@ func (n *Netgofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 	if n.applyCaps {
 		if config.CgoEnabled {
 			log.Warningf("Need to re-exec in order to drop capabilities, due to cgo build. Use a pure-Go gVisor build to avoid this.")
-			// Clear FD_CLOEXEC so udsFD survives re-exec.
+			// Clear FD_CLOEXEC so udsFD and passtFD survive re-exec.
 			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(n.udsFD), unix.F_SETFD, 0); errno != 0 {
-				_ = unix.Close(n.udsFD)
+				n.closeFDs()
 				return util.Errorf("error clearing CLOEXEC on udsFD: %v", errno)
+			}
+			if n.passtFD >= 0 {
+				if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(n.passtFD), unix.F_SETFD, 0); errno != 0 {
+					n.closeFDs()
+					return util.Errorf("error clearing CLOEXEC on passtFD: %v", errno)
+				}
 			}
 			reexecArgs := sandboxsetup.PrepareArgs(n.Name(), f, map[string]string{"apply-caps": "false"})
 			util.Fatalf("setCapsAndCallSelf(%v, %v): %v", reexecArgs, netgoferCaps, sandboxsetup.SetCapsAndCallSelf(reexecArgs, netgoferCaps))
 			panic("unreachable")
 		}
 		if err := sandboxsetup.ApplyCapsAllThreads(netgoferCaps, nil); err != nil {
-			_ = unix.Close(n.udsFD)
+			n.closeFDs()
 			return util.Errorf("dropping capabilities: %v", err)
 		}
 	}
@@ -182,12 +197,28 @@ func (n *Netgofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 	stopProfiling := profile.Start(profileOpts)
 	defer stopProfiling()
 
-	// TODO(b/518947343): Add support for rootless mode.
+	if n.passtFD >= 0 {
+		return n.runPasstMode(conf)
+	}
 	return n.runProxyMode(conf)
 }
 
+// closeFDs closes the FDs that netgofer received from runsc. Execute calls it
+// on error paths before the FDs are handed to a run mode.
+func (n *Netgofer) closeFDs() {
+	if n.udsFD >= 0 {
+		_ = unix.Close(n.udsFD)
+	}
+	if n.passtFD >= 0 {
+		_ = unix.Close(n.passtFD)
+	}
+}
+
 func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
-	log.Infof("Running in proxy mode")
+	if conf.Netgofer.AllowLoopback() {
+		n.allowLoopback = true
+	}
+	log.Infof("Running in proxy mode (allowLoopback=%v)", n.allowLoopback)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var (
@@ -197,8 +228,16 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 		linkEP     stack.LinkEndpoint
 		linkEPDone bool
 	)
+	allowLoopback := n.allowLoopback
 	st := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		NetworkProtocols: []stack.NetworkProtocolFactory{
+			ipv4.NewProtocolWithOptions(ipv4.Options{
+				AllowExternalLoopbackTraffic: allowLoopback,
+			}),
+			ipv6.NewProtocolWithOptions(ipv6.Options{
+				AllowExternalLoopbackTraffic: allowLoopback,
+			}),
+		},
 		TransportProtocols: []stack.TransportProtocolFactory{
 			tcp.NewProtocol,
 			udp.NewProtocol,
@@ -241,7 +280,9 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 	// proxyOutboundRequest can reject connections targeting netgofer's own
 	// network namespace IPs.
 	if n.egressFilter == nil {
-		f, err := egressfilter.New(egressfilter.Options{})
+		f, err := egressfilter.New(egressfilter.Options{
+			AllowLoopback: n.allowLoopback,
+		})
 		if err != nil {
 			log.Warningf("Failed to initialize egress filter: %v", err)
 			return subcommands.ExitFailure

@@ -16,6 +16,7 @@
 package main
 
 import (
+	_ "gvisor.dev/gvisor/runsc/cgoextras"
 	"gvisor.dev/gvisor/runsc/cli/sentrycli"
 	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )

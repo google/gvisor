@@ -34,7 +34,8 @@ type Forwarder struct {
 	maxInFlight int
 	handler     func(*ForwarderRequest)
 
-	mu       forwarderMutex
+	mu forwarderMutex
+	// +checklocks:mu
 	inFlight map[stack.TransportEndpointID]struct{}
 	listen   *listenContext
 }
@@ -106,8 +107,11 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 // ForwarderRequest represents a connection request received by the forwarder
 // and passed to the client. Clients must eventually call Complete() on it, and
 // may optionally create an endpoint to represent it via CreateEndpoint.
+// Complete releases the SYN packet. Calls to ID and
+// ForwardedPacketExperimentOption must finish before Complete begins.
 type ForwarderRequest struct {
-	mu         forwarderRequestMutex
+	mu forwarderRequestMutex
+	// +checklocks:mu
 	forwarder  *Forwarder
 	segment    *segment
 	synOptions header.TCPSynOptions

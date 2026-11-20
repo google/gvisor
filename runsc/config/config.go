@@ -185,8 +185,8 @@ type Config struct {
 	PCAP string `flag:"pcap-log"`
 
 	// Netgofer controls whether and how netgofer is used for networking via UDS.
-	// Note: It is experimental and currently only proxies outbound TCP traffic.
-	// Active TCP connections cannot be preserved across save/restore.
+	// Note: It is experimental and currently only proxies outbound TCP and UDP
+	// traffic. Active connections cannot be preserved across save/restore.
 	Netgofer NetgoferMode `flag:"netgofer"`
 
 	// NetworkProxyPath, if set, is the path of an external UDS that the
@@ -587,8 +587,8 @@ func (c *Config) PlatformDeviceFor(platform string) string {
 
 // Validate checks that the Config is in a consistent state, e.g. that no
 // interdependent or mutually-exclusive flag values conflict. Note that
-// Config.Override does not validate, so callers must call Validate once they
-// are done overriding.
+// Config.Override and Config.ApplyBundles do not validate, so callers must call
+// Validate once they are done overriding.
 func (c *Config) Validate() error {
 	paths, err := parsePlatformDevicePaths(c.PlatformDevicePath)
 	if err != nil {
@@ -610,6 +610,9 @@ func (c *Config) Validate() error {
 	}
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
+	}
+	if c.RDMAProxy && c.UseNetworkProxy() {
+		return fmt.Errorf("rdmaproxy flag is incompatible with netgofer and network-proxy-path flags")
 	}
 	if c.NetworkProxyPath != "" {
 		if !filepath.IsAbs(c.NetworkProxyPath) {
@@ -2055,8 +2058,13 @@ const (
 	// NetgoferModeOff disables the netgofer UDS proxy.
 	NetgoferModeOff NetgoferMode = iota
 
-	// NetgoferModeProxy runs netgofer in user-space Netstack TCP proxy mode.
+	// NetgoferModeProxy runs netgofer in user-space Netstack TCP/UDP proxy mode.
 	NetgoferModeProxy
+
+	// NetgoferModeProxyLoopback runs netgofer in user-space Netstack TCP/UDP proxy
+	// mode and allows loopback traffic (e.g. Docker Compose embedded DNS at
+	// 127.0.0.11:53 or local host resolvers) over the UDS proxy link.
+	NetgoferModeProxyLoopback
 )
 
 // Enabled reports whether UDS proxy networking is enabled.
@@ -2067,6 +2075,11 @@ func (n NetgoferMode) Enabled() bool {
 // Ptr returns a pointer to n.
 func (n NetgoferMode) Ptr() *NetgoferMode {
 	return &n
+}
+
+// AllowLoopback reports whether loopback traffic is allowed over the UDS proxy.
+func (n NetgoferMode) AllowLoopback() bool {
+	return n == NetgoferModeProxyLoopback
 }
 
 // Get implements flag.Getter.
@@ -2081,6 +2094,8 @@ func (n NetgoferMode) String() string {
 		return "off"
 	case NetgoferModeProxy:
 		return "proxy"
+	case NetgoferModeProxyLoopback:
+		return "proxy-loopback"
 	default:
 		panic(fmt.Sprintf("invalid netgofer mode %d", n))
 	}
@@ -2093,8 +2108,10 @@ func (n *NetgoferMode) Set(v string) error {
 		*n = NetgoferModeOff
 	case "proxy":
 		*n = NetgoferModeProxy
+	case "proxy-loopback":
+		*n = NetgoferModeProxyLoopback
 	default:
-		return fmt.Errorf("invalid netgofer mode %q (must be one of: off, proxy)", v)
+		return fmt.Errorf("invalid netgofer mode %q (must be one of: off, proxy, proxy-loopback)", v)
 	}
 	return nil
 }

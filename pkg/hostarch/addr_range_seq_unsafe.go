@@ -211,7 +211,9 @@ func (ars AddrRangeSeq) DropFirst64(n int64) AddrRangeSeq {
 			return AddrRangeSeq{}
 		}
 	default:
-		if rawHeadLen := (*AddrRange)(ars.data).Length(); ars.offset == rawHeadLen {
+		// The head is empty if all of its bytes were dropped, or if the limit
+		// truncates it to 0 bytes.
+		if rawHeadLen := (*AddrRange)(ars.data).Length(); ars.offset == rawHeadLen || ars.limit == 0 {
 			ars = ars.externalTail()
 		}
 	}

@@ -24,6 +24,23 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
+func BenchmarkReferenceClockSample(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		id   ClockID
+	}{{"monotonic", Monotonic}, {"realtime", Realtime}} {
+		b.Run(tc.name, func(b *testing.B) {
+			clock := syscallTSCReferenceClocks{}
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := clock.Sample(tc.id); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestClockGetTime(t *testing.T) {
 	ts := unix.Timespec{}
 	if ret := vdsoClockGettime(linux.CLOCK_MONOTONIC, &ts); ret != 0 {

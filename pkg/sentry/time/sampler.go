@@ -225,6 +225,8 @@ type syscallTSCReferenceClocks struct {
 }
 
 // Sample implements sampler.Sample.
+//
+// +checkescape
 func (sc syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
 	var s sample
 
@@ -242,6 +244,8 @@ func (sc syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
 }
 
 // clockGettime calls SYS_CLOCK_GETTIME, returning time in nanoseconds.
+//
+// +checkescape
 func clockGettime(c ClockID) (ReferenceNS, error) {
 	var ts unix.Timespec
 

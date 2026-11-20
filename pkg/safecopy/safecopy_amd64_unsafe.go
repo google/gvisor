@@ -19,11 +19,16 @@ package safecopy
 
 import (
 	"unsafe"
+
+	"golang.org/x/sys/cpu"
 )
 
 var (
 	checkXstateBegin uintptr
 	checkXstateEnd   uintptr
+
+	// hasERMS is true if REP STOSB is fast for large sizes.
+	hasERMS = cpu.X86.HasERMS
 )
 
 func initializeArchAddresses() {

@@ -213,7 +213,7 @@ type CgroupImpl interface {
 	// resource type for a given controller.
 	//
 	// See cgroupfs.controller.Charge.
-	Charge(t *Task, d *kernfs.Dentry, ctl CgroupControllerType, res CgroupResourceType, value int64) error
+	Charge(t *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) error
 
 	// ReadControlFromBackground allows a background context to read a cgroup's
 	// control values.

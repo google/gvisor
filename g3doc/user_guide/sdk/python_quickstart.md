@@ -53,7 +53,7 @@ This indicates the command successfully ran inside the gVisor sandbox, which
 emulates a Linux kernel.
 
 For more examples and advanced usage patterns, see the
-[complete CLI recipes](https://github.com/google/gvisor/tree/master/examples/sandboxexec/python).
+[complete CLI recipes](https://github.com/gvisor/gvisor/tree/master/examples/sandboxexec/python).
 
 --------------------------------------------------------------------------------
 

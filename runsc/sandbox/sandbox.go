@@ -267,6 +267,8 @@ type Sandbox struct {
 	// child==true and the sandbox was waited on. This field allows for multiple
 	// threads to wait on sandbox and get the exit code, since Linux will return
 	// WaitStatus to one of the waiters only.
+	//
+	// +checklocks:statusMu
 	status unix.WaitStatus `nojson:"true"`
 
 	// Checkpointed will be true when the sandbox has been checkpointed.
@@ -301,6 +303,10 @@ type Args struct {
 
 	// Spec is the OCI spec that describes the container.
 	Spec *specs.Spec
+
+	// NvidiaDriverVersion is the NVIDIA driver ABI version for nvproxy, or
+	// empty if nvproxy is disabled.
+	NvidiaDriverVersion string
 
 	// BundleDir is the directory containing the container bundle.
 	BundleDir string
@@ -1357,12 +1363,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 		{Type: specs.PIDNamespace},
 	}
 
-	if specutils.NVProxyEnabled(args.Spec, conf) {
-		version, err := getNvproxyDriverVersion(conf)
-		if err != nil {
-			return fmt.Errorf("failed to get Nvidia driver version: %w", err)
-		}
-		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+version)
+	if args.NvidiaDriverVersion != "" {
+		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+args.NvidiaDriverVersion)
 	}
 
 	// Joins the network namespace if network is enabled. the sandbox talks
@@ -3177,9 +3179,9 @@ func deviceFileForPlatform(name, devicePath string) (*fd.FD, error) {
 	return f, nil
 }
 
-// getNvproxyDriverVersion returns the NVIDIA driver ABI version to use by
+// NVProxyDriverVersion returns the NVIDIA driver ABI version to use by
 // nvproxy, or "latest", which the sentry resolves to the newest supported ABI.
-func getNvproxyDriverVersion(conf *config.Config) (string, error) {
+func NVProxyDriverVersion(conf *config.Config) (string, error) {
 	switch conf.NVProxyDriverVersion {
 	case "":
 		return nvconf.HostDriverVersion()
@@ -3403,6 +3405,13 @@ func SetUserMappings(spec *specs.Spec, pid int) error {
 		}
 	}
 	return nil
+}
+
+// DrainDentryCache drains unused dentries in the filesystem selected by path in
+// the container's init process view. It does not disable caching or pause tasks.
+func (s *Sandbox) DrainDentryCache(cid, path string) error {
+	args := sentryapi.DrainDentryCacheArgs{ContainerID: cid, Path: path}
+	return s.call(sentryapi.ContMgrDrainDentryCache, &args, nil)
 }
 
 // Mount mounts a filesystem in a container.

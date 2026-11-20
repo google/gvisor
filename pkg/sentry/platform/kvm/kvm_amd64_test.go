@@ -20,6 +20,8 @@ package kvm
 import (
 	"fmt"
 	"os"
+	"reflect"
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -31,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
@@ -313,4 +316,174 @@ func TestSigbusInMovSSShadow(t *testing.T) {
 			})
 		})
 	}
+}
+
+func wrDR0(val uint64)
+func wrDR7(val uint64)
+
+const (
+	// dr7LocalRW0 enables DR0 locally for 2-byte read/write data accesses
+	// (L0 | LE | reserved bit 10 | R/W0=0b11 | LEN0=0b01).
+	dr7LocalRW0 = uint64(0x1 | 0x100 | 0x400 | (0x3 << 16) | (0x1 << 18))
+)
+
+// switchToUserWithWatchpoint enters guest user mode with a hardware data
+// watchpoint armed on addr and clears the watchpoint before returning.
+//
+//go:nosplit
+func switchToUserWithWatchpoint(c *vCPU, switchOpts ring0.SwitchOpts, addr uint64) ring0.Vector {
+	entersyscall()
+	bluepill(c)
+	wrDR0(addr)
+	wrDR6(_DR6_RESERVED)
+	wrDR7(dr7LocalRW0)
+	vec := c.CPU.SwitchToUser(switchOpts)
+	wrDR7(0)
+	wrDR0(0)
+	wrDR6(_DR6_RESERVED)
+	exitsyscall()
+	return vec
+}
+
+// deferredWatchpointTest runs targetFn with a hardware data watchpoint on the
+// selector word read by MOV (AX), SS so that #DB is deferred across the MOV SS
+// shadow onto the first instruction of the subsequent ring 0 entry point.
+func deferredWatchpointTest(t *testing.T, targetFn uintptr, wantVec ring0.Vector) {
+	ssSelector := uint16(ring0.Udata)
+	ssAddr := uint64(reflect.ValueOf(&ssSelector).Pointer())
+	var userStack [64]uint64
+	stackTop := uint64(reflect.ValueOf(&userStack[len(userStack)-1]).Pointer())
+
+	applicationTest(t, true, targetFn, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		regs.Rax = ssAddr
+		regs.Rsp = stackTop
+		// Set an unmapped canonical user GS base so any ring 0 entry path
+		// that dereferences GS before SWAP_GS faults immediately.
+		regs.Gs_base = 0x1000
+		switchOpts := ring0.SwitchOpts{
+			Registers:          regs,
+			FloatingPointState: &dummyFPState,
+			PageTables:         pt,
+			FullRestore:        true,
+		}
+		if c.PCIDs != nil {
+			var requireFlushPCID bool
+			switchOpts.UserPCID, requireFlushPCID = c.PCIDs.Assign(switchOpts.PageTables)
+			switchOpts.KernelPCID = fixedKernelPCID
+			switchOpts.Flush = switchOpts.Flush || requireFlushPCID
+		}
+		vec := switchToUserWithWatchpoint(c, switchOpts, ssAddr)
+		runtime.KeepAlive(&ssSelector)
+		runtime.KeepAlive(&userStack)
+		if vec == ring0.Vector(bounce) {
+			return true // Retry.
+		}
+		if vec != wantVec {
+			code, user := c.ErrorCode()
+			t.Errorf("SwitchToUser returned vector %v (want %v): rip=%#x (target=%#x, off=%#x) errCode=%#x user=%v cs=%#x ss=%#x eflags=%#x",
+				vec, wantVec, regs.Rip, targetFn, regs.Rip-uint64(targetFn), code, user, regs.Cs, regs.Ss, regs.Eflags)
+		}
+		if regs.Rip >= uint64(ring0.KernelStartAddress) || regs.Rsp >= uint64(ring0.KernelStartAddress) {
+			t.Errorf("unexpected kernel address in user registers: rip=%#x rsp=%#x", regs.Rip, regs.Rsp)
+		}
+		return false
+	})
+}
+
+func TestDeferredDBOnSyscall(t *testing.T) {
+	deferredWatchpointTest(t, testutil.AddrOfLoadSSSyscall(), ring0.Syscall)
+}
+
+func TestDeferredDBOnInt3(t *testing.T) {
+	deferredWatchpointTest(t, testutil.AddrOfLoadSSInt3(), ring0.Breakpoint)
+}
+
+// TestApplicationSigbus verifies that handling a user-mode NMI (SIGBUS on an
+// unbacked file page) clears the CPU's architectural NMI-blocking state, so
+// subsequent NMIs in ring 0 (safecopy) and in user mode after SYSRET are not
+// blocked.
+func TestApplicationSigbus(t *testing.T) {
+	memfd, err := memutil.CreateMemFD(fmt.Sprintf("kvm_sigbus_test_%d", os.Getpid()), 0)
+	if err != nil {
+		t.Fatalf("error creating memfd: %v", err)
+	}
+	memfile := os.NewFile(uintptr(memfd), "kvm_sigbus_test")
+	defer memfile.Close()
+	if err := memfile.Truncate(0); err != nil {
+		t.Fatalf("error truncating memfd: %v", err)
+	}
+
+	buf := make([]byte, hostarch.PageSize)
+	applicationTest(t, true, testutil.AddrOfTouch(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		addr, _, errno := unix.RawSyscall6(
+			unix.SYS_MMAP,
+			0,
+			hostarch.PageSize,
+			unix.PROT_READ|unix.PROT_WRITE,
+			unix.MAP_SHARED|unix.MAP_FILE,
+			memfile.Fd(),
+			0)
+		if errno != 0 {
+			t.Fatalf("error mapping file: %v", errno)
+		}
+		defer unix.RawSyscall(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
+
+		// 1. Trigger a user-mode SIGBUS (NMI) via IRET (FullRestore: true).
+		for {
+			regs.Rip = uint64(testutil.AddrOfTouch())
+			regs.Rax = uint64(addr)
+			var si linux.SignalInfo
+			_, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: &dummyFPState,
+				PageTables:         pt,
+				FullRestore:        true,
+			}, &si)
+			if err == platform.ErrContextInterrupt {
+				continue
+			}
+			if err != platform.ErrContextSignal || si.Signo != int32(unix.SIGBUS) {
+				t.Fatalf("first SwitchToUser got (%v, %+v), want (%v, SIGBUS)", err, si, platform.ErrContextSignal)
+			}
+			break
+		}
+
+		// Handling the user-mode NMI must have cleared the NMI-blocking
+		// latch. Leave guest mode without executing IRET and check it.
+		redpill()
+		if masked := getVCPUEvents(t, c).nmi.masked; masked != 0 {
+			t.Fatalf("nmi.masked = %d after a user-mode NMI, want 0", masked)
+		}
+
+		// 2. Trigger a ring-0 safecopy SIGBUS (NMI) on the same vCPU.
+		wantBus := safecopy.BusError{addr}
+		bluepill(c)
+		if _, err := safecopy.CopyIn(buf, unsafe.Pointer(addr)); err != wantBus {
+			t.Fatalf("safecopy.CopyIn got %v, want %v", err, wantBus)
+		}
+
+		// 3. Trigger another user-mode SIGBUS via SYSRET (FullRestore: false) followed
+		// by a third user-mode SIGBUS via SYSRET on the same vCPU.
+		for i := 0; i < 2; i++ {
+			for {
+				regs.Rip = uint64(testutil.AddrOfTouch())
+				regs.Rax = uint64(addr)
+				var si linux.SignalInfo
+				_, err := c.SwitchToUser(ring0.SwitchOpts{
+					Registers:          regs,
+					FloatingPointState: &dummyFPState,
+					PageTables:         pt,
+					FullRestore:        false,
+				}, &si)
+				if err == platform.ErrContextInterrupt {
+					continue
+				}
+				if err != platform.ErrContextSignal || si.Signo != int32(unix.SIGBUS) {
+					t.Fatalf("SYSRET SwitchToUser #%d got (%v, %+v), want (%v, SIGBUS)", i, err, si, platform.ErrContextSignal)
+				}
+				break
+			}
+		}
+		return false
+	})
 }

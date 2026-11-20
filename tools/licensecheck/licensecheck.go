@@ -95,6 +95,8 @@ const (
 	lgpl3       License = "LGPL-3.0-only"
 	mit         License = "MIT"
 	mpl2        License = "MPL-2.0"
+	ncsa        License = "NCSA"
+	spencer94   License = "Spencer-94"
 	unlicense   License = "Unlicense"
 	// noAssertion is the SPDX token for dependencies to which no software
 	// license applies, e.g. a certificate bundle.
@@ -116,6 +118,8 @@ var knownLicenses = map[License]bool{
 	lgpl3:       true,
 	mit:         true,
 	mpl2:        true,
+	ncsa:        true,
+	spencer94:   true,
 	unlicense:   true,
 	noAssertion: true,
 }
@@ -571,8 +575,7 @@ func (graph *modGraph) repoRefs() ([]repoRef, error) {
 			refs = append(refs, qemuRefs...)
 			continue
 		default:
-			// Toolchain extensions (crosstool, llvm_zlib, python, go_sdk,
-			// ...) are not audited.
+			// Toolchain extensions (crosstool, python, go_sdk, ...) are not audited.
 			continue
 		}
 		for _, r := range u.UsedRepos {

@@ -79,6 +79,24 @@ func TestOneCPUMask(t *testing.T) {
 	}
 }
 
+func TestCPUMask(t *testing.T) {
+	for _, test := range []struct {
+		first, end, cores uint
+		want              string
+	}{
+		{0, 2, 4, "3"},
+		{2, 4, 4, "c"},
+		{1, 4, 5, "0e"},
+		{0, 43, 86, "000000,000007ff,ffffffff"},
+		{43, 86, 86, "3fffff,fffff800,00000000"},
+		{32, 64, 65, "0,ffffffff,00000000"},
+	} {
+		if got := cpuMask(test.first, test.end, test.cores); got != test.want {
+			t.Errorf("cpuMask(%d, %d, %d): got %s, want %s", test.first, test.end, test.cores, got, test.want)
+		}
+	}
+}
+
 func TestIsCPUDirName(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -135,5 +153,24 @@ func TestCPUDirLookup(t *testing.T) {
 	}
 	if _, err := d.Lookup(ctx, "cpu4"); !linuxerr.Equals(linuxerr.ENOENT, err) {
 		t.Errorf("Lookup(cpu4): got error %v, want ENOENT", err)
+	}
+}
+
+func TestCPUListString(t *testing.T) {
+	for _, test := range []struct {
+		first, end uint
+		want       string
+	}{
+		{0, 1, "0\n"},
+		{3, 4, "3\n"},
+		{0, 2, "0-1\n"},
+		{0, 3, "0-2\n"},
+		{2, 4, "2-3\n"},
+		{0, 64, "0-63\n"},
+		{0, 65, "0-64\n"},
+	} {
+		if got := cpuListString(test.first, test.end); got != test.want {
+			t.Errorf("cpuListString(%d, %d): got %q, want %q", test.first, test.end, got, test.want)
+		}
 	}
 }

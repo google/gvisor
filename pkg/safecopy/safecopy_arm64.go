@@ -17,5 +17,14 @@
 
 package safecopy
 
+// useZVA is true if DC ZVA is allowed and zeroes 64-byte blocks.
+var useZVA bool
+
+// dczid returns the value of DCZID_EL0.
+func dczid() uint64
+
 func initializeArchAddresses() {
+	// DCZID_EL0 bit 4 is set if DC ZVA is prohibited, and bits 3:0 are the
+	// log2 of its block size in 4-byte words.
+	useZVA = dczid()&0x1f == 4
 }

@@ -71,6 +71,10 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(unix.SIOCGIFTXQLEN),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.TIOCOUTQ),
 			},
 			seccomp.PerArg{

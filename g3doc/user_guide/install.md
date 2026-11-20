@@ -86,7 +86,7 @@ production purposes.
 Prior to 2026-07, gVisor releases were limited to 2 binaries (`runsc` and
 `containerd-shim-runsc-v1`), with all accompanying material bundled inside of
 the `runsc` binary. This is changing to a multi-file approach; see
-[this gVisor issue for background](https://github.com/google/gvisor/issues/13718).
+[this gVisor issue for background](https://github.com/gvisor/gvisor/issues/13718).
 
 If any binary is missing, `runsc install` will best-effort attempt to install it
 into the `gvisor-bin/` subdirectory next to itself. **This auto-download
@@ -182,7 +182,7 @@ release. A given release is available at the following URL:
 You can use this link with the steps described in
 [Install latest release](#install-latest).
 
-See the [releases](https://github.com/google/gvisor/releases) page for
+See the [releases](https://github.com/gvisor/gvisor/releases) page for
 information about specific releases.
 
 For `apt` installation of a specific release, which may include point updates,
@@ -197,7 +197,7 @@ sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/g
 ### Point release
 
 Point releases correspond to
-[releases](https://github.com/google/gvisor/releases) tagged in the GitHub
+[releases](https://github.com/gvisor/gvisor/releases) tagged in the GitHub
 repository. Each release on GitHub includes release notes/changelogs and
 downloadable release tarballs for each architecture (`gvisor-x86_64.tar.bz2`,
 `gvisor-aarch64.tar.bz2`) alongside checksums (`SHA256SUMS`, `SHA512SUMS`).

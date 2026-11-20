@@ -107,8 +107,9 @@ type NUMA struct {
 type Snapshot struct {
 	VerbsABIVersion string `json:"verbs_abi_version"`
 	// PCINodes contains every PCI directory in the closure: the leaves
-	// (NICs, GPUs) and all their ancestor bridges/roots. Sorted by Path,
-	// which places parents before children.
+	// (NICs, the functions NCCL reads in their place, GPUs) and all their
+	// ancestor bridges/roots. Sorted by Path, which places parents before
+	// children.
 	PCINodes []PCINode `json:"pci_nodes"`
 	Devices  []Device  `json:"devices"`
 	NUMA     *NUMA     `json:"numa,omitempty"`

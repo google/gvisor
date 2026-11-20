@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 )
 
@@ -57,14 +58,13 @@ func newPacketMMapDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher
 		fd:     fd,
 		e:      e,
 	}
-	pageSize := unix.Getpagesize()
-	if tpBlockSize%pageSize != 0 {
-		stopFD.Close()
-		return nil, fmt.Errorf("tpBlockSize: %d is not page aligned, pagesize: %d", tpBlockSize, pageSize)
-	}
+	// Linux divides the block size by the frame size to count frames. The
+	// padding to a host page is smaller than one frame.
+	// https://github.com/torvalds/linux/blob/f66469d99/net/packet/af_packet.c#L4603-L4625
+	blockSize := bits.AlignUp(tpFrameSize*tpFrameNR, uint(unix.Getpagesize()))
 	tReq := tPacketReq{
-		tpBlockSize: uint32(tpBlockSize),
-		tpBlockNR:   uint32(tpBlockNR),
+		tpBlockSize: uint32(blockSize),
+		tpBlockNR:   1,
 		tpFrameSize: uint32(tpFrameSize),
 		tpFrameNR:   uint32(tpFrameNR),
 	}
@@ -73,12 +73,11 @@ func newPacketMMapDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher
 		stopFD.Close()
 		return nil, fmt.Errorf("failed to enable PACKET_RX_RING: %v", err)
 	}
-	// Let's mmap the blocks.
-	sz := tpBlockSize * tpBlockNR
-	buf, err := unix.Mmap(d.fd, 0, sz, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	// Map the ring block.
+	buf, err := unix.Mmap(d.fd, 0, blockSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
 		stopFD.Close()
-		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %v", sz, err)
+		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %v", blockSize, err)
 	}
 	d.mgr = newProcessorManager(opts, e)
 	d.mgr.start()

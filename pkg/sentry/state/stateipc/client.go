@@ -34,7 +34,11 @@ type AsyncFileClient struct {
 	asyncFileClientRefs
 
 	filesMu sync.Mutex
-	files   map[*asyncReadWriter]struct{}
+
+	// files contains the endpoints to shut down if the server disconnects.
+	//
+	// +checklocks:filesMu
+	files map[*asyncReadWriter]struct{}
 
 	uc           *urpc.Client
 	watchdog     sync.WaitGroup
@@ -91,9 +95,7 @@ func (c *AsyncFileClient) watchdogMain() {
 			c.filesMu.Lock()
 			defer c.filesMu.Unlock()
 			for rw := range c.files {
-				if !rw.destroyed {
-					rw.ioep.Shutdown()
-				}
+				rw.ioep.Shutdown()
 			}
 			return
 		}
@@ -191,10 +193,6 @@ type asyncReadWriter struct {
 	handle      uint32
 	isReader    bool
 
-	// destroyed is true if ioep.Destroy() has been called. destroyed
-	// is protected by client.filesMu.
-	destroyed bool
-
 	// numSubmissions is the number of submissions to be sent to the server by
 	// the next call to Wait().
 	numSubmissions uint32
@@ -214,10 +212,9 @@ func (rw *asyncReadWriter) Close() error {
 	rw.ioep.Shutdown()
 	rw.connectorWG.Wait()
 	rw.client.filesMu.Lock()
-	rw.ioep.Destroy()
-	rw.destroyed = true
 	delete(rw.client.files, rw)
 	rw.client.filesMu.Unlock()
+	rw.ioep.Destroy()
 	rw.client.DecRef()
 	return err
 }

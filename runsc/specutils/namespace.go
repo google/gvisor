@@ -53,11 +53,13 @@ func nsCloneFlag(nst specs.LinuxNamespaceType) uintptr {
 	}
 }
 
-// nsPath returns the path of the namespace for the current process and the
-// given namespace.
+// nsPath returns the path to the calling thread's namespace of the given type.
+// /proc/self/ns refers to the thread group leader, which can be in a different
+// namespace. See proc_thread-self(5).
 func nsPath(nst specs.LinuxNamespaceType) string {
+	const base = "/proc/thread-self/ns"
+
 	// LINT.IfChange
-	base := "/proc/self/ns"
 	switch nst {
 	case specs.CgroupNamespace:
 		return filepath.Join(base, "cgroup")

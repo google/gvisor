@@ -100,6 +100,7 @@ def _syscall_test(
         kvm_use_cpu_nums = True,
         in_sandbox_cgroup = "v1",
         requires_atime = False,
+        add_host_random = False,
         **kwargs):
     limit_ephemeral_ports = limit_ephemeral_ports and (network == "host" or platform == "native")
     if limit_ephemeral_ports:
@@ -187,6 +188,7 @@ def _syscall_test(
         "--add-host-uds=" + str(add_host_uds),
         "--add-host-connector=" + str(add_host_connector),
         "--add-host-fifo=" + str(add_host_fifo),
+        "--add-host-random=" + str(add_host_random),
         "--add-host-tty=" + str(add_host_tty),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
@@ -284,6 +286,7 @@ def syscall_test_variants(
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
       **kwargs: Additional test arguments; requires_atime enables host atime updates.
+        add_host_random binds the host random device at /dev/random.
     """
     for platform, platform_tags in all_platforms():
         # Add directfs to the default platform variant.
@@ -472,6 +475,7 @@ def syscall_test(
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
       **kwargs: Additional test arguments; requires_atime enables host atime updates.
+        add_host_random binds the host random device at /dev/random.
     """
     if not tags:
         tags = []

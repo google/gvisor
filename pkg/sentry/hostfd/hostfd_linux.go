@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false
-// +build !false
-
 package hostfd
 
 // MaxReadWriteIov is the maximum permitted size of a struct iovec array in a

@@ -23,4 +23,6 @@ import (
 // vdsoClockGettime invokes clock_gettime via the host VDSO when available,
 // falling back to the clock_gettime syscall. It returns 0 on success or a
 // negative errno value on failure.
+//
+//go:noescape
 func vdsoClockGettime(clockid ClockID, ts *unix.Timespec) int

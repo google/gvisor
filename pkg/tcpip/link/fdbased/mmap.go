@@ -39,7 +39,7 @@ const (
 // We overallocate the frame size to accommodate space for the
 // TPacketHdr+RawSockAddrLinkLayer+MAC header and any padding.
 //
-// Memory allocated for the ring buffer: tpBlockSize * tpBlockNR = 2 MiB
+// The ring holds 32 frames in one block of just over 2 MiB.
 //
 // NOTE:
 //
@@ -50,9 +50,7 @@ const (
 //	https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
 const (
 	tpFrameSize = 65536 + 128
-	tpBlockSize = tpFrameSize * 32
-	tpBlockNR   = 1
-	tpFrameNR   = (tpBlockSize * tpBlockNR) / tpFrameSize
+	tpFrameNR   = 32
 )
 
 // tPacketAlign aligns the pointer v at a tPacketAlignment boundary. Direct

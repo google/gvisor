@@ -1,6 +1,6 @@
 # gVisor Python Bindings
 
-Python bindings for [gVisor](https://github.com/google/gvisor).
+Python bindings for [gVisor](https://github.com/gvisor/gvisor).
 
 ## Overview
 
@@ -45,7 +45,7 @@ with Sandbox(
 
 *   [Quickstart](https://gvisor.dev/docs/sdk/python/quickstart/)
 *   [API reference](https://gvisor.dev/docs/sdk/python/)
-*   [Examples](https://github.com/google/gvisor/tree/master/examples/sandboxexec/python)
+*   [Examples](https://github.com/gvisor/gvisor/tree/master/examples/sandboxexec/python)
 
 ## License
 

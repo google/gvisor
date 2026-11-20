@@ -31,7 +31,7 @@ permalink: /application-compatibility/
       <br>
       Below is a small (but growing) sample of applications that are known to work in gVisor.
       This is a <b>best-effort</b> list, not a guarantee that applications marked "Compatible" are fully functional.
-      If you notice an issue, contributions to this list are welcome! Please open a pull request on <a href="https://github.com/google/gvisor">GitHub</a>.
+      If you notice an issue, contributions to this list are welcome! Please open a pull request on <a href="https://github.com/gvisor/gvisor">GitHub</a>.
     </p>
 
     <div style="margin-top: 30px;">
@@ -60,7 +60,7 @@ permalink: /application-compatibility/
             <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
               <div style="display: flex; align-items: baseline; flex-wrap: wrap;">
                 <span style="font-size: 18px; font-weight: 600; margin-right: 12px; color: #1a202c;">{{ item.name }}</span>
-                <span style="font-size: 13px; color: #94a3b8;">{% if item.version and item.version != '' %}Latest version tested: {{ item.version }}{% endif %}{% if item.version and item.version != '' and item.test_source and item.test_source != '' %}. {% endif %}{% if item.test_source and item.test_source != '' %}<a href="https://github.com/google/gvisor/blob/master/{{ item.test_source }}" target="_blank" rel="noopener" style="color: #94a3b8; text-decoration: underline;">Testing methodology</a>{% endif %}</span>
+                <span style="font-size: 13px; color: #94a3b8;">{% if item.version and item.version != '' %}Latest version tested: {{ item.version }}{% endif %}{% if item.version and item.version != '' and item.test_source and item.test_source != '' %}. {% endif %}{% if item.test_source and item.test_source != '' %}<a href="https://github.com/gvisor/gvisor/blob/master/{{ item.test_source }}" target="_blank" rel="noopener" style="color: #94a3b8; text-decoration: underline;">Testing methodology</a>{% endif %}</span>
               </div>
               <div>
                 {% case item.verdict %}

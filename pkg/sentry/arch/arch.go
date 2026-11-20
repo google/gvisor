@@ -138,6 +138,10 @@ type contextInterface interface {
 	// SetStack sets the current stack pointer.
 	SetStack(value uintptr)
 
+	// FramePointer returns the current frame pointer. It may not point to a
+	// frame if user code omits frame pointers.
+	FramePointer() uintptr
+
 	// TLS returns the current TLS pointer.
 	TLS() uintptr
 

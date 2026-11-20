@@ -472,9 +472,8 @@ func TestNoTLPOnSACK(t *testing.T) {
 	}
 }
 
-// TestRACKOnePacketTailLoss tests the trivial case of a tail loss of only one
-// packet. The probe should itself repairs the loss instead of having to go
-// into any recovery.
+// TestRACKOnePacketTailLoss tests that the probe repairs the loss without a
+// second retransmission.
 func TestRACKOnePacketTailLoss(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
@@ -493,6 +492,15 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	bytesRead += maxPayload
 	c.SendAck(seq, bytesRead)
 
+	// Only an ACK for subsequent data establishes that the probe repaired
+	// the loss. The first ACK could still be followed by a duplicate ACK.
+	data = append(data, 42)
+	if _, err := c.EP.Write(bytes.NewReader(data[bytesRead:]), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("writing data after the probe: %v", err)
+	}
+	c.ReceiveAndCheckPacketWithOptions(data, bytesRead, 1, e2e.TSOptionSize)
+	c.SendAck(seq, bytesRead+1)
+
 	metricPollFn := func() error {
 		tcpStats := c.Stack().Stats().TCP
 		stats := []struct {
@@ -500,10 +508,10 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 			name string
 			want uint64
 		}{
-			// #3 was retransmitted as TLP.
+			// The probe repaired #3 without entering fast recovery.
 			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 0},
-			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
-			{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery", 0},
+			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 0},
+			{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery", 1},
 			// RTO should not have fired.
 			{tcpStats.Timeouts, "stats.TCP.Timeouts", 0},
 			// Only #3 was retransmitted.

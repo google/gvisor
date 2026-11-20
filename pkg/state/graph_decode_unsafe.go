@@ -49,7 +49,7 @@ type decodeCallback struct {
 	valueLoader ValueLoader
 	value       any
 	slot        int
-	// waiter is an object that waits for the object, or -1.
+	// waiter is the object to unblock after this callback, or -1.
 	waiter int32
 	// next is the next callback of the same object, or -1.
 	next int32
@@ -109,9 +109,6 @@ type graphDecodeState struct {
 	// refs counts object references resolved so far.
 	refs uint64
 
-	// leaves is the queue of objects whose callbacks can run.
-	leaves []int32
-
 	// strings is the current allocation for string data.
 	strings []byte
 
@@ -147,11 +144,11 @@ func (ds *graphDecodeState) release() {
 	if cap(ds.objs) > maxPooledBytes/64 || cap(ds.targets) > maxPooledBytes/8 || cap(ds.cbs) > maxPooledBytes/64 {
 		return
 	}
-	clear(ds.types[:cap(ds.types)])
-	clear(ds.typeNames[:cap(ds.typeNames)])
-	clear(ds.objs[:cap(ds.objs)])
-	clear(ds.cbs[:cap(ds.cbs)])
-	clear(ds.targets[:cap(ds.targets)])
+	clear(ds.types)
+	clear(ds.typeNames)
+	clear(ds.objs)
+	clear(ds.cbs)
+	clear(ds.targets)
 	*ds = graphDecodeState{
 		types:      ds.types[:0],
 		typeNames:  ds.typeNames[:0],
@@ -160,7 +157,6 @@ func (ds *graphDecodeState) release() {
 		cbs:        ds.cbs[:0],
 		targets:    ds.targets[:0],
 		targetObjs: ds.targetObjs[:0],
-		leaves:     ds.leaves[:0],
 		itabCache:  ds.itabCache,
 		shapeCache: ds.shapeCache,
 	}
@@ -282,6 +278,9 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 		o.kind = d.byte()
 		o.inexact = o.kind&objInexact != 0
 		o.kind &^= objInexact
+		if i == 0 && o.kind != objKindValue {
+			Failf("invalid root object kind %d", o.kind)
+		}
 		switch o.kind {
 		case objKindValue:
 			if i == 0 {
@@ -331,9 +330,6 @@ func (ds *graphDecodeState) readObjects(root unsafe.Pointer, rootType *typeInfo)
 			totalBytes += uint64(o.size)
 			o.base = reflect.MakeSlice(o.ti.sliceTypeOf(), int(count), int(count)).UnsafePointer()
 		case objKindMap:
-			if i == 0 {
-				Failf("root is a map")
-			}
 			// size is the number of entries.
 			count := d.uvarint()
 			if count > maxDecodeObjectBytes {
@@ -415,7 +411,7 @@ func (cb *decodeCallback) user() bool {
 }
 
 func (ds *graphDecodeState) appendCallback(head, tail *int32, cb decodeCallback) {
-	if cb.waiter < 0 {
+	if cb.waiter < 0 || cb.user() {
 		ds.hooks++
 		ds.deferred++
 	}
@@ -467,8 +463,6 @@ func (ds *graphDecodeState) wait(waiter, obj int32, cb decodeCallback) {
 	}
 	ds.ods[waiter].blockedBy++
 	o := &ds.ods[obj]
-	if cb.user() {
-		ds.appendCallback(&o.waitHead, &o.waitTail, cb)
-	}
-	ds.appendCallback(&o.waitHead, &o.waitTail, decodeCallback{waiter: waiter})
+	cb.waiter = waiter
+	ds.appendCallback(&o.waitHead, &o.waitTail, cb)
 }
