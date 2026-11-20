@@ -34,6 +34,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -53,6 +54,8 @@ var (
 	forward = flag.String("forward", "", "forwarding target")
 	client  = flag.Bool("client", false, "use netstack for dial")
 	server  = flag.Bool("server", false, "use netstack for listen")
+
+	retransmitsFile = flag.String("retransmits_file", "", "if specified, writes the number of TCP segments that the forwarding network stack retransmitted to the specified file on exit.")
 
 	// Netstack-specific options.
 	mtu                = flag.Int("mtu", 1280, "mtu for network stack")
@@ -90,6 +93,52 @@ func (*netImpl) listen(port uint16) (net.Listener, error) {
 }
 
 func (*netImpl) printStats() {
+}
+
+// hostConns contains the connections that dial opened with the host network
+// stack. The connections must stay open until the last call to retransmits.
+type hostConns struct {
+	mu sync.Mutex
+	// +checklocks:mu
+	conns []net.Conn
+}
+
+// dial connects to addr with the host network stack.
+func (h *hostConns) dial(addr string) (net.Conn, error) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.conns = append(h.conns, conn)
+	return conn, nil
+}
+
+// retransmits returns the number of TCP segments that the host network stack
+// retransmitted on all connections.
+func (h *hostConns) retransmits() (uint64, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var total uint64
+	for _, conn := range h.conns {
+		raw, err := conn.(*net.TCPConn).SyscallConn()
+		if err != nil {
+			return 0, err
+		}
+		var info *unix.TCPInfo
+		var infoErr error
+		if err := raw.Control(func(fd uintptr) {
+			info, infoErr = unix.GetsockoptTCPInfo(int(fd), unix.SOL_TCP, unix.TCP_INFO)
+		}); err != nil {
+			return 0, err
+		}
+		if infoErr != nil {
+			return 0, infoErr
+		}
+		total += uint64(info.Total_retrans)
+	}
+	return total, nil
 }
 
 const (
@@ -456,7 +505,9 @@ func main() {
 		in = n
 	}
 	var out impl = &netImpl{}
-	dial := func() (net.Conn, error) { return net.Dial("tcp", *forward) }
+	var host hostConns
+	dial := func() (net.Conn, error) { return host.dial(*forward) }
+	retransmits := host.retransmits
 	if *client {
 		n, cleanup, err := newNetstackImpl("client", *clientTCPProbeFile)
 		if err != nil {
@@ -465,6 +516,7 @@ func main() {
 		defer cleanup()
 		out = n
 		dial = func() (net.Conn, error) { return n.dial(target) }
+		retransmits = func() (uint64, error) { return n.s.Stats().TCP.Retransmits.Value(), nil }
 	}
 
 	// Dial forward before binding.
@@ -534,6 +586,16 @@ func main() {
 
 	// Wait for the SIGTERM notifying us to stop.
 	<-sigs
+
+	if *retransmitsFile != "" {
+		n, err := retransmits()
+		if err != nil {
+			log.Fatalf("Unable to count retransmits: %v", err)
+		}
+		if err := os.WriteFile(*retransmitsFile, []byte(fmt.Sprintf("%d\n", n)), 0644); err != nil {
+			log.Fatalf("Unable to write retransmits file: %v", err)
+		}
+	}
 
 	if *memprofile != "" {
 		f, err := os.Create(*memprofile)

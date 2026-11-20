@@ -44,9 +44,14 @@ latency=10              # 10ms approximates a fast, dedicated connection.
 latency_variation=1     # +/- 1ms is a relatively low amount of jitter.
 loss=0.1                # 0.1% loss is non-zero, but not extremely high.
 duplicate=0.1           # 0.1% means duplicates are 1/10x as frequent as losses.
+reorder=0               # No reordering other than what the jitter causes.
+rate=0                  # No bottleneck.
+queue=                  # Empty means one bandwidth-delay product (minimum 20 packets).
+ecn=false               # The bottleneck queue drops packets and does not mark them.
 duration=30             # 30s is enough time to consistent results (experimentally).
 helper_dir="$(dirname "$0")"
 netstack_opts=
+netstack_cc=reno
 disable_linux_gso=
 disable_linux_gro=
 gro=false
@@ -103,6 +108,10 @@ while [[ $# -gt 0 ]]; do
       latency_variation=0 # No jitter.
       loss=0              # No loss.
       duplicate=0         # No duplicates.
+      reorder=0           # No reordering.
+      rate=0              # No bottleneck.
+      queue=              # Default queue length.
+      ecn=false           # No ECN marks.
       ;;
     --mtu)
       shift
@@ -117,6 +126,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cubic)
       netstack_opts="${netstack_opts} -cubic"
+      netstack_cc=cubic
       ;;
     --moderate-recv-buf)
       netstack_opts="${netstack_opts} -moderate_recv_buf"
@@ -145,6 +155,24 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ "$#" -le 0 ]] && echo "no duplicate provided" && exit 1
       duplicate=$1
+      ;;
+    --reorder)
+      shift
+      [[ "$#" -le 0 ]] && echo "no reorder probability provided" && exit 1
+      reorder=$1
+      ;;
+    --rate)
+      shift
+      [[ "$#" -le 0 ]] && echo "no rate provided" && exit 1
+      rate=$1
+      ;;
+    --queue)
+      shift
+      [[ "$#" -le 0 ]] && echo "no queue length provided" && exit 1
+      queue=$1
+      ;;
+    --ecn)
+      ecn=true
       ;;
     --cpuprofile)
       shift
@@ -235,10 +263,21 @@ while [[ $# -gt 0 ]]; do
       echo " --latency-variation   set the latency variation"
       echo " --loss                set the loss probability (%)"
       echo " --duplicate           set the duplicate probability (%)"
+      echo " --reorder             set the reorder probability (%); a reordered packet skips"
+      echo "                       the latency; requires a non-zero --latency"
+      echo " --rate                set the bottleneck rate (Mbit/s); 0 means no bottleneck"
+      echo " --queue               set the bottleneck queue length (packets); the default is"
+      echo "                       one bandwidth-delay product, and not less than 20 packets;"
+      echo "                       requires --rate"
+      echo " --ecn                 use a CoDel bottleneck queue that marks ECN-capable packets"
+      echo "                       and enable ECN in the Linux network stack; requires --rate"
       echo " --helpers             set the helper directory"
       echo " --num-client-threads  number of parallel client threads to run"
-      echo " --disable-linux-gso   disable segmentation offload (TSO, GSO, GRO) in the Linux network stack"
+      echo " --disable-linux-gso   disable segmentation offload (TSO, GSO) in the Linux network stack"
       echo " --disable-linux-gro   disable GRO in the Linux network stack"
+      echo " --gso                 set the maximum size of a netstack GSO packet (bytes); 0 means"
+      echo "                       no netstack GSO; the Linux network stack segments the packet"
+      echo " --swgso               make netstack segment the GSO packet; requires --gso"
       echo " --gro                 enable gVisor GRO"
       echo " --ipv6                use ipv6 for benchmarks"
       echo " --iperf-binary        name of the iperf binary to call"
@@ -246,8 +285,8 @@ while [[ $# -gt 0 ]]; do
       echo " --xdp                 use AF_XDP socket instead of AF_PACKET"
       echo " --no-user-ns          don't run in a new user namespace. Useful for testing as root"
       echo ""
-      echo "The output will of the script will be:"
-      echo "  <throughput> <client-cpu-usage> <server-cpu-usage>"
+      echo "The output of the script is one line in the Go benchmark format:"
+      echo "  BenchmarkTCP/<parameters> 1 <throughput> Mb/s <cpu-usage> cpu-time <sender-retransmits> retransmits"
       exit 1
   esac
   shift
@@ -267,6 +306,7 @@ duration=$((10#${duration}))
 half_latency=$(echo "${latency}"/2 | bc -l | awk '{printf "%1.2f", $0}')
 half_loss=$(echo "${loss}"/2 | bc -l | awk '{printf "%1.6f", $0}')
 half_duplicate=$(echo "${duplicate}"/2 | bc -l | awk '{printf "%1.6f", $0}')
+half_reorder=$(echo "${reorder}"/2 | bc -l | awk '{printf "%1.6f", $0}')
 # Per-attempt deadline for the iperf client (seconds).
 client_timeout=$((duration + 60))
 # The iperf port as it appears in /proc/net/tcp (4 uppercase hex digits).
@@ -295,16 +335,62 @@ else
   distribution=""
 fi
 
+if [[ ! "${rate}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "--rate must be a number (Mbit/s)" >&2
+  exit 1
+fi
+if [[ -n "${queue}" && ! "${queue}" =~ ^([2-9]|[1-9][0-9]+)$ ]]; then
+  echo "--queue must be a number of packets, and not less than 2" >&2
+  exit 1
+fi
+
+# The bottleneck is a bounded queue that a token bucket drains at the rate.
+bottleneck=false
+if [[ "$(echo "${rate}" | bc -q)" != "0" ]]; then
+  bottleneck=true
+  if [[ -z "${queue}" ]]; then
+    # One bandwidth-delay product, and not less than 20 packets.
+    queue=$(awk -v rate="${rate}" -v latency="${latency}" -v mtu="${mtu}" \
+      'BEGIN { q = rate * 125 * latency / mtu; if (q < 20) q = 20; printf "%d", q }')
+  fi
+  # The bucket holds 4ms of traffic, not more than the queue and not less than
+  # two packets. The token bucket segments a GSO packet that is larger than the
+  # bucket before the packet goes into the queue, so each packet fits in a
+  # queue that has a limit in bytes.
+  frame=$((mtu + 14)) # The queueing disciplines count the Ethernet header.
+  burst=$(awk -v rate="${rate}" -v frame="${frame}" -v queue="${queue}" 'BEGIN {
+    b = rate * 500
+    if (b > queue * frame) b = queue * frame
+    if (b < 2 * frame) b = 2 * frame
+    printf "%d", b
+  }')
+  if ${ecn}; then
+    # The CoDel interval is the round-trip time, and not less than 100ms.
+    interval=$(awk -v latency="${latency}" \
+      'BEGIN { i = latency; if (i < 100) i = 100; printf "%d", i }')
+    queue_qdisc="codel limit ${queue} interval ${interval}ms ecn"
+  else
+    queue_qdisc="bfifo limit $((queue * frame))"
+  fi
+else
+  if ${ecn} || [[ -n "${queue}" ]]; then
+    echo "--ecn and --queue require --rate" >&2
+    exit 1
+  fi
+  queue=0
+fi
+
 # Client proxy that will listen on the client's iperf target forward traffic
 # using the host networking stack.
-client_args="${proxy_binary} -port ${proxy_port} -forward ${full_server_proxy_addr}"
+client_args="${proxy_binary} -port ${proxy_port} -forward ${full_server_proxy_addr} \\
+    -retransmits_file=/tmp/client.retransmits"
 if ${client}; then
   # Client proxy that will listen on the client's iperf target
   # and forward traffic using netstack.
   client_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -client \\
       -mtu ${mtu} -iface client.0 -addr ${client_proxy_addr} -mask ${mask} \\
       -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso} --gro=${gro} \\
-      --xdp=${xdp}"
+      --xdp=${xdp} -retransmits_file=/tmp/client.retransmits"
 fi
 
 # Server proxy that will listen on the proxy port and forward to the server's
@@ -327,6 +413,14 @@ fi
 duplicate_opt=""
 if [[ "$(echo "$half_duplicate" | bc -q)" != "0" ]]; then
   duplicate_opt="duplicate ${half_duplicate}%"
+fi
+reorder_opt=""
+if [[ "$(echo "$half_reorder" | bc -q)" != "0" ]]; then
+  if [[ "$(echo "$half_latency" | bc -q)" == "0" ]]; then
+    echo "--reorder requires a non-zero --latency" >&2
+    exit 1
+  fi
+  reorder_opt="reorder ${half_reorder}%"
 fi
 
 exec unshare "${unshare_opts[@]}" -m -n -f -p --mount-proc /bin/bash << EOF
@@ -397,7 +491,7 @@ ip link set server.0 mtu ${mtu}
 ip link set wan.0 mtu ${mtu}
 ip link set wan.1 mtu ${mtu}
 
-# Add appropriate latency, loss and duplication.
+# Add appropriate latency, loss, duplication and reordering.
 #
 # This is added in at the point of bridge connection.
 for device in wan.0 wan.1; do
@@ -405,10 +499,22 @@ for device in wan.0 wan.1; do
   # actually doesn't work. The man page actually has a small comment about this
   # "It is also possible to add a correlation, but this option is now deprecated
   # due to the noticed bad behavior." For more information see netem(8).
-  tc qdisc add dev \$device root netem \\
+  #
+  # The limit is large so that netem drops only the packets that the loss
+  # probability selects, at any throughput and latency.
+  tc qdisc add dev \$device root netem limit 1000000 \\
     delay ${half_latency}ms ${latency_variation}ms ${distribution} \\
-    ${loss_opt} ${duplicate_opt}
+    ${loss_opt} ${duplicate_opt} ${reorder_opt}
 done
+
+# Add the bottleneck. A packet goes through it after the network emulation.
+if ${bottleneck}; then
+  for device in client.1 server.1; do
+    tc qdisc add dev \$device root handle 1: tbf \\
+      rate ${rate}mbit burst ${burst} limit ${burst}
+    tc qdisc add dev \$device parent 1:1 handle 10: ${queue_qdisc}
+  done
+fi
 
 # Start a client proxy.
 touch /tmp/client.netns
@@ -451,6 +557,13 @@ if [[ "${disable_linux_gro}" == "1" ]]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
 fi
+if ${ecn}; then
+  # By default, the Linux network stack accepts ECN but does not request it.
+  ${nsjoin_binary} /tmp/client.netns /bin/bash -c "echo 1 > /proc/sys/net/ipv4/tcp_ecn"
+  ${nsjoin_binary} /tmp/server.netns /bin/bash -c "echo 1 > /proc/sys/net/ipv4/tcp_ecn"
+fi
+host_cc=\$(${nsjoin_binary} /tmp/client.netns cat /proc/sys/net/ipv4/tcp_congestion_control)
+echo "Linux congestion control: \$host_cc" >&2
 ${nsjoin_binary} /tmp/client.netns ip link set client.0 up
 ${nsjoin_binary} /tmp/client.netns ip link set lo up
 ${nsjoin_binary} /tmp/server.netns ip link set server.0 up
@@ -528,8 +641,11 @@ while true; do
   sleep 0.1 # Wait for all services.
 done
 
-# Emit raw results.
+# Emit raw results and the state of the network emulation.
 cat "\${results_file}" >&2
+for device in wan.0 wan.1 client.1 server.1; do
+  tc -s qdisc show dev \$device >&2
+done
 
 if (( client_rc == 124 || client_rc == 137 )); then
   echo "iperf client timed out after ${client_timeout}s" >&2
@@ -540,9 +656,11 @@ if (( client_rc != 0 )); then
   exit 1
 fi
 
-# Emit a useful result (final throughput). For multi-stream runs (-P > 1),
-# iperf3 prints per-stream sender lines followed by a [SUM] sender line.
-mbits=\$(awk '\$NF == "sender" {
+# Emit the throughput from the receiver line of iperf. The sender line also
+# counts the data that is in buffers and that the server did not receive. For
+# multi-stream runs (-P > 1), iperf3 prints per-stream receiver lines followed
+# by a [SUM] receiver line.
+mbits=\$(awk '\$NF == "receiver" {
   for (i = 2; i <= NF; i++) {
     if (\$i == "Mbits/sec") {
       val = \$(i - 1)
@@ -551,7 +669,7 @@ mbits=\$(awk '\$NF == "sender" {
 }
 END { print val }' "\${results_file}")
 if [[ -z "\${mbits}" ]]; then
-  echo "iperf client did not report sender throughput" >&2
+  echo "iperf client did not report receiver throughput" >&2
   exit 1
 fi
 client_cpu_ticks=\$(cat /proc/\$client_pid/stat \\
@@ -562,6 +680,31 @@ ticks_per_sec=\$(getconf CLK_TCK)
 client_cpu_load=\$(bc -l <<< \$client_cpu_ticks/\$ticks_per_sec/${duration})
 server_cpu_load=\$(bc -l <<< \$server_cpu_ticks/\$ticks_per_sec/${duration})
 
+# The iperf client sends the data, so the client proxy is the sender on the
+# emulated path. It writes the number of retransmitted segments when it exits.
+kill -TERM \$client_pid
+wait \$client_pid
+retransmits=\$(cat /tmp/client.retransmits)
+if [[ -z "\${retransmits}" ]]; then
+  echo "the client proxy did not report a retransmit count" >&2
+  exit 1
+fi
+
+if ${client}; then
+  sender=netstack-${netstack_cc}
+else
+  sender=linux-\$host_cc
+fi
+receiver=linux
+if ${server}; then
+  receiver=netstack
+fi
+role=server
+cpu_load=\$server_cpu_load
+if ${client} || ${linux_client}; then
+  role=client
+  cpu_load=\$client_cpu_load
+fi
 hostgso=true
 if [[ "${disable_linux_gso}" ]]; then
   hostgso=false
@@ -570,13 +713,18 @@ hostgro=true
 if [[ "${disable_linux_gro}" ]]; then
   hostgro=false
 fi
-
-if ${client}; then
-  echo "BenchmarkTCP/role=client/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$client_cpu_load cpu-time"
-  exit 0
-elif ${linux_client}; then
-  echo "BenchmarkTCP/role=client/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$client_cpu_load cpu-time"
-  exit 0
+netstackgso=none
+if { ${client} || ${server}; } && ! ${xdp} && [[ "${gso}" != "0" ]]; then
+  netstackgso=host
+  if ${swgso}; then
+    netstackgso=gvisor
+  fi
 fi
-echo "BenchmarkTCP/role=server/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$server_cpu_load cpu-time"
+
+name="BenchmarkTCP/sender=\$sender/receiver=\$receiver/role=\$role"
+name="\$name/host-gso=\$hostgso/host-gro=\$hostgro/netstack-gso=\$netstackgso"
+name="\$name/mtu=${mtu}/rtt=${latency}ms/jitter=${latency_variation}ms"
+name="\$name/loss=${loss}/duplicate=${duplicate}/reorder=${reorder}"
+name="\$name/rate=${rate}/queue=${queue}/ecn=${ecn}"
+echo "\$name 1 \$mbits Mb/s \$cpu_load cpu-time \$retransmits retransmits"
 EOF
