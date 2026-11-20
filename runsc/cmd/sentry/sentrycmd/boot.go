@@ -235,6 +235,7 @@ type Boot struct {
 	// here because nvconf.HostSettings.FabricIMEXManagementDevMinor in
 	// particular is uint32 and there is no flag.Uint32Var().
 	procDriverNvidiaParams             string
+	nvidiaMIGCapabilities              string
 	nvidiaFabricIMEXManagementDevMinor int64
 	nvidiaMNCCManagementDevMinor       int64
 
@@ -327,6 +328,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 
 	// Nvidia driver properties.
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver ABI version to use, or 'latest' for the newest supported one")
+	f.StringVar(&b.nvidiaMIGCapabilities, "nvidia-mig-capabilities", "", "JSON metadata for explicitly granted NVIDIA MIG instance capabilities")
 	f.StringVar(&b.procDriverNvidiaParams, "nvidia-host-params", "", "value of /proc/driver/nvidia/params on the host")
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
 	f.Int64Var(&b.nvidiaMNCCManagementDevMinor, "nvidia-mncc-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/mncc-mgmt on the host")
@@ -454,6 +456,43 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 		}
 
+		if b.procDriverNvidiaParams == "" && b.nvidiaMIGCapabilities == "" {
+			var migDeviceMinors []uint32
+			if spec.Linux != nil {
+				for _, dev := range spec.Linux.Devices {
+					if dev.Type != "c" || dev.Major < 0 || dev.Minor < 0 || uint64(dev.Minor) > uint64(^uint32(0)) {
+						continue
+					}
+					name := strings.TrimPrefix(dev.Path, "/dev/nvidia-caps/nvidia-cap")
+					minor, err := strconv.ParseUint(name, 10, 32)
+					if name == dev.Path || err != nil || uint32(minor) != uint32(dev.Minor) {
+						continue
+					}
+					// Bind mounts use the host pathname. Require that the OCI
+					// device identity grants that exact host character device.
+					var st unix.Stat_t
+					if err := unix.Lstat(dev.Path, &st); err != nil {
+						util.Fatalf("checking NVIDIA capability device %q: %v", dev.Path, err)
+					}
+					if st.Mode&unix.S_IFMT != unix.S_IFCHR || uint64(unix.Major(uint64(st.Rdev))) != uint64(dev.Major) || uint64(unix.Minor(uint64(st.Rdev))) != uint64(dev.Minor) {
+						util.Fatalf("NVIDIA capability device %q does not match OCI character device %d:%d", dev.Path, dev.Major, dev.Minor)
+					}
+					migDeviceMinors = append(migDeviceMinors, uint32(minor))
+				}
+			}
+			if len(migDeviceMinors) != 0 {
+				capabilities, err := nvconf.GetMIGCapabilities(migDeviceMinors)
+				if err != nil {
+					util.Fatalf("discovering NVIDIA MIG capabilities: %v", err)
+				}
+				data, err := json.Marshal(capabilities)
+				if err != nil {
+					util.Fatalf("encoding NVIDIA MIG capabilities: %v", err)
+				}
+				b.nvidiaMIGCapabilities = string(data)
+				argOverride["nvidia-mig-capabilities"] = b.nvidiaMIGCapabilities
+			}
+		}
 		if b.procDriverNvidiaParams == "" {
 			driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
 			nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
@@ -717,6 +756,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	// Create the loader.
+	var migCapabilities map[string]nvconf.MIGCapability
+	if b.nvidiaMIGCapabilities != "" {
+		if err := json.Unmarshal([]byte(b.nvidiaMIGCapabilities), &migCapabilities); err != nil {
+			util.Fatalf("decoding NVIDIA MIG capabilities: %v", err)
+		}
+	}
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
 		Spec:                spec,
@@ -748,6 +793,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		NvidiaDriverVersion: nvidiaDriverVersion,
 		NvidiaHostSettings: &nvconf.HostSettings{
 			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
+			MIGCapabilities:              migCapabilities,
 			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 			FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
 			HaveMNCCManagement:           b.nvidiaMNCCManagementDevMinor >= 0,

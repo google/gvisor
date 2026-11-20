@@ -46,6 +46,9 @@ func ProcfsInfoFromVFS(vfsObj *vfs.VirtualFilesystem) *ProcfsInfo {
 	if nvp.devInfo.HaveMNCCManagement {
 		procfsInfo.StaticFiles["capabilities/mncc-mgmt"] = procfsCapability(nvp.devInfo.MNCCManagementDevMinor, 0o400)
 	}
+	for capabilityPath, capability := range nvp.migCapabilities {
+		procfsInfo.StaticFiles[capabilityPath] = procfsCapability(capability.Minor, capability.Mode)
+	}
 	return procfsInfo
 }
 

@@ -61,8 +61,26 @@ type HasCtrlInfoList interface {
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000client.h:
 const (
 	NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE        = 0xd01
+	NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO            = 0xd02
 	NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY = 0xd04
 )
+
+// Supported indices for NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO.
+const (
+	NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO_INDEX_PARENT  = 1
+	NV0000_CTRL_CMD_CLIENT_GET_HANDLE_INFO_INDEX_CLASSID = 2
+)
+
+// NV0000_CTRL_CLIENT_GET_HANDLE_INFO_PARAMS queries a handle's parent or class,
+// from src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000client.h.
+//
+// +marshal
+type NV0000_CTRL_CLIENT_GET_HANDLE_INFO_PARAMS struct {
+	_       structs.HostLayout
+	HObject Handle
+	Index   uint32
+	Data    uint64 // union of NvHandle hResult and NvU64 iResult
+}
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000event.h:
 const (
@@ -707,6 +725,8 @@ const (
 	NV2080_CTRL_CMD_GPU_GET_PARTITIONS                   = 0x20800175
 	NV2080_CTRL_CMD_GPU_GET_PARTITION_CAPACITY           = 0x20800181
 	NV2080_CTRL_CMD_GPU_DESCRIBE_PARTITIONS              = 0x20800185
+	NV2080_CTRL_CMD_GPU_GET_COMPUTE_PROFILES             = 0x208001a2
+	NV2080_CTRL_CMD_GPU_GET_PARTITIONS                   = 0x20800175
 	NV2080_CTRL_CMD_GPU_GET_ACTIVE_PARTITION_IDS         = 0x2080018b
 	NV2080_CTRL_CMD_GPU_GET_PIDS                         = 0x2080018d
 	NV2080_CTRL_CMD_GPU_GET_PID_INFO                     = 0x2080018e
@@ -1086,3 +1106,13 @@ const (
 const (
 	UNKNOWN_CONTROL_COMMAND_80028B = 0x80028b
 )
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrlc637.h:
+const (
+	NVC637_CTRL_CMD_EXEC_PARTITIONS_GET        = 0xc6370103
+	NVC637_CTRL_EXEC_PARTITIONS_GET_ACTIVE_IDS = 0xc6370104
+	NVC637_CTRL_CMD_GET_UUID                   = 0xc63701aa
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrlc638.h:
+const NVC638_CTRL_CMD_GET_UUID = 0xc6380101
