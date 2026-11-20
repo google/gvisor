@@ -34,6 +34,12 @@ type State struct {
 
 	// Our floating point state.
 	fpState fpu.State `state:"wait"`
+
+	// faultTrapno and faultErr are the trap number and error code of the
+	// fault that raised the SIGSEGV or SIGBUS that the task will handle
+	// next. SignalSetup copies them to the signal frame.
+	faultTrapno uint64
+	faultErr    uint64
 }
 
 // afterLoad is invoked by stateify.

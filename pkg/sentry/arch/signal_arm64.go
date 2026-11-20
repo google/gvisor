@@ -26,6 +26,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 )
 
+// RecordPageFault does nothing on arm64, whose signal frames carry no x86
+// trap number or error code.
+func (c *Context64) RecordPageFault(hostarch.AccessType) {}
+
+// RecordGeneralProtectionFault does nothing on arm64.
+func (c *Context64) RecordGeneralProtectionFault() {}
+
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
 // second argument to signal handlers set by signal(2).
 //

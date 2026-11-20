@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
+#include <setjmp.h>
 #include <signal.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/ucontext.h>
 
 #include <cstdint>
+#include <utility>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/platform_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
@@ -355,6 +363,101 @@ TEST(ExceptionTest, AlignmentCheck) {
         }
       },
       ::testing::KilledBySignal(SIGBUS), "");
+}
+
+// x86 trap numbers and page fault error code bits. See Linux's
+// arch/x86/include/asm/trapnr.h and arch/x86/include/asm/trap_pf.h.
+constexpr greg_t kTrapGeneralProtection = 13;
+constexpr greg_t kTrapPageFault = 14;
+constexpr greg_t kPageFaultWrite = 1 << 1;
+constexpr greg_t kPageFaultUser = 1 << 2;
+constexpr greg_t kPageFaultInstructionFetch = 1 << 4;
+
+sigjmp_buf fault_jmp;
+volatile greg_t fault_trapno;
+volatile greg_t fault_err;
+
+void RecordFault(int, siginfo_t*, void* ucontext) {
+  const ucontext_t* uc = static_cast<const ucontext_t*>(ucontext);
+  fault_trapno = uc->uc_mcontext.gregs[REG_TRAPNO];
+  fault_err = uc->uc_mcontext.gregs[REG_ERR];
+  siglongjmp(fault_jmp, 1);
+}
+
+// Calls fn(arg), which must raise signo, and returns the trap number and the
+// error code in the signal frame of the signo handler.
+//
+// The ptrace platform cannot get the host's fault error code, and does not
+// tell page faults from general protection faults, so callers skip on it.
+PosixErrorOr<std::pair<greg_t, greg_t>> FaultTrapnoAndErr(void (*fn)(char*),
+                                                          char* arg,
+                                                          int signo = SIGSEGV) {
+  struct sigaction sa = {};
+  sa.sa_sigaction = RecordFault;
+  sa.sa_flags = SA_SIGINFO;
+  ASSIGN_OR_RETURN_ERRNO(auto cleanup, ScopedSigaction(signo, sa));
+  if (sigsetjmp(fault_jmp, 1) == 0) {
+    fn(arg);
+    return PosixError(EINVAL, "no fault signal");
+  }
+  return std::make_pair(fault_trapno, fault_err);
+}
+
+void ReadByte(char* p) { (void)*reinterpret_cast<volatile char*>(p); }
+
+void WriteByte(char* p) { *reinterpret_cast<volatile char*>(p) = 1; }
+
+void CallAddress(char* p) { reinterpret_cast<void (*)()>(p)(); }
+
+void HaltIgnoringArg(char*) { Halt(); }
+
+TEST(ExceptionTest, ReadPageFaultTrapnoAndErr) {
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
+  Mapping m =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(
+                FaultTrapnoAndErr(ReadByte, static_cast<char*>(m.ptr()))),
+            std::make_pair(kTrapPageFault, kPageFaultUser));
+}
+
+TEST(ExceptionTest, WritePageFaultTrapnoAndErr) {
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
+  Mapping m =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(
+                FaultTrapnoAndErr(WriteByte, static_cast<char*>(m.ptr()))),
+            std::make_pair(kTrapPageFault, kPageFaultUser | kPageFaultWrite));
+}
+
+TEST(ExceptionTest, InstructionFetchPageFaultTrapnoAndErr) {
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
+  Mapping m =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(
+                FaultTrapnoAndErr(CallAddress, static_cast<char*>(m.ptr()))),
+            std::make_pair(kTrapPageFault,
+                           kPageFaultUser | kPageFaultInstructionFetch));
+}
+
+// A read of a shared memfd mapping past the end of the file raises SIGBUS from
+// a page fault.
+TEST(ExceptionTest, BusErrorTrapnoAndErr) {
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
+  int const memfd = memfd_create("trapno", 0);
+  ASSERT_THAT(memfd, SyscallSucceeds());
+  FileDescriptor fd(memfd);
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, fd.get(), 0));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(FaultTrapnoAndErr(
+                ReadByte, static_cast<char*>(m.ptr()), SIGBUS)),
+            std::make_pair(kTrapPageFault, kPageFaultUser));
+}
+
+TEST(ExceptionTest, GeneralProtectionFaultTrapnoAndErr) {
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
+  EXPECT_EQ(
+      ASSERT_NO_ERRNO_AND_VALUE(FaultTrapnoAndErr(HaltIgnoringArg, nullptr)),
+      std::make_pair(kTrapGeneralProtection, greg_t{0}));
 }
 
 TEST(ExceptionTest, Int3Normal) {
