@@ -1349,3 +1349,39 @@ func TestIPv6ExtHdrSerializer(t *testing.T) {
 		})
 	}
 }
+
+// TestIPv6ExtHdrOffsetNoOverflow verifies that HeaderOffset() stays correct
+// when an extension header's Hdr Ext Len is large enough that (length+1)*8
+// exceeds 255. It places a 256-byte Destination Options header (Hdr Ext Len =
+// 31) before a second header and checks the reported offset of the second one.
+func TestIPv6ExtHdrOffsetNoOverflow(t *testing.T) {
+	const (
+		hdrExtLen  = 31                  // 8-octet units, not counting the first 8.
+		firstBytes = (hdrExtLen + 1) * 8 // 256 bytes total for the first header.
+	)
+
+	// First header: NextHeader = Destination Options (points at header #2),
+	// Hdr Ext Len = 31, followed by padding to reach 256 bytes.
+	payload := make([]byte, 0, firstBytes+8)
+	payload = append(payload, uint8(IPv6DestinationOptionsExtHdrIdentifier), hdrExtLen)
+	payload = append(payload, make([]byte, firstBytes-2)...)
+	// Second header: NextHeader = No Next Header, Hdr Ext Len = 0, plus 6 bytes.
+	payload = append(payload, uint8(IPv6NoNextHeaderIdentifier), 0)
+	payload = append(payload, make([]byte, 6)...)
+
+	it := MakeIPv6PayloadIterator(IPv6DestinationOptionsExtHdrIdentifier, buffer.MakeWithData(payload))
+	defer it.Release()
+
+	// Consume the first (long) Destination Options header.
+	if _, done, err := it.Next(); err != nil || done {
+		t.Fatalf("first Next() = (done %t, err %v), want a header", done, err)
+	}
+	// Consume the second header; HeaderOffset() now reports its start.
+	if _, done, err := it.Next(); err != nil || done {
+		t.Fatalf("second Next() = (done %t, err %v), want a header", done, err)
+	}
+
+	if got, want := it.HeaderOffset(), uint32(IPv6FixedHeaderSize+firstBytes); got != want {
+		t.Errorf("HeaderOffset() = %d, want %d", got, want)
+	}
+}

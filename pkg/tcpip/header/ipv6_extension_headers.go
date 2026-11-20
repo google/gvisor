@@ -717,10 +717,9 @@ func (i *IPv6PayloadIterator) nextHeaderData(ignoreLength bool, bytes []byte) (I
 	// in section 4.8 for new extension headers at the top of page 24.
 	//   [ Hdr Ext Len ] ... Length of the Destination Options header in 8-octet
 	//   units, not including the first 8 octets.
-	// Compute the increment in uint32: (length+1)*8. Evaluating this in the
-	// uint8 domain (as `(length+1)*ipv6ExtHdrLenBytesPerUnit`) overflows for
-	// length >= 31 and yields a too-small nextOffset, which corrupts the
-	// offsets reported by HeaderOffset()/ParseOffset().
+	// Advance past this extension header, whose total size is (length+1)
+	// 8-octet units. length is a uint8, so widen it to uint32 before the
+	// arithmetic to keep the full range of nextOffset.
 	i.nextOffset += (uint32(length) + 1) * ipv6ExtHdrLenBytesPerUnit
 
 	bytesLen := int(length)*ipv6ExtHdrLenBytesPerUnit + ipv6ExtHdrLenBytesExcluded
