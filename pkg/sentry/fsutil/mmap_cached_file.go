@@ -46,6 +46,10 @@ type MmapCachedFile struct {
 
 	refsMu refsMutex `state:"nosave"`
 
+	// keepUnreferenced is true if mappings of chunks with no referenced pages
+	// are kept in chunkCache. keepUnreferenced is immutable after first use.
+	keepUnreferenced bool
+
 	// +checklocks:refsMu
 	mappableReleased bool
 
@@ -57,19 +61,65 @@ type MmapCachedFile struct {
 	// +checklocks:refsMu
 	memAcct FrameRefSet
 
+	// cached indexes the mappings whose last page reference has been dropped.
+	// +checklocks:refsMu
+	cached map[uint64]*cachedChunk `state:"nosave"`
+
 	mapsMu mapsMutex `state:"nosave"`
 
 	// mappings maps chunk start offsets to mappings of those chunks.
 	// +checklocks:mapsMu
 	mappings map[uint64]mapping `state:"nosave"`
+
+	// After a failed remap, discard mappings at their last reference until
+	// all mappings have been regenerated or removed.
+	// +checklocks:mapsMu
+	remapFailed bool `state:"nosave"`
+}
+
+// chunkCache holds chunk mappings with no referenced pages, across all
+// MmapCachedFiles that keep them, so that mapping the same pages again reuses
+// them. On the KVM platform, retaining the host mapping can also avoid guest
+// faults. Lock order is MmapCachedFile.refsMu, MmapCachedFile.mapsMu,
+// chunkCache.mu.
+var chunkCache = struct {
+	mu chunkCacheMutex
+
+	// chunks is ordered from most to least recently unreferenced.
+	// +checklocks:mu
+	chunks chunkList
+
+	// bytes is the total size of the mappings in chunks.
+	// +checklocks:mu
+	bytes uint64
+
+	// Overflow evicts to three quarters of maxBytes.
+	// +checklocks:mu
+	maxBytes uint64
+
+	// trimming is true from overflow until the cache reaches its low watermark.
+	// +checklocks:mu
+	trimming bool
+}{maxBytes: 8 << 30}
+
+// cachedChunk is an entry in chunkCache.chunks.
+type cachedChunk struct {
+	// chunkCache.mu protects the list links.
+	chunkEntry
+
+	file       *MmapCachedFile
+	chunkStart uint64
+
+	// removed means the entry has already been unlinked, possibly by an evictor.
+	// +checklocks:chunkCache.mu
+	removed bool
 }
 
 // chunkShift returns the binary log of the chunk size, which is the huge page
 // size. It is not a constant since the huge page size is only known at runtime
 // on some architectures.
 //
-// TODO: In addition to compounding the repeated remapping problem
-// described in MmapCachedFile.DecRef, this small chunk size may contribute
+// TODO: The small chunk size may contribute
 // to host VMA exhaustion. Consider increasing chunkShift. (But note that
 // larger values of chunkShift increase the speed with which applications
 // can consume sentry's address space, since only one byte per chunk needs
@@ -107,6 +157,17 @@ func (f *MmapCachedFile) SetFD(fd int) {
 	f.fd.Store(int32(fd))
 }
 
+// KeepUnreferencedMappings makes f keep its mappings of chunks with no
+// referenced pages for reuse, rather than unmap them. This is only appropriate
+// for regular files: a mapping of some other files, such as /dev/zero, depends
+// on when it was created, and a mapping of a memfd can prevent sealing it.
+//
+// Preconditions: f has not been used.
+func (f *MmapCachedFile) KeepUnreferencedMappings() {
+	f.keepUnreferenced = true
+}
+
+// +checklocks:f.refsMu
 func (f *MmapCachedFile) close() {
 	if fd := f.fd.RacyLoad(); fd >= 0 {
 		unix.Close(int(fd))
@@ -122,6 +183,11 @@ func (f *MmapCachedFile) MappableRelease() {
 		return
 	}
 	f.mappableReleased = true
+	if len(f.cached) != 0 {
+		f.mapsMu.Lock()
+		f.dropCachedMappingsLocked()
+		f.mapsMu.Unlock()
+	}
 	if len(f.refs) == 0 {
 		f.close()
 	}
@@ -169,6 +235,11 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 			// Would overflow.
 			panic(fmt.Sprintf("fsutil.MmapCachedFile.IncRef(%v): adding %d page references to chunk %#x, which has %d page references", fr, pgs, chunkStart, refs))
 		}
+		if refs == 0 {
+			if c := f.cached[chunkStart]; c != nil {
+				f.uncacheChunkLocked(c)
+			}
+		}
 		f.refs[chunkStart] = refs + pgs
 		chunkStart += chunkSize()
 		if chunkStart >= fr.End || chunkStart == 0 {
@@ -179,10 +250,7 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 
 // DecRef implements memmap.File.DecRef.
 func (f *MmapCachedFile) DecRef(fr memmap.FileRange) {
-	f.refsMu.Lock()
-	defer f.refsMu.Unlock()
-	f.decRefUnaccounted(fr)
-	f.memAcct.DecRefAndAccount(fr)
+	f.decRef(fr, true /* account */)
 }
 
 // RemoveMapping is called by implementations of memmap.Mappable.RemoveMapping
@@ -190,17 +258,15 @@ func (f *MmapCachedFile) DecRef(fr memmap.FileRange) {
 //
 // Preconditions: As for memmap.Mappable.RemoveMapping.
 func (f *MmapCachedFile) RemoveMapping(ar hostarch.AddrRange, offset uint64) {
-	f.refsMu.Lock()
-	defer f.refsMu.Unlock()
-	f.decRefUnaccounted(memmap.FileRange{offset, offset + uint64(ar.Length())})
+	f.decRef(memmap.FileRange{offset, offset + uint64(ar.Length())}, false /* account */)
 }
 
 // Preconditions:
 //   - fr.Length() != 0.
 //   - fr.Start and fr.End must be page-aligned.
-//
-// +checklocks:f.refsMu
-func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
+func (f *MmapCachedFile) decRef(fr memmap.FileRange, account bool) {
+	f.refsMu.Lock()
+	evict := false
 	chunkStart := fr.Start &^ chunkMask()
 	for {
 		refs := f.refs[chunkStart]
@@ -210,14 +276,13 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
 			f.refs[chunkStart] = refs - pgs
 		case refs == pgs:
 			delete(f.refs, chunkStart)
-			// TODO: Unmapping here generally means that mappings of host FDs
-			// will be unmapped when there are no application VMAs mapping f,
-			// e.g. between process executions, which may be expensive for some
-			// workloads. Consider retaining mappings until f.close() instead.
-			// This would also let us drop Add/RemoveMapping.
 			f.mapsMu.Lock()
 			if m, ok := f.mappings[chunkStart]; ok {
-				f.unmapAndRemove(chunkStart, m)
+				if !f.keepUnreferenced || f.mappableReleased || f.remapFailed {
+					f.unmapAndRemove(chunkStart, m)
+				} else if f.cacheChunkLocked(chunkStart) {
+					evict = true
+				}
 			}
 			f.mapsMu.Unlock()
 		case refs < pgs:
@@ -230,6 +295,91 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
 	}
 	if f.mappableReleased && len(f.refs) == 0 {
 		f.close()
+	}
+	if account {
+		f.memAcct.DecRefAndAccount(fr)
+	}
+	f.refsMu.Unlock()
+	if evict {
+		evictCachedChunks()
+	}
+}
+
+// cacheChunkLocked returns true if the caller should evict after unlocking f.
+//
+// +checklocks:f.refsMu
+func (f *MmapCachedFile) cacheChunkLocked(chunkStart uint64) bool {
+	c := &cachedChunk{file: f, chunkStart: chunkStart}
+	if f.cached == nil {
+		f.cached = make(map[uint64]*cachedChunk)
+	}
+	f.cached[chunkStart] = c
+	chunkCache.mu.Lock()
+	defer chunkCache.mu.Unlock()
+	chunkCache.chunks.PushFront(c)
+	chunkCache.bytes += chunkSize()
+	if chunkCache.bytes > chunkCache.maxBytes {
+		chunkCache.trimming = true
+		return true
+	}
+	return false
+}
+
+// +checklocks:f.refsMu
+func (f *MmapCachedFile) uncacheChunkLocked(c *cachedChunk) {
+	delete(f.cached, c.chunkStart)
+	chunkCache.mu.Lock()
+	c.removeLocked()
+	chunkCache.mu.Unlock()
+}
+
+// +checklocks:chunkCache.mu
+func (c *cachedChunk) removeLocked() {
+	if c.removed {
+		return
+	}
+	chunkCache.chunks.Remove(c)
+	c.removed = true
+	chunkCache.bytes -= chunkSize()
+	if chunkCache.bytes <= chunkCache.maxBytes/4*3 {
+		chunkCache.trimming = false
+	}
+}
+
+// +checklocks:f.refsMu
+// +checklocks:f.mapsMu
+func (f *MmapCachedFile) dropCachedMappingsLocked() {
+	for chunkStart, c := range f.cached {
+		f.uncacheChunkLocked(c)
+		f.unmapAndRemove(chunkStart, f.mappings[chunkStart])
+	}
+}
+
+// evictCachedChunks must be called without any MmapCachedFile locks.
+//
+// +checklocksexclude:chunkCache.mu
+func evictCachedChunks() {
+	for {
+		chunkCache.mu.Lock()
+		if !chunkCache.trimming {
+			chunkCache.mu.Unlock()
+			return
+		}
+		c := chunkCache.chunks.Back()
+		c.removeLocked()
+		chunkCache.mu.Unlock()
+
+		// Reuse, including reuse followed by another last reference, cancels
+		// eviction of this entry.
+		f := c.file
+		f.refsMu.Lock()
+		if f.cached[c.chunkStart] == c {
+			delete(f.cached, c.chunkStart)
+			f.mapsMu.Lock()
+			f.unmapAndRemove(c.chunkStart, f.mappings[c.chunkStart])
+			f.mapsMu.Unlock()
+		}
+		f.refsMu.Unlock()
 	}
 }
 
@@ -244,6 +394,9 @@ func (f *MmapCachedFile) unmapAndRemove(chunkStart uint64, m mapping) {
 		log.Warningf("fsutil.MmapCachedFile: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
 	}
 	delete(f.mappings, chunkStart)
+	if len(f.mappings) == 0 {
+		f.remapFailed = false
+	}
 }
 
 // MapInternal implements memmap.File.MapInternal.
@@ -306,6 +459,7 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 				uintptr(fd),
 				uintptr(chunkStart))
 			if errno != 0 {
+				f.remapFailed = true
 				return errno
 			}
 			m = mapping{addr, write}
@@ -341,8 +495,13 @@ func (f *MmapCachedFile) RegenerateMappings() error {
 		return nil
 	}
 
+	// Only referenced chunks need to keep their host addresses across the
+	// change of file description.
+	f.refsMu.Lock()
+	defer f.refsMu.Unlock()
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
+	f.dropCachedMappingsLocked()
 
 	for chunkStart, m := range f.mappings {
 		prot := unix.PROT_READ
@@ -358,9 +517,11 @@ func (f *MmapCachedFile) RegenerateMappings() error {
 			uintptr(fd),
 			uintptr(chunkStart))
 		if errno != 0 {
+			f.remapFailed = true
 			return errno
 		}
 	}
+	f.remapFailed = false
 	return nil
 }
 
