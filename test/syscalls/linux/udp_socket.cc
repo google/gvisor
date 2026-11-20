@@ -2588,6 +2588,21 @@ TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
   ASSERT_TRUE(IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) << addr;
 }
 
+// Linux's udp_sendmsg rejects a destination whose family is neither AF_INET
+// nor AF_UNSPEC with EAFNOSUPPORT (gvisor.dev/issue/5967).
+TEST(UdpInet4SocketTest, SendToInet6AddrReturnsEAFNOSUPPORT) {
+  auto sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  sockaddr_in6 addr = {};
+  addr.sin6_family = AF_INET6;
+  addr.sin6_port = htons(1234);
+  addr.sin6_addr = in6addr_loopback;
+  char buf[1] = {};
+  EXPECT_THAT(sendto(sock.get(), buf, sizeof(buf), 0,
+                     reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)),
+              SyscallFailsWithErrno(EAFNOSUPPORT));
+}
+
 }  // namespace
 
 }  // namespace testing

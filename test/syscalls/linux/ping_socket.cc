@@ -125,6 +125,34 @@ TEST_P(PingSocketPayloadTest, PayloadTooLarge) {
 INSTANTIATE_TEST_SUITE_P(IP, PingSocketPayloadTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
+TEST(PingSocket, SendToMismatchedFamilyReturnsEAFNOSUPPORT) {
+  auto ping = Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+  if (!ping.ok()) {
+    ASSERT_EQ(ping.error().errno_value(), EACCES);
+    GTEST_SKIP() << "ping socket not supported";
+  }
+  FileDescriptor& sock = ping.ValueOrDie();
+  // A ping socket requires a full ICMP header whose type is ICMP_ECHO.
+  constexpr icmphdr kBuf = {
+      .type = ICMP_ECHO,
+  };
+
+  sockaddr_in6 addr6 = {};
+  addr6.sin6_family = AF_INET6;
+  addr6.sin6_port = htons(1234);
+  addr6.sin6_addr = in6addr_loopback;
+  EXPECT_THAT(sendto(sock.get(), &kBuf, sizeof(kBuf), 0,
+                     reinterpret_cast<const sockaddr*>(&addr6), sizeof(addr6)),
+              SyscallFailsWithErrno(EAFNOSUPPORT));
+
+  sockaddr_in addr_unspec = {};
+  addr_unspec.sin_family = AF_UNSPEC;
+  EXPECT_THAT(sendto(sock.get(), &kBuf, sizeof(kBuf), 0,
+                     reinterpret_cast<const sockaddr*>(&addr_unspec),
+                     sizeof(addr_unspec)),
+              SyscallFailsWithErrno(EAFNOSUPPORT));
+}
+
 TEST(PingSocket, ReceiveTOS) {
   PosixErrorOr<FileDescriptor> result =
       Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
