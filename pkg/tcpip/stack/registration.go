@@ -425,6 +425,10 @@ type GroupAddressableEndpoint interface {
 
 	// IsInGroup returns true if the endpoint is a member of the specified group.
 	IsInGroup(group tcpip.Address) bool
+
+	// JoinedGroups returns the groups the endpoint is a member of, each
+	// mapped to the number of times it was joined.
+	JoinedGroups() map[tcpip.Address]uint64
 }
 
 // PrimaryEndpointBehavior is an enumeration of an AddressEndpoint's primary

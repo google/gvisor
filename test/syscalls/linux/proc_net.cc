@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sched.h>
@@ -89,6 +90,131 @@ TEST(ProcNetSymlink, Contents) {
 
   buf[n] = 0;
   EXPECT_STREQ(buf, "self/net");
+}
+
+TEST(ProcNetIGMP, HeaderAndMode) {
+  const auto contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/igmp"));
+  EXPECT_THAT(contents, ::testing::StartsWith(
+                            "Idx\tDevice    : Count Querier\tGroup    Users "
+                            "Timer\tReporter\n"));
+  struct stat st;
+  ASSERT_THAT(stat("/proc/net/igmp", &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode & (S_IFMT | 0777), S_IFREG | 0444);
+}
+
+PosixErrorOr<int> IGMPGroupUsers(in_addr group) {
+  ASSIGN_OR_RETURN_ERRNO(const auto contents, GetContents("/proc/net/igmp"));
+  const std::string address = absl::StrFormat("%08X", group.s_addr);
+  bool loopback = false;
+  for (absl::string_view line :
+       absl::StrSplit(contents, '\n', absl::SkipEmpty())) {
+    const std::vector<absl::string_view> fields =
+        absl::StrSplit(line, absl::ByAnyChar(" \t"), absl::SkipEmpty());
+    if (line.front() != '\t') {
+      loopback = fields.size() > 1 && fields[1] == "lo";
+    } else if (loopback && fields[0] == address) {
+      int users;
+      if (fields.size() != 4 || !absl::SimpleAtoi(fields[1], &users)) {
+        return PosixError(EINVAL, "invalid IGMP group entry");
+      }
+      return users;
+    }
+  }
+  return 0;
+}
+
+TEST(ProcNetIGMP, MembershipLifecycle) {
+  SKIP_IF(IsRunningWithHostinet());
+  auto first = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  auto second = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  ip_mreq group = {};
+  group.imr_multiaddr.s_addr = inet_addr("239.255.42.123");
+  group.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMPGroupUsers(group.imr_multiaddr)), 0);
+
+  ASSERT_THAT(setsockopt(first.get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMPGroupUsers(group.imr_multiaddr)), 1);
+  ASSERT_THAT(setsockopt(second.get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMPGroupUsers(group.imr_multiaddr)), 2);
+
+  ASSERT_THAT(setsockopt(first.get(), IPPROTO_IP, IP_DROP_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMPGroupUsers(group.imr_multiaddr)), 1);
+  second.reset();
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMPGroupUsers(group.imr_multiaddr)), 0);
+}
+
+TEST(ProcNetIGMP6, FormatAndMode) {
+  const auto contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/igmp6"));
+  // Each line is "%-4d %-15s %pi6 %5d %08X %ld\n": index, device, group,
+  // users, flags and timer.
+  EXPECT_THAT(contents, ::testing::MatchesRegex(
+                            "^([0-9]+ +[^ ]+ +[0-9a-f]{32} +[0-9]+ [0-9A-F]{8} "
+                            "[0-9]+\n)*$"));
+  struct stat st;
+  ASSERT_THAT(stat("/proc/net/igmp6", &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode & (S_IFMT | 0777), S_IFREG | 0444);
+}
+
+PosixErrorOr<int> IGMP6GroupUsers(const in6_addr& group) {
+  ASSIGN_OR_RETURN_ERRNO(const auto contents, GetContents("/proc/net/igmp6"));
+  std::string address;
+  for (uint8_t b : group.s6_addr) {
+    absl::StrAppendFormat(&address, "%02x", b);
+  }
+  for (absl::string_view line :
+       absl::StrSplit(contents, '\n', absl::SkipEmpty())) {
+    const std::vector<absl::string_view> fields =
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
+    if (fields.size() < 3 || fields[1] != "lo" || fields[2] != address) {
+      continue;
+    }
+    int users;
+    if (fields.size() != 6 || !absl::SimpleAtoi(fields[3], &users)) {
+      return PosixError(EINVAL, "invalid IGMP6 group entry");
+    }
+    return users;
+  }
+  return 0;
+}
+
+TEST(ProcNetIGMP6, MembershipLifecycle) {
+  SKIP_IF(IsRunningWithHostinet());
+  auto first = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+  auto second = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+  ipv6_mreq group = {};
+  ASSERT_EQ(inet_pton(AF_INET6, "ff15::42:123", &group.ipv6mr_multiaddr), 1);
+  group.ipv6mr_interface = if_nametoindex("lo");
+  ASSERT_NE(group.ipv6mr_interface, 0);
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMP6GroupUsers(group.ipv6mr_multiaddr)),
+            0);
+
+  ASSERT_THAT(setsockopt(first.get(), IPPROTO_IPV6, IPV6_JOIN_GROUP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMP6GroupUsers(group.ipv6mr_multiaddr)),
+            1);
+  ASSERT_THAT(setsockopt(second.get(), IPPROTO_IPV6, IPV6_JOIN_GROUP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMP6GroupUsers(group.ipv6mr_multiaddr)),
+            2);
+
+  ASSERT_THAT(setsockopt(first.get(), IPPROTO_IPV6, IPV6_LEAVE_GROUP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMP6GroupUsers(group.ipv6mr_multiaddr)),
+            1);
+  second.reset();
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(IGMP6GroupUsers(group.ipv6mr_multiaddr)),
+            0);
 }
 
 TEST(ProcNetIfInet6, Format) {
