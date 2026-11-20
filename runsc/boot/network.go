@@ -183,20 +183,13 @@ func (n *Network) CreateLinksAndRoutes(args *sentryapi.CreateLinksAndRoutesArgs,
 				fdOffset++
 			}
 			mac := tcpip.LinkAddress(link.LinkAddress)
-			linkDispatchMode := dispatchMode
-			if link.IsProxy {
-				// Use Readv for a SOCK_SEQPACKET UDS proxy link so a peer EOF (0-byte
-				// read) stops the dispatcher cleanly instead of busy-spinning in
-				// RecvMMsg.
-				linkDispatchMode = fdbased.Readv
-			}
 
 			linkEP, err := fdbased.New(&fdbased.Options{
 				FDs:                  FDs,
 				MTU:                  uint32(link.MTU),
 				EthernetHeader:       mac != "" && !link.IsProxy,
 				Address:              mac,
-				PacketDispatchMode:   linkDispatchMode,
+				PacketDispatchMode:   dispatchMode,
 				GSOMaxSize:           link.GSOMaxSize,
 				GVisorGSOEnabled:     link.GVisorGSOEnabled,
 				TXChecksumOffload:    link.TXChecksumOffload,

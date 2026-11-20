@@ -337,11 +337,6 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 	// fdbased.New must run before netgoferfilter.Install because it calls
 	// fstat on the UDS FD, which is disallowed by the seccomp filter.
 	var err error
-	// TODO(b/518947343): After the sentry closes its end of the UDS,
-	// recvmmsg returns zero-length messages instead of EAGAIN, so the
-	// RecvMMsg dispatcher below spins instead of exiting. Fix this by
-	// making fdbased's recvMMsgDispatcher treat a zero-length message as
-	// EOF, which keeps RecvMMsg batching.
 	linkEP, err = fdbased.New(&fdbased.Options{
 		FDs:                []int{n.udsFD},
 		MTU:                mtu,
@@ -406,7 +401,8 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 		switch linkErr.(type) {
 		case *tcpip.ErrConnectionReset, *tcpip.ErrClosedForReceive:
 			// Normal peer disconnect when the sandbox closes its end of the
-			// SOCK_SEQPACKET UDS socket (POLLHUP -> ECONNRESET).
+			// SOCK_SEQPACKET UDS socket (POLLHUP -> ECONNRESET, or 0-length
+			// recvmmsg -> ErrClosedForReceive).
 		default:
 			log.Warningf("UDS link endpoint closed with error: %v", linkErr)
 			return subcommands.ExitFailure
