@@ -1159,7 +1159,7 @@ func (fd *fileDescription) dentry() *dentry {
 
 // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
 func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
-	return fd.filesystem().listXattr(ctx, fd.dentry(), size)
+	return fd.filesystem().listXattr(ctx, fd.dentry(), auth.CredentialsFromContext(ctx))
 }
 
 // GetXattr implements vfs.FileDescriptionImpl.GetXattr.
