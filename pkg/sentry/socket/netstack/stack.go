@@ -1500,6 +1500,14 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 	if err := s.checkGateway(msg, &localRoute); err != nil {
 		return err
 	}
+	var rtMsg linux.RouteMessage
+	if _, ok := msg.GetData(&rtMsg); !ok {
+		return syserr.ErrInvalidArgument
+	}
+	unicast := rtMsg.Type == linux.RTN_UNICAST || rtMsg.Type == linux.RTN_UNSPEC
+	if unicast && localRoute.Gateway.Len() == 0 && localRoute.NIC == 0 {
+		return syserr.ErrNoDevice
+	}
 	found := false
 	sameDst := false
 	for _, rt := range s.Stack.GetRouteTable() {
