@@ -191,7 +191,7 @@ func newNetstackImpl(mode, probeFileName string) (*netstackImpl, func() error, e
 
 	var probeFile *os.File
 	var err error
-	probe := func(_ *tcp.TCPEndpointState) {}
+	var probe tcp.TCPProbeFunc
 	if probeFileName != "" {
 		probeFile, err = os.Create(probeFileName)
 		if err != nil {
