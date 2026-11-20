@@ -110,8 +110,8 @@ type connectionedEndpoint struct {
 	// This will store the socket's own credentials until the connection is
 	// established with connect(2). Once the connection is established, this
 	// will store the peer's credentials. The use of this option is possible
-	// only for connected `AF_UNIX` stream sockets and for `AF_UNIX` stream and
-	// datagram socket pairs created using socketpair(2)
+	// only for connected `AF_UNIX` stream and seqpacket sockets, and for
+	// `AF_UNIX` socket pairs created using socketpair(2)
 	peerCreds CredentialsControlMessage
 
 	// acceptedChan is per the TCP endpoint implementation. Note that the
@@ -387,10 +387,10 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 			writeQueue: writeQueue,
 		}
 		readQueue.IncRef()
+		if err := e.swapPeerCredsLocked(ctx, ce, ne); err != nil {
+			return err
+		}
 		if e.stype == linux.SOCK_STREAM {
-			if err := e.swapPeerCredsLocked(ctx, ce, ne); err != nil {
-				return err
-			}
 			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, peer)
 		} else {
 			returnConnect(&queueReceiver{readQueue: readQueue}, peer)
