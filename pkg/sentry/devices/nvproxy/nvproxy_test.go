@@ -272,7 +272,8 @@ func TestFilterCapabilities(t *testing.T) {
 		// Set of frontend ioctls that nvproxy accepts but does not forward to the
 		// host.
 		nonForwardedFrontendIoctls = map[uint32]struct{}{
-			nvgpu.NV_ESC_NUMA_INFO: struct{}{},
+			nvgpu.NV_ESC_NUMA_INFO:      struct{}{},
+			nvgpu.NV_ESC_IOCTL_XFER_CMD: struct{}{},
 		}
 
 		// Set of frontend ioctls that nvproxy makes but does not accept from the

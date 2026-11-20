@@ -34,6 +34,7 @@ const (
 	NV_ESC_ALLOC_OS_EVENT      = NV_IOCTL_BASE + 6
 	NV_ESC_FREE_OS_EVENT       = NV_IOCTL_BASE + 7
 	NV_ESC_CHECK_VERSION_STR   = NV_IOCTL_BASE + 10
+	NV_ESC_IOCTL_XFER_CMD      = NV_IOCTL_BASE + 11
 	NV_ESC_ATTACH_GPUS_TO_FD   = NV_IOCTL_BASE + 12
 	NV_ESC_SYS_PARAMS          = NV_IOCTL_BASE + 14
 	NV_ESC_EXPORT_TO_DMABUF_FD = NV_IOCTL_BASE + 17
@@ -176,6 +177,16 @@ type RMAPIVersion struct {
 	Cmd           uint32
 	Reply         uint32
 	VersionString [64]byte
+}
+
+// IoctlXfer is nv_ioctl_xfer_t, the parameter type for NV_ESC_IOCTL_XFER_CMD.
+//
+// +marshal
+type IoctlXfer struct {
+	_    structs.HostLayout
+	Cmd  uint32
+	Size uint32
+	Ptr  P64
 }
 
 // IoctlSysParams is the parameter type for NV_ESC_SYS_PARAMS.

@@ -191,6 +191,7 @@ func Init() {
 				frontendIoctl: map[uint32]frontendIoctlHandler{
 					nvgpu.NV_ESC_CARD_INFO:                     feHandler(frontendIoctlBytes, compUtil), // nv_ioctl_card_info_t array
 					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimpleNoStatus[nvgpu.RMAPIVersion], compUtil),
+					nvgpu.NV_ESC_IOCTL_XFER_CMD:                feHandler(frontendIoctlXfer, nvconf.ValidCapabilities),
 					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             feHandler(frontendIoctlBytes, compUtil), // NvU32 array containing GPU IDs
 					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimpleNoStatus[nvgpu.IoctlSysParams], compUtil),
 					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),
@@ -245,6 +246,7 @@ func Init() {
 					nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU:     uvmHandler(uvmIoctlSimple[nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS], nvconf.CapVideo),
 					nvgpu.UVM_VALIDATE_VA_RANGE:              uvmHandler(uvmIoctlSimple[nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS], compUtil),
 					nvgpu.UVM_CREATE_EXTERNAL_RANGE:          uvmHandler(uvmIoctlSimple[nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS], compUtil),
+					nvgpu.UVM_MAP_EXTERNAL_SPARSE:            uvmHandler(uvmIoctlSimple[nvgpu.UVM_MAP_EXTERNAL_SPARSE_PARAMS], compUtil),
 					nvgpu.UVM_MM_INITIALIZE:                  uvmHandler(uvmMMInitialize, compUtil),
 				},
 				controlCmd: map[uint32]controlCmdHandler{
@@ -363,6 +365,8 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS:                           ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS:                         ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_POWER_STATE:                           ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_L1_THRESHOLD:                          ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_PERF_BOOST:                                       ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2:          ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             ctrlHandler(rmControlSimple, compUtil),
@@ -554,6 +558,7 @@ func Init() {
 						FrontendInfos: map[uint32]IoctlInfo{
 							nvgpu.NV_ESC_CARD_INFO:                     ioctlInfoWithStructName("NV_ESC_CARD_INFO", nvgpu.IoctlCardInfo{}, "nv_ioctl_card_info_t"),
 							nvgpu.NV_ESC_CHECK_VERSION_STR:             ioctlInfoWithStructName("NV_ESC_CHECK_VERSION_STR", nvgpu.RMAPIVersion{}, "nv_ioctl_rm_api_version_t"),
+							nvgpu.NV_ESC_IOCTL_XFER_CMD:                ioctlInfoWithStructName("NV_ESC_IOCTL_XFER_CMD", nvgpu.IoctlXfer{}, "nv_ioctl_xfer_t"),
 							nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             simpleIoctlInfo("NV_ESC_ATTACH_GPUS_TO_FD"), // No params struct, params is a NvU32 array containing GPU IDs
 							nvgpu.NV_ESC_SYS_PARAMS:                    ioctlInfoWithStructName("NV_ESC_SYS_PARAMS", nvgpu.IoctlSysParams{}, "nv_ioctl_sys_params_t"),
 							nvgpu.NV_ESC_RM_DUP_OBJECT:                 ioctlInfo("NV_ESC_RM_DUP_OBJECT", nvgpu.NVOS55_PARAMETERS{}),
@@ -608,6 +613,7 @@ func Init() {
 							nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU:     ioctlInfo("UVM_PAGEABLE_MEM_ACCESS_ON_GPU", nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS{}),
 							nvgpu.UVM_VALIDATE_VA_RANGE:              ioctlInfo("UVM_VALIDATE_VA_RANGE", nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS{}),
 							nvgpu.UVM_CREATE_EXTERNAL_RANGE:          ioctlInfo("UVM_CREATE_EXTERNAL_RANGE", nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS{}),
+							nvgpu.UVM_MAP_EXTERNAL_SPARSE:            ioctlInfo("UVM_MAP_EXTERNAL_SPARSE", nvgpu.UVM_MAP_EXTERNAL_SPARSE_PARAMS{}),
 							nvgpu.UVM_MM_INITIALIZE:                  ioctlInfo("UVM_MM_INITIALIZE", nvgpu.UVM_MM_INITIALIZE_PARAMS{}),
 						},
 						ControlInfos: map[uint32]IoctlInfo{
@@ -726,6 +732,8 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            simpleIoctlInfo("NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS", "NV2080_CTRL_MC_SERVICE_INTERRUPTS_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS:                           simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS", "NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS:                         simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS", "NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_POWER_STATE:                           simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_POWER_STATE", "NV2080_CTRL_NVLINK_GET_POWER_STATE_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_L1_THRESHOLD:                          simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_L1_THRESHOLD", "NV2080_CTRL_NVLINK_GET_L1_THRESHOLD_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_PERF_BOOST:                                       simpleIoctlInfo("NV2080_CTRL_CMD_PERF_BOOST", "NV2080_CTRL_PERF_BOOST_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2:          simpleIoctlInfo("NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2", "NV2080_CTRL_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             simpleIoctlInfo("NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO", "NV2080_CTRL_RC_GET_WATCHDOG_INFO_PARAMS"),
@@ -1177,6 +1185,10 @@ func Init() {
 
 		v570_86_15 := addUnsupportedDriverABI(570, 86, 15, func() *driverABI {
 			abi := v565_57_01()
+			// GET_BW_MODE is implemented in 565.57.01, but its handler there
+			// does not check for GPUs without NVLink.
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_BW_MODE] = ctrlHandler(rmControlSimple, compUtil)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_L1_TOGGLE] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_EVENT_SET_TRIGGER_FIFO] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_MODE_MMU_GCC_DEBUG] = ctrlHandler(rmControlSimple, nvconf.CapProfiling)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_GET_COMPUTE_PROFILE_CAPACITY] = ctrlHandler(rmControlSimple, compUtil)
@@ -1202,6 +1214,8 @@ func Init() {
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_BW_MODE] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_BW_MODE", "NV2080_CTRL_NVLINK_GET_BW_MODE_PARAMS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_L1_TOGGLE] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_L1_TOGGLE", "NV2080_CTRL_NVLINK_GET_L1_TOGGLE_PARAMS")
 				info.ControlInfos[nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_MODE_MMU_GCC_DEBUG] = simpleIoctlInfo("NV83DE_CTRL_CMD_DEBUG_SET_MODE_MMU_GCC_DEBUG", "NV83DE_CTRL_DEBUG_SET_MODE_MMU_GCC_DEBUG_PARAMS")
 				info.FrontendInfos[nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD] = ioctlInfoWithStructName("NV_ESC_EXPORT_TO_DMABUF_FD", nvgpu.IoctlExportToDMABufFD_V570{}, "nv_ioctl_export_to_dma_buf_fd_t")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_EVENT_SET_TRIGGER_FIFO] = simpleIoctlInfo("NV2080_CTRL_CMD_EVENT_SET_TRIGGER_FIFO", "NV2080_CTRL_EVENT_SET_TRIGGER_FIFO_PARAMS")
@@ -1262,6 +1276,7 @@ func Init() {
 
 		v580_65_06 := addDriverABI(580, 65, 06, "04b10867af585e765cfbfdcf39ed5f4bd112375bebab0172eaa187c6aa5024ff", "e02acdc0d20d4a541aa5026bfddb1b9b4fc6bc64ae3b04ff9cb9c892700cf9c4", func() *driverABI {
 			abi := v575_51_02()
+			abi.controlCmd[nvgpu.NV2080_CTRL_NVLINK_GET_FIRMWARE_VERSION_INFO] = ctrlHandler(rmControlSimple, compUtil)
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS_V580], nvconf.CapGraphics|nvconf.CapVideo)
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
 			abi.allocationClass[nvgpu.NVCEB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
@@ -1278,6 +1293,7 @@ func Init() {
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
+				info.ControlInfos[nvgpu.NV2080_CTRL_NVLINK_GET_FIRMWARE_VERSION_INFO] = simpleIoctlInfo("NV2080_CTRL_NVLINK_GET_FIRMWARE_VERSION_INFO", "NV2080_CTRL_NVLINK_GET_FIRMWARE_VERSION_INFO_PARAMS")
 				info.FrontendInfos[nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD] = ioctlInfoWithStructName("NV_ESC_EXPORT_TO_DMABUF_FD", nvgpu.IoctlExportToDMABufFD_V580{}, "nv_ioctl_export_to_dma_buf_fd_t")
 				info.FrontendInfos[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = ioctlInfoWithStructName("NV_ESC_RM_MAP_MEMORY_DMA", nvgpu.NVOS46_PARAMETERS_V580{}, "NVOS46_PARAMETERS")
 				info.AllocationInfos[nvgpu.FERMI_VASPACE_A] = ioctlInfoWithStructName("FERMI_VASPACE_A", nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580{}, "NV_VASPACE_ALLOCATION_PARAMETERS")
@@ -1319,7 +1335,19 @@ func Init() {
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_VID_HEAP_CONTROL] = feHandler(rmVidHeapControlWithOSDescriptor, compUtil)
 			return abi
 		})
-		_ = addDriverABI(580, 196, 07, "0aab0518db53cf73c412dc7f32bbc850ca95e839d8923d0de4bff42c1c9169ce", "5b7d2319a1e5228cb47a67e07733a5abfb614cd8d4350a750211022343d27eed", v580_178_04)
+		// BUS_GET_PCI_INFO_V2 is in 580.196.07, 595.104.02, and 615.71.09 and
+		// later, but not in 590.48.01, 595.71.05 or the 610 branch.
+		_ = addDriverABI(580, 196, 07, "0aab0518db53cf73c412dc7f32bbc850ca95e839d8923d0de4bff42c1c9169ce", "5b7d2319a1e5228cb47a67e07733a5abfb614cd8d4350a750211022343d27eed", func() *driverABI {
+			abi := v580_178_04()
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO_V2] = ctrlHandler(rmControlSimple, compUtil)
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO_V2] = simpleIoctlInfo("NV2080_CTRL_CMD_BUS_GET_PCI_INFO_V2", "NV2080_CTRL_BUS_GET_PCI_INFO_V2_PARAMS")
+				return info
+			}
+			return abi
+		})
 
 		v590_44_01 := addUnsupportedDriverABI(590, 44, 01, func() *driverABI {
 			abi := v580_105_08()
@@ -1343,7 +1371,21 @@ func Init() {
 		})
 		v590_48_01 := addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
 
-		v595_71_05 := addUnsupportedDriverABI(595, 71, 05, v590_48_01)
+		// GET_REMAPPED_BANKS is declared in 590.44.01, but its handler first
+		// appears in 595.44.02. In the 580 branch, 0x20801361 instead selects
+		// GET_CPU_COHERENT_RANGE.
+		v595_44_02 := addUnsupportedDriverABI(595, 44, 02, func() *driverABI {
+			abi := v590_48_01()
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_FB_GET_REMAPPED_BANKS] = ctrlHandler(rmControlSimple, compUtil)
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_FB_GET_REMAPPED_BANKS] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_GET_REMAPPED_BANKS", "NV2080_CTRL_FB_GET_REMAPPED_BANKS_PARAMS")
+				return info
+			}
+			return abi
+		})
+		v595_71_05 := addUnsupportedDriverABI(595, 71, 05, v595_44_02)
 
 		v610_43_02 := addUnsupportedDriverABI(610, 43, 02, func() *driverABI {
 			abi := v595_71_05()
@@ -1427,6 +1469,7 @@ func Init() {
 		}, v615_15_00)
 		v615_71_09 := addDriverABI(615, 71, 9, "cdceed22bbeb61248d1a6deabc2596673e3a6501698ee71ac8d2fdc28f3b70fe", "21b7a442113b7057e69cf65a2d8f4d0d8705ec2a0d67ed906fbb1177810e8163", func() *driverABI {
 			abi := v615_62_00()
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO_V2] = ctrlHandler(rmControlSimple, compUtil)
 			abi.allocationClass[nvgpu.KEPLER_CHANNEL_GROUP_A] = allocHandler(rmAllocChannelGroupV615, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_OS_UNIX_CMD_MEMACCT_GET_IMPL] = ctrlHandler(rmControlSimple, compUtil)
 
@@ -1434,6 +1477,7 @@ func Init() {
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
 				info.AllocationInfos[nvgpu.KEPLER_CHANNEL_GROUP_A] = ioctlInfoWithStructName("KEPLER_CHANNEL_GROUP_A", nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615{}, "NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO_V2] = simpleIoctlInfo("NV2080_CTRL_CMD_BUS_GET_PCI_INFO_V2", "NV2080_CTRL_BUS_GET_PCI_INFO_V2_PARAMS")
 				info.ControlInfos[nvgpu.NV0000_CTRL_OS_UNIX_CMD_MEMACCT_GET_IMPL] = simpleIoctlInfo("NV0000_CTRL_OS_UNIX_CMD_MEMACCT_GET_IMPL", "NV0000_CTRL_OS_UNIX_MEMACCT_GET_IMPL_PARAMS")
 				return info
 			}
