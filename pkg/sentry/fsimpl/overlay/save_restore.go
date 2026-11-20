@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -90,15 +91,19 @@ func (fs *filesystem) rebuildRestoredDirInos(ctx context.Context) error {
 		if _, ok := rebuilt[key]; ok {
 			return linuxerr.EREMOTE
 		}
+		lowerMask := uint32(linux.STATX_INO | linux.STATX_NLINK)
+		if origin.lowerPath != "" {
+			lowerMask |= linux.STATX_TYPE
+		}
 		lowerStat, err := fs.vfsfs.VirtualFilesystem().StatAt(ctx, fs.creds, &vfs.PathOperation{
 			Root:  origin.lower,
 			Start: origin.lower,
-		}, &vfs.StatOptions{Mask: linux.STATX_INO | linux.STATX_NLINK})
+			Path:  fspath.Parse(origin.lowerPath),
+		}, &vfs.StatOptions{Mask: lowerMask})
 		if err != nil {
 			return err
 		}
-		const lowerMask = linux.STATX_INO | linux.STATX_NLINK
-		if lowerStat.Mask&lowerMask != lowerMask {
+		if lowerStat.Mask&lowerMask != lowerMask || (origin.lowerPath != "" && lowerStat.Mode&linux.S_IFMT != origin.lowerType) {
 			return linuxerr.EREMOTE
 		}
 		if lowerStat.Nlink != 1 {
@@ -106,6 +111,9 @@ func (fs *filesystem) rebuildRestoredDirInos(ctx context.Context) error {
 			// upper file must use its own identity instead of that origin.
 			discarded = append(discarded, origin)
 			continue
+		}
+		if origin.lowerVirtualIno != 0 {
+			lowerStat.Ino = origin.lowerVirtualIno
 		}
 		origin.identity = fs.encodeIdentity(layerDevNoAndIno{
 			layerDevNumber{lowerStat.DevMajor, lowerStat.DevMinor}, lowerStat.Ino,

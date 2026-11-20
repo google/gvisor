@@ -137,7 +137,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 	const timestampsMask = linux.STATX_ATIME | linux.STATX_MTIME
 	oldStat, err := vfsObj.StatAt(ctx, d.fs.creds, &oldpop, &vfs.StatOptions{
-		Mask: timestampsMask | linux.STATX_NLINK,
+		Mask: timestampsMask | linux.STATX_NLINK | linux.STATX_INO,
 	})
 	if err != nil {
 		return err
@@ -395,7 +395,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		if upperStat.Mask&linux.STATX_INO == 0 || oldStat.Mask&linux.STATX_NLINK == 0 {
+		const lowerMask = linux.STATX_NLINK | linux.STATX_INO
+		if upperStat.Mask&linux.STATX_INO == 0 || oldStat.Mask&lowerMask != lowerMask {
 			cleanupUndoCopyUp()
 			return linuxerr.EREMOTE
 		}
@@ -404,7 +405,10 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			ino:            upperStat.Ino,
 		}
 		if oldStat.Nlink == 1 {
-			d.aliasIno(upperKey)
+			if err := d.aliasIno(ctx, upperKey, oldStat.Ino); err != nil {
+				cleanupUndoCopyUp()
+				return err
+			}
 		} else {
 			d.assignOverlayIdentity(ctx, upperKey)
 		}

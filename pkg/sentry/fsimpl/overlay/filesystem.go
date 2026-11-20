@@ -1392,6 +1392,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		// An exchanged directory's contents can no longer be merged with
 		// lower layer directories at its new location.
 		if renamed.isDir() {
+			renamed.renamedLowerDir = len(renamed.lowerVDs) != 0
 			if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
 				Name:  fs.xattrOpaque,
 				Value: "y",
@@ -1400,6 +1401,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 		if replaced.isDir() {
+			replaced.renamedLowerDir = len(replaced.lowerVDs) != 0
 			if err := vfsObj.SetXattrAt(ctx, fs.creds, &oldpop, &vfs.SetXattrOptions{
 				Name:  fs.xattrOpaque,
 				Value: "y",
@@ -1452,6 +1454,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 	if renamed.isDir() {
+		renamed.renamedLowerDir = len(renamed.lowerVDs) != 0
 		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
 			Name:  fs.xattrOpaque,
 			Value: "y",

@@ -1182,7 +1182,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 // TestCheckpointRestoreInodeNumbers checks that files on a bind mount keep
 // their device and inode numbers across checkpoint/restore.
 func TestCheckpointRestoreInodeNumbers(t *testing.T) {
-	testCheckpointRestoreInodeNumbers(t, false /* rootOverlay */, true /* directfs */)
+	testCheckpointRestoreInodeNumbers(t, false /* rootOverlay */, true /* directfs */, false /* copyUp */, config.InodeNumbersPassthrough)
 }
 
 // TestCheckpointRestoreOverlayUnopenedInodeNumbers checks identities of lower
@@ -1190,12 +1190,24 @@ func TestCheckpointRestoreInodeNumbers(t *testing.T) {
 func TestCheckpointRestoreOverlayUnopenedInodeNumbers(t *testing.T) {
 	for _, directfs := range []bool{false, true} {
 		t.Run(fmt.Sprintf("directfs=%t", directfs), func(t *testing.T) {
-			testCheckpointRestoreInodeNumbers(t, true /* rootOverlay */, directfs)
+			testCheckpointRestoreInodeNumbers(t, true /* rootOverlay */, directfs, false /* copyUp */, config.InodeNumbersPassthrough)
 		})
 	}
 }
 
-func testCheckpointRestoreInodeNumbers(t *testing.T, rootOverlay, directfs bool) {
+// TestCheckpointRestoreOverlayCopiedUpInodeNumbers checks that copy-up origins
+// preserve identities across restore without retaining lower host handles.
+func TestCheckpointRestoreOverlayCopiedUpInodeNumbers(t *testing.T) {
+	for _, directfs := range []bool{false, true} {
+		for _, inodeNumbers := range []config.InodeNumbers{config.InodeNumbersPassthrough, config.InodeNumbersVirtual} {
+			t.Run(fmt.Sprintf("directfs=%t/inode-numbers=%s", directfs, inodeNumbers), func(t *testing.T) {
+				testCheckpointRestoreInodeNumbers(t, true /* rootOverlay */, directfs, true /* copyUp */, inodeNumbers)
+			})
+		}
+	}
+}
+
+func testCheckpointRestoreInodeNumbers(t *testing.T, rootOverlay, directfs, copyUp bool, inodeNumbers config.InodeNumbers) {
 	t.Helper()
 	base := testutil.TmpDir()
 	if rootOverlay {
@@ -1226,6 +1238,7 @@ func testCheckpointRestoreInodeNumbers(t *testing.T, rootOverlay, directfs bool)
 
 	spec, conf := sleepSpecConf(t)
 	conf.DirectFS = directfs
+	conf.InodeNumbers = inodeNumbers
 	// Keep the file open so that its dentry is checkpointed.
 	spec.Process.Args = []string{"/bin/sh", "-c", "exec 3<" + file + "; exec sleep 1000"}
 	if rootOverlay {
@@ -1277,6 +1290,41 @@ func testCheckpointRestoreInodeNumbers(t *testing.T, rootOverlay, directfs bool)
 	}
 	if err := waitForProcess(cont, newProcessBuilder().Cmd("sleep").Process()); err != nil {
 		t.Fatal(err)
+	}
+	if copyUp {
+		// Bound the Sentry and Gofer independently. Guest RLIMIT_NOFILE does
+		// not constrain the host descriptors retained by either process.
+		pids := []int{cont.SandboxPid(), cont.GoferPid.Load()}
+		beforeFDs := make([]int, len(pids))
+		for i, pid := range pids {
+			limit := unix.Rlimit{Cur: 4096, Max: 4096}
+			if err := unix.Prlimit(pid, unix.RLIMIT_NOFILE, &limit, nil); err != nil {
+				t.Fatal(err)
+			}
+			fds, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeFDs[i] = len(fds)
+		}
+		for start := 0; start < len(files); start += 1000 {
+			end := min(start+1000, len(files))
+			args := append([]string{"0600"}, files[start:end]...)
+			if out, err := executeCombinedOutput(conf, cont, nil, "/bin/chmod", args...); err != nil {
+				t.Fatalf("copy-up files %d..%d: %v\n%s", start, end, err, out)
+			}
+			for i, pid := range pids {
+				fds, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Allow descriptors for the chmod executable, its libraries,
+				// and normal executor activity, but not one per copied-up file.
+				if got, wantMax := len(fds), beforeFDs[i]+128; got > wantMax {
+					t.Fatalf("pid %d retains %d FDs after copying up %d files, want <= %d", pid, got, end, wantMax)
+				}
+			}
+		}
 	}
 	before, err := executeCombinedOutput(conf, cont, nil, statArgs[0], statArgs[1:]...)
 	if err != nil {

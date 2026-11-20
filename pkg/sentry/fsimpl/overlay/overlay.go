@@ -129,8 +129,8 @@ type filesystem struct {
 	ancestryMu ancestryRWMutex `state:"nosave"`
 
 	// dirInoCache contains origins of copied-up files only. Ordinary lookups
-	// and directory listings do not add entries. Each origin holds a reference
-	// to both layers so its key and identity can be rebuilt after restore.
+	// and directory listings do not add entries. Each origin retains the upper
+	// object and enough information to locate the lower object after restore.
 	dirInoCacheMu dirInoCacheMutex `state:"nosave"`
 	// +checklocks:dirInoCacheMu
 	dirInoCache map[layerDevNoAndIno]*overlayOrigin
@@ -230,6 +230,20 @@ type overlayOrigin struct {
 	identity overlayIdentity `state:"nosave"`
 	upper    vfs.VirtualDentry
 	lower    vfs.VirtualDentry
+
+	// lowerPath is rooted at lower when lower is a Gofer mount root.
+	// Otherwise lower refers directly to the origin and lowerPath is empty.
+	// Lower layers are immutable while the overlay is mounted, so retaining
+	// the path instead of the Gofer dentry allows its host handles to close.
+	lowerPath string
+
+	// lowerType is the lower object's file type at copy-up.
+	lowerType uint16
+
+	// lowerVirtualIno is the lower's original virtual inode number, or zero
+	// for passthrough inode numbers. The lower filesystem's allocator reserves
+	// virtual inode numbers across restore even after the dentry is evicted.
+	lowerVirtualIno uint64
 
 	// liveDentries counts overlay dentries that publish this origin's identity.
 	// It is protected by filesystem.dirInoCacheMu and rebuilt after restore.
@@ -645,25 +659,50 @@ func (fs *filesystem) encodeIdentity(orig layerDevNoAndIno) overlayIdentity {
 }
 
 // aliasIno preserves the origin of an independent file across copy-up.
-func (d *dentry) aliasIno(orig layerDevNoAndIno) {
+func (d *dentry) aliasIno(ctx context.Context, orig layerDevNoAndIno, lowerIno uint64) error {
 	fs := d.fs
+	lower := d.lowerVDs[0]
+	var lowerPath string
+	var lowerVirtualIno uint64
+	if impl, ok := lower.Mount().Filesystem().Impl().(interface {
+		OverlayOriginPathOptions() (exclusive, virtualInodes bool)
+	}); ok {
+		exclusive, virtualInodes := impl.OverlayOriginPathOptions()
+		if exclusive && virtualInodes {
+			lowerVirtualIno = lowerIno
+		}
+		if exclusive {
+			root := vfs.MakeVirtualDentry(lower.Mount(), lower.Mount().Root())
+			var err error
+			lowerPath, err = fs.vfsfs.VirtualFilesystem().PathnameReachable(ctx, root, lower)
+			if err != nil {
+				return err
+			}
+			if lowerPath == "" {
+				return linuxerr.EREMOTE
+			}
+			lower = root
+		}
+	}
 	fs.dirInoCacheMu.Lock()
 	defer fs.dirInoCacheMu.Unlock()
 	if _, ok := fs.dirInoCache[orig]; ok {
-		return
+		return nil
 	}
 	d.upperVD.IncRef()
-	// Keep the lower inode allocated while its identity is visible through
-	// the upper object, including when the lower name is removed externally.
-	d.lowerVDs[0].IncRef()
+	lower.IncRef()
 	origin := &overlayOrigin{
-		identity:     overlayIdentity{d.devMajor.Load(), d.devMinor.Load(), d.ino.Load()},
-		upper:        d.upperVD,
-		lower:        d.lowerVDs[0],
-		liveDentries: 1,
+		identity:        overlayIdentity{d.devMajor.Load(), d.devMinor.Load(), d.ino.Load()},
+		upper:           d.upperVD,
+		lower:           lower,
+		lowerPath:       lowerPath,
+		lowerType:       uint16(d.mode.Load() & linux.S_IFMT),
+		lowerVirtualIno: lowerVirtualIno,
+		liveDentries:    1,
 	}
 	fs.dirInoCache[orig] = origin
 	d.origin = origin
+	return nil
 }
 
 // ensureDirInoCache records restored dentries under their current layer
@@ -745,6 +784,10 @@ type dentry struct {
 	// protected by fs.renameMu.
 	parent atomic.Pointer[dentry] `state:".(*dentry)"`
 	name   string
+
+	// renamedLowerDir marks a directory that retained its old lower identity
+	// at a new name. It is protected by fs.renameMu.
+	renamedLowerDir bool
 
 	// If this dentry represents a directory, children maps the names of
 	// children for which dentries have been instantiated to those dentries,
@@ -967,6 +1010,9 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		parent.dirMu.NestedLock(dirIdx)
 		if !d.vfsd.IsDead() {
 			delete(parent.children, d.name)
+			if d.renamedLowerDir {
+				parent.dirents = nil
+			}
 		}
 		parent.dirMu.NestedUnlock(dirIdx)
 		// Drop the reference held by d on its parent without recursively

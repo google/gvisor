@@ -157,7 +157,10 @@ TEST(OverlayInode, StableIdentity) {
 // a lower layer subdirectory, and moves another lower layer subdirectory into
 // a directory that only the upper layer supplies. If a rename fails with
 // EXDEV, the test does not check that rename.
-TEST(OverlayInode, MergedDirectorySubdirectories) {
+class OverlayInodeDirectoryReplacement : public ::testing::TestWithParam<bool> {
+};
+
+TEST_P(OverlayInodeDirectoryReplacement, MergedDirectorySubdirectories) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   const TempPath base = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -177,6 +180,10 @@ TEST(OverlayInode, MergedDirectorySubdirectories) {
         JoinPath(upper, "sub"), JoinPath(upper, "sub/upper_dir"),
         JoinPath(upper, "sub/both")}) {
     ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  }
+  if (GetParam()) {
+    ASSERT_THAT(mkdir(JoinPath(lower, "sub/renamed").c_str(), 0755),
+                SyscallSucceeds());
   }
 
   const std::string opts =
@@ -202,6 +209,7 @@ TEST(OverlayInode, MergedDirectorySubdirectories) {
   if (renamed) {
     names.push_back("renamed");
   } else {
+    ASSERT_FALSE(IsRunningOnGvisor());
     EXPECT_THAT(rename_ret, SyscallFailsWithErrno(EXDEV));
   }
 
@@ -240,6 +248,9 @@ TEST(OverlayInode, MergedDirectorySubdirectories) {
     EXPECT_THAT(move_ret, SyscallFailsWithErrno(EXDEV));
   }
 }
+
+INSTANTIATE_TEST_SUITE_P(WithAndWithoutDestination,
+                         OverlayInodeDirectoryReplacement, ::testing::Bool());
 
 // Checks that directory entry inodes match stat after RENAME_EXCHANGE swaps
 // a lower layer subdirectory of a directory that both layers supply with a
