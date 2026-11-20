@@ -130,6 +130,25 @@ steps:
       arch: "arm64"
       queue: "arm64"
 
+  # Build the coverage-instrumented binaries (which are tagged `manual`).
+  - <<: *common
+    <<: *source_test
+    label: ":world_map: Build coverage binaries (AMD64)"
+    commands:
+      - "make build TARGETS='//runsc:runsc_coverage //runsc:runsc_race_coverage //runsc/cmd/sentry:gvisor_sentry_coverage //runsc/cmd/sentry:gvisor_sentry_race_coverage'"
+    agents:
+      arch: "amd64"
+      queue: "default"
+
+  - <<: *common
+    <<: *source_test
+    label: ":world_map: Build coverage binaries (ARM64)"
+    commands:
+      - "make build TARGETS='//runsc:runsc_coverage //runsc:runsc_race_coverage //runsc/cmd/sentry:gvisor_sentry_coverage //runsc/cmd/sentry:gvisor_sentry_race_coverage'"
+    agents:
+      arch: "arm64"
+      queue: "arm64"
+
   # Build everything (continuous only).
   - <<: *common
     <<: *source_test_continuous

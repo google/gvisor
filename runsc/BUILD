@@ -179,6 +179,7 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"false\" ",
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )
 
@@ -202,5 +203,6 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"true\" ",
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )

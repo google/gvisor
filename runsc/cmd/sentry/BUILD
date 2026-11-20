@@ -64,6 +64,7 @@ go_cov(
     srcs = COVERAGE_SRCS,
     outs = ["gvisor_sentry_cov"],
     cmd = COVERAGE_CMD % ("//runsc/cmd/sentry:gvisor_sentry_cov", "false"),
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )
 
@@ -72,6 +73,7 @@ go_cov(
     srcs = COVERAGE_SRCS,
     outs = ["gvisor_sentry_race_cov"],
     cmd = COVERAGE_CMD % ("//runsc/cmd/sentry:gvisor_sentry_race_cov", "true"),
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )
 
