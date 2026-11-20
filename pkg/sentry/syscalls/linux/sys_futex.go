@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -22,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 )
 
@@ -270,6 +272,94 @@ func Futex(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	default:
 		// We don't even know about this command.
 		return 0, nil, linuxerr.ENOSYS
+	}
+}
+
+// FutexWaitv implements Linux syscall futex_waitv(2).
+func FutexWaitv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	waitersAddr := args[0].Pointer()
+	nrFutexes := args[1].Uint()
+	flags := args[2].Uint()
+	timeoutAddr := args[3].Pointer()
+	clockID := args[4].Int()
+
+	if flags != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	if nrFutexes == 0 || nrFutexes > linux.FUTEX_WAITV_MAX || waitersAddr == 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// The timeout is absolute, on the clock named by clockID.
+	forever := timeoutAddr == 0
+	var clock ktime.Clock
+	var deadline ktime.Time
+	if !forever {
+		switch clockID {
+		case linux.CLOCK_REALTIME:
+			clock = t.Kernel().RealtimeClock()
+		case linux.CLOCK_MONOTONIC:
+			clock = t.Kernel().MonotonicClock()
+		default:
+			return 0, nil, linuxerr.EINVAL
+		}
+		ts, err := copyTimespecIn(t, timeoutAddr)
+		if err != nil {
+			return 0, nil, err
+		}
+		if !ts.Valid() {
+			return 0, nil, linuxerr.EINVAL
+		}
+		deadline = ktime.FromTimespec(ts)
+	}
+
+	waitv := make([]linux.FutexWaitv, nrFutexes)
+	if _, err := linux.CopyFutexWaitvSliceIn(t, waitersAddr, waitv); err != nil {
+		return 0, nil, err
+	}
+	fs := make([]futex.WaitvFutex, nrFutexes)
+	for i := range waitv {
+		wv := &waitv[i]
+		// Only 32-bit futexes are supported, as in Linux.
+		if wv.Flags&^(linux.FUTEX2_SIZE_MASK|linux.FUTEX2_PRIVATE) != 0 || wv.Reserved != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		if wv.Flags&linux.FUTEX2_SIZE_MASK != linux.FUTEX2_SIZE_U32 || wv.Val > math.MaxUint32 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		fs[i] = futex.WaitvFutex{
+			Addr:    hostarch.Addr(wv.Uaddr),
+			Val:     uint32(wv.Val),
+			Private: wv.Flags&linux.FUTEX2_PRIVATE != 0,
+		}
+	}
+
+	ws := t.FutexWaiters(len(fs))
+	for {
+		woken, err := t.Futex().WaitMultiplePrepare(ws, t, fs)
+		if err != nil {
+			return 0, nil, err
+		}
+		if woken >= 0 {
+			return uintptr(woken), nil, nil
+		}
+
+		if forever {
+			err = t.Block(ws[0].C)
+		} else {
+			err = t.BlockWithDeadlineFrom(ws[0].C, clock, true, deadline)
+		}
+
+		if woken := t.Futex().WaitMultipleComplete(ws, t); woken >= 0 {
+			return uintptr(woken), nil, nil
+		}
+		if err != nil {
+			// The timeout is absolute, so an interrupted wait restarts with
+			// the original arguments.
+			return 0, nil, linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
+		}
+		// A wakeup arrived without any Waiter having been woken. Wait again,
+		// as Linux does.
 	}
 }
 

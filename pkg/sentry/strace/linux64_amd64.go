@@ -376,6 +376,7 @@ var linuxAMD64 = SyscallMap{
 	437: makeSyscallInfo("openat2", FD, Path, OpenHow, Hex),
 	439: makeSyscallInfo("faccessat2", FD, Path, Oct, Hex),
 	441: makeSyscallInfo("epoll_pwait2", FD, EpollEvents, Hex, Timespec, SigSet),
+	449: makeSyscallInfo("futex_waitv", Hex, Hex, Hex, Timespec, Hex),
 }
 
 func init() {

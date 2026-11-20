@@ -533,3 +533,74 @@ func TestMutexStress(t *testing.T) {
 		<-c
 	}
 }
+
+// waitvFutexes returns n futexes at consecutive words starting at 0, each
+// expecting 0, alternating between shared and private.
+func waitvFutexes(n int) []WaitvFutex {
+	fs := make([]WaitvFutex, n)
+	for i := range fs {
+		fs[i] = WaitvFutex{Addr: hostarch.Addr(i * sizeofInt32), Private: i%2 == 1}
+	}
+	return fs
+}
+
+func prepareWaitv(t *testing.T, m *Manager, d Target, fs []WaitvFutex) []*Waiter {
+	ws := NewWaiters(len(fs))
+	if woken, err := m.WaitMultiplePrepare(ws, d, fs); woken != -1 || err != nil {
+		t.Fatalf("WaitMultiplePrepare: got (%d, %v), wanted (-1, nil)", woken, err)
+	}
+	return ws
+}
+
+func TestWaitMultipleHighestIndex(t *testing.T) {
+	m := NewManager()
+	d := newTestData(3 * sizeofInt32)
+	fs := waitvFutexes(3)
+	ws := prepareWaitv(t, m, d, fs)
+
+	for _, i := range []int{2, 0} {
+		if n, err := m.Wake(d, fs[i].Addr, fs[i].Private, ^uint32(0), 1); err != nil || n != 1 {
+			t.Errorf("Wake(%d): got (%d, %v), wanted (1, nil)", i, n, err)
+		}
+	}
+	if woken := m.WaitMultipleComplete(ws, d); woken != 2 {
+		t.Errorf("WaitMultipleComplete: got %d, wanted 2", woken)
+	}
+}
+
+// wakingTestData calls onLoad before loading the word at addr.
+type wakingTestData struct {
+	testData
+	addr   hostarch.Addr
+	onLoad func()
+}
+
+func (t wakingTestData) LoadUint32(addr hostarch.Addr) (uint32, error) {
+	if addr == t.addr && t.onLoad != nil {
+		t.onLoad()
+	}
+	return t.testData.LoadUint32(addr)
+}
+
+func TestWaitMultipleWokenDuringPrepare(t *testing.T) {
+	m := NewManager()
+	// Private futexes at words 0 and 2 use different buckets. LoadUint32 of
+	// fs[1] runs with only fs[1]'s bucket locked, so it can wake fs[0], which
+	// stands in for a wakeup from another task.
+	fs := []WaitvFutex{
+		{Addr: 0, Private: true},
+		{Addr: 2 * sizeofInt32, Val: 1, Private: true},
+	}
+	d := wakingTestData{testData: newTestData(3 * sizeofInt32), addr: fs[1].Addr}
+	d.onLoad = func() {
+		if n, err := m.Wake(d, fs[0].Addr, true, ^uint32(0), 1); err != nil || n != 1 {
+			t.Errorf("Wake during WaitMultiplePrepare: got (%d, %v), wanted (1, nil)", n, err)
+		}
+	}
+
+	ws := NewWaiters(len(fs))
+	// fs[1] does not match, but fs[0] was woken first, so the wait succeeds.
+	if woken, err := m.WaitMultiplePrepare(ws, d, fs); woken != 0 || err != nil {
+		t.Errorf("WaitMultiplePrepare: got (%d, %v), wanted (0, nil)", woken, err)
+	}
+}

@@ -105,6 +105,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/fasync",
+        "//pkg/sentry/kernel/futex",
         "//pkg/sentry/kernel/ipc",
         "//pkg/sentry/kernel/mq",
         "//pkg/sentry/kernel/msgqueue",
