@@ -204,8 +204,18 @@ func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, m
 	if err != nil {
 		return 0, nil, err
 	}
+
+	// Reserve the FD before the path is resolved, as Linux does, so that an
+	// open with no FD available fails before it creates or truncates the file.
+	fdTable := t.FDTable()
+	fd, err := fdTable.ReserveFD(t, 0)
+	if err != nil {
+		return 0, nil, err
+	}
+
 	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.O_NOFOLLOW == 0), resolveFlags)
 	if err != nil {
+		fdTable.UnreserveFD(fd)
 		return 0, nil, err
 	}
 	defer tpop.Release(t)
@@ -215,14 +225,15 @@ func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, m
 		Mode:  linux.FileMode(mode & (0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX) &^ t.FSContext().Umask()),
 	})
 	if err != nil {
+		fdTable.UnreserveFD(fd)
 		return 0, nil, err
 	}
 	defer file.DecRef(t)
 
-	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
+	fdTable.InstallReservedFD(fd, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
-	return uintptr(fd), nil, err
+	return uintptr(fd), nil, nil
 }
 
 // Access implements Linux syscall access(2).
