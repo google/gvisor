@@ -604,8 +604,8 @@ install_containerd = \
 
 containerd-test-%: load-containerd_harness load-basic_alpine load-basic_python load-basic_busybox load-basic_symlink-resolv load-basic_httpd load-basic_ubuntu
 	@$(call test_runtime,$(RUNTIME),--test_output=streamed --test_arg=-test.v --test_arg=--containerd_version=$* $(ARGS) -- //test/root:crictl_test)
-containerd-tests-min: containerd-test-1.7.31
-containerd-tests: containerd-test-1.7.31 containerd-test-2.0.8 containerd-test-2.1.7 containerd-test-2.2.3
+containerd-tests-min: containerd-test-2.0.14
+containerd-tests: containerd-test-2.0.14 containerd-test-2.3.7 containerd-test-2.4.2
 .PHONY: containerd-test-% containerd-tests-min containerd-tests
 
 containerd-performance-test-%:
