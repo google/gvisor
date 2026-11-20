@@ -93,6 +93,51 @@ TestAddress V4EmptyAddress() {
   return t;
 }
 
+// Wildcard IPv4 membership operations use the routed interface, not any match.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       WildcardMembershipUsesRoute) {
+  auto route_probe = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto multicast_addr = V4Multicast();
+  ASSERT_THAT(connect(route_probe->get(), AsSockAddr(&multicast_addr.addr),
+                      multicast_addr.addr_len),
+              SyscallSucceeds());
+  sockaddr_in source = {};
+  socklen_t source_len = sizeof(source);
+  ASSERT_THAT(getsockname(route_probe->get(), AsSockAddr(&source), &source_len),
+              SyscallSucceeds());
+  if (source.sin_addr.s_addr == lo_if_addr().sin_addr.s_addr) {
+    GTEST_SKIP() << "Multicast route uses loopback";
+  }
+
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  ip_mreqn group = {};
+  group.imr_multiaddr =
+      reinterpret_cast<sockaddr_in*>(&multicast_addr.addr)->sin_addr;
+  group.imr_ifindex = lo_if_idx();
+  ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  group.imr_ifindex = 0;
+  ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallFailsWithErrno(EADDRINUSE));
+  ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_DROP_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_DROP_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
+
+  group.imr_ifindex = lo_if_idx();
+  EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_DROP_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+}
+
 // Verifies that a broadcast UDP packet will arrive at all UDP sockets with
 // the destination port number.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,

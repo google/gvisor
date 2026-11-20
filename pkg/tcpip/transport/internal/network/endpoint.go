@@ -18,6 +18,7 @@ package network
 
 import (
 	"fmt"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -54,8 +55,10 @@ type Endpoint struct {
 	effectiveNetProto tcpip.NetworkProtocolNumber
 	// +checklocks:mu
 	connectedRoute *stack.Route `state:"nosave"`
+	// Join order lets IPv6 wildcard leaves remove the newest matching entry.
+	//
 	// +checklocks:mu
-	multicastMemberships map[multicastMembership]struct{}
+	multicastMemberships []multicastMembership
 	// +checklocks:mu
 	ipv4TTL uint8
 	// +checklocks:mu
@@ -118,6 +121,16 @@ type multicastMembership struct {
 	multicastAddr tcpip.Address
 }
 
+// +checklocks:e.mu
+func (e *Endpoint) findLastMembershipByMulticastAddrLocked(multicastAddr tcpip.Address) int {
+	for i := len(e.multicastMemberships) - 1; i >= 0; i-- {
+		if e.multicastMemberships[i].multicastAddr == multicastAddr {
+			return i
+		}
+	}
+	return -1
+}
+
 // Init initializes the endpoint.
 func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions, waiterQueue *waiter.Queue) {
 	e.mu.Lock()
@@ -149,7 +162,7 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 
 	// Linux defaults to TTL=1.
 	e.multicastTTL = 1
-	e.multicastMemberships = make(map[multicastMembership]struct{})
+	e.multicastMemberships = []multicastMembership{}
 	e.setEndpointState(transport.DatagramEndpointStateInitial)
 }
 
@@ -183,7 +196,7 @@ func (e *Endpoint) Close() {
 		return
 	}
 
-	for mem := range e.multicastMemberships {
+	for _, mem := range e.multicastMemberships {
 		proto, err := e.multicastNetProto(mem.multicastAddr)
 		if err != nil {
 			panic("non multicast address in an existing membership")
@@ -1037,6 +1050,17 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			return err
 		}
 
+		wildcardMembership := proto == header.IPv6ProtocolNumber && v.NIC == 0 && v.InterfaceAddr.Unspecified()
+		if wildcardMembership {
+			// IPv6 ifindex=0 checks the group before selecting an interface.
+			e.mu.Lock()
+			i := e.findLastMembershipByMulticastAddrLocked(v.MulticastAddr)
+			e.mu.Unlock()
+			if i >= 0 {
+				return &tcpip.ErrPortInUse{}
+			}
+		}
+
 		nicID := v.NIC
 		if v.InterfaceAddr.Unspecified() {
 			if nicID == 0 {
@@ -1044,6 +1068,9 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 					nicID = r.NICID()
 					r.Release()
 				}
+			}
+			if nicID == 0 && proto == header.IPv6ProtocolNumber {
+				nicID = e.stack.FindNICForMulticast(proto)
 			}
 		} else {
 			nicID = e.stack.CheckLocalAddress(nicID, proto, v.InterfaceAddr)
@@ -1057,7 +1084,11 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
-		if _, ok := e.multicastMemberships[memToInsert]; ok {
+		if wildcardMembership {
+			if e.findLastMembershipByMulticastAddrLocked(v.MulticastAddr) >= 0 {
+				return &tcpip.ErrPortInUse{}
+			}
+		} else if slices.Contains(e.multicastMemberships, memToInsert) {
 			return &tcpip.ErrPortInUse{}
 		}
 
@@ -1065,12 +1096,29 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			return err
 		}
 
-		e.multicastMemberships[memToInsert] = struct{}{}
+		e.multicastMemberships = append(e.multicastMemberships, memToInsert)
 
 	case *tcpip.RemoveMembershipOption:
 		proto, err := e.multicastNetProto(v.MulticastAddr)
 		if err != nil {
 			return err
+		}
+
+		if proto == header.IPv6ProtocolNumber && v.NIC == 0 && v.InterfaceAddr.Unspecified() {
+			// IPv6 ifindex=0 drops the newest matching membership, regardless of route.
+			e.mu.Lock()
+			defer e.mu.Unlock()
+
+			i := e.findLastMembershipByMulticastAddrLocked(v.MulticastAddr)
+			if i < 0 {
+				return &tcpip.ErrBadLocalAddress{}
+			}
+			memToRemove := e.multicastMemberships[i]
+			if err := e.stack.LeaveGroup(proto, memToRemove.nicID, v.MulticastAddr); err != nil {
+				return err
+			}
+			e.multicastMemberships = slices.Delete(e.multicastMemberships, i, i+1)
+			break
 		}
 
 		nicID := v.NIC
@@ -1093,7 +1141,8 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
-		if _, ok := e.multicastMemberships[memToRemove]; !ok {
+		i := slices.Index(e.multicastMemberships, memToRemove)
+		if i < 0 {
 			return &tcpip.ErrBadLocalAddress{}
 		}
 
@@ -1101,7 +1150,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			return err
 		}
 
-		delete(e.multicastMemberships, memToRemove)
+		e.multicastMemberships = slices.Delete(e.multicastMemberships, i, i+1)
 
 	case *tcpip.SocketDetachFilterOption:
 		return nil
