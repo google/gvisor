@@ -1,0 +1,44 @@
+# This workflow is used to re-trigger the Buildkite `pipeline` in certain
+# situations where Buildkite webhook triggers cannot safely do so.
+name: Re-run Pipeline after rebase
+
+"on":
+  # Triggering a job in Buildkite requires a Buildkite API write token. Checkout
+  # uses the trusted base branch, and PR metadata is treated as data and sent
+  # along to Buildkite, never as executable code.
+  pull_request_target:  # zizmor: ignore[dangerous-triggers]
+    types: [synchronize]
+
+concurrency:
+  # Cancel old in-progress pushes when a new push is made
+  group: retrigger-pipeline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  retrigger:
+    if: github.repository == 'gvisor/gvisor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read      # check out the script
+      pull-requests: read # list the PR's reviews
+      statuses: read      # check for an existing Pipeline build
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Re-trigger buildkite/pipeline/pr on push (if still approved)
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        BUILDKITE_TOKEN: ${{ secrets.BUILDKITE_PIPELINE_BUILD_TOKEN }}
+      with:
+        script: |-
+            const retriggerPipeline = require('./.github/workflows/retrigger_pipeline.js');
+            await retriggerPipeline({
+              github,
+              context,
+              core,
+              buildkiteToken: process.env.BUILDKITE_TOKEN,
+            });
