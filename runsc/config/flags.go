@@ -181,6 +181,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("gso", true, "enable host segmentation offload if it is supported by a network device.")
 	flagSet.Bool("software-gso", true, "enable gVisor segmentation offload when host offload can't be enabled.")
 	flagSet.Bool("gvisor-gro", false, "enable gVisor generic receive offload")
+	flagSet.Var(tcpDelayedACKPtr(TCPDelayedACKEnabled), "tcp-delayed-ack", "controls whether netstack TCP delays ACKs so that responses can carry them, like Linux. Values: enabled|disabled, default: enabled")
 	flagSet.Bool("tx-checksum-offload", false, "enable TX checksum offload.")
 	flagSet.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
 	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), flagQDisc, "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")

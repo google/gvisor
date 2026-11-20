@@ -1172,6 +1172,17 @@ func (*TCPAvailableCongestionControlOption) isGettableTransportProtocolOption() 
 
 func (*TCPAvailableCongestionControlOption) isSettableTransportProtocolOption() {}
 
+// TCPDelayedACKEnabled enables delayed ACKs for TCP. It is enabled by
+// default.
+//
+// TODO: Remove this option and TCPStats.DelayedACKs once delayed ACKs have
+// run in production without issues.
+type TCPDelayedACKEnabled bool
+
+func (*TCPDelayedACKEnabled) isGettableTransportProtocolOption() {}
+
+func (*TCPDelayedACKEnabled) isSettableTransportProtocolOption() {}
+
 // TCPModerateReceiveBufferOption enables/disables receive buffer moderation
 // for TCP.
 type TCPModerateReceiveBufferOption bool
@@ -2312,6 +2323,9 @@ type TCPStats struct {
 
 	// SpuriousRTORecovery is the number of spurious RTOs.
 	SpuriousRTORecovery *StatCounter
+
+	// DelayedACKs is the number of ACKs sent by the delayed ACK timer.
+	DelayedACKs *StatCounter
 
 	// ForwardMaxInFlightDrop is the number of connection requests that are
 	// dropped due to exceeding the maximum number of in-flight connection

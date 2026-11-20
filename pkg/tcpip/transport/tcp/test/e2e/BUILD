@@ -168,6 +168,27 @@ go_test(
 )
 
 go_test(
+    name = "tcp_delayed_ack_test",
+    size = "small",
+    srcs = ["tcp_delayed_ack_test.go"],
+    deps = [
+        ":e2e",
+        "//pkg/state",
+        "//pkg/tcpip",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/faketime",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/stack/gro",
+        "//pkg/tcpip/transport/tcp",
+        "//pkg/tcpip/transport/tcp/testing/context",
+        "//pkg/test/testutil",
+    ],
+)
+
+go_test(
     name = "tcp_sack_test",
     size = "small",
     srcs = ["tcp_sack_test.go"],

@@ -68,6 +68,7 @@ go_test(
     size = "small",
     srcs = [
         "endpoint_test.go",
+        "mmap_test.go",
         "processors_test.go",
     ],
     embed = [":fdbased"],

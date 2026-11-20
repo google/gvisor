@@ -110,6 +110,8 @@ type protocol struct {
 	// +checklocks:mu
 	moderateReceiveBuffer bool
 	// +checklocks:mu
+	delayedACK bool
+	// +checklocks:mu
 	lingerTimeout time.Duration
 	// +checklocks:mu
 	timeWaitTimeout time.Duration
@@ -336,6 +338,12 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		p.mu.Unlock()
 		return nil
 
+	case *tcpip.TCPDelayedACKEnabled:
+		p.mu.Lock()
+		p.delayedACK = bool(*v)
+		p.mu.Unlock()
+		return nil
+
 	case *tcpip.TCPLingerTimeoutOption:
 		p.mu.Lock()
 		if *v < 0 {
@@ -472,6 +480,12 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 	case *tcpip.TCPModerateReceiveBufferOption:
 		p.mu.RLock()
 		*v = tcpip.TCPModerateReceiveBufferOption(p.moderateReceiveBuffer)
+		p.mu.RUnlock()
+		return nil
+
+	case *tcpip.TCPDelayedACKEnabled:
+		p.mu.RLock()
+		*v = tcpip.TCPDelayedACKEnabled(p.delayedACK)
 		p.mu.RUnlock()
 		return nil
 
@@ -618,6 +632,7 @@ func newProtocol(s *stack.Stack, cc string, probe TCPProbeFunc) stack.TransportP
 		congestionControl:          cc,
 		availableCongestionControl: []string{ccReno, ccCubic},
 		moderateReceiveBuffer:      true,
+		delayedACK:                 true,
 		lingerTimeout:              DefaultTCPLingerTimeout,
 		timeWaitTimeout:            DefaultTCPTimeWaitTimeout,
 		timeWaitReuse:              tcpip.TCPTimeWaitReuseLoopbackOnly,
@@ -632,6 +647,13 @@ func newProtocol(s *stack.Stack, cc string, probe TCPProbeFunc) stack.TransportP
 	}
 	p.dispatcher.init(s.InsecureRNG(), gomaxprocs.Base())
 	return &p
+}
+
+// delayedACKEnabled returns the value of tcpip.TCPDelayedACKEnabled.
+func (p *protocol) delayedACKEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.delayedACK
 }
 
 // protocolFromStack retrieves the tcp.protocol instance from stack s.
