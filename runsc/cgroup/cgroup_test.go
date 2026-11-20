@@ -782,10 +782,10 @@ func TestLoadPaths(t *testing.T) {
 			err:       "invalid cgroups file",
 		},
 		{
-			name:      "too-many-fields",
-			cgroups:   "0:ctr:/path:extra\n",
+			name:      "colons-in-path",
+			cgroups:   "0:cpu:/path:extra\n",
 			mountinfo: debianMountinfo,
-			err:       "invalid cgroups file",
+			want:      map[string]string{"cpu": "/path:extra"},
 		},
 		{
 			name: "multiple-malformed",
