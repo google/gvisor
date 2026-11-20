@@ -157,6 +157,7 @@ func shouldValidateAnnotation(key string) bool {
 	const (
 		gvisorPrefix   = "dev.gvisor."
 		internalPrefix = "dev.gvisor.internal."
+		rootfsSource   = "dev.gvisor.spec.rootfs.source"
 	)
 	// Only validate gVisor annotations.
 	if !strings.HasPrefix(key, gvisorPrefix) {
@@ -172,8 +173,8 @@ func shouldValidateAnnotation(key string) bool {
 	if strings.HasPrefix(key, annotationContainerNameRemap) {
 		return false
 	}
-	// The source of a mount can change during restore.
-	if strings.HasPrefix(key, annotationMountPrefix) && strings.HasSuffix(key, ".source") {
+	// The source of a mount or of the rootfs can change during restore.
+	if strings.HasPrefix(key, annotationMountPrefix) && strings.HasSuffix(key, ".source") || key == rootfsSource {
 		return false
 	}
 	// Flag annotations controlling debug logging can change. They don't impact

@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -57,8 +58,8 @@ func newTestImage(features uint32, file erofs.InodeCompact) []byte {
 	return data
 }
 
-// openTestFile mounts image and opens its file "file".
-func openTestFile(t *testing.T, image []byte) *regularFileFD {
+// newTestImageFD returns a host file descriptor for a file containing image.
+func newTestImageFD(t *testing.T, image []byte) int {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "image")
 	if err != nil {
@@ -73,24 +74,42 @@ func openTestFile(t *testing.T, image []byte) *regularFileFD {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := contexttest.Context(t)
+	return imageFD
+}
+
+// mountTestImage mounts image and returns the root of the mount.
+func mountTestImage(t *testing.T, ctx context.Context, image []byte) vfs.VirtualDentry {
+	t.Helper()
 	mf := pgalloc.MemoryFileFromContext(ctx)
 	vfsObj := &vfs.VirtualFilesystem{}
 	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	vfsObj.MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{AllowUserMount: true})
-	mntns, err := vfsObj.NewMountNamespace(ctx, auth.CredentialsFromContext(ctx), "", Name, &vfs.MountOptions{GetFilesystemOptions: vfs.GetFilesystemOptions{Data: fmt.Sprintf("ifd=%d", imageFD)}}, nil)
+	mnt, err := vfsObj.MountDisconnected(ctx, auth.CredentialsFromContext(ctx), "", Name, &vfs.MountOptions{GetFilesystemOptions: vfs.GetFilesystemOptions{Data: fmt.Sprintf("ifd=%d", newTestImageFD(t, image))}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootVD := mntns.Root(ctx)
-	vfsfd, err := vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{Root: rootVD, Start: rootVD, Path: fspath.Parse("file")}, &vfs.OpenOptions{Flags: linux.O_RDONLY})
+	t.Cleanup(func() { mnt.DecRef(ctx); vfsObj.Release(ctx); mf.Destroy() })
+	return vfs.MakeVirtualDentry(mnt, mnt.Root())
+}
+
+// openTestPath opens the file at path, relative to root.
+func openTestPath(t *testing.T, ctx context.Context, root vfs.VirtualDentry, path string) *vfs.FileDescription {
+	t.Helper()
+	vfsfd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{Root: root, Start: root, Path: fspath.Parse(path)}, &vfs.OpenOptions{Flags: linux.O_RDONLY})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("OpenAt(%q): %v", path, err)
 	}
-	t.Cleanup(func() { vfsfd.DecRef(ctx); rootVD.DecRef(ctx); mntns.DecRef(ctx); vfsObj.Release(ctx); mf.Destroy() })
-	return vfsfd.Impl().(*regularFileFD)
+	t.Cleanup(func() { vfsfd.DecRef(ctx) })
+	return vfsfd
+}
+
+// openTestFile mounts image and opens its file "file".
+func openTestFile(t *testing.T, image []byte) *regularFileFD {
+	t.Helper()
+	ctx := contexttest.Context(t)
+	return openTestPath(t, ctx, mountTestImage(t, ctx, image), "file").Impl().(*regularFileFD)
 }
 
 func TestReadSpansInlineTail(t *testing.T) {
