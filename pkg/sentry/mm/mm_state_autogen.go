@@ -331,6 +331,7 @@ func (v *vma) StateFields() []string {
 		"off",
 		"realPerms",
 		"dontfork",
+		"dontdump",
 		"eagerForkCopy",
 		"sealed",
 		"mlockMode",
@@ -353,15 +354,16 @@ func (v *vma) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &v.mappable)
 	stateSinkObject.SaveUint64(1, &v.off)
 	stateSinkObject.SaveBool(3, &v.dontfork)
-	stateSinkObject.SaveBool(4, &v.eagerForkCopy)
-	stateSinkObject.SaveBool(5, &v.sealed)
-	stateSinkObject.Save(6, &v.mlockMode)
-	stateSinkObject.Save(7, &v.numaPolicy)
-	stateSinkObject.SaveUint64(8, &v.numaNodemask)
-	stateSinkObject.Save(9, &v.id)
-	stateSinkObject.SaveString(10, &v.name)
-	stateSinkObject.Save(11, &v.nameMut)
-	stateSinkObject.SaveUintptr(12, &v.lastFault)
+	stateSinkObject.SaveBool(4, &v.dontdump)
+	stateSinkObject.SaveBool(5, &v.eagerForkCopy)
+	stateSinkObject.SaveBool(6, &v.sealed)
+	stateSinkObject.Save(7, &v.mlockMode)
+	stateSinkObject.Save(8, &v.numaPolicy)
+	stateSinkObject.SaveUint64(9, &v.numaNodemask)
+	stateSinkObject.Save(10, &v.id)
+	stateSinkObject.SaveString(11, &v.name)
+	stateSinkObject.Save(12, &v.nameMut)
+	stateSinkObject.SaveUintptr(13, &v.lastFault)
 	stateSinkObject.SaveValue(2, realPermsValue)
 }
 
@@ -372,15 +374,16 @@ func (v *vma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.mappable)
 	stateSourceObject.LoadUint64(1, &v.off)
 	stateSourceObject.LoadBool(3, &v.dontfork)
-	stateSourceObject.LoadBool(4, &v.eagerForkCopy)
-	stateSourceObject.LoadBool(5, &v.sealed)
-	stateSourceObject.Load(6, &v.mlockMode)
-	stateSourceObject.Load(7, &v.numaPolicy)
-	stateSourceObject.LoadUint64(8, &v.numaNodemask)
-	stateSourceObject.Load(9, &v.id)
-	stateSourceObject.LoadString(10, &v.name)
-	stateSourceObject.Load(11, &v.nameMut)
-	stateSourceObject.LoadUintptr(12, &v.lastFault)
+	stateSourceObject.LoadBool(4, &v.dontdump)
+	stateSourceObject.LoadBool(5, &v.eagerForkCopy)
+	stateSourceObject.LoadBool(6, &v.sealed)
+	stateSourceObject.Load(7, &v.mlockMode)
+	stateSourceObject.Load(8, &v.numaPolicy)
+	stateSourceObject.LoadUint64(9, &v.numaNodemask)
+	stateSourceObject.Load(10, &v.id)
+	stateSourceObject.LoadString(11, &v.name)
+	stateSourceObject.Load(12, &v.nameMut)
+	stateSourceObject.LoadUintptr(13, &v.lastFault)
 	stateSourceObject.LoadValueTo(2, (*int)(nil), v)
 }
 

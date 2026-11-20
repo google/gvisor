@@ -264,5 +264,8 @@ func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIt
 	if vma.private && vma.effectivePerms.Write { // VM_ACCOUNT
 		b.WriteString("ac ")
 	}
+	if vma.dontdump { // VM_DONTDUMP
+		b.WriteString("dd ")
+	}
 	b.WriteString("\n")
 }
