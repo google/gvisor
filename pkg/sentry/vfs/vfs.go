@@ -39,6 +39,7 @@ package vfs
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -1108,6 +1109,9 @@ func (vfs *VirtualFilesystem) GetFilesystems() []*Filesystem {
 // MkdirAllAt recursively creates non-existent directories on the given path
 // (including the last component).
 func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string, root VirtualDentry, creds *auth.Credentials, mkdirOpts *MkdirOptions, mustBeDir bool) error {
+	if len(currentPath) >= linux.PATH_MAX {
+		return linuxerr.ENAMETOOLONG
+	}
 	pop := &PathOperation{
 		Root:  root,
 		Start: root,
@@ -1136,11 +1140,20 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 		return fmt.Errorf("stat failed for %q during directory creation: %w", currentPath, err)
 	}
 
-	// Recurse to ensure parent is created and then create the final directory.
-	if err := vfs.MkdirAllAt(ctx, path.Dir(currentPath), root, creds, mkdirOpts, true /* mustBeDir */); err != nil {
-		return err
+	// Like os.MkdirAll, split the parent without cleaning the path so that
+	// the filesystem resolves symlinks and ".." in traversal order.
+	parent := strings.TrimRight(currentPath, "/")
+	if i := strings.LastIndexByte(parent, '/'); i > 0 {
+		if err := vfs.MkdirAllAt(ctx, parent[:i], root, creds, mkdirOpts, true /* mustBeDir */); err != nil {
+			return err
+		}
 	}
 	if err := vfs.MkdirAt(ctx, creds, pop, mkdirOpts); err != nil {
+		// Parent traversal can create the final directory for paths ending
+		// in "/." or "/..". Recheck without following a final symlink.
+		if stat, statErr := vfs.StatAt(ctx, creds, pop, &StatOptions{Mask: linux.STATX_TYPE}); statErr == nil && stat.Mask&linux.STATX_TYPE != 0 && stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
+			return nil
+		}
 		return fmt.Errorf("failed to create directory %q: %w", currentPath, err)
 	}
 	return nil

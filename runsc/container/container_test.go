@@ -3951,21 +3951,69 @@ func TestDestroyStarting(t *testing.T) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for name, conf := range configs(t, false /* noOverlay */) {
-		t.Run(name, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "cwd-create")
-			if err != nil {
-				t.Fatalf("os.MkdirTemp() failed: %v", err)
-			}
-			dir := path.Join(tmpDir, "new/working/dir")
+	for _, tc := range []struct {
+		name    string
+		cwd     string
+		wantCwd string
+		pathLen int
+		wantErr string
+	}{
+		{name: "MissingDirectory", cwd: "new/working/dir", wantCwd: "new/working/dir"},
+		{name: "TrailingSlash", cwd: "new/working/dir/", wantCwd: "new/working/dir"},
+		{name: "RepeatedSeparators", cwd: "new//working///dir///", wantCwd: "new/working/dir"},
+		{name: "TrailingDot", cwd: "new/working/dir/.", wantCwd: "new/working/dir"},
+		{name: "DotDotAfterMissingComponent", cwd: "new/../wanted", wantCwd: "wanted"},
+		{name: "SymlinkDotDotExistingTarget", cwd: "link/../existing", wantCwd: "target/existing"},
+		{name: "SymlinkDotDotMissingTarget", cwd: "link/../missing/child", wantCwd: "target/missing/child"},
+		{name: "FileBeforeDotDot", cwd: "file/../wanted", wantErr: "not a directory"},
+		{name: "FileAfterDotDot", cwd: "new/../file", wantErr: "file exists"},
+		{name: "DanglingSymlink", cwd: "dangling", wantErr: "file exists"},
+		{name: "PathAtLimit", cwd: "new", wantCwd: "new", pathLen: linux.PATH_MAX - 1},
+		{name: "PathBeyondLimit", cwd: "new", pathLen: linux.PATH_MAX, wantErr: "file name too long"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for name, conf := range configs(t, false /* noOverlay */) {
+				t.Run(name, func(t *testing.T) {
+					tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "cwd-create")
+					if err != nil {
+						t.Fatalf("os.MkdirTemp() failed: %v", err)
+					}
+					t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+					for _, dir := range []string{"target/child", "target/existing"} {
+						if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755); err != nil {
+							t.Fatal(err)
+						}
+					}
+					// Files at the lexical targets make incorrect path cleaning fail.
+					for _, file := range []string{"file", "existing", "missing"} {
+						if err := os.WriteFile(filepath.Join(tmpDir, file), nil, 0644); err != nil {
+							t.Fatal(err)
+						}
+					}
+					for link, target := range map[string]string{"link": "target/child", "dangling": "absent"} {
+						if err := os.Symlink(target, filepath.Join(tmpDir, link)); err != nil {
+							t.Fatal(err)
+						}
+					}
 
-			// touch will fail if the directory doesn't exist.
-			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
-			spec.Process.Cwd = dir
-			spec.Root.Readonly = true
-
-			if err := run(spec, conf); err != nil {
-				t.Fatalf("Error running container: %v", err)
+					spec := testutil.NewSpecWithArgs("/bin/sh", "-c", `test "$(pwd -P)" = "$1"`, "sh", filepath.Join(tmpDir, tc.wantCwd))
+					spec.Process.Cwd = tmpDir + "/" + tc.cwd
+					if tc.pathLen != 0 {
+						spec.Process.Cwd += strings.Repeat("/.", (tc.pathLen-len(spec.Process.Cwd))/2)
+						if len(spec.Process.Cwd) < tc.pathLen {
+							spec.Process.Cwd += "/"
+						}
+					}
+					spec.Root.Readonly = true
+					err = run(spec, conf)
+					if tc.wantErr != "" {
+						if err == nil || !strings.Contains(err.Error(), "failed to create process working directory") || !strings.Contains(err.Error(), tc.wantErr) {
+							t.Fatalf("run() = %v, want working-directory creation error containing %q", err, tc.wantErr)
+						}
+					} else if err != nil {
+						t.Fatalf("run() failed: %v", err)
+					}
+				})
 			}
 		})
 	}
