@@ -28,6 +28,7 @@ full_server_addr=${server_addr}:${iperf_port}
 full_server_proxy_addr=${server_proxy_addr}:${proxy_port}
 iperf_binary_name=iperf3
 iperf_version_arg=
+addr_opts=
 
 # Defaults; this provides a reasonable approximation of a decent internet link.
 # Parameters can be varied independently from this set to see response to
@@ -187,6 +188,7 @@ while [[ $# -gt 0 ]]; do
       full_server_addr=[${server_addr}]:${iperf_port}
       full_server_proxy_addr=[${server_proxy_addr}]:${proxy_port}
       iperf_version_arg=-V
+      addr_opts=nodad
       netstack_opts="${netstack_opts} -ipv6"
       ;;
     --num-client-threads)
@@ -255,10 +257,20 @@ if [[ ${verbose} == "true" ]]; then
   set -x
 fi
 
+if ! [[ "${duration}" =~ ^0*[1-9][0-9]{0,4}$ ]] || (( 10#${duration} > 86400 )); then
+  echo "invalid duration: ${duration}" >&2
+  exit 1
+fi
+duration=$((10#${duration}))
+
 # Latency needs to be halved, since it's applied on both ways.
 half_latency=$(echo "${latency}"/2 | bc -l | awk '{printf "%1.2f", $0}')
 half_loss=$(echo "${loss}"/2 | bc -l | awk '{printf "%1.6f", $0}')
 half_duplicate=$(echo "${duplicate}"/2 | bc -l | awk '{printf "%1.6f", $0}')
+# Per-attempt deadline for the iperf client (seconds).
+client_timeout=$((duration + 60))
+# The iperf port as it appears in /proc/net/tcp (4 uppercase hex digits).
+iperf_port_hex=$(printf '%04X' "${iperf_port}")
 helper_dir="${helper_dir#$(pwd)/}" # Use relative paths.
 proxy_binary="${helper_dir}/tcp_proxy"
 nsjoin_binary="${helper_dir}/nsjoin"
@@ -339,6 +351,36 @@ ip link add wan.0 type veth peer name wan.1
 ip link set wan.0 up
 ip link set wan.1 up
 
+results_file=
+iperf_pid=
+server_pid=
+client_pid=
+function cleanup() {
+  set +e
+  if [[ -n "\${results_file}" ]]; then
+    rm -f "\${results_file}"
+  fi
+  if [[ -n "\${client_pid}" ]]; then
+    kill -TERM "\${client_pid}" 2>/dev/null
+    wait "\${client_pid}"
+  fi
+  if [[ -n "\${server_pid}" ]]; then
+    kill -TERM "\${server_pid}" 2>/dev/null
+    wait "\${server_pid}"
+  fi
+  if [[ -n "\${iperf_pid}" ]]; then
+    kill -9 "\${iperf_pid}" 2>/dev/null
+  fi
+  # Unlink all relevant devices from the bridge. This is because when the bridge
+  # is deleted, the kernel may hang. It appears that this problem is fixed in
+  # upstream commit 1ce5cce895309862d2c35d922816adebe094fe4a.
+  ip link set client.1 nomaster 2>/dev/null
+  ip link set server.1 nomaster 2>/dev/null
+  ip link set wan.0 nomaster 2>/dev/null
+  ip link set wan.1 nomaster 2>/dev/null
+}
+trap cleanup EXIT
+
 # Enroll on the bridge.
 ip link add name br0 type bridge
 ip link add name br1 type bridge
@@ -380,7 +422,7 @@ done
 if ! ${client}; then
   # Only add the address to NIC if netstack is not in use. Otherwise the host
   # will also process the inbound SYN and send a RST back.
-  ${nsjoin_binary} /tmp/client.netns ip addr add ${client_proxy_addr}/${mask} dev client.0
+  ${nsjoin_binary} /tmp/client.netns ip addr add ${client_proxy_addr}/${mask} dev client.0 ${addr_opts}
 fi
 
 # Start a server proxy.
@@ -393,12 +435,12 @@ done
 if ! ${server}; then
   # Only add the address to NIC if netstack is not in use. Otherwise the host
   # will also process the inbound SYN and send a RST back.
-  ${nsjoin_binary} /tmp/server.netns ip addr add ${server_proxy_addr}/${mask} dev server.0
+  ${nsjoin_binary} /tmp/server.netns ip addr add ${server_proxy_addr}/${mask} dev server.0 ${addr_opts}
 fi
 
 # Add client and server addresses, and bring everything up.
-${nsjoin_binary} /tmp/client.netns ip addr add ${client_addr}/${mask} dev client.0
-${nsjoin_binary} /tmp/server.netns ip addr add ${server_addr}/${mask} dev server.0
+${nsjoin_binary} /tmp/client.netns ip addr add ${client_addr}/${mask} dev client.0 ${addr_opts}
+${nsjoin_binary} /tmp/server.netns ip addr add ${server_addr}/${mask} dev server.0 ${addr_opts}
 if [[ "${disable_linux_gso}" == "1" ]]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 tso off
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gso off
@@ -416,60 +458,102 @@ ${nsjoin_binary} /tmp/server.netns ip link set lo up
 ip link set dev client.1 up
 ip link set dev server.1 up
 
-${nsjoin_binary} /tmp/server.netns ${server_args} &
-server_pid=\$!
-
-# Start the iperf server.
-${nsjoin_binary} /tmp/server.netns ${iperf_binary_name} ${iperf_version_arg} -p ${iperf_port} -s >&2 &
-iperf_pid=\$!
-
-# Give services time to start.
-sleep 5
-
-${nsjoin_binary} /tmp/client.netns ${client_args} &
-client_pid=\$!
-
-# Show traffic information.
+# Show traffic information before starting services.
 if ! ${client} && ! ${server}; then
   ${nsjoin_binary} /tmp/client.netns ping -c 100 -i 0.001 -W 1 ${server_addr} >&2 || true
 fi
 
 results_file=\$(mktemp)
-function cleanup {
-  rm -f \$results_file
-  kill -TERM \$client_pid
-  kill -TERM \$server_pid
-  wait \$client_pid
-  wait \$server_pid
-  kill -9 \$iperf_pid 2>/dev/null
-}
+
+# Start the iperf server and wait (at most 10s) until its listening socket
+# appears. Check /proc/net/tcp{,6} directly because a probe connection to the
+# iperf control port can disrupt the server's control state.
+${nsjoin_binary} /tmp/server.netns ${iperf_binary_name} ${iperf_version_arg} -p ${iperf_port} -s >&2 &
+iperf_pid=\$!
+
+server_ready=false
+for ((i = 0; i < 100; i++)); do
+  if ${nsjoin_binary} /tmp/server.netns cat /proc/net/tcp /proc/net/tcp6 2>/dev/null \\
+      | awk '\$4 == "0A" { split(\$2, a, ":"); print a[2] }' \\
+      | grep -q "^${iperf_port_hex}\$"; then
+    server_ready=true
+    break
+  fi
+  if ! kill -0 "\${iperf_pid}" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+if [[ "\${server_ready}" != "true" ]]; then
+  echo "iperf server failed to listen on port ${iperf_port}" >&2
+  exit 1
+fi
+
+# Start both proxies back-to-back once the iperf server is listening; the server
+# proxy dials the iperf server immediately on startup, starting its 10s cookie
+# read timeout.
+${nsjoin_binary} /tmp/server.netns ${server_args} &
+server_pid=\$!
+
+${nsjoin_binary} /tmp/client.netns ${client_args} &
+client_pid=\$!
 
 # Allow failure from this point.
 set +e
-trap cleanup EXIT
 
-# Run the benchmark, recording the results file.
-while ${nsjoin_binary} /tmp/client.netns ${iperf_binary_name} \\
-    ${iperf_version_arg} -p ${proxy_port} -c ${client_addr} -t ${duration} -f m -P ${num_client_threads} 2>&1 \\
-    | tee \$results_file \\
-    | grep -E "connect failed|unable to connect" >/dev/null; do
+# Run the benchmark, recording the results file. Retry connection refusal while
+# the proxies finish starting (at most 600 tries or 60s), stopping immediately
+# if any service exits. Bound each client attempt to ${client_timeout}s so a
+# stalled transfer fails promptly.
+connect_attempts=0
+connect_deadline=\$((SECONDS + 60))
+client_rc=0
+while true; do
+  ${nsjoin_binary} /tmp/client.netns timeout --kill-after=10 "${client_timeout}" \\
+      ${iperf_binary_name} ${iperf_version_arg} -p ${proxy_port} -c ${client_addr} \\
+      -t ${duration} -f m -P ${num_client_threads} >"\${results_file}" 2>&1
+  client_rc=\$?
+  if (( client_rc == 0 || client_rc == 124 || client_rc == 137 )); then
+    break
+  fi
+  if ! kill -0 "\${client_pid}" 2>/dev/null || ! kill -0 "\${server_pid}" 2>/dev/null || ! kill -0 "\${iperf_pid}" 2>/dev/null; then
+    break
+  fi
+  if ! grep -qE "connect failed|unable to connect to server" "\${results_file}"; then
+    break
+  fi
+  if (( ++connect_attempts >= 600 || SECONDS >= connect_deadline )); then
+    break
+  fi
   sleep 0.1 # Wait for all services.
 done
 
-# Unlink all relevant devices from the bridge. This is because when the bridge
-# is deleted, the kernel may hang. It appears that this problem is fixed in
-# upstream commit 1ce5cce895309862d2c35d922816adebe094fe4a.
-ip link set client.1 nomaster
-ip link set server.1 nomaster
-ip link set wan.0 nomaster
-ip link set wan.1 nomaster
-
 # Emit raw results.
-cat \$results_file >&2
+cat "\${results_file}" >&2
 
-# Emit a useful result (final throughput).
-mbits=\$(grep Mbits/sec \$results_file \\
-  | grep 'sender' | awk '{print \$7};')
+if (( client_rc == 124 || client_rc == 137 )); then
+  echo "iperf client timed out after ${client_timeout}s" >&2
+  exit 1
+fi
+if (( client_rc != 0 )); then
+  echo "iperf client failed with exit status \${client_rc}" >&2
+  exit 1
+fi
+
+# Emit a useful result (final throughput). For multi-stream runs (-P > 1),
+# iperf3 prints per-stream sender lines followed by a [SUM] sender line.
+mbits=\$(awk '\$NF == "sender" {
+  for (i = 2; i <= NF; i++) {
+    if (\$i == "Mbits/sec") {
+      val = \$(i - 1)
+    }
+  }
+}
+END { print val }' "\${results_file}")
+if [[ -z "\${mbits}" ]]; then
+  echo "iperf client did not report sender throughput" >&2
+  exit 1
+fi
 client_cpu_ticks=\$(cat /proc/\$client_pid/stat \\
   | awk '{print (\$14+\$15);}')
 server_cpu_ticks=\$(cat /proc/\$server_pid/stat \\
