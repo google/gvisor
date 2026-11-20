@@ -15,6 +15,7 @@
 package ptrace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -656,6 +657,43 @@ func (s *subprocess) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRa
 		arch.SyscallArgument{Value: uintptr(fd)},
 		arch.SyscallArgument{Value: uintptr(fr.Start)})
 	return err
+}
+
+// MapZero implements platform.AddressSpace.MapZero.
+func (s *subprocess) MapZero(addr hostarch.Addr, length uint64, at hostarch.AccessType, precommit bool) error {
+	if at.Write {
+		panic(fmt.Sprintf("MapZero(%#x, %#x, %v, %t): zero mappings must not be writable", addr, length, at, precommit))
+	}
+	// Host read faults in private anonymous mappings map the host's shared
+	// zero page which is read-only. However, under THP, the host allocates
+	// huge pages for read faults if use_zero_page is disabled in the kernel.
+	// So, we disable transparent huge pages for the mapping. precommit is ignored
+	// since MAP_POPULATE would fault in the mapping before madvise is called.
+	_, err := s.syscall(
+		unix.SYS_MMAP,
+		arch.SyscallArgument{Value: uintptr(addr)},
+		arch.SyscallArgument{Value: uintptr(length)},
+		arch.SyscallArgument{Value: uintptr(at.Prot())},
+		arch.SyscallArgument{Value: uintptr(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED)},
+		arch.SyscallArgument{Value: ^uintptr(0)}, // fd = -1
+		arch.SyscallArgument{Value: 0})
+	if err != nil {
+		return err
+	}
+
+	// Ensure THP is disabled for this mapping.
+	_, err = s.syscall(
+		unix.SYS_MADVISE,
+		arch.SyscallArgument{Value: uintptr(addr)},
+		arch.SyscallArgument{Value: uintptr(length)},
+		arch.SyscallArgument{Value: unix.MADV_NOHUGEPAGE})
+
+	// Ignore EINVAL if the host doesn't support THP.
+	if err != nil && !errors.Is(err, unix.EINVAL) {
+		return err
+	}
+
+	return nil
 }
 
 // Unmap implements platform.AddressSpace.Unmap.

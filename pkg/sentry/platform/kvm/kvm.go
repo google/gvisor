@@ -138,6 +138,11 @@ func (*KVM) SupportsAddressSpaceIO() bool {
 	return false
 }
 
+// SupportsMapZero implements platform.Platform.SupportsMapZero.
+func (*KVM) SupportsMapZero() bool {
+	return false
+}
+
 // MapUnit implements platform.Platform.MapUnit.
 func (*KVM) MapUnit() uint64 {
 	// We greedily creates PTEs in MapFile, so extremely large mappings can
