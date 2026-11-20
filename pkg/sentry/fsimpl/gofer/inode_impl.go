@@ -336,6 +336,16 @@ func (d *dentry) removeXattrImpl(ctx context.Context, name string) error {
 	}
 }
 
+// childGID returns the GID to request for a new child of directory i created
+// by creds. If i is a setgid directory, Linux gives new children i's GID (see
+// fs/inode.c:inode_init_owner()).
+func (i *inode) childGID(creds *auth.Credentials) auth.KGID {
+	if i.mode.Load()&linux.S_ISGID != 0 {
+		return auth.KGID(i.gid.Load())
+	}
+	return creds.FilesystemKGID
+}
+
 // Precondition: !d.isSynthetic().
 func (d *dentry) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
 	switch it := d.inode.impl.(type) {
