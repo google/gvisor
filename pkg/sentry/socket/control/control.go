@@ -734,16 +734,19 @@ func (fs *RightsFiles) Release(ctx context.Context) {
 func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32, bool) {
 	files, trunc := rights.Files(t, max)
 	fds := make([]int32, 0, len(files))
-	for i := 0; i < max && len(files) > 0; i++ {
-		fd, err := t.NewFDFrom(0, files[0], kernel.FDFlags{
+	for i, file := range files {
+		fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 			CloseOnExec: cloexec,
 		})
-		files[0].DecRef(t)
-		files = files[1:]
+		file.DecRef(t)
 		if err != nil {
 			t.Warningf("Error inserting FD: %v", err)
-			// This is what Linux does.
-			break
+			// This is what Linux does: drop the remaining files and report
+			// the truncation.
+			for _, f := range files[i+1:] {
+				f.DecRef(t)
+			}
+			return fds, true
 		}
 
 		fds = append(fds, int32(fd))
@@ -762,6 +765,9 @@ func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte, flag
 	fds, trunc := rightsFDs(t, rights, cloexec, maxFDs)
 	if trunc {
 		flags |= linux.MSG_CTRUNC
+	}
+	if len(fds) == 0 {
+		return buf, flags
 	}
 	align := t.Arch().Width()
 	return putCmsg(buf, flags, linux.SCM_RIGHTS, align, fds)

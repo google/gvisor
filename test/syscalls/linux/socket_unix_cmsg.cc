@@ -36,6 +36,7 @@
 #include "test/util/linux_capability_util.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/rlimit_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -1844,6 +1845,100 @@ TEST_P(UnixSocketPairCmsgTest, ZeroLengthRecvReceivesFD) {
     EXPECT_EQ(received_data, sent_data);
     EXPECT_EQ(CMSG_FIRSTHDR(&recv_msg2), nullptr);
   }
+}
+
+// If the receiver has no free FDs, the passed FDs are released, no
+// SCM_RIGHTS message is returned and MSG_CTRUNC is set.
+TEST_P(UnixSocketPairCmsgTest, FDPassFDTableFull) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  Cleanup close_read_end([&] { close(pipe_fds[0]); });
+
+  char sent_data = 'a';
+  int fds[] = {pipe_fds[1], pipe_fds[1]};
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), fds, 2, &sent_data, sizeof(sent_data)));
+  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
+
+  char received_data = 0;
+  struct iovec iov = {.iov_base = &received_data,
+                      .iov_len = sizeof(received_data)};
+  char control[CMSG_SPACE(2 * sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  {
+    // Every FD below the lowest free one is in use, so with that as the
+    // limit no new FD can be allocated.
+    int limit;
+    ASSERT_THAT(limit = open("/dev/null", O_RDONLY), SyscallSucceeds());
+    ASSERT_THAT(close(limit), SyscallSucceeds());
+    Cleanup reset_limit = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSetSoftRlimit(RLIMIT_NOFILE, limit));
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+                SyscallSucceedsWithValue(sizeof(received_data)));
+  }
+  EXPECT_EQ(received_data, sent_data);
+  EXPECT_EQ(msg.msg_flags & MSG_CTRUNC, MSG_CTRUNC);
+  EXPECT_EQ(msg.msg_controllen, 0);
+
+  // Nothing holds the pipe's write end anymore.
+  char c;
+  EXPECT_THAT(ReadFd(pipe_fds[0], &c, 1), SyscallSucceedsWithValue(0));
+}
+
+// If the receiver has room for only some of the passed FDs, it gets those,
+// the rest are released and MSG_CTRUNC is set.
+TEST_P(UnixSocketPairCmsgTest, FDPassFDTableAlmostFull) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  Cleanup close_read_end([&] { close(pipe_fds[0]); });
+
+  char sent_data = 'a';
+  int fds[] = {pipe_fds[1], pipe_fds[1]};
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), fds, 2, &sent_data, sizeof(sent_data)));
+  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
+
+  char received_data = 0;
+  struct iovec iov = {.iov_base = &received_data,
+                      .iov_len = sizeof(received_data)};
+  char control[CMSG_SPACE(2 * sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  {
+    // Every FD below the lowest free one is in use, so with a limit one
+    // above it exactly one new FD can be allocated.
+    int lowest_free;
+    ASSERT_THAT(lowest_free = open("/dev/null", O_RDONLY), SyscallSucceeds());
+    ASSERT_THAT(close(lowest_free), SyscallSucceeds());
+    Cleanup reset_limit = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSetSoftRlimit(RLIMIT_NOFILE, lowest_free + 1));
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+                SyscallSucceedsWithValue(sizeof(received_data)));
+  }
+  EXPECT_EQ(received_data, sent_data);
+  EXPECT_EQ(msg.msg_flags & MSG_CTRUNC, MSG_CTRUNC);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+  ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  ASSERT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
+  int fd;
+  memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  // Nothing holds the pipe's write end anymore.
+  char c;
+  EXPECT_THAT(ReadFd(pipe_fds[0], &c, 1), SyscallSucceedsWithValue(0));
 }
 
 }  // namespace
