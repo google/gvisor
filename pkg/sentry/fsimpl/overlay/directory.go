@@ -26,6 +26,23 @@ func (d *dentry) isDir() bool {
 	return d.mode.Load()&linux.S_IFMT == linux.S_IFDIR
 }
 
+func isDirOrUnknown(direntType uint8) bool {
+	return direntType == linux.DT_DIR || direntType == linux.DT_UNKNOWN
+}
+
+// hasLowerDirChildLocked reports whether d has a child dentry for a directory
+// that a lower layer supplies.
+//
+// Preconditions: d.dirMu must be locked.
+func (d *dentry) hasLowerDirChildLocked() bool {
+	for _, child := range d.children {
+		if child.isDir() && len(child.lowerVDs) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *dentry) isSGIDSet() bool {
 	return d.mode.Load()&linux.ModeSetGID != 0
 }
@@ -193,6 +210,9 @@ func (d *dentry) getDirentsLocked(ctx context.Context, ds **[]*dentry) ([]vfs.Di
 	var readdirErr error
 	prevDirents := make(map[string]struct{})
 	var maybeWhiteouts []vfs.Dirent
+	// mergedNames contains the names that a higher layer supplies and that a
+	// lower layer also supplies as a directory or as a file of unknown type.
+	var mergedNames map[string]struct{}
 	d.iterLayers(func(layerVD vfs.VirtualDentry, isUpper bool) bool {
 		stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
 			Root:  layerVD,
@@ -226,6 +246,12 @@ func (d *dentry) getDirentsLocked(ctx context.Context, ds **[]*dentry) ([]vfs.Di
 			if _, ok := prevDirents[dirent.Name]; ok {
 				// This file is hidden by, or merged with, another file with
 				// the same name in a previous layer.
+				if isDirOrUnknown(dirent.Type) {
+					if mergedNames == nil {
+						mergedNames = make(map[string]struct{})
+					}
+					mergedNames[dirent.Name] = struct{}{}
+				}
 				return nil
 			}
 			prevDirents[dirent.Name] = struct{}{}
@@ -282,23 +308,42 @@ func (d *dentry) getDirentsLocked(ctx context.Context, ds **[]*dentry) ([]vfs.Di
 		return nil, readdirErr
 	}
 
-	// Merged directories use their bottommost origin, which can differ from
-	// the layer that supplied the name. Regular files need no child lookup.
-	if len(d.lowerVDs) > 1 || d.upperVD.Ok() && len(d.lowerVDs) != 0 {
+	// A child directory that more than one layer supplies uses its
+	// bottommost origin. This origin can differ from the layer that
+	// supplied the name. A name that only one layer supplies uses the inode
+	// of that layer, so it needs no child lookup. If a child dentry exists,
+	// the listing uses the inode of that dentry. For example, a directory
+	// that a rename moves to a name that only the upper layer supplies keeps
+	// its lower layer inode while its dentry exists.
+	childInoDiffers := false
+	if len(mergedNames) != 0 || d.hasLowerDirChildLocked() {
 		for i := 2; i < len(dirents); i++ {
-			if dirents[i].Type != linux.DT_DIR && dirents[i].Type != linux.DT_UNKNOWN {
+			if !isDirOrUnknown(dirents[i].Type) {
 				continue
 			}
-			if child, _, err := d.fs.getChildLocked(ctx, d, dirents[i].Name, ds); err == nil {
-				dirents[i].Ino = child.ino.Load()
+			name := dirents[i].Name
+			if _, ok := mergedNames[name]; ok {
+				if child, _, err := d.fs.getChildLocked(ctx, d, name, ds); err == nil {
+					dirents[i].Ino = child.ino.Load()
+				}
+				continue
+			}
+			child, ok := d.children[name]
+			if !ok {
+				continue
+			}
+			if ino := child.ino.Load(); ino != dirents[i].Ino {
+				dirents[i].Ino = ino
+				childInoDiffers = true
 			}
 		}
 	}
 
-	// A child's inode may have changed while this listing was built. Leave
-	// the cache empty so the next readdir reads the new numbers. This
-	// listing is still returned to the caller that raced with that change.
-	if d.direntsEpoch.Load() != epoch {
+	// Leave the cache empty if this listing uses the inode of a child dentry
+	// that can be destroyed without invalidating d.dirents, or if a child's
+	// inode changed while this listing was built. This listing is still
+	// returned to the caller.
+	if childInoDiffers || d.direntsEpoch.Load() != epoch {
 		d.dirents = nil
 		return dirents, nil
 	}

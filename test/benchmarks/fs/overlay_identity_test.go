@@ -46,11 +46,21 @@ func workload() error {
 	if err != nil {
 		return err
 	}
+	if os.Args[4] == "readdir-dirs" {
+		// Copy up the directory so that its upper and lower layers are merged.
+		marker := filepath.Join(os.Args[2], "marker")
+		if err := os.WriteFile(marker, nil, 0644); err != nil {
+			return err
+		}
+		if err := os.Remove(marker); err != nil {
+			return err
+		}
+	}
 	var result measurement
 	for iteration := 0; iteration < 2; iteration++ {
 		start := time.Now()
 		switch os.Args[4] {
-		case "readdir":
+		case "readdir", "readdir-dirs":
 			f, err := os.Open(os.Args[2])
 			if err != nil {
 				return err
@@ -64,7 +74,7 @@ func workload() error {
 				return closeErr
 			}
 			if len(names) != count {
-				return fmt.Errorf("listed %d files, want %d", len(names), count)
+				return fmt.Errorf("listed %d entries, want %d", len(names), count)
 			}
 		case "stat":
 			for i := 0; i < count; i++ {
@@ -132,7 +142,13 @@ func benchmarkIdentity(b *testing.B, operation string, counts []int) {
 			}
 			defer os.RemoveAll(dir)
 			for i := 0; i < count; i++ {
-				if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(i)), nil, 0644); err != nil {
+				name := filepath.Join(dir, strconv.Itoa(i))
+				if operation == "readdir-dirs" {
+					err = os.Mkdir(name, 0755)
+				} else {
+					err = os.WriteFile(name, nil, 0644)
+				}
+				if err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -163,6 +179,12 @@ func benchmarkIdentity(b *testing.B, operation string, counts []int) {
 
 func BenchmarkOverlayReaddir(b *testing.B) {
 	benchmarkIdentity(b, "readdir", []int{1000, 10000, 100000})
+}
+
+// BenchmarkOverlayReaddirDirs lists lower layer subdirectories of a copied-up
+// directory.
+func BenchmarkOverlayReaddirDirs(b *testing.B) {
+	benchmarkIdentity(b, "readdir-dirs", []int{1000, 10000})
 }
 
 func BenchmarkOverlayStat(b *testing.B) {
