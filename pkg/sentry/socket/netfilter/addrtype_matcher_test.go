@@ -15,6 +15,7 @@
 package netfilter
 
 import (
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -83,9 +84,9 @@ func addrTypeStack(t *testing.T) *stack.Stack {
 		t.Fatalf("CreateNIC: %s", err)
 	}
 	for _, pa := range []tcpip.ProtocolAddress{
-		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: tcpip.AddrFrom4([4]byte{127, 0, 0, 1}), PrefixLen: 8}},
-		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: addrTypeLocalV4.WithPrefix()},
-		{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: addrTypeLocalV6.WithPrefix()},
+		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: netip.MustParsePrefix("127.0.0.1/8")},
+		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.FullPrefix(addrTypeLocalV4)},
+		{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: tcpip.FullPrefix(addrTypeLocalV6)},
 	} {
 		if err := s.AddProtocolAddress(1, pa, stack.AddressProperties{}); err != nil {
 			t.Fatalf("AddProtocolAddress(%s): %s", pa.AddressWithPrefix, err)

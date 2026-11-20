@@ -20,12 +20,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
@@ -54,7 +55,7 @@ func TestNDPNeighborSolicit(t *testing.T) {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
-	if got := tcpip.AddrFrom16Slice(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
+	if got := netip.AddrFrom16([16]byte(b[ndpNSTargetAddessOffset:][:IPv6AddressSize])); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 }
@@ -68,7 +69,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 		prf            NDPRoutePreference
 		lifetimeS      uint32
 		prefixBytes    []byte
-		expectedPrefix tcpip.Subnet
+		expectedPrefix netip.Prefix
 
 		expectedErr error
 	}{
@@ -100,28 +101,22 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			expectedPrefix: IPv6EmptySubnet,
 		},
 		{
-			name:         "Length=2 with Prefix Length in [1, 64] (1)",
-			length:       2,
-			prefixLength: 1,
-			prf:          LowRoutePreference,
-			lifetimeS:    1,
-			prefixBytes:  nil,
-			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
-				PrefixLen: 1,
-			}.Subnet(),
+			name:           "Length=2 with Prefix Length in [1, 64] (1)",
+			length:         2,
+			prefixLength:   1,
+			prf:            LowRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: netip.PrefixFrom(netip.IPv6Unspecified(), 1).Masked(),
 		},
 		{
-			name:         "Length=2 with Prefix Length in [1, 64] (64)",
-			length:       2,
-			prefixLength: 64,
-			prf:          HighRoutePreference,
-			lifetimeS:    1,
-			prefixBytes:  nil,
-			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
-				PrefixLen: 64,
-			}.Subnet(),
+			name:           "Length=2 with Prefix Length in [1, 64] (64)",
+			length:         2,
+			prefixLength:   64,
+			prf:            HighRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: netip.PrefixFrom(netip.IPv6Unspecified(), 64).Masked(),
 		},
 		{
 			name:         "Length=2 with Prefix Length > 64",
@@ -142,52 +137,40 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			expectedPrefix: IPv6EmptySubnet,
 		},
 		{
-			name:         "Length=3 with Prefix Length in [1, 64] (1)",
-			length:       3,
-			prefixLength: 1,
-			prf:          LowRoutePreference,
-			lifetimeS:    1,
-			prefixBytes:  nil,
-			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
-				PrefixLen: 1,
-			}.Subnet(),
+			name:           "Length=3 with Prefix Length in [1, 64] (1)",
+			length:         3,
+			prefixLength:   1,
+			prf:            LowRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: netip.PrefixFrom(netip.IPv6Unspecified(), 1).Masked(),
 		},
 		{
-			name:         "Length=3 with Prefix Length in [1, 64] (64)",
-			length:       3,
-			prefixLength: 64,
-			prf:          HighRoutePreference,
-			lifetimeS:    1,
-			prefixBytes:  nil,
-			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
-				PrefixLen: 64,
-			}.Subnet(),
+			name:           "Length=3 with Prefix Length in [1, 64] (64)",
+			length:         3,
+			prefixLength:   64,
+			prf:            HighRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: netip.PrefixFrom(netip.IPv6Unspecified(), 64).Masked(),
 		},
 		{
-			name:         "Length=3 with Prefix Length in [65, 128] (65)",
-			length:       3,
-			prefixLength: 65,
-			prf:          HighRoutePreference,
-			lifetimeS:    1,
-			prefixBytes:  nil,
-			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
-				PrefixLen: 65,
-			}.Subnet(),
+			name:           "Length=3 with Prefix Length in [65, 128] (65)",
+			length:         3,
+			prefixLength:   65,
+			prf:            HighRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: netip.PrefixFrom(netip.IPv6Unspecified(), 65).Masked(),
 		},
 		{
-			name:         "Length=3 with Prefix Length in [65, 128] (128)",
-			length:       3,
-			prefixLength: 128,
-			prf:          HighRoutePreference,
-			lifetimeS:    1,
-			prefixBytes:  nil,
-			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
-				PrefixLen: 128,
-			}.Subnet(),
+			name:           "Length=3 with Prefix Length in [65, 128] (128)",
+			length:         3,
+			prefixLength:   128,
+			prf:            HighRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: netip.PrefixFrom(netip.IPv6Unspecified(), 128).Masked(),
 		},
 		{
 			name:         "Length=3 with (invalid) Prefix Length > 128",
@@ -316,7 +299,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 		t.Errorf("got TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
-	if got := tcpip.AddrFrom16Slice(b[ndpNATargetAddressOffset:][:IPv6AddressSize]); got != addr2 {
+	if got := netip.AddrFrom16([16]byte(b[ndpNATargetAddressOffset:][:IPv6AddressSize])); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 
@@ -725,7 +708,7 @@ func TestOpts(t *testing.T) {
 				}
 				if addrs, err := rdnss.Addresses(); err != nil {
 					t.Errorf("Addresses(): %s", err)
-				} else if diff := cmp.Diff([]tcpip.Address{address}, addrs); diff != "" {
+				} else if diff := cmp.Diff([]netip.Addr{address}, addrs, cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 					t.Errorf("mismatched addresses (-want +got):\n%s", diff)
 				}
 			},
@@ -851,7 +834,7 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 		name     string
 		buf      []byte
 		lifetime time.Duration
-		addrs    []tcpip.Address
+		addrs    []netip.Addr
 	}{
 		{
 			"Valid1Addr",
@@ -861,8 +844,8 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 				0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 			},
 			0,
-			[]tcpip.Address{
-				tcpip.AddrFrom16Slice([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f")),
+			[]netip.Addr{
+				netip.MustParseAddr("1:203:405:607:809:a0b:c0d:e0f"),
 			},
 		},
 		{
@@ -874,9 +857,9 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 				17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16,
 			},
 			0,
-			[]tcpip.Address{
-				tcpip.AddrFrom16Slice([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f")),
-				tcpip.AddrFrom16Slice([]byte("\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10")),
+			[]netip.Addr{
+				netip.MustParseAddr("1:203:405:607:809:a0b:c0d:e0f"),
+				netip.MustParseAddr("1101:203:405:607:809:a0b:c0d:e10"),
 			},
 		},
 		{
@@ -889,10 +872,10 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 				17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17,
 			},
 			0,
-			[]tcpip.Address{
-				tcpip.AddrFrom16Slice([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f")),
-				tcpip.AddrFrom16Slice([]byte("\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10")),
-				tcpip.AddrFrom16Slice([]byte("\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x11")),
+			[]netip.Addr{
+				netip.MustParseAddr("1:203:405:607:809:a0b:c0d:e0f"),
+				netip.MustParseAddr("1101:203:405:607:809:a0b:c0d:e10"),
+				netip.MustParseAddr("1101:203:405:607:809:a0b:c0d:e11"),
 			},
 		},
 	}
@@ -917,7 +900,7 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 				t.Fatalf("got Type = %d, want = %d", got, ndpRecursiveDNSServerOptionType)
 			}
 
-			comparer := cmp.Comparer(func(addrA, addrB tcpip.Address) bool {
+			comparer := cmp.Comparer(func(addrA, addrB netip.Addr) bool {
 				return addrA == addrB
 			})
 

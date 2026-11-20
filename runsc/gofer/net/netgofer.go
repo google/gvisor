@@ -19,8 +19,8 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/netip"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -431,10 +431,10 @@ func (n *Netgofer) runProxyMode(conf *config.Config) subcommands.ExitStatus {
 // and the host kernel use the same pod IP.
 func (n *Netgofer) proxyOutboundRequest(ctx context.Context, r *tcp.ForwarderRequest) {
 	id := r.ID()
-	originalDst := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
+	originalDst := id.Local.String()
 	log.Debugf("Connection target: %q", originalDst)
 
-	if !n.egressFilter.Allows(id.LocalAddress, id.LocalPort) {
+	if !n.egressFilter.Allows(id.Local.Addr(), id.Local.Port()) {
 		log.Warningf("Rejecting connection to disallowed destination %q", originalDst)
 		r.Complete(true)
 		return
@@ -492,13 +492,12 @@ func (n *Netgofer) proxyOutboundRequest(ctx context.Context, r *tcp.ForwarderReq
 }
 
 func (n *Netgofer) handleOutboundUDPRequest(ctx context.Context, wg *sync.WaitGroup, wgMu *sync.Mutex, stopping *bool, rejectLog log.Logger, r *udp.ForwarderRequest) bool {
-	id := r.ID()
-	originalDst := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
+	originalDst := r.ID().Local
 	if log.IsLogging(log.Debug) {
 		log.Debugf("UDP target: %q", originalDst)
 	}
 
-	if !n.egressFilter.Allows(id.LocalAddress, id.LocalPort) {
+	if !n.egressFilter.Allows(originalDst.Addr(), originalDst.Port()) {
 		rejectLog.Warningf("Rejecting UDP datagram to disallowed destination %q", originalDst)
 		return false
 	}
@@ -553,13 +552,13 @@ func newOutboundUDPDialer() net.Dialer {
 	}
 }
 
-func (n *Netgofer) proxyOutboundUDP(ctx context.Context, c *gonet.UDPConn, originalDst string) {
+func (n *Netgofer) proxyOutboundUDP(ctx context.Context, c *gonet.UDPConn, originalDst netip.AddrPort) {
 	dial := n.dialContext
 	if dial == nil {
 		dialer := newOutboundUDPDialer()
 		dial = dialer.DialContext
 	}
-	hostConn, err := dial(ctx, "udp", originalDst)
+	hostConn, err := dial(ctx, "udp", originalDst.String())
 	if err != nil {
 		log.Warningf("Failed to dial UDP target %q: %v", originalDst, err)
 		return

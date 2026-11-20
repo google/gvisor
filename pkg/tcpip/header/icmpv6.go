@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -276,8 +277,8 @@ func (b ICMPv6) Payload() []byte {
 // ICMPv6ChecksumParams contains parameters to calculate ICMPv6 checksum.
 type ICMPv6ChecksumParams struct {
 	Header      ICMPv6
-	Src         tcpip.Address
-	Dst         tcpip.Address
+	Src         netip.Addr
+	Dst         netip.Addr
 	PayloadCsum uint16
 	PayloadLen  int
 }
@@ -299,6 +300,6 @@ func ICMPv6Checksum(params ICMPv6ChecksumParams) uint16 {
 
 // UpdateChecksumPseudoHeaderAddress updates the checksum to reflect an
 // updated address in the pseudo header.
-func (b ICMPv6) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address) {
+func (b ICMPv6) UpdateChecksumPseudoHeaderAddress(old, new netip.Addr) {
 	b.SetChecksum(^checksumUpdate2ByteAlignedAddress(^b.Checksum(), old, new))
 }

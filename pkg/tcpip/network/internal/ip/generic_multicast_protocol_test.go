@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -37,17 +38,17 @@ type mockMulticastGroupProtocolProtectedFields struct {
 	sync.RWMutex
 
 	genericMulticastGroup    ip.GenericMulticastProtocolState
-	sendReportGroupAddrCount map[tcpip.Address]int
-	sendLeaveGroupAddrCount  map[tcpip.Address]int
+	sendReportGroupAddrCount map[netip.Addr]int
+	sendLeaveGroupAddrCount  map[netip.Addr]int
 	makeQueuePackets         bool
 	disabled                 bool
-	sentV2Reports            map[tcpip.Address][]ip.MulticastGroupProtocolV2ReportRecordType
+	sentV2Reports            map[netip.Addr][]ip.MulticastGroupProtocolV2ReportRecordType
 }
 
 type mockMulticastGroupProtocol struct {
 	t *testing.T
 
-	skipProtocolAddress tcpip.Address
+	skipProtocolAddress netip.Addr
 
 	mu mockMulticastGroupProtocolProtectedFields
 }
@@ -65,9 +66,9 @@ func (m *mockMulticastGroupProtocol) init(opts ip.GenericMulticastProtocolOption
 }
 
 func (m *mockMulticastGroupProtocol) initLocked() {
-	m.mu.sendReportGroupAddrCount = make(map[tcpip.Address]int)
-	m.mu.sendLeaveGroupAddrCount = make(map[tcpip.Address]int)
-	m.mu.sentV2Reports = make(map[tcpip.Address][]ip.MulticastGroupProtocolV2ReportRecordType)
+	m.mu.sendReportGroupAddrCount = make(map[netip.Addr]int)
+	m.mu.sendLeaveGroupAddrCount = make(map[netip.Addr]int)
+	m.mu.sentV2Reports = make(map[netip.Addr][]ip.MulticastGroupProtocolV2ReportRecordType)
 }
 
 func (m *mockMulticastGroupProtocol) setEnabled(v bool) {
@@ -94,37 +95,37 @@ func (m *mockMulticastGroupProtocol) getV1Mode() bool {
 	return m.mu.genericMulticastGroup.GetV1ModeLocked()
 }
 
-func (m *mockMulticastGroupProtocol) joinGroup(addr tcpip.Address) {
+func (m *mockMulticastGroupProtocol) joinGroup(addr netip.Addr) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.genericMulticastGroup.JoinGroupLocked(addr)
 }
 
-func (m *mockMulticastGroupProtocol) leaveGroup(addr tcpip.Address) bool {
+func (m *mockMulticastGroupProtocol) leaveGroup(addr netip.Addr) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.mu.genericMulticastGroup.LeaveGroupLocked(addr)
 }
 
-func (m *mockMulticastGroupProtocol) handleReport(addr tcpip.Address) {
+func (m *mockMulticastGroupProtocol) handleReport(addr netip.Addr) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.genericMulticastGroup.HandleReportLocked(addr)
 }
 
-func (m *mockMulticastGroupProtocol) handleQuery(addr tcpip.Address, maxRespTime time.Duration) {
+func (m *mockMulticastGroupProtocol) handleQuery(addr netip.Addr, maxRespTime time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.genericMulticastGroup.HandleQueryLocked(addr, maxRespTime)
 }
 
-func (m *mockMulticastGroupProtocol) handleQueryV2(addr tcpip.Address, maxResponseCode uint16, sources header.AddressIterator, robustnessVariable uint8, queryInterval time.Duration) {
+func (m *mockMulticastGroupProtocol) handleQueryV2(addr netip.Addr, maxResponseCode uint16, sources header.AddressIterator, robustnessVariable uint8, queryInterval time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.genericMulticastGroup.HandleQueryV2Locked(addr, maxResponseCode, sources, robustnessVariable, queryInterval)
 }
 
-func (m *mockMulticastGroupProtocol) isLocallyJoined(addr tcpip.Address) bool {
+func (m *mockMulticastGroupProtocol) isLocallyJoined(addr netip.Addr) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.mu.genericMulticastGroup.IsLocallyJoinedRLocked(addr)
@@ -163,7 +164,7 @@ func (m *mockMulticastGroupProtocol) Enabled() bool {
 // SendReport implements ip.MulticastGroupProtocol.
 //
 // Precondition: m.mu must be locked.
-func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) {
+func (m *mockMulticastGroupProtocol) SendReport(groupAddress netip.Addr) (bool, tcpip.Error) {
 	if m.mu.TryLock() {
 		m.mu.Unlock() // +checklocksforce: TryLock.
 		m.t.Fatalf("got write lock, expected to not take the lock; generic multicast protocol must take the write lock before sending report for %s", groupAddress)
@@ -180,7 +181,7 @@ func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (boo
 // SendLeave implements ip.MulticastGroupProtocol.
 //
 // Precondition: m.mu must be locked.
-func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) tcpip.Error {
+func (m *mockMulticastGroupProtocol) SendLeave(groupAddress netip.Addr) tcpip.Error {
 	if m.mu.TryLock() {
 		m.mu.Unlock() // +checklocksforce: TryLock.
 		m.t.Fatalf("got write lock, expected to not take the lock; generic multicast protocol must take the write lock before sending leave for %s", groupAddress)
@@ -195,13 +196,13 @@ func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) tcpip
 }
 
 // ShouldPerformProtocol implements ip.MulticastGroupProtocol.
-func (m *mockMulticastGroupProtocol) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
+func (m *mockMulticastGroupProtocol) ShouldPerformProtocol(groupAddress netip.Addr) bool {
 	return groupAddress != m.skipProtocolAddress
 }
 
 type mockReportV2Record struct {
 	recordType   ip.MulticastGroupProtocolV2ReportRecordType
-	groupAddress tcpip.Address
+	groupAddress netip.Addr
 }
 
 type mockReportV2 struct {
@@ -214,11 +215,11 @@ type mockReportV2Builder struct {
 }
 
 // AddRecord implements ip.MulticastGroupProtocolV2ReportBuilder.
-func (b *mockReportV2Builder) AddRecord(recordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress tcpip.Address) {
+func (b *mockReportV2Builder) AddRecord(recordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress netip.Addr) {
 	b.report.records = append(b.report.records, mockReportV2Record{recordType: recordType, groupAddress: groupAddress})
 }
 
-func recordsToMap(m map[tcpip.Address][]ip.MulticastGroupProtocolV2ReportRecordType, records []mockReportV2Record) {
+func recordsToMap(m map[netip.Addr][]ip.MulticastGroupProtocolV2ReportRecordType, records []mockReportV2Record) {
 	for _, record := range records {
 		m[record.groupAddress] = append(m[record.groupAddress], record.recordType)
 	}
@@ -255,8 +256,8 @@ func (*mockMulticastGroupProtocol) V2QueryMaxRespCodeToV1Delay(code uint16) time
 }
 
 type checkFields struct {
-	sendReportGroupAddresses []tcpip.Address
-	sendLeaveGroupAddresses  []tcpip.Address
+	sendReportGroupAddresses []netip.Addr
+	sendLeaveGroupAddresses  []netip.Addr
 	sentV2Reports            []mockReportV2
 }
 
@@ -264,17 +265,17 @@ func (m *mockMulticastGroupProtocol) check(fields checkFields) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	sendReportGroupAddrCount := make(map[tcpip.Address]int)
+	sendReportGroupAddrCount := make(map[netip.Addr]int)
 	for _, a := range fields.sendReportGroupAddresses {
 		sendReportGroupAddrCount[a] = 1
 	}
 
-	sendLeaveGroupAddrCount := make(map[tcpip.Address]int)
+	sendLeaveGroupAddrCount := make(map[netip.Addr]int)
 	for _, a := range fields.sendLeaveGroupAddresses {
 		sendLeaveGroupAddrCount[a] = 1
 	}
 
-	sentV2Reports := make(map[tcpip.Address][]ip.MulticastGroupProtocolV2ReportRecordType)
+	sentV2Reports := make(map[netip.Addr][]ip.MulticastGroupProtocolV2ReportRecordType)
 	for _, report := range fields.sentV2Reports {
 		recordsToMap(sentV2Reports, report.records)
 	}
@@ -312,7 +313,7 @@ func (m *mockMulticastGroupProtocol) check(fields checkFields) string {
 func TestJoinGroup(t *testing.T) {
 	tests := []struct {
 		name              string
-		addr              tcpip.Address
+		addr              netip.Addr
 		shouldSendReports bool
 	}{
 		{
@@ -330,19 +331,19 @@ func TestJoinGroup(t *testing.T) {
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func(tcpip.Address) checkFields
+		checkFields     func(netip.Addr) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addr tcpip.Address) checkFields {
-				return checkFields{sendReportGroupAddresses: []tcpip.Address{addr}}
+			checkFields: func(addr netip.Addr) checkFields {
+				return checkFields{sendReportGroupAddresses: []netip.Addr{addr}}
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addr tcpip.Address) checkFields {
+			checkFields: func(addr netip.Addr) checkFields {
 				return checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{
 					{
 						recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
@@ -398,7 +399,7 @@ func TestLeaveGroup(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		addr               tcpip.Address
+		addr               netip.Addr
 		shouldSendMessages bool
 	}{
 		{
@@ -416,26 +417,26 @@ func TestLeaveGroup(t *testing.T) {
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func(tcpip.Address, bool) checkFields
-		handleQuery     func(*mockMulticastGroupProtocol, tcpip.Address)
+		checkFields     func(netip.Addr, bool) checkFields
+		handleQuery     func(*mockMulticastGroupProtocol, netip.Addr)
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				if leave {
-					return checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr}}
+					return checkFields{sendLeaveGroupAddresses: []netip.Addr{addr}}
 				}
-				return checkFields{sendReportGroupAddresses: []tcpip.Address{addr}}
+				return checkFields{sendReportGroupAddresses: []netip.Addr{addr}}
 			},
-			handleQuery: func(mgp *mockMulticastGroupProtocol, groupAddress tcpip.Address) {
+			handleQuery: func(mgp *mockMulticastGroupProtocol, groupAddress netip.Addr) {
 				mgp.handleQuery(groupAddress, maxRespCode)
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 				if leave {
 					recordType = ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
@@ -448,8 +449,8 @@ func TestLeaveGroup(t *testing.T) {
 					},
 				}}}}
 			},
-			handleQuery: func(mgp *mockMulticastGroupProtocol, groupAddress tcpip.Address) {
-				mgp.handleQueryV2(groupAddress, maxRespCode, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), 0, 0)
+			handleQuery: func(mgp *mockMulticastGroupProtocol, groupAddress netip.Addr) {
+				mgp.handleQueryV2(groupAddress, maxRespCode, header.MakeAddressIterator(addr1.BitLen()/8, bytes.NewBuffer(nil)), 0, 0)
 			},
 		},
 	}
@@ -458,7 +459,7 @@ func TestLeaveGroup(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for _, subTest := range subTests {
 				t.Run(subTest.name, func(t *testing.T) {
-					for _, queryAddr := range []tcpip.Address{test.addr, {}} {
+					for _, queryAddr := range []netip.Addr{test.addr, {}} {
 						t.Run(fmt.Sprintf("QueryAddr=%s", queryAddr), func(t *testing.T) {
 							mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr2}
 							clock := faketime.NewManualClock()
@@ -520,52 +521,52 @@ func TestLeaveGroup(t *testing.T) {
 func TestHandleReport(t *testing.T) {
 	tests := []struct {
 		name             string
-		reportAddr       tcpip.Address
-		expectReportsFor []tcpip.Address
+		reportAddr       netip.Addr
+		expectReportsFor []netip.Addr
 	}{
 		{
 			name:             "Unpecified empty",
-			reportAddr:       tcpip.Address{},
-			expectReportsFor: []tcpip.Address{addr1, addr2},
+			reportAddr:       netip.Addr{},
+			expectReportsFor: []netip.Addr{addr1, addr2},
 		},
 		{
 			name:             "Unpecified any",
-			reportAddr:       tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
-			expectReportsFor: []tcpip.Address{addr1, addr2},
+			reportAddr:       netip.IPv4Unspecified(),
+			expectReportsFor: []netip.Addr{addr1, addr2},
 		},
 		{
 			name:             "Specified",
 			reportAddr:       addr1,
-			expectReportsFor: []tcpip.Address{addr2},
+			expectReportsFor: []netip.Addr{addr2},
 		},
 		{
 			name:             "Specified all-nodes",
 			reportAddr:       addr3,
-			expectReportsFor: []tcpip.Address{addr1, addr2},
+			expectReportsFor: []netip.Addr{addr1, addr2},
 		},
 		{
 			name:             "Specified other",
 			reportAddr:       addr4,
-			expectReportsFor: []tcpip.Address{addr1, addr2},
+			expectReportsFor: []netip.Addr{addr1, addr2},
 		},
 	}
 
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func([]tcpip.Address) checkFields
+		checkFields     func([]netip.Addr) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addrs []tcpip.Address) checkFields {
+			checkFields: func(addrs []netip.Addr) checkFields {
 				return checkFields{sendReportGroupAddresses: addrs}
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addrs []tcpip.Address) checkFields {
+			checkFields: func(addrs []netip.Addr) checkFields {
 				var records []mockReportV2Record
 				for _, addr := range addrs {
 					records = append(records, mockReportV2Record{
@@ -593,11 +594,11 @@ func TestHandleReport(t *testing.T) {
 					}, subTest.v1Compatibility)
 
 					mgp.joinGroup(addr1)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr1})); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr1})); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					mgp.joinGroup(addr2)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr2})); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr2})); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					mgp.joinGroup(addr3)
@@ -630,64 +631,64 @@ func TestHandleReport(t *testing.T) {
 func TestHandleQuery(t *testing.T) {
 	tests := []struct {
 		name                    string
-		queryAddr               tcpip.Address
+		queryAddr               netip.Addr
 		maxDelay                time.Duration
-		expectQueriedReportsFor []tcpip.Address
-		expectDelayedReportsFor []tcpip.Address
+		expectQueriedReportsFor []netip.Addr
+		expectDelayedReportsFor []netip.Addr
 	}{
 		{
 			name:                    "Unpecified empty",
-			queryAddr:               tcpip.Address{},
+			queryAddr:               netip.Addr{},
 			maxDelay:                0,
-			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
+			expectQueriedReportsFor: []netip.Addr{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
 			name:                    "Unpecified any",
-			queryAddr:               tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
+			queryAddr:               netip.IPv4Unspecified(),
 			maxDelay:                1,
-			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
+			expectQueriedReportsFor: []netip.Addr{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
 			name:                    "Specified",
 			queryAddr:               addr1,
 			maxDelay:                2,
-			expectQueriedReportsFor: []tcpip.Address{addr1},
-			expectDelayedReportsFor: []tcpip.Address{addr2},
+			expectQueriedReportsFor: []netip.Addr{addr1},
+			expectDelayedReportsFor: []netip.Addr{addr2},
 		},
 		{
 			name:                    "Specified all-nodes",
 			queryAddr:               addr3,
 			maxDelay:                3,
 			expectQueriedReportsFor: nil,
-			expectDelayedReportsFor: []tcpip.Address{addr1, addr2},
+			expectDelayedReportsFor: []netip.Addr{addr1, addr2},
 		},
 		{
 			name:                    "Specified other",
 			queryAddr:               addr4,
 			maxDelay:                4,
 			expectQueriedReportsFor: nil,
-			expectDelayedReportsFor: []tcpip.Address{addr1, addr2},
+			expectDelayedReportsFor: []netip.Addr{addr1, addr2},
 		},
 	}
 
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func([]tcpip.Address) checkFields
+		checkFields     func([]netip.Addr) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addrs []tcpip.Address) checkFields {
+			checkFields: func(addrs []netip.Addr) checkFields {
 				return checkFields{sendReportGroupAddresses: addrs}
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addrs []tcpip.Address) checkFields {
+			checkFields: func(addrs []netip.Addr) checkFields {
 				var records []mockReportV2Record
 				for _, addr := range addrs {
 					records = append(records, mockReportV2Record{
@@ -715,11 +716,11 @@ func TestHandleQuery(t *testing.T) {
 					}, subTest.v1Compatibility)
 
 					mgp.joinGroup(addr1)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr1})); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr1})); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					mgp.joinGroup(addr2)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr2})); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr2})); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					mgp.joinGroup(addr3)
@@ -762,64 +763,64 @@ func TestHandleQuery(t *testing.T) {
 func TestHandleQueryV2Response(t *testing.T) {
 	tests := []struct {
 		name                    string
-		queryAddr               tcpip.Address
+		queryAddr               netip.Addr
 		maxDelay                uint16
-		expectQueriedReportsFor []tcpip.Address
-		expectDelayedReportsFor []tcpip.Address
+		expectQueriedReportsFor []netip.Addr
+		expectDelayedReportsFor []netip.Addr
 	}{
 		{
 			name:                    "Unpecified empty",
-			queryAddr:               tcpip.Address{},
+			queryAddr:               netip.Addr{},
 			maxDelay:                0,
-			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
+			expectQueriedReportsFor: []netip.Addr{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
 			name:                    "Unpecified any",
-			queryAddr:               tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
+			queryAddr:               netip.IPv4Unspecified(),
 			maxDelay:                1,
-			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
+			expectQueriedReportsFor: []netip.Addr{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
 			name:                    "Specified",
 			queryAddr:               addr1,
 			maxDelay:                2,
-			expectQueriedReportsFor: []tcpip.Address{addr1},
-			expectDelayedReportsFor: []tcpip.Address{addr2},
+			expectQueriedReportsFor: []netip.Addr{addr1},
+			expectDelayedReportsFor: []netip.Addr{addr2},
 		},
 		{
 			name:                    "Specified all-nodes",
 			queryAddr:               addr3,
 			maxDelay:                3,
 			expectQueriedReportsFor: nil,
-			expectDelayedReportsFor: []tcpip.Address{addr1, addr2},
+			expectDelayedReportsFor: []netip.Addr{addr1, addr2},
 		},
 		{
 			name:                    "Specified other",
 			queryAddr:               addr4,
 			maxDelay:                4,
 			expectQueriedReportsFor: nil,
-			expectDelayedReportsFor: []tcpip.Address{addr1, addr2},
+			expectDelayedReportsFor: []netip.Addr{addr1, addr2},
 		},
 	}
 
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func([]tcpip.Address, bool) checkFields
+		checkFields     func([]netip.Addr, bool) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addrs []tcpip.Address, _ bool) checkFields {
+			checkFields: func(addrs []netip.Addr, _ bool) checkFields {
 				return checkFields{sendReportGroupAddresses: addrs}
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addrs []tcpip.Address, queryResponse bool) checkFields {
+			checkFields: func(addrs []netip.Addr, queryResponse bool) checkFields {
 				var records []mockReportV2Record
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 				if queryResponse {
@@ -852,11 +853,11 @@ func TestHandleQueryV2Response(t *testing.T) {
 					}, subTest.v1Compatibility)
 
 					mgp.joinGroup(addr1)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr1}, false /* queryResponse */)); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr1}, false /* queryResponse */)); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					mgp.joinGroup(addr2)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr2}, false /* queryResponse */)); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr2}, false /* queryResponse */)); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					mgp.joinGroup(addr3)
@@ -864,7 +865,7 @@ func TestHandleQueryV2Response(t *testing.T) {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					clock.Advance(maxUnsolicitedReportDelay)
-					if diff := mgp.check(subTest.checkFields([]tcpip.Address{addr1, addr2}, false /* queryResponse */)); diff != "" {
+					if diff := mgp.check(subTest.checkFields([]netip.Addr{addr1, addr2}, false /* queryResponse */)); diff != "" {
 						t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 					clock.Advance(maxUnsolicitedReportDelay)
@@ -877,7 +878,7 @@ func TestHandleQueryV2Response(t *testing.T) {
 					//
 					// Note that if we are in V1 compatibility mode, the V2 query will be
 					// handled as a V1 query.
-					mgp.handleQueryV2(test.queryAddr, test.maxDelay, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), 0, 0)
+					mgp.handleQueryV2(test.queryAddr, test.maxDelay, header.MakeAddressIterator(addr1.BitLen()/8, bytes.NewBuffer(nil)), 0, 0)
 					if subTest.v1Compatibility {
 						clock.Advance(mgp.V2QueryMaxRespCodeToV1Delay(test.maxDelay))
 					} else {
@@ -1000,13 +1001,13 @@ func TestV1CompatbilityModeTimer(t *testing.T) {
 					v1Check := func() {
 						t.Helper()
 						mgp.joinGroup(addr1)
-						if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
+						if diff := mgp.check(checkFields{sendReportGroupAddresses: []netip.Addr{addr1}}); diff != "" {
 							t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 						}
 						if !mgp.leaveGroup(addr1) {
 							t.Fatalf("got mgp.leaveGroup(%s) = false, want = true", addr1)
 						}
-						if diff := mgp.check(checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
+						if diff := mgp.check(checkFields{sendLeaveGroupAddresses: []netip.Addr{addr1}}); diff != "" {
 							t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 						}
 					}
@@ -1018,7 +1019,7 @@ func TestV1CompatbilityModeTimer(t *testing.T) {
 					clock.Advance(minDuration)
 					v2Check(t)
 					// Should update the Robustness variable and Querier's Query interval.
-					mgp.handleQueryV2(addr3, 0, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), test.robustnessVariable, test.queryInterval)
+					mgp.handleQueryV2(addr3, 0, header.MakeAddressIterator(addr1.BitLen()/8, bytes.NewBuffer(nil)), test.robustnessVariable, test.queryInterval)
 				})
 			}
 		})
@@ -1031,22 +1032,22 @@ func TestJoinCount(t *testing.T) {
 	tests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func(tcpip.Address, bool) checkFields
+		checkFields     func(netip.Addr, bool) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				if leave {
-					return checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr}}
+					return checkFields{sendLeaveGroupAddresses: []netip.Addr{addr}}
 				}
-				return checkFields{sendReportGroupAddresses: []tcpip.Address{addr}}
+				return checkFields{sendReportGroupAddresses: []netip.Addr{addr}}
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 				if leave {
 					recordType = ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
@@ -1159,13 +1160,13 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 		name            string
 		v1              bool
 		v1Compatibility bool
-		checkFields     func([]tcpip.Address, bool) checkFields
+		checkFields     func([]netip.Addr, bool) checkFields
 	}{
 		{
 			name:            "V1",
 			v1:              true,
 			v1Compatibility: false,
-			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
+			checkFields: func(addrs []netip.Addr, leave bool) checkFields {
 				if leave {
 					return checkFields{sendLeaveGroupAddresses: addrs}
 				}
@@ -1176,7 +1177,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			name:            "V1 Compatibility",
 			v1:              false,
 			v1Compatibility: true,
-			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
+			checkFields: func(addrs []netip.Addr, leave bool) checkFields {
 				if leave {
 					return checkFields{sendLeaveGroupAddresses: addrs}
 				}
@@ -1187,7 +1188,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			name:            "V2",
 			v1:              false,
 			v1Compatibility: false,
-			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
+			checkFields: func(addrs []netip.Addr, leave bool) checkFields {
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 				if leave {
 					recordType = ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
@@ -1223,11 +1224,11 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			}
 
 			mgp.joinGroup(addr1)
-			if diff := mgp.check(test.checkFields([]tcpip.Address{addr1}, false /* leave */)); diff != "" {
+			if diff := mgp.check(test.checkFields([]netip.Addr{addr1}, false /* leave */)); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.joinGroup(addr2)
-			if diff := mgp.check(test.checkFields([]tcpip.Address{addr2}, false /* leave */)); diff != "" {
+			if diff := mgp.check(test.checkFields([]netip.Addr{addr2}, false /* leave */)); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.joinGroup(addr3)
@@ -1238,7 +1239,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			// Should send the leave reports for each but still consider them locally
 			// joined.
 			mgp.makeAllNonMember()
-			if diff := mgp.check(test.checkFields([]tcpip.Address{addr1, addr2}, true /* leave */)); diff != "" {
+			if diff := mgp.check(test.checkFields([]netip.Addr{addr1, addr2}, true /* leave */)); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -1247,7 +1248,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
-			for _, group := range []tcpip.Address{addr1, addr2, addr3} {
+			for _, group := range []netip.Addr{addr1, addr2, addr3} {
 				if !mgp.isLocallyJoined(group) {
 					t.Fatalf("got mgp.isLocallyJoined(%s) = false, want = true", group)
 				}
@@ -1257,7 +1258,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			mgp.initializeGroups()
 			for i := 0; i < unsolicitedTransmissionCount; i++ {
 				if test.v1 {
-					if diff := mgp.check(test.checkFields([]tcpip.Address{addr1, addr2}, false /* leave */)); diff != "" {
+					if diff := mgp.check(test.checkFields([]netip.Addr{addr1, addr2}, false /* leave */)); diff != "" {
 						t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 					}
 				} else {
@@ -1304,12 +1305,12 @@ func TestGroupStateNonMember(t *testing.T) {
 	tests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func([]tcpip.Address, bool) checkFields
+		checkFields     func([]netip.Addr, bool) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
+			checkFields: func(addrs []netip.Addr, leave bool) checkFields {
 				if leave {
 					return checkFields{sendLeaveGroupAddresses: addrs}
 				}
@@ -1319,7 +1320,7 @@ func TestGroupStateNonMember(t *testing.T) {
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
+			checkFields: func(addrs []netip.Addr, leave bool) checkFields {
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 				if leave {
 					recordType = ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
@@ -1402,35 +1403,35 @@ func TestMakeAllNonMemberCancelsDelayedReportJob(t *testing.T) {
 		name            string
 		v1              bool
 		v1Compatibility bool
-		checkFields     func(tcpip.Address, bool) checkFields
+		checkFields     func(netip.Addr, bool) checkFields
 	}{
 		{
 			name:            "V1",
 			v1:              true,
 			v1Compatibility: false,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				if leave {
-					return checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr}}
+					return checkFields{sendLeaveGroupAddresses: []netip.Addr{addr}}
 				}
-				return checkFields{sendReportGroupAddresses: []tcpip.Address{addr}}
+				return checkFields{sendReportGroupAddresses: []netip.Addr{addr}}
 			},
 		},
 		{
 			name:            "V1 Compatibility",
 			v1:              false,
 			v1Compatibility: true,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				if leave {
-					return checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr}}
+					return checkFields{sendLeaveGroupAddresses: []netip.Addr{addr}}
 				}
-				return checkFields{sendReportGroupAddresses: []tcpip.Address{addr}}
+				return checkFields{sendReportGroupAddresses: []netip.Addr{addr}}
 			},
 		},
 		{
 			name:            "V2",
 			v1:              false,
 			v1Compatibility: false,
-			checkFields: func(addr tcpip.Address, leave bool) checkFields {
+			checkFields: func(addr netip.Addr, leave bool) checkFields {
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 				if leave {
 					recordType = ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
@@ -1467,7 +1468,7 @@ func TestMakeAllNonMemberCancelsDelayedReportJob(t *testing.T) {
 
 			// Handle a query so that the delayed report job is scheduled when operating
 			// in V2 mode.
-			mgp.handleQueryV2(addr1, maxRespCode, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), 0, 0)
+			mgp.handleQueryV2(addr1, maxRespCode, header.MakeAddressIterator(addr1.BitLen()/8, bytes.NewBuffer(nil)), 0, 0)
 
 			mgp.makeAllNonMember()
 			if diff := mgp.check(test.checkFields(addr1, true /* leave */)); diff != "" {
@@ -1497,19 +1498,19 @@ func TestQueuedPackets(t *testing.T) {
 	tests := []struct {
 		name            string
 		v1Compatibility bool
-		checkFields     func(tcpip.Address) checkFields
+		checkFields     func(netip.Addr) checkFields
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			checkFields: func(addr tcpip.Address) checkFields {
-				return checkFields{sendReportGroupAddresses: []tcpip.Address{addr}}
+			checkFields: func(addr netip.Addr) checkFields {
+				return checkFields{sendReportGroupAddresses: []netip.Addr{addr}}
 			},
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			checkFields: func(addr tcpip.Address) checkFields {
+			checkFields: func(addr netip.Addr) checkFields {
 				return checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{
 					{
 						recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
@@ -1569,7 +1570,7 @@ func TestQueuedPackets(t *testing.T) {
 			mgp.setQueuePackets(true)
 			mgp.handleQuery(addr1, time.Nanosecond)
 			clock.Advance(time.Nanosecond)
-			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []netip.Addr{addr1}}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -1577,7 +1578,7 @@ func TestQueuedPackets(t *testing.T) {
 			// send.
 			mgp.setQueuePackets(false)
 			mgp.sendQueuedReports()
-			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []netip.Addr{addr1}}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -1592,7 +1593,7 @@ func TestQueuedPackets(t *testing.T) {
 			mgp.setQueuePackets(true)
 			mgp.handleQuery(addr1, time.Nanosecond)
 			clock.Advance(time.Nanosecond)
-			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []netip.Addr{addr1}}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -1609,7 +1610,7 @@ func TestQueuedPackets(t *testing.T) {
 			// prevent a newly joined group's reports from being sent.
 			mgp.setQueuePackets(true)
 			mgp.joinGroup(addr2)
-			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []netip.Addr{addr2}}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.handleReport(addr2)
@@ -1660,7 +1661,7 @@ func TestGetSetV1Mode(t *testing.T) {
 		t.Error("got mgp.getV1Mode() = false, want = true")
 	}
 	mgp.joinGroup(addr2)
-	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []netip.Addr{addr2}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 

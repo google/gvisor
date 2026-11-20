@@ -136,7 +136,7 @@ func (m *addrTypeMatcher) matchType(addr tcpip.Address, mask uint16) bool {
 // ipv4AddrType classifies addr like Linux inet_dev_addr_type, which looks addr
 // up in the local routing table.
 func (m *addrTypeMatcher) ipv4AddrType(addr tcpip.Address) uint16 {
-	if addr.Len() != header.IPv4AddressSize {
+	if !addr.Is4() {
 		return linux.XT_ADDRTYPE_UNICAST
 	}
 	// ipv4_is_zeronet and ipv4_is_lbcast.
@@ -163,7 +163,7 @@ func (m *addrTypeMatcher) ipv4AddrType(addr tcpip.Address) uint16 {
 // UNSPEC in mask is a separate requirement on addr; LOCAL then requires addr
 // to be local.
 func (m *addrTypeMatcher) matchTypeIPv6(addr tcpip.Address, mask uint16) bool {
-	if addr.Len() != header.IPv6AddressSize {
+	if !addr.Is6() {
 		return false
 	}
 	multicast := header.IsV6MulticastAddress(addr)

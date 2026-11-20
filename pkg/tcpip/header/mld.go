@@ -17,9 +17,8 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"time"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 const (
@@ -82,7 +81,7 @@ func (m MLD) SetMaximumResponseDelay(maxRespDelayMS uint16) {
 }
 
 // MulticastAddress returns the Multicast Address.
-func (m MLD) MulticastAddress() tcpip.Address {
+func (m MLD) MulticastAddress() netip.Addr {
 	// As per RFC 2710 section 3.5:
 	//
 	//   In a Query message, the Multicast Address field is set to zero when
@@ -92,11 +91,11 @@ func (m MLD) MulticastAddress() tcpip.Address {
 	//   In a Report or Done message, the Multicast Address field holds a
 	//   specific IPv6 multicast address to which the message sender is
 	//   listening or is ceasing to listen, respectively.
-	return tcpip.AddrFrom16([16]byte(m[mldMulticastAddressOffset:][:IPv6AddressSize]))
+	return netip.AddrFrom16([16]byte(m[mldMulticastAddressOffset:][:IPv6AddressSize]))
 }
 
 // SetMulticastAddress sets the Multicast Address field.
-func (m MLD) SetMulticastAddress(multicastAddress tcpip.Address) {
+func (m MLD) SetMulticastAddress(multicastAddress netip.Addr) {
 	if n := copy(m[mldMulticastAddressOffset:], multicastAddress.AsSlice()); n != IPv6AddressSize {
 		panic(fmt.Sprintf("copied %d bytes, expected to copy %d bytes", n, IPv6AddressSize))
 	}

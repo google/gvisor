@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"net/netip"
 	"reflect"
 	"testing"
 
@@ -39,7 +40,7 @@ type testIPv6Endpoint struct {
 	nic      NetworkInterface
 	protocol *testIPv6Protocol
 
-	invalidatedRtr tcpip.Address
+	invalidatedRtr netip.Addr
 }
 
 func (*testIPv6Endpoint) Enable() tcpip.Error {
@@ -97,7 +98,7 @@ func (*testIPv6Endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return header.IPv6ProtocolNumber
 }
 
-func (e *testIPv6Endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
+func (e *testIPv6Endpoint) InvalidateDefaultRouter(rtr netip.Addr) {
 	e.invalidatedRtr = rtr
 }
 
@@ -128,7 +129,7 @@ func (*testIPv6Protocol) MinimumPacketSize() int {
 }
 
 // ParseAddresses implements NetworkProtocol.ParseAddresses.
-func (*testIPv6Protocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
+func (*testIPv6Protocol) ParseAddresses(v []byte) (src, dst netip.Addr) {
 	h := header.IPv6(v)
 	return h.SourceAddress(), h.DestinationAddress()
 }

@@ -16,6 +16,7 @@ package context
 
 import (
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -29,8 +30,6 @@ import (
 )
 
 const (
-	v4MappedAddrPrefix = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff"
-
 	// StackPort is the port TestFlow uses with StackAddr.
 	StackPort = 1234
 
@@ -44,40 +43,40 @@ var (
 
 	// StackAddr is the IPv4 address assigned to the stack's NIC and is used by
 	// TestFlow as the local address.
-	StackAddr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
+	StackAddr = netip.AddrFrom4([4]byte{10, 0, 0, 1})
 
 	// StackV4MappedAddr is the IPv4-mapped IPv6 StackAddr.
-	StackV4MappedAddr = tcpip.AddrFromSlice(append([]byte(v4MappedAddrPrefix), StackAddr.AsSlice()...))
+	StackV4MappedAddr = netip.AddrFrom16(StackAddr.As16())
 
 	// TestAddr is the IPv4 address used by TestFlow as the remote address.
-	TestAddr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
+	TestAddr = netip.AddrFrom4([4]byte{10, 0, 0, 2})
 
 	// TestV4MappedAddr is the IPv4-mapped IPv6 TestAddr.
-	TestV4MappedAddr = tcpip.AddrFromSlice(append([]byte(v4MappedAddrPrefix), TestAddr.AsSlice()...))
+	TestV4MappedAddr = netip.AddrFrom16(TestAddr.As16())
 
 	// MulticastAddr is the IPv4 multicast address used by IPv4 multicast
 	// TestFlow.
-	MulticastAddr = tcpip.AddrFromSlice([]byte("\xe8\x2b\xd3\xea"))
+	MulticastAddr = netip.AddrFrom4([4]byte{232, 43, 211, 234})
 
 	// MulticastV4MappedAddr is the IPv4-mapped IPv6 MulticastAddr.
-	MulticastV4MappedAddr = tcpip.AddrFromSlice(append([]byte(v4MappedAddrPrefix), MulticastAddr.AsSlice()...))
+	MulticastV4MappedAddr = netip.AddrFrom16(MulticastAddr.As16())
 
 	// BroadcastV4MappedAddr is the IPv4-mapped IPv6 BroadcastAddr.
-	BroadcastV4MappedAddr = tcpip.AddrFromSlice(append([]byte(v4MappedAddrPrefix), BroadcastAddr.AsSlice()...))
+	BroadcastV4MappedAddr = netip.AddrFrom16(BroadcastAddr.As16())
 
 	// V4MappedWildcardAddr is the IPv4-mapped IPv6 wildcard (any) address.
-	V4MappedWildcardAddr = tcpip.AddrFromSlice([]byte(v4MappedAddrPrefix + "\x00\x00\x00\x00"))
+	V4MappedWildcardAddr = netip.AddrFrom16(header.IPv4Any.As16())
 
 	// StackV6Addr is the IPv6 address assigned to the stack's NIC and is used by
 	// TestFlow as the local address.
-	StackV6Addr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+	StackV6Addr = netip.MustParseAddr("a00::1")
 
 	// TestV6Addr is the IPv6 address used by TestFlow as the remote address.
-	TestV6Addr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
+	TestV6Addr = netip.MustParseAddr("a00::2")
 
 	// MulticastV6Addr is the IPv6 multicast address used by IPv6 multicast
 	// TestFlow.
-	MulticastV6Addr = tcpip.AddrFromSlice([]byte("\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"))
+	MulticastV6Addr = netip.MustParseAddr("ff00::")
 )
 
 // Header4Tuple stores the 4-tuple {src-IP, src-port, dst-IP, dst-port} used in
@@ -237,7 +236,7 @@ func (flow TestFlow) MakeHeader4Tuple(direction PacketDirection) Header4Tuple {
 }
 
 // GetMulticastAddr returns the multicast address of a TestFlow.
-func (flow TestFlow) GetMulticastAddr() tcpip.Address {
+func (flow TestFlow) GetMulticastAddr() netip.Addr {
 	if flow.IsV4() {
 		return MulticastAddr
 	}
@@ -246,9 +245,9 @@ func (flow TestFlow) GetMulticastAddr() tcpip.Address {
 
 // MapAddrIfApplicable converts the given IPv4 address into its V4-mapped
 // version if it is applicable to the TestFlow.
-func (flow TestFlow) MapAddrIfApplicable(v4Addr tcpip.Address) tcpip.Address {
+func (flow TestFlow) MapAddrIfApplicable(v4Addr netip.Addr) netip.Addr {
 	if flow.isMapped() {
-		return tcpip.AddrFromSlice(append([]byte(v4MappedAddrPrefix), v4Addr.AsSlice()...))
+		return netip.AddrFrom16(v4Addr.As16())
 	}
 	return v4Addr
 }

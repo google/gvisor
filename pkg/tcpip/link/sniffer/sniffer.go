@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -187,8 +188,8 @@ func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	// Figure out the network layer info.
 	var transProto uint8
-	var src tcpip.Address
-	var dst tcpip.Address
+	var src netip.Addr
+	var dst netip.Addr
 	var size uint16
 	var id uint32
 	var fragmentOffset uint16
@@ -236,8 +237,8 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 			"%s%s arp %s (%s) -> %s (%s) valid:%t",
 			prefix,
 			dir,
-			tcpip.AddrFromSlice(arp.ProtocolAddressSender()), tcpip.LinkAddress(arp.HardwareAddressSender()),
-			tcpip.AddrFromSlice(arp.ProtocolAddressTarget()), tcpip.LinkAddress(arp.HardwareAddressTarget()),
+			netip.AddrFrom4([4]byte(arp.ProtocolAddressSender())), tcpip.LinkAddress(arp.HardwareAddressSender()),
+			netip.AddrFrom4([4]byte(arp.ProtocolAddressTarget())), tcpip.LinkAddress(arp.HardwareAddressTarget()),
 			arp.IsValid(),
 		)
 		return

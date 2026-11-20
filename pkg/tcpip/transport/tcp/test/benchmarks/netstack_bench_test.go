@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -34,8 +35,8 @@ import (
 )
 
 var (
-	clientAddr = tcpip.AddrFrom4([4]byte{10, 0, 0, 2})
-	serverAddr = tcpip.AddrFrom4([4]byte{10, 0, 0, 3})
+	clientAddr = netip.AddrFrom4([4]byte{10, 0, 0, 2})
+	serverAddr = netip.AddrFrom4([4]byte{10, 0, 0, 3})
 )
 
 // topology owns a client/server stack pair (indices 0/1) and its packet pumps.
@@ -56,7 +57,7 @@ func newTopology(t testing.TB, rack bool, batch time.Duration) *topology {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	n := &topology{ctx: ctx, cancel: cancel}
 	t.Cleanup(n.close)
-	for i, addr := range []tcpip.Address{clientAddr, serverAddr} {
+	for i, addr := range []netip.Addr{clientAddr, serverAddr} {
 		link := channel.New(4096, 1280, "")
 		n.links[i] = link
 		// Inject GSO packets intact to model coalesced reception as frequently
@@ -72,7 +73,7 @@ func newTopology(t testing.TB, rack bool, batch time.Duration) *topology {
 		if err := s.CreateNIC(1, link); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: addr.WithPrefix()}, stack.AddressProperties{}); err != nil {
+		if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: netip.PrefixFrom(addr, addr.BitLen())}, stack.AddressProperties{}); err != nil {
 			t.Fatal(err)
 		}
 		s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})

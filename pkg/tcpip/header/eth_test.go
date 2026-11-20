@@ -15,6 +15,7 @@
 package header
 
 import (
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -135,7 +136,7 @@ func TestEthernetAddressFromMulticastIPv4Address(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := EthernetAddressFromMulticastIPv4Address(tcpip.AddrFrom4Slice([]byte(test.addr))); got != test.expectedLinkAddr {
+			if got := EthernetAddressFromMulticastIPv4Address(netip.AddrFrom4([4]byte([]byte(test.addr)))); got != test.expectedLinkAddr {
 				t.Fatalf("got EthernetAddressFromMulticastIPv4Address(%s) = %s, want = %s", test.addr, got, test.expectedLinkAddr)
 			}
 		})
@@ -144,7 +145,7 @@ func TestEthernetAddressFromMulticastIPv4Address(t *testing.T) {
 
 func TestEthernetAddressFromMulticastIPv6Address(t *testing.T) {
 	addr := testutil.MustParse6("ff02:304:506:708:90a:b0c:d0e:f1a")
-	if got, want := EthernetAddressFromMulticastIPv6Address(tcpip.AddrFrom16Slice(addr.AsSlice())), tcpip.LinkAddress("\x33\x33\x0d\x0e\x0f\x1a"); got != want {
+	if got, want := EthernetAddressFromMulticastIPv6Address(addr), tcpip.LinkAddress("\x33\x33\x0d\x0e\x0f\x1a"); got != want {
 		t.Fatalf("got EthernetAddressFromMulticastIPv6Address(%s) = %s, want = %s", addr, got, want)
 	}
 }

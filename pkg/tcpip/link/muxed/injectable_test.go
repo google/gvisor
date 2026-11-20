@@ -16,14 +16,13 @@ package muxed
 
 import (
 	"bytes"
-	"net"
+	"net/netip"
 	"os"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -113,8 +112,8 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 	}
 }
 
-func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tcpip.Address) {
-	dstIP := tcpip.AddrFromSlice(net.ParseIP("1.2.3.4").To4())
+func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, netip.Addr) {
+	dstIP := netip.AddrFrom4([4]byte{1, 2, 3, 4})
 	pair, err := unix.Socketpair(unix.AF_UNIX,
 		unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC|unix.SOCK_NONBLOCK, 0)
 	if err != nil {
@@ -124,7 +123,7 @@ func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tc
 	if err != nil {
 		t.Fatalf("fdbased.NewInjectable(%d, 6500, stack.CapabilityNone) failed: %s", pair[1], err)
 	}
-	routes := map[tcpip.Address]stack.InjectableLinkEndpoint{dstIP: underlyingEndpoint}
+	routes := map[netip.Addr]stack.InjectableLinkEndpoint{dstIP: underlyingEndpoint}
 	endpoint := NewInjectableEndpoint(routes)
 	return endpoint, os.NewFile(uintptr(pair[0]), "test route end"), dstIP
 }
