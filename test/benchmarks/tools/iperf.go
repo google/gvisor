@@ -55,7 +55,6 @@ func (i *Iperf) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("failed to parse bandwitdth from %s: %v", output, err)
 	}
-	b.SetBytes(128 * 1024) // Measure Bytes/sec for b.N, although below is iperf output.
 	ReportCustomMetric(b, bW*1024, "bandwidth" /*metric name*/, "bytes_per_second" /*unit*/)
 }
 
