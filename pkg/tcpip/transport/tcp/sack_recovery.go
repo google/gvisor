@@ -64,7 +64,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 			//
 			// We pass s.smss as the limit as the Step 2) requires that
 			// new data sent should be of size s.smss or less.
-			if sent := snd.maybeSendSegment(nextSeg, limit, end); !sent {
+			if sent := snd.maybeSendSegment(nextSeg, limit, end, sendNormal); !sent {
 				return dataSent
 			}
 			dataSent = true
