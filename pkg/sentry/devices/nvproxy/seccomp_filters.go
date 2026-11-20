@@ -142,6 +142,14 @@ func Filters(enabledCaps nvconf.DriverCaps) seccomp.SyscallRules {
 	var ioctlRules []seccomp.SyscallRule
 	ioctlRules = append(ioctlRules, frontendIoctlFilters(enabledCaps)...)
 	ioctlRules = append(ioctlRules, uvmIoctlFilters(enabledCaps)...)
+	if enabledCaps&nvconf.CapDisplay != 0 {
+		for _, cmd := range drmHostIoctls() {
+			ioctlRules = append(ioctlRules, seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(cmd),
+			})
+		}
+	}
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_IOCTL: seccomp.Or(ioctlRules),
 		unix.SYS_MMAP: seccomp.PerArg{

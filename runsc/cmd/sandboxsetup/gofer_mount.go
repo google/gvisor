@@ -25,6 +25,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -501,10 +502,15 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 }
 
 // ShouldExposeNvidiaDevice returns true if path refers to an Nvidia device
-// which should be exposed to the container.
+// which should be exposed to the container. display is true if the display
+// driver capability is allowed, with which nvproxy proxies nvidia-drm render
+// nodes.
 //
 // Precondition: nvproxy is enabled.
-func ShouldExposeNvidiaDevice(path string) bool {
+func ShouldExposeNvidiaDevice(path string, display bool) bool {
+	if regexp.MustCompile(`^/dev/dri/renderD(\d+)$`).MatchString(path) {
+		return display
+	}
 	if !strings.HasPrefix(path, "/dev/nvidia") {
 		return false
 	}
@@ -549,8 +555,16 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
 	tpuproxyEnabled := specutils.TPUProxyEnabled(spec, conf)
 	rdmaproxyEnabled := specutils.RDMAEnabled(spec, conf)
+	display := false
+	if nvproxyEnabled {
+		caps, err := specutils.NVProxyDriverCapsAllowed(conf)
+		if err != nil {
+			return err
+		}
+		display = caps&nvconf.CapDisplay != 0
+	}
 	for _, dev := range spec.Linux.Devices {
-		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
+		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path, display)) ||
 			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path)) ||
 			(rdmaproxyEnabled && ShouldExposeRDMADevice(dev.Path))
 		if !shouldMount {

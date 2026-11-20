@@ -383,6 +383,13 @@ gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-smoke-tests
 
+GPU_DISPLAY_CAPS := all,display
+gpu-display-tests: load-basic_python $(RUNTIME_BIN)
+	@$(call sudo,test/gpu:display_test,--runtime=runc -test.v $(ARGS))
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-allowed-driver-capabilities=$(GPU_DISPLAY_CAPS))
+	@$(call sudo,test/gpu:display_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: gpu-display-tests
+
 cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:smoke_test,--runtime=runc -test.v --cos-gpu $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)

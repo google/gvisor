@@ -20,9 +20,10 @@ import (
 
 func TestShouldExposeNvidiaDevice(t *testing.T) {
 	tests := []struct {
-		name string
-		path string
-		want bool
+		name    string
+		path    string
+		display bool
+		want    bool
 	}{
 		{name: "nvidiactl", path: "/dev/nvidiactl", want: true},
 		{name: "nvidia-uvm", path: "/dev/nvidia-uvm", want: true},
@@ -31,15 +32,19 @@ func TestShouldExposeNvidiaDevice(t *testing.T) {
 		{name: "nvidia42", path: "/dev/nvidia42", want: true},
 		{name: "nvidia-uvm-tools", path: "/dev/nvidia-uvm-tools", want: true},
 		{name: "nvidia-modeset", path: "/dev/nvidia-modeset", want: false},
+		{name: "nvidia-modeset with display", path: "/dev/nvidia-modeset", display: true, want: false},
+		{name: "render node", path: "/dev/dri/renderD128", want: false},
+		{name: "render node with display", path: "/dev/dri/renderD128", display: true, want: true},
+		{name: "card node with display", path: "/dev/dri/card1", display: true, want: false},
 		{name: "not nvidia", path: "/dev/sda", want: false},
 		{name: "nvidia prefix but not device", path: "/dev/nvidia-cap1", want: false},
 		{name: "empty", path: "", want: false},
 	}
 	for _, tst := range tests {
 		t.Run(tst.name, func(t *testing.T) {
-			got := ShouldExposeNvidiaDevice(tst.path)
+			got := ShouldExposeNvidiaDevice(tst.path, tst.display)
 			if got != tst.want {
-				t.Errorf("ShouldExposeNvidiaDevice(%q) = %v, want %v", tst.path, got, tst.want)
+				t.Errorf("ShouldExposeNvidiaDevice(%q, %t) = %v, want %v", tst.path, tst.display, got, tst.want)
 			}
 		})
 	}

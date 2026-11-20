@@ -378,6 +378,9 @@ func TestFilterCapabilities(t *testing.T) {
 				t.Fatalf("Filters(%q) returned a non-Or rule for SYS_IOCTL: %v (type: %T)", caps.String(), ioctlRules, ioctlRules)
 			}
 			wantTotalIoctls := wantFrontendIoctls + wantUvmIoctls
+			if caps&nvconf.CapDisplay != 0 {
+				wantTotalIoctls += len(drmHostIoctls())
+			}
 			if gotTotalIoctls := len(ioctlOr); gotTotalIoctls != wantTotalIoctls {
 				t.Errorf("Filters(%q) returned %d total ioctl rules, expected %d", caps.String(), gotTotalIoctls, wantTotalIoctls)
 			}
