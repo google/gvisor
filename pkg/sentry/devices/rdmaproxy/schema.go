@@ -123,6 +123,10 @@ type MethodSchema struct {
 	// Attrs maps attribute id -> type. Any attribute not present here causes
 	// the request to be rejected.
 	Attrs map[uint16]AttrType
+	// Validate, if set, vets the staged buffers, keyed by attribute id,
+	// before the request is forwarded. They are sentry-side copies, so the
+	// app cannot change them after the check.
+	Validate func(staged map[uint16][]byte) error
 }
 
 // schemas is the allowlist of supported (object, method) pairs, keyed by
