@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -21,6 +21,18 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/safecopy",
         "//pkg/tcpip",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "syserr_test",
+    size = "small",
+    srcs = ["syserr_test.go"],
+    embed = [":syserr"],
+    deps = [
+        "//pkg/errors",
+        "//pkg/errors/linuxerr",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

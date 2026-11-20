@@ -98,6 +98,7 @@ var (
 	ENODATA         = errors.New(errno.ENODATA, "no data available")
 	ETIME           = errors.New(errno.ETIME, "timer expired")
 	ENOSR           = errors.New(errno.ENOSR, "out of streams resources")
+	ENONET          = errors.New(errno.ENONET, "machine is not on the network")
 	ENOPKG          = errors.New(errno.ENOPKG, "package not installed")
 	EREMOTE         = errors.New(errno.EREMOTE, "object is remote")
 	ENOLINK         = errors.New(errno.ENOLINK, "link has been severed")
@@ -171,7 +172,6 @@ var (
 	// Errors equivalent to other errors.
 	EWOULDBLOCK = EAGAIN
 	EDEADLOCK   = EDEADLK
-	ENONET      = ENOENT
 	ENOATTR     = ENODATA
 	ENOTSUP     = EOPNOTSUPP
 )
@@ -252,7 +252,7 @@ var errorSlice = []*errors.Error{
 	errno.ENODATA:         ENODATA,
 	errno.ETIME:           ETIME,
 	errno.ENOSR:           ENOSR,
-	errno.ENOSR + 1:       errNotValidError, // No valid errno between ENOSR and ENOPKG.
+	errno.ENONET:          ENONET,
 	errno.ENOPKG:          ENOPKG,
 	errno.EREMOTE:         EREMOTE,
 	errno.ENOLINK:         ENOLINK,
