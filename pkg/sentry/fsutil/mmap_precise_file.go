@@ -205,22 +205,26 @@ func (f *MmapPreciseFile) MapInternal(fr memmap.FileRange, at hostarch.AccessTyp
 // +checklocks:f.mapsMu
 func (f *MmapPreciseFile) mapInternalSegment(fr *memmap.FileRange, seg mappingIterator, prot int, write bool) (safemem.Block, mappingIterator, syscall.Errno) {
 	addr := seg.Value().addr + uintptr(fr.Start-seg.Start())
+	mapRange := seg.Range().Intersect(*fr)
 	if !seg.Value().writable && write {
-		seg = f.mappings.Isolate(seg, *fr)
-		_, _, errno := unix.Syscall6(
-			unix.SYS_MMAP,
+		// Upgrade permissions in place with mprotect so that a failure leaves
+		// the existing mapping intact. If the segment spans more than one host
+		// VMA, mprotect can fail after it changes the protection of some of
+		// them; this is harmless since the segment stays marked read-only and
+		// the next upgrade retries.
+		_, _, errno := unix.Syscall(
+			unix.SYS_MPROTECT,
 			addr,
-			uintptr(seg.Range().Length()),
-			uintptr(prot),
-			unix.MAP_SHARED|unix.MAP_FIXED,
-			uintptr(f.fd),
-			uintptr(seg.Start()))
+			uintptr(mapRange.Length()),
+			uintptr(prot))
 		if errno != 0 {
 			return safemem.Block{}, seg, errno
 		}
+		seg = f.mappings.Isolate(seg, *fr)
 		seg.ValuePtr().writable = write
+		seg = f.mappings.Unisolate(seg)
+		mapRange = seg.Range().Intersect(*fr)
 	}
-	mapRange := seg.Range().Intersect(*fr)
 	fr.Start = mapRange.End
 	return unsafeBlockFromMapping(addr, int(mapRange.Length())), seg, 0
 }

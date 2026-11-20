@@ -62,6 +62,23 @@ type MmapCachedFile struct {
 	// mappings maps chunk start offsets to mappings of those chunks.
 	// +checklocks:mapsMu
 	mappings map[uint64]mapping `state:"nosave"`
+
+	// oldMappings holds superseded chunk mappings until the chunk's reference
+	// count reaches zero, preserving address validity for previously returned
+	// internal mappings.
+	//
+	// Chunk reference counts include references held by application mappings
+	// (see AddMapping), so an old mapping can stay in oldMappings for as long
+	// as the application maps the chunk, even if no internal user holds its
+	// address. Each old mapping uses chunkSize() bytes of sentry address
+	// space and one host VMA, and holds a reference on the file description
+	// that it maps. The number of old mappings for a chunk is bounded:
+	// forEachMappingBlockLocked adds at most one when it makes the chunk's
+	// mapping writable, and RegenerateMappings adds one for each call, which
+	// only occurs when the mapped file description changes.
+	//
+	// +checklocks:mapsMu
+	oldMappings map[uint64]oldMapping `state:"nosave"`
 }
 
 // chunkShift returns the binary log of the chunk size, which is the huge page
@@ -96,6 +113,13 @@ func pagesInChunk(fr memmap.FileRange, chunkStart uint64) int64 {
 type mapping struct {
 	addr     uintptr
 	writable bool
+}
+
+// oldMapping stores one or more superseded chunk mapping addresses inline for
+// the common single-entry case, spilling additional addresses into more.
+type oldMapping struct {
+	addr uintptr
+	more []uintptr
 }
 
 // SetFD implements MmapFile.SetFD.
@@ -233,17 +257,52 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
 	}
 }
 
+// unmapAndRemove unmaps m and all old mappings of the chunk at chunkStart,
+// and removes them from f.mappings and f.oldMappings.
+//
 // Preconditions:
 //   - f.mappings[chunkStart] == m.
 //
 // +checklocks:f.mapsMu
 func (f *MmapCachedFile) unmapAndRemove(chunkStart uint64, m mapping) {
-	if _, _, errno := unix.Syscall(unix.SYS_MUNMAP, m.addr, uintptr(chunkSize()), 0); errno != 0 {
-		// This leaks address space and is unexpected, but is otherwise
-		// harmless, so complain but don't panic.
-		log.Warningf("fsutil.MmapCachedFile: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
+	unmapCachedMapping(chunkStart, m.addr)
+	if len(f.oldMappings) != 0 {
+		if om, ok := f.oldMappings[chunkStart]; ok {
+			unmapCachedMapping(chunkStart, om.addr)
+			for _, addr := range om.more {
+				unmapCachedMapping(chunkStart, addr)
+			}
+			delete(f.oldMappings, chunkStart)
+		}
 	}
 	delete(f.mappings, chunkStart)
+}
+
+// unmapCachedMapping unmaps the mapping of the chunk at chunkStart that starts
+// at addr.
+func unmapCachedMapping(chunkStart uint64, addr uintptr) {
+	if _, _, errno := unix.Syscall(unix.SYS_MUNMAP, addr, uintptr(chunkSize()), 0); errno != 0 {
+		// This leaks address space and is unexpected, but is otherwise
+		// harmless, so complain but don't panic.
+		log.Warningf("fsutil.MmapCachedFile: failed to unmap mapping %#x for chunk %#x: %v", addr, chunkStart, errno)
+	}
+}
+
+// retainOldMappingLocked adds addr, a superseded mapping of the chunk at
+// chunkStart, to f.oldMappings. The mapping stays valid until the chunk's
+// reference count reaches zero.
+//
+// +checklocks:f.mapsMu
+func (f *MmapCachedFile) retainOldMappingLocked(chunkStart uint64, addr uintptr) {
+	if f.oldMappings == nil {
+		f.oldMappings = make(map[uint64]oldMapping)
+	}
+	if om, ok := f.oldMappings[chunkStart]; ok {
+		om.more = append(om.more, addr)
+		f.oldMappings[chunkStart] = om
+		return
+	}
+	f.oldMappings[chunkStart] = oldMapping{addr: addr}
 }
 
 // MapInternal implements memmap.File.MapInternal.
@@ -297,18 +356,37 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 			m = mapping{addr, write}
 			f.mappings[chunkStart] = m
 		} else if write && !m.writable {
-			addr, _, errno := unix.Syscall6(
-				unix.SYS_MMAP,
+			// Upgrade permissions in place with mprotect when the existing VMA
+			// has VM_MAYWRITE. Unlike mmap with MAP_FIXED, mprotect does not
+			// unmap m.addr if it fails.
+			_, _, errno := unix.Syscall(
+				unix.SYS_MPROTECT,
 				m.addr,
 				uintptr(chunkSize()),
-				uintptr(prot),
-				unix.MAP_SHARED|unix.MAP_FIXED,
-				uintptr(fd),
-				uintptr(chunkStart))
+				uintptr(prot))
+			if errno == unix.EACCES {
+				// m.addr may have been mapped from a read-only file description
+				// before f.fd was replaced via dup3, leaving the VMA without
+				// VM_MAYWRITE. Allocate a new writable mapping without
+				// MAP_FIXED and keep m.addr valid until all references drop.
+				var addr uintptr
+				addr, _, errno = unix.Syscall6(
+					unix.SYS_MMAP,
+					0,
+					uintptr(chunkSize()),
+					uintptr(prot),
+					unix.MAP_SHARED,
+					uintptr(fd),
+					uintptr(chunkStart))
+				if errno == 0 {
+					f.retainOldMappingLocked(chunkStart, m.addr)
+					m.addr = addr
+				}
+			}
 			if errno != 0 {
 				return errno
 			}
-			m = mapping{addr, write}
+			m.writable = true
 			f.mappings[chunkStart] = m
 		}
 		var startOff uint64
@@ -331,6 +409,18 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 // RegenerateMappings must be called when the file description mapped by f
 // changes, to replace existing mappings of the previous file description.
 //
+// RegenerateMappings does not change previously returned internal mappings.
+// They remain valid until their page references are released, but they
+// continue to map the previous file description. If the previous and new file
+// descriptions are not coherent, callers must invalidate cached internal
+// mappings (for example, by invalidating memmap translations) to make users
+// switch to the new file description.
+//
+// RegenerateMappings creates all new mappings before it replaces the existing
+// ones, so it temporarily uses twice the address space and host VMAs. If it
+// fails, f's mappings are unchanged and continue to map the previous file
+// description.
+//
 // Preconditions:
 //   - f.MappableRelease() is not called concurrently with, or before,
 //     f.RegenerateMappings().
@@ -344,23 +434,39 @@ func (f *MmapCachedFile) RegenerateMappings() error {
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
 
+	if len(f.mappings) == 0 {
+		return nil
+	}
+
+	newMappings := make(map[uint64]mapping, len(f.mappings))
 	for chunkStart, m := range f.mappings {
 		prot := unix.PROT_READ
 		if m.writable {
 			prot |= unix.PROT_WRITE
 		}
-		_, _, errno := unix.Syscall6(
+		addr, _, errno := unix.Syscall6(
 			unix.SYS_MMAP,
-			m.addr,
+			0,
 			uintptr(chunkSize()),
 			uintptr(prot),
-			unix.MAP_SHARED|unix.MAP_FIXED,
+			unix.MAP_SHARED,
 			uintptr(fd),
 			uintptr(chunkStart))
 		if errno != 0 {
+			for start, nm := range newMappings {
+				unmapCachedMapping(start, nm.addr)
+			}
 			return errno
 		}
+		newMappings[chunkStart] = mapping{addr, m.writable}
 	}
+	if f.oldMappings == nil {
+		f.oldMappings = make(map[uint64]oldMapping, len(f.mappings))
+	}
+	for chunkStart, m := range f.mappings {
+		f.retainOldMappingLocked(chunkStart, m.addr)
+	}
+	f.mappings = newMappings
 	return nil
 }
 
