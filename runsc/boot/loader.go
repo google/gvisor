@@ -837,7 +837,7 @@ func New(args Args) (*Loader, error) {
 		}
 		unix.Close(args.CPUDMALatencyFD)
 	}
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing, 0 /* tscOffset */)
+	p, err := createPlatform(args.Conf, amxDisabled(args.Conf, args.Spec), args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing, 0 /* tscOffset */)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -933,6 +933,9 @@ func New(args Args) (*Loader, error) {
 	// back to the guest.
 	if args.Conf.Platform == "systrap" {
 		cpufs = cpufs.UnsetFSGSBASE()
+	}
+	if !p.SupportsAMX() {
+		cpufs = cpufs.UnsetAMX()
 	}
 
 	maxFDLimit := kernel.MaxFdLimit
@@ -1234,7 +1237,25 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing, tscOffset uint64) (platform.Platform, error) {
+// amxDisabled returns true if conf or the CPU features annotation of spec hide
+// AMX from the application.
+func amxDisabled(conf *config.Config, spec *specs.Spec) bool {
+	if conf.AMX == config.AMXDisabled {
+		return true
+	}
+	value, ok := spec.Annotations[specutils.AnnotationCPUFeatures]
+	if !ok {
+		return false
+	}
+	for str := range strings.SplitSeq(value, ",") {
+		if str == "amx_tile" {
+			return false
+		}
+	}
+	return true
+}
+
+func createPlatform(conf *config.Config, disableAMX bool, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing, tscOffset uint64) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
@@ -1249,6 +1270,7 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 		ApplicationCores:       numCPU,
 		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
 		TSCOffset:              tscOffset,
+		DisableAMX:             disableAMX,
 		SandboxID:              sandboxID,
 		StartupTimer:           startupTimer,
 		PinRing:                pinRing,

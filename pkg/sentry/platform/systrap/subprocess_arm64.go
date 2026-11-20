@@ -206,8 +206,15 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 	}
 }
 
+// fpStateLen returns the number of bytes of ac's FP state to copy to and from
+// ThreadContext.FPState.
+func fpStateLen(ac *arch.Context64) int {
+	return archState.FpLen()
+}
+
 func (s *subprocess) restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 	ctx.TLS = uint64(ac.TLS())
+	ctx.FPLen = uint32(fpStateLen(ac))
 }
 
 func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {

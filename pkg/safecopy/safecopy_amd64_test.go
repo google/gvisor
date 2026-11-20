@@ -18,6 +18,7 @@
 package safecopy_x_test
 
 import (
+	"encoding/binary"
 	"testing"
 	"unsafe"
 
@@ -44,6 +45,24 @@ func TestCheckXstateSuccess(t *testing.T) {
 	state := fpu.NewState()
 	err := safecopy.CheckXstate(state.BytePointer())
 	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+// TestCheckXstateAMXTileData checks state with live AMX tile data, as saved by
+// a checkpoint of a thread using AMX. The test's threads lack AMX permission.
+func TestCheckXstateAMXTileData(t *testing.T) {
+	cpuid.Initialize()
+	fs := cpuid.HostFeatureSet()
+	if !fs.UseXsave() || fs.ValidXCR0Mask()&cpuid.XCR0AmxDataMask == 0 {
+		t.Skip("AMX isn't supported")
+	}
+	state := fpu.NewState()
+	state.EnableAMX()
+	const xstateBVOffset = 512
+	bv := binary.LittleEndian.Uint64(state[xstateBVOffset:])
+	binary.LittleEndian.PutUint64(state[xstateBVOffset:], bv|cpuid.XCR0AmxDataMask)
+	if err := safecopy.CheckXstate(state.BytePointer()); err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 }

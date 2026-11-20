@@ -22,9 +22,11 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
 
-func setSysmsgThreadArchVars(precompiledseccomp.Values, uint64) {}
+func setStubProcessArchVars(precompiledseccomp.Values, bool) {}
 
-func stubProcessArchRules() []seccomp.RuleSet {
+func setSysmsgThreadArchVars(precompiledseccomp.Values, uint64, bool) {}
+
+func stubProcessArchRules(precompiledseccomp.Values) []seccomp.RuleSet {
 	return nil
 }
 

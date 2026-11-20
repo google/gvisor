@@ -86,6 +86,39 @@ type UContext64 struct {
 	Sigset   linux.SignalSet
 }
 
+// signalFrameSize returns the size of the largest signal frame that
+// SignalSetup builds at the top of an alternate signal stack when the floating
+// point state is fpStateLen bytes long.
+func signalFrameSize(featureSet cpuid.FeatureSet, fpStateLen int) uint64 {
+	_, fpAlign := featureSet.ExtendedStateSize()
+	var (
+		uc   UContext64
+		info linux.SignalInfo
+	)
+	// The floating point state, aligned to fpAlign, then the restorer address,
+	// the ucontext and the siginfo, aligned to 16 bytes and offset by 8.
+	fpSize := uint64(fpStateLen) + uint64(fpAlign) - 1
+	frameSize := uint64(8+uc.SizeBytes()+info.SizeBytes()) + 15 + 8
+	return fpSize + frameSize
+}
+
+// AMXSignalFrameSize returns the size of the largest signal frame that
+// SignalSetup builds at the top of an alternate signal stack when the floating
+// point state holds AMX tile data.
+func AMXSignalFrameSize(featureSet cpuid.FeatureSet) uint64 {
+	return signalFrameSize(featureSet, fpu.AMXStateLen())
+}
+
+// MinSignalStackSize returns the size of the largest signal frame that
+// SignalSetup builds at the top of an alternate signal stack for an
+// application with featureSet.
+func MinSignalStackSize(featureSet cpuid.FeatureSet) uint64 {
+	if featureSet.ValidXCR0Mask()&cpuid.XCR0AmxDataMask != 0 {
+		return AMXSignalFrameSize(featureSet)
+	}
+	return signalFrameSize(featureSet, fpu.DefaultStateLen())
+}
+
 // SignalSetup implements Context.SignalSetup. (Compare to Linux's
 // arch/x86/kernel/signal.c:__setup_rt_frame().)
 func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error {
@@ -171,10 +204,14 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	if _, err := st.IO.CopyOut(context.Background(), fpStart, fpState[:fpu.FP_SW_FRAME_OFFSET], usermem.IOOpts{}); err != nil {
 		return err
 	}
+	xfeatures := fpu.XFEATURE_MASK_FPSSE | featureSet.ValidXCR0Mask()
+	if xfeatures&cpuid.XCR0AmxDataMask != 0 && !c.fpState.HasAMX() {
+		xfeatures &^= cpuid.XCR0AmxDataMask
+	}
 	fpsw := fpu.FPSoftwareFrame{
 		Magic1:       fpu.FP_XSTATE_MAGIC1,
 		ExtendedSize: uint32(fpSize),
-		Xfeatures:    fpu.XFEATURE_MASK_FPSSE | featureSet.ValidXCR0Mask(),
+		Xfeatures:    xfeatures,
 		XstateSize:   uint32(fpSize) - fpu.FP_XSTATE_MAGIC2_SIZE,
 	}
 	st.Bottom = fpStart + 512

@@ -41,6 +41,9 @@ type Config struct {
 
 	// TSCOffset is the offset to apply to the guest TSC.
 	TSCOffset uint64
+
+	// DisableAMX keeps AMX out of the guest even if KVM supports it.
+	DisableAMX bool
 }
 
 func (*machine) applyConfig(config *Config) error { return nil }

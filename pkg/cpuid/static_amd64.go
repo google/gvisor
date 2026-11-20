@@ -69,6 +69,15 @@ func (fs FeatureSet) ToStatic() Static {
 		s[in] = fs.Query(in)
 	}
 
+	// AMX tile palette subleaves.
+	if fs.HasFeature(X86FeatureAMX_TILE) {
+		maxPalette := fs.Query(In{Eax: uint32(amxTileInfo)}).Eax
+		for i := uint32(1); i <= maxPalette; i++ {
+			in := In{Eax: uint32(amxTileInfo), Ecx: i}
+			s[in] = fs.Query(in)
+		}
+	}
+
 	// Save all cache information.
 	out := fs.Query(In{Eax: uint32(featureInfo)})
 	for i := uint32(0); i < out.Ecx; i++ {
@@ -98,25 +107,20 @@ func (s Static) ToFeatureSet() FeatureSet {
 
 // normalize normalizes extended state information.
 func (s Static) normalize() {
-	// AMX is not supported, so hide it from applications.
-	// TODO(gvisor.dev/issues/9896): Implement AMX support.
-	for _, f := range []Feature{X86FeatureAMX_BF16, X86FeatureAMX_TILE, X86FeatureAMX_INT8} {
-		s.Remove(f)
-	}
 	fs := FeatureSet{s, hwCap{}}
 	if fs.HasFeature(X86FeatureXSAVE) {
 		in := In{Eax: uint32(xSaveInfo)}
 		out := s[in]
-		tileData := s[In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}]
-		out.Ebx = excludeAMXTileData(out.Ebx, tileData.Ebx, tileData.Eax)
-		out.Ecx = excludeAMXTileData(out.Ecx, tileData.Ebx, tileData.Eax)
-		// Override local FPU sizes, which must be fixed.
-		out.Ecx = max(out.Ecx, excludeAMXTileData(maxXsaveSize, amxTileDataOffset, amxTileDataSize))
-		out.Ebx = max(out.Ebx, excludeAMXTileData(xsaveSize, amxTileDataOffset, amxTileDataSize))
-		out.Eax &^= uint32(XCR0AmxCfgMask | XCR0AmxDataMask)
+		// Override local FPU sizes, which must be fixed. Without AMX, the
+		// XSAVE area ends before AMX tile data.
+		maxSize, size := maxXsaveSize, xsaveSize
+		if uint64(out.Eax)&XCR0AmxDataMask == 0 {
+			maxSize = excludeAMXTileData(maxXsaveSize, amxTileDataOffset, amxTileDataSize)
+			size = excludeAMXTileData(xsaveSize, amxTileDataOffset, amxTileDataSize)
+		}
+		out.Ecx = max(out.Ecx, maxSize)
+		out.Ebx = max(out.Ebx, size)
 		s[in] = out
-		delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})
-		delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent})
 	}
 }
 

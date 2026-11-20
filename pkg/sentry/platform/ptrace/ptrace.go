@@ -281,6 +281,11 @@ func (*PTrace) SupportsAddressSpaceIO() bool {
 	return false
 }
 
+// SupportsAMX implements platform.Platform.SupportsAMX.
+func (*PTrace) SupportsAMX() bool {
+	return false
+}
+
 // MapUnit implements platform.Platform.MapUnit.
 func (*PTrace) MapUnit() uint64 {
 	// The host kernel manages page tables and arbitrary-sized mappings

@@ -191,6 +191,10 @@ func (app *runApp) execute(t *Task) taskRunState {
 		}
 	}
 
+	if !t.syncFPStateSize() {
+		return (*runExit)(nil)
+	}
+
 	// We're about to switch to the application again. If there's still an
 	// unhandled SyscallRestartErrno that wasn't translated to an EINTR,
 	// restart the syscall that was interrupted. If there's a saved signal
@@ -359,6 +363,12 @@ func (app *runApp) execute(t *Task) taskRunState {
 				sig = linux.SIGBUS
 				info.Signo = int32(linux.SIGBUS)
 			}
+		}
+
+		if sig == linux.SIGILL && t.fpStateNeedsResize() {
+			// The platform may have refused an instruction that the task is
+			// now allowed to use. Retry it after resizing the FP state.
+			return (*runApp)(nil)
 		}
 
 		switch sig {

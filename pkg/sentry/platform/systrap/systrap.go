@@ -61,6 +61,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
@@ -300,7 +301,8 @@ func New(opts platform.Options) (*Systrap, error) {
 
 	if maxSysmsgThreads == 0 {
 		// CPUID information has been initialized at this point.
-		archState.Init()
+		amxEnabled = !opts.DisableAMX && cpuid.HostAMXEnabled()
+		archState.Init(amxEnabled)
 		// Base GOMAXPROCS has been set at this point.
 		maxSysmsgThreads = gomaxprocs.Base()
 		// Account for syscall thread.
@@ -372,6 +374,15 @@ func New(opts platform.Options) (*Systrap, error) {
 // SupportsAddressSpaceIO implements platform.Platform.SupportsAddressSpaceIO.
 func (*Systrap) SupportsAddressSpaceIO() bool {
 	return false
+}
+
+// amxEnabled is true if applications may use AMX. It is set by the first call
+// to New.
+var amxEnabled bool
+
+// SupportsAMX implements platform.Platform.SupportsAMX.
+func (*Systrap) SupportsAMX() bool {
+	return amxEnabled
 }
 
 // MapUnit implements platform.Platform.MapUnit.

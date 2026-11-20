@@ -191,7 +191,9 @@ type Task struct {
 	// signalStack is the alternate signal stack used by signal handlers for
 	// which the SA_ONSTACK flag is set.
 	//
-	// signalStack is exclusive to the task goroutine.
+	// signalStack is written by the task goroutine, or by its parent before
+	// the task starts, while holding either TaskSet.mu or
+	// tg.signalHandlers.mu. Other goroutines may read it while holding both.
 	signalStack linux.SignalStack
 
 	// signalQueue is a set of registered waiters for signal-related events.
@@ -1027,4 +1029,10 @@ func (t *Task) SetCoredumpFilter(coredumpFilter uint32) {
 // GetCoredumpFilter returns the task's coredump filter.
 func (t *Task) GetCoredumpFilter() uint32 {
 	return t.tg.coredumpFilter.Load()
+}
+
+// XcompPerm returns the dynamic XSAVE features granted to the task's thread
+// group.
+func (t *Task) XcompPerm() uint64 {
+	return t.tg.xcompPerm.Load()
 }

@@ -18,7 +18,11 @@
 package kvm
 
 import (
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 )
@@ -262,9 +266,18 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 var hasFSGSBASE bool
 
 // updateGlobalOnce does global initialization. It has to be called only once.
-func updateGlobalOnce(fd int) error {
+func updateGlobalOnce(fd int, config *Config) error {
 	hasFSGSBASE = cpuid.HostFeatureSet().UseFSGSBASE()
 	fpu.InitHostState()
+
+	// KVM only reports and allows AMX for guests once the process has guest
+	// permission for it, which must be requested before creating vCPUs. If
+	// this fails, KVM_GET_SUPPORTED_CPUID below won't include AMX.
+	if !config.DisableAMX && cpuid.HostAMXEnabled() {
+		if _, errno := hostsyscall.RawSyscall(unix.SYS_ARCH_PRCTL, linux.ARCH_REQ_XCOMP_GUEST_PERM, linux.XFEATURE_XTILEDATA, 0); errno != 0 {
+			log.Infof("Guests can't use AMX: ARCH_REQ_XCOMP_GUEST_PERM failed: %v", errno)
+		}
+	}
 
 	bitsForScaling = getBitsForScaling()
 	if err := updateSystemValues(int(fd)); err != nil {
@@ -275,6 +288,8 @@ func updateGlobalOnce(fd int) error {
 	}
 	// Calculate whether guestPCID is supported.
 	hasGuestPCID = fs.HasFeature(cpuid.X86FeaturePCID)
+	amx := cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask
+	hasGuestAMX = fs.ValidXCR0Mask()&amx == amx
 	// Create a static feature set from the KVM entries. Then, we
 	// explicitly set OSXSAVE, since this does not come in the feature
 	// entries, but can be provided when the relevant CR4 bit is set.

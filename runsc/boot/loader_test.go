@@ -763,3 +763,27 @@ func TestSignalUnkillablePolicyMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestAMXDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		amx         config.AMXPolicy
+		annotations map[string]string
+		want        bool
+	}{
+		{name: "auto", amx: config.AMXAuto, want: false},
+		{name: "disabled", amx: config.AMXDisabled, want: true},
+		{name: "annotation with amx_tile", amx: config.AMXAuto, annotations: map[string]string{specutils.AnnotationCPUFeatures: "avx,amx_tile"}, want: false},
+		{name: "annotation without amx_tile", amx: config.AMXAuto, annotations: map[string]string{specutils.AnnotationCPUFeatures: "avx,amx_int8"}, want: true},
+		{name: "empty annotation", amx: config.AMXAuto, annotations: map[string]string{specutils.AnnotationCPUFeatures: ""}, want: true},
+		{name: "disabled with amx_tile", amx: config.AMXDisabled, annotations: map[string]string{specutils.AnnotationCPUFeatures: "amx_tile"}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{AMX: tc.amx}
+			spec := &specs.Spec{Annotations: tc.annotations}
+			if got := amxDisabled(conf, spec); got != tc.want {
+				t.Errorf("amxDisabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

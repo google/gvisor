@@ -67,18 +67,22 @@ const (
 	FXSAVE_AREA_SIZE = 512
 )
 
-// LINT.IfChange
 const (
 	// SupportedXFeatureStates contains all xfeatures supported right now.
 	//
-	// TODO(gvisor.dev/issues/9896): Implement AMX support.
 	// TODO(gvisor.dev/issues/10087): Implement PKRU support.
 	SupportedXFeatureStates = cpuid.XSAVEFeatureX87 |
 		cpuid.XSAVEFeatureSSE |
 		cpuid.XSAVEFeatureAVX |
 		cpuid.XSAVEFeatureAVX512op |
 		cpuid.XSAVEFeatureAVX512zmm0 |
-		cpuid.XSAVEFeatureAVX512zmm16
+		cpuid.XSAVEFeatureAVX512zmm16 |
+		cpuid.XCR0AmxCfgMask |
+		cpuid.XCR0AmxDataMask
+
+	// DefaultXFeatureStates contains the supported xfeatures other than AMX.
+	// A thread group uses AMX only after arch_prctl(ARCH_REQ_XCOMP_PERM).
+	DefaultXFeatureStates = SupportedXFeatureStates &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 
 	// ignoredXFeatureStates contains those xfeatures that may be
 	// present in a buffer but are safe to skip during restore.
@@ -90,24 +94,19 @@ const (
 		cpuid.XSAVEFeaturePKRU
 )
 
-// LINT.ThenChange(../../platform/systrap/sysmsg/sysmsg_offsets.h)
-
 // initX86FPState (defined in asm files) sets up initial state.
 func initX86FPState(data *byte, useXsave bool)
 
 func newX86FPStateSlice() State {
 	maxsize, align := cpuid.HostFeatureSet().ExtendedStateSize()
-	// We need capacity to be large enough to hold AMX bytes because of
-	// ptrace. PTRACE_SETREGSET/GETREGSET assume that AMX portions should
-	// always be used.
-	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+	// Capacity covers AMX state, which EnableAMX extends into.
 	capacity := maxsize + FP_XSTATE_MAGIC2_SIZE
 	size := maxsize - cpuid.HostFeatureSet().AMXExtendedStateSize()
 	// Always use at least 4096 bytes.
 	//
-	// For the KVM platform, this state is a fixed 4096 bytes, so make sure
-	// that the underlying array is at _least_ that size otherwise we will
-	// corrupt random memory. This is not a pleasant thing to debug.
+	// The KVM platform assumes that the state is at least 4096 bytes, so
+	// make sure that the underlying array is at _least_ that size otherwise
+	// we will corrupt random memory. This is not a pleasant thing to debug.
 	if capacity < 4096 {
 		capacity = 4096
 	}
@@ -123,9 +122,10 @@ func (s State) Slice() []byte {
 // NewState returns an initialized floating point state.
 //
 // The returned state is large enough to store all floating point state
-// supported by host, even if the app won't use much of it due to a restricted
-// FeatureSet. Since they may still be able to see state not advertised by
-// CPUID we must ensure it does not contain any sentry state.
+// supported by host except AMX tile data (see EnableAMX), even if the app
+// won't use much of it due to a restricted FeatureSet. Since they may still
+// be able to see state not advertised by CPUID we must ensure it does not
+// contain any sentry state.
 func NewState() State {
 	f := newX86FPStateSlice()
 	initX86FPState(&f[0], cpuid.HostFeatureSet().UseXsave())
@@ -134,9 +134,61 @@ func NewState() State {
 
 // Fork creates and returns an identical copy of the x86 floating point state.
 func (s *State) Fork() State {
-	n := newX86FPStateSlice()
+	n := newX86FPStateSlice()[:len(*s)]
 	copy(n, *s)
 	return n
+}
+
+// amxStateLen caches AMXStateLen.
+var amxStateLen = sync.OnceValue(func() int {
+	maxsize, _ := cpuid.HostFeatureSet().ExtendedStateSize()
+	return int(maxsize) + FP_XSTATE_MAGIC2_SIZE
+})
+
+// AMXStateLen returns the length of a State that holds AMX tile data state.
+func AMXStateLen() int {
+	return amxStateLen()
+}
+
+// defaultStateLen caches DefaultStateLen.
+var defaultStateLen = sync.OnceValue(func() int {
+	return len(newX86FPStateSlice())
+})
+
+// DefaultStateLen returns the length of a State that doesn't hold AMX tile
+// data state. Tile data starts FP_XSTATE_MAGIC2_SIZE bytes earlier in a State
+// that holds it.
+func DefaultStateLen() int {
+	return defaultStateLen()
+}
+
+// ClearUnusedTileData clears the tile data of s if s holds tile data state
+// but XSTATE_BV says that tile data is in its initial configuration.
+func (s State) ClearUnusedTileData() {
+	if !s.HasAMX() || hostarch.ByteOrder.Uint64(s[xstateBVOffset:])&cpuid.XCR0AmxDataMask != 0 {
+		return
+	}
+	clear(s[defaultStateLen()-FP_XSTATE_MAGIC2_SIZE : len(s)-FP_XSTATE_MAGIC2_SIZE])
+}
+
+// HasAMX returns true if s is large enough to hold AMX tile data state.
+func (s State) HasAMX() bool {
+	return len(s) >= amxStateLen()
+}
+
+// EnableAMX extends s to hold AMX tile data state, if it does not already.
+func (s *State) EnableAMX() {
+	n := amxStateLen()
+	if len(*s) >= n {
+		return
+	}
+	f := (*s)[:n]
+	// Only XSAVE writes past the length of s, and it sets XTILEDATA in
+	// XSTATE_BV when it writes tile data there.
+	if len(*s) < xstateBVOffset+8 || hostarch.ByteOrder.Uint64(f[xstateBVOffset:])&cpuid.XCR0AmxDataMask == 0 {
+		clear(f[len(*s)-FP_XSTATE_MAGIC2_SIZE:])
+	}
+	*s = f
 }
 
 // Reset resets s to its initial state.
@@ -157,10 +209,10 @@ var (
 func InitHostState() {
 	initHostStateOnce.Do(func() {
 		featureSet := cpuid.HostFeatureSet()
-		hostXCR0Mask = featureSet.ValidXCR0Mask()
+		// Sentry threads never use AMX.
+		hostXCR0Mask = featureSet.ValidXCR0Mask() &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 		hostUseXsave = featureSet.UseXsave()
 		hostFPSize, _ = featureSet.ExtendedStateSize()
-		// TODO(gvisor.dev/issues/9896): Implement AMX Support.
 		hostFPSize = hostFPSize - featureSet.AMXExtendedStateSize()
 	})
 }
@@ -300,6 +352,10 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 	if len(f) >= minXstateBytes {
 		// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
 		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:]) &^ ignoredXFeatureStates
+		if xstateBV&cpuid.XCR0AmxDataMask != 0 && !f.HasAMX() {
+			// Tile data is restored only into state that holds it.
+			xstateBV &^= cpuid.XCR0AmxDataMask
+		}
 		allowedMask := featureSet.ValidXCR0Mask() & SupportedXFeatureStates
 		if disallowedXstateBV := xstateBV &^ allowedMask; disallowedXstateBV != 0 {
 			// FIXME: b/478302010, b/478302512: If the app is using features
@@ -310,7 +366,11 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 			// using supported but disallowed features then it may no longer be
 			// migratable cross-CPU, but it's still better to not crash the
 			// app.)
-			supportedMask := cpuid.HostFeatureSet().ValidXCR0Mask() & SupportedXFeatureStates
+			//
+			// Unlike other disallowed features, AMX state that featureSet
+			// disallows is an error, because platforms that hide AMX can't
+			// restore it.
+			supportedMask := cpuid.HostFeatureSet().ValidXCR0Mask() & DefaultXFeatureStates
 			if unsupportedXstateBV := xstateBV &^ supportedMask; unsupportedXstateBV == 0 {
 				warnDisallowedXFeatureOnce.Do(func() {
 					log.Warningf("Application using supported but disallowed xfeatures %#x", disallowedXstateBV)
@@ -388,12 +448,13 @@ func (s *State) AfterLoad() {
 	// is saved, the state we care about is guaranteed to be a subset of
 	// new state. Later optimizations can use less space when using a
 	// smaller state component bitmap. Intel SDM Volume 1 Chapter 13 has
-	// more info.
+	// more info. The new state is extended with EnableAMX below if the saved
+	// state uses tile data.
 	*s = NewState()
 
-	// x86FPState always contains all the FP state supported by the host.
-	// We may have come from a newer machine that supports additional state
-	// which we cannot restore.
+	// x86FPState contains all the FP state supported by the host, except AMX
+	// tile data if it was not in use. We may have come from a newer machine
+	// that supports additional state which we cannot restore.
 	//
 	// The x86 FP state areas are backwards compatible, so we can simply
 	// truncate the additional floating point state.
@@ -404,10 +465,15 @@ func (s *State) AfterLoad() {
 	// this state, we must verify here that there is no in-use state
 	// (according to XSTATE_BV) which we do not support.
 	// What do we support?
+	amx := cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask
 	supportedBV := fxsaveBV
 	hostFeatureSet := cpuid.HostFeatureSet()
+	hostAMX := cpuid.HostAMXEnabled()
 	if hostFeatureSet.UseXsave() {
 		supportedBV = hostFeatureSet.ValidXCR0Mask() & SupportedXFeatureStates
+		if !hostAMX {
+			supportedBV &^= amx
+		}
 	}
 
 	// What was in use?
@@ -415,10 +481,21 @@ func (s *State) AfterLoad() {
 	if len(old) >= xstateBVOffset+8 {
 		savedBV = hostarch.ByteOrder.Uint64(old[xstateBVOffset:])
 	}
+	// If the state doesn't hold tile data, the task used AMX without
+	// permission (some platforms don't prevent this), and its tile data was
+	// not saved. If the host has no AMX, a task that was granted AMX makes
+	// restore fail later.
+	if savedBV&amx != 0 && (len(old) <= len(s.Slice()) || !hostAMX) {
+		savedBV &^= amx
+		hostarch.ByteOrder.PutUint64(old[xstateBVOffset:], savedBV)
+	}
 
 	// Supported features must be a superset of saved features.
 	if savedBV&^(supportedBV|ignoredXFeatureStates) != 0 {
 		panic(ErrLoadingState{supportedFeatures: supportedBV, savedFeatures: savedBV})
+	}
+	if savedBV&cpuid.XCR0AmxDataMask != 0 {
+		s.EnableAMX()
 	}
 	// ignoredXFeatureStates needs to be cleared from savedXstate, otherwise
 	// XRSTOR could fault if the current CPU does not support one of these

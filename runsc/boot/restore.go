@@ -393,7 +393,7 @@ func (r *restorer) restore(l *Loader) error {
 	r.timer.Reached("specs validated")
 
 	tscOffset, willJumpBackwards := r.computeTSCOffset()
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
+	p, err := createPlatform(l.root.conf, amxDisabled(l.root.conf, l.root.spec), l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}

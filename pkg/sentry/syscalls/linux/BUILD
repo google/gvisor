@@ -78,6 +78,7 @@ go_library(
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/cpuid",
         "//pkg/ebpf",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",

@@ -344,6 +344,8 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	t.rseqSignature = 0
 	t.oldRSeqCPUAddr = 0
 	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
+	// Dynamic XSAVE feature permissions are not preserved across execve.
+	t.tg.xcompPerm.Store(0)
 	t.tg.pidns.owner.mu.Unlock()
 
 	t.UnshareFdTable(int32(t.fdTable.CurrentMaxFDs()))

@@ -349,6 +349,9 @@ type Config struct {
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool `flag:"cpu-num-from-quota"`
 
+	// AMX controls whether Intel AMX is exposed to the application.
+	AMX AMXPolicy `flag:"amx"`
+
 	// Allows overriding of flags in OCI annotations.
 	AllowFlagOverride bool `flag:"allow-flag-override"`
 
@@ -1308,6 +1311,53 @@ func (n InodeNumbers) String() string {
 		return "virtual"
 	default:
 		panic(fmt.Sprintf("Invalid inode numbers mode %d", n))
+	}
+}
+
+// AMXPolicy controls whether Intel AMX is exposed to the application.
+type AMXPolicy int
+
+const (
+	// AMXAuto exposes AMX if the host and the platform support it.
+	AMXAuto AMXPolicy = iota
+
+	// AMXDisabled never exposes AMX, so that checkpoints can be restored on
+	// hosts without AMX.
+	AMXDisabled
+)
+
+// Ptr returns a pointer to p.
+func (p AMXPolicy) Ptr() *AMXPolicy {
+	return &p
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *AMXPolicy) Set(v string) error {
+	switch v {
+	case "auto":
+		*p = AMXAuto
+	case "disabled":
+		*p = AMXDisabled
+	default:
+		return fmt.Errorf("invalid AMX policy %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (p *AMXPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p AMXPolicy) String() string {
+	switch p {
+	case AMXAuto:
+		return "auto"
+	case AMXDisabled:
+		return "disabled"
+	default:
+		panic(fmt.Sprintf("Invalid AMX policy %d", p))
 	}
 }
 

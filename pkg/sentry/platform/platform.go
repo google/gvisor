@@ -54,6 +54,10 @@ type Platform interface {
 	// is supported.
 	HaveGlobalMemoryBarrier() bool
 
+	// SupportsAMX returns true if applications may use AMX, which requires
+	// that Contexts returned by this Platform save and restore AMX state.
+	SupportsAMX() bool
+
 	// MapUnit returns the alignment used for optional mappings into this
 	// platform's AddressSpaces. Higher values indicate lower per-page costs
 	// for AddressSpace.MapFile. As a special case, a MapUnit of 0 indicates
@@ -620,6 +624,9 @@ type Options struct {
 
 	// DisableFastPath, if true, completely disables the Systrap fast path.
 	DisableFastPath bool
+
+	// DisableAMX hides AMX from the application even if the host supports it.
+	DisableAMX bool
 
 	// ApplicationCores is used by KVM to determine the correct amount of
 	// vCPUs to create.

@@ -87,7 +87,7 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	// Ensure global initialization is done.
 	initIoeventfdMMIO()
 	globalOnce.Do(func() {
-		globalErr = updateGlobalOnce(int(fd))
+		globalErr = updateGlobalOnce(int(fd), &config)
 	})
 	if globalErr != nil {
 		return nil, globalErr
@@ -136,6 +136,15 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 // SupportsAddressSpaceIO implements platform.Platform.SupportsAddressSpaceIO.
 func (*KVM) SupportsAddressSpaceIO() bool {
 	return false
+}
+
+// hasGuestAMX indicates whether KVM allows AMX in guests. It is set by
+// updateGlobalOnce.
+var hasGuestAMX bool
+
+// SupportsAMX implements platform.Platform.SupportsAMX.
+func (*KVM) SupportsAMX() bool {
+	return hasGuestAMX
 }
 
 // MapUnit implements platform.Platform.MapUnit.
@@ -240,6 +249,7 @@ func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 		StartupTimer:     opts.StartupTimer,
 		PinRing:          opts.PinRing,
 		TSCOffset:        opts.TSCOffset,
+		DisableAMX:       opts.DisableAMX,
 	})
 }
 

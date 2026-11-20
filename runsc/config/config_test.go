@@ -41,6 +41,9 @@ func TestDefault(t *testing.T) {
 	if c.UseNetworkProxy() {
 		t.Errorf("UseNetworkProxy()=true, want false")
 	}
+	if c.AMX != AMXAuto {
+		t.Errorf("AMX=%v, want auto", c.AMX)
+	}
 
 	// All defaults doesn't require setting flags.
 	flags := c.ToFlags()
@@ -1304,6 +1307,31 @@ func TestSignalUnkillablePolicy(t *testing.T) {
 		}()
 		_ = SignalUnkillablePolicy(-1).String()
 	})
+}
+
+func TestAMXPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		val  string
+		want AMXPolicy
+	}{
+		{val: "auto", want: AMXAuto},
+		{val: "disabled", want: AMXDisabled},
+	} {
+		var p AMXPolicy
+		if err := p.Set(tc.val); err != nil {
+			t.Fatalf("p.Set(%q) failed: %v", tc.val, err)
+		}
+		if p != tc.want {
+			t.Errorf("p.Set(%q): got %v, want %v", tc.val, p, tc.want)
+		}
+		if p.String() != tc.val {
+			t.Errorf("p.String() = %q, want %q", p.String(), tc.val)
+		}
+	}
+	var p AMXPolicy
+	if err := p.Set("invalid"); err == nil {
+		t.Errorf("p.Set(%q) succeeded, want error", "invalid")
+	}
 }
 
 func TestSandboxCPUPolicy(t *testing.T) {

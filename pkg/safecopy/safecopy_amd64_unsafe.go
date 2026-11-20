@@ -40,7 +40,8 @@ func initializeArchAddresses() {
 func checkXstate(addr uintptr) (fault uintptr, sig int32, mxcsr uint32, cw uint16)
 func addrOfCheckXstate() uintptr
 
-// CheckXstate verifies that xstate can be restored by the xrstor instruction.
+// CheckXstate verifies that xstate, except for its AMX state components, can be
+// restored by the xrstor instruction.
 func CheckXstate(state *byte) error {
 	_, sig, _, _ := checkXstate(uintptr(unsafe.Pointer(state)))
 	return errorFromFaultSignal(uintptr(unsafe.Pointer(state)), sig)

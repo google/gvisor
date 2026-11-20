@@ -92,6 +92,9 @@ const (
 
 	// AT_SYSINFO_EHDR is the address of the VDSO.
 	AT_SYSINFO_EHDR = 33
+
+	// AT_MINSIGSTKSZ is the minimal stack size for signal delivery.
+	AT_MINSIGSTKSZ = 51
 )
 
 // ELF ET_CORE and ptrace GETREGSET/SETREGSET register set types.

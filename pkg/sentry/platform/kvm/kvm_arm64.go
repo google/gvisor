@@ -67,7 +67,7 @@ type kvmVcpuEvents struct {
 }
 
 // updateGlobalOnce does global initialization. It has to be called only once.
-func updateGlobalOnce(fd int) error {
+func updateGlobalOnce(fd int, _ *Config) error {
 	if err := disableHostPAC(); err != nil {
 		return err
 	}
