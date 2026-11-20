@@ -425,6 +425,19 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		timer:      timer,
 	}
 
+	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
+	if err != nil {
+		return fmt.Errorf("creating statefile reader: %w", err)
+	}
+	stateFile = nil
+	timer.Reached("created statefile reader")
+
+	checkpointVersion := cm.restorer.metadata[VersionKey]
+	currentVersion := version.Version()
+	if checkpointVersion != currentVersion {
+		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
+	}
+
 	// Create the main MemoryFile.
 	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
 	if err != nil {
@@ -441,13 +454,6 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 		pagesFile = nil
 		timer.Reached("created async MF loader")
 	}
-
-	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
-	if err != nil {
-		return fmt.Errorf("creating statefile reader: %w", err)
-	}
-	stateFile = nil
-	timer.Reached("created statefile reader")
 
 	cm.l.state = restoringUnstarted
 
@@ -488,11 +494,6 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 	}
 	cm.restorer.checkpointedSpecs = specs
 
-	checkpointVersion := cm.restorer.metadata[VersionKey]
-	currentVersion := version.Version()
-	if checkpointVersion != currentVersion {
-		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
-	}
 	if saved := cm.restorer.metadata[noRootContainerKey] == "true"; saved != cm.l.noRootContainer.enabled {
 		return fmt.Errorf("checkpoint taken with no-root-container=%t cannot be restored with no-root-container=%t", saved, cm.l.noRootContainer.enabled)
 	}
@@ -604,7 +605,9 @@ func (cm *containerManager) onRestoreFailed(err error) {
 	cm.l.state = restoreFailed
 	cm.l.restoreErr = err
 	cm.l.mu.Unlock()
-	cm.l.restoreDone.Broadcast()
+	if cm.l.restoreDone != nil {
+		cm.l.restoreDone.Broadcast()
+	}
 	cm.restorer = nil
 }
 
