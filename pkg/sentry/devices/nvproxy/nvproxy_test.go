@@ -384,3 +384,22 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// TestVidEngPerfmonSampleSince550 checks that
+// NV2080_CTRL_CMD_PERF_GET_VID_ENG_PERFMON_SAMPLE is proxied with the compute
+// or utility capability from driver 550.40.07, which added it, and not before.
+func TestVidEngPerfmonSampleSince550(t *testing.T) {
+	Init()
+	added := nvconf.NewDriverVersion(550, 40, 7)
+	for version, entry := range abis {
+		h, ok := entry.cons().controlCmd[nvgpu.NV2080_CTRL_CMD_PERF_GET_VID_ENG_PERFMON_SAMPLE]
+		// IsGreaterThan is also true for an equal version.
+		if want := version.IsGreaterThan(added); ok != want {
+			t.Errorf("driver %v proxies NV2080_CTRL_CMD_PERF_GET_VID_ENG_PERFMON_SAMPLE: %t, want %t", version, ok, want)
+			continue
+		}
+		if ok && h.capSet != compUtil {
+			t.Errorf("driver %v gates NV2080_CTRL_CMD_PERF_GET_VID_ENG_PERFMON_SAMPLE on %v, want %v", version, h.capSet, compUtil)
+		}
+	}
+}
