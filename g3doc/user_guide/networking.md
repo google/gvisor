@@ -2,11 +2,15 @@
 
 [TOC]
 
-gVisor implements its own network stack called [netstack][netstack]. All aspects
-of the network stack are handled inside the Sentry — including TCP connection
-state, control messages, and packet assembly — keeping it isolated from the host
-network stack. Data link layer packets are written directly to the virtual
-device inside the network namespace setup by Docker or Kubernetes.
+gVisor implements its own network stack called [netstack][netstack]. TCP
+connection state and control messages stay in the Sentry. With the default
+`--gso=true`, the Sentry offloads egress segmentation to the host kernel when
+the device supports GSO. `runsc` sets `PACKET_VNET_HDR` on its packet socket,
+the Sentry writes a virtio network header and one large frame, and the host
+kernel splits that frame. When the host cannot offload segmentation,
+`--software-gso` (default true) makes the Sentry split the frame to the link
+MTU. Data link layer packets are written to the virtual device in the network
+namespace set up by Docker or Kubernetes.
 
 Configuring the network stack may provide performance benefits, but isn't the
 only step to optimizing gVisor performance. See the
@@ -177,6 +181,8 @@ runtime configuration that annotations cannot exceed:
 ```
 
 ### Disable GSO {#gso}
+
+`--gso` defaults to true. It enables the host egress offload described above.
 
 If your Linux is older than 4.14.77, you can disable Generic Segmentation
 Offload (GSO) to run with a kernel that is newer than 3.17. Add the
