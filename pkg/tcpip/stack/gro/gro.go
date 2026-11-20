@@ -214,6 +214,9 @@ func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *st
 		groPkt = nil
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
+		if groPkt.pkt.GROSegmentSize == 0 {
+			groPkt.pkt.GROSegmentSize = uint16(groPkt.payloadSize())
+		}
 		pkt.Data().TrimFront(len(ipHdr) + int(dataOff))
 		groPkt.pkt.Data().Merge(pkt.Data())
 		// Update the IP total length.

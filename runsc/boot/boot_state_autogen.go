@@ -17,6 +17,7 @@ func (c *sandboxNetstackCreator) StateFields() []string {
 		"clock",
 		"allowPacketEndpointWrite",
 		"allowLiveTCPMigration",
+		"tcpDelayedACK",
 		"uid",
 	}
 }
@@ -29,7 +30,8 @@ func (c *sandboxNetstackCreator) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &c.clock)
 	stateSinkObject.SaveBool(1, &c.allowPacketEndpointWrite)
 	stateSinkObject.SaveBool(2, &c.allowLiveTCPMigration)
-	stateSinkObject.Save(3, &c.uid)
+	stateSinkObject.Save(3, &c.tcpDelayedACK)
+	stateSinkObject.Save(4, &c.uid)
 }
 
 func (c *sandboxNetstackCreator) afterLoad(context.Context) {}
@@ -39,7 +41,8 @@ func (c *sandboxNetstackCreator) StateLoad(ctx context.Context, stateSourceObjec
 	stateSourceObject.Load(0, &c.clock)
 	stateSourceObject.LoadBool(1, &c.allowPacketEndpointWrite)
 	stateSourceObject.LoadBool(2, &c.allowLiveTCPMigration)
-	stateSourceObject.Load(3, &c.uid)
+	stateSourceObject.Load(3, &c.tcpDelayedACK)
+	stateSourceObject.Load(4, &c.uid)
 }
 
 func init() {

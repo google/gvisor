@@ -250,6 +250,7 @@ func (b *iovecBuffer) StateFields() []string {
 		"views",
 		"sizes",
 		"skipsVnetHdr",
+		"vnetHdr",
 		"pulledIndex",
 	}
 }
@@ -262,7 +263,8 @@ func (b *iovecBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &b.views)
 	stateSinkObject.Save(1, &b.sizes)
 	stateSinkObject.SaveBool(2, &b.skipsVnetHdr)
-	stateSinkObject.SaveInt(3, &b.pulledIndex)
+	stateSinkObject.Save(3, &b.vnetHdr)
+	stateSinkObject.SaveInt(4, &b.pulledIndex)
 }
 
 func (b *iovecBuffer) afterLoad(context.Context) {}
@@ -272,7 +274,8 @@ func (b *iovecBuffer) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(0, &b.views)
 	stateSourceObject.Load(1, &b.sizes)
 	stateSourceObject.LoadBool(2, &b.skipsVnetHdr)
-	stateSourceObject.LoadInt(3, &b.pulledIndex)
+	stateSourceObject.Load(3, &b.vnetHdr)
+	stateSourceObject.LoadInt(4, &b.pulledIndex)
 }
 
 func (d *readVDispatcher) StateTypeName() string {

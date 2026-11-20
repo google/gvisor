@@ -704,6 +704,7 @@ func (p *protocol) StateFields() []string {
 		"congestionControl",
 		"availableCongestionControl",
 		"moderateReceiveBuffer",
+		"delayedACK",
 		"lingerTimeout",
 		"timeWaitTimeout",
 		"timeWaitReuse",
@@ -730,14 +731,15 @@ func (p *protocol) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveString(7, &p.congestionControl)
 	stateSinkObject.Save(8, &p.availableCongestionControl)
 	stateSinkObject.SaveBool(9, &p.moderateReceiveBuffer)
-	stateSinkObject.Save(10, &p.lingerTimeout)
-	stateSinkObject.Save(11, &p.timeWaitTimeout)
-	stateSinkObject.Save(12, &p.timeWaitReuse)
-	stateSinkObject.Save(13, &p.minRTO)
-	stateSinkObject.Save(14, &p.maxRTO)
-	stateSinkObject.SaveUint32(15, &p.maxRetries)
-	stateSinkObject.SaveUint8(16, &p.synRetries)
-	stateSinkObject.Save(17, &p.dispatcher)
+	stateSinkObject.SaveBool(10, &p.delayedACK)
+	stateSinkObject.Save(11, &p.lingerTimeout)
+	stateSinkObject.Save(12, &p.timeWaitTimeout)
+	stateSinkObject.Save(13, &p.timeWaitReuse)
+	stateSinkObject.Save(14, &p.minRTO)
+	stateSinkObject.Save(15, &p.maxRTO)
+	stateSinkObject.SaveUint32(16, &p.maxRetries)
+	stateSinkObject.SaveUint8(17, &p.synRetries)
+	stateSinkObject.Save(18, &p.dispatcher)
 }
 
 // +checklocksignore
@@ -752,14 +754,15 @@ func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.LoadString(7, &p.congestionControl)
 	stateSourceObject.Load(8, &p.availableCongestionControl)
 	stateSourceObject.LoadBool(9, &p.moderateReceiveBuffer)
-	stateSourceObject.Load(10, &p.lingerTimeout)
-	stateSourceObject.Load(11, &p.timeWaitTimeout)
-	stateSourceObject.Load(12, &p.timeWaitReuse)
-	stateSourceObject.Load(13, &p.minRTO)
-	stateSourceObject.Load(14, &p.maxRTO)
-	stateSourceObject.LoadUint32(15, &p.maxRetries)
-	stateSourceObject.LoadUint8(16, &p.synRetries)
-	stateSourceObject.Load(17, &p.dispatcher)
+	stateSourceObject.LoadBool(10, &p.delayedACK)
+	stateSourceObject.Load(11, &p.lingerTimeout)
+	stateSourceObject.Load(12, &p.timeWaitTimeout)
+	stateSourceObject.Load(13, &p.timeWaitReuse)
+	stateSourceObject.Load(14, &p.minRTO)
+	stateSourceObject.Load(15, &p.maxRTO)
+	stateSourceObject.LoadUint32(16, &p.maxRetries)
+	stateSourceObject.LoadUint8(17, &p.synRetries)
+	stateSourceObject.Load(18, &p.dispatcher)
 	stateSourceObject.AfterLoadTo(p)
 }
 
@@ -825,6 +828,13 @@ func (r *receiver) StateFields() []string {
 		"closed",
 		"pendingRcvdSegments",
 		"lastRcvdAckTime",
+		"delayedACK",
+		"quickAcks",
+		"rcvMSS",
+		"lastSegSize",
+		"ackFlags",
+		"pingpong",
+		"responseDeadline",
 	}
 }
 
@@ -841,6 +851,13 @@ func (r *receiver) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveBool(5, &r.closed)
 	stateSinkObject.Save(6, &r.pendingRcvdSegments)
 	stateSinkObject.Save(7, &r.lastRcvdAckTime)
+	stateSinkObject.SaveBool(8, &r.delayedACK)
+	stateSinkObject.SaveInt(9, &r.quickAcks)
+	stateSinkObject.SaveInt(10, &r.rcvMSS)
+	stateSinkObject.SaveInt(11, &r.lastSegSize)
+	stateSinkObject.SaveUint8(12, (*uint8)(&r.ackFlags))
+	stateSinkObject.SaveBool(13, &r.pingpong)
+	stateSinkObject.Save(14, &r.responseDeadline)
 }
 
 func (r *receiver) afterLoad(context.Context) {}
@@ -855,6 +872,13 @@ func (r *receiver) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.LoadBool(5, &r.closed)
 	stateSourceObject.Load(6, &r.pendingRcvdSegments)
 	stateSourceObject.Load(7, &r.lastRcvdAckTime)
+	stateSourceObject.LoadBool(8, &r.delayedACK)
+	stateSourceObject.LoadInt(9, &r.quickAcks)
+	stateSourceObject.LoadInt(10, &r.rcvMSS)
+	stateSourceObject.LoadInt(11, &r.lastSegSize)
+	stateSourceObject.LoadUint8(12, (*uint8)(&r.ackFlags))
+	stateSourceObject.LoadBool(13, &r.pingpong)
+	stateSourceObject.Load(14, &r.responseDeadline)
 }
 
 func (r *renoState) StateTypeName() string {

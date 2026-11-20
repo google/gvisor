@@ -1699,6 +1699,7 @@ func (pk *PacketBuffer) StateFields() []string {
 		"NICID",
 		"InputNICID",
 		"RXChecksumValidated",
+		"GROSegmentSize",
 		"NetworkPacketInfo",
 		"Mark",
 		"tuple",
@@ -1728,9 +1729,10 @@ func (pk *PacketBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(15, &pk.NICID)
 	stateSinkObject.Save(16, &pk.InputNICID)
 	stateSinkObject.SaveBool(17, &pk.RXChecksumValidated)
-	stateSinkObject.Save(18, &pk.NetworkPacketInfo)
-	stateSinkObject.SaveUint32(19, &pk.Mark)
-	stateSinkObject.Save(20, &pk.tuple)
+	stateSinkObject.SaveUint16(18, &pk.GROSegmentSize)
+	stateSinkObject.Save(19, &pk.NetworkPacketInfo)
+	stateSinkObject.SaveUint32(20, &pk.Mark)
+	stateSinkObject.Save(21, &pk.tuple)
 }
 
 func (pk *PacketBuffer) afterLoad(context.Context) {}
@@ -1755,9 +1757,10 @@ func (pk *PacketBuffer) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(15, &pk.NICID)
 	stateSourceObject.Load(16, &pk.InputNICID)
 	stateSourceObject.LoadBool(17, &pk.RXChecksumValidated)
-	stateSourceObject.Load(18, &pk.NetworkPacketInfo)
-	stateSourceObject.LoadUint32(19, &pk.Mark)
-	stateSourceObject.Load(20, &pk.tuple)
+	stateSourceObject.LoadUint16(18, &pk.GROSegmentSize)
+	stateSourceObject.Load(19, &pk.NetworkPacketInfo)
+	stateSourceObject.LoadUint32(20, &pk.Mark)
+	stateSourceObject.Load(21, &pk.tuple)
 }
 
 func (h *headerInfo) StateTypeName() string {

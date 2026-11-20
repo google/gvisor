@@ -1088,6 +1088,14 @@ func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 		return nil
 	}
 
+	if eps, ok := s.(*netstack.Stack); ok {
+		// A stack restored from a checkpoint has the setting it was saved
+		// with.
+		if err := setTCPDelayedACK(eps.Stack, l.root.conf.TCPDelayedACK); err != nil {
+			return err
+		}
+	}
+
 	if l.networkArgs == nil {
 		return nil
 	}
@@ -2283,7 +2291,20 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 		}
 	}
 
+	if err := setTCPDelayedACK(s.Stack, c.tcpDelayedACK); err != nil {
+		return nil, err
+	}
+
 	return s, nil
+}
+
+// setTCPDelayedACK sets tcpip.TCPDelayedACKEnabled on s.
+func setTCPDelayedACK(s *stack.Stack, mode config.TCPDelayedACK) error {
+	opt := tcpip.TCPDelayedACKEnabled(mode == config.TCPDelayedACKEnabled)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		return fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+	}
+	return nil
 }
 
 // sandboxNetstackCreator implements inet.NetworkStackCreator and
@@ -2294,6 +2315,7 @@ type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
 	allowPacketEndpointWrite bool
 	allowLiveTCPMigration    bool
+	tcpDelayedACK            config.TCPDelayedACK
 	uid                      uniqueid.Provider
 }
 
@@ -2304,6 +2326,7 @@ func newSandboxNetstackCreator(conf *config.Config, clock tcpip.Clock, uid uniqu
 		clock:                    clock,
 		allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
 		allowLiveTCPMigration:    conf.AllowLiveTCPMigration,
+		tcpDelayedACK:            conf.TCPDelayedACK,
 		uid:                      uid,
 	}
 }
