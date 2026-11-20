@@ -461,7 +461,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 		}
 
-		if b.procDriverNvidiaParams == "" {
+		if b.procDriverNvidiaParams == "" && b.nvidiaMIGCapabilities == "" {
 			var migDeviceMinors []uint32
 			if spec.Linux != nil {
 				for _, dev := range spec.Linux.Devices {
@@ -485,22 +485,27 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 					migDeviceMinors = append(migDeviceMinors, uint32(minor))
 				}
 			}
+			if len(migDeviceMinors) != 0 {
+				capabilities, err := nvconf.GetMIGCapabilities(migDeviceMinors)
+				if err != nil {
+					util.Fatalf("discovering NVIDIA MIG capabilities: %v", err)
+				}
+				data, err := json.Marshal(capabilities)
+				if err != nil {
+					util.Fatalf("encoding NVIDIA MIG capabilities: %v", err)
+				}
+				b.nvidiaMIGCapabilities = string(data)
+				argOverride["nvidia-mig-capabilities"] = b.nvidiaMIGCapabilities
+			}
+		}
+		if b.procDriverNvidiaParams == "" {
 			driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
 			nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
-				MIGDeviceMinors:          migDeviceMinors,
 				WantFabricIMEXManagement: driverCapsErr == nil && driverCaps&nvconf.CapFabricIMEXManagement != 0,
 			})
 			if err != nil {
 				log.Warningf("Failed to get nvconf.HostSettings: %v", err)
 			} else {
-				if len(nvhs.MIGCapabilities) != 0 {
-					data, err := json.Marshal(nvhs.MIGCapabilities)
-					if err != nil {
-						util.Fatalf("encoding NVIDIA MIG capabilities: %v", err)
-					}
-					b.nvidiaMIGCapabilities = string(data)
-					argOverride["nvidia-mig-capabilities"] = b.nvidiaMIGCapabilities
-				}
 				b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
 				argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
 				if nvhs.HaveFabricIMEXManagement {
