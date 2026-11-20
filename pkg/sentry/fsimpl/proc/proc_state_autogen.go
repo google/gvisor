@@ -901,6 +901,31 @@ func (i *fdInfoDirInode) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(11, &i.InodeFSOwned)
 }
 
+func (i *fdInfoInode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.fdInfoInode"
+}
+
+func (i *fdInfoInode) StateFields() []string {
+	return []string{
+		"taskOwnedInode",
+	}
+}
+
+func (i *fdInfoInode) beforeSave() {}
+
+// +checklocksignore
+func (i *fdInfoInode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.taskOwnedInode)
+}
+
+func (i *fdInfoInode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *fdInfoInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.taskOwnedInode)
+}
+
 func (d *fdInfoData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.fdInfoData"
 }
@@ -3329,6 +3354,7 @@ func init() {
 	state.RegisterNoHooks((*fdDirInode)(nil))
 	state.RegisterNoHooks((*fdSymlink)(nil))
 	state.RegisterNoHooks((*fdInfoDirInode)(nil))
+	state.RegisterNoHooks((*fdInfoInode)(nil))
 	state.RegisterNoHooks((*fdInfoData)(nil))
 	state.RegisterNoHooks((*auxvData)(nil))
 	state.RegisterNoHooks((*cmdlineData)(nil))
