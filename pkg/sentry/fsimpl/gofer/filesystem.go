@@ -213,7 +213,7 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp resolvingPath, d *dentr
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, nil, &parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
@@ -223,7 +223,7 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp resolvingPath, d *dentr
 	if err != nil {
 		return nil, false, err
 	}
-	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
+	if err := rp.CheckMount(ctx, &d.vfsd, &child.vfsd); err != nil {
 		return nil, false, err
 	}
 	if child.inode.isSymlink() && mayFollowSymlinks && rp.ShouldFollowSymlink() {

@@ -78,7 +78,7 @@ func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry,
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, nil, &parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
@@ -91,7 +91,7 @@ func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry,
 	if !ok {
 		return nil, false, linuxerr.ENOENT
 	}
-	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
+	if err := rp.CheckMount(ctx, &d.vfsd, &child.vfsd); err != nil {
 		return nil, false, err
 	}
 	if symlink, ok := child.inode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {

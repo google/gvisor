@@ -165,7 +165,7 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 		//
 		// Call rp.CheckMount() before updating d.parent's metadata, since if
 		// we traverse to another mount then d.parent's metadata is irrelevant.
-		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, nil, &parent.vfsd); err != nil {
 			return nil, errRevalidationStepDone{}
 		}
 		rp.Advance()

@@ -54,7 +54,7 @@ func step(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool,
 			d.IncRef()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, nil, &parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
@@ -68,7 +68,7 @@ func step(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool,
 	if err != nil {
 		return nil, false, err
 	}
-	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
+	if err := rp.CheckMount(ctx, &d.vfsd, &child.vfsd); err != nil {
 		child.DecRef(ctx)
 		return nil, false, err
 	}

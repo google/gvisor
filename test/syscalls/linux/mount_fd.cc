@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
+#include <linux/openat2.h>
 #include <sched.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,6 +29,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -117,6 +119,16 @@
 #endif
 #endif
 
+#ifndef SYS_openat2
+#if defined(__x86_64__)
+#define SYS_openat2 437
+#elif defined(__aarch64__)
+#define SYS_openat2 437
+#else
+#error "Unknown architecture"
+#endif
+#endif
+
 #ifndef OPEN_TREE_CLONE
 #define OPEN_TREE_CLONE 1
 #define OPEN_TREE_CLOEXEC O_CLOEXEC
@@ -124,6 +136,10 @@
 
 #ifndef AT_RECURSIVE
 #define AT_RECURSIVE 0x8000
+#endif
+
+#ifndef RESOLVE_BENEATH
+#define RESOLVE_BENEATH 0x1
 #endif
 
 inline int fsopen(const char* fsname, unsigned int flags) {
@@ -151,6 +167,10 @@ namespace testing {
 namespace {
 
 constexpr char kTmpfs[] = "tmpfs";
+
+int openat2(int dirfd, const std::string& path, const void* how, size_t size) {
+  return syscall(SYS_openat2, dirfd, path.c_str(), how, size);
+}
 
 // fsopen(2) tests
 
@@ -1171,6 +1191,148 @@ TEST(MoveMountTest, MoveMountDirOntoFileFails) {
   EXPECT_THAT(move_mount(treefd, "", AT_FDCWD, dst.path().c_str(),
                          MOVE_MOUNT_F_EMPTY_PATH),
               SyscallFailsWithErrno(EINVAL));
+}
+
+// A symlink can be the root of a mount (open_tree(AT_SYMLINK_NOFOLLOW) +
+// move_mount onto a non-directory, as util-linux does for
+// mount -o bind,X-mount.nocanonicalize=source). Path resolution that reaches
+// such a mount point must treat the mount root like any other symlink.
+TEST(MoveMountTest, BindMountedSymlinkIsFollowed) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+  auto const target = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "target", 0644));
+  auto const subdir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  auto const child = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(subdir.path(), "child", 0644));
+  const std::string file_link = JoinPath(dir.path(), "file_link");
+  const std::string dir_link = JoinPath(dir.path(), "dir_link");
+  ASSERT_THAT(symlink(target.path().c_str(), file_link.c_str()),
+              SyscallSucceeds());
+  ASSERT_THAT(symlink(subdir.path().c_str(), dir_link.c_str()),
+              SyscallSucceeds());
+  auto const file_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "file_mnt", 0644));
+  auto const dir_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "dir_mnt", 0644));
+
+  for (const auto& [link, mnt] : {std::make_pair(file_link, file_mnt.path()),
+                                  std::make_pair(dir_link, dir_mnt.path())}) {
+    int treefd =
+        open_tree(AT_FDCWD, link.c_str(),
+                  OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_SYMLINK_NOFOLLOW);
+    ASSERT_THAT(treefd, SyscallSucceeds());
+    ASSERT_THAT(
+        move_mount(treefd, "", AT_FDCWD, mnt.c_str(), MOVE_MOUNT_F_EMPTY_PATH),
+        SyscallSucceeds());
+    close(treefd);
+  }
+  auto cleanup = Cleanup([&]() {
+    umount2(file_mnt.path().c_str(), MNT_DETACH);
+    umount2(dir_mnt.path().c_str(), MNT_DETACH);
+  });
+
+  struct stat st;
+  ASSERT_THAT(lstat(file_mnt.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISLNK(st.st_mode));
+  ASSERT_THAT(stat(file_mnt.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(file_mnt.path())), "target");
+  EXPECT_THAT(open(file_mnt.path().c_str(), O_RDONLY | O_NOFOLLOW),
+              SyscallFailsWithErrno(ELOOP));
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(
+                GetContents(JoinPath(dir_mnt.path(), Basename(child.path())))),
+            "child");
+
+  // The mount root is an absolute symlink, so RESOLVE_BENEATH rejects it with
+  // EXDEV even though the target is inside dirfd.
+  struct open_how how = {
+      .flags = O_RDONLY,
+      .mode = 0,
+      .resolve = RESOLVE_BENEATH,
+  };
+  const std::string file_mnt_name = std::string(Basename(file_mnt.path()));
+  int beneath_fd =
+      openat2(dirfd.get(), file_mnt_name.c_str(), &how, sizeof(how));
+  if (beneath_fd < 0 && errno == ENOSYS) {
+    // openat2(2) was added in Linux 5.6, and the host kernel may not have it.
+  } else {
+    EXPECT_THAT(beneath_fd, SyscallFailsWithErrno(EXDEV));
+    if (beneath_fd >= 0) close(beneath_fd);
+  }
+
+  // RESOLVE_NO_SYMLINKS must reject the mount root symlink when the walk
+  // would follow it.
+  struct open_how how_nosymlinks = {
+      .flags = O_RDONLY,
+      .mode = 0,
+      .resolve = RESOLVE_NO_SYMLINKS,
+  };
+  int nosymlinks_fd = openat2(dirfd.get(), file_mnt_name.c_str(),
+                              &how_nosymlinks, sizeof(how_nosymlinks));
+  if (nosymlinks_fd < 0 && errno == ENOSYS) {
+    // Same host kernel limitation as above.
+  } else {
+    EXPECT_THAT(nosymlinks_fd, SyscallFailsWithErrno(ELOOP));
+    if (nosymlinks_fd >= 0) close(nosymlinks_fd);
+  }
+
+  // When the walk must not follow the final symlink, as with O_PATH |
+  // O_NOFOLLOW, RESOLVE_NO_SYMLINKS allows opening the symlink itself.
+  struct open_how how_nofollow = {
+      .flags = O_PATH | O_NOFOLLOW,
+      .mode = 0,
+      .resolve = RESOLVE_NO_SYMLINKS,
+  };
+  int nofollow_fd = openat2(dirfd.get(), file_mnt_name.c_str(), &how_nofollow,
+                            sizeof(how_nofollow));
+  if (nofollow_fd < 0 && errno == ENOSYS) {
+    // Same host kernel limitation as above.
+  } else {
+    ASSERT_THAT(nofollow_fd, SyscallSucceeds());
+    ASSERT_THAT(fstat(nofollow_fd, &st), SyscallSucceeds());
+    EXPECT_TRUE(S_ISLNK(st.st_mode));
+    close(nofollow_fd);
+  }
+
+  // A relative target at a mount root is resolved against the directory that
+  // contains the mount point, not the directory where the path walk started.
+  // dir and rel_dst hold rel_target files with different contents, and rel_src
+  // holds none, so each candidate scope gives a different result.
+  const std::string rel_dst = JoinPath(dir.path(), "rel_dst");
+  const std::string rel_src = JoinPath(dir.path(), "rel_src");
+  const std::string walk_origin_target = JoinPath(dir.path(), "rel_target");
+  const std::string mount_target = JoinPath(rel_dst, "rel_target");
+  const std::string rel_link = JoinPath(rel_src, "rel_link");
+  const std::string rel_mnt = JoinPath(rel_dst, "rel_mnt");
+  ASSERT_THAT(mkdir(rel_dst.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(rel_src.c_str(), 0755), SyscallSucceeds());
+  ASSERT_NO_ERRNO(CreateWithContents(walk_origin_target, "walk-origin", 0644));
+  ASSERT_NO_ERRNO(CreateWithContents(mount_target, "mountpoint-parent", 0644));
+  ASSERT_THAT(symlink("rel_target", rel_link.c_str()), SyscallSucceeds());
+  ASSERT_NO_ERRNO(CreateWithContents(rel_mnt, "mountpoint", 0644));
+
+  int rel_treefd =
+      open_tree(AT_FDCWD, rel_link.c_str(),
+                OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_SYMLINK_NOFOLLOW);
+  ASSERT_THAT(rel_treefd, SyscallSucceeds());
+  ASSERT_THAT(move_mount(rel_treefd, "", AT_FDCWD, rel_mnt.c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  close(rel_treefd);
+  auto cleanup_rel = Cleanup([&]() { umount2(rel_mnt.c_str(), MNT_DETACH); });
+
+  ASSERT_THAT(lstat(rel_mnt.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISLNK(st.st_mode));
+  const FileDescriptor rel_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      OpenAt(dirfd.get(), "rel_dst/rel_mnt", O_RDONLY));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContentsFD(rel_fd.get())),
+            "mountpoint-parent");
 }
 
 }  // namespace

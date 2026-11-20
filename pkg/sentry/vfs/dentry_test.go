@@ -199,7 +199,7 @@ func walkDirDotDot(ctx context.Context, rp *ResolvingPath, rootVD VirtualDentry,
 	if got, want := rp.Component(), "dir"; got != want {
 		return fmt.Errorf("rp.Component(): got %q, want %q", got, want)
 	}
-	if err := rp.CheckMount(ctx, childD.dentry()); err != nil {
+	if err := rp.CheckMount(ctx, rootVD.Dentry(), childD.dentry()); err != nil {
 		return fmt.Errorf("CheckMount failed on child: %w", err)
 	}
 	rp.Advance()
@@ -218,7 +218,7 @@ func walkDirDotDot(ctx context.Context, rp *ResolvingPath, rootVD VirtualDentry,
 	if isRoot {
 		return errors.New("CheckRoot returned isRoot=true for child dentry")
 	}
-	if err := rp.CheckMount(ctx, rootVD.Dentry()); err != nil {
+	if err := rp.CheckMount(ctx, nil, rootVD.Dentry()); err != nil {
 		return fmt.Errorf("CheckMount failed on parent: %w", err)
 	}
 	rp.Advance()
