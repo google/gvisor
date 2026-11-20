@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1211,6 +1212,529 @@ func TestSACKRetransmissionTimer(t *testing.T) {
 		t.Fatalf("at packet 2's retransmission deadline: got %d timeouts, want 1", got)
 	}
 	c.ReceiveAndCheckPacket(data, mss, mss)
+}
+
+// outstandingTest is a connection in which the test is the peer of a sender
+// with SACK and a manual clock. Packet numbers start at 1. The seq, ack and
+// checkOutstanding methods count data in units of the MSS at the time of
+// the connection, so they are correct only for packets that have that much
+// data.
+type outstandingTest struct {
+	t     *testing.T
+	c     *context.Context
+	clock *faketime.ManualClock
+	peer  *context.RawEndpoint
+	mss   int
+
+	// sender is the state of the sender after the last segment that it
+	// received.
+	sender atomic.Pointer[tcp.TCPSenderState]
+}
+
+// outstandingTestRecoveries are the loss detection configurations with
+// SACK: duplicate ACK counting and RACK.
+var outstandingTestRecoveries = []struct {
+	name     string
+	recovery tcpip.TCPRecovery
+}{
+	{name: "DupACK", recovery: 0},
+	{name: "RACK", recovery: tcpip.TCPRACKLossDetection},
+}
+
+// newOutstandingTest connects an endpoint with SACK and the given loss
+// detection configuration. If numPackets is not zero, it writes numPackets
+// packets of data to the endpoint and drops the packets that the sender
+// sends. The caller must call Cleanup on the c field of the result.
+func newOutstandingTest(t *testing.T, recovery tcpip.TCPRecovery, numPackets int) *outstandingTest {
+	t.Helper()
+	o := &outstandingTest{t: t, clock: faketime.NewManualClock()}
+	o.c = context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      1500,
+		Clock:    o.clock,
+		Probe: func(s *tcp.TCPEndpointState) {
+			snd := s.Sender
+			o.sender.Store(&snd)
+		},
+	})
+	e2e.SetStackSACKPermitted(t, o.c, true)
+	e2e.SetStackTCPRecovery(t, o.c, int(recovery))
+	o.peer = e2e.CreateConnectedWithSACKPermittedOption(o.c)
+
+	var info tcpip.TCPInfoOption
+	if err := o.c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+	o.mss = int(info.SndMss)
+	if numPackets > 0 {
+		data := make([]byte, numPackets*o.mss)
+		if n, err := o.c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+			t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+		}
+		o.sync()
+	}
+	return o
+}
+
+// sync waits until the sender has processed all the segments from the peer
+// and drops the packets that the sender sent.
+func (o *outstandingTest) sync() {
+	o.c.Stack().Pause()
+	o.c.Stack().Resume()
+	for p := o.c.GetPacketNonBlocking(); p != nil; p = o.c.GetPacketNonBlocking() {
+		p.Release()
+	}
+}
+
+// seq returns the sequence number of the first byte after packet n.
+func (o *outstandingTest) seq(n int) seqnum.Value {
+	return o.peer.AckNum.Add(seqnum.Size(n * o.mss))
+}
+
+// ack sends a cumulative ACK for packets 1 to acked. If sackEnd is greater
+// than sackStart, the ACK has a SACK block for packets sackStart+1 to
+// sackEnd. It returns the state of the sender after the sender has
+// processed the ACK.
+func (o *outstandingTest) ack(acked, sackStart, sackEnd int) *tcp.TCPSenderState {
+	var blocks []header.SACKBlock
+	if sackStart < sackEnd {
+		blocks = []header.SACKBlock{{Start: o.seq(sackStart), End: o.seq(sackEnd)}}
+	}
+	o.c.SendAckWithSACK(o.peer.NextSeqNum, acked*o.mss, blocks)
+	o.sync()
+	return o.sender.Load()
+}
+
+// decreasePathMTU tells the sender that quoted, a packet that the sender
+// sent, was too large for the path. The new path MTU gives a maximum payload
+// size that is between a half and the whole of the MSS, so a packet with one
+// MSS of data becomes two packets. The sender does not examine the sequence
+// number of quoted, so quoted can be a packet that the peer acknowledged.
+// decreasePathMTU does not drop the packets that the sender sends.
+func (o *outstandingTest) decreasePathMTU(quoted *buffer.View) {
+	newMTU := header.IPv4MinimumSize + header.TCPMinimumSize + header.TCPOptionsMaximumSize + o.mss/2 + 1
+	mtu := buffer.NewViewWithData([]byte{0, 0, byte(newMTU / 256), byte(newMTU % 256)})
+	defer mtu.Release()
+	o.c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4FragmentationNeeded, mtu, quoted, newMTU)
+	o.c.Stack().Pause()
+	o.c.Stack().Resume()
+}
+
+// checkOutstanding checks that the peer has acknowledged packets 1 to
+// acked, that the sender is out of recovery and has data in flight, and
+// that Outstanding is the number of packets that the sender sent and that
+// are not cumulatively acknowledged.
+func (o *outstandingTest) checkOutstanding(snd *tcp.TCPSenderState, acked int) {
+	o.t.Helper()
+	if got, want := snd.SndUna, o.seq(acked); got != want {
+		o.t.Fatalf("got SndUna = %d, want = %d", got, want)
+	}
+	if snd.FastRecovery.Active {
+		o.t.Fatal("sender is in recovery")
+	}
+	want := int(snd.SndUna.Size(snd.SndNxt)) / o.mss
+	if want == 0 {
+		o.t.Fatal("sender has no data in flight")
+	}
+	if got := snd.Outstanding; got != want {
+		o.t.Errorf("got Outstanding = %d, want = %d", got, want)
+	}
+}
+
+// TestSACKOutstandingAfterCumulativeACK tests that a segment which the peer
+// selectively acknowledges when the sender is not in recovery does not stay in
+// the count of outstanding packets after a cumulative ACK covers it.
+func TestSACKOutstandingAfterCumulativeACK(t *testing.T) {
+	for _, tc := range outstandingTestRecoveries {
+		t.Run(tc.name, func(t *testing.T) {
+			// The initial congestion window lets the sender send all the
+			// packets.
+			const numPackets = 8
+			o := newOutstandingTest(t, tc.recovery, numPackets)
+			defer o.c.Cleanup()
+
+			// Cumulatively ACK packet 1 to give the sender an RTT sample. With
+			// RACK, the reorder window is then a quarter of this RTT, and the clock
+			// does not advance again, so RACK does not mark a packet as lost.
+			o.clock.Advance(100 * time.Millisecond)
+			o.ack(1, 0, 0)
+
+			// SACK packet 4. One duplicate ACK does not start recovery.
+			o.ack(1, 3, 4)
+
+			// Cumulatively ACK packets 2 to 4. Packets 5 to 8 stay in flight.
+			snd := o.ack(4, 0, 0)
+			o.checkOutstanding(snd, 4)
+			if got, want := snd.SndNxt, o.seq(numPackets); got != want {
+				t.Errorf("got SndNxt = %d, want = %d", got, want)
+			}
+			// In slow start, the congestion window grows by one packet for each
+			// packet that a cumulative ACK covers.
+			if got, want := snd.SndCwnd, tcp.InitialCwnd+4; got != want {
+				t.Errorf("got SndCwnd = %d, want = %d", got, want)
+			}
+
+			tcpStats := o.c.Stack().Stats().TCP
+			for _, s := range []struct {
+				stat *tcpip.StatCounter
+				name string
+			}{
+				{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery"},
+				{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit"},
+				{tcpStats.Retransmits, "stats.TCP.Retransmits"},
+				{tcpStats.Timeouts, "stats.TCP.Timeouts"},
+			} {
+				if got := s.stat.Value(); got != 0 {
+					t.Errorf("got %s = %d, want = 0", s.name, got)
+				}
+			}
+		})
+	}
+}
+
+// TestSACKOutstandingAfterRecovery tests that, when SACK recovery ends and
+// when a later cumulative ACK covers segments that the peer selectively
+// acknowledged during recovery, the count of outstanding packets is the
+// number of sent packets that are not cumulatively acknowledged.
+func TestSACKOutstandingAfterRecovery(t *testing.T) {
+	for _, tc := range outstandingTestRecoveries {
+		t.Run(tc.name, func(t *testing.T) {
+			o := newOutstandingTest(t, tc.recovery, 30 /* numPackets */)
+			defer o.c.Cleanup()
+
+			// Cumulatively ACK packet 1, then send three duplicate ACKs that SACK
+			// packets 3 to 5. The sender starts recovery.
+			o.clock.Advance(100 * time.Millisecond)
+			o.ack(1, 0, 0)
+			for end := 3; end <= 5; end++ {
+				o.ack(1, 2, end)
+			}
+			if snd := o.sender.Load(); !snd.FastRecovery.Active {
+				t.Fatal("sender did not start recovery")
+			}
+			// The sender sent packets 1 to 12 before recovery started.
+			if got, want := o.sender.Load().FastRecovery.Last, o.seq(12)-1; got != want {
+				t.Fatalf("got FastRecovery.Last = %d, want = %d", got, want)
+			}
+
+			// SACK packets 6 to 10. The sender now has congestion window to send
+			// new data during recovery.
+			if snd := o.ack(1, 2, 10); snd.SndNxt.LessThan(o.seq(15)) {
+				t.Fatalf("got SndNxt = %d, want >= %d", snd.SndNxt, o.seq(15))
+			}
+
+			// Cumulatively ACK packets 2 to 12 and SACK packets 14 and 15, which
+			// the sender sent during recovery. Recovery ends with SACKed packets
+			// above the cumulative ACK. With RACK, the clock advances first so
+			// that the RTT sample of these packets is not zero. The reorder
+			// window is then not zero, and RACK does not immediately mark
+			// packet 13 as lost.
+			o.clock.Advance(50 * time.Millisecond)
+			o.checkOutstanding(o.ack(12, 13, 15), 12)
+
+			// The cumulative ACK now covers packets that were SACKed during
+			// recovery.
+			snd := o.ack(15, 0, 0)
+			o.checkOutstanding(snd, 15)
+			// The sender is in congestion avoidance. The cumulative ACK for
+			// packets 13 to 15 completes one congestion window of acknowledged
+			// packets, so the window grows by one packet.
+			if got, want := snd.SndCwnd, snd.Ssthresh+1; got != want {
+				t.Errorf("got SndCwnd = %d, want = %d", got, want)
+			}
+			if got, want := snd.SndCAAckCount, 1; got != want {
+				t.Errorf("got SndCAAckCount = %d, want = %d", got, want)
+			}
+
+			if got := o.c.Stack().Stats().TCP.SACKRecovery.Value(); got != 1 {
+				t.Errorf("got stats.TCP.SACKRecovery = %d, want = 1", got)
+			}
+		})
+	}
+}
+
+// TestSACKOutstandingAfterPathMTUDecrease tests the count of outstanding
+// packets when a path MTU decrease makes a selectively acknowledged segment
+// larger than one packet. A later cumulative ACK for the segment must
+// subtract the number of packets that the count has for the segment.
+func TestSACKOutstandingAfterPathMTUDecrease(t *testing.T) {
+	for _, tc := range outstandingTestRecoveries {
+		t.Run(tc.name, func(t *testing.T) {
+			o := newOutstandingTest(t, tc.recovery, 0 /* numPackets */)
+			defer o.c.Cleanup()
+
+			// Send two small packets, a packet with one MSS of data, and a
+			// small packet.
+			const (
+				small = 100
+				large = 2 // Index in sizes.
+			)
+			sizes := []int{small, small, o.mss, small}
+			first := o.peer.AckNum
+			var largePacket *buffer.View
+			for i, size := range sizes {
+				if n, err := o.c.EP.Write(bytes.NewReader(make([]byte, size)), tcpip.WriteOptions{}); err != nil || n != int64(size) {
+					t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, size)
+				}
+				o.c.Stack().Pause()
+				o.c.Stack().Resume()
+				p := o.c.GetPacketNonBlocking()
+				if p == nil {
+					t.Fatalf("sender did not send packet %d", i+1)
+				}
+				if i == large {
+					largePacket = p
+					defer largePacket.Release()
+				} else {
+					p.Release()
+				}
+			}
+
+			// Cumulatively ACK packet 1 to give the sender an RTT sample. With
+			// RACK, the reorder window is then a quarter of this RTT, and the clock
+			// does not advance again, so RACK does not mark a packet as lost.
+			o.clock.Advance(100 * time.Millisecond)
+			o.c.SendAckWithSACK(o.peer.NextSeqNum, small, nil)
+			o.sync()
+
+			// SACK the large packet. One duplicate ACK does not start recovery.
+			o.c.SendAckWithSACK(o.peer.NextSeqNum, small, []header.SACKBlock{{
+				Start: first.Add(2 * small),
+				End:   first.Add(seqnum.Size(2*small + o.mss)),
+			}})
+			o.sync()
+
+			// Decrease the path MTU. The large packet is now two packets. The
+			// sender does not send it again. The sender decreases the count of
+			// outstanding packets by one for the packet that was too large, and
+			// sends the last packet again, which increases the count by one.
+			o.decreasePathMTU(largePacket)
+
+			// Cumulatively ACK packets 2 and 3. The last packet stays in flight.
+			o.c.SendAckWithSACK(o.peer.NextSeqNum, 2*small+o.mss, nil)
+			o.sync()
+			snd := o.sender.Load()
+			if got, want := snd.SndUna, first.Add(seqnum.Size(2*small+o.mss)); got != want {
+				t.Fatalf("got SndUna = %d, want = %d", got, want)
+			}
+			if got, want := snd.SndNxt, snd.SndUna.Add(small); got != want {
+				t.Fatalf("got SndNxt = %d, want = %d", got, want)
+			}
+			if snd.FastRecovery.Active {
+				t.Fatal("sender is in recovery")
+			}
+			if got := snd.MaxPayloadSize; got >= o.mss || 2*got < o.mss {
+				t.Fatalf("got MaxPayloadSize = %d, want in [%d, %d)", got, (o.mss+1)/2, o.mss)
+			}
+			if got, want := snd.Outstanding, 1; got != want {
+				t.Errorf("got Outstanding = %d, want = %d", got, want)
+			}
+			tcpStats := o.c.Stack().Stats().TCP
+			if got := tcpStats.Retransmits.Value(); got != 1 {
+				t.Errorf("got stats.TCP.Retransmits = %d, want = 1", got)
+			}
+			if got := tcpStats.Timeouts.Value(); got != 0 {
+				t.Errorf("got stats.TCP.Timeouts = %d, want = 0", got)
+			}
+		})
+	}
+}
+
+// TestSACKPathMTUDecreaseWithFullWindow tests that, when the peer has
+// selectively acknowledged segments and the congestion window is full or
+// almost full, a path MTU decrease lets the sender immediately send one
+// packet: the first part of the first segment that is too large.
+func TestSACKPathMTUDecreaseWithFullWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// numPackets is the number of packets of data that the test
+		// writes. After the ACK for packet 1, the congestion window is
+		// 11 packets and packets 2 to numPackets are in flight, to a
+		// maximum of 11 packets.
+		numPackets int
+		// sackEnd is the last packet that the peer selectively
+		// acknowledges. The first is packet 3.
+		sackEnd int
+	}{
+		{name: "FullWindow", numPackets: 14, sackEnd: 3},
+		{name: "OnePacketOfWindow", numPackets: 11, sackEnd: 4},
+	} {
+		for _, rc := range outstandingTestRecoveries {
+			t.Run(tc.name+"/"+rc.name, func(t *testing.T) {
+				o := newOutstandingTest(t, rc.recovery, 0 /* numPackets */)
+				defer o.c.Cleanup()
+
+				data := make([]byte, tc.numPackets*o.mss)
+				if n, err := o.c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+					t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+				}
+				o.c.Stack().Pause()
+				o.c.Stack().Resume()
+				packet := o.c.GetPacketNonBlocking()
+				if packet == nil {
+					t.Fatal("sender did not send packet 1")
+				}
+				defer packet.Release()
+				o.sync()
+
+				// Cumulatively ACK packet 1 to give the sender an RTT sample. With
+				// RACK, the reorder window is then a quarter of this RTT, and the clock
+				// does not advance again, so RACK does not mark a packet as lost.
+				o.clock.Advance(100 * time.Millisecond)
+				o.ack(1, 0, 0)
+
+				// SACK packets 3 to sackEnd. One duplicate ACK does not start
+				// recovery. Packet 2 is not acknowledged.
+				snd := o.ack(1, 2, tc.sackEnd)
+				if snd.FastRecovery.Active {
+					t.Fatal("sender is in recovery")
+				}
+				if got, want := snd.Outstanding, min(tc.numPackets-1, snd.SndCwnd); got != want {
+					t.Fatalf("got Outstanding = %d, want = %d", got, want)
+				}
+
+				// Decrease the path MTU. Each SACKed packet is now two packets.
+				// The sender has congestion window for one packet, and sends the
+				// first part of packet 2.
+				o.decreasePathMTU(packet)
+				p := o.c.GetPacketNonBlocking()
+				if p == nil {
+					t.Fatal("sender did not send a packet after the path MTU decrease")
+				}
+				defer p.Release()
+				tcpHdr := header.TCP(header.IPv4(p.AsSlice()).Payload())
+				if got, want := seqnum.Value(tcpHdr.SequenceNumber()), o.seq(1); got != want {
+					t.Errorf("got sequence number = %d, want = %d", got, want)
+				}
+				if got := len(tcpHdr.Payload()); got >= o.mss || 2*got < o.mss {
+					t.Errorf("got payload size = %d, want in [%d, %d)", got, (o.mss+1)/2, o.mss)
+				}
+				if next := o.c.GetPacketNonBlocking(); next != nil {
+					next.Release()
+					t.Error("sender sent more than one packet after the path MTU decrease")
+				}
+
+				if got := o.c.Stack().Stats().TCP.Timeouts.Value(); got != 0 {
+					t.Errorf("got stats.TCP.Timeouts = %d, want = 0", got)
+				}
+				if rc.recovery != 0 {
+					// With RACK, one more ACK can start recovery, because the
+					// number of SACKed packets is larger after the path MTU
+					// decrease.
+					return
+				}
+
+				// Send the last ACK again to get the state of the sender. The
+				// congestion window is full.
+				snd = o.ack(1, 2, tc.sackEnd)
+				if snd.FastRecovery.Active {
+					t.Fatal("sender is in recovery")
+				}
+				if got, want := snd.Outstanding, snd.SndCwnd; got != want {
+					t.Errorf("got Outstanding = %d, want = %d", got, want)
+				}
+			})
+		}
+	}
+}
+
+// TestSACKOutstandingAfterRTO tests that, after a retransmit timeout, the
+// count of outstanding packets includes only the packets sent after the
+// timeout, and that it stays correct when a cumulative ACK covers segments
+// that were sent before the timeout and selectively acknowledged after it.
+func TestSACKOutstandingAfterRTO(t *testing.T) {
+	// The initial congestion window lets the sender send packets 1 to 10.
+	// RACK is off: with RACK, the retransmit timer does not expire after one
+	// RTO, because the sender first sends a tail loss probe.
+	o := newOutstandingTest(t, 0 /* recovery */, 14 /* numPackets */)
+	defer o.c.Cleanup()
+
+	var info tcpip.TCPInfoOption
+	if err := o.c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+	o.clock.Advance(info.RTO)
+	o.sync()
+	if got := o.c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+		t.Fatalf("got stats.TCP.Timeouts = %d, want = 1", got)
+	}
+
+	// Cumulatively ACK packet 1 and SACK packets 3 to 10. The sender sends
+	// packet 2 again, does not send packets 3 to 10 again, and sends packet 11.
+	snd := o.ack(1, 2, 10)
+	if got, want := snd.SndNxt, o.seq(11); got != want {
+		t.Fatalf("got SndNxt = %d, want = %d", got, want)
+	}
+	if got, want := snd.Outstanding, 2; got != want {
+		t.Errorf("got Outstanding = %d, want = %d", got, want)
+	}
+
+	// Cumulatively ACK packets 2 to 10. The congestion window grows by one
+	// packet, for packet 2.
+	snd = o.ack(10, 0, 0)
+	o.checkOutstanding(snd, 10)
+	if got, want := snd.SndCwnd, 3; got != want {
+		t.Errorf("got SndCwnd = %d, want = %d", got, want)
+	}
+}
+
+// TestSACKOutstandingAfterRTOAndPathMTUDecrease tests that a path MTU
+// decrease after a retransmit timeout does not add the segments that the peer
+// selectively acknowledged after the timeout to the count of outstanding
+// packets.
+func TestSACKOutstandingAfterRTOAndPathMTUDecrease(t *testing.T) {
+	// The initial congestion window lets the sender send all the packets.
+	// RACK is off for the same reason as in TestSACKOutstandingAfterRTO.
+	o := newOutstandingTest(t, 0 /* recovery */, 10 /* numPackets */)
+	defer o.c.Cleanup()
+
+	var info tcpip.TCPInfoOption
+	if err := o.c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+	o.clock.Advance(info.RTO)
+	o.c.Stack().Pause()
+	o.c.Stack().Resume()
+	// The sender sends packet 1 again.
+	packet := o.c.GetPacketNonBlocking()
+	if packet == nil {
+		t.Fatal("sender did not send a packet after the retransmit timeout")
+	}
+	defer packet.Release()
+	o.sync()
+
+	// Cumulatively ACK packet 1 and SACK packets 3 to 10. The sender sends
+	// packet 2 again and does not send packets 3 to 10 again. The congestion
+	// window is two packets.
+	snd := o.ack(1, 2, 10)
+	if got, want := snd.Outstanding, 1; got != want {
+		t.Fatalf("got Outstanding = %d, want = %d", got, want)
+	}
+	if got, want := snd.SndCwnd, 2; got != want {
+		t.Fatalf("got SndCwnd = %d, want = %d", got, want)
+	}
+
+	// Decrease the path MTU. The sender decreases the count of outstanding
+	// packets by one, to zero, and the congestion window lets it send the two
+	// parts of packet 2.
+	o.decreasePathMTU(packet)
+	sent := 0
+	for p := o.c.GetPacketNonBlocking(); p != nil; p = o.c.GetPacketNonBlocking() {
+		p.Release()
+		sent++
+	}
+	if got, want := sent, 2; got != want {
+		t.Errorf("sender sent %d packets after the path MTU decrease, want = %d", got, want)
+	}
+
+	// Send the last ACK again to get the state of the sender.
+	snd = o.ack(1, 2, 10)
+	if got := snd.MaxPayloadSize; got >= o.mss || 2*got < o.mss {
+		t.Fatalf("got MaxPayloadSize = %d, want in [%d, %d)", got, (o.mss+1)/2, o.mss)
+	}
+	if got, want := snd.Outstanding, 2; got != want {
+		t.Errorf("got Outstanding = %d, want = %d", got, want)
+	}
 }
 
 func TestMain(m *testing.M) {

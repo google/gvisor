@@ -254,7 +254,11 @@ type TCPSenderState struct {
 	SndCAAckCount int
 
 	// Outstanding is the number of packets that have been sent but not yet
-	// acknowledged.
+	// cumulatively acknowledged. During SACK recovery, it is the pipe
+	// estimate of RFC 6675, in packets. After a retransmit timeout, until
+	// the peer acknowledges all the data sent before the timeout, it is an
+	// estimate: it counts the packets sent after the timeout, and with SACK
+	// a cumulative ACK for a SACKed segment does not decrease it.
 	Outstanding int
 
 	// SackedOut is the number of packets which have been selectively
