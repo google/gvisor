@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -77,8 +78,12 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 	return regs
 }
 
+func trapRestartArgs(_ uintptr, rules []bpf.Instruction) []bpf.Instruction {
+	return rules
+}
+
 // updateSyscallRegs updates registers after finishing sysemu.
-func updateSyscallRegs(regs *arch.Registers, _ sysmsg.ContextState) {
+func updateSyscallRegs(regs *arch.Registers, _ sysmsg.ContextState, _ *linux.SignalInfo) {
 	// Ptrace puts -ENOSYS in rax on syscall-enter-stop.
 	regs.Rax = regs.Orig_rax
 }
