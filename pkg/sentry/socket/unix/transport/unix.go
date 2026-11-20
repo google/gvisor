@@ -657,12 +657,12 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, args Recv
 		out.ControlTrunc = true
 	}
 
-	haveRights := c.Rights != nil
+	haveRights := c.Rights != nil || len(out.UnusedRights) != 0
 
-	// If we have more capacity for data and haven't received any usable
-	// rights.
+	// If we have more capacity for data and haven't received any rights.
 	//
-	// Linux never coalesces rights control messages.
+	// Linux never coalesces rights control messages, and stops reading after
+	// a message with rights even if they are discarded.
 	for !haveRights && len(data) > 0 {
 		// Get a message from the readQueue.
 		m, n, err := q.readQueue.Dequeue()
@@ -689,11 +689,6 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, args Recv
 			}
 		}
 
-		if args.NumRights != 0 && c.Rights != nil && q.control.Rights != nil {
-			// Both messages have rights.
-			break
-		}
-
 		var cpd int64
 		cpd, data, q.buffer = vecCopy(data, q.buffer)
 		copied += cpd
@@ -710,8 +705,8 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, args Recv
 				out.UnusedRights = append(out.UnusedRights, q.control.Rights)
 			} else {
 				c.Rights = q.control.Rights
-				haveRights = true
 			}
+			haveRights = true
 			q.control.Rights = nil
 		}
 	}

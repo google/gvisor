@@ -16,6 +16,7 @@
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -31,6 +32,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -414,6 +416,127 @@ TEST_P(StreamUnixSocketPairTest, PeerWriteShutdownWakesRdHupOnlyPoller) {
       [peer] { ASSERT_THAT(shutdown(peer, SHUT_WR), SyscallSucceeds()); });
   EXPECT_EQ(res.ret, 1);
   EXPECT_EQ(res.revents, POLLRDHUP);
+}
+
+// A MSG_WAITALL receive stops after a message that carries SCM_RIGHTS and
+// returns the FDs, rather than blocking for more data.
+TEST_P(StreamUnixSocketPairTest, RecvmsgWaitAllStopsAtRights) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  char sent[] = {'a', 'b'};
+  ASSERT_NO_FATAL_FAILURE(
+      SendSingleFD(sockets->first_fd(), wfd.get(), &sent[0], 1));
+  ASSERT_THAT(WriteFd(sockets->first_fd(), &sent[1], 1),
+              SyscallSucceedsWithValue(1));
+
+  char received[2] = {};
+  struct iovec iov = {.iov_base = received, .iov_len = sizeof(received)};
+  char control[CMSG_SPACE(sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, MSG_WAITALL),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(received[0], 'a');
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+  ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  ASSERT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
+  int fd;
+  memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
+  FileDescriptor received_fd(fd);
+
+  // The received FD is the pipe's write end.
+  wfd.reset();
+  ASSERT_THAT(WriteFd(received_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+  char c;
+  ASSERT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // The data after the rights is still queued.
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), &c, 1, 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'b');
+}
+
+// A MSG_WAITALL receive without room for control messages drops the passed
+// FDs. That must release them even if the receive then blocks for more data.
+TEST_P(StreamUnixSocketPairTest, RecvWaitAllReleasesDiscardedRights) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  char sent[] = {'a', 'b'};
+  ASSERT_NO_FATAL_FAILURE(
+      SendSingleFD(sockets->first_fd(), wfd.get(), &sent[0], 1));
+  wfd.reset();
+
+  // Once the first message has been consumed, send more data so that a
+  // receive that wrongly blocks for it can complete.
+  ScopedThread t([&] {
+    for (int i = 0; i < 500; i++) {
+      int queued;
+      ASSERT_THAT(ioctl(sockets->second_fd(), FIONREAD, &queued),
+                  SyscallSucceeds());
+      if (queued == 0) {
+        break;
+      }
+      absl::SleepFor(absl::Milliseconds(10));
+    }
+    ASSERT_THAT(WriteFd(sockets->first_fd(), &sent[1], 1),
+                SyscallSucceedsWithValue(1));
+  });
+
+  char received[2];
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received,
+                               sizeof(received), MSG_WAITALL),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(received[0], 'a');
+  t.Join();
+
+  // Nothing holds the pipe's write end anymore.
+  char c;
+  EXPECT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(0));
+}
+
+// A receive stops after a message with SCM_RIGHTS even if the rights are
+// discarded because there is no room for them.
+TEST_P(StreamUnixSocketPairTest, RecvStopsAtDiscardedRights) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  char sent[] = {'a', 'b'};
+  ASSERT_NO_FATAL_FAILURE(
+      SendSingleFD(sockets->first_fd(), wfd.get(), &sent[0], 1));
+  wfd.reset();
+  ASSERT_THAT(WriteFd(sockets->first_fd(), &sent[1], 1),
+              SyscallSucceedsWithValue(1));
+
+  char received[2];
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received,
+                               sizeof(received), 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(received[0], 'a');
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received,
+                               sizeof(received), 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(received[0], 'b');
+
+  // The discarded rights were released.
+  char c;
+  EXPECT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(0));
 }
 
 INSTANTIATE_TEST_SUITE_P(

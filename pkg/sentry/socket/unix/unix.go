@@ -805,6 +805,13 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		}
 	}()
 
+	// Like Linux, a read stops after a message that carries SCM_RIGHTS, even
+	// with MSG_WAITALL. Reading on would also replace the rights in r without
+	// releasing them.
+	gotRights := func() bool {
+		return r.Control.Rights != nil || len(r.UnusedRights) != 0
+	}
+
 	// A receive with a zero byte destination still interacts with the
 	// message queue. If the queue is empty, it blocks or returns
 	// EWOULDBLOCK as usual. On packet sockets, it dequeues the next
@@ -836,7 +843,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 			msgFlags |= linux.MSG_CTRUNC
 		}
 
-		if err != nil || dontWait || !waitAll || isPacket || n >= dst.NumBytes() {
+		if err != nil || dontWait || !waitAll || isPacket || n >= dst.NumBytes() || gotRights() {
 			if isPacket && n < int64(r.MsgSize) {
 				msgFlags |= linux.MSG_TRUNC
 			}
@@ -879,7 +886,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 			}
 
 			streamPeerClosed := s.stype == linux.SOCK_STREAM && n == 0 && err == nil
-			if err != nil || !waitAll || isPacket || n >= dst.NumBytes() || streamPeerClosed {
+			if err != nil || !waitAll || isPacket || n >= dst.NumBytes() || streamPeerClosed || gotRights() {
 				if total > 0 {
 					err = nil
 				}
