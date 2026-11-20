@@ -841,6 +841,8 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 		if err != nil {
 			return 0, linuxerr.ConvertIntr(err.ToError(), linuxerr.ERESTARTSYS)
 		}
+		// Linux's ____sys_recvmsg() reports MSG_CMSG_CLOEXEC in msg_flags.
+		mflags |= int(flags & linux.MSG_CMSG_CLOEXEC)
 
 		if int(msg.Flags) != mflags {
 			// Copy out the flags to the caller.
@@ -860,6 +862,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	if e != nil {
 		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
+	mflags |= int(flags & linux.MSG_CMSG_CLOEXEC)
 
 	controlData := make([]byte, 0, msg.ControlLen)
 	controlData = control.PackControlMessages(t, cms, controlData)
