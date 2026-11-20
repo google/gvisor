@@ -696,6 +696,14 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 	}
 
 	if packetMustBeFragmented(pkt, networkMTU) {
+		if segs, ok := segmentForwardedGROPacket(pkt, networkMTU, int(r.MaxHeaderLength())); ok {
+			sent, remain, err := ip.WriteSegments(segs, func(seg *stack.PacketBuffer) tcpip.Error {
+				return e.nic.WritePacket(r, seg)
+			})
+			stats.PacketsSent.IncrementBy(uint64(sent))
+			stats.OutgoingPacketErrors.IncrementBy(uint64(remain))
+			return err
+		}
 		h := header.IPv4(pkt.NetworkHeader().Slice())
 		if h.Flags()&header.IPv4FlagDontFragment != 0 && pkt.NetworkPacketInfo.IsForwardedPacket {
 			// TODO(gvisor.dev/issue/5919): Handle error condition in which DontFragment
@@ -2073,6 +2081,28 @@ func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
 	payload := len(pkt.TransportHeader().Slice()) + pkt.Data().Size()
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
+}
+
+// segmentForwardedGROPacket segments a forwarded TCP packet that receive
+// offload coalesced, if its segments fit networkMTU. Receive offload, not the
+// sender, made the packet this large, so it is segmented rather than
+// fragmented or dropped, whether or not DF is set.
+func segmentForwardedGROPacket(pkt *stack.PacketBuffer, networkMTU uint32, reserveHeaderBytes int) (stack.PacketBufferList, bool) {
+	if !pkt.NetworkPacketInfo.IsForwardedPacket || pkt.GROSegmentSize == 0 {
+		return stack.PacketBufferList{}, false
+	}
+	h := header.IPv4(pkt.NetworkHeader().Slice())
+	if h.TransportProtocol() != header.TCPProtocolNumber || h.More() || h.FragmentOffset() != 0 {
+		return stack.PacketBufferList{}, false
+	}
+	id := h.ID()
+	return ip.SegmentCoalescedTCP(pkt, networkMTU, reserveHeaderBytes, func(i int, netHdr []byte, transportLen int) {
+		h := header.IPv4(netHdr)
+		h.SetTotalLength(uint16(len(netHdr) + transportLen))
+		h.SetID(id + uint16(i))
+		h.SetChecksum(0)
+		h.SetChecksum(^h.CalculateChecksum())
+	})
 }
 
 // Options holds options to configure a new protocol.

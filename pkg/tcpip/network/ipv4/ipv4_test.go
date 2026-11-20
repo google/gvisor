@@ -857,6 +857,296 @@ func TestFragmentForwarding(t *testing.T) {
 	}
 }
 
+// newCoalescedTCPPacket returns an IPv4 TCP packet carrying payload, marked as
+// coalesced by receive offload from segments of groSegmentSize bytes.
+func newCoalescedTCPPacket(t *testing.T, payload []byte, ipFlags uint8, groSegmentSize uint16) *stack.PacketBuffer {
+	t.Helper()
+	tcpLen := len(groTCPOptions) + header.TCPMinimumSize + len(payload)
+	hdr := prependable.New(header.IPv4MinimumSize + tcpLen)
+	copy(hdr.Prepend(len(payload)), payload)
+	copy(hdr.Prepend(len(groTCPOptions)), groTCPOptions)
+	tcpHdr := header.TCP(hdr.Prepend(header.TCPMinimumSize))
+	tcpHdr.Encode(&header.TCPFields{
+		SrcPort:    1234,
+		DstPort:    80,
+		SeqNum:     groSeqNum,
+		AckNum:     1,
+		DataOffset: uint8(header.TCPMinimumSize + len(groTCPOptions)),
+		Flags:      groTCPFlags,
+		WindowSize: 65535,
+	})
+	tcpHdr = header.TCP(hdr.View())
+	xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, remoteIPv4Addr1, remoteIPv4Addr2, uint16(tcpLen))
+	xsum = checksum.Checksum(payload, xsum)
+	tcpHdr.SetChecksum(^tcpHdr.CalculateChecksum(xsum))
+	ipHdr := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ipHdr.Encode(&header.IPv4Fields{
+		TotalLength: uint16(header.IPv4MinimumSize + tcpLen),
+		ID:          groIPID,
+		Flags:       ipFlags,
+		TTL:         groTTL,
+		Protocol:    uint8(header.TCPProtocolNumber),
+		SrcAddr:     remoteIPv4Addr1,
+		DstAddr:     remoteIPv4Addr2,
+	})
+	ipHdr.SetChecksum(^ipHdr.CalculateChecksum())
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	pkt.GROSegmentSize = groSegmentSize
+	return pkt
+}
+
+const (
+	groSeqNum   = 1000
+	groIPID     = 100
+	groTTL      = 2
+	groTCPFlags = header.TCPFlagAck | header.TCPFlagPsh | header.TCPFlagFin | header.TCPFlagCwr
+)
+
+// groTCPOptions is a TCP timestamp option, padded to 12 bytes.
+var groTCPOptions = []byte{header.TCPOptionNOP, header.TCPOptionNOP, header.TCPOptionTS, header.TCPOptionTSLength, 0, 0, 0, 1, 0, 0, 0, 2}
+
+// splitPayload returns the payload sizes of n bytes split into size-byte
+// segments.
+func splitPayload(n, size int) []int {
+	var sizes []int
+	for ; n > size; n -= size {
+		sizes = append(sizes, size)
+	}
+	return append(sizes, n)
+}
+
+func TestForwardingGROPacket(t *testing.T) {
+	const (
+		defaultMTU = 1000
+		tcpLen     = header.TCPMinimumSize + 12
+		mss        = defaultMTU - header.IPv4MinimumSize - tcpLen
+
+		// Host GRO frames of 8280 and 56842 bytes, forwarded to a 1446-byte
+		// MTU. 1408-byte segments, sized for a 1460-byte MTU, do not fit it.
+		bridgeMTU      = 1446
+		bridgeMSS      = bridgeMTU - header.IPv4MinimumSize - tcpLen
+		uplinkMSS      = 1408
+		frameOverhead  = header.EthernetMinimumSize + header.IPv4MinimumSize + tcpLen
+		fragmentMaxLen = (defaultMTU - header.IPv4MinimumSize) &^ 7
+	)
+
+	tests := []struct {
+		name string
+		// mtu is the MTU of both NICs, defaultMTU if zero.
+		mtu            uint32
+		ipFlags        uint8
+		groSegmentSize uint16
+		payloadLen     int
+		// wantSegments holds the payload size of each forwarded TCP segment.
+		wantSegments []int
+		// wantFragments is the number of IP fragments forwarded instead.
+		wantFragments    int
+		wantPacketTooBig uint64
+	}{
+		{
+			name:           "8280-byte frame with DF",
+			mtu:            bridgeMTU,
+			ipFlags:        header.IPv4FlagDontFragment,
+			groSegmentSize: bridgeMSS,
+			payloadLen:     8280 - frameOverhead,
+			wantSegments:   splitPayload(8280-frameOverhead, bridgeMSS),
+		},
+		{
+			name:           "56842-byte frame with DF",
+			mtu:            bridgeMTU,
+			ipFlags:        header.IPv4FlagDontFragment,
+			groSegmentSize: bridgeMSS,
+			payloadLen:     56842 - frameOverhead,
+			wantSegments:   splitPayload(56842-frameOverhead, bridgeMSS),
+		},
+		{
+			name:             "8280-byte frame with DF and segments too large",
+			mtu:              bridgeMTU,
+			ipFlags:          header.IPv4FlagDontFragment,
+			groSegmentSize:   uplinkMSS,
+			payloadLen:       8280 - frameOverhead,
+			wantPacketTooBig: 1,
+		},
+		{
+			name:           "segments do not fit and DF not set",
+			groSegmentSize: mss + 1,
+			payloadLen:     2 * (mss + 1),
+			wantFragments:  (tcpLen + 2*(mss+1) + fragmentMaxLen - 1) / fragmentMaxLen,
+		},
+		{
+			name:           "segments fit and DF set",
+			ipFlags:        header.IPv4FlagDontFragment,
+			groSegmentSize: mss,
+			payloadLen:     3*mss + 100,
+			wantSegments:   []int{mss, mss, mss, 100},
+		},
+		{
+			name:           "segments fit and DF not set",
+			groSegmentSize: mss,
+			payloadLen:     2 * mss,
+			wantSegments:   []int{mss, mss},
+		},
+		{
+			name:           "smaller segments than MTU allows",
+			ipFlags:        header.IPv4FlagDontFragment,
+			groSegmentSize: 500,
+			payloadLen:     1200,
+			wantSegments:   []int{500, 500, 200},
+		},
+		{
+			name:           "coalesced packet fits MTU",
+			ipFlags:        header.IPv4FlagDontFragment,
+			groSegmentSize: 300,
+			payloadLen:     600,
+			wantSegments:   []int{600},
+		},
+		{
+			name:             "segments do not fit and DF set",
+			ipFlags:          header.IPv4FlagDontFragment,
+			groSegmentSize:   mss + 1,
+			payloadLen:       2 * (mss + 1),
+			wantPacketTooBig: 1,
+		},
+		{
+			name:             "not coalesced and DF set",
+			ipFlags:          header.IPv4FlagDontFragment,
+			payloadLen:       2 * mss,
+			wantPacketTooBig: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
+			mtu := test.mtu
+			if mtu == 0 {
+				mtu = defaultMTU
+			}
+			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+			for nicID, addr := range defaultEndpointConfigs {
+				ep := channel.New(max(len(test.wantSegments), test.wantFragments)+1, mtu, "")
+				defer ep.Close()
+				if err := s.CreateNIC(nicID, ep); err != nil {
+					t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+				}
+				addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: addr}
+				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+				}
+				endpoints[nicID] = ep
+			}
+			s.SetRouteTable([]tcpip.Route{
+				{Destination: incomingIPv4Addr.Subnet(), NIC: incomingNICID},
+				{Destination: outgoingIPv4Addr.Subnet(), NIC: outgoingNICID},
+			})
+			if err := s.SetForwardingDefaultAndAllNICs(header.IPv4ProtocolNumber, true); err != nil {
+				t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", header.IPv4ProtocolNumber, err)
+			}
+
+			payload := make([]byte, test.payloadLen)
+			for i := range payload {
+				payload[i] = byte(i)
+			}
+			requestPkt := newCoalescedTCPPacket(t, payload, test.ipFlags, test.groSegmentSize)
+			defer requestPkt.DecRef()
+			endpoints[incomingNICID].InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+
+			reply := endpoints[incomingNICID].Read()
+			if test.wantPacketTooBig != 0 {
+				if reply == nil {
+					t.Fatal("expected an ICMP Fragmentation Needed packet through the incoming NIC")
+				}
+				defer reply.DecRef()
+				replyPayload := stack.PayloadSince(reply.NetworkHeader())
+				defer replyPayload.Release()
+				checker.IPv4(t, replyPayload,
+					checker.DstAddr(remoteIPv4Addr1),
+					checker.ICMPv4(
+						checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+						checker.ICMPv4Code(header.ICMPv4FragmentationNeeded),
+					),
+				)
+			} else if reply != nil {
+				reply.DecRef()
+				t.Fatal("got a packet through the incoming NIC, want none")
+			}
+
+			off := 0
+			for i, n := range test.wantSegments {
+				pkt := endpoints[outgoingNICID].Read()
+				if pkt == nil {
+					t.Fatalf("got %d packets through the outgoing NIC, want %d", i, len(test.wantSegments))
+				}
+				defer pkt.DecRef()
+				v := stack.PayloadSince(pkt.NetworkHeader())
+				defer v.Release()
+				wantFlags := header.TCPFlags(groTCPFlags)
+				if i != 0 {
+					wantFlags &^= header.TCPFlagCwr
+				}
+				if i != len(test.wantSegments)-1 {
+					wantFlags &^= header.TCPFlagFin | header.TCPFlagPsh
+				}
+				checker.IPv4(t, v,
+					checker.SrcAddr(remoteIPv4Addr1),
+					checker.DstAddr(remoteIPv4Addr2),
+					checker.TTL(groTTL-1),
+					checker.IPFullLength(uint16(header.IPv4MinimumSize+tcpLen+n)),
+					checker.FragmentFlags(test.ipFlags),
+					checker.TCP(
+						checker.TCPSeqNum(uint32(groSeqNum+off)),
+						checker.TCPFlags(wantFlags),
+					),
+				)
+				ipHdr := header.IPv4(v.AsSlice())
+				if got, want := ipHdr.ID(), uint16(groIPID+i); got != want {
+					t.Errorf("packet %d: got IP ID = %d, want = %d", i, got, want)
+				}
+				tcpHdr := header.TCP(ipHdr.Payload())
+				if got := []byte(tcpHdr[header.TCPMinimumSize:tcpHdr.DataOffset()]); !bytes.Equal(got, groTCPOptions) {
+					t.Errorf("packet %d: got TCP options = %x, want = %x", i, got, groTCPOptions)
+				}
+				if got, want := tcpHdr.Payload(), payload[off:off+n]; !bytes.Equal(got, want) {
+					t.Errorf("packet %d: TCP payload mismatch, got %d bytes, want %d bytes", i, len(got), len(want))
+				}
+				off += n
+			}
+			for i := 0; i < test.wantFragments; i++ {
+				pkt := endpoints[outgoingNICID].Read()
+				if pkt == nil {
+					t.Fatalf("got %d fragments through the outgoing NIC, want %d", i, test.wantFragments)
+				}
+				defer pkt.DecRef()
+				ipHdr := header.IPv4(pkt.NetworkHeader().Slice())
+				if got, want := ipHdr.More(), i != test.wantFragments-1; got != want {
+					t.Errorf("fragment %d: got More() = %t, want = %t", i, got, want)
+				}
+			}
+			if pkt := endpoints[outgoingNICID].Read(); pkt != nil {
+				pkt.DecRef()
+				t.Errorf("got more than %d packets through the outgoing NIC", len(test.wantSegments)+test.wantFragments)
+			}
+
+			if got := s.Stats().IP.Forwarding.PacketTooBig.Value(); got != test.wantPacketTooBig {
+				t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, test.wantPacketTooBig)
+			}
+			if test.wantPacketTooBig == 0 {
+				if got, want := s.Stats().IP.PacketsSent.Value(), uint64(len(test.wantSegments)+test.wantFragments); got != want {
+					t.Errorf("s.Stats().IP.PacketsSent.Value() = %d, want = %d", got, want)
+				}
+				if got := s.Stats().IP.OutgoingPacketErrors.Value(); got != 0 {
+					t.Errorf("s.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
+				}
+			}
+		})
+	}
+}
+
 func TestMulticastFragmentForwarding(t *testing.T) {
 	const (
 		defaultMTU           = 1000

@@ -808,6 +808,24 @@ func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
 }
 
+// segmentForwardedGROPacket segments a forwarded TCP packet that receive
+// offload coalesced, if its segments fit networkMTU. Receive offload, not the
+// sender, made the packet this large, so it is segmented rather than dropped.
+//
+// Only packets whose TCP header directly follows the fixed IPv6 header are
+// segmented.
+func segmentForwardedGROPacket(pkt *stack.PacketBuffer, networkMTU uint32, reserveHeaderBytes int) (stack.PacketBufferList, bool) {
+	if !pkt.NetworkPacketInfo.IsForwardedPacket || pkt.GROSegmentSize == 0 {
+		return stack.PacketBufferList{}, false
+	}
+	if header.IPv6(pkt.NetworkHeader().Slice()).NextHeader() != uint8(header.TCPProtocolNumber) {
+		return stack.PacketBufferList{}, false
+	}
+	return ip.SegmentCoalescedTCP(pkt, networkMTU, reserveHeaderBytes, func(_ int, netHdr []byte, transportLen int) {
+		header.IPv6(netHdr).SetPayloadLength(uint16(transportLen))
+	})
+}
+
 // handleFragments fragments pkt and calls the handler function on each
 // fragment. It returns the number of fragments handled and the number of
 // fragments left to be processed. The IP header must already be present in the
@@ -1026,6 +1044,14 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 	}
 
 	if packetMustBeFragmented(pkt, networkMTU) {
+		if segs, ok := segmentForwardedGROPacket(pkt, networkMTU, int(r.MaxHeaderLength())); ok {
+			sent, remain, err := ip.WriteSegments(segs, func(seg *stack.PacketBuffer) tcpip.Error {
+				return e.nic.WritePacket(r, seg)
+			})
+			stats.PacketsSent.IncrementBy(uint64(sent))
+			stats.OutgoingPacketErrors.IncrementBy(uint64(remain))
+			return err
+		}
 		if pkt.NetworkPacketInfo.IsForwardedPacket {
 			// As per RFC 2460, section 4.5:
 			//   Unlike IPv4, fragmentation in IPv6 is performed only by source nodes,

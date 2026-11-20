@@ -41,6 +41,7 @@
 package fdbased
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -608,12 +609,24 @@ func (h *virtioNetHdr) marshal() []byte {
 	return buf[:]
 }
 
+// unmarshal deserializes h from buf, in little-endian byte order. buf must be
+// at least virtioNetHdrSize bytes long.
+func (h *virtioNetHdr) unmarshal(buf []byte) {
+	h.flags = buf[0]
+	h.gsoType = buf[1]
+	h.hdrLen = binary.LittleEndian.Uint16(buf[2:])
+	h.gsoSize = binary.LittleEndian.Uint16(buf[4:])
+	h.csumStart = binary.LittleEndian.Uint16(buf[6:])
+	h.csumOffset = binary.LittleEndian.Uint16(buf[8:])
+}
+
 // These constants are declared in linux/virtio_net.h.
 const (
 	_VIRTIO_NET_HDR_F_NEEDS_CSUM = 1
 
 	_VIRTIO_NET_HDR_GSO_TCPV4 = 1
 	_VIRTIO_NET_HDR_GSO_TCPV6 = 4
+	_VIRTIO_NET_HDR_GSO_ECN   = 0x80
 )
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
