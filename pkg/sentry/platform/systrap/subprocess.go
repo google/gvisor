@@ -890,6 +890,7 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		ctx.sleeping = false
 		s.incAwakeContexts()
 	}
+	ctx.resetLatencyMeasures()
 	ctx.setState(sysmsg.ContextStateNone)
 	if err := s.contextQueue.add(ctx); err != nil {
 		return false, false, hostarch.NoAccess, err
