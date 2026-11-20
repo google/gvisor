@@ -34,6 +34,7 @@ go_test(
         "cpuid_amd64_test.go",
         "cpuid_arm64_test.go",
         "cpuid_test.go",
+        "idregister_arm64_test.go",
     ],
     embed = [":cpuid"],
     # NOTE: It seems that bazel code generation does not properly parse tags

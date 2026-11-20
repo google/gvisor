@@ -449,7 +449,21 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	case ring0.Vector(bounce): // ring0.VirtualizationException.
 		return hostarch.NoAccess, platform.ErrContextInterrupt
 	case ring0.El0SyncUndef,
-		ring0.El0SyncInv:
+		ring0.El0SyncSys:
+		// An application's MRS of an ID register lands here: as an
+		// undefined instruction before Armv8.4, and as a trapped MRS
+		// after. Linux emulates those reads, so try that before
+		// delivering SIGILL; any other instruction gets the SIGILL.
+		at, err := c.fault(int32(unix.SIGILL), info)
+		if err != platform.ErrContextSignal {
+			return at, err
+		}
+		// Like Linux, report an illegal opcode at the instruction: FAR_EL1
+		// and the fault status bits don't apply to these exceptions.
+		info.Code = 1 // ILL_ILLOPC (illegal opcode).
+		info.SetAddr(switchOpts.Registers.Pc)
+		return at, tryCPUIDError{}
+	case ring0.El0SyncInv:
 		return c.fault(int32(unix.SIGILL), info)
 	case ring0.El0SyncDbg:
 		*info = linux.SignalInfo{
@@ -464,9 +478,12 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}
 		return hostarch.NoAccess, platform.ErrContextSignal
-	case ring0.El0SyncSys,
-		ring0.El0SyncWfx:
-		return hostarch.NoAccess, nil // skip for now.
+	case ring0.El0SyncWfx:
+		// SCTLR_EL1.nTWI and nTWE are clear, so an application's WFI and
+		// WFE trap. Both are hints, so complete the instruction and let
+		// the task run loop check for work before resuming.
+		switchOpts.Registers.Pc += 4
+		return hostarch.NoAccess, platform.ErrContextInterrupt
 	default:
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
 	}

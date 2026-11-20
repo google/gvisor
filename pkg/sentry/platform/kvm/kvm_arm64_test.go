@@ -212,6 +212,62 @@ func TestHostPACDisabledVDSO(t *testing.T) {
 	})
 }
 
+// instructionAt returns the instruction at pc, which the test's host mappings
+// make readable.
+func instructionAt(pc uint64) uint32 {
+	return *(*uint32)(unsafe.Pointer(uintptr(pc)))
+}
+
+// svcInstruction is SVC #0.
+const svcInstruction = 0xd4000001
+
+// TestApplicationIDRegister tests that an application's MRS of an ID register
+// is reported for emulation, as Linux emulates it, and is not run as a system
+// call.
+func TestApplicationIDRegister(t *testing.T) {
+	applicationTest(t, true, testutil.AddrOfIDRegisterLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		var si linux.SignalInfo
+		_, err := c.SwitchToUser(ring0.SwitchOpts{
+			Registers:          regs,
+			FloatingPointState: &dummyFPState,
+			PageTables:         pt,
+		}, &si)
+		if err == platform.ErrContextInterrupt {
+			return true // Retry.
+		}
+		if _, ok := err.(tryCPUIDError); !ok {
+			t.Errorf("MRS of MIDR_EL1 returned (%v, %+v), want tryCPUIDError", err, si)
+		} else if si.Signo != int32(unix.SIGILL) || si.Code != 1 || si.Addr() != regs.Pc {
+			t.Errorf("MRS of MIDR_EL1 left signal %d, code %d at %#x for an unemulated read, want SIGILL, ILL_ILLOPC at pc %#x", si.Signo, si.Code, si.Addr(), regs.Pc)
+		} else if inst := instructionAt(regs.Pc); inst != 0xd5380000 {
+			t.Errorf("MRS of MIDR_EL1 returned with pc at %#08x, want the MRS", inst)
+		}
+		return false
+	})
+}
+
+// TestApplicationWFE tests that an application's trapped WFE completes, and
+// isn't run as a system call.
+func TestApplicationWFE(t *testing.T) {
+	applicationTest(t, true, testutil.AddrOfWFELoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		var si linux.SignalInfo
+		_, err := c.SwitchToUser(ring0.SwitchOpts{
+			Registers:          regs,
+			FloatingPointState: &dummyFPState,
+			PageTables:         pt,
+		}, &si)
+		if err == platform.ErrContextInterrupt {
+			return true // A trapped WFE, or an interrupt: resume.
+		}
+		if err != nil {
+			t.Errorf("WFE raised (%v, %+v), want a syscall", err, si)
+		} else if inst := instructionAt(regs.Pc - 4); inst != svcInstruction {
+			t.Errorf("syscall return with pc after %#08x, want after the SVC", inst)
+		}
+		return false
+	})
+}
+
 // disallowedVDSOExit returns a description of the last guest exit of c and
 // whether it indicates that a vDSO time call did not run entirely in guest
 // mode: a system call that reads the time.
