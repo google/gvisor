@@ -223,10 +223,6 @@ func (s *sender) schedulePTO() {
 // +checklocks:s.ep.mu
 // +checklocksexclude:s.rtt.rttMutex
 func (s *sender) probeTimerExpired() tcpip.Error {
-	if s.probeTimer.isUninitialized() || !s.probeTimer.checkExpiration() {
-		return nil
-	}
-
 	var dataSent bool
 	if s.writeNext != nil && s.writeNext.xmitCount == 0 && s.Outstanding < s.SndCwnd {
 		dataSent = s.maybeSendSegment(s.writeNext, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd))
@@ -455,10 +451,6 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 // +checklocks:rc.snd.ep.mu
 // +checklocksexclude:rc.snd.rtt.rttMutex
 func (rc *rackControl) reorderTimerExpired() tcpip.Error {
-	if rc.snd.reorderTimer.isUninitialized() || !rc.snd.reorderTimer.checkExpiration() {
-		return nil
-	}
-
 	// Evaluate loss as of the time the reorder timer was scheduled to fire (its
 	// target), not the current clock. The timer is armed for the instant a
 	// segment's reorder window elapses, but the timer callback itself can run

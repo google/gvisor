@@ -68,25 +68,29 @@ type timer struct {
 	// timer is the clock timer used to wait on.
 	timer tcpip.Timer
 
-	// callback is the function that's called when the timer expires.
+	// callback handles a wakeup from the underlying clock timer.
 	callback func()
 }
 
-// init initializes the timer. Once it expires the function callback
-// passed will be called.
-func (t *timer) init(clock tcpip.Clock, f func()) {
+// init registers expired to run under e.mu when the logical deadline is due.
+func (t *timer) init(e *Endpoint, expired func() tcpip.Error) {
 	t.state = timerStateDisabled
-	t.clock = clock
-	t.callback = f
+	t.clock = e.stack.Clock()
+	t.callback = func() {
+		e.handleTimer(func() tcpip.Error {
+			if t.consumeClockWake() {
+				return expired()
+			}
+			return nil
+		})
+	}
 }
 
 // cleanup frees all resources associated with the timer.
 func (t *timer) cleanup() {
-	if t.timer == nil {
-		// No cleanup needed.
-		return
+	if t.timer != nil {
+		t.timer.Stop()
 	}
-	t.timer.Stop()
 	*t = timer{}
 }
 
@@ -96,20 +100,17 @@ func (t *timer) isUninitialized() bool {
 	return t.state == timerUninitialized
 }
 
-// checkExpiration checks if the given timer has actually expired, it should be
-// called whenever the callback function is called, and is used to check if it's
-// a spurious timer expiration (due to a previously orphaned timer) or a
-// legitimate one.
-func (t *timer) checkExpiration() bool {
-	// Transition to fully disabled state if we're just consuming an
-	// orphaned timer.
-	if t.state == timerStateOrphaned {
+// consumeClockWake retires canceled wakeups and rearms early ones. It
+// disables the timer and returns true only when the current deadline is due.
+func (t *timer) consumeClockWake() bool {
+	switch t.state {
+	case timerUninitialized, timerStateDisabled:
+		return false
+	case timerStateOrphaned:
 		t.state = timerStateDisabled
 		return false
 	}
 
-	// The timer is enabled, but it may have expired early. Check if that's
-	// the case, and if so, reset the runtime timer to the correct time.
 	now := t.clock.NowMonotonic()
 	if now.Before(t.target) {
 		t.clockTarget = t.target
@@ -117,16 +118,13 @@ func (t *timer) checkExpiration() bool {
 		return false
 	}
 
-	// The timer has actually expired, disable it for now and inform the
-	// caller.
 	t.state = timerStateDisabled
 	return true
 }
 
-// disable disables the timer, leaving it in an orphaned state if it wasn't
-// already disabled.
+// disable leaves a scheduled timer orphaned until its callback fires.
 func (t *timer) disable() {
-	if t.state != timerStateDisabled {
+	if t.state == timerStateEnabled {
 		t.state = timerStateOrphaned
 	}
 }

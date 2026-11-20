@@ -181,13 +181,13 @@ func (e *Endpoint) closeEndpointAtRestore() {
 // +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) Restore(s *stack.Stack) {
 	if !e.EndpointState().closed() {
-		e.keepalive.timer.init(s.Clock(), timerHandler(e, e.keepaliveTimerExpired))
+		e.keepalive.timer.init(e, e.keepaliveTimerExpired)
 	}
 	if snd := e.snd; snd != nil {
-		snd.resendTimer.init(s.Clock(), timerHandler(e, e.snd.retransmitTimerExpired))
-		snd.reorderTimer.init(s.Clock(), timerHandler(e, e.snd.rc.reorderTimerExpired))
-		snd.probeTimer.init(s.Clock(), timerHandler(e, e.snd.probeTimerExpired))
-		snd.corkTimer.init(s.Clock(), timerHandler(e, e.snd.corkTimerExpired))
+		snd.resendTimer.init(e, e.snd.retransmitTimerExpired)
+		snd.reorderTimer.init(e, e.snd.rc.reorderTimerExpired)
+		snd.probeTimer.init(e, e.snd.probeTimerExpired)
+		snd.corkTimer.init(e, e.snd.corkTimerExpired)
 	}
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()

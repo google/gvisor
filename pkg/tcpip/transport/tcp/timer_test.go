@@ -19,32 +19,61 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
 
+// newTestTimer lets tests observe the clock wake separately from the TCP
+// handler that would run after acquiring the endpoint mutex.
+func newTestTimer(clock tcpip.Clock, wake func()) timer {
+	return timer{clock: clock, state: timerStateDisabled, callback: wake}
+}
+
 func TestCleanup(t *testing.T) {
-	const (
-		timerDurationSeconds     = 2
-		isAssertedTimeoutSeconds = timerDurationSeconds + 1
-	)
-
 	clock := faketime.NewManualClock()
-
-	tmr := timer{}
-	w := sleep.Waker{}
-	tmr.init(clock, w.Assert)
-	tmr.enable(timerDurationSeconds * time.Second)
-	tmr.cleanup()
-
-	if !tmr.isUninitialized() {
-		t.Errorf("got tmr.isUninitialized = false, want = true")
-	}
-
-	// The waker should not be asserted.
-	for i := 0; i < isAssertedTimeoutSeconds; i++ {
-		clock.Advance(time.Second)
-		if w.IsAsserted() {
-			t.Fatalf("waker asserted unexpectedly")
+	for _, armed := range []bool{false, true} {
+		w := sleep.Waker{}
+		tmr := newTestTimer(clock, w.Assert)
+		if armed {
+			tmr.enable(time.Second)
 		}
+		tmr.cleanup()
+		tmr.disable()
+		if !tmr.isUninitialized() {
+			t.Errorf("timer still initialized after cleanup (armed=%t)", armed)
+		}
+		// A callback may already be waiting for the endpoint mutex.
+		if tmr.consumeClockWake() {
+			t.Errorf("wake after cleanup expired the timer (armed=%t)", armed)
+		}
+		clock.Advance(2 * time.Second)
+		if w.IsAsserted() {
+			t.Errorf("clock ran the cleaned-up timer (armed=%t)", armed)
+		}
+	}
+}
+
+func TestPostponedTimerExpiresOnce(t *testing.T) {
+	clock := faketime.NewManualClock()
+	var wakes, expirations int
+	var tmr timer
+	tmr = newTestTimer(clock, func() {
+		wakes++
+		if tmr.consumeClockWake() {
+			expirations++
+		}
+	})
+	tmr.enable(time.Second)
+	tmr.enable(2 * time.Second)
+	clock.Advance(time.Second)
+	if wakes != 1 || expirations != 0 {
+		t.Fatalf("at old deadline got %d wakes and %d expirations, want 1 and 0", wakes, expirations)
+	}
+	clock.Advance(time.Second)
+	if wakes != 2 || expirations != 1 {
+		t.Fatalf("at new deadline got %d wakes and %d expirations, want 2 and 1", wakes, expirations)
+	}
+	if tmr.consumeClockWake() {
+		t.Fatal("second wake expired a disabled timer")
 	}
 }
