@@ -312,6 +312,14 @@ type connection struct {
 	// noCreate if FUSE server doesn't support the create operation. Files are
 	// then created with FUSE_MKNOD followed by FUSE_OPEN, as Linux does.
 	noCreate bool
+
+	// noGetxattr, noSetxattr, noListxattr and noRemovexattr record an ENOSYS
+	// reply to the matching xattr request. As in Linux, that request is not
+	// sent again on this connection and fails with EOPNOTSUPP instead.
+	noGetxattr    atomicbitops.Bool
+	noSetxattr    atomicbitops.Bool
+	noListxattr   atomicbitops.Bool
+	noRemovexattr atomicbitops.Bool
 }
 
 func linuxError(err error) error {

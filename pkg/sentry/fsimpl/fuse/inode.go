@@ -919,12 +919,15 @@ func (i *inode) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string,
 		Name: linux.CString(opts.Name),
 	}
 
+	if i.fs.conn.noGetxattr.Load() {
+		return "", linuxerr.EOPNOTSUPP
+	}
 	res, err := i.callRaw(ctx, linux.FUSE_GETXATTR, &in)
 	if err != nil {
 		return "", err
 	}
 	if err := res.Error(); err != nil {
-		return "", err
+		return "", xattrError(err, &i.fs.conn.noGetxattr)
 	}
 
 	if opts.Size == 0 {
@@ -953,7 +956,10 @@ func (i *inode) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
 		Value: []byte(opts.Value),
 	}
 
-	return i.callNoReply(ctx, linux.FUSE_SETXATTR, &in)
+	if i.fs.conn.noSetxattr.Load() {
+		return linuxerr.EOPNOTSUPP
+	}
+	return xattrError(i.callNoReply(ctx, linux.FUSE_SETXATTR, &in), &i.fs.conn.noSetxattr)
 }
 
 // ListXattr implements kernfs.InodeWithXattrs.ListXattr.
@@ -962,12 +968,15 @@ func (i *inode) ListXattr(ctx context.Context, size uint64) ([]string, error) {
 		Size: uint32(size),
 	}
 
+	if i.fs.conn.noListxattr.Load() {
+		return nil, linuxerr.EOPNOTSUPP
+	}
 	res, err := i.callRaw(ctx, linux.FUSE_LISTXATTR, &in)
 	if err != nil {
 		return nil, err
 	}
 	if err := res.Error(); err != nil {
-		return nil, err
+		return nil, xattrError(err, &i.fs.conn.noListxattr)
 	}
 
 	if size == 0 {
@@ -1010,6 +1019,21 @@ func (i *inode) ListXattr(ctx context.Context, size uint64) ([]string, error) {
 
 // RemoveXattr implements kernfs.InodeWithXattrs.RemoveXattr.
 func (i *inode) RemoveXattr(ctx context.Context, name string) error {
+	if i.fs.conn.noRemovexattr.Load() {
+		return linuxerr.EOPNOTSUPP
+	}
 	in := linux.CString(name)
-	return i.callNoReply(ctx, linux.FUSE_REMOVEXATTR, &in)
+	return xattrError(i.callNoReply(ctx, linux.FUSE_REMOVEXATTR, &in), &i.fs.conn.noRemovexattr)
+}
+
+// xattrError returns the error for an xattr request that failed with err. As
+// in Linux, a server that does not implement the request (ENOSYS) is recorded
+// in unsupported, and the caller gets EOPNOTSUPP, which applications expect
+// from a filesystem without xattrs.
+func xattrError(err error, unsupported *atomicbitops.Bool) error {
+	if linuxerr.Equals(linuxerr.ENOSYS, err) {
+		unsupported.Store(true)
+		return linuxerr.EOPNOTSUPP
+	}
+	return err
 }

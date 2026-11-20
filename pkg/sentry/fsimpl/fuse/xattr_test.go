@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -28,9 +29,11 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func TestFUSEXattr(t *testing.T) {
+// mountTestFUSE mounts a FUSE filesystem at /fuse, served through the
+// returned FD. It returns the task that serves requests and the mount point.
+func mountTestFUSE(t *testing.T) (*testutil.System, *kernel.Task, *vfs.FileDescription, vfs.PathOperation) {
 	s := setup(t)
-	defer s.Destroy()
+	t.Cleanup(s.Destroy)
 
 	k := kernel.KernelFromContext(s.Ctx)
 
@@ -80,20 +83,16 @@ func TestFUSEXattr(t *testing.T) {
 
 	// Unblock the connection so that VFS operations (which call conn.Call) can proceed.
 	conn.setInitialized()
+	return s, task, fd, pop
+}
 
-	// We will run the mock daemon in a goroutine.
-	// It will handle requests and we will signal it when we are done.
+// serveTestFUSE runs a mock FUSE server that passes each request to handle,
+// until the returned function stops it.
+func serveTestFUSE(t *testing.T, task *kernel.Task, fd *vfs.FileDescription, handle func(hdr linux.FUSEHeaderIn, payloadBuf []byte)) (stop func()) {
 	killServer := make(chan struct{}, 1)
 	serverDone := make(chan struct{})
-
-	// Target xattr details.
-	xattrName := "user.test"
-	xattrVal := "value.test"
-	newXattrVal := "value.new"
-
 	go func() {
 		defer close(serverDone)
-		// Server loop.
 		for {
 			inBuf := make([]byte, linux.FUSE_MIN_READ_BUFFER)
 			inIOseq := usermem.BytesIOSequence(inBuf)
@@ -113,84 +112,100 @@ func TestFUSEXattr(t *testing.T) {
 
 			var hdr linux.FUSEHeaderIn
 			payloadBuf := hdr.UnmarshalUnsafe(inBuf)
-
-			switch hdr.Opcode {
-			case linux.FUSE_GETXATTR:
-				var getXattrHdr linux.FUSEGetXattrHdr
-				nameBuf := getXattrHdr.UnmarshalUnsafe(payloadBuf)
-				name, _ := readCString(nameBuf)
-
-				if name != xattrName {
-					t.Errorf("GetXattr: expected name %q, got %q", xattrName, name)
-					sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENODATA))
-					continue
-				}
-
-				if getXattrHdr.Size == 0 {
-					out := linux.FUSEGetXattrOut{
-						Size: uint32(len(xattrVal)),
-					}
-					replyBuf := make([]byte, out.SizeBytes())
-					out.MarshalBytes(replyBuf)
-					sendSuccessReply(s.Ctx, t, fd, hdr.Unique, replyBuf)
-				} else {
-					sendSuccessReply(s.Ctx, t, fd, hdr.Unique, []byte(xattrVal))
-				}
-
-			case linux.FUSE_SETXATTR:
-				var setXattrHdr linux.FUSESetXattrHdr
-				restBuf := setXattrHdr.UnmarshalUnsafe(payloadBuf)
-				name, valBuf := readCString(restBuf)
-				val := valBuf[:setXattrHdr.Size]
-
-				if name != xattrName {
-					t.Errorf("SetXattr: expected name %q, got %q", xattrName, name)
-					sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.EINVAL))
-					continue
-				}
-				if string(val) != newXattrVal {
-					t.Errorf("SetXattr: expected value %q, got %q", newXattrVal, val)
-					sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.EINVAL))
-					continue
-				}
-
-				// Success reply.
-				sendSuccessReply(s.Ctx, t, fd, hdr.Unique, nil)
-
-			case linux.FUSE_LISTXATTR:
-				var listXattrHdr linux.FUSEGetXattrHdr
-				listXattrHdr.UnmarshalUnsafe(payloadBuf)
-
-				replyData := []byte(xattrName + "\x00")
-				if listXattrHdr.Size == 0 {
-					out := linux.FUSEGetXattrOut{
-						Size: uint32(len(replyData)),
-					}
-					replyBuf := make([]byte, out.SizeBytes())
-					out.MarshalBytes(replyBuf)
-					sendSuccessReply(s.Ctx, t, fd, hdr.Unique, replyBuf)
-				} else {
-					sendSuccessReply(s.Ctx, t, fd, hdr.Unique, replyData)
-				}
-
-			case linux.FUSE_REMOVEXATTR:
-				name, _ := readCString(payloadBuf)
-
-				if name != xattrName {
-					t.Errorf("RemoveXattr: expected name %q, got %q", xattrName, name)
-					sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENODATA))
-					continue
-				}
-
-				// Success reply.
-				sendSuccessReply(s.Ctx, t, fd, hdr.Unique, nil)
-
-			default:
-				t.Errorf("Unexpected opcode: %v", hdr.Opcode)
-				sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENOSYS))
-			}
+			handle(hdr, payloadBuf)
 		}
 	}()
+	return func() {
+		killServer <- struct{}{}
+		<-serverDone
+	}
+}
+
+func TestFUSEXattr(t *testing.T) {
+	s, task, fd, pop := mountTestFUSE(t)
+
+	// Target xattr details.
+	xattrName := "user.test"
+	xattrVal := "value.test"
+	newXattrVal := "value.new"
+
+	stop := serveTestFUSE(t, task, fd, func(hdr linux.FUSEHeaderIn, payloadBuf []byte) {
+		switch hdr.Opcode {
+		case linux.FUSE_GETXATTR:
+			var getXattrHdr linux.FUSEGetXattrHdr
+			nameBuf := getXattrHdr.UnmarshalUnsafe(payloadBuf)
+			name, _ := readCString(nameBuf)
+
+			if name != xattrName {
+				t.Errorf("GetXattr: expected name %q, got %q", xattrName, name)
+				sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENODATA))
+				return
+			}
+
+			if getXattrHdr.Size == 0 {
+				out := linux.FUSEGetXattrOut{
+					Size: uint32(len(xattrVal)),
+				}
+				replyBuf := make([]byte, out.SizeBytes())
+				out.MarshalBytes(replyBuf)
+				sendSuccessReply(s.Ctx, t, fd, hdr.Unique, replyBuf)
+			} else {
+				sendSuccessReply(s.Ctx, t, fd, hdr.Unique, []byte(xattrVal))
+			}
+
+		case linux.FUSE_SETXATTR:
+			var setXattrHdr linux.FUSESetXattrHdr
+			restBuf := setXattrHdr.UnmarshalUnsafe(payloadBuf)
+			name, valBuf := readCString(restBuf)
+			val := valBuf[:setXattrHdr.Size]
+
+			if name != xattrName {
+				t.Errorf("SetXattr: expected name %q, got %q", xattrName, name)
+				sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.EINVAL))
+				return
+			}
+			if string(val) != newXattrVal {
+				t.Errorf("SetXattr: expected value %q, got %q", newXattrVal, val)
+				sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.EINVAL))
+				return
+			}
+
+			// Success reply.
+			sendSuccessReply(s.Ctx, t, fd, hdr.Unique, nil)
+
+		case linux.FUSE_LISTXATTR:
+			var listXattrHdr linux.FUSEGetXattrHdr
+			listXattrHdr.UnmarshalUnsafe(payloadBuf)
+
+			replyData := []byte(xattrName + "\x00")
+			if listXattrHdr.Size == 0 {
+				out := linux.FUSEGetXattrOut{
+					Size: uint32(len(replyData)),
+				}
+				replyBuf := make([]byte, out.SizeBytes())
+				out.MarshalBytes(replyBuf)
+				sendSuccessReply(s.Ctx, t, fd, hdr.Unique, replyBuf)
+			} else {
+				sendSuccessReply(s.Ctx, t, fd, hdr.Unique, replyData)
+			}
+
+		case linux.FUSE_REMOVEXATTR:
+			name, _ := readCString(payloadBuf)
+
+			if name != xattrName {
+				t.Errorf("RemoveXattr: expected name %q, got %q", xattrName, name)
+				sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENODATA))
+				return
+			}
+
+			// Success reply.
+			sendSuccessReply(s.Ctx, t, fd, hdr.Unique, nil)
+
+		default:
+			t.Errorf("Unexpected opcode: %v", hdr.Opcode)
+			sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENOSYS))
+		}
+	})
 
 	// Perform operations and verify.
 
@@ -256,9 +271,59 @@ func TestFUSEXattr(t *testing.T) {
 		t.Fatalf("RemoveXattrAt failed: %v", err)
 	}
 
-	// Clean up.
-	killServer <- struct{}{}
-	<-serverDone
+	stop()
+}
+
+// TestFUSEXattrENOSYS checks that, as in Linux, a server's ENOSYS reply to an
+// xattr request fails it with EOPNOTSUPP, and the request is not sent again.
+// For listxattr, VFS turns that EOPNOTSUPP into an empty list.
+func TestFUSEXattrENOSYS(t *testing.T) {
+	s, task, fd, pop := mountTestFUSE(t)
+
+	requests := make(map[linux.FUSEOpcode]int)
+	stop := serveTestFUSE(t, task, fd, func(hdr linux.FUSEHeaderIn, payloadBuf []byte) {
+		requests[hdr.Opcode]++
+		sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.ENOSYS))
+	})
+
+	ops := []struct {
+		name   string
+		opcode linux.FUSEOpcode
+		do     func() error
+	}{
+		{"GetXattrAt", linux.FUSE_GETXATTR, func() error {
+			_, err := s.VFS.GetXattrAt(s.Ctx, task.Credentials(), &pop, &vfs.GetXattrOptions{Name: "user.test", Size: 100})
+			return err
+		}},
+		{"SetXattrAt", linux.FUSE_SETXATTR, func() error {
+			return s.VFS.SetXattrAt(s.Ctx, task.Credentials(), &pop, &vfs.SetXattrOptions{Name: "user.test", Value: "value"})
+		}},
+		{"RemoveXattrAt", linux.FUSE_REMOVEXATTR, func() error {
+			return s.VFS.RemoveXattrAt(s.Ctx, task.Credentials(), &pop, "user.test")
+		}},
+	}
+	for _, op := range ops {
+		for attempt := 1; attempt <= 2; attempt++ {
+			if err := op.do(); !linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+				t.Errorf("%s attempt %d: got error %v, want EOPNOTSUPP", op.name, attempt, err)
+			}
+		}
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if names, err := s.VFS.ListXattrAt(s.Ctx, task.Credentials(), &pop, 100); err != nil || len(names) != 0 {
+			t.Errorf("ListXattrAt attempt %d: got (%v, %v), want no names and no error", attempt, names, err)
+		}
+	}
+
+	stop()
+	for _, op := range ops {
+		if got := requests[op.opcode]; got != 1 {
+			t.Errorf("%s: server got %d requests, want 1", op.name, got)
+		}
+	}
+	if got := requests[linux.FUSE_LISTXATTR]; got != 1 {
+		t.Errorf("ListXattrAt: server got %d requests, want 1", got)
+	}
 }
 
 func sendErrorReply(ctx context.Context, t *testing.T, fd *vfs.FileDescription, unique linux.FUSEOpID, errno int32) {
