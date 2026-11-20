@@ -290,7 +290,7 @@ func loadPathsHelper(cgroup, mountinfo io.Reader, unified bool) (map[string]stri
 	for scanner.Scan() {
 		// Format: ID:[name=]controller1,controller2:path
 		// Example: 2:cpu,cpuacct:/user.slice
-		tokens := strings.Split(scanner.Text(), ":")
+		tokens := strings.SplitN(scanner.Text(), ":", 3)
 		if len(tokens) != 3 {
 			return nil, fmt.Errorf("invalid cgroups file, line: %q", scanner.Text())
 		}
