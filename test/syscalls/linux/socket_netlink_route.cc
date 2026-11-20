@@ -2815,6 +2815,212 @@ TEST(NetlinkRouteTest, NewRouteDestinationShorterThanPrefix) {
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1, &req, sizeof(req)));
 }
 
+std::string AddrBytes(int family, const char* text) {
+  char addr[sizeof(struct in6_addr)] = {};
+  TEST_CHECK(inet_pton(family, text, addr) == 1);
+  int addr_len =
+      family == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
+  return std::string(addr, addr_len);
+}
+
+TEST(NetlinkRouteTest, NewRouteDestinationHostBits) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  RouteConfig route;
+  route.family = AF_INET;
+  route.prefixlen = 24;
+  route.dst = AddrBytes(AF_INET, "198.51.100.5");
+  route.interface = loopback_link.index;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq, route), PosixErrorIs(EINVAL, _));
+
+  route.prefixlen = 0;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 1, route), PosixErrorIs(EINVAL, _));
+
+  route.prefixlen = 24;
+  route.dst = AddrBytes(AF_INET, "198.51.100.0");
+  ASSERT_NO_ERRNO(AddRouteFromConfig(fd, kSeq + 2, route));
+
+  route.dst = AddrBytes(AF_INET, "198.51.100.5");
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 3, route), PosixErrorIs(EINVAL, _));
+
+  route.dst = AddrBytes(AF_INET, "198.51.100.0");
+  EXPECT_NO_ERRNO(DelRouteFromConfig(fd, kSeq + 4, route));
+
+  route.family = AF_INET6;
+  route.prefixlen = 48;
+  route.dst = AddrBytes(AF_INET6, "2001:db8:1::5");
+  EXPECT_NO_ERRNO(AddRouteFromConfig(fd, kSeq + 5, route));
+}
+
+TEST(NetlinkRouteTest, NewRouteShortIpv4Destination) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  const std::string dst = AddrBytes(AF_INET, "198.51.100.0");
+  RouteConfig route;
+  route.family = AF_INET;
+  route.prefixlen = 24;
+  route.dst = dst.substr(0, 3);
+  route.interface = loopback_link.index;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq, route), PosixErrorIs(ERANGE, _));
+
+  route.prefixlen = 32;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 1, route), PosixErrorIs(ERANGE, _));
+
+  route.prefixlen = 24;
+  route.dst = dst;
+  ASSERT_NO_ERRNO(AddRouteFromConfig(fd, kSeq + 2, route));
+
+  route.dst = dst.substr(0, 3);
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 3, route), PosixErrorIs(ERANGE, _));
+
+  route.dst = dst;
+  EXPECT_NO_ERRNO(DelRouteFromConfig(fd, kSeq + 4, route));
+}
+
+TEST(NetlinkRouteTest, NewRouteOversizedPrefix) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  const std::string dst = AddrBytes(AF_INET, "198.51.100.0");
+  RouteConfig route;
+  route.family = AF_INET;
+  route.prefixlen = 33;
+  route.dst = dst;
+  route.interface = loopback_link.index;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq, route), PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 1, route), PosixErrorIs(EINVAL, _));
+
+  route.dst = dst + std::string(12, '\0');
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 2, route), PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 3, route), PosixErrorIs(EINVAL, _));
+
+  route.family = AF_INET6;
+  route.prefixlen = 129;
+  route.dst = AddrBytes(AF_INET6, "2001:db8:1::");
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 4, route), PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 5, route), PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkRouteTest, NewRouteWithoutDestinationUsesPrefix) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  RouteConfig route;
+  route.family = AF_INET;
+  route.interface = loopback_link.index;
+  ASSERT_NO_ERRNO(AddRouteFromConfig(fd, kSeq, route));
+
+  route.prefixlen = 24;
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 1, route), PosixErrorIs(ESRCH, _));
+
+  route.prefixlen = 33;
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 2, route), PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 3, route), PosixErrorIs(EINVAL, _));
+
+  route.prefixlen = 0;
+  EXPECT_NO_ERRNO(DelRouteFromConfig(fd, kSeq + 4, route));
+}
+
+TEST(NetlinkRouteTest, NewRouteEmptyDestinationOrGateway) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  RouteConfig route;
+  route.family = AF_INET;
+  route.dst = std::string();
+  route.interface = loopback_link.index;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq, route), PosixErrorIs(ERANGE, _));
+  EXPECT_THAT(DelRouteFromConfig(fd, kSeq + 1, route), PosixErrorIs(ERANGE, _));
+
+  route.prefixlen = 24;
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 2, route), PosixErrorIs(ERANGE, _));
+
+  route.dst = AddrBytes(AF_INET, "198.51.100.0");
+  route.gateway = std::string();
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 3, route), PosixErrorIs(ERANGE, _));
+
+  route.family = AF_INET6;
+  route.prefixlen = 48;
+  route.dst = AddrBytes(AF_INET6, "2001:db8:1::");
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 4, route), PosixErrorIs(ERANGE, _));
+
+  route.dst = std::string();
+  route.gateway.reset();
+  EXPECT_THAT(AddRouteFromConfig(fd, kSeq + 5, route), PosixErrorIs(EINVAL, _));
+}
+
 TEST(NetlinkRouteTest, NewRouteRejectTypeWithNexthop) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());

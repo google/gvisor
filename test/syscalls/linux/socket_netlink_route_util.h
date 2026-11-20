@@ -17,9 +17,11 @@
 
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <sys/socket.h>
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -92,6 +94,20 @@ PosixError DelUnicastRoute(int interface, int family, int prefixlen,
 PosixError ReplaceUnicastRouteViaGateway(int interface, int family,
                                          int prefixlen, const void* dst,
                                          const void* gw, int addrlen);
+
+struct RouteConfig {
+  int family = AF_UNSPEC;
+  int prefixlen = 0;
+  std::optional<std::string> dst;
+  std::optional<std::string> gateway;
+  std::optional<int> interface;
+};
+
+PosixError AddRouteFromConfig(const FileDescriptor& fd, uint32_t seq,
+                              const RouteConfig& config);
+
+PosixError DelRouteFromConfig(const FileDescriptor& fd, uint32_t seq,
+                              const RouteConfig& config);
 
 // AddExclusiveLookupInTableRule adds a PBR rule that performs a route lookup
 // against the given table, for all packets destined to the given subnet.

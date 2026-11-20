@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -203,6 +204,51 @@ PosixError ModifyUnicastRoute(int interface, int family, int prefixlen,
   memcpy(RTA_DATA(rta_dst), dst, dstlen);
 
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+PosixError ModifyRoute(const FileDescriptor& fd, uint32_t seq,
+                       const RouteConfig& config,
+                       NetlinkModification modification) {
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg route;
+    char attrbuf[512];
+  };
+
+  struct request req = {};
+  PosixError err = PopulateRouteNlmsghdr(modification, &req.hdr);
+  if (!err.ok()) {
+    return err;
+  }
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.route));
+  req.hdr.nlmsg_seq = seq;
+  req.route.rtm_family = config.family;
+  req.route.rtm_dst_len = config.prefixlen;
+  req.route.rtm_table = RT_TABLE_MAIN;
+  req.route.rtm_protocol = RTPROT_BOOT;
+  req.route.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.route.rtm_type = RTN_UNICAST;
+
+  auto add = [&](uint16_t type, const void* data, size_t len) {
+    struct rtattr* rta = reinterpret_cast<struct rtattr*>(
+        reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+    rta->rta_type = type;
+    rta->rta_len = RTA_LENGTH(len);
+    req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_SPACE(len);
+    memcpy(RTA_DATA(rta), data, len);
+  };
+  if (config.dst.has_value()) {
+    add(RTA_DST, config.dst->data(), config.dst->size());
+  }
+  if (config.gateway.has_value()) {
+    add(RTA_GATEWAY, config.gateway->data(), config.gateway->size());
+  }
+  if (config.interface.has_value()) {
+    int interface = *config.interface;
+    add(RTA_OIF, &interface, sizeof(interface));
+  }
+
+  return NetlinkRequestAckOrError(fd, seq, &req, req.hdr.nlmsg_len);
 }
 
 // Adds or removes the specified route.
@@ -464,6 +510,16 @@ PosixError ReplaceUnicastRouteViaGateway(int interface, int family,
   add(RTA_GATEWAY, gw, addrlen);
 
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+PosixError AddRouteFromConfig(const FileDescriptor& fd, uint32_t seq,
+                              const RouteConfig& config) {
+  return ModifyRoute(fd, seq, config, NetlinkModification::kAdd);
+}
+
+PosixError DelRouteFromConfig(const FileDescriptor& fd, uint32_t seq,
+                              const RouteConfig& config) {
+  return ModifyRoute(fd, seq, config, NetlinkModification::kDelete);
 }
 
 PosixError AddExclusiveLookupInTableRule(int family, int table, int priority,
