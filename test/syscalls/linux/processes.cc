@@ -298,6 +298,174 @@ TEST(Processes, ExitThatOrphansGroupSignalsStoppedMembers) {
   close(p[0]);
 }
 
+bool readProcessGroupData(int fd, void* data, size_t size) {
+  struct pollfd pfd = {.fd = fd, .events = POLLIN};
+  return RetryEINTR(poll)(&pfd, 1, 30000) == 1 &&
+         ReadFd(fd, data, size) == size;
+}
+
+// Keep session_leader in one group and group_leader in another group of the
+// same session. After parent moves to a third group, child moves out of
+// group_leader's group. That group still has an ancestor through
+// session_leader, so its stopped member must not receive SIGHUP. In the
+// setpgid case, grandchild then leaves the old group to expose the undercount.
+void processGroupAncestorAfterParentMoves(bool new_session) {
+  pid_t session_leader = fork();
+  if (session_leader == 0) {
+    TEST_PCHECK(setsid() != -1);
+    pid_t group_leader = fork();
+    if (group_leader == 0) {
+      TEST_PCHECK(setpgid(0, 0) == 0);
+      pid_t stopped = forkStoppedMember();
+
+      TEST_PCHECK(signal(SIGHUP, SIG_DFL) != SIG_ERR);
+      sigset_t hup;
+      sigemptyset(&hup);
+      sigaddset(&hup, SIGHUP);
+      TEST_PCHECK(sigprocmask(SIG_BLOCK, &hup, nullptr) == 0);
+
+      int ready[2], moved[2], go[2], done[2], child_go[2], child_done[2];
+      TEST_PCHECK(pipe(ready) == 0);
+      TEST_PCHECK(pipe(moved) == 0);
+      TEST_PCHECK(pipe(go) == 0);
+      TEST_PCHECK(pipe(done) == 0);
+      TEST_PCHECK(pipe(child_go) == 0);
+      TEST_PCHECK(pipe(child_done) == 0);
+
+      pid_t parent = fork();
+      if (parent == 0) {
+        pid_t child = fork();
+        if (child == 0) {
+          pid_t grandchild = fork();
+          if (grandchild == 0) {
+            close(ready[1]);
+            close(moved[1]);
+            close(done[1]);
+            close(go[1]);
+            close(child_go[1]);
+            char byte;
+            if (new_session) {
+              readProcessGroupData(child_go[0], &byte, 1);
+            } else {
+              TEST_PCHECK(readProcessGroupData(child_go[0], &byte, 1));
+              TEST_PCHECK(setsid() != -1);
+              TEST_PCHECK(WriteFd(child_done[1], &byte, 1) == 1);
+              close(child_done[1]);
+              readProcessGroupData(child_go[0], &byte, 1);
+            }
+            _exit(0);
+          }
+          TEST_PCHECK(grandchild > 0);
+          close(moved[1]);
+          close(child_done[1]);
+          close(go[1]);
+          close(child_go[1]);
+          char byte = 1;
+          TEST_PCHECK(WriteFd(ready[1], &byte, 1) == 1);
+          close(ready[1]);
+          if (!readProcessGroupData(go[0], &byte, 1)) {
+            TEST_PCHECK(kill(grandchild, SIGKILL) == 0 || errno == ESRCH);
+            int status;
+            TEST_PCHECK(RetryEINTR(waitpid)(grandchild, &status, 0) == grandchild);
+            _exit(1);
+          }
+          if (new_session) {
+            TEST_PCHECK(setsid() != -1);
+          } else {
+            TEST_PCHECK(setpgid(0, 0) == 0);
+          }
+          TEST_PCHECK(WriteFd(done[1], &byte, 1) == 1);
+          close(done[1]);
+          bool got_cleanup = readProcessGroupData(go[0], &byte, 1);
+          TEST_PCHECK(kill(grandchild, SIGKILL) == 0 || errno == ESRCH);
+          int status;
+          TEST_PCHECK(RetryEINTR(waitpid)(grandchild, &status, 0) == grandchild);
+          _exit(got_cleanup ? 0 : 1);
+        }
+        TEST_PCHECK(child > 0);
+        close(ready[1]);
+        close(done[1]);
+        close(child_done[1]);
+        close(go[1]);
+        close(child_go[1]);
+        TEST_PCHECK(setpgid(0, 0) == 0);
+        char byte = 1;
+        TEST_PCHECK(WriteFd(moved[1], &byte, 1) == 1);
+        close(moved[1]);
+        int status;
+        TEST_PCHECK(RetryEINTR(waitpid)(child, &status, 0) == child);
+        _exit(WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1);
+      }
+      TEST_PCHECK(parent > 0);
+      close(ready[1]);
+      close(moved[1]);
+      close(done[1]);
+      close(child_done[1]);
+
+      char byte;
+      bool ready_received = readProcessGroupData(ready[0], &byte, 1);
+      bool parent_moved = readProcessGroupData(moved[0], &byte, 1);
+      if (!ready_received || !parent_moved) {
+        byte = 1;
+        TEST_PCHECK(WriteFd(go[1], &byte, 1) == 1);
+        TEST_PCHECK(WriteFd(go[1], &byte, 1) == 1);
+        TEST_PCHECK(WriteFd(child_go[1], &byte, 1) == 1);
+        TEST_PCHECK(WriteFd(child_go[1], &byte, 1) == 1);
+        TEST_PCHECK(kill(stopped, SIGKILL) == 0 || errno == ESRCH);
+        int status;
+        TEST_PCHECK(RetryEINTR(waitpid)(stopped, &status, 0) == stopped);
+        TEST_PCHECK(RetryEINTR(waitpid)(parent, &status, 0) == parent);
+        _exit(1);
+      }
+      TEST_PCHECK(WriteFd(go[1], &byte, 1) == 1);
+      bool operation_succeeded = readProcessGroupData(done[0], &byte, 1);
+      if (!new_session) {
+        if (operation_succeeded) {
+          TEST_PCHECK(WriteFd(child_go[1], &byte, 1) == 1);
+          operation_succeeded = readProcessGroupData(child_done[0], &byte, 1);
+        }
+      }
+
+      sigset_t pending;
+      TEST_PCHECK(sigpending(&pending) == 0);
+      bool received_hup = sigismember(&pending, SIGHUP);
+      if (operation_succeeded) {
+        TEST_PCHECK(WriteFd(go[1], &byte, 1) == 1);
+      } else {
+        TEST_PCHECK(WriteFd(go[1], &byte, 1) == 1);
+        TEST_PCHECK(WriteFd(child_go[1], &byte, 1) == 1);
+        TEST_PCHECK(WriteFd(child_go[1], &byte, 1) == 1);
+      }
+      TEST_PCHECK(kill(stopped, SIGKILL) == 0 || errno == ESRCH);
+      int status;
+      TEST_PCHECK(RetryEINTR(waitpid)(stopped, &status, 0) == stopped);
+      TEST_PCHECK(RetryEINTR(waitpid)(parent, &status, 0) == parent);
+      bool passed = operation_succeeded && !received_hup && WIFEXITED(status) &&
+                    WEXITSTATUS(status) == 0;
+      _exit(passed ? 0 : 1);
+    }
+    TEST_PCHECK(group_leader > 0);
+    int status;
+    TEST_PCHECK(RetryEINTR(waitpid)(group_leader, &status, 0) == group_leader);
+    _exit(WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1);
+  }
+  ASSERT_THAT(session_leader, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(session_leader, &status, 0),
+              SyscallSucceedsWithValue(session_leader));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "the group received a spurious SIGHUP; status " << status;
+}
+
+TEST(Processes, SetsidWithChildDoesNotOrphanOldProcessGroup) {
+  processGroupAncestorAfterParentMoves(true);
+}
+
+TEST(Processes, SetpgidWithChildDoesNotOrphanOldProcessGroup) {
+  processGroupAncestorAfterParentMoves(false);
+}
+
 // setpgid(2) refuses to move a session leader into another process group, and
 // still moves a child that leads no session.
 TEST(Processes, SetPGIDOfSessionLeader) {
