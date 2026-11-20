@@ -157,3 +157,95 @@ func TestAddressableEndpointStateDisabled(t *testing.T) {
 		})
 	}
 }
+
+func TestAcquireAssignedAddressOrMatchingSkipsHostAddresses(t *testing.T) {
+	var networkEp fakeNetworkEndpoint
+	if err := networkEp.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
+
+	var s stack.AddressableEndpointState
+	s.Init(&networkEp, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
+
+	hostAddr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom4([4]byte{192, 0, 2, 1}),
+		PrefixLen: 32,
+	}
+	subnetAddr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom4([4]byte{192, 0, 2, 2}),
+		PrefixLen: 24,
+	}
+	broadcastAddr := tcpip.AddrFrom4([4]byte{192, 0, 2, 255})
+
+	calls := 0
+	isBroadcast := func(ep stack.AddressEndpoint) bool {
+		calls++
+		subnet := ep.Subnet()
+		return subnet.IsBroadcast(broadcastAddr)
+	}
+	acquire := func() stack.AddressEndpoint {
+		calls = 0
+		// Promiscuous NICs pass allowTemp=true, which does not skip removed addresses.
+		return s.AcquireAssignedAddressOrMatching(broadcastAddr, isBroadcast, true /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */)
+	}
+
+	ep, err := s.AddAndAcquirePermanentAddress(hostAddr, stack.AddressProperties{})
+	if err != nil {
+		t.Fatalf("s.AddAndAcquirePermanentAddress(%s, {}): %s", hostAddr, err)
+	}
+	ep.DecRef()
+	acquire()
+	if calls != 0 {
+		t.Fatalf("got %d matcher calls from s.AcquireAssignedAddressOrMatching(%s, ...), want = 0", calls, broadcastAddr)
+	}
+
+	ep, err = s.AddAndAcquirePermanentAddress(subnetAddr, stack.AddressProperties{})
+	if err != nil {
+		t.Fatalf("s.AddAndAcquirePermanentAddress(%s, {}): %s", subnetAddr, err)
+	}
+	ep.DecRef()
+	if ep := acquire(); ep == nil || ep.AddressWithPrefix() != subnetAddr || calls != 1 {
+		t.Fatalf("got s.AcquireAssignedAddressOrMatching(%s, ...) = %v after %d matcher calls, want = %s after 1 call", broadcastAddr, ep, calls, subnetAddr)
+	}
+
+	if err := s.RemovePermanentAddress(subnetAddr.Address); err != nil {
+		t.Fatalf("s.RemovePermanentAddress(%s): %s", subnetAddr.Address, err)
+	}
+	acquire()
+	if calls != 0 {
+		t.Fatalf("got %d matcher calls from s.AcquireAssignedAddressOrMatching(%s, ...), want = 0", calls, broadcastAddr)
+	}
+}
+
+func BenchmarkAcquireAssignedAddressOrMatchingHostAddresses(b *testing.B) {
+	var networkEp fakeNetworkEndpoint
+	if err := networkEp.Enable(); err != nil {
+		b.Fatalf("ep.Enable(): %s", err)
+	}
+
+	var s stack.AddressableEndpointState
+	s.Init(&networkEp, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
+
+	for i := range 512 {
+		addr := tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFrom4([4]byte{10, 0, byte(i >> 8), byte(i)}),
+			PrefixLen: 32,
+		}
+		ep, err := s.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{})
+		if err != nil {
+			b.Fatalf("s.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
+		}
+		ep.DecRef()
+	}
+
+	remoteAddr := tcpip.AddrFrom4([4]byte{192, 0, 2, 1})
+	isBroadcast := func(ep stack.AddressEndpoint) bool {
+		subnet := ep.Subnet()
+		return subnet.IsBroadcast(remoteAddr)
+	}
+	for b.Loop() {
+		if ep := s.AcquireAssignedAddressOrMatching(remoteAddr, isBroadcast, false /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */); ep != nil {
+			b.Fatalf("got s.AcquireAssignedAddressOrMatching(%s, ...) = %s, want = nil", remoteAddr, ep.AddressWithPrefix())
+		}
+	}
+}
