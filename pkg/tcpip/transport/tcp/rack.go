@@ -310,7 +310,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 	s.state = tcpip.Open
 	// This ACK can also report out-of-order data beyond the repaired hole.
 	// The scoreboard still includes blocks covered by the cumulative ACK.
-	if last, ok := s.ep.scoreboard.ranges.Max(); ok && ack.LessThan(last.End) {
+	if end, ok := s.ep.scoreboard.maxEnd(); ok && ack.LessThan(end) {
 		s.state = tcpip.Disorder
 	}
 	s.ep.stack.Stats().TCP.TLPRecovery.Increment()

@@ -61,19 +61,23 @@ type SACKScoreboard struct {
 func NewSACKScoreboard(smss uint16, iss seqnum.Value) *SACKScoreboard {
 	return &SACKScoreboard{
 		smss:      smss,
-		ranges:    btree.NewG[header.SACKBlock](defaultBtreeDegree, sackBlockLess),
 		maxSACKED: iss,
 	}
 }
 
 // Reset erases all known range information from the SACK scoreboard.
 func (s *SACKScoreboard) Reset() {
-	s.ranges = btree.NewG[header.SACKBlock](defaultBtreeDegree, sackBlockLess)
+	s.ranges = nil
 	s.sacked = 0
 }
 
 // Insert inserts/merges the provided SACKBlock into the scoreboard.
 func (s *SACKScoreboard) Insert(r header.SACKBlock) {
+	if s.ranges == nil {
+		// Allocate the tree on first use, since connections that never
+		// receive SACK blocks don't need one.
+		s.ranges = btree.NewG[header.SACKBlock](defaultBtreeDegree, sackBlockLess)
+	}
 	if s.ranges.Len() >= maxSACKBlocks {
 		return
 	}
@@ -170,10 +174,12 @@ func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
 func (s *SACKScoreboard) String() string {
 	var str strings.Builder
 	str.WriteString("SACKScoreboard: {")
-	s.ranges.Ascend(func(sb header.SACKBlock) bool {
-		fmt.Fprintf(&str, "%v,", sb)
-		return true
-	})
+	if !s.Empty() {
+		s.ranges.Ascend(func(sb header.SACKBlock) bool {
+			fmt.Fprintf(&str, "%v,", sb)
+			return true
+		})
+	}
 	str.WriteString("}\n")
 	return str.String()
 }
@@ -210,6 +216,9 @@ func (s *SACKScoreboard) Delete(seq seqnum.Value) {
 
 // Copy provides a copy of the SACK scoreboard.
 func (s *SACKScoreboard) Copy() (sackBlocks []header.SACKBlock, maxSACKED seqnum.Value) {
+	if s.Empty() {
+		return nil, s.maxSACKED
+	}
 	s.ranges.Ascend(func(sb header.SACKBlock) bool {
 		sackBlocks = append(sackBlocks, sb)
 		return true
@@ -279,7 +288,16 @@ func (s *SACKScoreboard) IsLost(seq seqnum.Value) bool {
 
 // Empty returns true if the SACK scoreboard has no entries, false otherwise.
 func (s *SACKScoreboard) Empty() bool {
-	return s.ranges.Len() == 0
+	return s.ranges == nil || s.ranges.Len() == 0
+}
+
+// maxEnd returns the end of the highest SACK block, if any.
+func (s *SACKScoreboard) maxEnd() (seqnum.Value, bool) {
+	if s.ranges == nil {
+		return 0, false
+	}
+	last, ok := s.ranges.Max()
+	return last.End, ok
 }
 
 // Sacked returns the current number of bytes held in the SACK scoreboard.
