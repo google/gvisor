@@ -153,6 +153,22 @@ func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, erro
 	return info, nil
 }
 
+// vdsoParamsSize is the size of the VDSO's parameter area. The VDSO's linker
+// scripts (vdso/vdso_*.lds) place it at _params = VDSO_PRELINK - 0x1000, that
+// is 4 KiB below the VDSO whatever the page size.
+const vdsoParamsSize = 0x1000
+
+// ParamsFileRange returns the part of ParamPage that holds the VDSO's
+// parameters: its last 4 KiB, directly below the VDSO. That's all of ParamPage
+// with 4 KiB pages; with larger pages, the parameters written to the start of
+// the page would be invisible to the VDSO, so every clock_gettime would fall
+// back to a syscall.
+func (v *VDSO) ParamsFileRange() memmap.FileRange {
+	fr := v.ParamPage.FileRange()
+	fr.Start = fr.End - vdsoParamsSize
+	return fr
+}
+
 // VDSO describes a VDSO.
 //
 // NOTE(mpratt): to support multiple architectures or operating systems, this
