@@ -81,11 +81,14 @@ func launch(ctx context.Context, logger testutil.Logger) (int, error) {
 	}
 
 	// Stage the runtime and test binary into the containerd harness.
-	runtimeHostDir, err := stageRuntime(self)
+	runtimeHostDir, err := os.MkdirTemp("", "harness-runtime")
 	if err != nil {
 		return 1, err
 	}
 	defer os.RemoveAll(runtimeHostDir)
+	if err := stageRuntime(runtimeHostDir, self); err != nil {
+		return 1, err
+	}
 
 	var mounts []mount.Mount
 	mounts = append(mounts, mount.Mount{
@@ -184,28 +187,21 @@ func launch(ctx context.Context, logger testutil.Logger) (int, error) {
 	return 0, nil
 }
 
-func stageRuntime(self string) (string, error) {
-	// Create a temporary directory for the runtime and test binary.
-	dir, err := os.MkdirTemp("", "harness-runtime")
-	if err != nil {
-		return "", err
-	}
+func stageRuntime(dir, self string) error {
 	if err := os.Chmod(dir, 0755); err != nil {
-		os.RemoveAll(dir)
-		return "", err
+		return err
 	}
 
 	// Copy the release tree into the temporary directory.
 	root, err := testutil.FindFile("release")
 	if err != nil {
-		os.RemoveAll(dir)
-		return "", fmt.Errorf("cannot locate release tree: %w", err)
+		return fmt.Errorf("cannot locate release tree: %w", err)
 	}
 
 	count := 0
 	// Walk the release tree and copy it to the temporary directory so we can mount it into the
 	// harness.
-	err = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+	if err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -223,29 +219,34 @@ func stageRuntime(self string) (string, error) {
 		}
 		count++
 		return copyFile(real, target, 0755)
-	})
-	if err != nil {
-		os.RemoveAll(dir)
-		return "", fmt.Errorf("copying release files: %w", err)
+	}); err != nil {
+		return fmt.Errorf("copying release files: %w", err)
 	}
 	if count == 0 {
-		os.RemoveAll(dir)
-		return "", fmt.Errorf("release tree %q is empty", root)
+		return fmt.Errorf("release tree %q is empty", root)
+	}
+
+	// Each subtest starts a fresh containerd. Stage its sandbox image with
+	// the runtime so the subtest can import it before creating a pod.
+	archive, err := testutil.FindFile("test/root/pause.tar")
+	if err != nil {
+		return fmt.Errorf("locating sandbox image: %w", err)
+	}
+	if err := copyFile(archive, filepath.Join(dir, "pause.tar"), 0644); err != nil {
+		return fmt.Errorf("staging sandbox image: %w", err)
 	}
 
 	// Copy the test binary into the temporary directory.
 	selfReal, err := filepath.EvalSymlinks(self)
 	if err != nil {
-		os.RemoveAll(dir)
-		return "", fmt.Errorf("cannot resolve test binary: %w", err)
+		return fmt.Errorf("cannot resolve test binary: %w", err)
 	}
 	binName := filepath.Base(self)
 	if err := copyFile(selfReal, filepath.Join(dir, binName), 0755); err != nil {
-		os.RemoveAll(dir)
-		return "", fmt.Errorf("copying test binary: %w", err)
+		return fmt.Errorf("copying test binary: %w", err)
 	}
 
-	return dir, nil
+	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

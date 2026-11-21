@@ -1,3 +1,6 @@
+load("@bazel_lib//lib:copy_file.bzl", "copy_file")
+load("@rules_img//img:image.bzl", "image_manifest")
+load("@rules_img//img:load.bzl", "image_load")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -63,6 +66,34 @@ go_test(
     ],
 )
 
+image_manifest(
+    name = "pause",
+    testonly = True,
+    base = "@cri_pause",
+)
+
+image_load(
+    name = "pause_load",
+    testonly = True,
+    image = ":pause",
+    tag = "gvisor.dev/images/cri/pause:latest",
+)
+
+filegroup(
+    name = "sandbox_image",
+    testonly = True,
+    srcs = [":pause_load"],
+    output_group = "tarball",
+)
+
+copy_file(
+    name = "sandbox_image_tar",
+    testonly = True,
+    src = ":sandbox_image",
+    out = "pause.tar",
+    allow_symlink = True,
+)
+
 go_test(
     name = "crictl_test",
     size = "large",
@@ -73,6 +104,7 @@ go_test(
         "crictl_test.go",
     ],
     data = [
+        ":sandbox_image_tar",
         "//:release",
     ],
     embed = [":root"],

@@ -260,17 +260,21 @@ func tarNameForImage(image string) string {
 // directory of pre-exported tarballs if ImageDirEnv is set.
 func (cc *Crictl) Import(image string) error {
 	if dir := os.Getenv(ImageDirEnv); dir != "" {
-		tarball := path.Join(dir, tarNameForImage(image))
-		out, err := cc.runCmd(ResolvePath("ctr"),
-			fmt.Sprintf("--connect-timeout=%s", 30*time.Second),
-			fmt.Sprintf("--address=%s", cc.endpoint),
-			"-n", "k8s.io", "images", "import", "--all-platforms", tarball)
-		if err != nil {
-			return fmt.Errorf("importing %q from %q: %v (%s)", image, tarball, err, out)
-		}
-		return nil
+		return cc.ImportArchive(path.Join(dir, tarNameForImage(image)))
 	}
 	return cc.importFromDocker(image)
+}
+
+// ImportArchive imports a local image tarball into the CRI image store.
+func (cc *Crictl) ImportArchive(tarball string) error {
+	out, err := cc.runCmd(ResolvePath("ctr"),
+		fmt.Sprintf("--connect-timeout=%s", 30*time.Second),
+		fmt.Sprintf("--address=%s", cc.endpoint),
+		"-n", "k8s.io", "images", "import", "--all-platforms", tarball)
+	if err != nil {
+		return fmt.Errorf("importing %q: %w (%s)", tarball, err, out)
+	}
+	return nil
 }
 
 func (cc *Crictl) runCmd(name string, args ...string) (string, error) {
