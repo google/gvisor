@@ -107,6 +107,35 @@ def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
 
+def go_binary_archive(target):
+    """Returns compiled Go archive metadata for a binary target."""
+    return target[GoArchive].data
+
+def _nogo_package(target, rule, nogo_info):
+    deps = []
+    if rule.kind == "go_proto_library":
+        compilers = [rule.attr.compiler] if rule.attr.compiler else rule.attr.compilers
+        for compiler in compilers:
+            deps.extend(compiler[nogo_info].deps)
+    if GoArchive not in target:
+        # A source-only proto plugin's files are compiled by its consumer.
+        return None, deps
+
+    # The compiler may supply the importmap through an embed. Use the resolved
+    # package metadata, including for binaries that expose only GoArchive.
+    info = target[GoInfo] if go_has_source(target) else target[GoArchive].data
+    return struct(
+        srcs = list(info.srcs),
+        archive = target[GoArchive].data.file,
+        importpath = info.importmap,
+        source_importpath = info.importpath,
+        importpath_aliases = list(info.importpath_aliases),
+    ), deps
+
+def nogo_extra_proto_deps(target):  # buildifier: disable=unused-variable
+    """Returns (import path, archive, compiler export file) for binary-only dependencies."""
+    return []
+
 def go_source_files(target):
     """Returns the canonical source membership, including source-only embeds."""
     return target[GoInfo].srcs
@@ -114,10 +143,6 @@ def go_source_files(target):
 def go_has_source(target):
     """Returns whether the target exposes its canonical Go source view."""
     return GoInfo in target
-
-def go_binary_archive(target):
-    """Returns compiled Go archive metadata for a binary target."""
-    return target[GoArchive].data
 
 def go_binary_nogo_dep(name, noasan = False):  # buildifier: disable=unused-variable
     """Returns the target that nogo should analyze for the given go_binary.
@@ -205,6 +230,10 @@ def go_rule(rule, implementation, **kwargs):
     if rule == aspect:
         # Nogo analyzes Go sources without invoking the C/C++ toolchain.
         kwargs.setdefault("toolchains", []).append("@io_bazel_rules_go//go:toolchain")
+
+        # go_proto_library imports the runtime supplied by its proto compiler.
+        if "deps" in kwargs.get("attr_aspects", []):
+            kwargs["attr_aspects"] = kwargs["attr_aspects"] + ["compiler", "compilers"]
         return aspect(implementation, **kwargs)
     return _go_rule(implementation, **kwargs)
 
@@ -250,6 +279,7 @@ def go_context(ctx, goos = None, goarch = None, attr = None):
         gotags = go_ctx.mode.tags,
         lang_version = "go" + go_ctx.sdk.version,  # go_ctx.sdk.version excludes the go prefix.
         nogo_args = nogo_args,
+        nogo_package = _nogo_package,
         # Go builds tools such as objdump on demand, including assembly sources
         # that need the SDK's pkg/include headers.
         runfiles = depset(
@@ -353,6 +383,3 @@ def go_imports(name, src, out):
         src = src,
         out = out,
     )
-
-def nogo_extra_proto_deps(target):  # buildifier: disable=unused-variable
-    return []

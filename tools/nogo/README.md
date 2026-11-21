@@ -29,3 +29,15 @@ It exists for several reasons.
 
 To use this package, import `nogo_test` from `defs.bzl` and add a single
 dependency which is a `go_binary` or `go_library` rule.
+
+Nogo writes package export data with `gcexportdata.Write` during the same source
+analysis that produces its facts. Dependent packages read that data directly.
+When a generated package supplies only a compiler archive, Nogo reads it with
+the matching Go SDK and converts its types to the same export format. Compiled
+`.a` files also remain inputs to analyzers that inspect machine code.
+
+When the Go build rules expose generated protobuf sources, the aspect analyzes
+them with the runtime dependencies supplied by their compilers. Standard-library analysis writes a directory of export files
+for the selected SDK, architecture and build mode, including internal and vendored
+packages. Imports use the configured canonical package paths so exported types
+and decoded facts share package identities.
