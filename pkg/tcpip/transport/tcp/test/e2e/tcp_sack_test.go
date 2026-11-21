@@ -1213,6 +1213,153 @@ func TestSACKRetransmissionTimer(t *testing.T) {
 	c.ReceiveAndCheckPacket(data, mss, mss)
 }
 
+// TestSACKedThenAckedSegmentLeavesOutstanding is a regression test for
+// gvisor.dev/issue/14092: a segment SACKed outside of loss recovery and then
+// cumulatively ACKed must be removed from Outstanding. SetPipe() only
+// accounts for SACKed segments during recovery, so before the fix the
+// segment's packet count leaked into Outstanding permanently, throttling
+// long-lived connections on reordering-but-lossless paths.
+func TestSACKedThenAckedSegmentLeavesOutstanding(t *testing.T) {
+	for _, enableRACK := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enableRACK: %v", enableRACK), func(t *testing.T) {
+			const numPackets = 5
+			var c *context.Context
+			outstanding := make(chan int, 1)
+			probe := func(state *tcp.TCPEndpointState) {
+				// Match the cumulative ACK of the first three
+				// segments; the other two are still in flight.
+				if state.Sender.SndUna == c.IRS.Add(1+3*maxPayload) {
+					select {
+					case outstanding <- state.Sender.Outstanding:
+					default:
+					}
+				}
+			}
+			// A manual clock keeps RACK from declaring the segment
+			// below the SACKed one lost: on a real clock that
+			// depends on how far apart the two were sent, and
+			// recovery would hide the leak.
+			clock := faketime.NewManualClock()
+			c = context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				EnableV6: true,
+				MTU:      uint32(mtu),
+				Clock:    clock,
+				Probe:    probe,
+			})
+			defer c.Cleanup()
+
+			e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, enableRACK)
+
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			// ACK the first segment after a round trip, which
+			// gives RACK a reordering window of a quarter of it.
+			clock.Advance(100 * time.Millisecond)
+			c.SendAck(seq, maxPayload)
+			// SACK the third segment. A single duplicate ACK does
+			// not trigger loss recovery: this is benign reordering,
+			// not loss, so SetPipe() never runs to account for the
+			// SACKed segment.
+			c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{
+				{Start: c.IRS.Add(1 + 2*maxPayload), End: c.IRS.Add(1 + 3*maxPayload)},
+			})
+			// Cumulatively ACK the first three segments, covering
+			// the SACKed one.
+			c.SendAck(seq, 3*maxPayload)
+			c.Stack().Pause()
+			c.Stack().Resume()
+
+			select {
+			case got := <-outstanding:
+				if want := 2; got != want {
+					t.Errorf("got Sender.Outstanding = %d after a cumulative ACK covering a SACKed segment, want %d", got, want)
+				}
+			default:
+				t.Error("the cumulative ACK of the first three segments was not processed")
+			}
+			if got := c.Stack().Stats().TCP.Retransmits.Value(); got != 0 {
+				t.Errorf("got %d retransmissions, want 0: the sender must stay out of loss recovery", got)
+			}
+
+			// ACK the remaining data so the endpoint quiesces for
+			// the leak check.
+			c.SendAck(seq, numPackets*maxPayload)
+		})
+	}
+}
+
+// TestSACKAfterTimeoutLeavesOutstanding checks that segments which the peer
+// SACKs again after a retransmission timeout are not taken out of Outstanding
+// when they are cumulatively ACKed. The timeout zeroes Outstanding and resets
+// the scoreboard, so segments sent before it are not counted in Outstanding,
+// although the first SACK for them after the timeout looks new.
+//
+// RACK is disabled: with it, that SACK starts a loss recovery, and SetPipe()
+// recomputes Outstanding.
+func TestSACKAfterTimeoutLeavesOutstanding(t *testing.T) {
+	const numPackets = 8
+	var c *context.Context
+	outstanding := make(chan int, 1)
+	probe := func(state *tcp.TCPEndpointState) {
+		// Match the cumulative ACK of the first six segments.
+		if state.Sender.SndUna == c.IRS.Add(1+6*maxPayload) {
+			select {
+			case outstanding <- state.Sender.Outstanding:
+			default:
+			}
+		}
+	}
+	clock := faketime.NewManualClock()
+	c = context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      uint32(mtu),
+		Clock:    clock,
+		Probe:    probe,
+	})
+	defer c.Cleanup()
+
+	e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, false /* enableRACK */)
+
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	ack := func(packets int, blocks ...header.SACKBlock) {
+		c.SendAckWithSACK(seq, packets*maxPayload, blocks)
+		c.Stack().Pause()
+		c.Stack().Resume()
+	}
+	clock.Advance(100 * time.Millisecond)
+	ack(1)
+
+	// Segments 2, 3, 7 and 8 are lost, and so are the ACKs for segments 4
+	// to 6. Wait for the retransmission timeout.
+	timeouts := c.Stack().Stats().TCP.Timeouts
+	for elapsed := time.Duration(0); timeouts.Value() == 0; elapsed += 10 * time.Millisecond {
+		if elapsed > time.Minute {
+			t.Fatal("no retransmission timeout within a minute")
+		}
+		clock.Advance(10 * time.Millisecond)
+	}
+
+	// The peer receives the retransmission of segment 2 and reports
+	// segments 4 to 6 again. The sender retransmits segments 3 and 7.
+	ack(2, header.SACKBlock{Start: c.IRS.Add(1 + 3*maxPayload), End: c.IRS.Add(1 + 6*maxPayload)})
+	// Segment 3 fills the hole. Segment 7 is still in flight, and the
+	// sender retransmits segment 8.
+	ack(6)
+
+	select {
+	case got := <-outstanding:
+		if want := 2; got != want {
+			t.Errorf("got Sender.Outstanding = %d after a cumulative ACK covering segments SACKed after a timeout, want %d", got, want)
+		}
+	default:
+		t.Error("the cumulative ACK of the first six segments was not processed")
+	}
+
+	// ACK the remaining data so the endpoint quiesces for the leak check.
+	ack(numPackets)
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
