@@ -97,3 +97,50 @@ func TestTCPUserTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestKeepaliveUserTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		userTimeout time.Duration
+	}{
+		{"ProbeCount", 0},
+		{"UserTimeout", 6 * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			listener, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listener)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+			defer conn.Close(t)
+			conn.Connect(t)
+			fd, _ := dut.Accept(t, listener)
+			defer dut.Close(t, fd)
+
+			dut.SetSockOptInt(t, fd, unix.SOL_TCP, unix.TCP_KEEPIDLE, 1)
+			dut.SetSockOptInt(t, fd, unix.SOL_TCP, unix.TCP_KEEPINTVL, 1)
+			dut.SetSockOptInt(t, fd, unix.SOL_TCP, unix.TCP_KEEPCNT, 1)
+			dut.SetSockOptInt(t, fd, unix.SOL_TCP, unix.TCP_USER_TIMEOUT, int32(tt.userTimeout.Milliseconds()))
+			dut.SetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_KEEPALIVE, 1)
+
+			// Leave the first probe unanswered. With a user timeout the
+			// socket must probe again despite reaching TCP_KEEPCNT.
+			probe := testbench.TCP{
+				Flags:  testbench.TCPFlags(header.TCPFlagAck),
+				SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum(t) - 1)),
+			}
+			if _, err := conn.Expect(t, probe, 4*time.Second); err != nil {
+				t.Fatalf("first keepalive probe: %v", err)
+			}
+			if tt.userTimeout != 0 {
+				if _, err := conn.Expect(t, probe, 4*time.Second); err != nil {
+					soErr := unix.Errno(dut.GetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_ERROR))
+					t.Fatalf("second keepalive probe: SO_ERROR = %v; %v", soErr, err)
+				}
+			}
+			dut.PollOne(t, fd, unix.POLLERR, tt.userTimeout+4*time.Second)
+			if err := unix.Errno(dut.GetSockOptInt(t, fd, unix.SOL_SOCKET, unix.SO_ERROR)); err != unix.ETIMEDOUT {
+				t.Errorf("SO_ERROR = %v, want %v", err, unix.ETIMEDOUT)
+			}
+		})
+	}
+}
