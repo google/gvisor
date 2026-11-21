@@ -914,3 +914,69 @@ func TestRDMASysfs(t *testing.T) {
 		t.Errorf("reading speed of a down link returned %v, want EINVAL", err)
 	}
 }
+
+// TestRDMASysfsWithoutDevices checks the tree built from a snapshot that only
+// holds GPU topology.
+func TestRDMASysfsWithoutDevices(t *testing.T) {
+	const (
+		bridge  = "devices/pci0000:16/0000:16:01.0"
+		gpuLeaf = bridge + "/0000:17:00.0"
+	)
+	s := newTestSystemWithInternalData(t, &sys.InternalData{
+		RDMASysfs: &rdma.Snapshot{
+			PCINodes: []rdma.PCINode{
+				{Path: "devices/pci0000:16"},
+				{Path: bridge, Attrs: map[string]string{"class": "0x060400\n"}},
+				{Path: gpuLeaf, Attrs: map[string]string{
+					"class":         "0x030200\n",
+					"vendor":        "0x10de\n",
+					"numa_node":     "1\n",
+					"local_cpulist": "96-191\n",
+				}, Config: rdmaTestPCIConfig},
+			},
+		},
+	})
+	defer s.Destroy()
+
+	// There are no InfiniBand classes or PCI drivers without RDMA devices.
+	for p, want := range map[string]map[string]testutil.DirentType{
+		"/class": {
+			"power_supply": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+		},
+		"/class/pci_bus": {
+			"0000:16": linux.DT_LNK,
+			"0000:17": linux.DT_LNK,
+		},
+		"/bus/pci": {"devices": linux.DT_DIR},
+		"/bus/pci/devices": {
+			"0000:16:01.0": linux.DT_LNK,
+			"0000:17:00.0": linux.DT_LNK,
+		},
+	} {
+		s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot(p)), want)
+	}
+
+	// Without the host's NUMA nodes, all sandbox CPUs are local to the GPU.
+	wantGPUCPUList := "0\n"
+	if cores := kernel.KernelFromContext(s.Ctx).ApplicationCores(); cores > 1 {
+		wantGPUCPUList = fmt.Sprintf("0-%d\n", cores-1)
+	}
+	// NVML finds GPUs through /sys/bus/pci/devices, NCCL through
+	// /sys/class/pci_bus.
+	for p, want := range map[string]string{
+		"/bus/pci/devices/0000:17:00.0/vendor":            "0x10de\n",
+		"/bus/pci/devices/0000:17:00.0/config":            string(rdmaTestPCIConfig),
+		"/bus/pci/devices/0000:17:00.0/numa_node":         "0\n",
+		"/bus/pci/devices/0000:17:00.0/local_cpulist":     wantGPUCPUList,
+		"/class/pci_bus/0000:17/../../0000:17:00.0/class": "0x030200\n",
+	} {
+		got, err := readTestFile(s, p)
+		if err != nil {
+			t.Fatalf("reading %q: %v", p, err)
+		}
+		if got != want {
+			t.Errorf("%q contains %q, want %q", p, got, want)
+		}
+	}
+}

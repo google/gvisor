@@ -17,10 +17,12 @@ package rdma
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -39,14 +41,23 @@ type UverbsSpec struct {
 }
 
 // Static PCI attribute files captured at every level of the hierarchy.
-// uevent is captured verbatim (NCCL parses PCI_SLOT_NAME out of it;
-// libibverbs matches drivers on modalias).
+// libibverbs matches drivers on modalias.
 var pciAttrNames = []string{
 	"class", "vendor", "device", "subsystem_vendor", "subsystem_device",
 	"revision", "numa_node", "local_cpus", "local_cpulist",
-	"max_link_speed", "max_link_width", "current_link_speed",
-	"current_link_width", "modalias", "uevent", "resource",
+	"max_link_speed", "max_link_width", "modalias", "resource",
 }
+
+// rdmaPCIAttrNames are pciAttrNames and the PCI attribute files that only
+// Collect captures. uevent is captured verbatim (NCCL parses PCI_SLOT_NAME
+// out of it). CollectGPUs leaves out uevent, which some kernels only read
+// under the device lock, and the current link state, which changes with GPU
+// traffic.
+var rdmaPCIAttrNames = append(slices.Clone(pciAttrNames), "current_link_speed", "current_link_width", "uevent")
+
+// pciConfigHeaderSize is the size of the PCI configuration space header,
+// which is all that Linux returns to readers without CAP_SYS_ADMIN.
+const pciConfigHeaderSize = 64
 
 // Static identity attributes of /sys/class/infiniband/<ibdev>/.
 var ibAttrNames = []string{
@@ -204,20 +215,9 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 		}
 	}
 
-	// Materialize every PCI node with its static attributes and config space.
-	for p := range pciPaths {
-		attrs, err := readAttrs(path.Join(sysRoot, p), pciAttrNames)
-		if err != nil {
-			return nil, fmt.Errorf("PCI node %q: %w", p, err)
-		}
-		// config is best-effort: root complexes and some bridges lack it.
-		config, err := os.ReadFile(path.Join(sysRoot, p, "config"))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("reading PCI config of %q: %w", p, err)
-		}
-		s.PCINodes = append(s.PCINodes, PCINode{Path: p, Attrs: attrs, Config: config})
+	if s.PCINodes, err = pciNodes(sysRoot, pciPaths, rdmaPCIAttrNames, os.ReadFile); err != nil {
+		return nil, err
 	}
-	sort.Slice(s.PCINodes, func(i, j int) bool { return s.PCINodes[i].Path < s.PCINodes[j].Path })
 
 	// Assign driver IDs to each driver by matching the driver name from the
 	// DRIVER= line in the uevent of each PCI node.
@@ -239,6 +239,93 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 	}
 	s.NUMA = numa
 	return s, nil
+}
+
+// CollectGPUs returns a snapshot of the host's PCI functions of the given
+// vendor (for example "0x10de") that are bound to one of the given drivers,
+// their ancestors and the host's NUMA nodes, read from host sysfs rooted at
+// sysRoot. The snapshot has no Devices, and PCINode.Config only holds the
+// configuration space header. CollectGPUs returns (nil, nil) if there are no
+// such functions.
+func CollectGPUs(sysRoot, vendor string, drivers []string) (*Snapshot, error) {
+	pciPaths := make(map[string]bool)
+	for _, driver := range drivers {
+		driverDir := path.Join(sysRoot, "bus/pci/drivers", driver)
+		names, err := listOptionalNames(driverDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range names {
+			if !bdfRE.MatchString(name) {
+				continue
+			}
+			fn := path.Join(driverDir, name)
+			v, present, err := readAttr(path.Join(fn, "vendor"))
+			if err != nil {
+				return nil, fmt.Errorf("reading vendor of PCI device %q: %w", name, err)
+			}
+			if !present || strings.TrimSpace(v) != vendor {
+				continue
+			}
+			leaf, err := relRealpath(sysRoot, fn)
+			if err != nil {
+				return nil, fmt.Errorf("resolving PCI path of %q: %w", name, err)
+			}
+			if err := addWithAncestors(pciPaths, leaf); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(pciPaths) == 0 {
+		return nil, nil
+	}
+
+	nodes, err := pciNodes(sysRoot, pciPaths, pciAttrNames, readConfigHeader)
+	if err != nil {
+		return nil, err
+	}
+	numa, err := collectNUMA(sysRoot)
+	if err != nil {
+		return nil, err
+	}
+	return &Snapshot{PCINodes: nodes, NUMA: numa}, nil
+}
+
+// pciNodes reads the attributes in attrNames of the PCI directories in paths,
+// and their config space with readConfig, and returns them sorted by path,
+// which places parents before children.
+func pciNodes(sysRoot string, paths map[string]bool, attrNames []string, readConfig func(string) ([]byte, error)) ([]PCINode, error) {
+	var nodes []PCINode
+	for p := range paths {
+		attrs, err := readAttrs(path.Join(sysRoot, p), attrNames)
+		if err != nil {
+			return nil, fmt.Errorf("PCI node %q: %w", p, err)
+		}
+		// config is best-effort: root complexes and some bridges lack it.
+		config, err := readConfig(path.Join(sysRoot, p, "config"))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("reading PCI config of %q: %w", p, err)
+		}
+		nodes = append(nodes, PCINode{Path: p, Attrs: attrs, Config: config})
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Path < nodes[j].Path })
+	return nodes, nil
+}
+
+// readConfigHeader returns the configuration space header in the config file
+// at p.
+func readConfigHeader(p string) ([]byte, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b := make([]byte, pciConfigHeaderSize)
+	n, err := io.ReadFull(f, b)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	return b[:n], nil
 }
 
 // addWithAncestors records leaf and every ancestor directory whose name is

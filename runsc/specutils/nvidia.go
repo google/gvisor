@@ -25,6 +25,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
 )
@@ -49,6 +50,38 @@ const (
 // NVProxyEnabled returns true if nvproxy should be enabled.
 func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
 	return conf.NVProxy || AnnotationToBool(spec, AnnotationNVProxy) || GPUFunctionalityRequested(spec, conf)
+}
+
+// GPUSysfsSnapshotEnabled returns true if runsc should snapshot the host's GPU
+// PCI topology (see TakeGPUSysfsSnapshot) for the container with spec: if it
+// uses GPUs, which enables nvproxy, and has neither RDMA nor TPU proxy. The
+// RDMA sysfs snapshot already holds GPU topology, and sysfs cannot merge the
+// snapshot's /sys/devices tree with the TPU proxy's.
+func GPUSysfsSnapshotEnabled(spec *specs.Spec, conf *config.Config) bool {
+	return GPUFunctionalityRequested(spec, conf) && !RDMAEnabled(spec, conf) && !TPUProxyEnabled(spec, conf)
+}
+
+// nvidiaVendorID is the PCI vendor ID of NVIDIA GPUs and NVSwitches.
+const nvidiaVendorID = "0x10de"
+
+// nvidiaPCIDrivers are the host drivers of the NVIDIA GPUs and NVSwitches that
+// nvproxy can use. Other functions, such as GPUs bound to a VFIO driver to be
+// passed through to VMs, are left out: VMMs reset these GPUs whenever a VM
+// starts or reboots, and reading their config space blocks during resets.
+var nvidiaPCIDrivers = []string{"nvidia", "nvidia-nvswitch"}
+
+// TakeGPUSysfsSnapshot returns a snapshot of the PCI topology of the host's
+// NVIDIA GPUs and NVSwitches, read from the host sysfs at sysRoot, from which
+// the sentry builds the PCI tree of containers that use GPUs, or nil if there
+// are none. This is best effort: on failure, it logs a warning and returns
+// nil.
+func TakeGPUSysfsSnapshot(sysRoot string) *rdma.Snapshot {
+	snap, err := rdma.CollectGPUs(sysRoot, nvidiaVendorID, nvidiaPCIDrivers)
+	if err != nil {
+		log.Warningf("Not exposing GPU PCI topology in sysfs: %v", err)
+		return nil
+	}
+	return snap
 }
 
 // GPUFunctionalityRequested returns true if the container should have access

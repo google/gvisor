@@ -19,6 +19,7 @@ import (
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -71,6 +72,12 @@ type StartArgs struct {
 
 	// IsRootfsUpperTarFilePresent indicates whether the rootfs upper tar file is present.
 	IsRootfsUpperTarFilePresent bool
+
+	// GPUSysfs is the snapshot of the host's GPU PCI topology that runsc
+	// takes when a container that uses GPUs starts in a sandbox without a
+	// sysfs snapshot, since the sandbox cannot read the host's sysfs. The
+	// sandbox only uses it if it still has no sysfs snapshot.
+	GPUSysfs *rdma.Snapshot
 
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
@@ -339,3 +346,7 @@ const ContMgrSetNetworkArgs = "containerManager.SetNetworkArgs"
 // ContMgrGetNetworkConfig returns the network interfaces and routes applied
 // during the creation of root container.
 const ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
+
+// ContMgrHasSysfsSnapshot returns whether the sandbox has a host sysfs
+// snapshot (see StartArgs.GPUSysfs).
+const ContMgrHasSysfsSnapshot = "containerManager.HasSysfsSnapshot"

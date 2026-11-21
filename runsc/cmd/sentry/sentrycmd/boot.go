@@ -714,6 +714,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			util.Fatalf("loading RDMA sysfs snapshot: %v", err)
 		}
 		timer.Reached("RDMA snapshot loaded")
+	} else if specutils.GPUSysfsSnapshotEnabled(spec, conf) {
+		if rdmaSnap = loadGPUSysfsSnapshot(rdma.Path); rdmaSnap != nil {
+			timer.Reached("GPU sysfs snapshot loaded")
+		}
 	}
 
 	// Create the loader.

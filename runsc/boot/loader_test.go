@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -169,6 +170,36 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		return nil, nil, fmt.Errorf("boot.New: %w", err)
 	}
 	return l, cleanup, nil
+}
+
+// TestUseGPUSysfsSnapshot checks that a sandbox keeps the first sysfs snapshot
+// that it gets, ignores snapshots with RDMA devices from runsc start, and tells
+// runsc whether it has one.
+func TestUseGPUSysfsSnapshot(t *testing.T) {
+	first := &rdma.Snapshot{PCINodes: []rdma.PCINode{{Path: "devices/pci0000:00"}}}
+	second := &rdma.Snapshot{PCINodes: []rdma.PCINode{{Path: "devices/pci0000:80"}}}
+	withDevices := &rdma.Snapshot{Devices: []rdma.Device{{IBDev: "mlx5_0"}}}
+	l := &Loader{}
+	cm := &containerManager{l: l}
+	check := func(want *rdma.Snapshot) {
+		t.Helper()
+		var has bool
+		if err := cm.HasSysfsSnapshot(nil, &has); err != nil {
+			t.Fatalf("HasSysfsSnapshot failed: %v", err)
+		}
+		l.mu.Lock()
+		got := l.rdmaSysfs
+		l.mu.Unlock()
+		if got != want || has != (want != nil) {
+			t.Errorf("sysfs snapshot = %+v and HasSysfsSnapshot = %t, want %+v", got, has, want)
+		}
+	}
+	l.useGPUSysfsSnapshot(nil)
+	l.useGPUSysfsSnapshot(withDevices)
+	check(nil)
+	l.useGPUSysfsSnapshot(first)
+	l.useGPUSysfsSnapshot(second)
+	check(first)
 }
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.

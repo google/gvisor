@@ -197,6 +197,7 @@ go_test(
         "//pkg/gomaxprocs",
         "//pkg/lisafs",
         "//pkg/log",
+        "//pkg/rdma",
         "//pkg/seccomp",
         "//pkg/sentry/checkpoint",
         "//pkg/sentry/fscheckpoint",

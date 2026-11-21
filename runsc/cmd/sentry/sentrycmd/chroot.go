@@ -187,6 +187,12 @@ func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) err
 		return fmt.Errorf("error configuring chroot for RDMA sysfs: %w", err)
 	}
 
+	if specutils.GPUSysfsSnapshotEnabled(spec, conf) {
+		if gpuSysfsUpdateChroot("/sys", chroot) {
+			timer.Reached("GPU sysfs snapshot taken")
+		}
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
@@ -325,4 +331,35 @@ func rdmaSysfsUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config)
 		}
 	}
 	return nil
+}
+
+// gpuSysfsUpdateChroot saves a snapshot of the PCI topology of the host's
+// NVIDIA GPUs, read from the host sysfs at sysRoot, in the sandbox chroot, and
+// reports whether it saved one (see specutils.TakeGPUSysfsSnapshot). This is
+// best effort: on failure, it logs a warning and saves no snapshot.
+//
+// Preconditions: Must run before pivot_root, while the host /sys is still
+// reachable.
+func gpuSysfsUpdateChroot(sysRoot, chroot string) bool {
+	snap := specutils.TakeGPUSysfsSnapshot(sysRoot)
+	if snap == nil {
+		return false
+	}
+	if err := snap.Save(filepath.Join(chroot, rdma.Path)); err != nil {
+		log.Warningf("Not exposing GPU PCI topology in sysfs: %v", err)
+		return false
+	}
+	return true
+}
+
+// loadGPUSysfsSnapshot loads the GPU sysfs snapshot, if any, that
+// gpuSysfsUpdateChroot saved at path. Like taking the snapshot, this is best
+// effort: on failure, it logs a warning and returns nil.
+func loadGPUSysfsSnapshot(path string) *rdma.Snapshot {
+	snap, err := rdma.Load(path)
+	if err != nil {
+		log.Warningf("Not exposing GPU PCI topology in sysfs: %v", err)
+		return nil
+	}
+	return snap
 }

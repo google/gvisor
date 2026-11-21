@@ -257,8 +257,11 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
-	// rdmaSysfs is the host sysfs snapshot for RDMA device topology, or
-	// nil when disabled.
+	// rdmaSysfs is the host sysfs snapshot for RDMA device and GPU topology,
+	// or nil when disabled. Sandboxes whose root container does not use GPUs
+	// get it when the first container that uses GPUs starts.
+	//
+	// +checklocks:mu
 	rdmaSysfs *rdma.Snapshot
 
 	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
@@ -541,8 +544,8 @@ type Args struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
 
-	// RDMASysfs is the host sysfs snapshot for RDMA device topology, or
-	// nil when disabled.
+	// RDMASysfs is the host sysfs snapshot for RDMA device and GPU topology,
+	// or nil when disabled.
 	RDMASysfs *rdma.Snapshot
 	// PodInitConfigFD is the file descriptor to a file passed in the
 	//	--pod-init-config flag
@@ -699,9 +702,10 @@ func New(args Args) (*Loader, error) {
 	// any application socket can exist. rdma-core discovers devices and binds
 	// userspace providers through nldev (RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID);
 	// providers without a PCI-ID match table (e.g. libirdma) are unusable
-	// without it. A nil snapshot leaves the protocol unregistered-equivalent:
+	// without it. If RDMA is disabled, the snapshot, if any, only holds GPU
+	// topology, and the protocol stays unregistered-equivalent:
 	// socket(AF_NETLINK, ..., NETLINK_RDMA) fails as on a host without RDMA.
-	if args.RDMASysfs != nil {
+	if args.RDMASysfs != nil && specutils.RDMAEnabled(args.Spec, args.Conf) {
 		rdmanetlink.Init(args.RDMASysfs)
 	}
 
@@ -970,7 +974,7 @@ func New(args Args) (*Loader, error) {
 	}
 	args.StartupTimer.Reached("kernel initialized")
 
-	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs); err != nil {
+	if err := registerFilesystems(l.k, &l.root, args.RDMASysfs); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 	args.StartupTimer.Reached("filesystems registered")
@@ -1606,6 +1610,21 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 	}
 	l.processes[eid] = &execProcess{hostTTY: tty}
 	return nil
+}
+
+// useGPUSysfsSnapshot makes snap, a GPU sysfs snapshot that runsc took for a
+// container that uses GPUs, the sysfs snapshot of the sandbox if it has none.
+//
+// +checklocksexclude:l.mu
+func (l *Loader) useGPUSysfsSnapshot(snap *rdma.Snapshot) {
+	if snap == nil || len(snap.Devices) > 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.rdmaSysfs == nil {
+		l.rdmaSysfs = snap
+	}
 }
 
 // startSubcontainer starts a child container. It returns the thread group ID of

@@ -271,6 +271,29 @@ All nvproxy functionality is supported on systrap and ptrace platforms.
 regarding virtual memory layout](https://github.com/gvisor/gvisor/issues/11436);
 all other nvproxy functionality is supported on the KVM platform.
 
+### PCI Topology {#pci-topology}
+
+Tools such as `nvidia-smi topo -m`, NVML and NCCL compute GPU topology from the
+PCI hierarchy in `/sys`. Containers that use GPUs get a read-only copy of this
+hierarchy for the host's NVIDIA GPUs and NVSwitches that are bound to the
+`nvidia` or `nvidia-nvswitch` driver, with the bridges and root complexes above
+them. The copy includes GPUs that are not assigned to the container.
+
+-   The `config` files only hold the configuration space header, as on Linux
+    for readers without `CAP_SYS_ADMIN`. There are no `uevent`,
+    `current_link_speed` and `current_link_width` files.
+-   The sandbox has a single NUMA node. In `local_cpus` and `local_cpulist`,
+    GPUs keep their relative host locality: if the host has n NUMA nodes with
+    CPUs, the GPUs on the i-th of these nodes are local to the i-th of n shares
+    of the sandbox CPUs.
+-   `runsc` copies the topology when the first container that uses GPUs starts
+    in the sandbox, and containers restored from a checkpoint keep the copy of
+    the original host. If `runsc` cannot read the topology, the containers get
+    no copy.
+
+In sandboxes with [RDMA support](rdma.md), the RDMA topology in `/sys` includes
+the GPUs instead, and sandboxes with [TPU support](tpu.md) get no copy.
+
 ### Debugging
 
 There are a few methods to try when debugging GPU workloads. The first step to

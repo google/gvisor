@@ -67,8 +67,9 @@ type InternalData struct {
 	// application CPU.
 	EnableNUMATopology bool
 	// RDMASysfs, when non-nil, is the host sysfs snapshot from which the
-	// RDMA device topology (/sys/devices/pci..., /sys/class/infiniband*,
-	// /sys/class/net, /sys/class/pci_bus, /sys/bus/pci/devices) is constructed.
+	// RDMA device and GPU topology (/sys/devices/pci..., /sys/class/pci_bus,
+	// /sys/bus/pci/devices and, with RDMA devices, /sys/class/infiniband*,
+	// /sys/class/net and /sys/bus/pci/drivers) is constructed.
 	RDMASysfs *rdma.Snapshot
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.

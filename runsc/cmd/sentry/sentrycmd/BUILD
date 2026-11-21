@@ -59,6 +59,7 @@ go_test(
     srcs = ["chroot_test.go"],
     embed = [":sentrycmd"],
     deps = [
+        "//pkg/rdma",
         "//runsc/config",
         "//runsc/specutils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",

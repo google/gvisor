@@ -1129,6 +1129,44 @@ func TestTPUProxyEnabled(t *testing.T) {
 	}
 }
 
+func TestGPUSysfsSnapshotEnabled(t *testing.T) {
+	withDevices := func(paths ...string) specs.Spec {
+		spec := specs.Spec{Process: &specs.Process{Args: []string{"/bin/true"}}, Linux: &specs.Linux{}}
+		for _, p := range paths {
+			spec.Linux.Devices = append(spec.Linux.Devices, specs.LinuxDevice{Path: p})
+		}
+		return spec
+	}
+	withHook := func(visibleDevices string) specs.Spec {
+		return specs.Spec{
+			Hooks:   &specs.Hooks{Prestart: []specs.Hook{{Path: "/usr/bin/nvidia-container-runtime-hook"}}},
+			Process: &specs.Process{Env: []string{"NVIDIA_VISIBLE_DEVICES=" + visibleDevices}},
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		spec specs.Spec
+		conf config.Config
+		want bool
+	}{
+		{name: "no-gpus", spec: withDevices(), conf: config.Config{NVProxy: true}},
+		{name: "gpus", spec: withDevices("/dev/nvidiactl"), conf: config.Config{NVProxy: true}, want: true},
+		{name: "hook-with-gpus", spec: withHook("all"), conf: config.Config{NVProxy: true}, want: true},
+		{name: "hook-with-driver-only", spec: withHook("none"), conf: config.Config{NVProxy: true}, want: true},
+		{name: "hook-without-gpus", spec: withHook("void"), conf: config.Config{NVProxy: true}},
+		{name: "rdma", spec: withDevices("/dev/nvidiactl", "/dev/infiniband/uverbs0"), conf: config.Config{NVProxy: true, RDMAProxy: true}},
+		{name: "rdmaproxy-without-uverbs", spec: withDevices("/dev/nvidiactl"), conf: config.Config{NVProxy: true, RDMAProxy: true}, want: true},
+		{name: "tpuproxy", spec: withDevices("/dev/nvidiactl"), conf: config.Config{NVProxy: true, TPUProxy: true}},
+		{name: "tpu-device", spec: withDevices("/dev/nvidiactl", "/dev/accel0"), conf: config.Config{NVProxy: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GPUSysfsSnapshotEnabled(&tc.spec, &tc.conf); got != tc.want {
+				t.Errorf("GPUSysfsSnapshotEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestCopySpec checks that spec copies hold the given spec, and that the copy
 // is actually sealed (i.e. read-only).
 func TestCopySpec(t *testing.T) {
