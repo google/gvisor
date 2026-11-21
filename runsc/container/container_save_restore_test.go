@@ -223,7 +223,7 @@ func TestSignalUnkillablePolicyRestore(t *testing.T) {
 // recorded. Then, it is restored in two new containers and the first number
 // printed from these containers is checked. Both should be the next consecutive
 // number after the last number from the checkpointed container.
-func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec) {
+func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec, afterRestore ...func(*Container)) {
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
 		t.Fatalf("os.MkdirTemp failed: %v", err)
@@ -327,6 +327,9 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	// picks up from where it left off.
 	if lastNum+1 != firstNum {
 		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+	}
+	for _, f := range afterRestore {
+		f(cont2)
 	}
 	cont2.Destroy()
 	cont2 = nil
@@ -1265,7 +1268,8 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
 	for _, tc := range []struct{ name, options string }{
-		{name: "flat"},
+		{name: "flat", options: "-E noinline_data"},
+		{name: "inline"},
 		{name: "chunk-blockmap", options: "--chunksize=8192 -E force-inode-blockmap"},
 		{name: "chunk-indexes", options: "--chunksize=8192 -E force-chunk-indexes"},
 	} {
@@ -1302,6 +1306,10 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 						// shared between host and test container.
 						spec.Annotations[sentryapi.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
 						return spec
+					}, func(c *Container) {
+						if out, err := executeCombinedOutput(conf, c, nil, "/busybox", "true"); err != nil {
+							t.Errorf("exec /busybox true after restore: %v, out: %s", err, out)
+						}
 					})
 				})
 			}
