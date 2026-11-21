@@ -82,6 +82,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/cpuid",
+        "//pkg/erofs",
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/seccheck/scsdk",
@@ -155,6 +156,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/erofs",
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/sentry/control/controlapi",

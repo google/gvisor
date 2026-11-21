@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -57,8 +58,8 @@ func newTestImage(features uint32, file erofs.InodeCompact) []byte {
 	return data
 }
 
-// openTestFile mounts image and opens its file "file".
-func openTestFile(t *testing.T, image []byte) *regularFileFD {
+// mountTestImage mounts image and returns its context, VFS, and root.
+func mountTestImage(t *testing.T, image []byte) (context.Context, *vfs.VirtualFilesystem, vfs.VirtualDentry) {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "image")
 	if err != nil {
@@ -85,11 +86,19 @@ func openTestFile(t *testing.T, image []byte) *regularFileFD {
 		t.Fatal(err)
 	}
 	rootVD := mntns.Root(ctx)
+	t.Cleanup(func() { rootVD.DecRef(ctx); mntns.DecRef(ctx); vfsObj.Release(ctx); mf.Destroy() })
+	return ctx, vfsObj, rootVD
+}
+
+// openTestFile mounts image and opens its file "file".
+func openTestFile(t *testing.T, image []byte) *regularFileFD {
+	t.Helper()
+	ctx, vfsObj, rootVD := mountTestImage(t, image)
 	vfsfd, err := vfsObj.OpenAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{Root: rootVD, Start: rootVD, Path: fspath.Parse("file")}, &vfs.OpenOptions{Flags: linux.O_RDONLY})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { vfsfd.DecRef(ctx); rootVD.DecRef(ctx); mntns.DecRef(ctx); vfsObj.Release(ctx); mf.Destroy() })
+	t.Cleanup(func() { vfsfd.DecRef(ctx) })
 	return vfsfd.Impl().(*regularFileFD)
 }
 
