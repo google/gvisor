@@ -928,11 +928,12 @@ func (cm *containerManager) Mount(args *sentryapi.MountArgs, _ *struct{}) error 
 		Path:  fspath.Parse(dest),
 	}
 
+	// EROFS consumes the image FD even if mounting fails.
+	cu.Release()
 	if _, err := t.Kernel().VFS().MountAt(ctx, t.Credentials(), source, &pop, fstype, &opts); err != nil {
 		return err
 	}
 	log.Infof("Mounted %q to %q type: %s, internal-options: %q, in container %q", source, dest, fstype, opts.GetFilesystemOptions.Data, args.ContainerID)
-	cu.Release()
 	return nil
 }
 

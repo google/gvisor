@@ -153,7 +153,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		f.Close()
 		return nil, nil, err
 	}
-	cu.Add(func() { image.Close() })
+	imageCu := cleanup.Make(func() { image.Close() })
+	defer imageCu.Clean()
 
 	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
 	if opts.InternalData != nil && !ok {
@@ -189,6 +190,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 	cu.Add(func() { fs.vfsfs.DecRef(ctx) })
+	imageCu.Release()
 
 	fs.zeroPage, err = fs.memoryFile.Allocate(uint64(hostarch.PageSize), pgalloc.AllocOpts{Kind: usage.PageCache, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
 	if err != nil {
