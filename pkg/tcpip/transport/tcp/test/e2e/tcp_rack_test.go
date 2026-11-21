@@ -357,6 +357,195 @@ func TestRACKTLPFallbackRTO(t *testing.T) {
 	}
 }
 
+// TestRACKTLPSendsNewData tests that when the congestion window is full and
+// there is unsent data, the loss probe sends the next new segment instead of
+// retransmitting the last one, and that no second probe goes out while that
+// one is unacknowledged (RFC 8985, section 7.3).
+func TestRACKTLPSendsNewData(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	e2e.SetStackSACKPermitted(t, c, true)
+	// A short handshake RTT makes the PTO short (2 * SRTT). The RTO stays
+	// at the 3 s minimum that the test context sets, so the last wait below,
+	// a PTO and then the RTO, stays within GetPacket's 5 s timeout.
+	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 300*time.Millisecond /* delay */)
+
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("GetSockOpt failed: %v", err)
+	}
+	cwnd := int(info.SndCwnd)
+	numPackets := cwnd + 5
+	data := make([]byte, numPackets*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	// The first cwnd segments fill the congestion window, and all are lost.
+	for i := 0; i < cwnd; i++ {
+		c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+	}
+
+	// The PTO fires. The probe is the next new segment, not a retransmission
+	// of the last one.
+	c.ReceiveAndCheckPacketWithOptions(data, cwnd*maxPayload, maxPayload, e2e.TSOptionSize)
+	if got := c.Stack().Stats().TCP.Retransmits.Value(); got != 0 {
+		t.Errorf("got stats.TCP.Retransmits.Value() = %d, want = 0", got)
+	}
+
+	// The probe is lost too. No second probe may go out while the first is
+	// unacknowledged, even after a write, so the next packet is the RTO's
+	// retransmission of the first segment.
+	r.Reset(data[:maxPayload])
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, e2e.TSOptionSize)
+	if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+		t.Errorf("got stats.TCP.Timeouts.Value() = %d, want = 1", got)
+	}
+}
+
+// TestRACKTLPLostProbeRTO follows TestRACKTLPSendsNewData on a manual clock.
+// The probe is lost too, so the RTO must retransmit the first segment when it
+// was due as the probe went out. Writes that send nothing, a duplicate ACK and
+// an ACK of data not yet sent must neither postpone the RTO nor let a second
+// probe go out (RFC 8985, section 7.3). In the last case no new data is
+// queued, so the probe is a retransmission.
+func TestRACKTLPLostProbeRTO(t *testing.T) {
+	const (
+		noACK = iota
+		duplicateACK
+		unsentDataACK
+	)
+	for _, tc := range []struct {
+		name string
+		// writes is whether the application writes every 10 ms after the
+		// probe goes out.
+		writes bool
+		// ack is the kind of ACK that arrives after the probe.
+		ack int
+		// retransmit is whether only the segments that fill the congestion
+		// window are written first, so that the probe retransmits the last.
+		retransmit bool
+	}{
+		{name: "no ACK"},
+		{name: "writes", writes: true},
+		{name: "duplicate ACK", ack: duplicateACK},
+		{name: "ACK of unsent data", ack: unsentDataACK},
+		{name: "writes after retransmitted probe", writes: true, retransmit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			c := context.NewWithOpts(t, context.Options{EnableV4: true, MTU: uint32(mtu), Clock: clock})
+			defer c.Cleanup()
+
+			e2e.SetStackSACKPermitted(t, c, true)
+			peer := c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 0 /* delay */)
+
+			var info tcpip.TCPInfoOption
+			if err := c.EP.GetSockOpt(&info); err != nil {
+				t.Fatalf("GetSockOpt failed: %v", err)
+			}
+			cwnd := int(info.SndCwnd)
+			numPackets, probeOffset := cwnd+5, cwnd*maxPayload
+			if tc.retransmit {
+				numPackets, probeOffset = cwnd, (cwnd-1)*maxPayload
+			}
+			data := make([]byte, numPackets*maxPayload)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			var r bytes.Reader
+			r.Reset(data)
+			if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write failed: %s", err)
+			}
+
+			// The first cwnd segments fill the congestion window, and all are
+			// lost.
+			for i := 0; i < cwnd; i++ {
+				c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+			}
+
+			// nextData advances the clock 1 ms at a time, calling each before
+			// every step, until the sender sends data. It returns the data's
+			// offset and how long that took.
+			nextData := func(limit time.Duration, each func(elapsed time.Duration)) (int, time.Duration) {
+				t.Helper()
+				for elapsed := time.Duration(0); elapsed < limit; {
+					if each != nil {
+						each(elapsed)
+					}
+					clock.Advance(time.Millisecond)
+					elapsed += time.Millisecond
+					for v := c.GetPacketNonBlocking(); v != nil; v = c.GetPacketNonBlocking() {
+						tcpHdr := header.TCP(header.IPv4(v.AsSlice()).Payload())
+						offset := int(c.IRS.Add(1).Size(seqnum.Value(tcpHdr.SequenceNumber())))
+						n := len(tcpHdr.Payload())
+						v.Release()
+						if n > 0 {
+							return offset, elapsed
+						}
+					}
+				}
+				t.Fatalf("no data sent within %v", limit)
+				return 0, 0
+			}
+
+			// The PTO fires, and the probe is the next new segment, or with
+			// none queued, the last segment again. It is lost too.
+			if offset, _ := nextData(info.RTO, nil); offset != probeOffset {
+				t.Fatalf("got probe at offset %d, want %d", offset, probeOffset)
+			}
+
+			switch tc.ack {
+			case duplicateACK:
+				peer.AckNum = c.IRS.Add(1)
+			case unsentDataACK:
+				// One byte beyond SND.NXT, the end of the probe.
+				peer.AckNum = c.IRS.Add(seqnum.Size(1 + probeOffset + maxPayload + 1))
+			}
+			if tc.ack != noACK {
+				peer.SendPacketWithTS(nil, peer.TSVal+1)
+				// Let the endpoint process the ACK.
+				c.Stack().Pause()
+				c.Stack().Resume()
+			}
+			var write func(elapsed time.Duration)
+			if tc.writes {
+				write = func(elapsed time.Duration) {
+					if elapsed%(10*time.Millisecond) == 0 {
+						r.Reset(data[:maxPayload])
+						if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+							t.Fatalf("Write failed: %s", err)
+						}
+					}
+				}
+			}
+
+			// The RTO, armed when the probe went out, retransmits the first
+			// segment.
+			offset, elapsed := nextData(2*info.RTO, write)
+			if offset != 0 {
+				t.Fatalf("got data at offset %d %v after the probe, want the RTO's retransmission at 0", offset, elapsed)
+			}
+			if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+				t.Errorf("got stats.TCP.Timeouts.Value() = %d, want = 1", got)
+			}
+			if elapsed > info.RTO+time.Millisecond {
+				t.Errorf("got RTO %v after the probe, want %v", elapsed, info.RTO)
+			}
+		})
+	}
+}
+
 // TestNoTLPRecoveryOnDSACK tests the scenario where the sender speculates a
 // tail loss and sends a TLP. Everything is received and acked. The probe
 // segment is DSACKed. No fast recovery should be triggered in this case.
