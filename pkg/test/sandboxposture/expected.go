@@ -334,7 +334,7 @@ func expectedFilesystem(opts ExpectedOpts) Filesystem {
 	entries := []string{"etc/", "etc/localtime", "proc/"}
 	entries = append(entries, opts.ExtraRootEntries...)
 
-	mounts := []string{"/ tmpfs ro"}
+	mounts := []string{"/ tmpfs ro,nosuid,nodev,noexec"}
 	mounts = append(mounts, opts.ExtraMounts...)
 
 	sort.Strings(entries)
