@@ -1749,9 +1749,9 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err != nil {
 		return nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
+	// CreateProcess takes its own reference if it succeeds.
+	defer fdTable.DecRef(ctx)
 	info.procArgs.StartupTimeline.Reached("FD table created")
-	// CreateProcess takes a reference on fdTable if successful. We won't need
-	// ours either way.
 	info.procArgs.FDTable = fdTable
 
 	if ttyFile != nil {
@@ -1841,8 +1841,6 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating process: %w", err)
 	}
-	// CreateProcess takes a reference on FDTable if successful.
-	info.procArgs.FDTable.DecRef(ctx)
 
 	// Install seccomp filters with the new task if there are any.
 	filter, err := buildOCISeccompFilter(info.conf, info.spec)
