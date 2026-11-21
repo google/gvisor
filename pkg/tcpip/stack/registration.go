@@ -193,10 +193,9 @@ type MappablePacketEndpoint interface {
 	// nil if there is none.
 	GetPacketMMapEndpoint() PacketMMapEndpoint
 
-	// HandlePacketMMapCopy is a function that is called when a packet received is
-	// too large for the buffer size specified for the memory mapped endpoint. In
-	// this case, the packet is copied and passed to the original packet endpoint.
-	HandlePacketMMapCopy(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	// HandlePacketMMapCopy queues an oversized mmap packet if copying is enabled
+	// and the receive queue has room. It reports whether the packet was queued.
+	HandlePacketMMapCopy(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) bool
 }
 
 // PacketMMapOpts are the options for initializing a PacketMMapEndpoint.
