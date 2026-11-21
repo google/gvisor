@@ -1261,10 +1261,6 @@ TEST_P(UdpSocketTest, ReadShutdownSameSocketResetsShutdownState) {
 }
 
 TEST_P(UdpSocketTest, ReadShutdown) {
-  // TODO(gvisor.dev/issue/1202): Calling recv() after shutdown without
-  // MSG_DONTWAIT blocks indefinitely.
-  SKIP_IF(IsRunningWithHostinet());
-
   ASSERT_NO_ERRNO(BindLoopback());
 
   char received[512] = {};
@@ -1289,9 +1285,6 @@ TEST_P(UdpSocketTest, ReadShutdown) {
 }
 
 TEST_P(UdpSocketTest, ReadShutdownDifferentThread) {
-  // TODO(gvisor.dev/issue/1202): Calling recv() after shutdown without
-  // MSG_DONTWAIT blocks indefinitely.
-  SKIP_IF(IsRunningWithHostinet());
   ASSERT_NO_ERRNO(BindLoopback());
 
   char received[512] = {};

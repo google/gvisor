@@ -38,6 +38,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
+#include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
@@ -596,6 +597,7 @@ TEST_P(SocketInetLoopbackTest, TCPUnblockWaitOnLocalRdHUp) {
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
   sockaddr_storage listen_addr = listener.addr;
   FileDescriptor accepted;
+  absl::Notification accepted_set;
 
   // Bind and listen on socket
   ASSERT_THAT(
@@ -607,6 +609,7 @@ TEST_P(SocketInetLoopbackTest, TCPUnblockWaitOnLocalRdHUp) {
     // Accept connections
     accepted =
         ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+    accepted_set.Notify();
     int data = 1234;
     ASSERT_THAT(RetryEINTR(recv)(accepted.get(), &data, sizeof(data), 0),
                 SyscallSucceedsWithValue(0));
@@ -644,8 +647,9 @@ TEST_P(SocketInetLoopbackTest, TCPUnblockWaitOnLocalRdHUp) {
       absl::SleepFor(absl::Milliseconds(50));
     }
 
-    // Shutdown read
-    shutdown(accepted.get(), SHUT_RD);
+    // Shutdown read, once t1 has set accepted.
+    accepted_set.WaitForNotification();
+    ASSERT_THAT(shutdown(accepted.get(), SHUT_RD), SyscallSucceeds());
   });
   t1.Join();
   t2.Join();
