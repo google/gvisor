@@ -46,6 +46,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -139,6 +140,56 @@ void RunFuseServer(
     SCOPED_TRACE(absl::StrFormat("FUSE opcode %u", in.opcode));
     if (!respond(fd.get(), in)) break;
   }
+}
+
+TEST(FuseTest, PollBeforeMount) {
+  auto fd_or = Open("/dev/fuse", O_RDWR);
+  if (!IsRunningOnGvisor() && !fd_or.ok()) {
+    // Some native test environments do not expose a usable FUSE device.
+    int err = fd_or.error().errno_value();
+    SKIP_IF(err == ENOENT || err == ENODEV || err == EPERM || err == EACCES);
+  }
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(std::move(fd_or));
+  for (int timeout : {0, 1000}) {
+    SCOPED_TRACE(timeout);
+    struct pollfd pfd = {.fd = fd.get(), .events = POLLIN};
+    ASSERT_THAT(poll(&pfd, 1, timeout), SyscallSucceedsWithValue(1));
+    EXPECT_EQ(pfd.revents, POLLERR);
+  }
+}
+
+TEST(FuseTest, EpollAcrossMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  const FileDescriptor ep = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(ep.get(), fd.get(), EPOLLIN | EPOLLET, 0));
+  epoll_event event = {};
+  // Restore rechecks every epoll interest, including edge-triggered ones.
+  // Keep it from rearming this watch between consuming EPOLLERR and checking
+  // whether the mount itself delivered an edge.
+  DisableSave ds;
+  ASSERT_THAT(epoll_wait(ep.get(), &event, 1, 0), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(static_cast<uint32_t>(event.events),
+            static_cast<uint32_t>(EPOLLERR));
+
+  // The original watch never joined a connection's wait queue. A watch added
+  // after mounting sees the pending FUSE_INIT request.
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto opts =
+      absl::StrFormat("fd=%d,user_id=%d,group_id=%d,rootmode=40000", fd.get(),
+                      getuid(), getgid());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "fuse", dir.path(), "fuse", MS_NODEV | MS_NOSUID, opts, MNT_DETACH));
+  EXPECT_THAT(epoll_wait(ep.get(), &event, 1, 0), SyscallSucceedsWithValue(0));
+  ds.reset();
+  ASSERT_THAT(epoll_ctl(ep.get(), EPOLL_CTL_DEL, fd.get(), nullptr),
+              SyscallSucceeds());
+  ASSERT_NO_ERRNO(RegisterEpollFD(ep.get(), fd.get(), EPOLLIN | EPOLLET, 0));
+  ASSERT_THAT(epoll_wait(ep.get(), &event, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(static_cast<uint32_t>(event.events),
+            static_cast<uint32_t>(EPOLLIN));
+  FuseInit(fd.get());
 }
 
 TEST(FuseTest, EpollAfterAbort) {
