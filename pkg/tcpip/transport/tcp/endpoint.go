@@ -531,17 +531,17 @@ type Endpoint struct {
 	// without hearing a response, the connection is closed.
 	keepalive keepalive
 
-	// userTimeout if non-zero specifies a user specified timeout for
-	// a connection w/ pending data to send. A connection that has pending
-	// unacked data will be forcibily aborted if the timeout is reached
-	// without any data being acked.
+	// userTimeout, when nonzero, limits how long TCP waits for data to be
+	// acknowledged or for the peer's receive window to reopen while data is
+	// queued. It also applies to unanswered keepalive probes.
+	//
+	// +checklocks:mu
 	userTimeout time.Duration
 
-	// deferAccept if non-zero specifies a user specified time during
-	// which the final ACK of a handshake will be dropped provided the
-	// ACK is a bare ACK and carries no data. If the timeout is crossed then
-	// the bare ACK is accepted and the connection is delivered to the
-	// listener.
+	// deferAccept is the interval from the start of a passive handshake
+	// during which a final ACK without data cannot complete the handshake.
+	//
+	// +checklocks:mu
 	deferAccept time.Duration
 
 	// acceptMu protects accepQueue
@@ -586,9 +586,9 @@ type Endpoint struct {
 
 	stats Stats
 
-	// tcpLingerTimeout is the maximum amount of a time a socket
-	// a socket stays in TIME_WAIT state before being marked
-	// closed.
+	// tcpLingerTimeout limits how long a closed socket stays in FIN-WAIT-2.
+	//
+	// +checklocks:mu
 	tcpLingerTimeout time.Duration
 
 	// closed indicates that the user has called closed on the
@@ -614,10 +614,14 @@ type Endpoint struct {
 	// is yet to send a FIN but on our end the socket is fully closed i.e. endpoint.Close()
 	// has been called on the socket. This timer is not started for sockets that
 	// are waiting for a peer FIN but are not closed.
+	//
+	// +checklocks:mu
 	finWait2Timer tcpip.Timer `state:"nosave"`
 
 	// timeWaitTimer is used to reap a socket once a socket has been in TIME-WAIT state
 	// for tcp.DefaultTCPTimeWaitTimeout seconds.
+	//
+	// +checklocks:mu
 	timeWaitTimer tcpip.Timer `state:"nosave"`
 
 	// listenCtx is used by listening endpoints to store state used while listening for
