@@ -64,8 +64,8 @@ type pollState struct {
 
 // initReadiness gets the current ready mask for the file represented by the FD
 // stored in pfd.FD. If a channel is passed in, the waiter entry in "state" is
-// used to register with the file for event notifications, and a reference to
-// the file is stored in "state".
+// used to register with the file for event notifications. A successful registration
+// leaves a reference to the file in "state" for releaseState.
 func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan struct{}) error {
 	if pfd.FD < 0 {
 		pfd.REvents = 0
@@ -81,11 +81,12 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 	if ch == nil {
 		defer file.DecRef(t)
 	} else {
-		state.file = file
 		state.waiter.Init(waiter.ChannelNotifier(ch), waiter.EventMaskFromLinux(uint32(pfd.Events)))
 		if err := file.EventRegister(&state.waiter); err != nil {
+			file.DecRef(t)
 			return err
 		}
+		state.file = file
 	}
 
 	r := file.Readiness(waiter.EventMaskFromLinux(uint32(pfd.Events)))
