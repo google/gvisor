@@ -307,10 +307,10 @@ func convertRules(s *specs.LinuxSeccomp) ([]ociRule, error) {
 
 // convertArgs converts an OCI seccomp argument rule to a list of seccomp.Rule.
 func convertArgs(args []specs.LinuxSeccompArg) (seccomp.SyscallRule, error) {
-	argCounts := make([]uint, 6)
+	var argCounts [seccomp.RuleIP]uint
 
 	for _, arg := range args {
-		if arg.Index > 6 {
+		if arg.Index >= uint(len(argCounts)) {
 			return nil, fmt.Errorf("invalid index: %d", arg.Index)
 		}
 
