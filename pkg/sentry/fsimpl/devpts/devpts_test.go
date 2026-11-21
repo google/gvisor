@@ -18,8 +18,12 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -198,5 +202,147 @@ func TestReplicaModeAndOwner(t *testing.T) {
 				t.Errorf("root mode: got %#o, want %#o", got, rootMode)
 			}
 		})
+	}
+}
+
+// newIndexTestRoot creates a virtual devpts mount for allocator invariants.
+func newIndexTestRoot(t *testing.T) (context.Context, vfs.VirtualDentry, *rootInode) {
+	t.Helper()
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS.Init: %v", err)
+	}
+	t.Cleanup(func() { vfsObj.Release(ctx) })
+	vfsObj.MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", Name, &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{Data: "newinstance"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewMountNamespace: %v", err)
+	}
+	vd := mntns.Root(ctx)
+	t.Cleanup(func() {
+		vd.DecRef(ctx)
+		mntns.DecRef(ctx)
+	})
+	root := vd.Dentry().Impl().(*kernfs.Dentry).Inode().(*rootInode)
+	return ctx, vd, root
+}
+
+func indexTestTerminal(t *testing.T, ctx context.Context, root *rootInode) *Terminal {
+	t.Helper()
+	term, err := root.allocateTerminal(ctx, auth.CredentialsFromContext(ctx))
+	if err != nil {
+		t.Fatalf("allocateTerminal: %v", err)
+	}
+	t.Cleanup(func() {
+		root.mu.Lock()
+		replica := root.replicas[term.n]
+		live := replica != nil && replica.t == term
+		root.mu.Unlock()
+		if live {
+			root.masterClose(ctx, term)
+		}
+	})
+	return term
+}
+
+func indexTestExternal(t *testing.T, ctx context.Context, vd vfs.VirtualDentry) *ExternalReplica {
+	t.Helper()
+	er, err := AddExternalReplica(ctx, vd, auth.CredentialsFromContext(ctx), kernel.NewTTY(0, nil))
+	if err != nil {
+		t.Fatalf("AddExternalReplica: %v", err)
+	}
+	t.Cleanup(func() { er.Remove(ctx) })
+	return er
+}
+
+func TestMixedInternalAndExternalIndexReservations(t *testing.T) {
+	ctx, vd, root := newIndexTestRoot(t)
+	first := indexTestTerminal(t, ctx, root)
+	external := indexTestExternal(t, ctx, vd)
+	if first.n != 0 || external.Index() != 1 {
+		t.Fatalf("initial indices: internal=%d, external=%d", first.n, external.Index())
+	}
+	root.masterClose(ctx, first)
+	reused := indexTestTerminal(t, ctx, root)
+	next := indexTestTerminal(t, ctx, root)
+	if reused.n != 0 || next.n != 2 {
+		t.Errorf("mixed allocation reused=%d, next=%d; want 0,2", reused.n, next.n)
+	}
+	root.mu.Lock()
+	owner := root.externals[external.n]
+	refs := root.allocated[external.n]
+	root.mu.Unlock()
+	if owner != external || refs != 1 {
+		t.Errorf("external reservation changed: owner=%p, refs=%d", owner, refs)
+	}
+}
+
+func TestRepeatedExternalRemovePreservesReusedIndex(t *testing.T) {
+	for _, externalReplacement := range []bool{false, true} {
+		t.Run(map[bool]string{false: "internal", true: "external"}[externalReplacement], func(t *testing.T) {
+			ctx, vd, root := newIndexTestRoot(t)
+			old := indexTestExternal(t, ctx, vd)
+			old.Remove(ctx)
+			var index uint32
+			if externalReplacement {
+				current := indexTestExternal(t, ctx, vd)
+				index = current.Index()
+				device := current.tty.DeviceID()
+				old.Remove(ctx)
+				if current.tty.DeviceID() != device {
+					t.Errorf("repeated Remove changed replacement device ID")
+				}
+				root.mu.Lock()
+				live := root.externals[index] == current
+				root.mu.Unlock()
+				if !live {
+					t.Errorf("repeated Remove deleted replacement")
+				}
+			} else {
+				current := indexTestTerminal(t, ctx, root)
+				index = current.n
+				old.Remove(ctx)
+				root.mu.Lock()
+				live := root.replicas[index] != nil && root.replicas[index].t == current
+				root.mu.Unlock()
+				if !live {
+					t.Errorf("repeated Remove deleted replacement")
+				}
+			}
+			if index != 0 {
+				t.Fatalf("replacement index=%d, want 0", index)
+			}
+			next := indexTestTerminal(t, ctx, root)
+			if next.n != 1 {
+				t.Errorf("next index=%d, want 1", next.n)
+			}
+		})
+	}
+}
+
+func TestFreeIndexHeapRebuild(t *testing.T) {
+	ctx, _, root := newIndexTestRoot(t)
+	terms := make([]*Terminal, 8)
+	for i := range terms {
+		terms[i] = indexTestTerminal(t, ctx, root)
+	}
+	for _, i := range []int{6, 1, 4} {
+		root.masterClose(ctx, terms[i])
+	}
+	root.mu.Lock()
+	root.freeIndices = nil
+	root.mu.Unlock()
+	root.afterLoad(ctx)
+	for _, want := range []uint32{1, 4, 6} {
+		term := indexTestTerminal(t, ctx, root)
+		if term.n != want {
+			t.Errorf("rebuilt allocation=%d, want %d", term.n, want)
+		}
 	}
 }

@@ -101,6 +101,7 @@ func (er *ExternalReplica) Remove(context.Context) {
 	if er.root.externals[er.n] == er {
 		delete(er.root.externals, er.n)
 		er.tty.SetDeviceID(0, 0)
+		er.root.releaseTerminalRefLocked(er.n)
 	}
 }
 

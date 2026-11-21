@@ -24,6 +24,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
+#include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -270,6 +271,262 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   size_t n = ASSERT_NO_ERRNO_AND_VALUE(
       PollAndReadFd(fd.get(), buf, expected, kTimeout));
   EXPECT_EQ(expected, n);
+}
+
+TEST(BasicPtyTest, ReuseIndexAfterLastReplicaDescriptionCloses) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "devpts_reuse", dir.path(), "devpts", 0, "newinstance,ptmxmode=0666", 0));
+  const std::string ptmx = JoinPath(dir.path(), "ptmx");
+  FileDescriptor first =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ptmx, O_RDWR | O_NOCTTY));
+  const int first_index = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first));
+  EXPECT_EQ(first_index, 0);
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), absl::StrCat(first_index)), O_RDWR | O_NOCTTY));
+  const int duplicated = dup(replica.get());
+  ASSERT_THAT(duplicated, SyscallSucceeds());
+  FileDescriptor duplicate(duplicated);
+  first.reset();
+  replica.reset();
+
+  FileDescriptor second =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ptmx, O_RDWR | O_NOCTTY));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(second)), 1);
+  duplicate.reset();
+  FileDescriptor reused =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ptmx, O_RDWR | O_NOCTTY));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), first_index);
+}
+
+TEST(BasicPtyTest, ReuseIndexAfterMasterOnlyCloses) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "devpts_reuse", dir.path(), "devpts", 0, "newinstance,ptmxmode=0666", 0));
+  for (int i = 0; i < 8; ++i) {
+    FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+        Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_NOCTTY));
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(master)), 0);
+  }
+}
+
+class DevptsIndexTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    directory_.emplace(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    mount_.emplace(ASSERT_NO_ERRNO_AND_VALUE(
+        Mount("devpts_index", directory_->path(), "devpts", 0,
+              "newinstance,ptmxmode=0666", 0)));
+    ptmx_ = JoinPath(directory_->path(), "ptmx");
+  }
+
+  PosixErrorOr<FileDescriptor> NewMaster() const {
+    return Open(ptmx_, O_RDWR | O_NOCTTY);
+  }
+
+  std::string ReplicaPath(int index) const {
+    return JoinPath(directory_->path(), absl::StrCat(index));
+  }
+
+  std::optional<TempPath> directory_;
+  std::optional<Cleanup> mount_;
+  std::string ptmx_;
+};
+
+TEST_F(DevptsIndexTest, IndependentReplicaDescriptionsAndDupPinIndex) {
+  FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 0);
+  FileDescriptor a =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ReplicaPath(0), O_RDWR | O_NOCTTY));
+  FileDescriptor b =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ReplicaPath(0), O_RDWR | O_NOCTTY));
+  FileDescriptor duplicate = ASSERT_NO_ERRNO_AND_VALUE(a.Dup());
+  first.reset();
+  a.reset();
+  FileDescriptor second = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(second)), 1);
+  b.reset();
+  FileDescriptor third = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(third)), 2);
+  MaybeSave();
+  duplicate.reset();
+  FileDescriptor reused = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), 0);
+}
+
+TEST_F(DevptsIndexTest, DuplicatedMasterPinsIndexUntilFinalClose) {
+  FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 0);
+  FileDescriptor duplicate = ASSERT_NO_ERRNO_AND_VALUE(first.Dup());
+  first.reset();
+  FileDescriptor second = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(second)), 1);
+  duplicate.reset();
+  FileDescriptor reused = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), 0);
+}
+
+TEST_F(DevptsIndexTest, PeerDescriptionPinsIndex) {
+  FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 0);
+  int result = ioctl(first.get(), TIOCGPTPEER, O_RDWR | O_NOCTTY | O_CLOEXEC);
+  ASSERT_THAT(result, SyscallSucceeds());
+  FileDescriptor peer(result);
+  first.reset();
+  FileDescriptor second = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(second)), 1);
+  peer.reset();
+  FileDescriptor reused = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), 0);
+}
+
+TEST_F(DevptsIndexTest, FailedPeerFdInstallationDoesNotPinIndex) {
+  FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 0);
+  struct rlimit original = {};
+  ASSERT_THAT(getrlimit(RLIMIT_NOFILE, &original), SyscallSucceeds());
+  {
+    const Cleanup restore([&] {
+      EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &original), SyscallSucceeds());
+    });
+    struct rlimit restricted = original;
+    restricted.rlim_cur = 0;
+    ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &restricted), SyscallSucceeds());
+    for (int i = 0; i < 8; ++i) {
+      const int result = ioctl(first.get(), TIOCGPTPEER, O_RDWR | O_NOCTTY);
+      FileDescriptor unexpected(result);
+      EXPECT_THAT(result, SyscallFailsWithErrno(EMFILE));
+    }
+  }
+  first.reset();
+  FileDescriptor reused = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), 0);
+}
+
+TEST_F(DevptsIndexTest, PathHandleDoesNotPinIndexOrOpenReplacement) {
+  FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 0);
+  FileDescriptor stale =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(ReplicaPath(0), O_PATH | O_CLOEXEC));
+  first.reset();
+  FileDescriptor reused = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(reused)), 0);
+  const std::string stale_path = absl::StrCat("/proc/self/fd/", stale.get());
+  const int result = open(stale_path.c_str(), O_RDWR | O_NOCTTY);
+  FileDescriptor unexpected(result);
+  EXPECT_THAT(result, SyscallFailsWithErrno(EIO));
+}
+
+TEST_F(DevptsIndexTest, LowestFreedIndexAmongLiveTerminals) {
+  std::vector<FileDescriptor> masters;
+  masters.reserve(64);
+  for (int i = 0; i < 64; ++i) {
+    masters.push_back(ASSERT_NO_ERRNO_AND_VALUE(NewMaster()));
+    ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(masters.back())), i);
+  }
+  for (int i : {31, 3, 17}) {
+    masters[i].reset();
+  }
+  MaybeSave();
+  for (int i : {3, 17, 31}) {
+    masters.push_back(ASSERT_NO_ERRNO_AND_VALUE(NewMaster()));
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(masters.back())), i);
+  }
+}
+
+TEST_F(DevptsIndexTest, ReusesHolesWithLiveNeighbors) {
+  FileDescriptor zero = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  FileDescriptor one = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  FileDescriptor two = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  FileDescriptor three = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(three)), 3);
+  one.reset();
+  three.reset();
+  MaybeSave();
+  FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 1);
+  FileDescriptor second = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(second)), 3);
+}
+
+TEST_F(DevptsIndexTest, OpenReplicaRacingFinalMasterClose) {
+  for (int i = 0; i < 32; ++i) {
+    FileDescriptor first = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+    ASSERT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(first)), 0);
+    FileDescriptor stale =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(ReplicaPath(0), O_PATH | O_CLOEXEC));
+    // The magic link selects the old inode even if its number is reused.
+    const std::string path = absl::StrCat("/proc/self/fd/", stale.get());
+    int opened = -1;
+    int open_errno = 0;
+    absl::Notification start;
+    ScopedThread opener([&] {
+      start.WaitForNotification();
+      opened = open(path.c_str(), O_RDWR | O_NOCTTY);
+      open_errno = errno;
+    });
+    start.Notify();
+    first.reset();
+    // Keep the allocation concurrent with the pending open.
+    FileDescriptor during = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+    const int during_index = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(during));
+    opener.Join();
+    FileDescriptor replica(opened);
+    if (opened >= 0) {
+      // A successful old-inode open must keep index zero reserved.
+      EXPECT_EQ(during_index, 1);
+    } else {
+      EXPECT_EQ(open_errno, EIO);
+      // An in-progress open can hold a temporary reservation until failure.
+      EXPECT_THAT(during_index, AnyOf(0, 1));
+    }
+    replica.reset();
+    FileDescriptor after = ASSERT_NO_ERRNO_AND_VALUE(NewMaster());
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(after)),
+              during_index == 0 ? 1 : 0);
+  }
+}
+
+TEST_F(DevptsIndexTest, DevTtyDescriptionPinsIndexAfterHangup) {
+  const std::string replica_path = ReplicaPath(0);
+  const char* ptmx = ptmx_.c_str();
+  const char* replica = replica_path.c_str();
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([&] {
+              TEST_PCHECK(setsid() >= 0);
+              struct sigaction ignored = {};
+              ignored.sa_handler = SIG_IGN;
+              TEST_PCHECK(sigemptyset(&ignored.sa_mask) == 0);
+              TEST_PCHECK(sigaction(SIGHUP, &ignored, nullptr) == 0);
+              int first = open(ptmx, O_RDWR | O_NOCTTY);
+              TEST_PCHECK(first >= 0);
+              int index = -1;
+              int zero = 0;
+              TEST_PCHECK(ioctl(first, TIOCGPTN, &index) == 0);
+              TEST_CHECK(index == 0);
+              TEST_PCHECK(ioctl(first, TIOCSPTLCK, &zero) == 0);
+              int slave = open(replica, O_RDWR | O_NOCTTY);
+              TEST_PCHECK(slave >= 0);
+              TEST_PCHECK(ioctl(slave, TIOCSCTTY, 0) == 0);
+              int tty = open("/dev/tty", O_RDWR | O_NOCTTY);
+              TEST_PCHECK(tty >= 0);
+              TEST_PCHECK(close(first) == 0);
+              TEST_PCHECK(close(slave) == 0);
+              int during = open(ptmx, O_RDWR | O_NOCTTY);
+              TEST_PCHECK(during >= 0);
+              TEST_PCHECK(ioctl(during, TIOCGPTN, &index) == 0);
+              TEST_CHECK(index == 1);
+              TEST_PCHECK(close(tty) == 0);
+              int reused = open(ptmx, O_RDWR | O_NOCTTY);
+              TEST_PCHECK(reused >= 0);
+              TEST_PCHECK(ioctl(reused, TIOCGPTN, &index) == 0);
+              TEST_CHECK(index == 0);
+              TEST_PCHECK(close(during) == 0);
+              TEST_PCHECK(close(reused) == 0);
+            })),
+            0);
 }
 
 TEST(BasicPtyTest, OpenMasterReplica) {

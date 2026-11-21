@@ -62,8 +62,7 @@ func (ri *replicaInode) Valid(context.Context, *kernfs.Dentry, string) bool {
 	// Return valid if the replica still exists.
 	ri.root.mu.Lock()
 	defer ri.root.mu.Unlock()
-	_, ok := ri.root.replicas[ri.t.n]
-	return ok
+	return ri.root.replicas[ri.t.n] == ri
 }
 
 // Stat implements kernfs.Inode.Stat.
@@ -100,6 +99,7 @@ var _ vfs.FileDescriptionImpl = (*replicaFileDescription)(nil)
 // Release implements fs.FileOperations.Release.
 func (rfd *replicaFileDescription) Release(ctx context.Context) {
 	rfd.inode.t.ld.replicaClose()
+	rfd.inode.root.releaseTerminalRef(rfd.inode.t.n)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
