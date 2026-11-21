@@ -56,6 +56,17 @@ const (
 	NetworkModeSandbox NetworkMode = "sandbox"
 )
 
+// CgroupPolicy defines the policy with which runsc should configure cgroups
+type CgroupPolicy string
+
+const (
+	// CgroupPolicyIgnore ignores cgroup configuration for sandboxed processes
+	CgroupPolicyIgnore CgroupPolicy = "ignore"
+
+	// CgroupPolicyEnforce requires cgroup configuration for sandboxed processes
+	CgroupPolicyEnforce CgroupPolicy = "enforce"
+)
+
 // Options holds the configuration for a Sandbox.
 type Options struct {
 	runtimeDir string
@@ -70,6 +81,7 @@ type Options struct {
 	err        error
 	workingDir string
 	hostname   string
+	cgroup     CgroupPolicy
 
 	// Process and filesystem layout.
 	rootPath     string
@@ -153,6 +165,18 @@ func WithRuntimeDir(runtimeDir string) Option {
 func WithID(id string) Option {
 	return func(o *Options) {
 		o.id = id
+	}
+}
+
+// WithCgroupPolicy configured the cgroup configuration policy used for runsc.
+func WithCgroupPolicy(policy CgroupPolicy) Option {
+	return func(o *Options) {
+		switch policy {
+		case CgroupPolicyEnforce, CgroupPolicyIgnore:
+			o.cgroup = policy
+		default:
+			o.err = fmt.Errorf("invalid cgroup policy %q: must be one of ignore, enforce", policy)
+		}
 	}
 }
 
@@ -360,6 +384,10 @@ func newOptions(opts ...Option) (*Options, error) {
 	options := &Options{
 		network:    NetworkModeNone,
 		workingDir: "/",
+		cgroup:     CgroupPolicyEnforce,
+	}
+	if os.Geteuid() != 0 {
+		options.cgroup = CgroupPolicyIgnore
 	}
 	for _, o := range opts {
 		o(options)
@@ -407,8 +435,11 @@ func (o *Options) runscGlobalArgs() []string {
 	if o.stateDir != "" {
 		args = append(args, "--root", o.stateDir)
 	}
-	if os.Geteuid() != 0 {
+	switch o.cgroup {
+	case CgroupPolicyIgnore:
 		args = append(args, "--ignore-cgroups")
+	case CgroupPolicyEnforce:
+		// NOTE: this is the default behaviour of runsc
 	}
 	switch o.network {
 	case NetworkModeHost:
