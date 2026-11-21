@@ -309,9 +309,9 @@ type connection struct {
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
 
-	// noCreate if FUSE server doesn't support the create operation. Files are
-	// then created with FUSE_MKNOD followed by FUSE_OPEN, as Linux does.
-	noCreate bool
+	// noCreate records an ENOSYS reply to FUSE_CREATE. Later creates use
+	// FUSE_MKNOD followed by FUSE_OPEN.
+	noCreate atomicbitops.Bool
 }
 
 func linuxError(err error) error {
