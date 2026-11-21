@@ -20,6 +20,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -33,6 +34,10 @@ import (
 type testData struct {
 	context.Context
 	data []byte
+
+	// liveTIDs, when non-nil, is the set of TIDs PIOwnerExists reports as
+	// live. A nil map means every TID is treated as live.
+	liveTIDs map[uint32]struct{}
 }
 
 const sizeofInt32 = 4
@@ -41,6 +46,15 @@ func newTestData(size uint) testData {
 	return testData{
 		data: make([]byte, size),
 	}
+}
+
+func newTestDataWithLiveTIDs(size uint, live ...uint32) testData {
+	d := newTestData(size)
+	d.liveTIDs = make(map[uint32]struct{}, len(live))
+	for _, tid := range live {
+		d.liveTIDs[tid] = struct{}{}
+	}
+	return d
 }
 
 func (t testData) SwapUint32(addr hostarch.Addr, new uint32) (uint32, error) {
@@ -64,6 +78,14 @@ func (t testData) GetSharedKey(addr hostarch.Addr) (Key, error) {
 		Kind:   KindSharedMappable,
 		Offset: uint64(addr),
 	}, nil
+}
+
+func (t testData) PIOwnerExists(tid uint32) bool {
+	if t.liveTIDs == nil {
+		return true
+	}
+	_, ok := t.liveTIDs[tid]
+	return ok
 }
 
 func futexKind(private bool) string {
@@ -532,4 +554,80 @@ func TestMutexStress(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-c
 	}
+}
+
+// Regression for google/gvisor#16184: FUTEX_LOCK_PI / FUTEX_TRYLOCK_PI must
+// return ESRCH when the futex word names a TID that does not exist, matching
+// Linux attach_to_pi_owner / handle_exit_race.
+func TestLockPIDeadOwner(t *testing.T) {
+	const (
+		callerTID = uint32(1)
+		deadTID   = uint32(0x3fffff)
+	)
+
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			for _, try := range []bool{false, true} {
+				name := "lock"
+				if try {
+					name = "trylock"
+				}
+				t.Run(name, func(t *testing.T) {
+					m := NewManager()
+					// No live TIDs: deadTID is absent from the caller's namespace.
+					d := newTestDataWithLiveTIDs(sizeofInt32)
+					if _, err := d.SwapUint32(0, deadTID); err != nil {
+						t.Fatalf("SwapUint32: %v", err)
+					}
+
+					w := NewWaiter()
+					locked, err := m.LockPI(w, d, 0, callerTID, private, try)
+					if locked {
+						t.Fatalf("LockPI: acquired lock with dead owner")
+					}
+					if !linuxerr.Equals(linuxerr.ESRCH, err) {
+						t.Fatalf("LockPI: got (%v, %v), wanted ESRCH", locked, err)
+					}
+
+					cur, err := d.LoadUint32(0)
+					if err != nil {
+						t.Fatalf("LoadUint32: %v", err)
+					}
+					want := deadTID | linux.FUTEX_WAITERS
+					if cur != want {
+						t.Errorf("futex word: got %#x, wanted %#x (tid|WAITERS)", cur, want)
+					}
+					if w.bucket.Load() != nil {
+						t.Error("waiter was enqueued for a dead owner")
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestLockPILiveOwnerStillWaits(t *testing.T) {
+	const (
+		callerTID = uint32(1)
+		ownerTID  = uint32(2)
+	)
+
+	m := NewManager()
+	d := newTestDataWithLiveTIDs(sizeofInt32, ownerTID)
+	if _, err := d.SwapUint32(0, ownerTID); err != nil {
+		t.Fatalf("SwapUint32: %v", err)
+	}
+
+	w := NewWaiter()
+	locked, err := m.LockPI(w, d, 0, callerTID, true, false)
+	if err != nil {
+		t.Fatalf("LockPI: unexpected error %v", err)
+	}
+	if locked {
+		t.Fatal("LockPI: acquired lock held by a live owner")
+	}
+	if w.bucket.Load() == nil {
+		t.Fatal("LockPI: waiter was not enqueued for a live owner")
+	}
+	m.WaitComplete(w, d)
 }

@@ -50,6 +50,11 @@ func (t *Task) GetSharedKey(addr hostarch.Addr) (futex.Key, error) {
 	return t.MemoryManager().GetSharedFutexKey(t, addr)
 }
 
+// PIOwnerExists implements futex.Target.PIOwnerExists.
+func (t *Task) PIOwnerExists(tid uint32) bool {
+	return t.tg.pidns.TaskWithID(ThreadID(tid)) != nil
+}
+
 // GetRobustList sets the robust futex list for the task.
 func (t *Task) GetRobustList() hostarch.Addr {
 	t.mu.Lock()
