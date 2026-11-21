@@ -138,6 +138,15 @@ type sender struct {
 	// the first segment that was retransmitted due to RTO expiration.
 	firstRetransmittedSegXmitTime tcpip.MonotonicTime
 
+	// outstandingExcludesSACKed is true from the start of SACK recovery, or
+	// from a retransmit timeout on an endpoint with SACK, until the peer
+	// acknowledges all the data that was sent before that event. While it
+	// is true, Outstanding can exclude SACKed segments: SetPipe() does not
+	// count them, and after a retransmit timeout sendData() does not send
+	// them again. Thus, while it is true, a cumulative ACK for a SACKed
+	// segment does not decrease Outstanding.
+	outstandingExcludesSACKed bool
+
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
 	zeroWindowProbing bool `state:"nosave"`
@@ -430,6 +439,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 	// Rewind writeNext to the first segment exceeding the MTU. Do nothing
 	// if it is already before such a packet.
 	nextSeg := s.writeNext
+	sackedDelta := 0
 	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
 		if seg == s.writeNext {
 			// We got to writeNext before we could find a segment
@@ -444,10 +454,31 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		}
 
 		if s.ep.SACKPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
-			// Update sackedOut for new maximum payload size.
-			s.SackedOut -= s.pCount(seg, oldMSS)
-			s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
+			// Update the packet counts of the segment for the new
+			// maximum payload size.
+			delta := s.pCount(seg, s.MaxPayloadSize) - s.pCount(seg, oldMSS)
+			s.SackedOut += delta
+			sackedDelta += delta
 		}
+	}
+
+	if !s.outstandingExcludesSACKed {
+		// Outstanding includes the SACKed segments. sendData() does
+		// not send a SACKed segment again, so nothing else updates the
+		// packet counts of these segments in Outstanding.
+		if s.Outstanding < s.SndCwnd {
+			// The congestion window is not full. Limit
+			// sackedDelta so that the window keeps room for
+			// count packets. sendData() can then send data
+			// again, starting at the first segment exceeding
+			// the MTU. The part of sackedDelta above this limit
+			// stays out of Outstanding, and Outstanding is then
+			// too low by that part after a cumulative ACK covers
+			// the SACKed segments. If the window is full,
+			// sendData() cannot send, and no limit is necessary.
+			sackedDelta = min(sackedDelta, max(s.SndCwnd-count-s.Outstanding, 0))
+		}
+		s.Outstanding += sackedDelta
 	}
 
 	// Since we likely reduced the number of outstanding packets, we may be
@@ -674,6 +705,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	// We'll keep on transmitting (or retransmitting) as we get acks for
 	// the data we transmit.
 	s.Outstanding = 0
+	s.outstandingExcludesSACKed = s.ep.SACKPermitted
 
 	// Expunge all SACK information as per https://tools.ietf.org/html/rfc6675#section-5.1
 	//
@@ -1195,6 +1227,7 @@ func (s *sender) enterRecovery() {
 	s.startSpuriousRecoveryDetection()
 
 	if s.ep.SACKPermitted {
+		s.outstandingExcludesSACKed = true
 		s.state = tcpip.SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
 		// Set TLPRxtOut to false according to
@@ -1743,13 +1776,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			s.writeList.Remove(seg)
 
-			// If SACK is enabled then only reduce outstanding if
-			// the segment was not previously SACKED as these have
-			// already been accounted for in SetPipe().
-			if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
-				s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
-			} else {
-				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
+			count := s.pCount(seg, s.MaxPayloadSize)
+			sacked := s.ep.SACKPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock())
+			if sacked {
+				s.SackedOut -= count
+			}
+			if !sacked || !s.outstandingExcludesSACKed {
+				s.Outstanding -= count
 			}
 			seg.DecRef()
 			ackLeft -= datalen
@@ -1769,6 +1802,18 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if !s.FastRecovery.Active {
 			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT, rcvdSeg.rcvdTime)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
+				if s.outstandingExcludesSACKed {
+					// All the sent segments that are still in the write
+					// list were first sent after SACK recovery started or
+					// after the retransmit timeout. Set Outstanding to
+					// the number of packets in those that are before
+					// writeNext.
+					s.outstandingExcludesSACKed = false
+					s.Outstanding = 0
+					for seg := s.writeList.Front(); seg != nil && seg != s.writeNext && seg.xmitCount != 0; seg = seg.Next() {
+						s.Outstanding += s.pCount(seg, s.MaxPayloadSize)
+					}
+				}
 				s.state = tcpip.Open
 				// Update RACK when we are exiting fast or RTO
 				// recovery as described in the RFC
