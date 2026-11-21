@@ -433,12 +433,12 @@ func TestPickEphemeralPort(t *testing.T) {
 	}
 }
 
-// TestOverflow addresses b/183593432, wherein an overflowing uint16 causes a
-// port allocation failure.
+// TestOverflow checks that an offset near either integer boundary still
+// visits the entire port range (see b/183593432).
 func TestOverflow(t *testing.T) {
-	// Use a small range and start at offsets that will cause an overflow.
-	count := uint16(50)
-	for offset := uint32(math.MaxUint16 - count); offset < math.MaxUint16; offset++ {
+	const count = 50
+	checkOffset := func(offset uint32) {
+		t.Helper()
 		reservedPorts := make(map[uint16]struct{})
 		// Ensure we can reserve everything in the allowed range.
 		for i := uint16(0); i < count; i++ {
@@ -450,11 +450,22 @@ func TestOverflow(t *testing.T) {
 				return false, nil
 			})
 			if err != nil {
-				t.Fatalf("port picking failed at iteration %d, for offset %d, len(reserved): %+v", i, offset, len(reservedPorts))
+				t.Fatalf("offset %d: reserved %d of %d ports: %s", offset, len(reservedPorts), count, err)
 			}
-			if port < firstEphemeral || port > firstEphemeral+count {
+			if port < firstEphemeral || port >= firstEphemeral+count {
 				t.Fatalf("reserved port %d, which is not in range [%d, %d]", port, firstEphemeral, firstEphemeral+count-1)
 			}
 		}
+	}
+	for distance := range uint32(count + 1) {
+		checkOffset(math.MaxUint16 - distance)
+		checkOffset(math.MaxUint32 - distance)
+	}
+}
+
+func TestEmptyRange(t *testing.T) {
+	port, err := pickEphemeralPort(math.MaxUint32, firstEphemeral, 0, nil)
+	if _, ok := err.(*tcpip.ErrNoPortAvailable); port != 0 || !ok {
+		t.Fatalf("pickEphemeralPort with no ports = (%d, %v), want (0, ErrNoPortAvailable)", port, err)
 	}
 }
