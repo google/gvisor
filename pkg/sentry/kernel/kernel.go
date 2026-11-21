@@ -134,6 +134,17 @@ type SaveRestoreExecConfig struct {
 	// (GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE) set to "save" before the kernel is
 	// saved, "restore" after the kernel is restored and restarted, and "resume"
 	// after the kernel is saved and resumed.
+	//
+	// In restore mode, GVISOR_SAVE_RESTORE_DEVICE_MAP is also set if the
+	// restore maps at least one saved GPU to a GPU with a different UUID, and
+	// all saved GPUs and the GPUs they are mapped to have a UUID. Its value
+	// lists all saved GPUs, in the format of cuda-checkpoint's --device-map
+	// flag: "oldUuid1=newUuid1,oldUuid2=newUuid2". It is set for all NVIDIA
+	// driver versions, but cuda-checkpoint accepts --device-map only with
+	// driver R580 or newer.
+	//
+	// The container's own value of GVISOR_SAVE_RESTORE_DEVICE_MAP is not passed
+	// to the binary.
 	Argv []string
 	// Timeout is the timeout for the save/restore binary. If the binary fails to
 	// exit within this timeout the save/restore operation will fail.
