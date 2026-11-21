@@ -667,7 +667,13 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 				return 0, nil
 			}
 
-			n, msgFlags, senderAddrBuf, controlBuf, err = s.recvMsgFromHost(safemem.IovecsFromBlockSeq(dsts), flags, senderRequested, controlLen)
+			numIovs := dsts.NumBlocks()
+			if s.stype == linux.SOCK_STREAM {
+				// The host rejects more than UIO_MAXIOV iovecs; a short read is fine.
+				numIovs = min(numIovs, hostfd.MaxSendRecvMsgIov)
+			}
+			iovs := safemem.IovecsFromBlockSeqN(dsts, numIovs)
+			n, msgFlags, senderAddrBuf, controlBuf, err = s.recvMsgFromHost(iovs, flags, senderRequested, controlLen)
 			return n, err
 		})
 		return dst.CopyOutFrom(t, recvmsgToBlocks)
@@ -885,7 +891,12 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 			return uint64(n), nil
 		}
 
-		iovs := safemem.IovecsFromBlockSeq(srcs)
+		numIovs := srcs.NumBlocks()
+		if s.stype == linux.SOCK_STREAM {
+			// The host rejects more than UIO_MAXIOV iovecs; a short write is fine.
+			numIovs = min(numIovs, hostfd.MaxSendRecvMsgIov)
+		}
+		iovs := safemem.IovecsFromBlockSeqN(srcs, numIovs)
 		msg := unix.Msghdr{
 			Iov:    &iovs[0],
 			Iovlen: uint64(len(iovs)),
