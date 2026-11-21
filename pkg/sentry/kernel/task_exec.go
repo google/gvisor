@@ -291,22 +291,10 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 		oldTID = tracer.tg.pidns.tids[t]
 	}
 	t.promoteLocked()
-	// "POSIX timers are not preserved (timer_create(2))." - execve(2). Handle
-	// this first since POSIX timers are protected by the signal mutex, which
-	// we're about to change. Note that we have to stop and destroy timers
-	// without holding any mutexes to avoid circular lock ordering.
-	var its []*IntervalTimer
-	oldSignalHandlers := t.tg.signalHandlers
-	oldSignalHandlers.mu.Lock()
-	for _, it := range t.tg.timers {
-		its = append(its, it)
-	}
-	clear(t.tg.timers)
-	oldSignalHandlers.mu.Unlock()
+	// "POSIX timers are not preserved (timer_create(2))." - execve(2).
+	// A timer delivering a signal may need the TaskSet lock.
 	t.tg.pidns.owner.mu.Unlock()
-	for _, it := range its {
-		it.DestroyTimer()
-	}
+	t.tg.destroyIntervalTimers()
 	t.tg.pidns.owner.mu.Lock()
 	// "During an execve(2), the dispositions of handled signals are reset to
 	// the default; the dispositions of ignored signals are left unchanged. ...
@@ -323,6 +311,7 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	//	- "Disposition" only means sigaction::sa_handler/sa_sigaction; flags,
 	//		restorer (if present), and mask are always reset. (See Linux's
 	//		fs/exec.c:setup_new_exec => kernel/signal.c:flush_signal_handlers.)
+	oldSignalHandlers := t.tg.signalHandlers
 	oldSignalHandlers.mu.Lock() // to ensure ThreadGroup.signalLock()'s correctness
 	t.tg.setSignalHandlersLocked(oldSignalHandlers.copyForExecLocked())
 	t.endStopCond.L = &t.tg.signalHandlers.mu
