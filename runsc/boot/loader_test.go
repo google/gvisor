@@ -275,6 +275,74 @@ func TestRestoreFailBeforeStart(t *testing.T) {
 	}
 }
 
+// TestRestoreSubcontainerFailUnblocksStartAndDoesNotPoisonNewContainers checks
+// that a sub-container restore failure unblocks WaitForStartSignal, marks only
+// containers involved in the failed restore as stopped, allows DeliverToAllProcesses
+// signaling during cleanup, and leaves newly created sub-containers in Creating state.
+func TestRestoreSubcontainerFailUnblocksStartAndDoesNotPoisonNewContainers(t *testing.T) {
+	l, cleanup, err := createLoader(testConfig(), testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer l.Destroy()
+	defer cleanup()
+
+	const (
+		rootCID      = "foo"
+		failedSubCID = "sub-failed"
+		newSubCID    = "sub-new"
+	)
+	if err := l.createSubcontainer(failedSubCID, nil); err != nil {
+		t.Fatalf("createSubcontainer(%q) failed: %v", failedSubCID, err)
+	}
+
+	l.mu.Lock()
+	l.state = restoringUnstarted
+	l.mu.Unlock()
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		l.WaitForStartSignal()
+		err := l.run()
+		l.ctrl.manager.startResultChan <- err
+		runErrCh <- err
+	}()
+
+	// Trigger a sub-container restore failure (missing spec).
+	if err := l.ctrl.manager.RestoreSubcontainer(&sentryapi.StartArgs{CID: failedSubCID}, nil); err == nil {
+		t.Fatalf("RestoreSubcontainer with missing spec succeeded, want error")
+	}
+
+	select {
+	case runErr := <-runErrCh:
+		if runErr == nil {
+			t.Errorf("l.run() after failed restore succeeded, want error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("WaitForStartSignal did not unblock after restore failure")
+	}
+
+	for _, cid := range []string{rootCID, failedSubCID} {
+		if got := l.containerRuntimeState(cid); got != sentryapi.RuntimeStateStopped {
+			t.Errorf("containerRuntimeState(%q) = %v, want %v", cid, got, sentryapi.RuntimeStateStopped)
+		}
+		var ws uint32
+		if err := l.waitContainer(cid, &ws); err != nil || ws != 1 {
+			t.Errorf("waitContainer(%q) = (%d, %v), want (1, nil)", cid, ws, err)
+		}
+		if err := l.signal(cid, 0, int32(linux.SIGKILL), sentryapi.DeliverToAllProcesses); err != nil {
+			t.Errorf("signal(%q, SIGKILL, DeliverToAllProcesses) = %v, want nil", cid, err)
+		}
+	}
+
+	if err := l.createSubcontainer(newSubCID, nil); err != nil {
+		t.Fatalf("createSubcontainer(%q) failed: %v", newSubCID, err)
+	}
+	if got := l.containerRuntimeState(newSubCID); got != sentryapi.RuntimeStateCreating {
+		t.Errorf("containerRuntimeState(%q) = %v, want %v", newSubCID, got, sentryapi.RuntimeStateCreating)
+	}
+}
+
 // watchStartupHeapReleases replaces l.freeOSMemory. It returns a channel that
 // receives a value for each release.
 func watchStartupHeapReleases(l *Loader) <-chan struct{} {
