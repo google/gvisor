@@ -1,10 +1,8 @@
 # Security and Vulnerability Reporting
 
-Sensitive security-related questions, comments, and reports should be sent to
-the gvisor-security@googlegroups.com
-([gvisor-security mailing list][gvisor-security-list]), or reported privately
-via [GitHub security advisories][gvisor-security-advisories]. You should receive
-a prompt response, typically within 48 hours.
+Sensitive security-related questions, comments, and reports should be reported
+privately via [GitHub security advisories][gvisor-security-advisories]. You
+should receive a prompt response, typically within 48 hours.
 
 ## Which issues get CVEs?
 
@@ -275,12 +273,12 @@ non-gVisor sandbox) and affect supported, non-experimental features:
     -   **Classification**: `SandboxRoot / Exfil`.
     -   **CVE**: ✔️ Yes.
 
-## Security list access
+## Security advisory access
 
-Policies for security list access, vulnerability embargo, and vulnerability
-disclosure are outlined in the [governance policy](GOVERNANCE.md).
+Policies for access to non-public security advisories, vulnerability embargo,
+and vulnerability disclosure are outlined in the
+[governance policy](GOVERNANCE.md).
 
-[gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
 [gvisor-security-advisories]: https://github.com/gvisor/gvisor/security/advisories
 
 ## Information you must send as part of security vulnerability reports
@@ -293,9 +291,8 @@ disclosure are outlined in the [governance policy](GOVERNANCE.md).
     executing the attack in an unsandboxed context, everything else being equal
     (e.g. running with `runc` instead of `runsc`).
 -   Proof-of-concept code and instructions on how to run it.
--   Each email or advisory must be about a single vulnerability. If you have
-    found multiple vulnerabilities, send a separate report for each of them.
+-   Each advisory must be about a single vulnerability. If you have found
+    multiple vulnerabilities, send a separate report for each of them.
 
-Submissions to the security mailing list or GitHub security advisories that do
-not meet these requirements may be rejected, ignored, or have the reporters
-blocked after repeat offenses.
+Advisories that do not meet these requirements may be rejected, ignored, or have
+the reporters blocked after repeat offenses.
