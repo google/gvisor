@@ -3524,6 +3524,21 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 		_, err := ifr.CopyOut(t, args[2].Pointer())
 		return 0, err
 
+	case linux.SIOCSIFFLAGS:
+		var ifr linux.IFReq
+		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		// The capability is checked before the device is looked up, and the
+		// ifreq is not copied back.
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return 0, linuxerr.EPERM
+		}
+		if err := interfaceIoctl(ctx, io, arg, &ifr); err != nil {
+			return 0, err.ToError()
+		}
+		return 0, nil
+
 	case linux.SIOCGIFCONF:
 		// Return a list of interface addresses or the buffer size
 		// necessary to hold the list.
@@ -3643,6 +3658,14 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 		// Drop the flags that don't fit in the size that we need to return. This
 		// matches Linux behavior.
 		hostarch.ByteOrder.PutUint16(ifr.Data[:2], uint16(f))
+
+	case linux.SIOCSIFFLAGS:
+		epstack, ok := stk.(*Stack)
+		if !ok {
+			return errStackType
+		}
+		flags := uint32(hostarch.ByteOrder.Uint16(ifr.Data[:2]))
+		return epstack.SetInterfaceFlags(ctx, tcpip.NICID(index), flags)
 
 	case linux.SIOCGIFADDR:
 		// Copy the IPv4 address out.
@@ -3782,10 +3805,12 @@ func interfaceStatusFlags(stack inet.Stack, name string) (uint32, *syserr.Error)
 func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
 	var rv uint32
 	if f.Up {
-		rv |= linux.IFF_UP | linux.IFF_LOWER_UP
+		rv |= linux.IFF_UP
 	}
+	// A NIC that is administratively up but disabled, such as while external
+	// networking is paused, is reported like a device without carrier.
 	if f.Running {
-		rv |= linux.IFF_RUNNING
+		rv |= linux.IFF_RUNNING | linux.IFF_LOWER_UP
 	}
 	if f.Promiscuous {
 		rv |= linux.IFF_PROMISC

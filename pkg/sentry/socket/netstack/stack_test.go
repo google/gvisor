@@ -27,6 +27,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -75,6 +79,110 @@ func TestRemoveRouteRemovesFirstMatchOnly(t *testing.T) {
 	}
 	if err := delRoute(); err != syserr.ErrNoProcess {
 		t.Fatalf("third RemoveRoute = %v, want %v", err, syserr.ErrNoProcess)
+	}
+}
+
+// While external networking is paused, bringing a non-loopback interface up
+// with SIOCSIFFLAGS or RTM_NEWLINK records it as up but leaves it without
+// carrier. Resuming enables only interfaces that are up.
+func TestSetInterfaceUpWhileExternalNetworkingPaused(t *testing.T) {
+	const (
+		loopbackNICID = 1
+		externalNICID = 2
+	)
+	ctx := context.Background()
+	for _, test := range []struct {
+		name  string
+		setUp func(s *netstack.Stack, id tcpip.NICID, up bool) *syserr.Error
+	}{
+		{
+			name: "SIOCSIFFLAGS",
+			setUp: func(s *netstack.Stack, id tcpip.NICID, up bool) *syserr.Error {
+				var flags uint32
+				if up {
+					flags = linux.IFF_UP
+				}
+				return s.SetInterfaceFlags(ctx, id, flags)
+			},
+		},
+		{
+			name: "RTM_NEWLINK",
+			setUp: func(s *netstack.Stack, id tcpip.NICID, up bool) *syserr.Error {
+				var flags uint32
+				if up {
+					flags = linux.IFF_UP
+				}
+				msg := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+					Type:  linux.RTM_NEWLINK,
+					Flags: linux.NLM_F_REQUEST,
+				})
+				msg.Put(&linux.InterfaceInfoMessage{
+					Family: linux.AF_UNSPEC,
+					Index:  int32(id),
+					Flags:  flags,
+					Change: linux.IFF_UP,
+				})
+				return s.SetInterface(ctx, msg)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := &netstack.Stack{
+				Stack: stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				}),
+			}
+			defer s.Stack.Destroy()
+			if err := s.Stack.CreateNIC(loopbackNICID, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", loopbackNICID, err)
+			}
+			if err := s.Stack.CreateNIC(externalNICID, channel.New(0, 1500, "\x02\x00\x00\x00\x00\x01")); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", externalNICID, err)
+			}
+
+			setUp := func(up bool) {
+				t.Helper()
+				if err := test.setUp(s, externalNICID, up); err != nil {
+					t.Fatalf("setting IFF_UP to %t on NIC %d: %v", up, externalNICID, err)
+				}
+			}
+			const carrier = linux.IFF_RUNNING | linux.IFF_LOWER_UP
+			checkFlags := func(want uint32) {
+				t.Helper()
+				iface, ok := s.Interfaces()[externalNICID]
+				if !ok {
+					t.Fatalf("interface %d not found", externalNICID)
+				}
+				if got := iface.Flags & (linux.IFF_UP | carrier); got != want {
+					t.Errorf("interface flags = %#x, want %#x", got, want)
+				}
+				if got, want := s.Stack.CheckNIC(externalNICID), want&carrier != 0; got != want {
+					t.Errorf("CheckNIC(%d) = %t, want %t", externalNICID, got, want)
+				}
+			}
+
+			s.Stack.DisableAllNonLoopbackNICs()
+			checkFlags(linux.IFF_UP)
+
+			// Taking the interface down and up again while paused does not
+			// enable it.
+			setUp(false)
+			checkFlags(0)
+			setUp(true)
+			checkFlags(linux.IFF_UP)
+
+			s.Stack.EnableAllNonLoopbackNICs()
+			checkFlags(linux.IFF_UP | carrier)
+
+			// An interface that was taken down stays down across a pause and
+			// resume.
+			setUp(false)
+			s.Stack.DisableAllNonLoopbackNICs()
+			s.Stack.EnableAllNonLoopbackNICs()
+			checkFlags(0)
+			setUp(true)
+			checkFlags(linux.IFF_UP | carrier)
+		})
 	}
 }
 
