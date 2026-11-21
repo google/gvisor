@@ -563,6 +563,56 @@ func TestHasPodCgroupParent(t *testing.T) {
 	}
 }
 
+// TestNewInitSandbox verifies that newInit treats every container runsc boots a
+// sandbox for as the sandbox, including one with no CRI annotation. Otherwise
+// runsc create runs with the shim's output buffers as its stdio, the sandbox
+// keeps them as the container's stdio, and create waits out WaitDelay.
+func TestNewInitSandbox(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		want        bool
+	}{
+		{
+			name: "no-annotation",
+			want: true,
+		},
+		{
+			name:        "containerd-sandbox",
+			annotations: map[string]string{specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox},
+			want:        true,
+		},
+		{
+			name:        "containerd-container",
+			annotations: map[string]string{specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer},
+		},
+		{
+			name:        "crio-sandbox",
+			annotations: map[string]string{specutils.CRIOContainerTypeAnnotation: specutils.CRIOContainerTypeSandbox},
+			want:        true,
+		},
+		{
+			name:        "crio-container",
+			annotations: map[string]string{specutils.CRIOContainerTypeAnnotation: specutils.CRIOContainerTypeContainer},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := t.TempDir()
+			if err := utils.WriteSpec(bundle, &specs.Spec{Annotations: tc.annotations}); err != nil {
+				t.Fatalf("WriteSpec: %v", err)
+			}
+			r := &proc.CreateConfig{ID: "c1", Bundle: bundle}
+			p, err := newInit(t.TempDir(), "default", nil, r, &Options{}, filepath.Join(bundle, "rootfs"))
+			if err != nil {
+				t.Fatalf("newInit: %v", err)
+			}
+			if p.Sandbox != tc.want {
+				t.Errorf("newInit() Sandbox = %v, want %v", p.Sandbox, tc.want)
+			}
+		})
+	}
+}
+
 // TestHasPodCgroupParentNoSpec verifies that an unreadable bundle leaves the
 // fallback disabled rather than arming it on a guess.
 func TestHasPodCgroupParentNoSpec(t *testing.T) {

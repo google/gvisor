@@ -855,7 +855,11 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 	p.WorkDir = workDir
 	p.IoUID = int(options.IoUID)
 	p.IoGID = int(options.IoGID)
-	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
+	// runsc create boots a new sandbox for every root container, which
+	// includes a container with no CRI annotation at all (ctr run, for
+	// example). The root container's stdio is fixed at create, so the shim
+	// must treat it as the sandbox and hand its IO to create, not start.
+	p.Sandbox = specutils.IsRootContainer(spec)
 	p.UserLog = utils.UserLogPath(spec)
 	if uid, err := utils.PodUID(spec, r.Bundle); err == nil {
 		p.K8sPodUID = uid
