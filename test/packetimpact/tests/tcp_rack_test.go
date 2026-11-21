@@ -16,6 +16,7 @@ package tcp_rack_test
 
 import (
 	"flag"
+	"slices"
 	"testing"
 	"time"
 
@@ -72,6 +73,61 @@ func createSACKConnection(t *testing.T) (testbench.DUT, testbench.TCPIPv4, int32
 func getRTTAndRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rtt, rto time.Duration) {
 	info := dut.GetSockOptTCPInfo(t, acceptFd)
 	return time.Duration(info.RTT) * time.Microsecond, time.Duration(info.RTO) * time.Microsecond
+}
+
+// TestDSACKAboveGap checks the two SACK blocks described in RFC 2883 §4.1.3:
+// the duplicated data is reported first, followed by the queued range that
+// contains it. The cumulative ACK cannot advance until the gap is filled.
+func TestDSACKAboveGap(t *testing.T) {
+	dut, conn, fd, _ := createSACKConnection(t)
+	if !header.ParseSynOptions(conn.SynAck(t).Options, true /* isAck */).SACKPermitted {
+		t.Fatal("SYN-ACK did not permit SACK")
+	}
+	const stream = "abcdefghijklmnop"
+	base := *conn.LocalSeqNum(t)
+	send := func(start, end int) {
+		t.Helper()
+		conn.Send(t, testbench.TCP{
+			SeqNum: testbench.Uint32(uint32(base) + uint32(start)),
+			Flags:  testbench.TCPFlags(header.TCPFlagAck),
+		}, &testbench.Payload{Bytes: []byte(stream[start:end])})
+	}
+	expectACK := func(next int, want ...header.SACKBlock) {
+		t.Helper()
+		ack, err := conn.Expect(t, testbench.TCP{
+			AckNum: testbench.Uint32(uint32(base) + uint32(next)),
+			Flags:  testbench.TCPFlags(header.TCPFlagAck),
+		}, time.Second)
+		if err != nil {
+			t.Fatalf("waiting for ACK at offset %d: %v", next, err)
+		}
+		if got := header.ParseTCPOptions(ack.Options).SACKBlocks; !slices.Equal(got, want) {
+			t.Errorf("ACK at offset %d has SACK blocks %v, want %v (base %d)", next, got, want, base)
+		}
+	}
+	queued := header.SACKBlock{Start: base.Add(8), End: base.Add(16)}
+	send(8, 16)
+	expectACK(0, queued)
+	send(8, 16)
+	expectACK(0, queued, queued)
+	send(10, 14)
+	expectACK(0, header.SACKBlock{Start: base.Add(10), End: base.Add(14)}, queued)
+	send(0, 8)
+	expectACK(len(stream))
+
+	// Close the stream at its declared length. Reading to EOF must yield the
+	// original stream exactly once, despite both overlapping retransmissions.
+	conn.Send(t, testbench.TCP{
+		SeqNum: testbench.Uint32(uint32(base) + uint32(len(stream))),
+		Flags:  testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck),
+	})
+	expectACK(len(stream) + 1)
+	if got := dut.Recv(t, fd, int32(len(stream)+1), unix.MSG_WAITALL); string(got) != stream {
+		t.Errorf("recv = %q, want %q", got, stream)
+	}
+	if got := dut.Recv(t, fd, 1, 0); len(got) != 0 {
+		t.Errorf("recv after stream = %q, want EOF", got)
+	}
 }
 
 func sendAndReceive(t *testing.T, dut testbench.DUT, conn testbench.TCPIPv4, numPkts int, acceptFd int32, payloadSize int, sendACK bool) time.Time {
