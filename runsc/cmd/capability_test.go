@@ -21,7 +21,6 @@ import (
 
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
@@ -29,13 +28,6 @@ import (
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
-
-func init() {
-	log.SetLevel(log.Debug)
-	if err := testutil.ConfigureExePath(); err != nil {
-		panic(err.Error())
-	}
-}
 
 func checkProcessCaps(pid int, wantCaps *specs.LinuxCapabilities) error {
 	curCaps, err := capability.NewPid2(pid)

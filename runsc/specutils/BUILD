@@ -49,6 +49,7 @@ go_test(
     embed = [":specutils"],
     deps = [
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/test/testprocess",
         "//runsc/config",
         "//runsc/flag",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",

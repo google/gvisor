@@ -136,6 +136,7 @@ go_test(
         "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/test/sandboxposture",
+        "//pkg/test/testprocess",
         "//pkg/test/testutil",
         "//runsc/boot/sentryapi",
         "//runsc/cgroup",

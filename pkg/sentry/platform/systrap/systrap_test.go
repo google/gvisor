@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -32,22 +33,20 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const childEnv = "SYSTRAP_TEST_CHILD"
 
 func TestMain(m *testing.M) {
+	testprocess.RunIfChild()
 	switch mode := os.Getenv(childEnv); mode {
 	case "":
 		cpuid.Initialize()
 		os.Exit(m.Run())
-	case "stuck":
-		for {
-			unix.Pause()
-		}
 	case "hoststall":
-		if err := hostStallChild(); err != nil {
+		if err := hostStallChild(context.Background()); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}

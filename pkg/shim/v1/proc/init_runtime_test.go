@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -35,14 +36,16 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/test/testprocess"
 )
 
 func BenchmarkRuntimeLockUncontended(b *testing.B) {
 	p := New("bench", nil, stdio.Stdio{})
+	ctx := b.Context()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, unlock, err := p.lockRuntime(context.Background())
+		_, unlock, err := p.lockRuntime(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -52,12 +55,13 @@ func BenchmarkRuntimeLockUncontended(b *testing.B) {
 
 func BenchmarkRuntimeLockContended(b *testing.B) {
 	p := New("bench", nil, stdio.Stdio{})
+	ctx := b.Context()
 	b.SetParallelism(8)
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, unlock, err := p.lockRuntime(context.Background())
+			_, unlock, err := p.lockRuntime(ctx)
 			if err != nil {
 				b.Error(err)
 				return
@@ -70,10 +74,11 @@ func BenchmarkRuntimeLockContended(b *testing.B) {
 
 func BenchmarkRuntimeLockBurst(b *testing.B) {
 	p := New("bench", nil, stdio.Stdio{})
+	ctx := b.Context()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, release, err := p.lockRuntime(context.Background())
+		_, release, err := p.lockRuntime(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -84,7 +89,7 @@ func BenchmarkRuntimeLockBurst(b *testing.B) {
 			go func() {
 				defer finished.Done()
 				ready.Done()
-				_, unlock, err := p.lockRuntime(context.Background())
+				_, unlock, err := p.lockRuntime(ctx)
 				if err != nil {
 					b.Error(err)
 					return
@@ -102,7 +107,7 @@ func BenchmarkRuntimeLockBurst(b *testing.B) {
 func TestRuntimeLockCancellationHandoff(t *testing.T) {
 	p := New("test", nil, stdio.Stdio{})
 	for i := 0; i < 100; i++ {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		p.mu.Lock()
 		result := make(chan error, 1)
 		go func() {
@@ -115,7 +120,7 @@ func TestRuntimeLockCancellationHandoff(t *testing.T) {
 		if err := <-result; !errors.Is(err, context.Canceled) {
 			t.Fatalf("iteration %d: canceled operation returned %v", i, err)
 		}
-		retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Second)
+		retryCtx, retryCancel := context.WithTimeout(t.Context(), time.Second)
 		err := p.RuntimeCall(retryCtx, func(context.Context, *runsccmd.Runsc) error { return nil })
 		retryCancel()
 		if err != nil {
@@ -143,6 +148,35 @@ func testPidfd(t *testing.T, pid int) int {
 	return fd
 }
 
+// Some shim operations discard the runtime error or return only its exit
+// status. Observe the real wait so a failed exec cannot pass a timeout test.
+type runtimeKillMonitor struct {
+	runsccmd.ProcessMonitor
+	path   string
+	killed atomic.Bool
+}
+
+func (m *runtimeKillMonitor) Wait(cmd *exec.Cmd, exits chan runc.Exit) (int, error) {
+	status, err := m.ProcessMonitor.Wait(cmd, exits)
+	if cmd.Path == m.path && cmd.ProcessState != nil && cmd.ProcessState.Sys().(syscall.WaitStatus).Signal() == syscall.SIGKILL {
+		m.killed.Store(true)
+	}
+	return status, err
+}
+
+func expectRuntimeKill(t *testing.T, path string) func() {
+	t.Helper()
+	m := &runtimeKillMonitor{ProcessMonitor: runsccmd.Monitor, path: path}
+	runsccmd.Monitor = m
+	t.Cleanup(func() { runsccmd.Monitor = m.ProcessMonitor })
+	return func() {
+		t.Helper()
+		if !m.killed.Load() {
+			t.Errorf("runtime %q was never killed", path)
+		}
+	}
+}
+
 type testProcessMonitor struct{}
 
 func (testProcessMonitor) Subscribe() chan runc.Exit  { return make(chan runc.Exit) }
@@ -150,15 +184,16 @@ func (testProcessMonitor) Unsubscribe(chan runc.Exit) {}
 
 func newRuntimeWedgedInit(t *testing.T) *Init {
 	t.Helper()
+	return newRuntimeInit(t, testprocess.Pause.Path(t))
+}
+
+func newRuntimeInit(t *testing.T, command string) *Init {
+	t.Helper()
 	old, oldLong := runscTimeout, runscLongOperationTimeout
 	runscTimeout = 200 * time.Millisecond
 	runscLongOperationTimeout = runscTimeout
 	t.Cleanup(func() { runscTimeout, runscLongOperationTimeout = old, oldLong })
-	fake := filepath.Join(t.TempDir(), "fake-runsc")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec >/dev/null 2>&1\nexec sleep 60\n"), 0o755); err != nil {
-		t.Fatalf("write fake runsc: %v", err)
-	}
-	p := New("test", &runsccmd.Runsc{Command: fake, Root: t.TempDir()}, stdio.Stdio{})
+	p := New("test", &runsccmd.Runsc{Command: command, Root: t.TempDir()}, stdio.Stdio{})
 	p.initState = &runningState{p: p}
 	return p
 }
@@ -173,36 +208,41 @@ func requireBounded(t *testing.T, start time.Time) {
 func TestRuntimeCallsAreBounded(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		call func(*Init) error
+		call func(context.Context, *Init) error
 	}{
-		{"Status", func(p *Init) error { _, err := p.Status(context.Background()); return err }},
-		{"Stats", func(p *Init) error { _, err := p.Stats(context.Background(), "test"); return err }},
-		{"Kill", func(p *Init) error { return p.Kill(context.Background(), uint32(unix.SIGTERM), false) }},
-		{"Update", func(p *Init) error { return p.Update(context.Background(), &types.Any{Value: []byte(`{}`)}) }},
+		{"Status", func(ctx context.Context, p *Init) error { _, err := p.Status(ctx); return err }},
+		{"Stats", func(ctx context.Context, p *Init) error { _, err := p.Stats(ctx, "test"); return err }},
+		{"Kill", func(ctx context.Context, p *Init) error { return p.Kill(ctx, uint32(unix.SIGTERM), false) }},
+		{"Update", func(ctx context.Context, p *Init) error { return p.Update(ctx, &types.Any{Value: []byte(`{}`)}) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newRuntimeWedgedInit(t)
+			checkKilled := expectRuntimeKill(t, p.runtime.Command)
 			start := time.Now()
-			if err := tc.call(p); err == nil {
+			if err := tc.call(t.Context(), p); err == nil {
 				t.Fatalf("%s succeeded against a wedged runsc", tc.name)
 			}
 			requireBounded(t, start)
+			checkKilled()
 		})
 	}
 }
 
 func TestCreateWedgedRunscIsBounded(t *testing.T) {
 	p := newRuntimeWedgedInit(t)
+	checkKilled := expectRuntimeKill(t, p.runtime.Command)
 	p.Bundle = t.TempDir()
 	t.Cleanup(p.closeIO)
 	start := time.Now()
-	if err := p.Create(context.Background(), &CreateConfig{ID: p.id, Bundle: p.Bundle}); err == nil {
+	if err := p.Create(t.Context(), &CreateConfig{ID: p.id, Bundle: p.Bundle}); err == nil {
 		t.Fatal("Create succeeded against a wedged runsc")
 	}
 	requireBounded(t, start)
+	checkKilled()
 }
 
-func init() {
+func TestMain(m *testing.M) {
+	testprocess.RunIfChild()
 	if os.Getenv("GVISOR_SHIM_TEST_RUNTIME_HELPER") == "1" {
 		if filepath.Base(os.Args[0]) == "runsc-sandbox" {
 			gate := os.NewFile(3, "sandbox-gate")
@@ -217,6 +257,7 @@ func init() {
 		}
 		os.Exit(0)
 	}
+	os.Exit(m.Run())
 }
 
 func sandboxIdentityProcess(t *testing.T, bundle, executable string) (*exec.Cmd, *os.File) {
@@ -225,9 +266,9 @@ func sandboxIdentityProcess(t *testing.T, bundle, executable string) (*exec.Cmd,
 	if err != nil {
 		t.Fatal(err)
 	}
-	process := exec.Command(executable, "--bundle="+bundle)
+	process := exec.CommandContext(t.Context(), executable, "--bundle="+bundle)
 	if executable == "/bin/sh" {
-		process = exec.Command("/bin/sh", "-c", "read token <&3", "--bundle="+bundle)
+		process = exec.CommandContext(t.Context(), "/bin/sh", "-c", "read token <&3", "--bundle="+bundle)
 	}
 	process.Args[0] = "runsc-sandbox"
 	process.ExtraFiles = []*os.File{r}
@@ -352,7 +393,7 @@ func TestCreatePinsOnlyMatchingSandbox(t *testing.T) {
 			if name == "FailedIO" {
 				cfg.Stdin = filepath.Join(t.TempDir(), "missing-fifo")
 			}
-			err = p.Create(context.Background(), cfg)
+			err = p.Create(t.Context(), cfg)
 			if name == "FailedIO" {
 				if err == nil {
 					t.Fatal("Create succeeded with missing stdin FIFO")
@@ -387,17 +428,13 @@ func TestPinnedSandboxRemainsOwnedAcrossExec(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.runtime.Command = exe
-	if err := p.Create(context.Background(), &CreateConfig{ID: p.id, Bundle: p.Bundle}); err != nil {
+	if err := p.Create(t.Context(), &CreateConfig{ID: p.id, Bundle: p.Bundle}); err != nil {
 		t.Fatal(err)
 	}
 	if p.sandboxPidfd < 0 {
 		t.Fatal("Create did not retain the matching sandbox pidfd")
 	}
-	neighbor := exec.Command("sleep", "60")
-	if err := neighbor.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = neighbor.Process.Kill(); _ = neighbor.Wait() })
+	neighbor, _ := testprocess.Pause.Start(t)
 	sleepPath, err := exec.LookPath("sleep")
 	if err != nil {
 		t.Fatal(err)
@@ -421,22 +458,25 @@ func TestPinnedSandboxRemainsOwnedAcrossExec(t *testing.T) {
 	if !changed {
 		t.Fatal("sandbox did not exec sleep with its original PID")
 	}
-	poll := []unix.PollFd{{Fd: int32(p.sandboxPidfd), Events: unix.POLLIN}}
+	// Kill may close the shim's pidfd. Keep a reference to the same process
+	// description so we can observe its exit without reaping it twice.
+	pidfd, err := unix.FcntlInt(uintptr(p.sandboxPidfd), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(pidfd)
+	poll := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
 	if n, err := unix.Poll(poll, 0); err != nil || n != 0 {
 		t.Fatalf("pidfd lost the live sandbox across exec: %d, %v", n, err)
 	}
 	p.runtime.Command = wedgedCommand
-	if err := p.Kill(context.Background(), uint32(unix.SIGKILL), true); err == nil {
+	if err := p.Kill(t.Context(), uint32(unix.SIGKILL), true); err == nil {
 		t.Fatal("Kill succeeded against wedged runsc")
 	}
-	done := make(chan error, 1)
-	go func() { done <- sandbox.Wait() }()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("explicit sandbox SIGKILL failed to terminate its pinned sandbox after exec")
+	if n, err := unix.Poll(poll, 2000); err != nil || n != 1 || poll[0].Revents&unix.POLLIN == 0 {
+		t.Fatalf("pinned sandbox did not exit after SIGKILL: poll = %d, %v, events %#x", n, err, poll[0].Revents)
 	}
-	if err := neighbor.Process.Signal(unix.Signal(0)); err != nil {
+	if err := neighbor.Signal(unix.Signal(0)); err != nil {
 		t.Fatalf("neighbor was affected by sandbox teardown: %v", err)
 	}
 }
@@ -444,7 +484,7 @@ func TestPinnedSandboxRemainsOwnedAcrossExec(t *testing.T) {
 func TestFuseStatusRetryPreservesOutcome(t *testing.T) {
 	for _, name := range []string{"Stopped", "Error", "Running"} {
 		t.Run(name, func(t *testing.T) {
-			p := newRuntimeWedgedInit(t)
+			p := newRuntimeInit(t, filepath.Join(t.TempDir(), "retry-runsc"))
 			runscTimeout = 3 * time.Second
 			p.FuseAbort = true
 			result := "echo '{\"status\":\"running\"}'"
@@ -459,7 +499,7 @@ func TestFuseStatusRetryPreservesOutcome(t *testing.T) {
 			if err := os.WriteFile(p.runtime.Command, []byte(script), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			status, err := p.Status(context.Background())
+			status, err := p.Status(t.Context())
 			if name == "Error" {
 				if err == nil || !strings.Contains(err.Error(), "unexpected state failure") {
 					t.Fatalf("Status = %q, %v, want retry error", status, err)
@@ -481,21 +521,23 @@ func TestExecRuntimeCallsAreBounded(t *testing.T) {
 	for _, name := range []string{"Start", "Kill"} {
 		t.Run(name, func(t *testing.T) {
 			p := newRuntimeWedgedInit(t)
+			checkKilled := expectRuntimeKill(t, p.runtime.Command)
 			p.Monitor = testProcessMonitor{}
 			e := &execProcess{parent: p, path: t.TempDir(), id: "exec", internalPid: 1, waitBlock: make(chan struct{})}
 			e.execState = &execCreatedState{p: e}
 			start := time.Now()
 			var err error
 			if name == "Start" {
-				err = e.Start(context.Background())
+				err = e.Start(t.Context())
 			} else {
-				err = e.Kill(context.Background(), uint32(unix.SIGKILL), true)
+				err = e.Kill(t.Context(), uint32(unix.SIGKILL), true)
 			}
 			if err == nil {
 				t.Fatalf("exec %s succeeded against a wedged runsc", name)
 			}
 			requireBounded(t, start)
-			_ = e.delete(context.Background())
+			checkKilled()
+			_ = e.delete(t.Context())
 		})
 	}
 }
@@ -504,7 +546,7 @@ func TestExecCanceledCallerDoesNotWaitBehindLock(t *testing.T) {
 	e := &execProcess{}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	for _, call := range []func(context.Context) error{e.Start, e.Delete, func(ctx context.Context) error {
 		return e.Kill(ctx, uint32(unix.SIGKILL), true)
@@ -523,13 +565,13 @@ func TestExecDeleteBoundsIOWaitAndCanRetry(t *testing.T) {
 	e.execState = &execStoppedState{p: e}
 	e.wg.Add(1)
 	start := time.Now()
-	err := e.Delete(context.Background())
+	err := e.Delete(t.Context())
 	e.wg.Done()
 	if !errors.Is(err, errRunscTimeout) {
 		t.Fatalf("Delete error = %v, want shim timeout", err)
 	}
 	requireBounded(t, start)
-	if err := e.Delete(context.Background()); err != nil {
+	if err := e.Delete(t.Context()); err != nil {
 		t.Fatalf("Delete retry: %v", err)
 	}
 }
@@ -548,7 +590,7 @@ func TestDeleteClosesPidfdBeforeFailedUnmount(t *testing.T) {
 	old := unmountRootfs
 	unmountRootfs = func(string, int) error { return unix.EBUSY }
 	t.Cleanup(func() { unmountRootfs = old })
-	if err := p.Delete(context.Background()); !errors.Is(err, unix.EBUSY) {
+	if err := p.Delete(t.Context()); !errors.Is(err, unix.EBUSY) {
 		t.Fatalf("Delete error = %v, want unmount failure", err)
 	}
 	if p.sandboxPidfd != -1 {
@@ -574,7 +616,7 @@ func TestInitDeleteBoundsIOWaitAndCanRetry(t *testing.T) {
 	releaseIO := sync.OnceFunc(p.wg.Done)
 	t.Cleanup(releaseIO)
 	start := time.Now()
-	if err := p.Delete(context.Background()); !errors.Is(err, errRunscTimeout) {
+	if err := p.Delete(t.Context()); !errors.Is(err, errRunscTimeout) {
 		t.Fatalf("Delete error = %v, want shim timeout", err)
 	}
 	requireBounded(t, start)
@@ -583,7 +625,7 @@ func TestInitDeleteBoundsIOWaitAndCanRetry(t *testing.T) {
 	}
 	requireLiveProcess(t, pipe)
 	releaseIO()
-	if err := p.Delete(context.Background()); err != nil {
+	if err := p.Delete(t.Context()); err != nil {
 		t.Fatalf("Delete retry: %v", err)
 	}
 	if _, ok := p.initState.(*deletedState); !ok {
@@ -595,7 +637,7 @@ func TestInitCallsObserveCancellationWhileLocked(t *testing.T) {
 	p := newRuntimeWedgedInit(t)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	for _, tc := range []struct {
 		name string
@@ -628,7 +670,7 @@ func TestRuntimeDeadlineIncludesLockWait(t *testing.T) {
 	start := time.Now()
 	timer := time.AfterFunc(50*time.Millisecond, mu.Unlock)
 	defer timer.Stop()
-	ctx, unlock, err := lockRuntimeFor(mu, context.Background(), time.Second)
+	ctx, unlock, err := lockRuntimeFor(mu, t.Context(), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +687,7 @@ func pinnedTestProcess(t *testing.T, p *Init) (*exec.Cmd, *os.File) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	process := exec.Command("sleep", "60")
+	process := testprocess.Pause.Command(t.Context())
 	process.ExtraFiles = []*os.File{w}
 	if err := process.Start(); err != nil {
 		r.Close()
@@ -688,7 +730,7 @@ func TestExplicitSandboxKillAfterFuseWatchdog(t *testing.T) {
 			_, pipe := pinnedTestProcess(t, p)
 			neighbor := New("neighbor", nil, stdio.Stdio{})
 			_, neighborPipe := pinnedTestProcess(t, neighbor)
-			ctx := context.Background()
+			ctx := t.Context()
 			wantCause := errRunscTimeout
 			if callerDeadline {
 				var cancel context.CancelFunc
@@ -756,7 +798,7 @@ func TestInitExitRetainsLiveSandboxForExplicitDelete(t *testing.T) {
 			if p.sandboxPidfd < 0 {
 				t.Fatal("init exit discarded the still-live sandbox process handle")
 			}
-			if err := p.Delete(context.Background()); err == nil {
+			if err := p.Delete(t.Context()); err == nil {
 				t.Fatal("Delete succeeded against a wedged runtime")
 			}
 			if err := pipe.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
@@ -825,7 +867,7 @@ func TestOnlyExplicitSandboxTeardownEscalates(t *testing.T) {
 				p.mu.Lock()
 				defer p.mu.Unlock()
 			}
-			ctx := context.Background()
+			ctx := t.Context()
 			if tc.callerTimeout {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, 25*time.Millisecond)
@@ -877,6 +919,7 @@ func TestLongRuntimeOperationsAreBounded(t *testing.T) {
 	for _, name := range []string{"Start", "Restore", "Checkpoint"} {
 		t.Run(name, func(t *testing.T) {
 			p := newRuntimeWedgedInit(t)
+			checkKilled := expectRuntimeKill(t, p.runtime.Command)
 			p.Platform = fakePlatform{}
 			p.Sandbox = true
 			p.initState = &createdState{p: p}
@@ -884,17 +927,18 @@ func TestLongRuntimeOperationsAreBounded(t *testing.T) {
 			var err error
 			switch name {
 			case "Start":
-				err = p.Start(context.Background())
+				err = p.Start(t.Context())
 			case "Restore":
-				err = p.Restore(context.Background(), &extension.RestoreConfig{ImagePath: t.TempDir()})
+				err = p.Restore(t.Context(), &extension.RestoreConfig{ImagePath: t.TempDir()})
 			case "Checkpoint":
 				p.initState = &runningState{p: p}
-				err = p.CheckpointSandbox(context.Background(), &runsccmd.CheckpointOpts{})
+				err = p.CheckpointSandbox(t.Context(), &runsccmd.CheckpointOpts{})
 			}
 			if err == nil {
 				t.Fatal("operation succeeded against a wedged runtime")
 			}
 			requireBounded(t, start)
+			checkKilled()
 		})
 	}
 }
@@ -925,7 +969,7 @@ func TestDeleteBoundsBlockedUnmountAndReusesWorker(t *testing.T) {
 	t.Cleanup(func() { unblock(); <-finished; unmountRootfs = old })
 	for range 2 {
 		start := time.Now()
-		if err := p.Delete(context.Background()); !errors.Is(err, errRunscTimeout) {
+		if err := p.Delete(t.Context()); !errors.Is(err, errRunscTimeout) {
 			t.Fatalf("Delete error = %v, want bounded unmount failure", err)
 		}
 		requireBounded(t, start)
@@ -935,7 +979,7 @@ func TestDeleteBoundsBlockedUnmountAndReusesWorker(t *testing.T) {
 	}
 	unblock()
 	<-finished
-	if err := p.Delete(context.Background()); err != nil {
+	if err := p.Delete(t.Context()); err != nil {
 		t.Fatalf("Delete retry after unmount recovery: %v", err)
 	}
 }
@@ -955,12 +999,12 @@ func TestTeardownDoesNotInterruptCheckpoint(t *testing.T) {
 	}
 	p.runtime.Command = fake
 	done := make(chan error, 1)
-	go func() { done <- p.CheckpointSandbox(context.Background(), &runsccmd.CheckpointOpts{}) }()
-	t.Cleanup(func() {
+	go func() { done <- p.CheckpointSandbox(t.Context(), &runsccmd.CheckpointOpts{}) }()
+	defer func() {
 		if err := <-done; err != nil {
 			t.Errorf("checkpoint failed: %v", err)
 		}
-	})
+	}()
 	deadline := time.Now().Add(time.Second)
 	for {
 		if _, err := os.Stat(marker); err == nil {
@@ -972,8 +1016,8 @@ func TestTeardownDoesNotInterruptCheckpoint(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	for _, call := range []func() error{
-		func() error { return p.Delete(context.Background()) },
-		func() error { return p.Kill(context.Background(), uint32(unix.SIGKILL), true) },
+		func() error { return p.Delete(t.Context()) },
+		func() error { return p.Kill(t.Context(), uint32(unix.SIGKILL), true) },
 	} {
 		if err := call(); !errors.Is(err, errRunscTimeout) {
 			t.Fatalf("contended teardown error = %v, want shim timeout", err)
@@ -1017,7 +1061,7 @@ func TestDeleteClosesBlockedOutputPipe(t *testing.T) {
 		_, _ = io.Copy(io.Discard, reader)
 		_ = reader.Close()
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	if err := copyPipes(ctx, p.io, "", path, os.DevNull, &p.wg, &p.closers); err != nil {
 		t.Fatal(err)
@@ -1035,7 +1079,7 @@ func TestDeleteClosesBlockedOutputPipe(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if err := p.Delete(context.Background()); !errors.Is(err, errRunscTimeout) {
+	if err := p.Delete(t.Context()); !errors.Is(err, errRunscTimeout) {
 		t.Fatalf("blocked pipe Delete = %v, want timeout", err)
 	}
 	requireLiveProcess(t, sandboxPipe)
@@ -1047,7 +1091,7 @@ func TestDeleteClosesBlockedOutputPipe(t *testing.T) {
 	old := unmountRootfs
 	unmountRootfs = func(string, int) error { return nil }
 	t.Cleanup(func() { unmountRootfs = old })
-	if err := p.Delete(context.Background()); err != nil {
+	if err := p.Delete(t.Context()); err != nil {
 		t.Fatalf("Delete retry after closing output: %v", err)
 	}
 }
@@ -1072,7 +1116,7 @@ func TestFailedDeleteRetainsOnlyLivePidfd(t *testing.T) {
 			oldUnmount := unmountRootfs
 			unmountRootfs = func(string, int) error { return nil }
 			t.Cleanup(func() { unmountRootfs = oldUnmount })
-			if err := p.Delete(context.Background()); err == nil {
+			if err := p.Delete(t.Context()); err == nil {
 				t.Fatal("failed runtime delete reported success")
 			}
 			if exited {
@@ -1087,10 +1131,8 @@ func TestFailedDeleteRetainsOnlyLivePidfd(t *testing.T) {
 					t.Fatal("failed delete discarded the live sandbox identity")
 				}
 				requireLiveProcess(t, pipe)
-				if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec >/dev/null 2>&1\nexec sleep 60\n"), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := p.Delete(context.Background()); !errors.Is(err, errRunscTimeout) {
+				p.runtime.Command = testprocess.Pause.Path(t)
+				if err := p.Delete(t.Context()); !errors.Is(err, errRunscTimeout) {
 					t.Fatalf("wedged retry error = %v", err)
 				}
 				if err := pipe.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
@@ -1111,18 +1153,10 @@ func TestDeleteTimeoutAfterSuccessfulKill(t *testing.T) {
 			p := newRuntimeWedgedInit(t)
 			p.initState = &stoppedState{process: p}
 			p.Sandbox = sandboxTask
-			sandbox := exec.Command("sleep", "60")
-			if err := sandbox.Start(); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = sandbox.Process.Kill(); _ = sandbox.Wait() })
-			p.sandboxPidfd = testPidfd(t, sandbox.Process.Pid)
+			sandbox, exited := testprocess.Pause.Start(t)
+			p.sandboxPidfd = testPidfd(t, sandbox.Pid)
 			t.Cleanup(p.closeSandboxPidfd)
-			neighbor := exec.Command("sleep", "60")
-			if err := neighbor.Start(); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = neighbor.Process.Kill(); _ = neighbor.Wait() })
+			neighbor, _ := testprocess.Pause.Start(t)
 			dir := t.TempDir()
 			fake := filepath.Join(dir, "delete-wedged-runsc")
 			marker := filepath.Join(dir, "delete-reached")
@@ -1132,7 +1166,7 @@ func TestDeleteTimeoutAfterSuccessfulKill(t *testing.T) {
 			}
 			p.runtime.Command = fake
 			start := time.Now()
-			if err := p.Delete(context.Background()); err == nil {
+			if err := p.Delete(t.Context()); err == nil {
 				t.Fatal("Delete succeeded against wedged delete command")
 			}
 			requireBounded(t, start)
@@ -1140,17 +1174,15 @@ func TestDeleteTimeoutAfterSuccessfulKill(t *testing.T) {
 				t.Fatalf("successful kill never reached Delete: %v", err)
 			}
 			if sandboxTask {
-				done := make(chan error, 1)
-				go func() { done <- sandbox.Wait() }()
 				select {
-				case <-done:
+				case <-exited:
 				case <-time.After(2 * time.Second):
 					t.Fatal("Delete timeout did not terminate its sandbox")
 				}
-			} else if err := sandbox.Process.Signal(unix.Signal(0)); err != nil {
+			} else if err := sandbox.Signal(unix.Signal(0)); err != nil {
 				t.Fatalf("workload Delete killed sandbox: %v", err)
 			}
-			if err := neighbor.Process.Signal(unix.Signal(0)); err != nil {
+			if err := neighbor.Signal(unix.Signal(0)); err != nil {
 				t.Fatalf("neighbor was affected: %v", err)
 			}
 		})
