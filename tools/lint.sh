@@ -55,8 +55,6 @@ declare -r CODESPELL_VERSION="2.3.0"
 declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
 declare -r CLANG_TIDY_VERSION="22.1.8"
-# Keep in sync with images/default/Dockerfile.
-declare -r BUILDIFIER_VERSION="8.5.1"
 
 # The codespell and cpplint wheels are architecture-independent.
 declare -r CODESPELL_URL="https://files.pythonhosted.org/packages/0e/20/b6019add11e84f821184234cea0ad91442373489ef7ccfa3d73a71b908fa/codespell-${CODESPELL_VERSION}-py3-none-any.whl"
@@ -66,16 +64,12 @@ declare -r CPPLINT_SHA256="5031cb9671cd5bb3dbb4d3243eebd0d42cdf76388ab49c0d276f8
 
 case "$(uname -m)" in
   x86_64|amd64)
-    declare -r BUILDIFIER_ARCH="amd64"
-    declare -r BUILDIFIER_SHA256="887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/42/ef/3f8e215916e79ecd435b5bc20810443f80fce3fb8bbfe6d2783ceb775c1b/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     declare -r CLANG_FORMAT_SHA256="64900462c1203cee2fec364536c2dda708baf0619e15b52ceda926648cc82f56"
     declare -r CLANG_TIDY_URL="https://files.pythonhosted.org/packages/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-${CLANG_TIDY_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     declare -r CLANG_TIDY_SHA256="1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1"
     ;;
   aarch64|arm64)
-    declare -r BUILDIFIER_ARCH="arm64"
-    declare -r BUILDIFIER_SHA256="947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/0e/b6/1a162e427d912b88653a66e99a22414d798eb885b761ffddb74dbc13963f/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
     declare -r CLANG_FORMAT_SHA256="09af54d2ef51680b34e36ed71b9f510bd399fb7b10b29a2a40843cd0e0344228"
     declare -r CLANG_TIDY_URL="https://files.pythonhosted.org/packages/ac/b7/61ed8c319f2d9ddb9762a550a6fee434bdef7bdc46d5a4b50929f1c90ec0/clang_tidy-${CLANG_TIDY_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
@@ -134,16 +128,6 @@ fetch() {
     return 1
   fi
   mv "${tmp}" "${out}"
-}
-
-install_buildifier() {
-  local -r bin="${CACHE_DIR}/buildifier-${BUILDIFIER_VERSION}"
-  if [[ ! -x "${bin}" ]]; then
-    fetch "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-${BUILDIFIER_ARCH}" \
-      "${BUILDIFIER_SHA256}" "${bin}"
-    chmod +x "${bin}"
-  fi
-  echo "${bin}"
 }
 
 install_codespell() {
@@ -314,7 +298,7 @@ check_clang_tidy() {
 # excluded because rules_shell / proto_library.bzl loads are not used here.
 check_buildifier() {
   local buildifier
-  buildifier="$(install_buildifier)"
+  buildifier="$(bazel_binary @buildifier_prebuilt//:buildifier)"
   local -r warnings="-duplicated-name,-list-append,-native-py,-native-sh-binary,-native-sh-library,-native-sh-test,-native-proto"
   if [[ "${FIX}" -eq 1 ]]; then
     bazel_files | xargs -0 "${buildifier}" --mode=fix --lint=fix --warnings="${warnings}"
