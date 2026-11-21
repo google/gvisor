@@ -144,10 +144,6 @@ type deferredObject struct {
 // loadValue decodes a value of type ti for Source.LoadValueTo, and calls
 // l.StateLoadValue with it once the objects it refers to are complete.
 func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
-	// Values are decoded to storage that is reused while the values are
-	// only passed to l immediately: generated StateLoadValue methods copy
-	// them. Values passed later, or whose decoding ran code that may keep
-	// their address, keep their storage.
 	p := ds.valueScratch[ti]
 	if p == nil {
 		p = reflect.New(ti.typ).UnsafePointer()
@@ -174,20 +170,23 @@ func (ds *graphDecodeState) loadValue(ti *typeInfo, slot int, l ValueLoader) {
 		return
 	}
 	cb := decodeCallback{valueLoader: l, slot: slot, value: makeAny(ti, p), waiter: -1}
-	if ds.lastRef >= 0 {
-		if ds.lastRef != ds.cur && ds.lastRef != 0 {
-			ds.wait(ds.cur, ds.lastRef, cb)
-			return
-		}
-	} else if ds.refs != refs {
+	// makeAny copies direct values into the interface. Indirect values may
+	// keep p until StateLoadValue has copied them. Either form must keep
+	// p if user code could have retained its address during decoding.
+	reusable := ds.hooks == hooks
+	copied := ti.direct
+	switch {
+	case ds.lastRef > 0 && ds.lastRef != ds.cur:
+		ds.wait(ds.cur, ds.lastRef, cb)
+	case ds.lastRef < 0 && ds.refs != refs:
 		if !ds.noCallbacks {
 			ds.addCallback(ds.cur, cb)
 		}
-		return
+	default:
+		ds.runCallback(&cb)
+		copied = true
 	}
-	reusable := ds.hooks == hooks
-	ds.runCallback(&cb)
-	if reusable {
+	if reusable && copied {
 		if ds.valueScratch == nil {
 			ds.valueScratch = make(map[*typeInfo]unsafe.Pointer)
 		}
