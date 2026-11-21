@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"math"
 	"reflect"
 	"strings"
 
@@ -202,12 +201,47 @@ func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, 
 	}
 }
 
+// rootSliceLength returns the logical length of a known slice field, or -1
+// if the encoded value does not contain that field.
+func rootSliceLength(spec *wire.Type, root *wire.Struct, field string) int64 {
+	for i, name := range spec.Fields {
+		if name != field || i >= root.Fields() {
+			continue
+		}
+		switch v := (*root.Field(i)).(type) {
+		case *wire.Slice:
+			if v.Length <= v.Capacity {
+				return int64(v.Length)
+			}
+		case wire.Nil:
+			return 0
+		}
+		break
+	}
+	return -1
+}
+
+// AfterGraph may consume application-specific data following an object graph.
+// frame is the zero-based frame index read by the printer.
+// root is the registered name of the root struct. sliceLength is the
+// length of its requested slice field, or -1 when unavailable.
+// Report each raw region consumed so subsequent object references keep their IDs.
+type AfterGraph func(frame int, root string, sliceLength int64, reportRaw func(int64) error) error
+
 // printStream is the basic print implementation.
-func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
+func (p *printer) printStream(w io.Writer, r io.Reader, sliceRoot, sliceField string, after AfterGraph) (err error) {
 	wr := wire.Reader{Reader: r}
 
 	// current graph ID.
 	var graph uint64
+	reportRaw := func(n int64) error {
+		graph++
+		if n == 0 {
+			return nil
+		}
+		_, err := fmt.Fprintf(w, "(%d bytes non-object data)\n", n)
+		return err
+	}
 
 	if p.html {
 		fmt.Fprintf(w, "<pre>")
@@ -226,7 +260,7 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 
 	p.typeSpecs = make(map[string]*wire.Type)
 
-	for {
+	for frame := 0; ; frame++ {
 		// Find the first object to begin generation.
 		hdr, err := state.ReadHeaderMode(&wr)
 		if err == io.EOF {
@@ -236,21 +270,12 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 			return err
 		}
 		if !hdr.Object {
-			graph++ // Increment the graph.
-			if hdr.Length > 0 {
-				if _, err := fmt.Fprintf(w, "(%d bytes non-object data)\n", hdr.Length); err != nil {
-					return err
-				}
-				limit := int64(math.MaxInt64)
-				if hdr.Length < math.MaxInt64 {
-					limit = int64(hdr.Length)
-				}
-				if _, err := io.Copy(io.Discard, &io.LimitedReader{
-					R: r,
-					N: limit,
-				}); err != nil {
-					return err
-				}
+			length := int64(hdr.Length) // Raw headers use at most 62 bits.
+			if err := reportRaw(length); err != nil {
+				return err
+			}
+			if _, err := io.Copy(io.Discard, io.LimitReader(r, length)); err != nil {
+				return err
 			}
 			continue
 		}
@@ -258,14 +283,27 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 			if hdr.Length > 4<<30 {
 				return fmt.Errorf("invalid object graph length %d", hdr.Length)
 			}
-			data := make([]byte, hdr.Length)
-			if _, err := io.ReadFull(r, data); err != nil {
-				return err
+			// A truncated input shouldn't allocate its declared full length.
+			data, err := io.ReadAll(io.LimitReader(r, int64(hdr.Length)))
+			if uint64(len(data)) != hdr.Length {
+				if err != nil {
+					return err
+				}
+				if len(data) == 0 {
+					return io.EOF
+				}
+				return io.ErrUnexpectedEOF
 			}
-			if err := state.PrintGraph(w, data, graph, p.html); err != nil {
+			root, length, err := state.PrintGraphRoot(w, data, graph, p.html, sliceRoot, sliceField)
+			if err != nil {
 				return err
 			}
 			graph++
+			if after != nil {
+				if err := after(frame, root, length, reportRaw); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 
@@ -310,7 +348,17 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 			}
 		}
 
+		var root string
+		length := int64(-1)
 		for _, objAndID := range objects {
+			if st, ok := objAndID.obj.(*wire.Struct); after != nil && ok && objAndID.id == 1 && st.TypeID > 0 && uint64(st.TypeID) < tid {
+				spec := p.typeSpecs[fmt.Sprintf("g%dt%d", graph, st.TypeID)]
+				root = spec.Name
+				if root == sliceRoot {
+					length = rootSliceLength(spec, st, sliceField)
+				}
+			}
+
 			// Format the node.
 			str, _ := p.format(graph, 0, objAndID.obj)
 			tag := fmt.Sprintf("g%dr%d", graph, objAndID.id)
@@ -322,17 +370,27 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 				return err
 			}
 		}
+		if after != nil {
+			if err := after(frame, root, length, reportRaw); err != nil {
+				return err
+			}
+		}
 	}
-
 	return nil
+}
+
+// PrintWithAfterGraph renders the stream, calling after for each decoded root.
+// The callback must consume from the same reader passed to this function.
+func PrintWithAfterGraph(w io.Writer, r io.Reader, asHTML bool, sliceRoot, sliceField string, after AfterGraph) error {
+	return (&printer{html: asHTML}).printStream(w, r, sliceRoot, sliceField, after)
 }
 
 // PrintText reads the stream from r and prints text to w.
 func PrintText(w io.Writer, r io.Reader) error {
-	return (&printer{}).printStream(w, r)
+	return PrintWithAfterGraph(w, r, false, "", "", nil)
 }
 
 // PrintHTML reads the stream from r and prints html to w.
 func PrintHTML(w io.Writer, r io.Reader) error {
-	return (&printer{html: true}).printStream(w, r)
+	return PrintWithAfterGraph(w, r, true, "", "", nil)
 }
