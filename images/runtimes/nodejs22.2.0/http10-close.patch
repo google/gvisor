@@ -1,0 +1,46 @@
+Node 22.2.0 can check the HTTP/1.0 socket before the response has
+finished. Backport the upstream test that waits for the client socket to
+close and checks the server socket when the response finishes.
+
+https://github.com/nodejs/node/commit/b6fe731c5
+
+diff --git a/test/parallel/test-http-remove-connection-header-persists-connection.js b/test/parallel/test-http-remove-connection-header-persists-connection.js
+index df7e39ae9437..d5f53a703c82 100644
+--- a/test/parallel/test-http-remove-connection-header-persists-connection.js
++++ b/test/parallel/test-http-remove-connection-header-persists-connection.js
+@@ -10,6 +10,13 @@ const server = http.createServer(function(request, response) {
+   // For HTTP/1.0, the connection should be closed after the response automatically.
+   response.removeHeader('connection');
+
++  if (request.httpVersion === '1.0') {
++    const socket = request.socket;
++    response.on('finish', common.mustCall(function() {
++      assert.ok(socket.writableEnded);
++    }));
++  }
++
+   response.end('beep boop\n');
+ });
+
+@@ -50,9 +57,7 @@ function makeHttp10Request(cb) {
+                 '\r\n');
+     socket.resume(); // Ignore the response itself
+
+-    setTimeout(function() {
+-      cb(socket);
+-    }, common.platformTimeout(50));
++    socket.on('close', cb);
+   });
+ }
+
+@@ -62,9 +67,7 @@ server.listen(0, function() {
+       // Both HTTP/1.1 requests should have used the same socket:
+       assert.strictEqual(firstSocket, secondSocket);
+
+-      makeHttp10Request(function(socket) {
+-        // The server should have immediately closed the HTTP/1.0 socket:
+-        assert.strictEqual(socket.closed, true);
++      makeHttp10Request(function() {
+         server.close();
+       });
+     });
