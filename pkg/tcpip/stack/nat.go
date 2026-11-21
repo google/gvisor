@@ -567,7 +567,8 @@ func (cn *conn) ConfigureNoopNAT(pkt *PacketBuffer, natType NATType) bool {
 }
 
 // configureMasquerade configures the connection for masquerade to the primary
-// address of outNICID. route, if set, only supplies the next hop.
+// address of outNICID. For IPv4, route, if set, supplies the next hop that
+// the source address is selected for; IPv6 selects for the destination.
 func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, stk *Stack, ports PortOrIdentRange, changePort bool) bool {
 	srcAddr := pkt.Network().SourceAddress()
 	if srcAddr == header.IPv4Any || srcAddr == header.IPv6Any {
@@ -591,18 +592,17 @@ func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, outNICID tc
 	}
 
 	// Ref: net/netfilter/nf_nat_masquerade.c:nf_nat_masquerade_ipv[4|6]()
-	// Use the next hop address as the destination address if it is set.
-	var nh tcpip.Address
-	if route != nil {
-		nh = route.NextHop()
-	}
-	if nh.Len() == 0 {
-		nh = pkt.Network().DestinationAddress()
+	// IPv4 selects the address for the next hop if there is one; IPv6
+	// selects it for the packet's destination.
+	remote := pkt.Network().DestinationAddress()
+	if route != nil && pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+		if nh := route.NextHop(); nh.Len() != 0 {
+			remote = nh
+		}
 	}
 
 	// addressEP is expected to be set for the postrouting hook.
-	// Find the outgoing primary address for the destination address.
-	ep := addressEP.AcquireOutgoingPrimaryAddress(nh, tcpip.Address{} /* srcHint */, false /* allowExpired */)
+	ep := addressEP.AcquireOutgoingPrimaryAddress(remote, tcpip.Address{} /* srcHint */, false /* allowExpired */)
 	if ep == nil {
 		// No address exists that we can use as a source address.
 		return false
