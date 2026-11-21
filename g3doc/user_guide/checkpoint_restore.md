@@ -32,10 +32,6 @@ their processes after committing a checkpoint.)
 > Note: All top-level runsc flags needed when calling run must be provided to
 > checkpoint if `--leave-running` is used.
 
-> Note: `--leave-running` functions by causing an immediate restore so the
-> container, although will maintain its given container id, may have a different
-> process id.
-
 ```bash
 runsc checkpoint --image-path=<path> --leave-running <container id>
 ```
