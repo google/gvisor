@@ -2117,6 +2117,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
+        "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:logging",
@@ -2130,6 +2131,7 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
+        "//test/util:timer_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
