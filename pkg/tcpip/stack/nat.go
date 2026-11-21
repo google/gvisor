@@ -241,10 +241,11 @@ func IPTHandlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	}
 	switch hook {
 	case Prerouting:
+		opts.natType = DNAT
+		fallthrough
+	case Input:
 		opts.fullChecksum = true
 		opts.updatePseudoHeader = true
-		opts.natType = DNAT
-	case Input:
 	case Forward:
 		panic("should not handle packet in the forwarding hook")
 	case Output:
@@ -467,10 +468,11 @@ func NFTApplyNAT(pkt *PacketBuffer, hook NFHook, rt *Route) bool {
 	}
 	switch hook {
 	case NFPrerouting:
+		opts.natType = DNAT
+		fallthrough
+	case NFInput:
 		opts.fullChecksum = true
 		opts.updatePseudoHeader = true
-		opts.natType = DNAT
-	case NFInput:
 	case NFForward:
 		panic("should not handle packet in the forwarding hook")
 	case NFOutput:

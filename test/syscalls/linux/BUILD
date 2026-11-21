@@ -1376,16 +1376,20 @@ cc_binary(
     deps = select_gtest() + [
         ":iptables_types",
         ":iptables_util",
+        ":socket_netlink_route_util",
+        ":socket_netlink_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
     ],
 )
 
