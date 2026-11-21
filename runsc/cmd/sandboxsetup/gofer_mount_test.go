@@ -30,9 +30,18 @@ func TestShouldExposeNvidiaDevice(t *testing.T) {
 		{name: "nvidia1", path: "/dev/nvidia1", want: true},
 		{name: "nvidia42", path: "/dev/nvidia42", want: true},
 		{name: "nvidia-uvm-tools", path: "/dev/nvidia-uvm-tools", want: true},
+		{name: "nvidia-cap1", path: "/dev/nvidia-caps/nvidia-cap1", want: true},
+		{name: "nvidia-cap4323", path: "/dev/nvidia-caps/nvidia-cap4323", want: true},
+		{name: "imex-channel0", path: "/dev/nvidia-caps-imex-channels/channel0", want: true},
+		{name: "imex-channel2047", path: "/dev/nvidia-caps-imex-channels/channel2047", want: true},
 		{name: "nvidia-modeset", path: "/dev/nvidia-modeset", want: false},
 		{name: "not nvidia", path: "/dev/sda", want: false},
 		{name: "nvidia prefix but not device", path: "/dev/nvidia-cap1", want: false},
+		{name: "nvidia-caps dir", path: "/dev/nvidia-caps", want: false},
+		{name: "nvidia-cap non-numeric", path: "/dev/nvidia-caps/nvidia-capX", want: false},
+		{name: "nvidia-caps path traversal", path: "/dev/nvidia-caps/../nvidia0", want: false},
+		{name: "imex-channel without number", path: "/dev/nvidia-caps-imex-channels/channel", want: false},
+		{name: "imex-channel subpath", path: "/dev/nvidia-caps-imex-channels/channel0/x", want: false},
 		{name: "empty", path: "", want: false},
 	}
 	for _, tst := range tests {
