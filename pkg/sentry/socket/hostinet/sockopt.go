@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
@@ -244,6 +245,14 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 	}
 	sockOpt, ok := sockOptMap[levelName{uint64(level), uint64(name)}]
 	if !ok {
+		if level == linux.SOL_UDP {
+			// UDP socket options require an int-sized value. No SOL_UDP
+			// options are implemented.
+			if socket.IsUDP(s) && len(opt) < sizeofInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			return syserr.ErrProtocolNotAvailable
+		}
 		// Pretend to accept socket options we don't understand. This
 		// seems dangerous, but it's what netstack does...
 		return nil
