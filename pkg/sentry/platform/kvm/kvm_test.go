@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // dummyFPState is initialized in TestMain.
@@ -461,6 +462,103 @@ func TestWrongVCPU(t *testing.T) {
 	})
 }
 
+// TestVCPUPool checks that vCPUs can be acquired concurrently with their
+// creation (see machine.createVCPUsAsync), and that the whole pool exists once
+// BlockBeforeSeccomp returns.
+func TestVCPUPool(t *testing.T) {
+	desc, err := platformdesc.Lookup("kvm")
+	if err != nil {
+		t.Fatalf("error looking up platform: %v", err)
+	}
+	deviceFile, err := desc.OpenDevice("")
+	if err != nil {
+		t.Fatalf("error opening device file: %v", err)
+	}
+	k, err := New(deviceFile, Config{})
+	if err != nil {
+		t.Fatalf("error creating KVM instance: %v", err)
+	}
+	defer k.machine.Destroy()
+
+	// Acquire every vCPU of the pool from a different thread, while they
+	// may still be being created.
+	n := k.machine.maxVCPUs
+	vCPUs := make(chan *vCPU, n)
+	release := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c := k.machine.Get()
+			vCPUs <- c
+			<-release
+			k.machine.Put(c)
+		}()
+	}
+	seen := make(map[*vCPU]bool)
+	for i := 0; i < n; i++ {
+		c := <-vCPUs
+		if c == nil || seen[c] {
+			t.Errorf("Get returned nil or a vCPU in use: %v", c)
+		}
+		seen[c] = true
+	}
+	close(release)
+	wg.Wait()
+
+	if err := k.BlockBeforeSeccomp(); err != nil {
+		t.Fatalf("BlockBeforeSeccomp failed: %v", err)
+	}
+	k.machine.mu.RLock()
+	defer k.machine.mu.RUnlock()
+	if k.machine.createdVCPUs != n {
+		t.Errorf("createdVCPUs = %d after BlockBeforeSeccomp, want %d", k.machine.createdVCPUs, n)
+	}
+	for id, c := range k.machine.vCPUsByID {
+		if c == nil {
+			t.Errorf("vCPU %d not created after BlockBeforeSeccomp", id)
+		}
+	}
+}
+
+// TestBlockBeforeSeccompWaitsForAllMachines checks that BlockBeforeSeccomp
+// waits until all machines have created their vCPUs, not only the machine of
+// its own platform.
+func TestBlockBeforeSeccompWaitsForAllMachines(t *testing.T) {
+	desc, err := platformdesc.Lookup("kvm")
+	if err != nil {
+		t.Fatalf("error looking up platform: %v", err)
+	}
+	var ks [2]*KVM
+	for i := range ks {
+		deviceFile, err := desc.OpenDevice("")
+		if err != nil {
+			t.Fatalf("error opening device file: %v", err)
+		}
+		k, err := New(deviceFile, Config{})
+		if err != nil {
+			t.Fatalf("error creating KVM instance: %v", err)
+		}
+		t.Cleanup(k.machine.Destroy)
+		ks[i] = k
+	}
+
+	// The second machine starts to create vCPUs after the first machine, so
+	// it is more likely to still be creating vCPUs here.
+	if err := ks[0].BlockBeforeSeccomp(); err != nil {
+		t.Fatalf("BlockBeforeSeccomp failed: %v", err)
+	}
+	for i, k := range ks {
+		k.machine.mu.RLock()
+		created, maxVCPUs := k.machine.createdVCPUs, k.machine.maxVCPUs
+		k.machine.mu.RUnlock()
+		if created != maxVCPUs {
+			t.Errorf("machine %d: createdVCPUs = %d after BlockBeforeSeccomp, want %d", i, created, maxVCPUs)
+		}
+	}
+}
+
 func TestRdtsc(t *testing.T) {
 	var i int // Iteration count.
 	kvmTest(t, nil, func(c *vCPU) bool {
@@ -749,6 +847,32 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 	})
 	if a != 0 {
 		b.Logf("ErrContextInterrupt occurred %d times (in %d iterations).", a, a+i)
+	}
+}
+
+// TestMemBarrierShared checks that all KVM instances share one host membarrier
+// probe, since registration for private-expedited membarrier applies to the
+// whole process.
+func TestMemBarrierShared(t *testing.T) {
+	desc, err := platformdesc.Lookup("kvm")
+	if err != nil {
+		t.Fatalf("error looking up platform: %v", err)
+	}
+	var ks [2]*KVM
+	for i := range ks {
+		deviceFile, err := desc.OpenDevice("")
+		if err != nil {
+			t.Fatalf("error opening device file: %v", err)
+		}
+		k, err := New(deviceFile, Config{})
+		if err != nil {
+			t.Fatalf("error creating KVM instance: %v", err)
+		}
+		t.Cleanup(k.machine.Destroy)
+		ks[i] = k
+	}
+	if ks[0].MemBarrier != ks[1].MemBarrier {
+		t.Errorf("KVM instances have different host membarrier probes: %p and %p", ks[0].MemBarrier, ks[1].MemBarrier)
 	}
 }
 

@@ -1348,6 +1348,10 @@ func (l *Loader) installSeccompFilters() error {
 		l.PreSeccompCallback()
 		l.startupTimer.Reached("pre-seccomp callback done")
 	}
+	if err := l.k.Platform.BlockBeforeSeccomp(); err != nil {
+		return fmt.Errorf("initializing platform: %w", err)
+	}
+	l.startupTimer.Reached("platform ready for seccomp")
 	if l.root.conf.DisableSeccomp {
 		log.Warningf("*** SECCOMP WARNING: syscall filter is DISABLED. Running in less secure mode.")
 	} else {

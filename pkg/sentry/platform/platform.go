@@ -108,6 +108,12 @@ type Platform interface {
 	// SeccompInfo returns seccomp-related information about this platform.
 	SeccompInfo() SeccompInfo
 
+	// BlockBeforeSeccomp blocks until the platform no longer needs syscalls
+	// that its seccomp filters don't allow. It must be called before seccomp
+	// filters are installed. An error means that the platform failed to
+	// initialize.
+	BlockBeforeSeccomp() error
+
 	// ConcurrencyCount returns the maximum number of contexts that can run
 	// in parallel. Concurrent calls to Context.Switch() beyond
 	// ConcurrencyCount() may block until previous calls have returned.
@@ -144,6 +150,16 @@ func (NoCPUPreemptionDetection) DetectsCPUPreemption() bool {
 // PreemptAllCPUs implements Platform.PreemptAllCPUs.
 func (NoCPUPreemptionDetection) PreemptAllCPUs() error {
 	panic("This platform does not support CPU preemption detection")
+}
+
+// NoBlockBeforeSeccomp implements Platform.BlockBeforeSeccomp for platforms
+// that don't need syscalls disallowed by their seccomp filters after they are
+// created.
+type NoBlockBeforeSeccomp struct{}
+
+// BlockBeforeSeccomp implements Platform.BlockBeforeSeccomp.
+func (NoBlockBeforeSeccomp) BlockBeforeSeccomp() error {
+	return nil
 }
 
 // NoCPUNumbers implements Platform.HasCPUNumbers for platforms that do
@@ -204,6 +220,26 @@ func (u UseHostProcessMemoryBarrier) GlobalMemoryBarrier() error {
 		return u.MemBarrier.ProcessMemoryBarrier()
 	}
 	return u.MemBarrier.GlobalMemoryBarrier()
+}
+
+// UseLazyHostProcessMemoryBarrier is UseHostProcessMemoryBarrier, but only
+// waits for the host membarrier probe (and private-expedited registration)
+// when the application first needs a memory barrier.
+// Platforms must populate `MemBarrier` from `hostmm.NewLazyHostMemBarrier(true)`,
+// and call `MemBarrier.Get()` in `BlockBeforeSeccomp` if their seccomp filters
+// do not allow the probe's syscalls.
+type UseLazyHostProcessMemoryBarrier struct {
+	MemBarrier *hostmm.LazyHostMemBarrier
+}
+
+// HaveGlobalMemoryBarrier implements Platform.HaveGlobalMemoryBarrier.
+func (u UseLazyHostProcessMemoryBarrier) HaveGlobalMemoryBarrier() bool {
+	return UseHostProcessMemoryBarrier{MemBarrier: u.MemBarrier.Get()}.HaveGlobalMemoryBarrier()
+}
+
+// GlobalMemoryBarrier implements Platform.GlobalMemoryBarrier.
+func (u UseLazyHostProcessMemoryBarrier) GlobalMemoryBarrier() error {
+	return UseHostProcessMemoryBarrier{MemBarrier: u.MemBarrier.Get()}.GlobalMemoryBarrier()
 }
 
 // MemoryManager represents an abstraction above the platform address space

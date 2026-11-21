@@ -159,6 +159,7 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/platform/platformdesc",
         "//pkg/sentry/time",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

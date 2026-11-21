@@ -65,7 +65,7 @@ type runData struct {
 // KVM represents a lightweight VM context.
 type KVM struct {
 	// KVM never changes mm_structs.
-	platform.UseHostProcessMemoryBarrier
+	platform.UseLazyHostProcessMemoryBarrier
 
 	// machine is the backing VM.
 	machine *machine
@@ -74,6 +74,12 @@ type KVM struct {
 var (
 	globalOnce sync.Once
 	globalErr  error
+
+	// memBarrier is the host membarrier probe of all KVM instances.
+	// Registration for private-expedited membarrier applies to the whole
+	// process, so one probe is sufficient.
+	memBarrierOnce sync.Once
+	memBarrier     *hostmm.LazyHostMemBarrier
 )
 
 // New returns a new KVM-based implementation of the platform interface.
@@ -81,7 +87,13 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	if err := hostarch.CheckHostPageSize(); err != nil {
 		return nil, fmt.Errorf("KVM platform: %w", err)
 	}
-	mbCh := hostmm.Probe(true)
+	// Registering for private-expedited membarrier waits for an RCU grace
+	// period (10-20 ms). Only the application's membarrier(2) calls need
+	// the result, so New does not wait for it. BlockBeforeSeccomp waits for
+	// it before the seccomp filters are installed.
+	memBarrierOnce.Do(func() {
+		memBarrier = hostmm.NewLazyHostMemBarrier(true)
+	})
 	fd := deviceFile.FD()
 
 	// Ensure global initialization is done.
@@ -123,13 +135,9 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	}
 	config.StartupTimer.Reached("kvm machine created")
 
-	config.StartupTimer.Reached("waiting for membarrier")
-	memBarrier := <-mbCh
-	config.StartupTimer.Reached("host membarrier probed")
-
 	return &KVM{
-		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: memBarrier},
-		machine:                     machine,
+		UseLazyHostProcessMemoryBarrier: platform.UseLazyHostProcessMemoryBarrier{MemBarrier: memBarrier},
+		machine:                         machine,
 	}, nil
 }
 
@@ -176,6 +184,19 @@ func (k *KVM) ConcurrencyCount() int {
 	return k.machine.maxVCPUs
 }
 
+// BlockBeforeSeccomp implements platform.Platform.BlockBeforeSeccomp.
+//
+// The seccomp filters don't allow creating vCPUs or the membarrier(2) commands
+// that the host membarrier probe uses, and apply to the whole process. So
+// BlockBeforeSeccomp waits for the probe, and until all machines have created
+// their vCPUs, not only the machine of this platform. It returns only the
+// error of this platform's machine.
+func (k *KVM) BlockBeforeSeccomp() error {
+	k.MemBarrier.Get()
+	waitAllVCPUs()
+	return k.machine.vCPUsErr
+}
+
 // HasCPUNumbers implements platform.Platform.HasCPUNumbers.
 func (k *KVM) HasCPUNumbers() bool {
 	return k.machine.useCPUNums
@@ -197,6 +218,9 @@ func (*KVM) DetectsCPUPreemption() bool {
 // PreemptAllCPUs implements platform.Platform.PreemptAllCPUs.
 func (k *KVM) PreemptAllCPUs() error {
 	for _, c := range k.machine.vCPUsByID {
+		if c == nil {
+			continue // Not created (see machine.createVCPUsAsync).
+		}
 		c.lastCtx.Store(nil)
 		c.BounceToHost()
 	}
@@ -206,6 +230,9 @@ func (k *KVM) PreemptAllCPUs() error {
 // PreemptCPU implements platform.Platform.PreemptCPU.
 func (k *KVM) PreemptCPU(cpu int32) error {
 	c := k.machine.vCPUsByID[cpu]
+	if c == nil {
+		return nil // Not created (see machine.createVCPUsAsync).
+	}
 	c.lastCtx.Store(nil)
 	c.BounceToHost()
 	return nil

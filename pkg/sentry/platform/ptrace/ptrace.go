@@ -241,6 +241,7 @@ type PTrace struct {
 	platform.NoCPUPreemptionDetection
 	platform.UseHostGlobalMemoryBarrier
 	platform.NoCPUNumbers
+	platform.NoBlockBeforeSeccomp
 }
 
 // New returns a new ptrace-based implementation of the platform interface.

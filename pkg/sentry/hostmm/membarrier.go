@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // HostMemBarrier provides access to the host membarrier(2) operations that the
@@ -115,4 +116,33 @@ func probe(probePrivateExpedited bool) HostMemBarrier {
 		}
 	}
 	return mb
+}
+
+// LazyHostMemBarrier is a HostMemBarrier whose Probe result is only waited
+// for on first use.
+//
+// Registering for MEMBARRIER_CMD_PRIVATE_EXPEDITED waits for an RCU grace
+// period (10-20 ms on large hosts). The result is only needed when the
+// application calls membarrier(2), so platforms can avoid blocking sandbox
+// startup on it. The probe calls membarrier(2) with MEMBARRIER_CMD_QUERY and
+// MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, so call Get before installing
+// seccomp filters that do not allow these commands.
+type LazyHostMemBarrier struct {
+	ch   <-chan HostMemBarrier
+	once sync.Once
+	mb   HostMemBarrier
+}
+
+// NewLazyHostMemBarrier returns a LazyHostMemBarrier for the result of
+// Probe(probePrivateExpedited).
+func NewLazyHostMemBarrier(probePrivateExpedited bool) *LazyHostMemBarrier {
+	return &LazyHostMemBarrier{ch: Probe(probePrivateExpedited)}
+}
+
+// Get waits for the probe to complete and returns its result.
+func (l *LazyHostMemBarrier) Get() HostMemBarrier {
+	l.once.Do(func() {
+		l.mb = <-l.ch
+	})
+	return l.mb
 }
