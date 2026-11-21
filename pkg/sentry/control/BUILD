@@ -97,6 +97,7 @@ go_test(
         "fs_test.go",
         "proc_test.go",
         "state_test.go",
+        "tpu_control_test.go",
         "usage_test.go",
     ],
     embed = [":control"],

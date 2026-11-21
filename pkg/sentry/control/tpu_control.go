@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
@@ -76,7 +77,12 @@ func postResumeTPU(k *kernel.Kernel) error {
 	if tpuTasksVal != nil {
 		tasks := tpuTasksVal.([]*kernel.Task)
 		for _, t := range tasks {
-			info, err := extractTPUTaskInfo(t)
+			hexFd, ok := strings.CutPrefix(t.Name(), tpuThreadNamePrefix)
+			if !ok {
+				log.Warningf("TPU task %d doesn't have a TPU prefix", t.ThreadID())
+				continue
+			}
+			info, err := parseTPUTaskInfo(t, hexFd)
 			if err != nil {
 				log.Warningf("Failed to extract TPU task info for task %d: %v", t.ThreadID(), err)
 				continue
@@ -97,12 +103,12 @@ func postResumeTPU(k *kernel.Kernel) error {
 	return nil
 }
 
-// Callers must not hold any thread-group leader's Task.mu in k.
-// checklocks cannot name the leader mutexes selected by ForEachThreadGroup.
+// findTPUTasks returns TPU control info for all libtpu threads in k (callers must not hold any Task.mu).
 func findTPUTasks(k *kernel.Kernel) []*tpuTaskInfo {
 	var infos []*tpuTaskInfo
 	sctx := k.SupervisorContext()
-	k.TaskSet().ForEachThreadGroup(func(tg *kernel.ThreadGroup, tgLeader *kernel.Task) {
+	for _, tg := range k.RootPIDNamespace().ThreadGroups() {
+		tgLeader := tg.Leader()
 		hasTPU := false
 		tgLeader.WithMuLocked(func(t *kernel.Task) {
 			t.FDTable().ForEach(sctx, func(_ int32, file *vfs.FileDescription, _ kernel.FDFlags) bool {
@@ -115,19 +121,22 @@ func findTPUTasks(k *kernel.Kernel) []*tpuTaskInfo {
 		})
 
 		if !hasTPU {
-			return
+			continue
 		}
 
-		tg.ForEachTask(func(t *kernel.Task) bool {
-			tpuInfo, err := extractTPUTaskInfo(t)
+		for _, t := range tg.Tasks() {
+			hexFd, ok := strings.CutPrefix(t.Name(), tpuThreadNamePrefix)
+			if !ok {
+				continue
+			}
+			tpuInfo, err := parseTPUTaskInfo(t, hexFd)
 			if err != nil {
 				log.Warningf("Failed to extract TPU task info for task %d: %v", t.ThreadID(), err)
-				return true
+				continue
 			}
 			infos = append(infos, tpuInfo)
-			return true
-		})
-	})
+		}
+	}
 	return infos
 }
 
@@ -293,14 +302,10 @@ func isTPUDevice(file *vfs.FileDescription) bool {
 	return vfio.IsVFIOFD(impl)
 }
 
-func extractTPUTaskInfo(t *kernel.Task) (*tpuTaskInfo, error) {
-	name := t.Name()
-	if !strings.HasPrefix(name, tpuThreadNamePrefix) {
-		return nil, fmt.Errorf("task %d does not have a TPU thread name", t.ThreadID())
-	}
-	hexFd := strings.TrimPrefix(name, tpuThreadNamePrefix)
+// parseTPUTaskInfo parses hex-encoded request and response FDs from a libtpu thread suffix.
+func parseTPUTaskInfo(t *kernel.Task, hexFd string) (*tpuTaskInfo, error) {
 	if len(hexFd) != 8 {
-		return nil, fmt.Errorf("invalid TPU thread name format %s", name)
+		return nil, fmt.Errorf("invalid TPU thread name suffix %q", hexFd)
 	}
 	reqWriteFd, err := strconv.ParseInt(hexFd[:4], 16, 32)
 	if err != nil {

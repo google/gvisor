@@ -119,13 +119,6 @@ func newTaskSet(pidns *PIDNamespace) *TaskSet {
 	return ts
 }
 
-// ForEachThreadGroup applies f to each thread group in ts.
-func (ts *TaskSet) ForEachThreadGroup(f func(tg *ThreadGroup, tgLeader *Task)) {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-	ts.forEachThreadGroupLocked(f)
-}
-
 // forEachThreadGroupLocked applies f to each thread group in ts.
 //
 // Preconditions: ts.mu must be locked (for reading or writing).
@@ -635,11 +628,16 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 	return tasks
 }
 
-// ForEachTask invokes f() on each task in tg.
-func (tg *ThreadGroup) ForEachTask(f func(t *Task) bool) {
+// Tasks returns a snapshot of the tasks in tg.
+func (tg *ThreadGroup) Tasks() []*Task {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
-	tg.ForEachTaskLocked(f)
+
+	tasks := make([]*Task, 0, tg.tasksCount)
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
+		tasks = append(tasks, t)
+	}
+	return tasks
 }
 
 // ForEachTaskLocked invokes f() on each task in tg.
