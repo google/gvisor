@@ -19,4 +19,13 @@ const (
 	WaitReasonSelect      uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonSelect" }} */
 	WaitReasonChanReceive uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonChanReceive" }} */
 	WaitReasonSemacquire  uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonSemacquire" }} */
+
+	// WaitReasonSyncCondWait is the reason that sync.Cond.Wait parks with.
+	//
+	// It is one of the few reasons that testing/synctest considers to be
+	// durably blocking, so goroutines that park with it don't prevent a
+	// synctest bubble from becoming idle and advancing its fake clock. It is
+	// for primitives that, like sync.Cond, park a goroutine until some other
+	// goroutine explicitly wakes it.
+	WaitReasonSyncCondWait uint8 = /*->*/ 0xff /*<- {{ Constant (Import "runtime") "waitReasonSyncCondWait" }} */
 )

@@ -17,6 +17,7 @@ package syncevent
 import (
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -44,6 +45,56 @@ func TestWaiterAsyncNotify(t *testing.T) {
 	}()
 	if got := w.Wait(); got != want {
 		t.Errorf("Waiter.Wait: got %#x, wanted %#x", got, want)
+	}
+}
+
+// TestWaiterInSynctest tests that a goroutine blocked in one of Waiter's Wait
+// methods is durably blocked as far as testing/synctest is concerned, so that
+// code using Waiters can be tested with a fake clock.
+//
+// If it is not, this test hangs until the test binary times out: synctest.Wait
+// never returns and the bubble's clock never advances.
+func TestWaiterInSynctest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wait func(*Waiter) Set
+	}{
+		{"Wait", (*Waiter).Wait},
+		{"WaitAndAckAll", (*Waiter).WaitAndAckAll},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var w Waiter
+				w.Init()
+				want := Set(1)
+
+				got := make(chan Set, 1)
+				go func() {
+					got <- tc.wait(&w)
+				}()
+
+				// Wait returns once every other goroutine in the bubble is
+				// durably blocked.
+				synctest.Wait()
+				select {
+				case es := <-got:
+					t.Fatalf("returned %#x with no events pending", es)
+				default:
+				}
+
+				// The fake clock only advances while the bubble is idle.
+				start := time.Now()
+				time.Sleep(time.Hour)
+				if d := time.Since(start); d != time.Hour {
+					t.Errorf("slept for %v of fake time, want %v", d, time.Hour)
+				}
+
+				w.Notify(want)
+				if es := <-got; es != want {
+					t.Errorf("got %#x, wanted %#x", es, want)
+				}
+			})
+		})
 	}
 }
 

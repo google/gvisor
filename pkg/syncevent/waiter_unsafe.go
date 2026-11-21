@@ -93,7 +93,11 @@ func (w *Waiter) WaitFor(es Set) Set {
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
 		// called or has not reached atomic.SwapUintptr()), go to sleep until
 		// w.NotifyPending() => goready().
-		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceBlockSelect, 0)
+		//
+		// The wait reason is that of sync.Cond.Wait, even though this isn't
+		// one, so that testing/synctest treats waiters as durably blocked;
+		// see sync.WaitReasonSyncCondWait.
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSyncCondWait, sync.TraceBlockSelect, 0)
 	}
 }
 
@@ -139,7 +143,11 @@ func (w *Waiter) WaitAndAckAll() Set {
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
 		// called or has not reached atomic.SwapUintptr()), go to sleep until
 		// w.NotifyPending() => goready().
-		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceBlockSelect, 0)
+		//
+		// The wait reason is that of sync.Cond.Wait, even though this isn't
+		// one, so that testing/synctest treats waiters as durably blocked;
+		// see sync.WaitReasonSyncCondWait.
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSyncCondWait, sync.TraceBlockSelect, 0)
 
 		// Check for pending events. We call PendingAndAckAll() directly now since
 		// we only expect to be woken after events become pending.
