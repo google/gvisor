@@ -99,19 +99,26 @@ $ docker build -t docker-in-gvisor images/basic/docker
 In a gVisor sandbox, Docker containers can be started with a set of capabilities
 as `audit_write`, `chown`, `dac_override`, `fowner`, `fsetid`, `kill`, `mknod`,
 `net_bind_service`, `net_admin`, `net_raw`, `setfcap`, `setgid`, `setpcap`,
-`setuid`, `sys_admin`, `sys_chroot`, `sys_ptrace`. For the simplicity, let's
-start the sandbox with all capabilities:
+`setuid`, `sys_admin`, `sys_chroot`, `sys_ptrace`. For simplicity, let's start
+the sandbox with all capabilities and no seccomp profile:
 
 ```shell
-# NOTE: `--cap-add` does *NOT* grant any host capabilities. See below.
-$ docker run --runtime runsc -d --rm --cap-add all --name docker-in-gvisor docker-in-gvisor
+# NOTE: `--cap-add` does *NOT* grant any host capabilities,
+# and `--security-opt seccomp=unconfined` does NOT change the host-side seccomp
+# filter. See below.
+$ docker run --runtime runsc -d --rm --cap-add all --security-opt seccomp=unconfined --name docker-in-gvisor docker-in-gvisor
 ```
 
 > **NOTE**: **gVisor *never* runs with capabilities** on the host Linux kernel,
 > even when the above `--cap-add all` flag. This flag only controls the
 > capabilities *perceived* by the in-sandbox application (in this case, the
 > in-sandbox Docker daemon). This does not provide the sandboxed application,
-> nor the gVisor sandbox itself, any host privileges.
+> nor the gVisor sandbox itself, any host privileges. Similarly, the default
+> seccomp profile of Docker denies system calls that the in-sandbox Docker
+> daemon needs. The `--security-opt seccomp=unconfined` flag is also needed
+> even when running Docker-in-Docker without gVisor. Its effect is to removes
+> this profile from the processes within the sandbox, but gVisor applies its
+> own seccomp filters to the sandbox on the host regardless.
 
 Now, we can build and run Docker containers.
 

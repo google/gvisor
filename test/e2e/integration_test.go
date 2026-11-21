@@ -1260,8 +1260,9 @@ func TestUnshareUsernsWithoutSetfcap(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
-		Image:   "basic/integrationtest",
-		CapDrop: []string{"setfcap"},
+		Image:        "basic/integrationtest",
+		CapDrop:      []string{"setfcap"},
+		SecurityOpts: []string{"seccomp=unconfined"},
 	}, "unshare", "-Ur", "ls"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
