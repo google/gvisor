@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,8 +88,14 @@ func TestHostDriverRequiresChecksum(t *testing.T) {
 	}
 }
 
+var fakeInstaller = flag.String("fake-installer", "", "path to the test installer executable")
+
 func TestDriverInstalls(t *testing.T) {
-	const content = "#!/bin/sh\nexit 0\n"
+	content, err := os.ReadFile(*fakeInstaller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerChecksum := checksum(string(content))
 	version := nvconf.NewDriverVersion(1, 2, 3)
 	oldVersion := nvconf.NewDriverVersion(1, 2, 2)
 	inspectionError := errors.New("unknown current driver")
@@ -108,15 +115,15 @@ func TestDriverInstalls(t *testing.T) {
 		mismatch     bool
 		wantSteps    string
 	}{
-		{name: "already_installed", current: version, wantChecksum: checksum(content), wantSteps: "inspect"},
-		{name: "absent", wantChecksum: checksum(content), wantSteps: "inspect preflight download install"},
-		{name: "replace", current: oldVersion, wantChecksum: checksum(content), wantSteps: "inspect preflight download uninstall install"},
-		{name: "inspection_failure", current: version, inspectErr: inspectionError, wantChecksum: checksum(content), wantErr: inspectionError, wantSteps: "inspect"},
-		{name: "unsuitable_host", current: oldVersion, hostErr: hostError, wantChecksum: checksum(content), wantErr: hostError, wantSteps: "inspect preflight"},
-		{name: "read_failure", current: oldVersion, readErr: io.ErrUnexpectedEOF, wantChecksum: checksum(content), wantErr: io.ErrUnexpectedEOF, wantSteps: "inspect preflight download"},
+		{name: "already_installed", current: version, wantChecksum: installerChecksum, wantSteps: "inspect"},
+		{name: "absent", wantChecksum: installerChecksum, wantSteps: "inspect preflight download install"},
+		{name: "replace", current: oldVersion, wantChecksum: installerChecksum, wantSteps: "inspect preflight download uninstall install"},
+		{name: "inspection_failure", current: version, inspectErr: inspectionError, wantChecksum: installerChecksum, wantErr: inspectionError, wantSteps: "inspect"},
+		{name: "unsuitable_host", current: oldVersion, hostErr: hostError, wantChecksum: installerChecksum, wantErr: hostError, wantSteps: "inspect preflight"},
+		{name: "read_failure", current: oldVersion, readErr: io.ErrUnexpectedEOF, wantChecksum: installerChecksum, wantErr: io.ErrUnexpectedEOF, wantSteps: "inspect preflight download"},
 		{name: "checksum_failure", current: oldVersion, wantChecksum: "wrong", mismatch: true, wantSteps: "inspect preflight download"},
-		{name: "uninstall_failure", current: oldVersion, wantChecksum: checksum(content), uninstallErr: uninstallError, wantErr: uninstallError, wantSteps: "inspect preflight download uninstall"},
-		{name: "install_failure", current: oldVersion, wantChecksum: checksum(content), installErr: installError, wantErr: installError, wantSteps: "inspect preflight download uninstall install"},
+		{name: "uninstall_failure", current: oldVersion, wantChecksum: installerChecksum, uninstallErr: uninstallError, wantErr: uninstallError, wantSteps: "inspect preflight download uninstall"},
+		{name: "install_failure", current: oldVersion, wantChecksum: installerChecksum, installErr: installError, wantErr: installError, wantSteps: "inspect preflight download uninstall install"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := t.Context()
@@ -128,8 +135,8 @@ func TestDriverInstalls(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if got, want := data, []byte(content); !bytes.Equal(got, want) {
-					return fmt.Errorf("installer contents = %q, want %q", got, want)
+				if !bytes.Equal(data, content) {
+					return fmt.Errorf("prepared installer %q differs from downloaded contents", path)
 				}
 				// Direct execution also requires the file to be executable
 				// and no longer open for writing.
@@ -149,7 +156,7 @@ func TestDriverInstalls(t *testing.T) {
 				},
 				downloader: Downloader{client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 					steps = append(steps, "download")
-					reader := iotest.DataErrReader(strings.NewReader(content))
+					reader := iotest.DataErrReader(bytes.NewReader(content))
 					if test.readErr != nil {
 						reader = iotest.ErrReader(test.readErr)
 					}
