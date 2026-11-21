@@ -415,13 +415,8 @@ func (n *nic) setAdminState(up, paused bool) tcpip.Error {
 	return n.enableLocked()
 }
 
-// remove detaches NIC from the link endpoint and releases network endpoint
-// resources. This guarantees no packets between this NIC and the network
-// stack.
-//
-// It returns an action that has to be executed after releasing the Stack lock
-// and any error encountered.
-func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
+// disableForRemoval disables the NIC and releases its network endpoints.
+func (n *nic) disableForRemoval(closeLinkEndpoint bool) {
 	n.enableDisableMu.Lock()
 
 	n.disableLocked()
@@ -433,23 +428,20 @@ func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 	n.enableDisableMu.Unlock()
 
 	// Drain and drop any packets pending link resolution.
-	// We must not hold n.enableDisableMu here.
 	n.linkResQueue.cancel()
 
-	var deferAct func()
-	// Prevent packets from going down to the link before shutting the link down.
+	if closeLinkEndpoint {
+		n.NetworkLinkEndpoint.SetOnCloseAction(nil)
+	}
+}
+
+// detachLink drains outgoing packets before stopping the link's receive
+// workers. A worker may need the stack mutex to finish processing a packet.
+//
+// +checklocksexclude:n.stack.mu
+func (n *nic) detachLink() {
 	n.qDisc.Close()
 	n.NetworkLinkEndpoint.Attach(nil)
-	if closeLinkEndpoint {
-		ep := n.NetworkLinkEndpoint
-		ep.SetOnCloseAction(nil)
-		// The link endpoint has to be closed without holding a
-		// netstack lock, because it can trigger other netstack
-		// operations.
-		deferAct = ep.Close
-	}
-
-	return deferAct, nil
 }
 
 // setPromiscuousMode enables or disables promiscuous mode.
