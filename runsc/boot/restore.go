@@ -932,12 +932,8 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.Sav
 		return err
 	}
 
-	state := control.State{
-		Kernel:   l.k,
-		Watchdog: l.watchdog,
-	}
 	defer l.stopIfKilled()
-	return state.SaveWithOpts(saveOpts, execOpts)
+	return control.Save(l.k, l.watchdog, saveOpts, execOpts)
 }
 
 // postResume runs post-resume work and then completes the checkpoint attempt.
