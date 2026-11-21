@@ -87,6 +87,19 @@ type FDTable struct {
 
 	// descriptorTable holds descriptors.
 	descriptorTable `state:".(map[int32]descriptor)"`
+
+	// keepMatch is set by KeepClosedFDs. FDs of closed files that it
+	// matches stay set in fdBitmap, and are recorded in kept, until
+	// ReleaseKeptFDs.
+	//
+	// +checklocks:mu
+	keepMatch func(*vfs.FileDescription) bool `state:"nosave"`
+
+	// kept holds the FDs kept since KeepClosedFDs. It may contain
+	// duplicates.
+	//
+	// +checklocks:mu
+	kept []int32 `state:"nosave"`
 }
 
 func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
@@ -479,7 +492,7 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) *vfs.FileDescription {
 	f.mu.Lock()
 	df := f.set(fd, nil, FDFlags{}) // Zap entry.
 	if df != nil {
-		f.fdBitmap.Remove(uint32(fd))
+		f.freeLocked(fd, df)
 	}
 	f.mu.Unlock()
 
@@ -488,6 +501,47 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) *vfs.FileDescription {
 		// Table's reference on df is transferred to caller, so don't DecRef.
 	}
 	return df
+}
+
+// freeLocked marks fd, which held df, as free in fdBitmap, unless
+// KeepClosedFDs keeps it.
+//
+// +checklocks:f.mu
+func (f *FDTable) freeLocked(fd int32, df *vfs.FileDescription) {
+	if f.keepMatch != nil && f.keepMatch(df) {
+		f.kept = append(f.kept, fd)
+		return
+	}
+	f.fdBitmap.Remove(uint32(fd))
+}
+
+// KeepClosedFDs keeps FDs closed by Remove or RemoveNextInRange from being
+// reused until ReleaseKeptFDs, if match returns true for their files. A
+// second close of such an FD fails with EBADF instead of closing a file that
+// another thread has since opened. NewFDAt can still install a file at a kept
+// FD. match is called with the table locked. It returns false, and does
+// nothing, if the table is already keeping FDs.
+func (f *FDTable) KeepClosedFDs(match func(*vfs.FileDescription) bool) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.keepMatch != nil {
+		return false
+	}
+	f.keepMatch = match
+	return true
+}
+
+// ReleaseKeptFDs makes FDs kept since KeepClosedFDs available again.
+func (f *FDTable) ReleaseKeptFDs() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, fd := range f.kept {
+		if file, _, _ := f.get(fd); file == nil {
+			f.fdBitmap.Remove(uint32(fd))
+		}
+	}
+	f.keepMatch = nil
+	f.kept = nil
 }
 
 // RemoveIf removes all FDs where cond is true.
@@ -523,22 +577,27 @@ func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd in
 	}
 
 	f.mu.Lock()
-	fdUint, err := f.fdBitmap.FirstOne(uint32(startFd))
-	fd := int32(fdUint)
-	if err != nil || fd > endFd {
-		f.mu.Unlock()
-		return MaxFdLimit, nil
+	var fd int32
+	var df *vfs.FileDescription
+	for {
+		fdUint, err := f.fdBitmap.FirstOne(uint32(startFd))
+		fd = int32(fdUint)
+		if err != nil || fd > endFd {
+			f.mu.Unlock()
+			return MaxFdLimit, nil
+		}
+		df = f.set(fd, nil, FDFlags{}) // Zap entry.
+		if df != nil {
+			break
+		}
+		// fd is kept by KeepClosedFDs.
+		startFd = fd + 1
 	}
-	df := f.set(fd, nil, FDFlags{}) // Zap entry.
-	if df != nil {
-		f.fdBitmap.Remove(uint32(fd))
-	}
+	f.freeLocked(fd, df)
 	f.mu.Unlock()
 
-	if df != nil {
-		f.fileUnlock(ctx, df)
-		// Table's reference on df is transferred to caller, so don't DecRef.
-	}
+	f.fileUnlock(ctx, df)
+	// Table's reference on df is transferred to caller, so don't DecRef.
 	return fd, df
 }
 

@@ -86,6 +86,12 @@ type uvmFD struct {
 	queue waiter.Queue
 }
 
+// IsUVMFD returns true if fd is a /dev/nvidia-uvm FD.
+func IsUVMFD(fd *vfs.FileDescription) bool {
+	_, ok := fd.Impl().(*uvmFD)
+	return ok
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *uvmFD) Release(context.Context) {
 	fdnotifier.RemoveFD(fd.hostFD)

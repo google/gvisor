@@ -157,6 +157,11 @@ func postResumeCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
 	cudaCheckpointSequential := k.PopCheckpointState(cudaCheckpointSequentialKey).(bool)
 	cudaProcs := k.PopCheckpointState(cudaProcsKey).([]*kernel.ThreadGroup)
 	timeline.Reached("starting cuda-ckpt")
+	// libcuda can close a /dev/nvidia-uvm FD twice while restoring. Keep the
+	// numbers of closed UVM FDs from being reused until restore finishes, so
+	// that the second close cannot close a file another thread just opened.
+	release := keepClosedUVMFDs(k.SupervisorContext(), cudaProcs)
+	defer release()
 	// FIXME: b/460451448 - pass --device-map to cuda-checkpoint if accepted
 	err := toggleCudaProcs(k.SupervisorContext(), k, cudaCheckpointPath, cudaProcs, timeline, cudaCheckpointSequential)
 	// FIXME: b/456299722
@@ -164,6 +169,35 @@ func postResumeCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
 		tg.SigsegvUnlock()
 	}
 	return err
+}
+
+// keepClosedUVMFDs keeps closed UVM FDs in the FD tables of procs from being
+// reused, and returns a function that releases them.
+func keepClosedUVMFDs(ctx context.Context, procs []*kernel.ThreadGroup) func() {
+	var tables []*kernel.FDTable
+	for _, tg := range procs {
+		// As in cudaProcs, only the thread group leader's FD table is used.
+		var fdt *kernel.FDTable
+		tg.Leader().WithMuLocked(func(t *kernel.Task) {
+			if f := t.FDTable(); f != nil && f.TryIncRef() {
+				fdt = f
+			}
+		})
+		if fdt == nil {
+			continue
+		}
+		if fdt.KeepClosedFDs(nvproxy.IsUVMFD) {
+			tables = append(tables, fdt)
+		} else {
+			fdt.DecRef(ctx)
+		}
+	}
+	return func() {
+		for _, fdt := range tables {
+			fdt.ReleaseKeptFDs()
+			fdt.DecRef(ctx)
+		}
+	}
 }
 
 type checkpointProc struct {
