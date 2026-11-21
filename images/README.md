@@ -33,12 +33,15 @@ single images via individual `load` targets, or pull all images via a single
 
 ## Go image helpers
 
-Bazel builds the CUDA sample runners and Ollama HTTP client with the repository
+Bazel builds the CUDA sample runners with the repository
 Go SDK and CGO disabled, and packages them with the image sources in
 `//images:source_contexts`. Their `make` image commands stage that archive
 before computing the image hash, so changes to a helper or the SDK invalidate
 the image cache. The selected architecture controls both the helper binaries and
 the Docker build.
+
+The Ollama HTTP client uses the same pinned Alpine base as the benchmark image.
+Bazel assembles its image directly.
 
 Docker still builds the separate ASCII image converter using `golang:1.25`.
 

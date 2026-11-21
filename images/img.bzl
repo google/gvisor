@@ -1,5 +1,7 @@
 """Test image archives and contexts for the Make image targets."""
 
+load("@rules_img//img:image.bzl", "image_manifest")
+load("@rules_img//img:layer.bzl", "file_metadata", "image_layer")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("//tools:defs.bzl", "pkg_tar")
@@ -33,4 +35,32 @@ def image_outputs(name, image, image_name):
         name = name + "_context",
         srcs = [":" + name + "_files"],
         package_dir = "images/" + image_name,
+    )
+
+def executable_image(name, image_name, executables, **kwargs):
+    """Packages executable files in a Linux image for the Make image targets.
+
+    Args:
+      name: Prefix for the layer, manifest, and Make targets.
+      image_name: Image name relative to images/.
+      executables: Map of paths in the image to executable targets.
+      **kwargs: Additional image_manifest attributes, such as base or cmd.
+    """
+    image_layer(
+        name = name + "_layer",
+        srcs = executables,
+        default_metadata = file_metadata(mode = "0755"),
+        include_runfiles = False,
+    )
+    image_manifest(
+        name = name + "_image",
+        layers = [":" + name + "_layer"],
+        tags = ["manual"],
+        target_compatible_with = ["@platforms//os:linux"],
+        **kwargs
+    )
+    image_outputs(
+        name = name,
+        image = ":" + name + "_image",
+        image_name = image_name,
     )

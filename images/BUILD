@@ -14,6 +14,7 @@ filegroup(
     srcs = glob(["**"]) + [
         "//images/basic:sources",
         "//images/benchmarks/bun-spawn:sources",
+        "//images/benchmarks/profile-helper:sources",
         "//images/compatibility:sources",
         "//images/gpu/ollama/client:sources",
     ],
@@ -40,13 +41,11 @@ pkg_files(
     srcs = [
         ":cuda_12_8_run_sample",
         ":cuda_run_sample",
-        "//images/gpu/ollama/client",
     ],
     attributes = pkg_attributes(mode = "0755"),
     renames = {
         ":cuda_run_sample": "gpu/cuda-tests/run_sample",
         ":cuda_12_8_run_sample": "gpu/cuda-tests-12-8/run_sample",
-        "//images/gpu/ollama/client": "gpu/ollama/client/client",
     },
 )
 
@@ -81,11 +80,17 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-image_outputs(
-    name = "benchmark_alpine",
-    image = select({
+alias(
+    name = "alpine_base",
+    actual = select({
         "@platforms//cpu:aarch64": "@benchmark_alpine_arm64",
         "@platforms//cpu:x86_64": "@benchmark_alpine_amd64",
     }),
+    visibility = ["//images:__subpackages__"],
+)
+
+image_outputs(
+    name = "benchmark_alpine",
+    image = ":alpine_base",
     image_name = "benchmarks/alpine",
 )
