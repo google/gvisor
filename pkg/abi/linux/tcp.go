@@ -56,6 +56,10 @@ const (
 
 // Socket constants from include/net/tcp.h.
 const (
+	// TCP_CA_NAME_MAX is the size of a congestion control algorithm's name,
+	// including the terminating NUL.
+	TCP_CA_NAME_MAX = 16
+
 	MAX_TCP_KEEPIDLE  = 32767
 	MAX_TCP_KEEPINTVL = 32767
 	MAX_TCP_KEEPCNT   = 127

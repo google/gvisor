@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -40,6 +41,8 @@ type TestStack struct {
 	TCPSendBufSize               TCPBufferSize
 	TCPSACKFlag                  bool
 	Recovery                     TCPLossRecovery
+	AvailableCongestionControl   []string
+	CongestionControl            string
 	IPForwarding                 bool
 	AllowExternalLoopbackTraffic bool
 	IPv6KeepAddrOnDownFlag       bool
@@ -168,6 +171,25 @@ func (s *TestStack) TCPRecovery() (TCPLossRecovery, error) {
 // SetTCPRecovery implements Stack.
 func (s *TestStack) SetTCPRecovery(recovery TCPLossRecovery) error {
 	s.Recovery = recovery
+	return nil
+}
+
+// TCPAvailableCongestionControl implements Stack.
+func (s *TestStack) TCPAvailableCongestionControl() ([]string, error) {
+	return s.AvailableCongestionControl, nil
+}
+
+// TCPCongestionControl implements Stack.
+func (s *TestStack) TCPCongestionControl() (string, error) {
+	return s.CongestionControl, nil
+}
+
+// SetTCPCongestionControl implements Stack.
+func (s *TestStack) SetTCPCongestionControl(name string) error {
+	if !slices.Contains(s.AvailableCongestionControl, name) {
+		return linuxerr.ENOENT
+	}
+	s.CongestionControl = name
 	return nil
 }
 

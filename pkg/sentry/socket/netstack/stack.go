@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -1113,6 +1114,31 @@ func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 // SetTCPRecovery implements inet.Stack.SetTCPRecovery.
 func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
 	opt := tcpip.TCPRecovery(recovery)
+	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)).ToError()
+}
+
+// TCPAvailableCongestionControl implements
+// inet.Stack.TCPAvailableCongestionControl.
+func (s *Stack) TCPAvailableCongestionControl() ([]string, error) {
+	var avail tcpip.TCPAvailableCongestionControlOption
+	if err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &avail); err != nil {
+		return nil, syserr.TranslateNetstackError(err).ToError()
+	}
+	return strings.Fields(string(avail)), nil
+}
+
+// TCPCongestionControl implements inet.Stack.TCPCongestionControl.
+func (s *Stack) TCPCongestionControl() (string, error) {
+	var cc tcpip.CongestionControlOption
+	if err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+		return "", syserr.TranslateNetstackError(err).ToError()
+	}
+	return string(cc), nil
+}
+
+// SetTCPCongestionControl implements inet.Stack.SetTCPCongestionControl.
+func (s *Stack) SetTCPCongestionControl(name string) error {
+	opt := tcpip.CongestionControlOption(name)
 	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)).ToError()
 }
 
