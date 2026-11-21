@@ -181,33 +181,20 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 		return
 	}
 
-	// Keep needed information before trimming header.
-	p := tcpip.TransportProtocolNumber(hdr.NextHeader())
-	dstAddr := hdr.DestinationAddress()
-
-	// Skip the IP header, then handle the fragmentation header if there
-	// is one.
-	if _, ok := pkt.Data().Consume(header.IPv6MinimumSize); !ok {
-		panic("could not consume IPv6MinimumSize bytes")
+	// The quoted payload may be truncated, but all extension headers before the
+	// transport header must be present. Non-initial fragments have no transport
+	// header to deliver.
+	payload := pkt.Data().ToBuffer()
+	payload.TrimFront(header.IPv6MinimumSize)
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(hdr.NextHeader()), payload)
+	defer it.Release()
+	p, offset, ok := it.TransportHeader()
+	if !ok {
+		return
 	}
-	if p == header.IPv6FragmentHeader {
-		f, ok := pkt.Data().PullUp(header.IPv6FragmentHeaderSize)
-		if !ok {
-			return
-		}
-		fragHdr := header.IPv6Fragment(f)
-		if !fragHdr.IsValid() || fragHdr.FragmentOffset() != 0 {
-			// We can't handle fragments that aren't at offset 0
-			// because they don't have the transport headers.
-			return
-		}
-		p = fragHdr.TransportProtocol()
-
-		// Skip fragmentation header and find out the actual protocol
-		// number.
-		if _, ok := pkt.Data().Consume(header.IPv6FragmentHeaderSize); !ok {
-			panic("could not consume IPv6FragmentHeaderSize bytes")
-		}
+	dstAddr := hdr.DestinationAddress()
+	if _, ok := pkt.Data().Consume(int(offset)); !ok {
+		panic("could not consume parsed IPv6 headers")
 	}
 
 	e.dispatcher.DeliverTransportError(srcAddr, dstAddr, ProtocolNumber, p, transErr, pkt)
