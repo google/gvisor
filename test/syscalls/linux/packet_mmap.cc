@@ -625,10 +625,22 @@ TEST(PacketMmapTest, PacketReserve) {
       .tp_frame_nr = tp_frame_nr,
   };
 
+  auto expect_reserve = [&](int expected) {
+    int value = -1;
+    socklen_t len = sizeof(value);
+    ASSERT_THAT(
+        getsockopt(mmap_sock.get(), SOL_PACKET, PACKET_RESERVE, &value, &len),
+        SyscallSucceeds());
+    EXPECT_EQ(len, sizeof(value));
+    EXPECT_EQ(value, expected);
+  };
+  expect_reserve(0);
+
   int reserve = 20;
   ASSERT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_RESERVE, &reserve,
                          sizeof(reserve)),
               SyscallSucceeds());
+  expect_reserve(reserve);
   void* ring = ASSERT_NO_ERRNO_AND_VALUE(MakePacketMmapRing(
       mmap_sock.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
       sizeof(bind_addr), &req, TPACKET_V2));
