@@ -120,38 +120,26 @@ def _deps_test_impl(ctx):
             if len(bad_deps) > 0:
                 nodes[node_target] = bad_deps
 
-    # If there aren't any violations, write a passing test.
-    if len(nodes) == 0:
-        ctx.actions.write(
-            output = ctx.outputs.executable,
-            content = "#!/bin/bash\n\nexit 0\n",
-        )
-        return []
+    message = ""
+    if nodes:
+        lines = [
+            "Invalid dependencies found. If you're sure you want to add dependencies,",
+            "modify this target.",
+            "",
+        ]
+        for target, deps in nodes.items():
+            lines.append("%s depends on:" % target.label)
+            lines.extend(["\t%s" % dep.label for dep in deps])
+        message = "\n".join(lines) + "\n"
 
-    # If we're here, we've found at least one violation.
-    script_lines = [
-        "#!/bin/bash",
-        "echo Invalid dependencies found. If you\\'re sure you want to add dependencies,",
-        "echo modify this target.",
-        "echo",
-    ]
-
-    # List the violations.
-    for target, deps in nodes.items():
-        script_lines.append(
-            'echo "{target} depends on:"'.format(target = target.label),
-        )
-        for dep in deps:
-            script_lines.append('echo "\t{dep}"'.format(dep = dep.label))
-
-    # The test must fail.
-    script_lines.append("exit 1\n")
-
-    ctx.actions.write(
-        output = ctx.outputs.executable,
-        content = "\n".join(script_lines),
-    )
-    return []
+    executable = ctx.outputs.executable
+    report = ctx.actions.declare_file(executable.basename + ".report", sibling = executable)
+    ctx.actions.write(report, message)
+    ctx.actions.symlink(output = executable, target_file = ctx.executable._reporter, is_executable = True)
+    return [DefaultInfo(
+        executable = executable,
+        runfiles = ctx.runfiles(files = [report]).merge(ctx.attr._reporter[DefaultInfo].default_runfiles),
+    )]
 
 # Checks that targets only depend on an allowlist of other targets. Targets can
 # be specified directly, or prefixes can be used to allow entire packages or
@@ -183,6 +171,11 @@ deps_test = rule(
                   "covered by allowed or allowed_prefixes. Makes " +
                   "'never add these' possible to be defined explicitly in " +
                   "the BUILD file.",
+        ),
+        "_reporter": attr.label(
+            default = "//tools/deps:report",
+            executable = True,
+            cfg = "target",
         ),
     },
     test = True,
