@@ -1,0 +1,31 @@
+# Patch files to make them ARM-compatible:
+# https://github.com/giltene/wrk2/pull/110 fixes the option parser.
+# The histogram implementation also includes zlib.h without using zlib.
+
+diff --git a/src/hdr_histogram.c b/src/hdr_histogram.c
+--- a/src/hdr_histogram.c
++++ b/src/hdr_histogram.c
+@@ -10 +9,0 @@
+-#include <x86intrin.h>
+@@ -15 +13,0 @@
+-#include <zlib.h>
+diff --git a/src/script.c b/src/script.c
+--- a/src/script.c
++++ b/src/script.c
+@@ -30 +30 @@
+-static const struct luaL_reg addrlib[] = {
++static const struct luaL_Reg addrlib[] = {
+@@ -36 +36 @@
+-static const struct luaL_reg statslib[] = {
++static const struct luaL_Reg statslib[] = {
+@@ -42 +42 @@
+-static const struct luaL_reg threadlib[] = {
++static const struct luaL_Reg threadlib[] = {
+
+diff --git a/src/wrk.c b/src/wrk.c
+--- a/src/wrk.c
++++ b/src/wrk.c
+@@ -711 +711,2 @@
+-    char c, **header = headers;
++    char **header = headers;
++    int c;
