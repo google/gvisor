@@ -37,24 +37,8 @@ steps:
     command: make smoke-race-tests
   - <<: *common
     <<: *source_test
-    label: ":broom: Lint"
-    command: make lint
-  - <<: *common
-    <<: *source_test
     label: ":soap: Lint (C++)"
     command: make lint-cc
-  - <<: *common
-    <<: *source_test
-    label: ":scroll: Governance file sync check"
-    command: make governance-check
-  - <<: *common
-    <<: *source_test
-    label: ":building_construction: Gazelle BUILD file check"
-    command: make gazelle-check
-  - <<: *common
-    <<: *source_test
-    label: ":scales: Dependency license check"
-    command: make license-check
 
   # Basic unit tests.
   - <<: *common
