@@ -89,12 +89,7 @@ PosixErrorOr<std::set<std::string>> DumpLinkNames() {
 
 PosixErrorOr<Link> GetLinkByName(const std::string& name) {
   ASSIGN_OR_RETURN_ERRNO(auto links, DumpLinks());
-  for (const auto& link : links) {
-    if (link.name == name) {
-      return link;
-    }
-  }
-  return PosixError(ENOENT, "interface not found");
+  return FindLinkByName(links, name);
 }
 
 struct ping_ip_pkt {
