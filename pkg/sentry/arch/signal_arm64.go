@@ -113,15 +113,18 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	// Adjust the code.
 	info.FixSignalCodeForUser()
 
-	// Set up the stack frame.
-	if _, err := info.CopyOut(st, StackBottomMagic); err != nil {
-		return err
-	}
-	infoAddr := st.Bottom
+	// Set up the stack frame: siginfo at the new stack pointer, then the
+	// ucontext, in the same order as Linux. Unwinders use this order to find
+	// the interrupted registers when they step through the sigreturn
+	// trampoline.
 	if _, err := uc.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
 	ucAddr := st.Bottom
+	if _, err := info.CopyOut(st, StackBottomMagic); err != nil {
+		return err
+	}
+	infoAddr := st.Bottom
 
 	// Set up registers.
 	c.Regs.Sp = uint64(st.Bottom)
@@ -164,12 +167,12 @@ func (regs *Registers) validRegs() bool {
 // SignalRestore implements Context.SignalRestore.
 func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error) {
 	// Copy out the stack frame.
-	var uc UContext64
-	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
-		return 0, linux.SignalStack{}, err
-	}
 	var info linux.SignalInfo
 	if _, err := info.CopyIn(st, StackBottomMagic); err != nil {
+		return 0, linux.SignalStack{}, err
+	}
+	var uc UContext64
+	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, linux.SignalStack{}, err
 	}
 
