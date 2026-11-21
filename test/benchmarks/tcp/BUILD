@@ -15,6 +15,7 @@ go_binary(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/rand",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/link/fdbased",
