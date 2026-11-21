@@ -69,6 +69,9 @@ const (
 	SIOCSPGRP   = 0x00008902
 	FIOGETOWN   = 0x00008903
 	SIOCGPGRP   = 0x00008904
+
+	TIOCGLCKTRMIOS = 0x00005456
+	TIOCSLCKTRMIOS = 0x00005457
 )
 
 // ioctl(2) requests provided by uapi/linux/sockios.h

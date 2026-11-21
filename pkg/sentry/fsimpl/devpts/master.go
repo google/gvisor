@@ -159,6 +159,10 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		// N.B. TCGETS on the master actually returns the configuration
 		// of the replica end.
 		return mfd.t.ld.getTermios(t, args)
+	case linux.TIOCGLCKTRMIOS:
+		return mfd.t.ld.getLockedTermios(t, args)
+	case linux.TIOCSLCKTRMIOS:
+		return mfd.t.ld.setLockedTermios(t, args)
 	case linux.TCGETS2:
 		return mfd.t.ld.getTermios2(t, args)
 	case linux.TCSETS,
