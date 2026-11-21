@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -24,6 +24,17 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "socket_test",
+    size = "small",
+    srcs = ["socket_test.go"],
+    embed = [":socket"],
+    deps = [
+        "//pkg/abi/linux",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
