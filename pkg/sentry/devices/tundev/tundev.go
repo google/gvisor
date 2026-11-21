@@ -106,7 +106,13 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 				ctx.Warningf("Unsupported tun flags: %x", linuxFlags)
 			}
 		}
-		return 0, fd.device.SetIff(ctx, stack.Stack, req.Name(), flags)
+		req.IFName[len(req.IFName)-1] = 0
+		if err := fd.device.SetIff(ctx, stack.Stack, req.Name(), flags); err != nil {
+			return 0, err
+		}
+		req.SetName(fd.device.Name())
+		_, err = req.CopyOut(t, data)
+		return 0, err
 
 	case linux.TUNSETPERSIST:
 		v := args[2].Uint()
@@ -114,7 +120,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 
 	case linux.TUNGETIFF:
 		var req linux.IFReq
-		copy(req.IFName[:], fd.device.Name())
+		req.SetName(fd.device.Name())
 		hostarch.ByteOrder.PutUint16(req.Data[:], netstack.TUNFlagsToLinux(fd.device.Flags()))
 		_, err := req.CopyOut(t, data)
 		return 0, err
