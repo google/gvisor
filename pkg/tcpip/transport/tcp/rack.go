@@ -426,6 +426,11 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd + clockResolution
 			if timeRemaining < 0 || (timeRemaining == 0 && clockResolution == 0) {
 				seg.lost = true
+				if rc.snd.inRecovery() && rc.snd.spuriousRecovery {
+					// Eifel judged the earlier retransmission. It cannot undo
+					// the congestion response for this newly detected loss.
+					rc.snd.pipePrev = 0
+				}
 				numLost++
 			} else {
 				// Arm the timer through the uncertainty boundary, so that a timer
@@ -492,6 +497,7 @@ func (rc *rackControl) recover(retransmitHead bool) {
 		if next != snd.writeNext {
 			snd.updateWriteNext(next)
 		}
+		snd.capturePipePrev()
 		snd.cc.HandleLossDetected()
 		snd.enterRecovery()
 		// Unlike three duplicate ACKs, a RACK loss can be anywhere in the
