@@ -119,7 +119,8 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 
 		// We don't match fragments.
 		if frag := netHeader.FragmentOffset(); frag != 0 {
-			if frag == 1 {
+			// As in Linux's tcp_mt() (net/netfilter/xt_tcpudp.c), drop offset 1 (8 bytes).
+			if frag == 8 {
 				return false, true
 			}
 			return false, false
