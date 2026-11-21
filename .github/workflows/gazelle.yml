@@ -4,11 +4,10 @@ name: Gazelle
 
 "on":
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
+      - "release/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
