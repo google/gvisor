@@ -571,6 +571,38 @@ TEST(SemaphoreTest, SemCtlGetPidFork) {
               SyscallSucceedsWithValue(child_pid));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << " status " << status;
+  EXPECT_THAT(semctl(sem.get(), 0, GETPID),
+              SyscallSucceedsWithValue(child_pid));
+}
+
+TEST(SemaphoreTest, SemCtlGetPidAcrossPidNamespaces) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+  ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 0), SyscallSucceeds());
+
+  // Each child is PID 1 in its own namespace. Neither can see the previous
+  // writer: the parent for the first child, its sibling for the second.
+  for (bool write : {true, false}) {
+    const pid_t child = syscall(SYS_clone, CLONE_NEWPID | SIGCHLD, 0, 0, 0, 0);
+    if (child == 0) {
+      TEST_CHECK(semctl(sem.get(), 0, GETPID) == 0);
+      if (write) {
+        TEST_PCHECK(semctl(sem.get(), 0, SETVAL, 1) == 0);
+        TEST_CHECK(semctl(sem.get(), 0, GETPID) == getpid());
+      }
+      _exit(0);
+    }
+    ASSERT_THAT(child, SyscallSucceeds());
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+    ASSERT_EQ(status, 0);
+    if (write) {
+      EXPECT_THAT(semctl(sem.get(), 0, GETPID),
+                  SyscallSucceedsWithValue(child));
+    }
+  }
 }
 
 TEST(SemaphoreTest, SemIpcSet) {

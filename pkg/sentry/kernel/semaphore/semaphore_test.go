@@ -27,7 +27,7 @@ import (
 
 func executeOps(ctx context.Context, t *testing.T, set *Set, ops []linux.Sembuf, block bool) chan struct{} {
 	set.mu.Lock()
-	ch, _, err := set.executeOps(ctx, ops, 123)
+	ch, _, err := set.executeOps(ctx, ops, nil)
 	set.mu.Unlock()
 	if err != nil {
 		t.Fatalf("ExecuteOps(ops) failed, err: %v, ops: %+v", err, ops)
@@ -128,13 +128,13 @@ func TestNoWait(t *testing.T) {
 	ops[0].SemFlg = linux.IPC_NOWAIT
 	set.mu.Lock()
 	defer set.mu.Unlock()
-	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
+	if _, _, err := set.executeOps(ctx, ops, nil); err != linuxerr.ErrWouldBlock {
 		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
 
 	ops[0].SemOp = 0
 	ops[0].SemFlg = linux.IPC_NOWAIT
-	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
+	if _, _, err := set.executeOps(ctx, ops, nil); err != linuxerr.ErrWouldBlock {
 		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
 }

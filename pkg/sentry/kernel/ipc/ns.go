@@ -20,3 +20,29 @@ type contextID int
 // We define it here because it's needed in several packages, and is not
 // possible to use otherwise without causing a circular dependency.
 const CtxIPCNamespace contextID = iota
+
+// PID records a process's number in each PID namespace where it is visible.
+// Namespace inode numbers survive checkpoint and do not keep exited processes
+// or their namespaces alive.
+//
+// +stateify savable
+type PID struct {
+	namespaceIno uint64
+	number       int32
+	next         *PID
+}
+
+// WithNumber returns a snapshot that also includes number in namespaceIno.
+func (pid *PID) WithNumber(namespaceIno uint64, number int32) *PID {
+	return &PID{namespaceIno: namespaceIno, number: number, next: pid}
+}
+
+// In returns the PID visible in namespaceIno, or zero if none is visible.
+func (pid *PID) In(namespaceIno uint64) int32 {
+	for ; pid != nil; pid = pid.next {
+		if pid.namespaceIno == namespaceIno {
+			return pid.number
+		}
+	}
+	return 0
+}
