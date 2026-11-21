@@ -120,7 +120,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 	if opts.ExitAfterSaving {
 		defer k.Kill(linux.WaitStatusExit(0)) // consistent with sentry/state.SaveOpts.Save
 	}
-	return k.quiescePausedAnd(ctx, func() error {
+	return k.quiescePausedAnd(func() error {
 		for i := range opts.Bundles {
 			if err := k.fsSaveLocked(ctx, &opts.Bundles[i], opts.RunscVersion, nil /* mfsToSave */, nil /* matchCtx */); err != nil {
 				return fmt.Errorf("bundle %d: %w", i, err)
