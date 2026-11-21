@@ -3674,7 +3674,6 @@ func TestOCISeccompErrnoRet(t *testing.T) {
 	}
 
 	spec, conf := sleepSpecConf(t)
-	conf.OCISeccomp = true
 
 	// getsid(2) and getpgid(2) are both fully implemented by the sentry and
 	// are not on the Go runtime's startup path, so the only way test_app can
