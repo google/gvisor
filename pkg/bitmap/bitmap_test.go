@@ -413,3 +413,84 @@ func TestGrow(t *testing.T) {
 		t.Errorf("Grow() got: %v, want: %v", bitmap.ToSlice(), want)
 	}
 }
+
+// Verify FlipRange and ClearRange for ranges that end at the last bit of the
+// bitmap.
+func TestRangeToBitmapEnd(t *testing.T) {
+	const size = 256
+	check := func(t *testing.T, bitmap *Bitmap, begin, end uint32) {
+		t.Helper()
+		want := make([]uint32, 0)
+		for i := begin; i < end; i++ {
+			want = append(want, i)
+		}
+		if got := bitmap.ToSlice(); !slices.Equal(got, want) {
+			t.Errorf("ToSlice() got: %v, wanted: %v", got, want)
+		}
+		if got := bitmap.GetNumOnes(); got != uint32(len(want)) {
+			t.Errorf("GetNumOnes() got: %v, wanted: %v", got, len(want))
+		}
+	}
+
+	t.Run("FlipRange", func(t *testing.T) {
+		bitmap := New(size)
+		bitmap.FlipRange(192, size)
+		check(t, &bitmap, 192, size)
+	})
+	t.Run("ClearRange", func(t *testing.T) {
+		bitmap := New(size)
+		for i := uint32(192); i < size; i++ {
+			bitmap.Add(i)
+		}
+		bitmap.ClearRange(200, size)
+		check(t, &bitmap, 192, 200)
+	})
+}
+
+// Verify that FlipRange and ClearRange do not change the bitmap for empty
+// ranges.
+func TestEmptyRange(t *testing.T) {
+	// size is a multiple of 64, so New(size).Size() == size.
+	const size = 256
+	tests := []struct {
+		name  string
+		begin uint32
+		end   uint32
+	}{
+		{"at 0", 0, 0},
+		{"within one bitBlock", 10, 10},
+		{"at bitBlock boundary", 64, 64},
+		{"at end of bitmap", size, size},
+		{"begin after end", 130, 65},
+	}
+	ops := []struct {
+		name string
+		fn   func(b *Bitmap, begin, end uint32)
+	}{
+		{"FlipRange", (*Bitmap).FlipRange},
+		{"ClearRange", (*Bitmap).ClearRange},
+	}
+
+	for _, op := range ops {
+		op := op
+		t.Run(op.name, func(t *testing.T) {
+			for _, tt := range tests {
+				tt := tt
+				t.Run(tt.name, func(t *testing.T) {
+					bitmap := New(size)
+					for i := uint32(0); i < size; i += 3 {
+						bitmap.Add(i)
+					}
+					want := bitmap.ToSlice()
+					op.fn(&bitmap, tt.begin, tt.end)
+					if got := bitmap.ToSlice(); !slices.Equal(got, want) {
+						t.Errorf("%s(%d, %d) got: %v, wanted: %v", op.name, tt.begin, tt.end, got, want)
+					}
+					if got := bitmap.GetNumOnes(); got != uint32(len(want)) {
+						t.Errorf("%s(%d, %d): GetNumOnes() got: %v, wanted: %v", op.name, tt.begin, tt.end, got, len(want))
+					}
+				})
+			}
+		})
+	}
+}
