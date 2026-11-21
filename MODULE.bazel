@@ -400,10 +400,12 @@ register_toolchains("//:cc_toolchain_aarch64")
 ### Go
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.from_file(
+    name = "go_sdk",
     go_mod = "//:go.mod",
     patch_strip = 1,
     patches = ["//tools:go_types_memoize.patch"],
 )
+use_repo(go_sdk, "go_sdk")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")

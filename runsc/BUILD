@@ -164,7 +164,7 @@ go_cov(
         "//:go.sum",
         "//:gopath",
         "//tools:build_cover.sh",
-        "//tools:go-allow-internal.patch",
+        "//tools:go_cover_toolchain",
     ],
     outs = ["runsc_cov"],
     cmd =
@@ -174,7 +174,7 @@ go_cov(
         "\"$(location //:go.mod)\" " +
         "\"$(location //:go.sum)\" " +
         "\"$(location main.go)\" " +
-        "\"$(location //tools:go-allow-internal.patch)\" " +
+        "\"$(location //tools:go_cover_toolchain)\" " +
         "\"false\" ",
     tags = ["manual"],
     visibility = ["//debian:__pkg__"],
@@ -188,7 +188,7 @@ go_cov(
         "//:go.sum",
         "//:gopath",
         "//tools:build_cover.sh",
-        "//tools:go-allow-internal.patch",
+        "//tools:go_cover_toolchain",
     ],
     outs = ["runsc_race_cov"],
     cmd =
@@ -198,7 +198,7 @@ go_cov(
         "\"$(location //:go.mod)\" " +
         "\"$(location //:go.sum)\" " +
         "\"$(location main.go)\" " +
-        "\"$(location //tools:go-allow-internal.patch)\" " +
+        "\"$(location //tools:go_cover_toolchain)\" " +
         "\"true\" ",
     tags = ["manual"],
     visibility = ["//debian:__pkg__"],
