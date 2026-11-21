@@ -75,6 +75,9 @@ func main() {
 		spec.Linux = &specs.Linux{}
 	}
 
+	// Enable ICMP sockets, as the native DUT does.
+	spec.Linux.Sysctl = map[string]string{"net.ipv4.ping_group_range": "0 0"}
+
 	// Use the DUT namespace which is the current namespace's.
 	spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{
 		Type: "network",
