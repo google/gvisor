@@ -3751,6 +3751,57 @@ func TestOCISeccompErrnoRet(t *testing.T) {
 	}
 }
 
+// TestOCISeccompKillProcess checks that an OCI seccomp profile can kill the
+// process that makes a syscall.
+func TestOCISeccompKillProcess(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	spec, conf := sleepSpecConf(t)
+	conf.OCISeccomp = true
+	spec.Linux = &specs.Linux{
+		Seccomp: &specs.LinuxSeccomp{
+			DefaultAction: specs.ActAllow,
+			Syscalls: []specs.LinuxSyscall{
+				{
+					Names:  []string{"getsid"},
+					Action: specs.ActKillProcess,
+				},
+			},
+		},
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	ws, err := execute(conf, cont, app, "syscall", "--syscall="+strconv.Itoa(unix.SYS_GETSID))
+	if err != nil {
+		t.Fatalf("error executing test_app: %v", err)
+	}
+	if !ws.Signaled() || ws.Signal() != unix.SIGSYS {
+		t.Errorf("test_app wait status: got %#x, want killed by SIGSYS", uint32(ws))
+	}
+}
+
 func TestWaitOnExitedSandbox(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {

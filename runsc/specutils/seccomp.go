@@ -24,6 +24,8 @@ func knownSeccompActions() []string {
 	// LINT.IfChange
 	return []string{
 		string(specs.ActKill),
+		string(specs.ActKillProcess),
+		string(specs.ActKillThread),
 		string(specs.ActTrap),
 		string(specs.ActErrno),
 		string(specs.ActTrace),
