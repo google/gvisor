@@ -4144,7 +4144,6 @@ func TestMultiContainerExecSeccomp(t *testing.T) {
 
 	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
-	conf.OCISeccomp = true
 
 	testSpecs, ids := createSpecs(sleepCmd, sleepCmd)
 
