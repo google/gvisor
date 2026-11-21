@@ -132,6 +132,19 @@ type TSCAdjustablePlatform interface {
 	TSCFrequency() (uint64, bool)
 }
 
+// RestorablePlatform is an optional interface that may be implemented by a
+// Platform that a restore can reuse instead of creating a new Platform.
+type RestorablePlatform interface {
+	// PrepareRestore prepares the platform to run restored applications whose
+	// guest TSC is offset by tscOffset host TSC cycles (see
+	// TSCAdjustablePlatform). It returns false if the platform can't be
+	// reused, e.g. because it already ran application code; the caller must
+	// then create a new Platform.
+	//
+	// PrepareRestore must be called before seccomp filters are installed.
+	PrepareRestore(tscOffset uint64) (bool, error)
+}
+
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
 // dependent methods for Platforms that do not support this feature.
 type NoCPUPreemptionDetection struct{}

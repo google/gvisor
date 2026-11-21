@@ -57,6 +57,13 @@ const (
 	poolPCIDs = 128
 )
 
+// resetTSCOffset applies a guest TSC offset to a machine that was created
+// without one, so that a restore can reuse it. This is not implemented on
+// arm64: it always returns false, and restores create a new machine.
+func (m *machine) resetTSCOffset(uint64) (bool, error) {
+	return false, nil
+}
+
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	// Stop one page short so the end address (addr + length) of the last
 	// upper-half page (0xfffffffffffff000) does not overflow a 64-bit uint.

@@ -393,7 +393,7 @@ func (r *restorer) restore(l *Loader) error {
 	r.timer.Reached("specs validated")
 
 	tscOffset, willJumpBackwards := r.computeTSCOffset()
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
+	p, err := r.platformForRestore(l, tscOffset)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -790,6 +790,37 @@ func (r *restorer) calculateWallTimeSavings(s *sentryapi.Savings) error {
 	s.WallTimeSaved = savedWt - wt
 	log.Infof("Walltime saved with restore: %v ms, restore walltime: %v ms", s.WallTimeSaved.Milliseconds(), wt.Milliseconds())
 	return nil
+}
+
+// platformForRestore returns the platform to restore the kernel into.
+//
+// It reuses the platform of the kernel that the sandbox booted with if the
+// platform supports it: that kernel never ran application code, and creating a
+// platform is on the critical path of restore (e.g. the KVM platform creates a
+// VM and its pool of vCPUs before seccomp filters are installed). Otherwise, it
+// creates a new platform.
+func (r *restorer) platformForRestore(l *Loader, tscOffset uint64) (platform.Platform, error) {
+	if l.k != nil {
+		if rp, ok := l.k.Platform.(platform.RestorablePlatform); ok {
+			reused, err := rp.PrepareRestore(tscOffset)
+			if err != nil {
+				log.Warningf("Failed to reuse the platform for restore, creating a new one: %v", err)
+			} else if reused {
+				if err := setPlatformTSCOffset(l.root.conf.Platform, l.k.Platform); err != nil {
+					return nil, err
+				}
+				// The new platform would have used the device file.
+				if r.deviceFile != nil {
+					r.deviceFile.Close()
+					r.deviceFile = nil
+				}
+				log.Infof("Reusing platform %s for restore", l.root.conf.Platform)
+				r.timer.Reached("platform reused")
+				return l.k.Platform, nil
+			}
+		}
+	}
+	return createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
 }
 
 // computeTSCOffset returns the guest TSC offset to apply on restore, and whether

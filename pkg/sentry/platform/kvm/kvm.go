@@ -197,6 +197,9 @@ func (*KVM) DetectsCPUPreemption() bool {
 // PreemptAllCPUs implements platform.Platform.PreemptAllCPUs.
 func (k *KVM) PreemptAllCPUs() error {
 	for _, c := range k.machine.vCPUsByID {
+		if c == nil {
+			continue // Not created (see machine.createVCPUsAsync).
+		}
 		c.lastCtx.Store(nil)
 		c.BounceToHost()
 	}
@@ -206,6 +209,9 @@ func (k *KVM) PreemptAllCPUs() error {
 // PreemptCPU implements platform.Platform.PreemptCPU.
 func (k *KVM) PreemptCPU(cpu int32) error {
 	c := k.machine.vCPUsByID[cpu]
+	if c == nil {
+		return nil // Not created (see machine.createVCPUsAsync).
+	}
 	c.lastCtx.Store(nil)
 	c.BounceToHost()
 	return nil
@@ -223,6 +229,11 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 // TSCOffset implements platform.TSCAdjustablePlatform.
 func (k *KVM) TSCOffset() uint64 {
 	return k.machine.tscOffset
+}
+
+// PrepareRestore implements platform.RestorablePlatform.PrepareRestore.
+func (k *KVM) PrepareRestore(tscOffset uint64) (bool, error) {
+	return k.machine.resetTSCOffset(tscOffset)
 }
 
 // TSCFrequency implements platform.TSCAdjustablePlatform.

@@ -130,6 +130,7 @@ go_test(
         "kvm_amd64_test.go",
         "kvm_amd64_test.s",
         "kvm_arm64_test.go",
+        "kvm_restore_amd64_test.go",
         "kvm_safecopy_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
@@ -159,6 +160,7 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/platform/platformdesc",
         "//pkg/sentry/time",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -196,6 +198,7 @@ go_test(
         "kvm_amd64_test.go",
         "kvm_amd64_test.s",
         "kvm_arm64_test.go",
+        "kvm_restore_amd64_test.go",
         "kvm_safecopy_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
