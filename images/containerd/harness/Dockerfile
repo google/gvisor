@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH
-ARG CONTAINERD_MATRIX="1.7.31:v1.28.0 2.0.8:v1.32.0 2.1.7:v1.33.0 2.2.3:v1.34.0"
+ARG CONTAINERD_MATRIX="2.0.14:v1.32.0 2.3.7:v1.35.0 2.4.2:v1.37.0"
 
 RUN set -eux; \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}"; \

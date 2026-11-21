@@ -220,13 +220,13 @@ func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 		return 0, nil, t.MemoryManager().SetDontFork(addr, length, false)
 	case linux.MADV_DONTFORK:
 		return 0, nil, t.MemoryManager().SetDontFork(addr, length, true)
+	case linux.MADV_DONTDUMP:
+		return 0, nil, t.MemoryManager().SetDontDump(addr, length, true)
+	case linux.MADV_DODUMP:
+		return 0, nil, t.MemoryManager().SetDontDump(addr, length, false)
 	case linux.MADV_HUGEPAGE, linux.MADV_NOHUGEPAGE:
 		fallthrough
 	case linux.MADV_MERGEABLE, linux.MADV_UNMERGEABLE:
-		fallthrough
-	case linux.MADV_DONTDUMP, linux.MADV_DODUMP:
-		// TODO(b/72045799): Core dumping isn't implemented, so these are
-		// no-ops.
 		fallthrough
 	case linux.MADV_NORMAL, linux.MADV_RANDOM, linux.MADV_SEQUENTIAL, linux.MADV_WILLNEED:
 		// Do nothing, we totally ignore the suggestions above.

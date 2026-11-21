@@ -60,7 +60,7 @@ Next, build and run the container:
 
 ```bash
 # Clone the gVisor repository
-$ git clone https://github.com/google/gvisor.git
+$ git clone https://github.com/gvisor/gvisor.git
 $ cd gvisor
 
 # Build & run the systemd-ubuntu container in gVisor
@@ -435,7 +435,7 @@ chert@dev:~$
 A number of other popular services, including Apache, PostgreSQL, MariaDB,
 Redis, and Docker, have been tested to work under systemd in gVisor. These
 services are now a part of gVisor's
-[integration test suite](https://github.com/google/gvisor/blob/master/test/e2e/systemd_test.go).
+[integration test suite](https://github.com/gvisor/gvisor/blob/master/test/e2e/systemd_test.go).
 
 ## Sandboxed agentic desktop access
 
@@ -478,7 +478,7 @@ Build and run the GNOME image on the GPU instance:
 
 ```bash
 # Clone the gVisor repository
-$ git clone https://github.com/google/gvisor.git
+$ git clone https://github.com/gvisor/gvisor.git
 $ cd gvisor
 
 # Build & run the systemd-debian-gnome container in gVisor

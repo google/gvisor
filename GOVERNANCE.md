@@ -70,12 +70,12 @@ project and build trust in the community.
 ## Maintainers
 
 gVisor maintainers have approval authority on the
-[project GitHub repository](https://github.com/google/gvisor). They review and
+[project GitHub repository](https://github.com/gvisor/gvisor). They review and
 approve changes, and can assign issues and add additional reviewers. The current
 maintainers are listed in
-[MAINTAINERS.md](https://github.com/google/gvisor/tree/master/MAINTAINERS.md),
+[MAINTAINERS.md](https://github.com/gvisor/gvisor/tree/master/MAINTAINERS.md),
 which is generated from
-[`governance/maintainers.yaml`](https://github.com/google/gvisor/tree/master/governance/maintainers.yaml).
+[`governance/maintainers.yaml`](https://github.com/gvisor/gvisor/tree/master/governance/maintainers.yaml).
 Maintainers collectively manage the project's resources and contributors.
 
 Any maintainer may approve a change, regardless of their affiliation, and no
@@ -125,7 +125,7 @@ group. Where two candidates are comparably qualified, maintainers should prefer
 the candidate whose employer is less represented in the current roster.
 
 Maintainers who are selected will be added to
-[`governance/maintainers.yaml`](https://github.com/google/gvisor/tree/master/governance/maintainers.yaml),
+[`governance/maintainers.yaml`](https://github.com/gvisor/gvisor/tree/master/governance/maintainers.yaml),
 granted the necessary GitHub rights, and offered access to the project's private
 maintainer channels.
 
@@ -154,7 +154,7 @@ A maintainer who steps back from active participation is converted to
 Emeritus maintainers are recognized for their past contributions and may still
 be consulted on project matters, but do not have voting rights or merge access.
 Emeritus maintainers are listed in a separate section of
-[MAINTAINERS.md](https://github.com/google/gvisor/tree/master/MAINTAINERS.md).
+[MAINTAINERS.md](https://github.com/gvisor/gvisor/tree/master/MAINTAINERS.md).
 
 An emeritus maintainer may be reinstated to active maintainer status by a simple
 majority vote of existing maintainers, subject to
@@ -199,14 +199,14 @@ The project maintains the following channels:
     channel in the CNCF workspace, for user questions and general discussion.
 *   [#gvisor-dev](https://cloud-native.slack.com/archives/C0CCZ4S4V62): public
     Slack channel in the CNCF workspace, for development discussion.
-*   [GitHub issues](https://github.com/google/gvisor/issues): public bug reports
+*   [GitHub issues](https://github.com/gvisor/gvisor/issues): public bug reports
     and feature requests.
 *   [gvisor-security](mailto:gvisor-security@googlegroups.com): **private**
     security list. Access is restricted to maintainers of the core gVisor
     project, subject to the [security disclosure](#security-disclosure) policy
     below. It is private so that vulnerabilities can be fixed before they are
     disclosed publicly.
-*   [GitHub security advisories](https://github.com/google/gvisor/security/advisories):
+*   [GitHub security advisories](https://github.com/gvisor/gvisor/security/advisories):
     **private** vulnerability reporting via GitHub. Reports are visible only to
     the reporter and the Security Response Team until disclosed, subject to the
     [security disclosure](#security-disclosure) policy below.
@@ -309,9 +309,9 @@ organization voted.
 
 **Determining organization.** A maintainer's organization is their current
 employer as recorded in
-[`governance/maintainers.yaml`](https://github.com/google/gvisor/tree/master/governance/maintainers.yaml)
+[`governance/maintainers.yaml`](https://github.com/gvisor/gvisor/tree/master/governance/maintainers.yaml)
 and rendered in
-[MAINTAINERS.md](https://github.com/google/gvisor/tree/master/MAINTAINERS.md).
+[MAINTAINERS.md](https://github.com/gvisor/gvisor/tree/master/MAINTAINERS.md).
 Independent contractors and self-employed contributors are each treated as their
 own organization. Companies that own one another are treated as a single
 organization. If a maintainer's affiliation is unclear, the Maintainer Council

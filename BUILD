@@ -248,7 +248,6 @@ go_path(
         "//pkg/tcpip/sample/tun_tcp_echo",
         "//pkg/tcpip/transport/tcpconntrack",
         "//runsc/checkpointgofer/gcs",
-        "//runsc/cgoextras",
         "//runsc/coretagprime",
         "//runsc/gofer/net",
         "//runsc/metricserver",

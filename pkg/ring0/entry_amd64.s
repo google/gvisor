@@ -44,6 +44,10 @@
 #define _RFLAGS_IOPL0 4096 // +checkconst . _RFLAGS_IOPL0
 #define _KERNEL_FLAGS 2    // +checkconst . KernelFlagsSet
 
+// Selectors.
+#define _KCODE 16 // +checkconst . Kcode
+#define _KDATA 24 // +checkconst . Kdata
+
 // Vectors.
 #define DivideByZero               0 // +checkconst . DivideByZero
 #define Debug                      1 // +checkconst . Debug
@@ -686,7 +690,23 @@ exception_skip_gs:
 	MOVQ CX, CPU_ERROR_CODE(AX)           // Set error code.
 	MOVQ $1, CPU_ERROR_TYPE(AX)           // Set error type to user.
 	MOVQ BX, 32(SP)                       // Output vector.
+	CMPQ BX, $NMI
+	JE exception_user_nmi_iret
 	RET
+
+exception_user_nmi_iret:
+	// Delivering an NMI sets the CPU's architectural NMI-blocking latch,
+	// which remains set until IRET executes. Clear it before returning so
+	// subsequent NMIs in ring 0 (e.g. safecopy) or after SYSRET to user
+	// mode are not blocked.
+	POPQ AX                               // Return RIP (SP is now caller's SP).
+	MOVQ SP, CX                           // Target RSP after IRET.
+	PUSHQ $_KDATA                         // SS.
+	PUSHQ CX                              // RSP.
+	PUSHQ $_KERNEL_FLAGS                  // RFLAGS.
+	PUSHQ $_KCODE                         // CS.
+	PUSHQ AX                              // RIP.
+	IRET()
 
 kernel:
 	// As per above, we can save directly.

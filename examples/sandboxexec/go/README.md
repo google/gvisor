@@ -75,7 +75,7 @@ module.
 ### In the gVisor Source Tree (Bazel)
 
 If developing directly within the
-[gVisor repository](https://github.com/google/gvisor), put the sandbox code in a
+[gVisor repository](https://github.com/gvisor/gvisor), put the sandbox code in a
 `go_library`, so that a `go_test` can test it. Keep `main()` in a small
 `go_binary`:
 

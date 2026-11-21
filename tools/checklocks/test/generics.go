@@ -44,7 +44,7 @@ func (g *genericValueStruct[T]) setLocked(v T) {
 }
 
 // genericMapStruct is a minimal reproduction of generic guarded fields.
-// See https://github.com/google/gvisor/issues/10372 and #11671.
+// See https://github.com/gvisor/gvisor/issues/10372 and #11671.
 type genericMapStruct[K comparable] struct {
 	mu sync.Mutex
 	// +checklocks:mu

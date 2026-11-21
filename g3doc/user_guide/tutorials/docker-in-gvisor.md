@@ -22,7 +22,7 @@ network driver and the bridge network driver are tested and supported.
 
 -   `dockerd` inside gVisor needs to be executed with flags `--iptables=false
     --ip6tables=false` and additional network setup is needed, check
-    [images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
+    [images/basic/docker/start-dockerd.sh](https://github.com/gvisor/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
     for reference. With iptables disabled, `docker run --expose=` does not
     expose the port; if a nested container needs to expose ports, inside gVisor
     use `docker run --network=host`.
@@ -84,7 +84,7 @@ To run Docker in gVisor, you must use one of the following workarounds:
     containerd-snapshotter=false` to fall back to classic storage drivers.
 
 See
-[images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
+[images/basic/docker/start-dockerd.sh](https://github.com/gvisor/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
 as a reference implementation of how to handle these configurations at container
 startup.
 

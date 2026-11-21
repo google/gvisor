@@ -425,6 +425,20 @@ TEST_F(OpenTest, FileNotDirectory) {
               SyscallFailsWithErrno(ENOTDIR));
 }
 
+// A magic link to a file is refused by O_DIRECTORY and a trailing slash like
+// the file itself.
+TEST_F(OpenTest, MagicLinkToFileNotDirectory) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+  const std::string link = "/proc/self/fd/" + std::to_string(fd.get());
+  EXPECT_THAT(open(link.c_str(), O_RDONLY | O_DIRECTORY),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(open((link + "/").c_str(), O_RDONLY),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_NO_ERRNO(Open(link, O_RDONLY));
+}
+
 TEST_F(OpenTest, SymlinkDirectory) {
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   std::string link = NewTempAbsPath();

@@ -17,10 +17,8 @@ allowed.
 
 To submit a blog post, follow the steps below.
 
-1.  [Sign the Contributor License Agreements](https://gvisor.dev/contributing/)
-    if you have not yet done so.
 1.  Familiarize yourself with the Markdown format for the
-    [existing blog posts](https://github.com/google/gvisor/tree/master/website/blog).
+    [existing blog posts](https://github.com/gvisor/gvisor/tree/master/website/blog).
 1.  Write your blog post in a text editor of your choice.
 1.  (Optional) If you need help with markdown, check out
     [StakEdit](https://stackedit.io/app#) or read
@@ -31,6 +29,14 @@ To submit a blog post, follow the steps below.
     following way: *[BLOG] Your proposed title* , but don’t put the date in the
     file name. The blog reviewers will work with you on the final file name, and
     the date on which the blog will be published.
+1.  In the **Commit changes** dialog, sign off on your commit as described in
+    the
+    [Developer Certificate of Origin](https://gvisor.dev/contributing/#developer-certificate-of-origin)
+    section: add a `Signed-off-by: Your Name <email>` line to the extended
+    description. The email must be the commit author email. If the dialog shows
+    an email selector, use the selected email. If not, use the primary email in
+    your GitHub email settings. If you keep your email private, use your
+    `@users.noreply.github.com` email from the same page.
 1.  When you save the file, GitHub will walk you through the pull request (PR)
     process.
 1.  Send us a message on the
@@ -55,6 +61,51 @@ To submit a blog post, follow the steps below.
 
 -   Blogs with no content relevant to gVisor
 -   Vendor pitches
+
+## SVG diagrams
+
+Put a diagram in `website/_includes/<post-name>/` and embed it with a caption:
+
+```liquid
+{% include diagram.html src="my-post/flow.svg" caption="The request reaches the worker." %}
+```
+
+The include adds the frame, accessible label, and caption. The blog layout loads
+`assets/js/diagrams.js` once on pages with diagrams to pause animations offscreen
+and when the reader prefers reduced motion. Static diagrams use the same include.
+
+Use a `viewBox` so the SVG scales to the available width. Give paths and markers
+IDs that are unique across all diagrams on the page. The shared
+`website/_sass/diagrams.scss` supplies the site's colors and typography through
+these classes:
+
+| Classes | Purpose |
+| --- | --- |
+| `d-name`, `d-note`, `d-tag` | Names, supporting labels, and boundary labels |
+| `d-hot` | Accent-colored text |
+| `d-box`, `d-box-hot` | Component boxes |
+| `d-zone`, `d-ghost` | Filled boundaries and dashed outlines |
+| `d-cell`, `d-cell-hot` | Data blocks and chart bars |
+| `d-line`, `d-line-hot`, `d-dash` | Connections and dashed connections |
+| `d-head`, `d-head-hot` | Arrowheads |
+| `d-pulse` | Animated traffic dots |
+
+Put animated elements in a `<g class="d-moving">` group, which is hidden for
+readers who prefer reduced motion. Keep labels and connections outside that group
+so the explanation remains visible without animation. Use the SVGs in
+`website/_includes/tines-3b/` as examples.
+
+Feed readers do not receive the diagram stylesheet. For posts with these diagrams,
+add a default scoped to the generated post filename in `website/_config.yml` so
+the feed includes an excerpt and a link to the article:
+
+```yaml
+  - scope:
+      path: "_posts/YYYY-MM-DD-my-post.md"
+    values:
+      feed:
+        excerpt_only: true
+```
 
 ## Review Process
 

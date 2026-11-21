@@ -168,12 +168,13 @@ type MemoryManager struct {
 	// +checklocks:activeMu
 	hasPinned bool
 
-	// gsInUse is true if the application uses the GS register. Only Systrap
-	// cares about this, but it must be defined in mm to preserve the flag
-	// across save/restores.
+	// syscallPatchingDisabled indicates that the platform must not rewrite
+	// application syscall instructions, due to ptrace or application GS use.
+	// It is preserved across fork and restore because platform address spaces
+	// are not saved.
 	//
-	// gsInUse is protected by activeMu.
-	gsInUse bool
+	// +checklocks:activeMu
+	syscallPatchingDisabled bool
 
 	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
 	// until users becomes 0, at which point as becomes nil. Reads with a live
@@ -320,6 +321,9 @@ type vma struct {
 	// dontfork is the MADV_DONTFORK setting for this vma configured by madvise().
 	dontfork bool
 
+	// dontdump is the MADV_DONTDUMP setting for this vma configured by madvise().
+	dontdump bool
+
 	// eagerForkCopy is memmap.MMapOpts.EagerForkCopy.
 	// It tells if the vma should be copied on fork() instead of
 	// being marked for COW
@@ -369,6 +373,7 @@ func (v *vma) copy() vma {
 		growsDown:      v.growsDown,
 		isStack:        v.isStack,
 		dontfork:       v.dontfork,
+		dontdump:       v.dontdump,
 		eagerForkCopy:  v.eagerForkCopy,
 		sealed:         v.sealed,
 		mlockMode:      v.mlockMode,

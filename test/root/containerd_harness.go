@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	containerdVersion = flag.String("containerd_version", "2.2.3",
+	containerdVersion = flag.String("containerd_version", "2.4.2",
 		"containerd version to test against; must be baked into the harness image")
 	harnessImage = flag.String("harness_image", "containerd/harness",
 		"harness image, relative to images/")

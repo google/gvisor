@@ -2,7 +2,7 @@
 
 Status as of 2024-08-14: Completed. To get an overview of what was ultimately
 implemented, check out the
-[presentation here](https://github.com/google/gvisor/blob/master/g3doc/presentations/nvidia_tooling.pdf).
+[presentation here](https://github.com/gvisor/gvisor/blob/master/g3doc/presentations/nvidia_tooling.pdf).
 
 ## Overview
 

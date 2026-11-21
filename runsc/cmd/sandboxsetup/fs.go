@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -124,7 +125,11 @@ func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, erro
 	return base, nil
 }
 
-// AdjustMountOptions adds filesystem-specific gofer mount options.
+// AdjustMountOptions adds filesystem-specific gofer mount options. An option
+// is only added if opts does not already contain it, so callers may set these
+// options explicitly in the spec. This lets a checkpoint taken with a mount
+// source on one filesystem type be restored with the source on another type
+// and still pass restore spec validation.
 func AdjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
 	rv := make([]string, len(opts))
 	copy(rv, opts)
@@ -133,9 +138,10 @@ func AdjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 	if err := unix.Statfs(path, &statfs); err != nil {
 		return nil, err
 	}
+	log.Debugf("Mount %q is on filesystem type %#x", path, statfs.Type)
 	switch statfs.Type {
 	case unix.OVERLAYFS_SUPER_MAGIC:
-		rv = append(rv, "overlayfs_stale_read")
+		rv = appendMountOption(rv, "overlayfs_stale_read")
 	case unix.NFS_SUPER_MAGIC, unix.FUSE_SUPER_MAGIC:
 		// The gofer client implements remote file handle sharing for
 		// performance. However, remote filesystems like NFS and FUSE
@@ -144,9 +150,18 @@ func AdjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 		// close(2) syscall from being propagated to the host. Hence
 		// disable file handle sharing, so remote files are flushed
 		// correctly.
-		rv = append(rv, "disable_file_handle_sharing")
+		rv = appendMountOption(rv, "disable_file_handle_sharing")
 	}
 	return rv, nil
+}
+
+// appendMountOption returns opts with opt appended, unless opts already
+// contains opt.
+func appendMountOption(opts []string, opt string) []string {
+	if slices.Contains(opts, opt) {
+		return opts
+	}
+	return append(opts, opt)
 }
 
 // WaitForFD waits for the other end of a given FD to be closed.

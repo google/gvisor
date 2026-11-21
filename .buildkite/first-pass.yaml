@@ -15,8 +15,6 @@ _templates:
       <<: *retry_settings
   source_test: &source_test
     if: build.env("STAGED_BINARIES") == null
-  source_test_presubmit: &source_test_presubmit
-    if: build.env("STAGED_BINARIES") == null && build.branch != "master"
   docker: &docker
     env:
       BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
@@ -26,11 +24,7 @@ env:
 
 priority: ${PRIORITY:-0}
 
-agents:
-  queue: "untrusted"
-
 steps:
-  # Run smoke tests before the other tests.
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (AMD64)"
@@ -41,13 +35,6 @@ steps:
       GLIBC_TUNABLES: glibc.pthread.rseq=0
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
-
-  # Run the remaining tests only if the smoke tests pass, so that a change
-  # that does not build or start does not use the other agents (presubmits
-  # only).
-  - wait: ~
-    if: build.branch != "master"
-
   - <<: *common
     <<: *source_test
     label: ":broom: Lint"

@@ -1002,6 +1002,11 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, linuxerr.EEXIST
 		}
+		// The start is a file if the path ends at the root of a file bind
+		// mount or at a magic link to a file.
+		if rp.MustBeDir() && !start.isDir() {
+			return nil, linuxerr.ENOTDIR
+		}
 		if !start.inode.cachedMetadataAuthoritative() {
 			// Refresh dentry's attributes before opening.
 			if err := start.inode.updateMetadata(ctx); err != nil {

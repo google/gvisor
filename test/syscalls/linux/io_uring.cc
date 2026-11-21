@@ -60,7 +60,7 @@ bool IOUringAvailable() {
   // io_uring is relatively new and may not be available on all kernels. Probe
   // using an intentionally invalid call to io_uring_enter.
   errno = 0;
-  int rc = syscall(__NR_io_uring_enter, -1, 1, 1, 0, nullptr);
+  int rc = syscall(kIOUringEnterSyscall, -1, 1, 1, 0, nullptr);
   if (rc != -1) {
     // How did this succeed?
     std::cerr << "Probe io_uring_enter(2) with invalid FD somehow succeeded..."

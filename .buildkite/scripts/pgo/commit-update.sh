@@ -17,7 +17,7 @@
 set -euxo pipefail
 
 today="$(date +"%Y-%m-%d")"
-repo_url="https://github.com/google/gvisor.git"
+repo_url="https://github.com/gvisor/gvisor.git"
 pgo_branch_name="pgo/update-${today}"
 
 # GitHub CLI authentication.
@@ -26,7 +26,7 @@ gh auth login --with-token < "$HOME/.github-token"
 gh auth setup-git
 
 # Create new branch for the PR and stages changes in it.
-git stash
+git stash push --include-untracked
 git pull --rebase=true "$repo_url" master
 git checkout -b "$pgo_branch_name"
 git stash pop

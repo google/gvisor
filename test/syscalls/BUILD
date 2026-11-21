@@ -46,6 +46,8 @@ syscall_test(
 )
 
 syscall_test(
+    # ARCH_SET_GS permanently disables patching in the address space.
+    one_sandbox = False,
     test = "//test/syscalls/linux:arch_prctl_test",
 )
 
@@ -214,6 +216,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_host_random = True,
     test = "//test/syscalls/linux:epoll_test",
 )
 
@@ -436,6 +439,8 @@ syscall_test(
 )
 
 syscall_test(
+    # The test populates 512 MiB and keeps the mapping across restore.
+    size = "enormous",
     test = "//test/syscalls/linux:memory_accounting_test",
 )
 
@@ -684,6 +689,8 @@ syscall_test(
 )
 
 syscall_test(
+    # Tracing disables syscall patching for the tracee's address space.
+    one_sandbox = False,
     test = "//test/syscalls/linux:ptrace_test",
 )
 
@@ -1391,6 +1398,8 @@ syscall_test(
 )
 
 syscall_test(
+    # Ptrace needs tracer threads in addition to the 1,000 guest threads.
+    size = "large",
     # Per-syscall tracing dominates the million deliberately invalid close calls.
     # Keep debug logs without formatting a trace for every call.
     args = ["--strace=false"],

@@ -2488,6 +2488,75 @@ func TestInodeNumbers(t *testing.T) {
 	}
 }
 
+// TestHostOverlayfsWhiteouts checks that a directory that Linux overlayfs on
+// the host does not merge can be listed when it contains whiteouts. The
+// overlay omits them; without it, the listing is the host's.
+func TestHostOverlayfsWhiteouts(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "whiteout-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	top := path.Join(dir, "top")
+	bottom := path.Join(dir, "bottom")
+	merged := path.Join(dir, "merged")
+	for _, d := range []string{top, path.Join(bottom, "d"), merged} {
+		if err := os.MkdirAll(d, 0777); err != nil {
+			t.Fatalf("os.MkdirAll() failed: %v", err)
+		}
+	}
+	if err := os.WriteFile(path.Join(bottom, "d", "file"), nil, 0666); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	if err := unix.Mknod(path.Join(bottom, "d", "whiteout"), unix.S_IFCHR, 0); err != nil {
+		t.Skipf("cannot create a whiteout: %v", err)
+	}
+	if err := unix.Mount("overlay", merged, "overlay", unix.MS_RDONLY, "lowerdir="+top+":"+bottom); err != nil {
+		t.Skipf("cannot mount overlayfs: %v", err)
+	}
+	defer unix.Unmount(merged, unix.MNT_DETACH)
+
+	for name, conf := range configs(t, false /* noOverlay */) {
+		for _, directfs := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/directfs=%t", name, directfs), func(t *testing.T) {
+				conf.DirectFS = directfs
+				spec, _ := sleepSpecConf(t)
+				// The bind mount of the test tmpdir must be recursive to
+				// include the overlayfs mount.
+				for i := range spec.Mounts {
+					if spec.Mounts[i].Destination == testutil.TmpDir() {
+						spec.Mounts[i].Options = append(spec.Mounts[i].Options, "rbind")
+					}
+				}
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+				cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(conf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+				out, err := executeCombinedOutput(conf, cont, nil, "/bin/ls", path.Join(merged, "d"))
+				if err != nil {
+					t.Fatalf("ls failed: %v, output: %s", err, out)
+				}
+				want := "file\nwhiteout"
+				if conf.Overlay2.Enabled() {
+					want = "file"
+				}
+				if got := strings.TrimSpace(string(out)); got != want {
+					t.Errorf("ls got %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
 const (
 	unimplementedCharDevSrc  = "/dev/port"
 	unimplementedCharDevRdev = "1:4"
@@ -2574,6 +2643,23 @@ func checkBindMountCharDevices(t *testing.T, conf *config.Config, app string) {
 		if err := run(spec, conf); err != nil {
 			t.Fatalf("chardev-check of %s failed: %v", check.src, err)
 		}
+	}
+}
+
+// TestNvidiaDevicesWithoutNVProxy checks that a container starts when its spec
+// has NVIDIA device files and nvproxy is disabled.
+func TestNvidiaDevicesWithoutNVProxy(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/true")
+	spec.Linux = &specs.Linux{}
+	for _, path := range []string{
+		"/dev/nvidia-uvm",
+		"/dev/nvidia-caps/nvidia-cap1",
+		"/dev/nvidia-caps-imex-channels/channel0",
+	} {
+		spec.Linux.Devices = append(spec.Linux.Devices, specs.LinuxDevice{Path: path, Type: "c", Major: 511})
+	}
+	if err := run(spec, testutil.TestConfig(t)); err != nil {
+		t.Fatalf("run() failed: %v", err)
 	}
 }
 
@@ -3865,21 +3951,69 @@ func TestDestroyStarting(t *testing.T) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for name, conf := range configs(t, false /* noOverlay */) {
-		t.Run(name, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "cwd-create")
-			if err != nil {
-				t.Fatalf("os.MkdirTemp() failed: %v", err)
-			}
-			dir := path.Join(tmpDir, "new/working/dir")
+	for _, tc := range []struct {
+		name    string
+		cwd     string
+		wantCwd string
+		pathLen int
+		wantErr string
+	}{
+		{name: "MissingDirectory", cwd: "new/working/dir", wantCwd: "new/working/dir"},
+		{name: "TrailingSlash", cwd: "new/working/dir/", wantCwd: "new/working/dir"},
+		{name: "RepeatedSeparators", cwd: "new//working///dir///", wantCwd: "new/working/dir"},
+		{name: "TrailingDot", cwd: "new/working/dir/.", wantCwd: "new/working/dir"},
+		{name: "DotDotAfterMissingComponent", cwd: "new/../wanted", wantCwd: "wanted"},
+		{name: "SymlinkDotDotExistingTarget", cwd: "link/../existing", wantCwd: "target/existing"},
+		{name: "SymlinkDotDotMissingTarget", cwd: "link/../missing/child", wantCwd: "target/missing/child"},
+		{name: "FileBeforeDotDot", cwd: "file/../wanted", wantErr: "not a directory"},
+		{name: "FileAfterDotDot", cwd: "new/../file", wantErr: "file exists"},
+		{name: "DanglingSymlink", cwd: "dangling", wantErr: "file exists"},
+		{name: "PathAtLimit", cwd: "new", wantCwd: "new", pathLen: linux.PATH_MAX - 1},
+		{name: "PathBeyondLimit", cwd: "new", pathLen: linux.PATH_MAX, wantErr: "file name too long"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for name, conf := range configs(t, false /* noOverlay */) {
+				t.Run(name, func(t *testing.T) {
+					tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "cwd-create")
+					if err != nil {
+						t.Fatalf("os.MkdirTemp() failed: %v", err)
+					}
+					t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+					for _, dir := range []string{"target/child", "target/existing"} {
+						if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755); err != nil {
+							t.Fatal(err)
+						}
+					}
+					// Files at the lexical targets make incorrect path cleaning fail.
+					for _, file := range []string{"file", "existing", "missing"} {
+						if err := os.WriteFile(filepath.Join(tmpDir, file), nil, 0644); err != nil {
+							t.Fatal(err)
+						}
+					}
+					for link, target := range map[string]string{"link": "target/child", "dangling": "absent"} {
+						if err := os.Symlink(target, filepath.Join(tmpDir, link)); err != nil {
+							t.Fatal(err)
+						}
+					}
 
-			// touch will fail if the directory doesn't exist.
-			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
-			spec.Process.Cwd = dir
-			spec.Root.Readonly = true
-
-			if err := run(spec, conf); err != nil {
-				t.Fatalf("Error running container: %v", err)
+					spec := testutil.NewSpecWithArgs("/bin/sh", "-c", `test "$(pwd -P)" = "$1"`, "sh", filepath.Join(tmpDir, tc.wantCwd))
+					spec.Process.Cwd = tmpDir + "/" + tc.cwd
+					if tc.pathLen != 0 {
+						spec.Process.Cwd += strings.Repeat("/.", (tc.pathLen-len(spec.Process.Cwd))/2)
+						if len(spec.Process.Cwd) < tc.pathLen {
+							spec.Process.Cwd += "/"
+						}
+					}
+					spec.Root.Readonly = true
+					err = run(spec, conf)
+					if tc.wantErr != "" {
+						if err == nil || !strings.Contains(err.Error(), "failed to create process working directory") || !strings.Contains(err.Error(), tc.wantErr) {
+							t.Fatalf("run() = %v, want working-directory creation error containing %q", err, tc.wantErr)
+						}
+					} else if err != nil {
+						t.Fatalf("run() failed: %v", err)
+					}
+				})
 			}
 		})
 	}

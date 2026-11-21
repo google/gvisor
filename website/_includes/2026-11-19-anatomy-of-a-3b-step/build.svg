@@ -1,0 +1,100 @@
+<svg viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="bd-h" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+  </defs>
+
+  <!-- inside the builder -->
+  <rect x="20" y="20" width="680" height="152" rx="12" class="d-zone"/>
+  <text x="36" y="42" class="d-tag">BUILDER SANDBOX, THROWN AWAY AFTER</text>
+
+  <rect x="40" y="70" width="140" height="70" rx="8" class="d-box"/>
+  <text x="54" y="94" class="d-name">Dockerfile</text>
+  <text x="54" y="111" class="d-note">FROM, RUN, COPY</text>
+
+  <rect x="210" y="70" width="150" height="70" rx="8" class="d-box"/>
+  <text x="224" y="94" class="d-name">builder</text>
+  <text x="224" y="111" class="d-note">each RUN nested,</text>
+  <text x="224" y="126" class="d-note">network via Pony</text>
+
+  <rect x="390" y="70" width="140" height="70" rx="8" class="d-box"/>
+  <text x="404" y="94" class="d-name">layers</text>
+  <text x="404" y="111" class="d-note">timestamps clamped</text>
+
+  <rect x="560" y="70" width="124" height="70" rx="8" class="d-box-hot"/>
+  <text x="574" y="94" class="d-name">chunked</text>
+  <text x="574" y="111" class="d-note">EROFS metadata</text>
+  <text x="574" y="126" class="d-note">+ chunk blobs</text>
+
+  <path id="bd-1" d="M180 105 H208" class="d-line" marker-end="url(#bd-h)"/>
+  <path id="bd-2" d="M360 105 H388" class="d-line" marker-end="url(#bd-h)"/>
+  <path id="bd-3" d="M530 105 H558" class="d-line" marker-end="url(#bd-h)"/>
+  <path id="bd-4" d="M622 140 V240" class="d-line" marker-end="url(#bd-h)"/>
+  <text x="630" y="200" class="d-note">push</text>
+
+  <!-- outside the sandbox -->
+  <rect x="20" y="214" width="680" height="152" rx="12" class="d-ghost"/>
+  <text x="36" y="356" class="d-tag">STORAGE GATEWAY AND SPONGEBLOB</text>
+
+  <rect x="560" y="242" width="124" height="70" rx="8" class="d-box"/>
+  <text x="574" y="266" class="d-name">registry</text>
+  <text x="574" y="283" class="d-note">for this build</text>
+  <text x="574" y="298" class="d-note">only</text>
+
+  <rect x="390" y="242" width="140" height="70" rx="8" class="d-box"/>
+  <text x="404" y="266" class="d-name">staging</text>
+  <text x="404" y="283" class="d-note">private to this</text>
+  <text x="404" y="298" class="d-note">attempt</text>
+
+  <rect x="210" y="242" width="150" height="70" rx="8" class="d-box"/>
+  <text x="224" y="266" class="d-name">tenant pool</text>
+  <text x="224" y="283" class="d-note">one object per</text>
+  <text x="224" y="298" class="d-note">digest</text>
+
+  <rect x="40" y="242" width="140" height="70" rx="8" class="d-box"/>
+  <text x="54" y="266" class="d-name">published</text>
+  <text x="54" y="283" class="d-note">image, plus the</text>
+  <text x="54" y="298" class="d-note">cache pointer</text>
+
+  <path id="bd-5" d="M560 277 H532" class="d-line" marker-end="url(#bd-h)"/>
+  <path id="bd-6" d="M390 277 H362" class="d-line" marker-end="url(#bd-h)"/>
+  <path id="bd-7" d="M210 277 H182" class="d-line" marker-end="url(#bd-h)"/>
+  <text x="376" y="332" text-anchor="middle" class="d-note">copied only once the bytes match the digest</text>
+
+  <!-- the step's own cache, read back lazily -->
+  <path d="M285 242 V142" class="d-line d-dash" marker-end="url(#bd-h)"/>
+  <text x="295" y="197" class="d-note">this step’s previous cache, mounted lazily</text>
+
+  <!-- one build moving through, hop by hop -->
+  <g class="d-moving">
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.02;0.1;1" calcMode="linear"><mpath href="#bd-1"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.02;0.1;0.11;1"/>
+    </circle>
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.14;0.22;1" calcMode="linear"><mpath href="#bd-2"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.139;0.14;0.22;0.23;1"/>
+    </circle>
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.26;0.34;1" calcMode="linear"><mpath href="#bd-3"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.259;0.26;0.34;0.35;1"/>
+    </circle>
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.38;0.5;1" calcMode="linear"><mpath href="#bd-4"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.379;0.38;0.5;0.51;1"/>
+    </circle>
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.56;0.64;1" calcMode="linear"><mpath href="#bd-5"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.559;0.56;0.64;0.65;1"/>
+    </circle>
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.7;0.78;1" calcMode="linear"><mpath href="#bd-6"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.699;0.7;0.78;0.79;1"/>
+    </circle>
+    <circle r="4" class="d-pulse">
+      <animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.84;0.92;1" calcMode="linear"><mpath href="#bd-7"/></animateMotion>
+      <animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.839;0.84;0.92;0.93;1"/>
+    </circle>
+  </g>
+</svg>

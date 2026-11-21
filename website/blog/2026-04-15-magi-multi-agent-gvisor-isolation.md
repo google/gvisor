@@ -475,7 +475,7 @@ Moving on to PicoClaw, the minimal agent.
 We will use the
 [PicoClaw Docker image](https://hub.docker.com/r/sipeed/picoclaw), and enable a
 few skills for GitHub interaction with the
-[gVisor repository](https://github.com/google/gvisor).
+[gVisor repository](https://github.com/gvisor/gvisor).
 
 Note that while this demo was on a x86-64 VM, PicoClaw has also been confirmed
 to work in **gVisor on arm64 on a Raspberry Pi 4 Model B**.
@@ -580,7 +580,7 @@ install next. For now, let's review a small gVisor PR:
 <div class="double-border-glow">
 <img src="/assets/images/2026-04-15-magi/picoclaw-2.png" alt="PicoClaw being tasked with explaining and reviewing a gVisor pull request.">
 </div>
-<figcaption>PicoClaw being tasked with explaining and reviewing [gVisor pull request #12911](https://github.com/google/gvisor/pull/12911).<br/>Which was later reviewed by a human as well.</figcaption>
+<figcaption>PicoClaw being tasked with explaining and reviewing [gVisor pull request #12911](https://github.com/gvisor/gvisor/pull/12911).<br/>Which was later reviewed by a human as well.</figcaption>
 </figure>
 
 </div>
@@ -814,7 +814,7 @@ $ file /tmp/screenshot.png
 We will use the
 [Firecrawl `docker-compose.yaml` template](https://github.com/firecrawl/firecrawl/blob/main/docker-compose.yaml),
 simply modified to run all containers in gVisor. Because
-[the way `docker-compose` sets up DNS](https://github.com/google/gvisor/issues/7469)
+[the way `docker-compose` sets up DNS](https://github.com/gvisor/gvisor/issues/7469)
 is incompatible with gVisor's per-container network stack, we need to use
 pre-assigned IPs rather than container hostnames in the `docker-compose` file.
 

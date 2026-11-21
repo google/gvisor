@@ -1088,6 +1088,14 @@ func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 		return nil
 	}
 
+	if eps, ok := s.(*netstack.Stack); ok {
+		// A stack restored from a checkpoint has the setting it was saved
+		// with.
+		if err := setTCPDelayedACK(eps.Stack, l.root.conf.TCPDelayedACK); err != nil {
+			return err
+		}
+	}
+
 	if l.networkArgs == nil {
 		return nil
 	}
@@ -2205,16 +2213,17 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		if conf.EnableRaw && !specutils.HasCapabilities(capability.CAP_NET_RAW) {
 			return nil, fmt.Errorf("configuring network=host with raw sockets requires CAP_NET_RAW capability")
 		}
-		// No network namespacing support for hostinet yet, hence creator is nil.
-		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
+		// The root namespace is backed by the host network stack. A child
+		// network namespace (unshare(CLONE_NEWNET)) cannot share it, and with a
+		// nil creator it gets no stack at all: no loopback device and
+		// EAFNOSUPPORT from socket(AF_INET). Give children the same
+		// loopback-only netstack that network=none uses instead: a working
+		// 127.0.0.1, and no device that reaches the host network.
+		creator := newSandboxNetstackCreator(conf, clock, uid)
+		return inet.NewRootNamespace(hostinet.NewStack(), creator, userns), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
-		creator := &sandboxNetstackCreator{
-			clock:                    clock,
-			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
-			allowLiveTCPMigration:    conf.AllowLiveTCPMigration,
-			uid:                      uid,
-		}
+		creator := newSandboxNetstackCreator(conf, clock, uid)
 		s, err := creator.newEmptySandboxNetworkStack()
 		if err != nil {
 			return nil, err
@@ -2282,7 +2291,20 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 		}
 	}
 
+	if err := setTCPDelayedACK(s.Stack, c.tcpDelayedACK); err != nil {
+		return nil, err
+	}
+
 	return s, nil
+}
+
+// setTCPDelayedACK sets tcpip.TCPDelayedACKEnabled on s.
+func setTCPDelayedACK(s *stack.Stack, mode config.TCPDelayedACK) error {
+	opt := tcpip.TCPDelayedACKEnabled(mode == config.TCPDelayedACKEnabled)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		return fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+	}
+	return nil
 }
 
 // sandboxNetstackCreator implements inet.NetworkStackCreator and
@@ -2293,10 +2315,21 @@ type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
 	allowPacketEndpointWrite bool
 	allowLiveTCPMigration    bool
+	tcpDelayedACK            config.TCPDelayedACK
 	uid                      uniqueid.Provider
 }
 
 var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
+
+func newSandboxNetstackCreator(conf *config.Config, clock tcpip.Clock, uid uniqueid.Provider) *sandboxNetstackCreator {
+	return &sandboxNetstackCreator{
+		clock:                    clock,
+		allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
+		allowLiveTCPMigration:    conf.AllowLiveTCPMigration,
+		tcpDelayedACK:            conf.TCPDelayedACK,
+		uid:                      uid,
+	}
+}
 
 // CreateStack implements inet.NetworkStackCreator.CreateStack.
 //

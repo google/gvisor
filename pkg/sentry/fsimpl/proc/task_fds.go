@@ -297,7 +297,7 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode,
 		task: i.task,
 		fd:   fd,
 	}
-	return i.fs.newTaskOwnedInode(ctx, i.task, i.fs.NextIno(), 0444, data), nil
+	return i.fs.newFDInfoInode(ctx, i.task, data), nil
 }
 
 // IterDirents implements Inode.IterDirents.
@@ -318,9 +318,49 @@ func (i *fdInfoDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *ker
 	return fd.VFSFileDescription(), nil
 }
 
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
+//
+// ptrace read access is required, then the mode check applies.
+// See fs/proc/fd.c:proc_fdinfo_permission.
+//
+// +checklocksexclude:i.fdDir.task.mu
+func (i *fdInfoDirInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if !kernel.ContextCanTrace(ctx, i.task, false /* attach */) {
+		return linuxerr.EACCES
+	}
+	return i.InodeAttrs.CheckPermissions(ctx, creds, ats)
+}
+
 // DecRef implements kernfs.Inode.DecRef.
 func (i *fdInfoDirInode) DecRef(ctx context.Context) {
 	i.fdInfoDirInodeRefs.DecRef(func() { i.Destroy(ctx) })
+}
+
+// fdInfoInode is the inode for a file in /proc/[pid]/fdinfo.
+//
+// +stateify savable
+type fdInfoInode struct {
+	taskOwnedInode
+}
+
+var _ kernfs.Inode = (*fdInfoInode)(nil)
+
+func (fs *filesystem) newFDInfoInode(ctx context.Context, task *kernel.Task, data *fdInfoData) kernfs.Inode {
+	owned := fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, data).(*taskOwnedInode)
+	return &fdInfoInode{taskOwnedInode: *owned}
+}
+
+// CheckPermissions implements kernfs.Inode.CheckPermissions.
+//
+// ptrace read access is required, then the mode check applies.
+// See fs/proc/fd.c:proc_fdinfo_permission.
+//
+// +checklocksexclude:i.owner.mu
+func (i *fdInfoInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	if !kernel.ContextCanTrace(ctx, i.owner, false /* attach */) {
+		return linuxerr.EACCES
+	}
+	return i.taskOwnedInode.CheckPermissions(ctx, creds, ats)
 }
 
 // fdInfoData implements vfs.DynamicBytesSource for /proc/[pid]/fdinfo/[fd].

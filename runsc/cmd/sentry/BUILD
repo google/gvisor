@@ -14,7 +14,6 @@ go_binary(
     visibility = ["//visibility:public"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
-        "//runsc/cgoextras",
         "//runsc/cli/sentrycli",
         "//runsc/gvisorbinaries",
     ],
@@ -33,7 +32,6 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
-        "//runsc/cgoextras",
         "//runsc/cli/sentrycli",
         "//runsc/gvisorbinaries",
     ],
@@ -64,6 +62,7 @@ go_cov(
     srcs = COVERAGE_SRCS,
     outs = ["gvisor_sentry_cov"],
     cmd = COVERAGE_CMD % ("//runsc/cmd/sentry:gvisor_sentry_cov", "false"),
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )
 
@@ -72,6 +71,7 @@ go_cov(
     srcs = COVERAGE_SRCS,
     outs = ["gvisor_sentry_race_cov"],
     cmd = COVERAGE_CMD % ("//runsc/cmd/sentry:gvisor_sentry_race_cov", "true"),
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )
 
@@ -87,7 +87,6 @@ go_binary(
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/sentry/socket/plugin/stack",
-        "//runsc/cgoextras",
         "//runsc/cli",
         "//runsc/cli/sentrycli",
         "//runsc/cmd/sentry/sentrycmd",
@@ -102,7 +101,6 @@ deps_test(
     # Keep this tight.
     allowed = [
         "//runsc/autoplatform",
-        "//runsc/cgoextras",
         "//runsc/cli",
         "//runsc/cli/sentrycli",
         "//runsc/cmd/nvproxy",

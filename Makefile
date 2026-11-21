@@ -266,7 +266,7 @@ nogo-tests:
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/runner/... test/trace/...)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-nogo$(COMMA)-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/runner/... test/trace/...)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
@@ -604,8 +604,8 @@ install_containerd = \
 
 containerd-test-%: load-containerd_harness load-basic_alpine load-basic_python load-basic_busybox load-basic_symlink-resolv load-basic_httpd load-basic_ubuntu
 	@$(call test_runtime,$(RUNTIME),--test_output=streamed --test_arg=-test.v --test_arg=--containerd_version=$* $(ARGS) -- //test/root:crictl_test)
-containerd-tests-min: containerd-test-1.7.31
-containerd-tests: containerd-test-1.7.31 containerd-test-2.0.8 containerd-test-2.1.7 containerd-test-2.2.3
+containerd-tests-min: containerd-test-2.0.14
+containerd-tests: containerd-test-2.0.14 containerd-test-2.3.7 containerd-test-2.4.2
 .PHONY: containerd-test-% containerd-tests-min containerd-tests
 
 containerd-performance-test-%:
@@ -752,6 +752,15 @@ benchmark-nodocker: ## Runs non-Docker benchmarks once, without selecting a plat
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
+
+moby-benchmarks: BENCHMARKS_SUITE = ding
+moby-benchmarks: BENCHMARKS_TARGETS = //test/benchmarks/ding:moby_test
+moby-benchmarks: load-moby load-basic_alpine $(if $(filter-out runc,$(RUNTIME)),$(RUNTIME_BIN)) ## Runs Docker-in-gVisor (DING) benchmarks.
+ifneq ($(RUNTIME),runc)
+	@$(call install_runtime,$(RUNTIME),--net-raw --allow-packet-socket-write --TESTONLY-nftables --profile)
+endif
+	@$(call run_benchmark,$(RUNTIME))
+.PHONY: moby-benchmarks
 
 # For benchmarking seccheck, use setup-seccheck and run-benchmark-seccheck.
 # Default seccheck benchmark config.

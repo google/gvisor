@@ -190,7 +190,7 @@ for direct access to some files. And most files will be remotely accessed
 through the Gofers, in which case no FDs are donated to the Sentry.
 
 The Sentry itself is only allowed access to specific
-[allowlisted syscalls](https://github.com/google/gvisor/blob/master/runsc/config/config.go).
+[allowlisted syscalls](https://github.com/gvisor/gvisor/blob/master/runsc/config/config.go).
 Without networking, the Sentry needs 53 host syscalls in order to function, and
 with networking, it uses an additional 15[^8]. By limiting the allowlist to only
 these needed syscalls, we radically reduce the amount of host OS attack surface.
@@ -290,23 +290,23 @@ stable.
 
 [^1]: [https://en.wikipedia.org/wiki/Secure_by_design](https://en.wikipedia.org/wiki/Secure_by_design)
 [^2]: [https://gvisor.dev/docs/architecture_guide](https://gvisor.dev/docs/architecture_guide/)
-[^3]: [https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/linux/linux64_amd64.go](https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/syscalls.go)
+[^3]: [https://github.com/gvisor/gvisor/blob/master/pkg/sentry/syscalls/linux/linux64_amd64.go](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/syscalls/syscalls.go)
 
 <!-- mdformat off(mdformat formats this into multiple lines) -->
 [^4]: Internally that is, it doesn't call to the Host OS to implement them, in fact that is explicitly disallowed, more on that in the future.
 <!-- mdformat on -->
 
 [^5]: [https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/syscalls/syscall_64.tbl#L345](https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/syscalls/syscall_64.tbl#L345)
-[^6]: [https://github.com/google/gvisor/tree/master/runsc/boot/filter](https://github.com/google/gvisor/tree/master/runsc/boot/filter)
+[^6]: [https://github.com/gvisor/gvisor/tree/master/runsc/boot/filter](https://github.com/gvisor/gvisor/tree/master/runsc/boot/filter)
 [^7]: [https://en.wikipedia.org/wiki/Dirty_COW](https://en.wikipedia.org/wiki/Dirty_COW)
-[^8]: [https://github.com/google/gvisor/blob/master/runsc/boot/config.go](https://github.com/google/gvisor/blob/master/runsc/boot/config.go)
+[^8]: [https://github.com/gvisor/gvisor/blob/master/runsc/boot/config.go](https://github.com/gvisor/gvisor/blob/master/runsc/boot/config.go)
 
 <!-- mdformat off(mdformat breaks this url by escaping the parenthesis) -->
 [^9]: [https://en.wikipedia.org/wiki/9P_(protocol)](https://en.wikipedia.org/wiki/9P_(protocol))
 <!-- mdformat on -->
 
 [^10]: [https://gvisor.dev/docs/user_guide/networking/#network-passthrough](https://gvisor.dev/docs/user_guide/networking/#network-passthrough)
-[^11]: [https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390](https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390)
-[^12]: [https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ring0/kernel_amd64.go#L182](https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ring0/kernel_amd64.go#L182)
+[^11]: [https://github.com/gvisor/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390](https://github.com/gvisor/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390)
+[^12]: [https://github.com/gvisor/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ring0/kernel_amd64.go#L182](https://github.com/gvisor/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ring0/kernel_amd64.go#L182)
 [^13]: [https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-4557](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-4557)
 [^14]: [https://www.google.com/about/appsecurity/reward-program/index.html](https://www.google.com/about/appsecurity/reward-program/index.html)

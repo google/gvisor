@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <linux/netlink.h>
@@ -49,9 +50,6 @@ namespace testing {
 namespace {
 
 TEST(NetworkNamespaceTest, LoopbackExists) {
-  // TODO(b/267210840): Fix this tests for hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   ScopedThread t([&] {
@@ -62,13 +60,42 @@ TEST(NetworkNamespaceTest, LoopbackExists) {
   });
 }
 
+// Under hostinet the root namespace is the host's network stack, but a child
+// namespace gets a private netstack. Its only interface must be loopback and it
+// must have no route to the host network.
+TEST(NetworkNamespaceTest, HostinetChildHasOnlyLoopback) {
+  SKIP_IF(!IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  ScopedThread t([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    struct if_nameindex* ifs = if_nameindex();
+    ASSERT_NE(ifs, nullptr);
+    int count = 0;
+    for (struct if_nameindex* i = ifs; i->if_index != 0; ++i) {
+      EXPECT_STREQ(i->if_name, "lo") << "unexpected interface " << i->if_name;
+      ++count;
+    }
+    if_freenameindex(ifs);
+    EXPECT_EQ(count, 1);
+
+    // TEST-NET-1 (RFC 5737): nothing in the child can route to it.
+    struct sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(1);
+    ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &addr.sin_addr), 1);
+    FileDescriptor s =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    EXPECT_THAT(connect(s.get(), AsSockAddr(&addr), sizeof(addr)),
+                SyscallFailsWithErrno(ENETUNREACH));
+  });
+}
+
 // Like Linux, a newly created network namespace starts with its loopback
 // interface administratively DOWN. The application is responsible for bringing
 // it up, after which it reports IFF_UP.
 TEST(NetworkNamespaceTest, LoopbackStartsDown) {
-  // TODO(b/267210840): Fix this tests for hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // Non-root network namespaces are recreated from scratch on restore, so
@@ -95,9 +122,6 @@ TEST(NetworkNamespaceTest, LoopbackStartsDown) {
 // Like Linux, the loopback interface of a new network namespace starts with no
 // addresses; the kernel assigns 127.0.0.1/8 and ::1/128 when it is brought up.
 TEST(NetworkNamespaceTest, LoopbackAddressesAddedOnUp) {
-  // TODO(b/267210840): Fix this tests for hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // Non-root network namespaces are recreated from scratch on restore, so
@@ -176,9 +200,6 @@ TEST(NetworkNamespaceTest, LoopbackAddressesAddedOnUp) {
 // routes. Bringing it back up restores neither; only loopback's ::1 is
 // recreated.
 TEST(NetworkNamespaceTest, IPv6FlushedOnDown) {
-  // TODO(b/267210840): Fix this tests for hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // Non-root network namespaces are recreated from scratch on restore, so
@@ -271,9 +292,6 @@ TEST(NetworkNamespaceTest, IPv6FlushedOnDown) {
 // flag to its value in ifi_flags, and the kernel ignores the flags that
 // userspace cannot change, such as IFF_LOOPBACK and IFF_RUNNING.
 TEST(NetworkNamespaceTest, LinkChangeFlagsLikeLinux) {
-  // TODO(b/267210840): Fix this tests for hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // Non-root network namespaces are recreated from scratch on restore, so
@@ -317,9 +335,6 @@ TEST(NetworkNamespaceTest, LinkChangeFlagsLikeLinux) {
 // TODO(gvisor.dev/issue/4595): Also check that an interface that is DOWN stays
 // DOWN, once non-root network namespaces are restored from their saved state.
 TEST(NetworkNamespaceTest, LoopbackUpAcrossSave) {
-  // TODO(b/267210840): Fix this tests for hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   ScopedThread t([&] {

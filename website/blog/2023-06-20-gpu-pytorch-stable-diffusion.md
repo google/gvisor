@@ -259,7 +259,7 @@ Happy sandboxing!
 <span class="attribution">**Happy sandboxing!** Generated with Stable Diffusion
 v1.5.</span>
 
-[gVisor GPU support]: https://github.com/google/gvisor/blob/master/g3doc/proposals/nvidia_driver_proxy.md
+[gVisor GPU support]: https://github.com/gvisor/gvisor/blob/master/g3doc/proposals/nvidia_driver_proxy.md
 [Stable Diffusion]: https://stability.ai/blog/stable-diffusion-public-release
 [Stability AI]: https://stability.ai/
 [automatic1111/stable-diffusion-webui]: https://github.com/AUTOMATIC1111/stable-diffusion-webui

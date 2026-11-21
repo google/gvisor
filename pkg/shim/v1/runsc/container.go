@@ -422,7 +422,6 @@ func (c *Container) Restore(ctx context.Context, r *extension.RestoreRequest) (e
 		return nil, err
 	}
 	// TODO: Set the cgroup and oom notifications on restore.
-	// https://github.com/google/gvisor-containerd-shim/issues/58
 	return p, nil
 }
 

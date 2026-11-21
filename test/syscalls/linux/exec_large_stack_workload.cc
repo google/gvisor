@@ -12,12 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package cgoextras provides cgo-only runtime workarounds and initialization
-// for runsc and sentry binaries.
-//
-// In pure-Go binaries (CGO_ENABLED=0), cgo code in this package is not built.
-// When cgo is enabled (e.g., -race, network plugins), this package is compiled
-// with cgo and runs early process initialization such as disabling host ARM64
-// Pointer Authentication (PAC) keys via an ELF .init_array constructor before
-// libpthread or the Go runtime spawns threads.
-package cgoextras
+#include <stddef.h>
+
+namespace {
+
+constexpr size_t kFrameSize = 4096;
+
+// Recursing to this depth uses more than 32 MiB of stack.
+constexpr int kDepth = (32 << 20) / kFrameSize;
+
+__attribute__((noinline)) int Recurse(int depth) {
+  volatile char buf[kFrameSize];
+  for (size_t i = 0; i < kFrameSize; i += 64) {
+    buf[i] = static_cast<char>(depth);
+  }
+  if (depth == 0) {
+    return 0;
+  }
+  return Recurse(depth - 1) + buf[0] - static_cast<char>(depth);
+}
+
+}  // namespace
+
+int main() { return Recurse(kDepth); }

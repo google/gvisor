@@ -82,7 +82,7 @@ func main() {
 	})
 
 	// Prepare logs.
-	runscLogPath, err := testing.UndeclaredOutput("runsc.%%TIMESTAMP%%.%%COMMAND%%.log")
+	runscLogPath, err := testing.UndeclaredOutput("runsc.%TIMESTAMP%.%COMMAND%.log")
 	if err != nil {
 		log.Fatalf("failed to create runsc log file: %s", err)
 	}
