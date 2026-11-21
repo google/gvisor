@@ -14,8 +14,7 @@
 
 // Package licensecheck audits the licenses of gVisor's external dependencies.
 //
-// Dependencies are enumerated by asking Bazel (`make mod`, which wraps `bazel
-// mod` in the dockerized build environment): the root module's direct
+// Dependencies are enumerated with `bazel mod`: the root module's direct
 // bazel_deps, the http_archive/http_file repos declared in MODULE.bazel, and
 // the Go repos imported from the go_deps extension, unioned with go.mod's
 // requirements, plus the user-mode archives exposed by the QEMU toolchain.
@@ -62,6 +61,9 @@ type Paths struct {
 	GoMod  string
 	YAML   string
 	Policy string
+
+	// BazelMod runs module queries. If nil, the checker uses bazel mod.
+	BazelMod BazelMod
 }
 
 // Entry records the license of a single dependency.
@@ -206,8 +208,9 @@ func (d dep) source() string {
 const (
 	yamlHeader = `# Licenses of gVisor's external dependencies, as declared in MODULE.bazel and
 # go.mod.
-# Regenerate with: make run TARGETS=//tools/licensecheck/main:licensecheck ARGS=--mode=fetch
-# Check completeness with ARGS=--mode=verify.
+# Regenerate with: bazel run //tools/licensecheck/main:licensecheck -- --mode=fetch
+# In the Make builder, use: make license-check ARGS=--mode=fetch
+# Check completeness with: make license-check
 # Entries whose license cannot be fetched automatically are maintained by hand and preserved
 # by --mode=fetch, so you can hand-edit the file for these.
 # license_source selects an immutable upstream notice for a pinned binary artifact;
@@ -393,7 +396,10 @@ type repoRef struct {
 
 // enumerate returns all external dependencies, sorted by name.
 func enumerate(p Paths) ([]dep, error) {
-	graphOut, err := makeMod("graph", "--depth", "1", "--extension_info=all", "--output", "json")
+	if p.BazelMod == nil {
+		p.BazelMod = NewBazelMod()
+	}
+	graphOut, err := p.BazelMod("graph", "--depth", "1", "--extension_info=all", "--output", "json")
 	if err != nil {
 		return nil, err
 	}
@@ -401,16 +407,15 @@ func enumerate(p Paths) ([]dep, error) {
 	if err != nil {
 		return nil, err
 	}
-	refs, err := graph.repoRefs()
+	refs, err := graph.repoRefs(p.BazelMod)
 	if err != nil {
 		return nil, err
 	}
-	refNames := make([]string, 0, len(refs)+1)
-	refNames = append(refNames, "show_repo")
+	refNames := make([]string, 0, len(refs))
 	for _, r := range refs {
 		refNames = append(refNames, r.ref)
 	}
-	showOut, err := makeMod(refNames...)
+	showOut, err := p.BazelMod("show_repo", refNames...)
 	if err != nil {
 		return nil, err
 	}
@@ -475,12 +480,8 @@ func enumerate(p Paths) ([]dep, error) {
 }
 
 // readRepoMapping asks Bazel for apparent-to-canonical repository names.
-func readRepoMapping(repo string) (map[string]string, error) {
-	if repo == "" {
-		// Preserve the empty root repository argument through make's shell.
-		repo = "''"
-	}
-	out, err := makeMod("dump_repo_mapping", repo)
+func (mod BazelMod) readRepoMapping(repo string) (map[string]string, error) {
+	out, err := mod("dump_repo_mapping", repo)
 	if err != nil {
 		return nil, err
 	}
@@ -513,16 +514,25 @@ func qemuUserRepoRefs(mapping map[string]string) ([]repoRef, error) {
 	return refs, nil
 }
 
-// makeMod runs `make mod TARGETS="..."`, which wraps `bazel mod`.
-var makeMod = func(args ...string) (string, error) {
-	cmd := exec.Command("make", "-s", "mod", "OPTIONS=", "TARGETS="+strings.Join(args, " "))
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("cannot run make mod %s: %w\n%s", strings.Join(args, " "), err, stderr.String())
+// BazelMod queries the module graph selected by the caller.
+type BazelMod func(subcommand string, args ...string) (string, error)
+
+// NewBazelMod returns a query function using the supplied command and options.
+// With no command, it runs bazel mod.
+func NewBazelMod(command ...string) BazelMod {
+	if len(command) == 0 {
+		command = []string{"bazel", "mod"}
 	}
-	return stdout.String(), nil
+	return func(subcommand string, args ...string) (string, error) {
+		cmd := exec.Command(command[0], slices.Concat(command[1:], []string{subcommand}, args)...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("cannot run bazel mod %s: %w\n%s", subcommand, err, stderr.String())
+		}
+		return stdout.String(), nil
+	}
 }
 
 // modGraph is the subset of `bazel mod graph --output json` that enumerate
@@ -539,7 +549,7 @@ type modGraph struct {
 }
 
 // repoRefs selects source dependencies imported by the root module.
-func (graph *modGraph) repoRefs() ([]repoRef, error) {
+func (graph *modGraph) repoRefs(mod BazelMod) ([]repoRef, error) {
 	var refs []repoRef
 	for _, m := range graph.Dependencies {
 		refs = append(refs, repoRef{m.Key, m.Name})
@@ -556,7 +566,7 @@ func (graph *modGraph) repoRefs() ([]repoRef, error) {
 		case strings.HasSuffix(u.Key, "//qemu/extension:qemu.bzl%qemu"):
 			// The public user toolchain refers to indirect archive repos. Audit
 			// its complete user-mode family, including unselected architectures.
-			root, err := readRepoMapping("")
+			root, err := mod.readRepoMapping("")
 			if err != nil {
 				return nil, err
 			}
@@ -564,7 +574,7 @@ func (graph *modGraph) repoRefs() ([]repoRef, error) {
 			if hub == "" {
 				return nil, errors.New("QEMU user toolchain repository is not imported")
 			}
-			mapping, err := readRepoMapping(hub)
+			mapping, err := mod.readRepoMapping(hub)
 			if err != nil {
 				return nil, err
 			}
