@@ -17,6 +17,7 @@ package portforward
 
 import (
 	"fmt"
+	"io"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -100,9 +101,18 @@ func doCopy(ctx context.Context, dst, src proxyConn, buf []byte, cancel chan str
 		return fmt.Errorf("failed to read from %q: err %v", src.Name(), err)
 	}
 
-	_, err = dst.Write(ctx, buf[0:n], cancel)
-	if err != nil {
-		return fmt.Errorf("failed to write to %q: err %v", src.Name(), err)
+	// Write may accept fewer bytes than requested (e.g. when the destination's
+	// send buffer is nearly full), so keep writing until the whole chunk has
+	// been sent. Otherwise the remainder would be silently dropped.
+	for written := 0; written < n; {
+		m, err := dst.Write(ctx, buf[written:n], cancel)
+		if err != nil {
+			return fmt.Errorf("failed to write to %q: err %v", dst.Name(), err)
+		}
+		if m == 0 {
+			return fmt.Errorf("failed to write to %q: err %v", dst.Name(), io.ErrShortWrite)
+		}
+		written += m
 	}
 	return nil
 }
