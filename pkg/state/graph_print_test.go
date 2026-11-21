@@ -99,6 +99,23 @@ func encodeRawGraph(t *testing.T, root any) []byte {
 	return raw
 }
 
+func TestPrintGraphWriteError(t *testing.T) {
+	raw := encodeRawGraph(t, new([128]int))
+	for _, asHTML := range []bool{false, true} {
+		r, w := io.Pipe()
+		go func() {
+			// Close during the array, after the object heading.
+			io.CopyN(io.Discard, r, 100)
+			r.Close()
+		}()
+		err := PrintGraph(w, raw, 0, asHTML)
+		w.Close()
+		if err != io.ErrClosedPipe {
+			t.Errorf("PrintGraph(html=%v) = %v, want closed pipe", asHTML, err)
+		}
+	}
+}
+
 func TestPrintGraphSliceNotation(t *testing.T) {
 	backing := make([]int, 2, 8)
 	backing[0], backing[1] = 10, 20
