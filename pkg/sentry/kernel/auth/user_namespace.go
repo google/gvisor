@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for
@@ -48,6 +49,16 @@ type UserNamespace struct {
 	// numUserNamespaces is the number of descendant user namespaces currently
 	// charged to this namespace. **Not** protected by mu.
 	numUserNamespaces atomicbitops.Int32
+
+	// InotifyMaxInstances and InotifyMaxWatches are the per-user limits in
+	// this namespace. Charges also count against each ancestor's owner.
+	InotifyMaxInstances atomicbitops.Int32
+	InotifyMaxWatches   atomicbitops.Int32
+
+	inotifyMu sync.Mutex `state:"nosave"`
+
+	// +checklocks:inotifyMu
+	inotifyUsers map[KUID]inotifyUsage
 
 	// mu protects the ID maps, setgroupsAllowed, and inode.
 	//
@@ -98,6 +109,8 @@ func NewRootUserNamespace() *UserNamespace {
 	var ns UserNamespace
 	ns.setgroupsAllowed = true
 	ns.maxUserNamespaces.Store(defaultMaxUserNamespaces)
+	ns.InotifyMaxInstances.Store(128)
+	ns.InotifyMaxWatches.Store(1048576)
 	// """
 	// The initial user namespace has no parent namespace, but, for
 	// consistency, the kernel provides dummy user and group ID mapping files
@@ -255,11 +268,13 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 		return nil, err
 	}
 	return &UserNamespace{
-		parent:            c.UserNamespace,
-		owner:             c.EffectiveKUID,
-		parentHadSetfcap:  c.HasSelfCapability(linux.CAP_SETFCAP),
-		setgroupsAllowed:  parentSetgroupsAllowed,
-		maxUserNamespaces: atomicbitops.FromInt32(defaultMaxUserNamespaces),
+		parent:              c.UserNamespace,
+		owner:               c.EffectiveKUID,
+		parentHadSetfcap:    c.HasSelfCapability(linux.CAP_SETFCAP),
+		setgroupsAllowed:    parentSetgroupsAllowed,
+		maxUserNamespaces:   atomicbitops.FromInt32(defaultMaxUserNamespaces),
+		InotifyMaxInstances: atomicbitops.FromInt32(math.MaxInt32),
+		InotifyMaxWatches:   atomicbitops.FromInt32(math.MaxInt32),
 		// "When a user namespace is created, it starts without a mapping of
 		// user IDs (group IDs) to the parent user namespace." -
 		// user_namespaces(7)
