@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_GVISOR_PKG_SENTRY_PLATFORM_SYSTRAP_SYSMSG_ATOMIC_H_
 #define THIRD_PARTY_GVISOR_PKG_SENTRY_PLATFORM_SYSTRAP_SYSMSG_ATOMIC_H_
 
-#define atomic_load(p) __atomic_load_n(p, __ATOMIC_ACQUIRE)
-#define atomic_store(p, val) __atomic_store_n(p, val, __ATOMIC_RELEASE)
+#define load_acquire(p) __atomic_load_n(p, __ATOMIC_ACQUIRE)
+#define store_release(p, val) __atomic_store_n(p, val, __ATOMIC_RELEASE)
 #define atomic_compare_exchange(p, old, val)                        \
   __atomic_compare_exchange_n(p, old, val, false, __ATOMIC_ACQ_REL, \
                               __ATOMIC_ACQUIRE)
