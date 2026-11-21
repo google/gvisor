@@ -77,6 +77,7 @@ var SockOpts = []SockOpt{
 
 	{linux.SOL_IPV6, linux.IPV6_CHECKSUM, sizeofInt32, true, true, false},
 	{linux.SOL_IPV6, linux.IPV6_MULTICAST_HOPS, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_MULTICAST_LOOP, sizeofInt32, true, true, true},
 	{linux.SOL_IPV6, linux.IPV6_RECVERR, sizeofInt32, true, true, false},
 	{linux.SOL_IPV6, linux.IPV6_RECVHOPLIMIT, sizeofInt32, true, true, false},
 	{linux.SOL_IPV6, linux.IPV6_RECVORIGDSTADDR, sizeofInt32, true, true, false},

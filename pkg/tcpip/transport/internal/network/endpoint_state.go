@@ -50,7 +50,7 @@ func (e *Endpoint) Resume(s *stack.Stack) error {
 		}
 	case transport.DatagramEndpointStateConnected:
 		var err tcpip.Error
-		multicastLoop := e.ops.GetMulticastLoop()
+		multicastLoop := e.multicastLoop()
 		// Release the connectedRoute if present.
 		if e.connectedRoute != nil {
 			e.connectedRoute.Release()
