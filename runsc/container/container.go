@@ -1519,7 +1519,7 @@ func (c *Container) saveLocked() error {
 // `fn` runs with the state file lock held.
 func (c *Container) modify(fn func() error) error {
 	c.requireAllowWrite()
-	if err := c.Saver.lock(); err != nil {
+	if err := c.Saver.lockExisting(); err != nil {
 		return err
 	}
 	defer c.Saver.UnlockOrDie()
