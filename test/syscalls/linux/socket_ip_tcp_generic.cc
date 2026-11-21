@@ -1490,11 +1490,58 @@ TEST_P(TCPSocketPairTest, CloseWithLingerOption) {
   ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
               SyscallFailsWithErrno(EBADF));
 
-  // Close the socket.
+  // Close the socket. The peer is still open, but close() returns once the
+  // peer acknowledges the FIN, long before the linger timeout.
+  const DisableSave disable_save;  // Timing-related.
+  const absl::Time start = absl::Now();
   dupFd.reset();
+  EXPECT_LT(absl::Now() - start, absl::Seconds(sl.l_linger) / 2);
   // Write on dupFd should fail as all references for socket are removed.
   ASSERT_THAT(RetryEINTR(write)(dupFd.get(), buf, sizeof(buf)),
               SyscallFailsWithErrno(EBADF));
+
+  // The peer received the data and the FIN.
+  char got[sizeof(buf)];
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), got, sizeof(got)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_THAT(RetryEINTR(read)(sockets->second_fd(), got, sizeof(got)),
+              SyscallSucceedsWithValue(0));
+}
+
+// Test that close does not linger in FIN-WAIT-2, after the peer acknowledged
+// the FIN that shutdown(SHUT_WR) sent.
+TEST_P(TCPSocketPairTest, CloseWithLingerOptionInFinWait2) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct linger sl = {
+      .l_onoff = 1,
+      .l_linger = 5,
+  };
+  ASSERT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+      SyscallSucceeds());
+
+  // Send the FIN and wait until the peer acknowledges it.
+  ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_WR), SyscallSucceeds());
+  const absl::Time deadline =
+      absl::Now() + absl::Milliseconds(kPositiveTimeoutMs);
+  int state;
+  do {
+    absl::SleepFor(absl::Milliseconds(10));
+    struct tcp_info info = {};
+    socklen_t info_len = sizeof(info);
+    ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_INFO, &info,
+                           &info_len),
+                SyscallSucceeds());
+    state = info.tcpi_state;
+  } while (state != TCP_FIN_WAIT2 && absl::Now() < deadline);
+  ASSERT_EQ(state, TCP_FIN_WAIT2);
+
+  // The peer is still open, but close() returns at once.
+  const DisableSave disable_save;  // Timing-related.
+  const absl::Time start = absl::Now();
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+  EXPECT_LT(absl::Now() - start, absl::Seconds(sl.l_linger) / 2);
 }
 
 TEST_P(TCPSocketPairTest, ResetWithSoLingerZeroTimeoutOption) {

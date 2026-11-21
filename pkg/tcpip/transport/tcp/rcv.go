@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // ackFlags are reasons to send the next ACK sooner, like Linux's ICSK_ACK_*
@@ -411,6 +412,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateFinWait1:
 			r.ep.setEndpointState(StateFinWait2)
 			r.ep.maybeStartFinWait2TimerLocked()
+			// Wake up a lingering close, which waits until our FIN
+			// is acknowledged.
+			r.ep.waiterQueue.Notify(waiter.EventInternal)
 
 		case StateClosing:
 			r.ep.setEndpointState(StateTimeWait)
