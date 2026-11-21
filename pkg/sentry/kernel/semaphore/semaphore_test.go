@@ -177,7 +177,7 @@ func TestWaitMinInt16NotWoken(t *testing.T) {
 func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r := NewRegistry(auth.NewRootUserNamespace())
-	set, err := r.FindOrCreate(ctx, 123, 2, linux.FileMode(0x600), true, true, true)
+	set, err := r.FindOrCreate(ctx, 123, 2, linux.FileMode(0600), true, true, true)
 
 	if err != nil {
 		t.Fatalf("FindOrCreate() failed, err: %v", err)
@@ -207,6 +207,9 @@ func TestUnregister(t *testing.T) {
 	}
 	if got := r.FindByID(set.obj.ID); got != nil {
 		t.Fatalf("FindById(%d) failed, got: %+v, expected: nil", set.obj.ID, got)
+	}
+	if got, err := set.CountNegativeWaiters(0, creds); err != nil || got != 0 {
+		t.Fatalf("queued waiters after removal = (%d, %v), want (0, nil)", got, err)
 	}
 	for i, ch := range chs {
 		if !signalled(ch) {
