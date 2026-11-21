@@ -5,6 +5,11 @@ package(
     licenses = ["notice"],
 )
 
+exports_files(
+    ["procumounter.c"],
+    visibility = ["//:__pkg__"],
+)
+
 # Tell build_cleaner not to create an unnecessary cc_library for
 # procumounter.c.
 filegroup(
