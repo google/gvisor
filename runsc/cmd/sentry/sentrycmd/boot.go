@@ -774,8 +774,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Fatalf exits the process and doesn't run defers.
 	// 'l' must be destroyed explicitly after this point!
 
-	if b.procMountSyncFD != -1 {
-		l.PreSeccompCallback = func() {
+	l.PreSeccompCallback = func() {
+		if b.procMountSyncFD != -1 {
 			// Call validateOpenFDs() before umounting /proc.
 			validateOpenFDs(bootArgs.PassFDs, procSelfFD)
 			// This callback runs on the same goroutine as the rest of sandbox
@@ -783,6 +783,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			timer.Reached("open FDs validated")
 			// Umount /proc right before installing seccomp filters.
 			umountProc()
+		}
+		// Close the error log (`--log`) so that the sandbox does not hold it
+		// once untrusted code runs, as it can sometimes be connected to a TTY.
+		// After this, `util.Errorf` and `util.Fatalf` write only to `--debug-log`.
+		if errorLog, ok := util.ErrorLogger.(*os.File); ok {
+			util.ErrorLogger = nil
+			if err := errorLog.Close(); err != nil {
+				log.Warningf("Failed to close error log: %v", err)
+			}
 		}
 	}
 

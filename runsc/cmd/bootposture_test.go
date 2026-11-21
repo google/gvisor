@@ -114,6 +114,8 @@ func testBootPosture(t *testing.T, tc postureCase) {
 		conf.FDLimit = tc.fdLimit
 	}
 	conf.EnableCoreTags = tc.coreTags
+	// The Sentry must not hold the error log after it starts the container.
+	conf.LogFilename = filepath.Join(t.TempDir(), "error.log")
 	// testutil.TestConfig sets this so that tests can run without privileges.
 	// Undo it here since we do want to test the non-test case.
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = false
@@ -198,6 +200,17 @@ func testBootPosture(t *testing.T, tc postureCase) {
 	}
 
 	pid := c.Sandbox.Getpid()
+	// Wait for the control server to be responsive.
+	if _, err := c.Sandbox.Stacks(); err != nil {
+		t.Fatalf("Error getting the stacks of the created sandbox: %v", err)
+	}
+	created, err := sandboxposture.Collect(sandboxposture.Opts{PID: pid, RefPID: os.Getpid()})
+	if err != nil {
+		t.Fatalf("Error collecting posture of created sandbox %d: %v", pid, err)
+	}
+	if created.FDs.Counts[sandboxposture.FDErrorLog] == 0 {
+		t.Errorf("Created sandbox %d does not hold the error log %q", pid, conf.LogFilename)
+	}
 	if err := c.Start(conf); err != nil {
 		t.Fatalf("Error starting container: %v", err)
 	}

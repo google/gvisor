@@ -183,7 +183,7 @@ const capSysPtrace = "CAP_SYS_PTRACE"
 // config.
 var baseFDClasses = []string{
 	FDNullDev,
-	FDRegular, // debug and log files donated by the parent
+	FDRegular, // log files donated by the parent other than `FDErrorLog`
 	FDPipe,
 	FDSocket,
 	FDAnonPrefix + "eventfd",
