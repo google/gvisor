@@ -1501,6 +1501,10 @@ TEST(Inotify, HardlinksReuseSameWatch) {
   const int file2_wd = ASSERT_NO_ERRNO_AND_VALUE(
       InotifyAddWatch(fd.get(), file2.path(), IN_ALL_EVENTS));
 
+  EXPECT_THAT(inotify_add_watch(fd.get(), file2.path().c_str(),
+                                IN_MODIFY | IN_MASK_CREATE),
+              SyscallFailsWithErrno(EEXIST));
+
   // The watch descriptors for watches on different links to the same file
   // should be identical.
   EXPECT_NE(root_wd, file_wd);
@@ -1682,6 +1686,30 @@ TEST(Inotify, AddWatchWithInvalidEventMaskFails) {
 
   EXPECT_THAT(inotify_add_watch(fd.get(), root.path().c_str(), 0),
               SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(inotify_add_watch(fd.get(), root.path().c_str(),
+                                IN_OPEN | IN_MASK_CREATE | IN_MASK_ADD),
+              SyscallFailsWithErrno(EINVAL));
+  // An unrecognized bit is invalid even when a known event is also set.
+  EXPECT_THAT(
+      inotify_add_watch(fd.get(), root.path().c_str(), IN_OPEN | 0x1000),
+      SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, MaskCreatePreservesExistingWatch) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file.path(), IN_OPEN | IN_MASK_CREATE));
+
+  EXPECT_THAT(inotify_add_watch(fd.get(), file.path().c_str(),
+                                IN_MODIFY | IN_MASK_CREATE),
+              SyscallFailsWithErrno(EEXIST));
+  FileDescriptor writer =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+  ASSERT_THAT(write(writer.get(), "x", 1), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get())),
+              Are({Event(IN_OPEN, wd)}));
 }
 
 TEST(Inotify, AddWatchOnInvalidPathFails) {
