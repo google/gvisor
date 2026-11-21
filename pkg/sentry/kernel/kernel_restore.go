@@ -390,10 +390,10 @@ func NewAsyncMFLoader(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader
 
 func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline, pageLoadOpts pgalloc.AsyncPagesFileLoadOpts) {
 	defer timeline.End()
-	defer pagesMetadata.Close()
 	cu := cleanup.Make(func() {
 		mfl.metadataWg.Done()
 		mfl.loadWg.Done()
+		pagesMetadata.Close()
 	})
 	defer cu.Clean()
 
@@ -484,6 +484,14 @@ func (mfl *AsyncMFLoader) WaitMainMFStart() error {
 func (mfl *AsyncMFLoader) WaitMetadata() error {
 	mfl.metadataWg.Wait()
 	return mfl.metadataErr
+}
+
+// Err returns the error that stopped asynchronous page loading, or nil if no
+// error has occurred. It does not wait for page loading to complete.
+//
+// Preconditions: WaitMetadata has returned nil.
+func (mfl *AsyncMFLoader) Err() error {
+	return mfl.apfl.Err()
 }
 
 // Wait waits for the background goroutine to successfully complete fully

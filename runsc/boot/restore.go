@@ -249,6 +249,9 @@ type restorer struct {
 	// restorer.restore() returns.
 	background bool
 
+	// If lazy is true, restore completes without waiting for untouched pages.
+	lazy bool
+
 	// mainMF is the main MemoryFile of the sandbox.
 	// It is created as soon as possible, and may be restored to as soon as
 	// the first container is restored, which is earlier than when the sandbox's
@@ -731,17 +734,37 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 	// keep loading in the background.
 	k.IncCheckpointGenOnRestore()
 
+	if r.lazy {
+		if r.asyncMFLoader != nil {
+			if err := r.asyncMFLoader.Err(); err != nil {
+				r.failPageLoad(k, err)
+				return
+			}
+		}
+		r.completeRestore(timeline)
+	}
+
 	// Wait for page loading to complete if happening in the background.
 	if r.asyncMFLoader != nil {
 		if err := r.asyncMFLoader.Wait(); err != nil {
-			r.cm.onRestoreFailed(fmt.Errorf("async MemoryFile loading failed: %w", err))
-			log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
-			k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
-			r.cm.l.stopIfKilled()
+			r.failPageLoad(k, err)
 			return
 		}
 	}
 
+	if !r.lazy {
+		r.completeRestore(timeline)
+	}
+}
+
+func (r *restorer) failPageLoad(k *kernel.Kernel, err error) {
+	r.cm.onRestoreFailed(fmt.Errorf("async MemoryFile loading failed: %w", err))
+	log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
+	k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+	r.cm.l.stopIfKilled()
+}
+
+func (r *restorer) completeRestore(timeline *timing.Timeline) {
 	var s sentryapi.Savings
 	if err := r.calculateCPUSavings(&s); err != nil {
 		log.Warningf("Failed to calculate CPU savings: %v", err)

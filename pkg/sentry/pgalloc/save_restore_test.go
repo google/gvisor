@@ -23,8 +23,10 @@ import (
 	"runtime"
 	"slices"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
@@ -426,6 +428,245 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 				f.Destroy()
 			}
 		})
+	}
+}
+
+// countingAsyncReader counts reads started on an AsyncReader.
+type countingAsyncReader struct {
+	stateio.AsyncReader
+	reads  atomicbitops.Int32
+	closes atomicbitops.Int32
+}
+
+func (r *countingAsyncReader) Close() error {
+	r.closes.Add(1)
+	return r.AsyncReader.Close()
+}
+
+func (r *countingAsyncReader) AddRead(id int, off int64, dstFile stateio.DestinationFile, dstFR memmap.FileRange, dstMap []byte) {
+	r.reads.Add(1)
+	r.AsyncReader.AddRead(id, off, dstFile, dstFR, dstMap)
+}
+
+func (r *countingAsyncReader) AddReadv(id int, off int64, total uint64, dstFile stateio.DestinationFile, dstFRs []memmap.FileRange, dstMaps []unix.Iovec) {
+	r.reads.Add(1)
+	r.AsyncReader.AddReadv(id, off, total, dstFile, dstFRs, dstMaps)
+}
+
+// TestAsyncPageLoadLazy checks that lazy loading reads only awaited pages, and
+// that AwaitLoadAll loads the remaining pages.
+func TestAsyncPageLoadLazy(t *testing.T) {
+	const pages = 16
+	pageSize := uint64(hostarch.PageSize)
+	f := newSaveTestMemoryFile(t, "", false)
+	fr := allocateSaveTestPages(t, f)
+	for i := range pages {
+		pwritePage(t, f, fr, i, byte(i+1))
+	}
+	var data, meta bytes.Buffer
+	saveDone := make(chan error, 1)
+	apfs, err := StartAsyncPagesFileSave(stateio.NewIOWriter(&data, pageSize, 1, 1), func(err error) { saveDone <- err })
+	if err != nil {
+		t.Fatalf("StartAsyncPagesFileSave: %v", err)
+	}
+	if err := f.SaveTo(context.Background(), &meta, &SaveOpts{PagesFile: apfs}); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+	apfs.MemoryFilesDone()
+	if err := <-saveDone; err != nil {
+		t.Fatalf("async page save: %v", err)
+	}
+
+	// Each read is one page, so the number of reads is the number of pages read.
+	r := &countingAsyncReader{AsyncReader: stateio.NewIOReader(bytes.NewReader(data.Bytes()), pageSize, 1, 4)}
+	loadDone := make(chan error, 1)
+	apfl, err := StartAsyncPagesFileLoad(r, func(err error) { loadDone <- err }, nil, AsyncPagesFileLoadOpts{Lazy: true})
+	if err != nil {
+		t.Fatalf("StartAsyncPagesFileLoad: %v", err)
+	}
+	rf := newSaveTestMemoryFile(t, "", false)
+	if err := rf.LoadFrom(context.Background(), bytes.NewReader(meta.Bytes()), &LoadOpts{PagesFile: apfl}); err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	apfl.MemoryFilesDone()
+	if err := apfl.Err(); err != nil {
+		t.Fatalf("Err with unloaded pages: %v", err)
+	}
+
+	// Give the loader time to start reads that it should not start.
+	time.Sleep(50 * time.Millisecond)
+	if got := r.reads.Load(); got != 0 {
+		t.Fatalf("got %d reads before any page is awaited, want 0", got)
+	}
+	amfl := rf.asyncPageLoad.Load()
+	if amfl == nil {
+		t.Fatal("async page load completed before any page was awaited")
+	}
+	if err := amfl.awaitLoad(memmap.FileRange{fr.Start + 3*pageSize, fr.Start + 4*pageSize}); err != nil {
+		t.Fatalf("awaitLoad: %v", err)
+	}
+	if got := r.reads.Load(); got != 1 {
+		t.Fatalf("got %d reads after one page is awaited, want 1", got)
+	}
+	select {
+	case err := <-loadDone:
+		t.Fatalf("async page load completed with unloaded pages: %v", err)
+	default:
+	}
+
+	if err := rf.AwaitLoadAll(); err != nil {
+		t.Fatalf("AwaitLoadAll: %v", err)
+	}
+	select {
+	case err := <-loadDone:
+		if err != nil {
+			t.Fatalf("async page load: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for async page load to complete")
+	}
+	if got := r.reads.Load(); got != pages {
+		t.Errorf("got %d reads in total, want %d", got, pages)
+	}
+	buf := make([]byte, pageSize)
+	for i := range pages {
+		if _, err := unix.Pread(rf.FD(), buf, int64(fr.Start+uint64(i)*pageSize)); err != nil {
+			t.Fatalf("Pread page %d: %v", i, err)
+		}
+		if got, want := buf[17], byte(i+1); got != want {
+			t.Errorf("page %d: got %d, want %d", i, got, want)
+		}
+	}
+}
+
+func saveAsyncTestPages(t *testing.T) (fr memmap.FileRange, data, meta []byte) {
+	t.Helper()
+	f := newSaveTestMemoryFile(t, "", false)
+	fr = allocateSaveTestPages(t, f)
+	for i := range 16 {
+		pwritePage(t, f, fr, i, byte(i+1))
+	}
+	meta, data = saveTestPageFiles(t, f, false)
+	return fr, data, meta
+}
+
+type closeCheckingReader struct {
+	stateio.AsyncReader
+	check func()
+}
+
+func (r *closeCheckingReader) Close() error {
+	r.check()
+	return r.AsyncReader.Close()
+}
+
+func TestAsyncPageLoadLazyError(t *testing.T) {
+	_, _, meta := saveAsyncTestPages(t)
+	rf := newSaveTestMemoryFile(t, "", false)
+	// An empty pages file makes the first demanded read fail.
+	r := &closeCheckingReader{AsyncReader: stateio.NewIOReader(bytes.NewReader(nil), uint64(hostarch.PageSize), 1, 1)}
+	loadDone := make(chan error, 1)
+	apfl, err := StartAsyncPagesFileLoad(r, func(err error) { loadDone <- err }, nil, AsyncPagesFileLoadOpts{Lazy: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.check = func() {
+		if err := apfl.Err(); !linuxerr.Equals(linuxerr.EIO, err) {
+			t.Errorf("Err before Close: got %v, want EIO", err)
+		}
+		select {
+		case err := <-loadDone:
+			t.Errorf("load callback ran before Close: %v", err)
+		default:
+		}
+	}
+	if err := rf.LoadFrom(context.Background(), bytes.NewReader(meta), &LoadOpts{PagesFile: apfl}); err != nil {
+		t.Fatal(err)
+	}
+	apfl.MemoryFilesDone()
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- rf.AwaitLoadAll() }()
+	for _, done := range []<-chan error{waitDone, loadDone} {
+		select {
+		case err := <-done:
+			if !linuxerr.Equals(linuxerr.EIO, err) {
+				t.Errorf("page loading: got %v, want EIO", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for failed page load")
+		}
+	}
+}
+
+func TestAsyncPageLoadLazyDiscard(t *testing.T) {
+	for _, files := range []int{1, 3} {
+		for _, demand := range []bool{false, true} {
+			t.Run(fmt.Sprintf("files=%d/demand=%t", files, demand), func(t *testing.T) {
+				pageSize := uint64(hostarch.PageSize)
+				fr, data, meta := saveAsyncTestPages(t)
+				r := &countingAsyncReader{AsyncReader: stateio.NewIOReader(bytes.NewReader(data), pageSize, 1, 4)}
+				loadDone := make(chan error, 1)
+				apfl, err := StartAsyncPagesFileLoad(r, func(err error) { loadDone <- err }, nil, AsyncPagesFileLoadOpts{Lazy: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var callbacks atomicbitops.Int32
+				restored := make([]*MemoryFile, 0, files)
+				for range files {
+					rf := newSaveTestMemoryFile(t, "", false)
+					if err := rf.LoadFrom(context.Background(), bytes.NewReader(meta), &LoadOpts{
+						PagesFile: apfl,
+						DoneCallback: func(err error) {
+							if err != nil {
+								t.Errorf("MemoryFile load: %v", err)
+							}
+							callbacks.Add(1)
+						},
+					}); err != nil {
+						t.Fatal(err)
+					}
+					restored = append(restored, rf)
+				}
+				apfl.MemoryFilesDone()
+				for _, rf := range restored {
+					if demand {
+						if err := rf.asyncPageLoad.Load().awaitLoad(memmap.FileRange{fr.Start, fr.Start + pageSize}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					rf.DecRef(fr)
+					if err := rf.AwaitLoadAll(); err != nil {
+						t.Fatalf("AwaitLoadAll after discard: %v", err)
+					}
+				}
+				select {
+				case err := <-loadDone:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("page loading did not complete after the remaining cold pages were discarded")
+				}
+				for _, rf := range restored {
+					if rf.IsAsyncLoading() {
+						t.Error("MemoryFile is still asynchronously loading")
+					}
+				}
+				if got := callbacks.Load(); got != int32(files) {
+					t.Errorf("got %d completion callbacks, want %d", got, files)
+				}
+				if got := r.closes.Load(); got != 1 {
+					t.Errorf("pages reader closed %d times, want 1", got)
+				}
+				wantReads := int32(0)
+				if demand {
+					wantReads = int32(files)
+				}
+				if got := r.reads.Load(); got != wantReads {
+					t.Errorf("got %d reads, want %d", got, wantReads)
+				}
+			})
+		}
 	}
 }
 

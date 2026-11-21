@@ -2116,7 +2116,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+			if err := contRestore.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -4590,7 +4590,7 @@ func TestUsageFD(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -5954,7 +5954,7 @@ func TestSpecValidation(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			err = cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */)
+			err = cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */)
 			if err == nil {
 				if test.wantErr == "" {
 					return
@@ -6585,7 +6585,7 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	if err := cont2.Restore(conf, lastImage, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, lastImage, sandbox.DirectIOOff, false /* background */, sandbox.BackgroundLoadEager, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring: %v", err)
 	}
 	// Restore does not wait for its hook to finish. Wait before starting another
