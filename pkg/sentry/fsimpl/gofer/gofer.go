@@ -2407,7 +2407,11 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 				// If overlayfsStaleRead is in effect, then the new FD may not
 				// be coherent with the existing one, so we have no choice but
 				// to switch to mappings of the new FD in both the application
-				// and sentry. Otherwise, racing callers of
+				// and sentry. RegenerateMappings does not change internal
+				// mappings that are already in use (e.g. cached in pmas), so
+				// these can read stale data until translations are
+				// invalidated below; any such mappings are read-only.
+				// Otherwise, racing callers of
 				// d.inode.mmapFile.FD() may use the old or new file
 				// description, but this doesn't matter since they refer to the
 				// same file, and any racing mappings must be read-only. Thus
