@@ -28,9 +28,9 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
       echo " * [${target}](artifact://${log#/}) (${BUILDKITE_LABEL})" | \
         buildkite-agent annotate --style error --context failures --append
 
-      # Upload boot and gofer logs found in the test's directory (e.g. undeclared outputs).
+      # Upload runtime and daemon logs from the test's directory (e.g. undeclared outputs).
       log_dir=$(dirname "${log}")
-      find "${log_dir}" \( -iname "*.boot.txt" -o -iname "*.gofer.txt" \) \
+      find "${log_dir}" \( -iname "*.boot.txt" -o -iname "*.gofer.txt" -o -name "dockerd_*.log" \) \
         -print 2>/dev/null | while read -r debug_log; do
         buildkite-agent artifact upload "${debug_log}"
       done
