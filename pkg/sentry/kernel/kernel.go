@@ -59,6 +59,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
@@ -2527,6 +2528,21 @@ func (k *Kernel) PipeMount() *vfs.Mount {
 // GetNamespaceInode returns a new nsfs inode which serves as a reference counter for the namespace.
 func (k *Kernel) GetNamespaceInode(ctx context.Context, ns vfs.Namespace) refs.TryRefCounter {
 	return nsfs.NewInode(ctx, k.nsfsMount, ns)
+}
+
+// MountNamespaceOf returns the mount namespace referred to by mnt if mnt is a
+// mount of a mount namespace file (/proc/[pid]/ns/mnt), and nil otherwise.
+func MountNamespaceOf(mnt *vfs.Mount) *vfs.MountNamespace {
+	d, ok := mnt.Root().Impl().(*kernfs.Dentry)
+	if !ok {
+		return nil
+	}
+	i, ok := d.Inode().(*nsfs.Inode)
+	if !ok {
+		return nil
+	}
+	mntns, _ := i.Namespace().(*vfs.MountNamespace)
+	return mntns
 }
 
 // ShmMount returns the tmpfs mount.
