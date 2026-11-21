@@ -33,8 +33,9 @@ import (
 )
 
 var (
-	killThreadAction = seccomp.KillThread
-	trapAction       = seccomp.Trap
+	killThreadAction  = seccomp.KillThread
+	killProcessAction = seccomp.KillProcess
+	trapAction        = seccomp.Trap
 	// errnoAction is the default errno returned for SCMP_ACT_ERRNO when the
 	// rule (or the profile's defaultErrnoRet) does not request a specific one,
 	// matching runc's default.
@@ -206,11 +207,12 @@ func lookupSyscallNo(arch uint32, name string) (uint32, error) {
 // or nil if it requested none. It is only meaningful for ActErrno and
 // ActTrace and, as in runc, is silently ignored for every other action.
 func convertAction(act specs.LinuxSeccompAction, errnoRet *uint) (seccomp.Action, error) {
-	// TODO(gvisor.dev/issue/3124): Update specs package to include ActLog and ActKillProcess.
 	// LINT.IfChange
 	switch act {
-	case specs.ActKill:
+	case specs.ActKill, specs.ActKillThread:
 		return killThreadAction, nil
+	case specs.ActKillProcess:
+		return killProcessAction, nil
 	case specs.ActTrap:
 		return trapAction, nil
 	case specs.ActErrno:

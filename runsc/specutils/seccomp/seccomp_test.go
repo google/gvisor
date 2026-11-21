@@ -168,6 +168,63 @@ var (
 			expected: uint32(linux.SECCOMP_RET_LOG),
 		},
 		{
+			name: "match_name_kill_thread",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:  []string{"getcwd"},
+						Action: specs.ActKillThread,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
+		},
+		{
+			name: "match_name_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:  []string{"getcwd"},
+						Action: specs.ActKillProcess,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
+			name: "match_args_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:  []string{"personality"},
+						Action: specs.ActKillProcess,
+						Args:   []specs.LinuxSeccompArg{{Index: 0, Value: 8, Op: specs.OpEqualTo}},
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "personality", &[6]uint64{8}),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
+			name: "default_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActKillProcess,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:  []string{"getcwd"},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
 			name: "no_match_name_allow",
 			config: specs.LinuxSeccomp{
 				DefaultAction: specs.ActAllow,
@@ -956,7 +1013,7 @@ func TestSyscallAboveMaxSyscallNum(t *testing.T) {
 func TestRandomFilterMatchesFullProgram(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	names := []string{"read", "write", "personality", "clone", "not_a_syscall"}
-	actions := []specs.LinuxSeccompAction{specs.ActKill, specs.ActTrap, specs.ActErrno, specs.ActTrace, specs.ActLog, specs.ActAllow}
+	actions := []specs.LinuxSeccompAction{specs.ActKill, specs.ActKillProcess, specs.ActTrap, specs.ActErrno, specs.ActTrace, specs.ActLog, specs.ActAllow}
 	errnoRets := []*uint{nil, errnoRetPtr(0), errnoRetPtr(uint(unix.EPERM)), errnoRetPtr(uint(unix.ENOSYS))}
 	ops := []specs.LinuxSeccompOperator{specs.OpEqualTo, specs.OpNotEqual, specs.OpGreaterThan, specs.OpGreaterEqual, specs.OpLessThan, specs.OpLessEqual, specs.OpMaskedEqual}
 	values := []uint64{0, 1, 2, 3}
