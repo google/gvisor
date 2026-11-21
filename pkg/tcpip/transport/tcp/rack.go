@@ -399,7 +399,8 @@ func (rc *rackControl) exitRecovery() {
 }
 
 // detectLoss marks the segment as lost if the reordering window has elapsed
-// and the ACK is not received. It will also arm the reorder timer.
+// and the ACK is not received. It will also arm the reorder timer. It returns
+// the number of segments that are marked lost and not retransmitted yet.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2 Step 5.
 //
 // +checklocks:rc.snd.ep.mu
@@ -440,6 +441,14 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 					timeout = timeWait
 				}
 			}
+		} else if seg.xmitCount == 1 {
+			// seg was sent once, and not before the RACK segment. Segments
+			// are first sent in sequence order, so every later segment was
+			// last sent no earlier than seg: none can be lost now, and none
+			// was marked lost earlier, since the RACK segment only advances.
+			// Without loss or reordering the walk ends here, at the first
+			// segment, instead of at the end of the flight.
+			break
 		}
 	}
 

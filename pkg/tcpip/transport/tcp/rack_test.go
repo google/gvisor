@@ -15,6 +15,8 @@
 package tcp
 
 import (
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -409,6 +411,260 @@ func TestRACKEqualTransmitTimeOrdersByEndSequence(t *testing.T) {
 		if seg.lost != wantLost {
 			t.Errorf("segment ending at %d lost=%t, want %t", seg.sequenceNumber.Add(1), seg.lost, wantLost)
 		}
+	}
+}
+
+// TestRACKDetectLossStopsAfterRACKSegment checks that loss detection does not
+// look past the first segment that was sent once and not before the RACK
+// segment. Segments are first sent in sequence order, so no segment after it
+// can have been sent before the RACK segment.
+func TestRACKDetectLossStopsAfterRACKSegment(t *testing.T) {
+	rackXmitTime := tcpip.MonotonicTime{}.Add(time.Millisecond)
+	for _, test := range []struct {
+		name     string
+		xmitTime tcpip.MonotonicTime
+	}{
+		{"later", rackXmitTime.Add(time.Millisecond)},
+		// The RACK segment ends at 2, as does the segment below.
+		{"same time", rackXmitTime},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			ctx := newRACKTestContext(clock, 0)
+			defer ctx.cleanup()
+			ctx.snd.ep.mu.Lock()
+			defer ctx.snd.ep.mu.Unlock()
+			ctx.snd.rc.XmitTime = rackXmitTime
+			ctx.snd.rc.EndSequence = 2
+
+			before := ctx.addSegment(0, tcpip.MonotonicTime{})
+			ctx.addSegment(1, test.xmitTime)
+			// No sender produces this segment: it follows a segment that was
+			// sent once, and claims to have been sent before it. It shows
+			// whether the walk went past that segment.
+			beyond := ctx.addSegment(2, tcpip.MonotonicTime{})
+
+			if got := ctx.snd.rc.detectLoss(rackXmitTime.Add(2 * time.Millisecond)); got != 1 {
+				t.Errorf("detectLoss got %d losses, want 1", got)
+			}
+			if !before.lost {
+				t.Error("segment sent before the RACK segment not marked lost")
+			}
+			if beyond.lost {
+				t.Error("detectLoss examined a segment past the first one sent after the RACK segment")
+			}
+		})
+	}
+}
+
+// TestRACKDetectLossWalksPastRetransmissions checks that a retransmission,
+// which says nothing about when the segments after it were sent, does not end
+// loss detection.
+func TestRACKDetectLossWalksPastRetransmissions(t *testing.T) {
+	clock := faketime.NewManualClock()
+	ctx := newRACKTestContext(clock, 0)
+	defer ctx.cleanup()
+	ctx.snd.ep.mu.Lock()
+	defer ctx.snd.ep.mu.Unlock()
+	ctx.snd.rc.XmitTime = tcpip.MonotonicTime{}.Add(time.Millisecond)
+	ctx.snd.rc.EndSequence = 3
+
+	// The first segment was retransmitted after the RACK segment was sent.
+	retransmitted := ctx.addSegment(0, tcpip.MonotonicTime{}.Add(2*time.Millisecond))
+	retransmitted.xmitCount = 2
+	// A segment marked lost earlier and not yet retransmitted still counts.
+	marked := ctx.addSegment(1, tcpip.MonotonicTime{})
+	marked.lost = true
+	original := ctx.addSegment(2, tcpip.MonotonicTime{})
+
+	if got := ctx.snd.rc.detectLoss(tcpip.MonotonicTime{}.Add(3 * time.Millisecond)); got != 2 {
+		t.Errorf("detectLoss got %d losses, want 2", got)
+	}
+	if retransmitted.lost {
+		t.Error("retransmission sent after the RACK segment marked lost")
+	}
+	if !marked.lost {
+		t.Error("segment marked lost earlier no longer marked lost")
+	}
+	if !original.lost {
+		t.Error("segment sent before the RACK segment not marked lost")
+	}
+}
+
+// fullWalk reports what detectLoss has to find at rcvTime: the segments it
+// has to mark lost, its result, and the longest wait for a segment that is
+// not lost yet. It looks at every transmitted segment and changes nothing.
+//
+// +checklocks:ctx.snd.ep.mu
+func (ctx *rackTestContext) fullWalk(rcvTime tcpip.MonotonicTime) (map[*segment]bool, int, time.Duration) {
+	rc := &ctx.snd.rc
+	lost := make(map[*segment]bool)
+	numLost := 0
+	var timeout time.Duration
+	for seg := ctx.snd.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
+		if ctx.snd.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+			lost[seg] = seg.lost
+			continue
+		}
+		if seg.lost && seg.xmitCount == 1 {
+			lost[seg] = true
+			numLost++
+			continue
+		}
+		lost[seg] = seg.lost
+		endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
+		if !seg.xmitTime.Before(rc.XmitTime) && (seg.xmitTime != rc.XmitTime || !endSeq.LessThan(rc.EndSequence)) {
+			continue
+		}
+		if timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd; timeRemaining <= 0 {
+			lost[seg] = true
+			numLost++
+		} else if timeRemaining > timeout {
+			timeout = timeRemaining
+		}
+	}
+	return lost, numLost, timeout
+}
+
+// TestRACKDetectLossMatchesFullWalk drives a sender's write list through
+// random transmissions, retransmissions, splits, acknowledgments and
+// scoreboard resets, and checks after each step that detectLoss finds what a
+// walk over every transmitted segment finds.
+func TestRACKDetectLossMatchesFullWalk(t *testing.T) {
+	const (
+		seeds = 200
+		steps = 300
+		tick  = 100 * time.Microsecond
+	)
+	for seed := int64(0); seed < seeds; seed++ {
+		func() {
+			rng := rand.New(rand.NewSource(seed))
+			clock := faketime.NewManualClock()
+			ctx := newRACKTestContext(clock, 0)
+			defer ctx.cleanup()
+			ctx.snd.ep.mu.Lock()
+			defer ctx.snd.ep.mu.Unlock()
+			ctx.snd.rc.ReoWnd = time.Duration(rng.Intn(4)) * tick
+
+			// live holds the segments in the write list, in order.
+			var live []*segment
+			pick := func() *segment {
+				if len(live) == 0 {
+					return nil
+				}
+				return live[rng.Intn(len(live))]
+			}
+			deliver := func(seg *segment) {
+				ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
+				defer ack.DecRef()
+				ctx.snd.rc.update(seg, ack)
+			}
+
+			// Sequence numbers advance by two, which leaves room for the
+			// second half of a split segment.
+			var next seqnum.Value
+			for step := 0; step < steps; step++ {
+				switch op := rng.Intn(12); {
+				case op < 4:
+					// Send new data.
+					live = append(live, ctx.addSegment(next, clock.NowMonotonic()))
+					next += 2
+				case op < 6:
+					clock.Advance(time.Duration(1+rng.Intn(3)) * tick)
+				case op == 10:
+					// Split a segment, as splitSeg does: the second half
+					// inherits when and how often the segment was sent.
+					if len(live) == 0 {
+						break
+					}
+					i := rng.Intn(len(live))
+					seg := live[i]
+					if seg.sequenceNumber%2 != 0 || (i+1 < len(live) && live[i+1].sequenceNumber == seg.sequenceNumber+1) {
+						break
+					}
+					half := seg.clone()
+					half.sequenceNumber++
+					ctx.snd.writeList.InsertAfter(seg, half)
+					ctx.segs = append(ctx.segs, half)
+					live = append(live[:i+1], append([]*segment{half}, live[i+1:]...)...)
+				case op == 11:
+					// A retransmission timeout forgets what was selectively
+					// acknowledged.
+					ctx.snd.ep.scoreboard.Reset()
+				case op < 7:
+					// Retransmit, as sendSegment does.
+					if seg := pick(); seg != nil {
+						seg.xmitTime = clock.NowMonotonic()
+						seg.xmitCount++
+						seg.lost = false
+					}
+				case op < 9:
+					// Selective acknowledgment.
+					if seg := pick(); seg != nil && !ctx.snd.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+						deliver(seg)
+						ctx.snd.ep.scoreboard.Insert(seg.sackBlock())
+					}
+				default:
+					// Cumulative acknowledgment.
+					for n := rng.Intn(3); n >= 0 && len(live) != 0; n-- {
+						seg := live[0]
+						if !ctx.snd.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+							deliver(seg)
+						}
+						ctx.snd.writeList.Remove(seg)
+						live = live[1:]
+					}
+				}
+
+				now := clock.NowMonotonic()
+				wantLost, wantNumLost, wantTimeout := ctx.fullWalk(now)
+				ctx.snd.reorderTimer.disable()
+				if got := ctx.snd.rc.detectLoss(now); got != wantNumLost {
+					t.Fatalf("seed %d step %d: detectLoss got %d losses, want %d", seed, step, got, wantNumLost)
+				}
+				for seg := ctx.snd.writeList.Front(); seg != nil; seg = seg.Next() {
+					if seg.lost != wantLost[seg] {
+						t.Fatalf("seed %d step %d: segment %d lost=%t, want %t", seed, step, seg.sequenceNumber, seg.lost, wantLost[seg])
+					}
+				}
+				if got, want := ctx.snd.reorderTimer.enabled(), wantTimeout != 0; got != want {
+					t.Fatalf("seed %d step %d: reorder timer enabled=%t, want %t", seed, step, got, want)
+				}
+				if got, want := ctx.snd.reorderTimer.target, now.Add(wantTimeout); wantTimeout != 0 && got != want {
+					t.Fatalf("seed %d step %d: reorder timer target = %v, want %v", seed, step, got, want)
+				}
+			}
+		}()
+	}
+}
+
+// BenchmarkRACKDetectLoss measures loss detection on an ACK that finds no
+// loss: the RACK segment has been acknowledged cumulatively, and everything in
+// flight was sent after it.
+func BenchmarkRACKDetectLoss(b *testing.B) {
+	for _, inFlight := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("inFlight=%d", inFlight), func(b *testing.B) {
+			clock := faketime.NewManualClock()
+			ctx := newRACKTestContext(clock, 0)
+			defer ctx.cleanup()
+			ctx.snd.ep.mu.Lock()
+			defer ctx.snd.ep.mu.Unlock()
+			ctx.snd.rc.XmitTime = tcpip.MonotonicTime{}.Add(time.Millisecond)
+			ctx.snd.rc.EndSequence = 1
+			xmitTime := ctx.snd.rc.XmitTime
+			for seq := 1; seq <= inFlight; seq++ {
+				xmitTime = xmitTime.Add(time.Microsecond)
+				ctx.addSegment(seqnum.Value(seq), xmitTime)
+			}
+			now := xmitTime.Add(time.Millisecond)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if got := ctx.snd.rc.detectLoss(now); got != 0 {
+					b.Fatalf("detectLoss got %d losses, want 0", got)
+				}
+			}
+		})
 	}
 }
 
