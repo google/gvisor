@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime"
 	"slices"
@@ -51,7 +52,7 @@ func openSaveTestFile(tb testing.TB, dir string) *os.File {
 
 // newSaveTestMemoryFile returns a MemoryFile backed by a file in dir, or by a
 // memfd if dir is empty.
-func newSaveTestMemoryFile(t *testing.T, dir string, diskBacked bool) *MemoryFile {
+func newSaveTestMemoryFile(t testing.TB, dir string, diskBacked bool) *MemoryFile {
 	t.Helper()
 	file := openSaveTestFile(t, dir)
 	f, err := NewMemoryFile(file, MemoryFileOpts{
@@ -286,10 +287,12 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 		name          string
 		diskBacked    bool
 		exclude       bool
+		shared        bool
 		wantCommitted uint64
 	}{
 		{name: "memfd", wantCommitted: 2 * uint64(hostarch.PageSize)},
 		{name: "memfd excluding committed zero pages", exclude: true, wantCommitted: uint64(hostarch.PageSize)},
+		{name: "memfd shared", shared: true, wantCommitted: 2 * uint64(hostarch.PageSize)},
 		{name: "disk-backed", diskBacked: true, wantCommitted: 2 * uint64(hostarch.PageSize)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -299,6 +302,10 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 			}
 			f := newSaveTestMemoryFile(t, dir, tc.diskBacked)
 			fr := allocateSaveTestPages(t, f)
+			if tc.shared {
+				f.IncRef(fr, 0)
+				t.Cleanup(func() { f.DecRef(fr) })
+			}
 			pwritePage(t, f, fr, 2, 1)
 			pwritePage(t, f, fr, 13, 2)
 
@@ -333,6 +340,15 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 				t.Fatalf("asynchronous page load: %v", asyncErr)
 			}
 			t.Cleanup(func() { restored.DecRef(fr) })
+			if got, want := restored.HasUniqueRef(fr), !tc.shared; got != want {
+				t.Fatalf("HasUniqueRef after async restore = %t, want %t", got, want)
+			}
+			if tc.shared {
+				restored.DecRef(fr)
+				if !restored.HasUniqueRef(fr) {
+					t.Fatal("restored pages remain shared after releasing the extra reference")
+				}
+			}
 			restored.forEachMappingSlice(fr, func(bs []byte) {
 				if !bytes.Equal(bs, want) {
 					t.Error("restored contents differ from saved contents")
@@ -540,5 +556,331 @@ func TestAsyncLoadShortRead(t *testing.T) {
 	}
 	if !dst.HasUniqueRef(fr) {
 		t.Error("page loader still holds a reference after reporting EIO")
+	}
+}
+
+func TestSaveToPreservesReferenceCounts(t *testing.T) {
+	newMemoryFile := func() *MemoryFile {
+		file := openSaveTestFile(t, "")
+		f, err := NewMemoryFile(file, MemoryFileOpts{
+			DelayedEviction:         DelayedEvictionDisabled,
+			DisableMemoryAccounting: true,
+			ExpectHugepages:         true,
+		})
+		if err != nil {
+			file.Close()
+			t.Fatalf("NewMemoryFile: %v", err)
+		}
+		t.Cleanup(f.Destroy)
+		return f
+	}
+	f := newMemoryFile()
+	small, err := f.Allocate(8*uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate small pages: %v", err)
+	}
+	huge, err := f.Allocate(2*uint64(hostarch.HugePageSize), AllocOpts{Mode: AllocateUncommitted, Huge: true})
+	if err != nil {
+		t.Fatalf("Allocate huge pages: %v", err)
+	}
+	crossSmall, err := f.Allocate(chunkSize, AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate small pages before huge pages: %v", err)
+	}
+	crossHuge, err := f.Allocate(chunkSize, AllocOpts{Mode: AllocateUncommitted, Huge: true})
+	if err != nil {
+		t.Fatalf("Allocate huge pages after small pages: %v", err)
+	}
+	crossTailSmall, err := f.Allocate(chunkSize, AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatalf("Allocate small pages after huge pages: %v", err)
+	}
+	if crossSmall.End != crossHuge.Start || crossHuge.End != crossTailSmall.Start {
+		t.Fatalf("page-size classes are not adjacent: small %v, huge %v, small %v", crossSmall, crossHuge, crossTailSmall)
+	}
+	cross := memmap.FileRange{Start: crossSmall.Start, End: crossTailSmall.End}
+	smallFirst := memmap.FileRange{Start: small.Start + uint64(hostarch.PageSize), End: small.Start + 5*uint64(hostarch.PageSize)}
+	smallSecond := memmap.FileRange{Start: small.Start + 3*uint64(hostarch.PageSize), End: small.Start + 6*uint64(hostarch.PageSize)}
+	hugeFirst := memmap.FileRange{Start: huge.Start, End: huge.Start + uint64(hostarch.HugePageSize)}
+	f.IncRef(smallFirst, 0)
+	f.IncRef(smallSecond, 0)
+	f.IncRef(huge, 0)
+	f.IncRef(hugeFirst, 0)
+	f.IncRef(cross, 0)
+
+	var checkpoint bytes.Buffer
+	if err := f.SaveTo(context.Background(), &checkpoint, &SaveOpts{}); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+	// Balance the source references before the MemoryFile is destroyed.
+	f.DecRef(smallSecond)
+	f.DecRef(smallFirst)
+	f.DecRef(hugeFirst)
+	f.DecRef(huge)
+	f.DecRef(small)
+	f.DecRef(huge)
+	f.DecRef(cross)
+	f.DecRef(crossSmall)
+	f.DecRef(crossHuge)
+	f.DecRef(crossTailSmall)
+
+	restored := newMemoryFile()
+	if err := restored.LoadFrom(context.Background(), bytes.NewReader(checkpoint.Bytes()), &LoadOpts{}); err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if got, ok := restored.FirstSharedRange(small); !ok || got != (memmap.FileRange{
+		Start: small.Start + uint64(hostarch.PageSize),
+		End:   small.Start + 6*uint64(hostarch.PageSize),
+	}) {
+		t.Errorf("FirstSharedRange(small) = (%v, %t), want the complete overlapping range", got, ok)
+	}
+	if got, ok := restored.FirstSharedRange(huge); !ok || got != huge {
+		t.Errorf("FirstSharedRange(huge) = (%v, %t), want %v", got, ok, huge)
+	}
+	restored.DecRef(smallSecond)
+	if got, ok := restored.FirstSharedRange(small); !ok || got != (memmap.FileRange{
+		Start: small.Start + uint64(hostarch.PageSize),
+		End:   small.Start + 5*uint64(hostarch.PageSize),
+	}) {
+		t.Errorf("FirstSharedRange(small) after partial release = (%v, %t), want the remaining overlap", got, ok)
+	}
+	restored.DecRef(smallFirst)
+	if !restored.HasUniqueRef(small) {
+		t.Error("small backing is shared after all extra references are released")
+	}
+	restored.DecRef(huge)
+	if got, ok := restored.FirstSharedRange(huge); !ok || got != hugeFirst {
+		t.Errorf("FirstSharedRange(huge) after partial release = (%v, %t), want %v", got, ok, hugeFirst)
+	}
+	restored.DecRef(hugeFirst)
+	if !restored.HasUniqueRef(huge) {
+		t.Error("huge backing is shared after all extra references are released")
+	}
+	if got, ok := restored.FirstSharedRange(cross); !ok || got != cross {
+		t.Errorf("FirstSharedRange(cross) = (%v, %t), want %v", got, ok, cross)
+	}
+	restored.DecRef(cross)
+	if !restored.HasUniqueRef(cross) {
+		t.Error("cross-class backing is shared after its extra reference is released")
+	}
+	restored.DecRef(crossSmall)
+	restored.DecRef(crossHuge)
+	restored.DecRef(crossTailSmall)
+
+	smallProbe, err := restored.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted, Dir: TopDown})
+	if err != nil {
+		t.Fatalf("Allocate small probe: %v", err)
+	}
+	if smallProbe.Start < huge.End && huge.Start < smallProbe.End {
+		t.Errorf("small allocation %v overlaps live huge allocation %v", smallProbe, huge)
+	}
+	hugeProbe, err := restored.Allocate(uint64(hostarch.HugePageSize), AllocOpts{Mode: AllocateUncommitted, Huge: true, Dir: BottomUp})
+	if err != nil {
+		t.Fatalf("Allocate huge probe: %v", err)
+	}
+	if hugeProbe.Start < small.End && small.Start < hugeProbe.End {
+		t.Errorf("huge allocation %v overlaps live small allocation %v", hugeProbe, small)
+	}
+	restored.DecRef(smallProbe)
+	restored.DecRef(hugeProbe)
+	restored.DecRef(small)
+	restored.DecRef(huge)
+}
+
+func TestMemoryFileOrdinaryReferenceLimits(t *testing.T) {
+	f := newSaveTestMemoryFile(t, "", false)
+	fr, err := f.Allocate(uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.DecRef(fr)
+	for _, count := range []uint64{math.MaxUint64 - 1, math.MaxUint64} {
+		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
+			f.mu.Lock()
+			pb := f.exportMetadataProto()
+			f.mu.Unlock()
+			for _, r := range pb.UnfreeSmall {
+				if r.Start <= fr.Start && fr.End <= r.End {
+					r.Refs = count
+				}
+			}
+			loaded := &MemoryFile{}
+			if err := loaded.importMetadataProto(pb); err != nil {
+				t.Fatal(err)
+			}
+			checkCount := func(want uint64) {
+				t.Helper()
+				loaded.mu.Lock()
+				saved := loaded.exportMetadataProto()
+				loaded.mu.Unlock()
+				found := false
+				for _, r := range saved.UnfreeSmall {
+					if r.Start <= fr.Start && fr.End <= r.End {
+						found = true
+						if r.Refs != want {
+							t.Fatalf("saved count = %d, want %d", r.Refs, want)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("saved metadata omitted live range")
+				}
+				if loaded.HasUniqueRef(fr) != (want == 1) {
+					t.Fatalf("uniqueness disagrees with ordinary count %d", want)
+				}
+			}
+			checkCount(count)
+			loaded.DecRef(fr)
+			checkCount(count - 1)
+			loaded.IncRef(fr, 0)
+			checkCount(count)
+			if count == math.MaxUint64 {
+				func() {
+					defer func() {
+						if recover() == nil {
+							t.Error("ordinary reference overflow did not panic")
+						}
+					}()
+					loaded.IncRef(fr, 0)
+				}()
+				checkCount(count)
+			} else {
+				loaded.IncRef(fr, 0)
+				checkCount(count + 1)
+			}
+		})
+	}
+}
+
+// BenchmarkSaveToUncommitted measures checkpoint metadata costs without page data.
+// For first-save latency, run each sub-benchmark in a fresh process with -benchtime=1x.
+func BenchmarkSaveToUncommitted(b *testing.B) {
+	for _, bc := range []struct {
+		name   string
+		stride uint64
+		shared bool
+	}{
+		{name: "contiguous-unshared", stride: 1},
+		{name: "contiguous-shared", stride: 1, shared: true},
+		{name: "sparse-unshared", stride: 2},
+		{name: "sparse-shared", stride: 2, shared: true},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			const size = 128 << 20
+			page := uint64(hostarch.PageSize)
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				file := openSaveTestFile(b, "")
+				f, err := NewMemoryFile(file, MemoryFileOpts{
+					DelayedEviction:         DelayedEvictionDisabled,
+					DisableMemoryAccounting: true,
+				})
+				if err != nil {
+					file.Close()
+					b.Fatalf("NewMemoryFile: %v", err)
+				}
+				fr, err := f.Allocate(size, AllocOpts{Mode: AllocateUncommitted})
+				if err != nil {
+					f.Destroy()
+					b.Fatalf("Allocate: %v", err)
+				}
+				for start := fr.Start; start < fr.End; start += bc.stride * page {
+					if bc.shared {
+						f.IncRef(memmap.FileRange{Start: start, End: start + page}, 0)
+					}
+					if bc.stride == 2 {
+						f.DecRef(memmap.FileRange{Start: start + page, End: start + 2*page})
+					}
+				}
+				f.mu.Lock()
+				for f.haveWaste {
+					f.mu.Unlock()
+					runtime.Gosched()
+					f.mu.Lock()
+				}
+				f.mu.Unlock()
+				b.StartTimer()
+				if err := f.SaveTo(context.Background(), io.Discard, &SaveOpts{}); err != nil {
+					b.Fatalf("SaveTo: %v", err)
+				}
+				b.StopTimer()
+				for start := fr.Start; start < fr.End; start += bc.stride * page {
+					fr := memmap.FileRange{Start: start, End: start + page}
+					if bc.shared {
+						f.DecRef(fr)
+					}
+					f.DecRef(fr)
+				}
+				f.Destroy()
+			}
+		})
+	}
+}
+
+// BenchmarkLoadFromUncommitted measures restore costs without page data.
+// For cold restores, run each sub-benchmark in a fresh process with -benchtime=1x.
+func BenchmarkLoadFromUncommitted(b *testing.B) {
+	for _, fragmented := range []bool{false, true} {
+		file := openSaveTestFile(b, "")
+		f, err := NewMemoryFile(file, MemoryFileOpts{
+			DelayedEviction:         DelayedEvictionDisabled,
+			DisableMemoryAccounting: true,
+		})
+		if err != nil {
+			file.Close()
+			b.Fatalf("NewMemoryFile: %v", err)
+		}
+		fr, err := f.Allocate(128<<20, AllocOpts{Mode: AllocateUncommitted})
+		if err != nil {
+			f.Destroy()
+			b.Fatalf("Allocate: %v", err)
+		}
+		page := uint64(hostarch.PageSize)
+		if fragmented {
+			f.IncRef(fr, 0)
+			for start := fr.Start; start < fr.End; start += 2 * page {
+				f.IncRef(memmap.FileRange{Start: start, End: start + page}, 0)
+			}
+		}
+		release := func(mf *MemoryFile) {
+			if fragmented {
+				for start := fr.Start; start < fr.End; start += 2 * page {
+					mf.DecRef(memmap.FileRange{Start: start, End: start + page})
+				}
+				mf.DecRef(fr)
+			}
+			mf.DecRef(fr)
+			mf.Destroy()
+		}
+		var checkpoint bytes.Buffer
+		if err := f.SaveTo(context.Background(), &checkpoint, &SaveOpts{}); err != nil {
+			b.Fatalf("SaveTo: %v", err)
+		}
+		// Keep source nodes live so they cannot prewarm the restore pool.
+		b.Cleanup(func() { release(f) })
+
+		b.Run(fmt.Sprintf("fragmented-sharing=%t", fragmented), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				file := openSaveTestFile(b, "")
+				restored, err := NewMemoryFile(file, MemoryFileOpts{
+					DelayedEviction:         DelayedEvictionDisabled,
+					DisableMemoryAccounting: true,
+				})
+				if err != nil {
+					file.Close()
+					b.Fatalf("NewMemoryFile: %v", err)
+				}
+				b.StartTimer()
+				if err := restored.LoadFrom(context.Background(), bytes.NewReader(checkpoint.Bytes()), &LoadOpts{}); err != nil {
+					b.Fatalf("LoadFrom: %v", err)
+				}
+				b.StopTimer()
+				release(restored)
+			}
+		})
 	}
 }
