@@ -266,12 +266,21 @@ func (s *State) FullRestore() bool {
 func New(arch Arch) *Context64 {
 	switch arch {
 	case ARM64:
-		return &Context64{
+		c := &Context64{
 			State{
 				fpState: fpu.NewState(),
 			},
 			[]fpu.State(nil),
 		}
+		// Like Linux's start_thread, start applications with speculative
+		// store bypass allowed when the CPU lets software control it. With
+		// PSTATE.SSBS clear, a load can't run ahead of an older store whose
+		// address isn't known yet, which slows ordinary code by up to 2x.
+		// Applications can still clear it with MSR SSBS.
+		if cpuid.HostFeatureSet().HasSSBS() {
+			c.Regs.Pstate |= linux.PSR_SSBS_BIT
+		}
+		return c
 	}
 	panic(fmt.Sprintf("unknown architecture %v", arch))
 }
