@@ -115,6 +115,7 @@ func uvmIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_VALIDATE_VA_RANGE), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_CREATE_EXTERNAL_RANGE), compUtil},
+		{seccomp.EqualTo(nvgpu.UVM_MAP_EXTERNAL_SPARSE), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_TOOLS_INIT_EVENT_TRACKER), nvconf.CapProfiling},
 		{seccomp.EqualTo(nvgpu.UVM_TOOLS_SET_NOTIFICATION_THRESHOLD), nvconf.CapProfiling},
 		{seccomp.EqualTo(nvgpu.UVM_TOOLS_EVENT_QUEUE_ENABLE_EVENTS), nvconf.CapProfiling},

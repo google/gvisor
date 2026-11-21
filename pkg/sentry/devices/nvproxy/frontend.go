@@ -250,7 +250,11 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	result, err := fd.dev.nvp.abi.frontendIoctl[nr].handle(&fi)
 	if err != nil {
 		if handleErr, ok := err.(*errHandler); ok {
-			fi.ctx.Warningf("nvproxy: %v for frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", handleErr, nr, nr, argSize, cmd)
+			if fi.nr != nr {
+				fi.ctx.Warningf("nvproxy: %v for frontend ioctl %d == %#x (argSize=%d) in transfer (cmd=%#x)", handleErr, fi.nr, fi.nr, fi.ioctlParamsSize, cmd)
+			} else {
+				fi.ctx.Warningf("nvproxy: %v for frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", handleErr, nr, nr, argSize, cmd)
+			}
 			return 0, linuxerr.EINVAL
 		}
 	}
@@ -272,6 +276,34 @@ type frontendIoctlState struct {
 	nr              uint32
 	ioctlParamsAddr hostarch.Addr
 	ioctlParamsSize uint32
+}
+
+// frontendIoctlXfer implements NV_ESC_IOCTL_XFER_CMD by dispatching the
+// enclosed ioctl to its own handler, as if the application had issued it
+// directly.
+func frontendIoctlXfer(fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.IoctlXfer
+	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	// Handlers forward the enclosed ioctl to the host as a direct ioctl, so it
+	// cannot be another transfer, and its number and size must fit in the
+	// IOC_NRBITS and IOC_SIZEBITS fields of an ioctl request. The host driver
+	// also accepts a size of exactly NV_ABSOLUTE_MAX_IOCTL_SIZE
+	// (1 << IOC_SIZEBITS), which this check rejects.
+	if ioctlParams.Cmd == nvgpu.NV_ESC_IOCTL_XFER_CMD || ioctlParams.Cmd >= 1<<linux.IOC_NRBITS || ioctlParams.Size >= 1<<linux.IOC_SIZEBITS {
+		return 0, linuxerr.EINVAL
+	}
+	fi.nr = ioctlParams.Cmd
+	fi.ioctlParamsAddr = addrFromP64(ioctlParams.Ptr)
+	fi.ioctlParamsSize = ioctlParams.Size
+	if fi.ctx.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: frontend ioctl in transfer: nr = %d = %#x, argSize = %d", fi.nr, fi.nr, fi.ioctlParamsSize)
+	}
+	return fi.fd.dev.nvp.abi.frontendIoctl[fi.nr].handle(fi)
 }
 
 // frontendIoctlSimple implements a frontend ioctl whose parameters don't

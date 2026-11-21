@@ -63,6 +63,7 @@ const (
 	UVM_PAGEABLE_MEM_ACCESS_ON_GPU        = 70
 	UVM_VALIDATE_VA_RANGE                 = 72
 	UVM_CREATE_EXTERNAL_RANGE             = 73
+	UVM_MAP_EXTERNAL_SPARSE               = 74
 	UVM_MM_INITIALIZE                     = 75
 	UVM_TOOLS_INIT_EVENT_TRACKER_V2       = 76
 	UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_V2 = 77
@@ -871,6 +872,26 @@ func (p *UVM_CREATE_EXTERNAL_RANGE_PARAMS) GetStatus() uint32 {
 
 // SetStatus implements HasStatus.SetStatus.
 func (p *UVM_CREATE_EXTERNAL_RANGE_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
+type UVM_MAP_EXTERNAL_SPARSE_PARAMS struct {
+	_        structs.HostLayout
+	Base     uint64
+	Length   uint64
+	GPUUUID  NvUUID
+	RMStatus uint32
+	Pad0     [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MAP_EXTERNAL_SPARSE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_MAP_EXTERNAL_SPARSE_PARAMS) SetStatus(status uint32) {
 	p.RMStatus = status
 }
 
