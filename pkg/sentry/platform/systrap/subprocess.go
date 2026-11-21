@@ -94,15 +94,26 @@ type thread struct {
 	logPrefix atomic.Pointer[string]
 }
 
-// requestThread is used to request a new sysmsg thread. A thread identifier will
-// be sent into the thread channel.
+type threadResult struct {
+	thread *thread
+	err    error
+}
+
+// rejectedSysmsgClone marks an errno from clone before a sysmsg thread exists.
+type rejectedSysmsgClone unix.Errno
+
+func (e rejectedSysmsgClone) Error() string {
+	return unix.Errno(e).Error()
+}
+
+// requestThread is used to request a new sysmsg thread.
 type requestThread struct {
-	thread chan *thread
+	result chan threadResult
 }
 
 // requestStub is used to request a new stub process.
 type requestStub struct {
-	done chan *thread
+	result chan threadResult
 }
 
 // maxSysmsgThreads is the maximum number of sysmsg threads that a subprocess
@@ -230,13 +241,17 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 	return nil
 }
 
-func handlePtraceSyscallRequestError(req any, format string, values ...any) {
+func sendPtraceSyscallRequestResult(req any, result threadResult) {
 	switch req := req.(type) {
 	case requestThread:
-		req.thread <- nil
+		req.result <- result
 	case requestStub:
-		req.done <- nil
+		req.result <- result
 	}
+}
+
+func handlePtraceSyscallRequestError(req any, err error, format string, values ...any) {
+	sendPtraceSyscallRequestResult(req, threadResult{err: err})
 	log.BugTracebackf("handlePtraceSyscallRequest failed: "+format, values...)
 }
 
@@ -247,18 +262,13 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	s.syscallThreadMu.Lock()
 	defer s.syscallThreadMu.Unlock()
 	if s.dead.Load() {
-		switch req := req.(type) {
-		case requestThread:
-			req.thread <- nil
-		case requestStub:
-			req.done <- nil
-		}
+		sendPtraceSyscallRequestResult(req, threadResult{err: errDeadSubprocess})
 		return
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := s.syscallThread.attach(); err != nil {
-		handlePtraceSyscallRequestError(req, err.Error())
+		handlePtraceSyscallRequestError(req, err, "%v", err)
 		return
 	}
 	defer s.syscallThread.detach()
@@ -269,7 +279,14 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	case requestThread:
 		t, err := ptraceThread.clone()
 		if err != nil {
-			handlePtraceSyscallRequestError(req, "error initializing thread: %v", err)
+			if errno, ok := err.(unix.Errno); ok {
+				err = rejectedSysmsgClone(errno)
+				if errno == unix.EAGAIN {
+					sendPtraceSyscallRequestResult(req, threadResult{err: err})
+					return
+				}
+			}
+			handlePtraceSyscallRequestError(req, err, "error initializing thread: %v", err)
 			return
 		}
 
@@ -279,8 +296,12 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		// (Hopefully nobody tgkilled it with a signal <
 		// SIGSTOP before the SIGSTOP was delivered, in which
 		// case that signal would be delivered before SIGSTOP.)
-		if sig, err := t.wait(stopped); err != nil || sig != unix.SIGSTOP {
-			handlePtraceSyscallRequestError(req, "error waiting for new clone: expected SIGSTOP, got %v (err: %v)", sig, err)
+		if sig, err := t.wait(stopped); err != nil {
+			handlePtraceSyscallRequestError(req, err, "error waiting for new clone: expected SIGSTOP, got %v (err: %v)", sig, err)
+			return
+		} else if sig != unix.SIGSTOP {
+			err := fmt.Errorf("error waiting for new clone: expected SIGSTOP, got %v", sig)
+			handlePtraceSyscallRequestError(req, err, "%v", err)
 			return
 		}
 
@@ -295,7 +316,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			arch.SyscallArgument{Value: 0},
 		)
 		if err != nil {
-			handlePtraceSyscallRequestError(req, "prctl: %v", err)
+			handlePtraceSyscallRequestError(req, err, "prctl: %v", err)
 			return
 		}
 
@@ -313,20 +334,21 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			if errors.Is(err, unix.EINVAL) {
 				t.Debugf("PR_SET_SYSCALL_USER_DISPATCH isn't supported. User syscalls will be trapped by seccomp.")
 			} else {
-				handlePtraceSyscallRequestError(req, "prctl: %v", err)
+				handlePtraceSyscallRequestError(req, err, "prctl: %v", err)
 				return
 			}
 		}
 
 		id, ok := s.sysmsgStackPool.Get()
 		if !ok {
-			handlePtraceSyscallRequestError(req, "unable to allocate a sysmsg stub thread")
+			err := fmt.Errorf("unable to allocate a sysmsg stub thread")
+			handlePtraceSyscallRequestError(req, err, "%v", err)
 			return
 		}
 		t.sysmsgStackID = id
 
 		if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(unix.SIGSTOP)); e != 0 {
-			handlePtraceSyscallRequestError(req, "tkill failed: %v", e)
+			handlePtraceSyscallRequestError(req, e, "tkill failed: %v", e)
 			return
 		}
 
@@ -334,14 +356,18 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		t.detach()
 
 		// Return the thread.
-		r.thread <- t
+		r.result <- threadResult{thread: t}
 	case requestStub:
 		t, err := ptraceThread.createStub()
 		if err != nil {
-			handlePtraceSyscallRequestError(req, "unable to create a stub process: %v", err)
+			if err == unix.EAGAIN {
+				sendPtraceSyscallRequestResult(req, threadResult{err: err})
+				return
+			}
+			handlePtraceSyscallRequestError(req, err, "unable to create a stub process: %v", err)
 			return
 		}
-		r.done <- t
+		r.result <- threadResult{thread: t}
 
 	}
 }
@@ -367,22 +393,14 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 		return sp, nil
 	}
 
-	// The following goroutine is responsible for creating the first traced
-	// thread, and responding to requests to make additional threads in the
-	// traced process. The process will be killed and reaped when the
-	// request channel is closed, which happens in Release below.
-	requests := make(chan any)
-
-	// Ready.
 	sp := &subprocess{
-		requests:          requests,
+		requests:          make(chan any),
 		faultedContexts:   make(map[*platformContext]struct{}),
 		sysmsgStackPool:   pool.Pool{Start: 0, Limit: uint64(maxChildThreads)},
 		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
 		memoryFile:        memoryFile,
 		sysmsgThreads:     make(map[uint32]*sysmsgThread),
 	}
-	sp.subprocessRefs.InitRefs()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -397,33 +415,71 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 		return nil, err
 	}
 
-	go func() { // S/R-SAFE: Platform-related.
-
-		// Wait for requests to create threads.
-		for req := range requests {
-			sp.handlePtraceSyscallRequest(req)
-		}
-
-		// Requests should never be closed.
-		panic("unreachable")
-	}()
+	go sp.servePtraceSyscallRequests() // S/R-SAFE: Platform-related.
 
 	sp.unmap()
 	sp.usertrap = usertrap.New(disablePatching)
-	sp.mapSharedRegions()
+	contextQueueFR, threadContextFR := sp.mapSharedRegions()
 	sp.mapPrivateRegions()
 
 	// The main stub doesn't need sysmsg threads.
 	if seccompNotify {
-		// Create the initial sysmsg thread.
-		atomic.AddUint32(&sp.contextQueue.numThreadsToWakeup, 1)
-		if err := sp.createSysmsgThread(); err != nil {
+		if err := sp.createInitialSysmsgThread(contextQueueFR, threadContextFR); err != nil {
 			return nil, err
 		}
-		sp.numSysmsgThreads++
 	}
 
+	sp.subprocessRefs.InitRefs()
 	return sp, nil
+}
+
+func (s *subprocess) servePtraceSyscallRequests() {
+	for req := range s.requests {
+		s.handlePtraceSyscallRequest(req)
+	}
+}
+
+func (s *subprocess) createInitialSysmsgThread(contextQueueFR, threadContextFR memmap.FileRange) error {
+	atomic.AddUint32(&s.contextQueue.numThreadsToWakeup, 1)
+	if err := s.withAliveRLock(s.createSysmsgThreadLocked); err != nil {
+		if rejected, ok := err.(rejectedSysmsgClone); ok {
+			s.discardUnstartedSubprocess(contextQueueFR, threadContextFR)
+			return unix.Errno(rejected)
+		}
+		return err
+	}
+	s.numSysmsgThreads++
+	return nil
+}
+
+// discardUnstartedSubprocess releases a new stub after clone failed before
+// creating its first sysmsg thread. The subprocess has not been published.
+func (s *subprocess) discardUnstartedSubprocess(contextQueueFR, threadContextFR memmap.FileRange) {
+	// Wait for the request worker to detach before closing its channel.
+	s.syscallThreadMu.Lock()
+	close(s.requests)
+	s.syscallThreadMu.Unlock()
+
+	t := s.syscallThread
+	if err := unix.Tgkill(int(t.thread.tgid), int(t.thread.tid), unix.SIGKILL); err != nil && err != unix.ESRCH {
+		panic(fmt.Sprintf("killing unstarted stub %d: %v", t.thread.tid, err))
+	}
+	for {
+		var status unix.WaitStatus
+		_, err := unix.Wait4(int(t.thread.tid), &status, unix.WALL, nil)
+		if err == unix.EINTR {
+			continue
+		}
+		if err == unix.ECHILD {
+			break
+		}
+		if err != nil || (!status.Exited() && !status.Signaled()) {
+			panic(fmt.Sprintf("waiting for unstarted stub %d: status %v, error %v", t.thread.tid, status, err))
+		}
+		break
+	}
+	t.releaseSentryResources()
+	s.unmapSharedRegions(contextQueueFR, threadContextFR)
 }
 
 // mapSharedRegions maps the shared regions that are used between the subprocess
@@ -432,7 +488,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 //
 // Should be called before any sysmsg threads are created.
 // Initializes s.contextQueue and s.threadContextRegion.
-func (s *subprocess) mapSharedRegions() {
+func (s *subprocess) mapSharedRegions() (memmap.FileRange, memmap.FileRange) {
 	if s.contextQueue != nil || s.threadContextRegion != 0 {
 		panic("contextQueue or threadContextRegion was already initialized")
 	}
@@ -490,6 +546,7 @@ func (s *subprocess) mapSharedRegions() {
 	}
 
 	s.threadContextRegion = sentryThreadContextRegionAddr
+	return contextQueueFR, threadContextFR
 }
 
 func (s *subprocess) mapPrivateRegions() {
@@ -1136,19 +1193,24 @@ func initSysmsgThreadPriority() {
 // createSysmsgThread creates a new sysmsg thread.
 // The thread starts processing any available context in the context queue.
 func (s *subprocess) createSysmsgThread() error {
-	return s.withAliveRLock(s.createSysmsgThreadLocked)
+	err := s.withAliveRLock(s.createSysmsgThreadLocked)
+	if rejected, ok := err.(rejectedSysmsgClone); ok {
+		return unix.Errno(rejected)
+	}
+	return err
 }
 
 // +checklocksread:s.aliveMu
 func (s *subprocess) createSysmsgThreadLocked() error {
 	// Create a new seccomp process.
 	var r requestThread
-	r.thread = make(chan *thread)
+	r.result = make(chan threadResult)
 	s.requests <- r
-	p := <-r.thread
-	if p == nil {
-		return fmt.Errorf("createSysmsgThread: failed to get clone")
+	result := <-r.result
+	if result.err != nil {
+		return result.err
 	}
+	p := result.thread
 	success := false
 	defer func() {
 		if !success {

@@ -79,6 +79,17 @@ func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.Allo
 	return fr, (*contextQueue)(unsafe.Pointer(addr))
 }
 
+func (s *subprocess) unmapSharedRegions(contextQueueFR, threadContextFR memmap.FileRange) {
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, s.threadContextRegion, uintptr(threadContextFR.Length()), 0); errno != 0 {
+		panic(fmt.Sprintf("unmapping thread context region: %v", errno))
+	}
+	s.memoryFile.DecRef(threadContextFR)
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, uintptr(unsafe.Pointer(s.contextQueue)), uintptr(contextQueueFR.Length()), 0); errno != 0 {
+		panic(fmt.Sprintf("unmapping context queue: %v", errno))
+	}
+	s.memoryFile.DecRef(contextQueueFR)
+}
+
 func saveFPState(ctx *sharedContext, ac *arch.Context64) {
 	fpState := ac.FloatingPointData().BytePointer()
 	dst := unsafe.Slice(fpState, archState.FpLen())
