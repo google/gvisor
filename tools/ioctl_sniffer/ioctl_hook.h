@@ -19,6 +19,4 @@
 
 typedef int (*libc_ioctl)(int fd, uint64_t request, void* argp);
 
-void init_libc_ioctl_handle();
-
 #endif  // TOOLS_IOCTL_SNIFFER_IOCTL_HOOK_H_
