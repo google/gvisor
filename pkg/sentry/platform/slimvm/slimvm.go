@@ -39,6 +39,8 @@ type SlimVM struct {
 	// add RSEQ support for SlimVM.
 	platform.NoCPUNumbers
 
+	platform.NoBlockBeforeSeccomp
+
 	// machine is the backing VM.
 	machine *machine
 }
