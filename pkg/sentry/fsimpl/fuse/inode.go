@@ -701,7 +701,7 @@ func (*inode) IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.Iter
 func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (kernfs.Inode, error) {
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
 		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
-	if !i.fs.conn.noCreate {
+	if !i.fs.conn.noCreate.Load() {
 		in := linux.FUSECreateIn{
 			CreateMeta: linux.FUSECreateMeta{
 				Flags: opts.Flags,
@@ -714,7 +714,7 @@ func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) 
 		if err == nil || !linuxerr.Equals(linuxerr.ENOSYS, err) {
 			return child, err
 		}
-		i.fs.conn.noCreate = true
+		i.fs.conn.noCreate.Store(true)
 	}
 	// The MKNOD reply carries no file handle, so Open() will issue a FUSE_OPEN.
 	in := linux.FUSEMknodIn{
