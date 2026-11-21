@@ -59,7 +59,8 @@ func (ee *ExecError) Error() string {
 	return fmt.Sprintf("process terminated with status: %d", ee.ExitStatus)
 }
 
-// Exec creates a process inside the container.
+// Exec creates a process inside the container and returns its combined output,
+// including any output read before an error.
 // If the process exits with a non-zero error code, the error will be of
 // type `ExecError`.
 func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (string, error) {
@@ -77,7 +78,7 @@ func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (st
 	// observe the request context.
 	out, outErr := p.Logs()
 	if exitStatus, err := p.WaitExitStatus(ctx); err != nil {
-		return "", err
+		return out, err
 	} else if exitStatus != 0 {
 		return out, &ExecError{exitStatus}
 	}
@@ -153,10 +154,8 @@ func (p *Process) Read() (string, string, error) {
 // Logs returns combined stdout/stderr from the process.
 func (p *Process) Logs() (string, error) {
 	var out bytes.Buffer
-	if err := p.read(&out, &out); err != nil {
-		return "", err
-	}
-	return out.String(), nil
+	err := p.read(&out, &out)
+	return out.String(), err
 }
 
 func (p *Process) read(stdout, stderr *bytes.Buffer) error {
