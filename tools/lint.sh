@@ -52,15 +52,12 @@ declare -ra OPTIONAL_CHECKS=(actions clang-tidy)
 declare -ra KNOWN_CHECKS=("${ALL_CHECKS[@]}" "${OPTIONAL_CHECKS[@]}")
 
 declare -r CODESPELL_VERSION="2.3.0"
-declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
 declare -r CLANG_TIDY_VERSION="22.1.8"
 
-# The codespell and cpplint wheels are architecture-independent.
+# The codespell wheel is architecture-independent.
 declare -r CODESPELL_URL="https://files.pythonhosted.org/packages/0e/20/b6019add11e84f821184234cea0ad91442373489ef7ccfa3d73a71b908fa/codespell-${CODESPELL_VERSION}-py3-none-any.whl"
 declare -r CODESPELL_SHA256="a9c7cef2501c9cfede2110fd6d4e5e62296920efe9abfb84648df866e47f58d1"
-declare -r CPPLINT_URL="https://files.pythonhosted.org/packages/6a/52/4ec97b6e4f55549973ce668285228ff0bb1913f058265ff7549c65b3a97d/cpplint-${CPPLINT_VERSION}-py3-none-any.whl"
-declare -r CPPLINT_SHA256="5031cb9671cd5bb3dbb4d3243eebd0d42cdf76388ab49c0d276f8a2d116e9928"
 
 case "$(uname -m)" in
   x86_64|amd64)
@@ -135,20 +132,6 @@ install_codespell() {
   if [[ ! -d "${dir}" ]]; then
     local -r wheel="${CACHE_DIR}/codespell.whl"
     fetch "${CODESPELL_URL}" "${CODESPELL_SHA256}" "${wheel}"
-    rm -rf "${dir}.tmp"
-    mkdir -p "${dir}.tmp"
-    unzip -q "${wheel}" -d "${dir}.tmp"
-    mv "${dir}.tmp" "${dir}"
-    rm -f "${wheel}"
-  fi
-  echo "${dir}"
-}
-
-install_cpplint() {
-  local -r dir="${CACHE_DIR}/cpplint-${CPPLINT_VERSION}"
-  if [[ ! -d "${dir}" ]]; then
-    local -r wheel="${CACHE_DIR}/cpplint.whl"
-    fetch "${CPPLINT_URL}" "${CPPLINT_SHA256}" "${wheel}"
     rm -rf "${dir}.tmp"
     mkdir -p "${dir}.tmp"
     unzip -q "${wheel}" -d "${dir}.tmp"
@@ -352,11 +335,11 @@ check_spelling() {
 }
 
 check_cpplint() {
-  local cpplint_dir
-  cpplint_dir="$(install_cpplint)"
+  local cpplint
+  cpplint="$(bazel_binary @cpplint//:cpplint)"
   local -r jobs="$(nproc 2>/dev/null || echo 1)"
   cc_files |
-    PYTHONPATH="${cpplint_dir}" xargs -0 -P "${jobs}" -n 32 python3 -W ignore::DeprecationWarning -m cpplint \
+    xargs -0 -P "${jobs}" -n 32 "${cpplint}" \
       --quiet --filter=-,+build/include_order,+build/c++11
 }
 

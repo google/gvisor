@@ -180,6 +180,12 @@
   commit: f4b10eef3a7b114033d52c8d83ad43b105a150b3
   sha256: 2c8a2520ef58c3d2a6e9e0392ec2cea37adb17db4e00c903d48415fd809397f8
   license: Apache-2.0
+- dependency: cpplint
+  version: https://github.com/cpplint/cpplint/archive/refs/tags/2.0.2.tar.gz
+  retrieved: "2026-10-29"
+  commit: 350702a4d39395571bd118c9a3cff0a573488d61
+  sha256: fc6d0cd40f934b58e8e0bb5eb5f1f2b651880b5fbc0e93a54e6fb6503f733b3d
+  license: BSD-3-Clause
 - dependency: envoy_api
   version: https://github.com/envoyproxy/data-plane-api/archive/84e84367f2560cdb47b9bb78fd3e615feb80c3e4.tar.gz
   retrieved: "2026-10-06"

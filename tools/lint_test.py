@@ -52,7 +52,7 @@ class LintTest(unittest.TestCase):
     )
     self.tool(self.bin / "git", "printf 'tracked source\\0'")
     self.tool(self.bin / "curl", "echo unexpected-download >&2; exit 42")
-    # Bazel materializes both tools at the execroot-relative paths from cquery.
+    # Bazel materializes three tools at the execroot-relative paths from cquery.
     self.tool(
         self.bin / "bazel",
         f'echo "$*" >> "{self.bazel_log}"\n'
@@ -61,11 +61,12 @@ class LintTest(unittest.TestCase):
         '  *" cquery "*)\n'
         '    case "$*" in\n'
         '      *"@buildifier_prebuilt//:buildifier"*) echo "buildifier buildifier" ;;\n'
+        '      *"@cpplint//:cpplint"*) echo "cpplint cpplint" ;;\n'
         '      *) echo "goimports goimports" ;;\n'
         '    esac ;;\n'
         "esac",
     )
-    for name in ("goimports", "clang-format", "buildifier"):
+    for name in ("goimports", "clang-format", "buildifier", "cpplint"):
       self.tool(self.formatter(name), "exit 0")
 
   def tool(self, path: pathlib.Path, body: str) -> None:
@@ -73,7 +74,7 @@ class LintTest(unittest.TestCase):
     path.chmod(0o755)
 
   def formatter(self, name: str) -> pathlib.Path:
-    if name in ("goimports", "buildifier"):
+    if name in ("goimports", "buildifier", "cpplint"):
       return self.execroot / name
     version = self.versions[name.upper().replace("-", "_")]
     return self.cache / f"{name}-{version}"
@@ -95,7 +96,7 @@ class LintTest(unittest.TestCase):
     self.assertNotIn("lint: all checks passed.", result.stderr)
 
   def test_formatter_status(self) -> None:
-    names = ("goimports", "clang-format", "buildifier")
+    names = ("goimports", "clang-format", "buildifier", "cpplint")
     success = self.lint(*names)
     self.assertEqual(success.returncode, 0, success.stderr)
     for name in names:
@@ -105,6 +106,7 @@ class LintTest(unittest.TestCase):
         ("goimports",),
         ("clang-format",),
         ("buildifier",),
+        ("cpplint",),
         ("--fix", "goimports"),
         ("--fix", "buildifier"),
     ):
