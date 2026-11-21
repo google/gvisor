@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
   libreadline-dev \
   libssl-dev \
   make \
+  patch \
   zlib1g-dev
 
 # Use flags -LJO to follow the html redirect and download .tar.gz.
@@ -19,3 +20,7 @@ RUN tar -zxf cpython-${VERSION}.tar.gz
 WORKDIR /root/cpython-${VERSION}
 RUN ./configure --with-pydebug
 RUN make -s -j $(nproc)
+
+COPY socket-cleanup.patch /tmp/socket-cleanup.patch
+RUN patch -p1 --fuzz=0 --no-backup-if-mismatch < /tmp/socket-cleanup.patch \
+  && rm -f /tmp/socket-cleanup.patch
