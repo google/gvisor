@@ -105,24 +105,20 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	defer nodeApp.CleanUp(ctx)
 
 	// Wait until the Client sees the server as up.
-	harness.WaitUntilContainerServing(ctx, clientMachine, nodeApp, port)
+	if err := harness.WaitUntilContainerServing(ctx, clientMachine, nodeApp, port); err != nil {
+		b.Fatalf("server readiness failed: %v", err)
+	}
 
 	heyCmd := hey.MakeCmd("node", port)
 
 	// the client should run on Native.
-	b.ResetTimer()
 	client := clientMachine.GetNativeContainer(ctx, b)
-	out, err := client.Run(ctx, dockerutil.RunOpts{
+	defer client.CleanUp(ctx)
+	runHey(b, ctx, client, dockerutil.RunOpts{
 		Image:      "benchmarks/hey",
 		Links:      []string{nodeApp.MakeLink("node")},
 		CpusetCpus: harness.ClientCPUSet(),
-	}, heyCmd...)
-	if err != nil {
-		b.Fatalf("hey container failed: %v logs: %s", err, out)
-	}
-
-	// Stop the timer to parse the data and report stats.
-	hey.Report(b, out)
+	}, hey, heyCmd...)
 }
 
 func TestMain(m *testing.M) {

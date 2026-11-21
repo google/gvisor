@@ -59,14 +59,14 @@ func (dr *dockerRunner) Run(ctx context.Context, image string, argv []string) ([
 	stdout, stderr, streamsErr := cont.OutputStreams(ctx)
 	if waitErr != nil {
 		if streamsErr == nil {
-			return nil, nil, fmt.Errorf("container exited with error: %v; stderr: %v", waitErr, stderr)
+			return nil, nil, fmt.Errorf("container exited with error: %v; stderr: %s", waitErr, stderr)
 		}
 		return nil, nil, fmt.Errorf("container exited with error: %v (cannot get output streams: %v)", waitErr, streamsErr)
 	}
 	if streamsErr != nil {
 		return nil, nil, fmt.Errorf("could not get container output streams: %v", streamsErr)
 	}
-	return []byte(stdout), []byte(stderr), nil
+	return stdout.Bytes(), stderr.Bytes(), nil
 }
 
 // XL generates images using Stable Diffusion XL.
