@@ -1,0 +1,222 @@
+# This workflow sets a commit status on the head commit of each open pull
+# request to master or to a release branch. The status is
+# "maintainer-approval/master" or "maintainer-approval/release". It is
+# successful when enough maintainers approved the pull request;
+# maintainer_approval.js has the rule.
+#
+# Each run reads the state of all open pull requests, and sets the statuses
+# that are out of date. The head commit of a pull request gets its first status
+# when the status is successful, when a maintainer approval is in effect, or
+# when the script cannot read the statuses of that commit. A run also replaces
+# a status of a family that is successful, or that the app did not set, on a
+# head commit that no open pull request to a branch of that family has. It
+# does that for the head commits of the open pull requests, and of the pull
+# requests that were closed or merged a short time ago. A merged pull request
+# keeps the status of the family of its base branch. The event that starts a
+# run is not an input.
+#
+# The job uses the script and the rosters of the master branch, and it does not
+# check out or run pull request content. It authenticates as a GitHub App. The
+# private key of the app is in the "maintainer-approval" environment, which
+# only the master branch can use, and the branch rules accept the status from
+# this app only. Thus, a workflow on another branch cannot set a status that
+# the branch rules accept.
+#
+# The job runs only if the repository variable MAINTAINER_APPROVAL_CLIENT_ID
+# has the client ID of the app. To put this workflow into operation, do these
+# steps in this order:
+#   1. Create the app and the environment with the settings that are given
+#      below. Set the deployment branches of the environment before the
+#      secret. Make sure that a job on another branch that uses the
+#      environment cannot read a secret of the environment.
+#   2. Make the conditions for the credentials, for the rulesets and for the
+#      release branches, which are given below, true.
+#   3. Set the repository variable.
+#   4. After a run sets the statuses, make the two statuses required in the
+#      rulesets, from this app only. GitHub shows an app as a source of a
+#      status only after the app set that status. If no run set the status of
+#      the release branches, use the API to set its source. In the ruleset of
+#      the release branches, do not require the status for the creation of a
+#      branch: the release procedure creates a release branch from a commit
+#      of the master branch, which does not have that status.
+#   5. Make the number of approvals that the branch rules require equal to
+#      one. A larger number also applies to the pull requests that need one
+#      maintainer approval.
+#
+# The app has these settings:
+#   - Repository permissions: Commit statuses (write), Contents (read), Pull
+#     requests (read). No other permissions.
+#   - It is installed on this repository only.
+#   - It has no client secret, no callback URL, and no device flow. An account
+#     must not be able to get a token of the app.
+#   - The organization owns it, and only the organization owners can manage
+#     it.
+#   - Its ID is the APP_ID value in this file.
+#
+# The environment has these settings:
+#   - Deployment branches: the master branch only.
+#   - Secret MAINTAINER_APPROVAL_PRIVATE_KEY: the only private key of the app.
+#     No other copy of the key exists. An account that has the key can set a
+#     successful status on each commit.
+#
+# Condition for the credentials: no workflow and no automation must be able to
+# read a credential of a maintainer, of a trusted bot, or of another account
+# with write access. Such a credential can approve a pull request or push a
+# head commit as that account. Examples are an access token, a deploy key with
+# write access, and the token of an app that acts for such an account. For
+# the same reason, the repository setting that lets GitHub Actions approve
+# pull requests must be off.
+#
+# Condition for the rulesets: the rulesets of the master branch and of each
+# release branch must have pull request rules that dismiss stale approvals,
+# that require one approval, and that require the approval of the most recent
+# push. The script reads the rulesets, and it sets no successful status for a
+# branch without these rules. The classic branch protection rules are not
+# rulesets, thus they do not count. The rulesets must have no bypass actors;
+# the script cannot read them. If the rulesets require a status of this
+# workflow, they must require it from this app only, and the script sets no
+# successful status if they do not. The reasons for the pull request rules
+# are:
+#   - The script counts the approvals of the head commit that GitHub did not
+#     dismiss. With a rule that dismisses stale approvals, GitHub keeps an
+#     approval on the head commit only while the changes of the pull request
+#     stay the same.
+#   - A status changes some time after the pull request does. In that time,
+#     a merge still needs an approval from an account that did not make the
+#     most recent push. An agreement that was removed in that time can still
+#     have an effect.
+#
+# The release branches share one status. Thus, in the time before a status
+# changes, a commit that is successful for one release branch is also accepted
+# for another release branch: in a second pull request with the same head
+# commit, or after a change of the base branch of the pull request.
+#
+# Condition for the release branches: only the release procedure must be able
+# to create a branch that the ruleset of the release branches matches. The
+# rule that restricts the creation is in a ruleset of its own, whose only
+# bypass actor is the identity of the release procedure.
+#
+# If two pull requests to different release branches have the same head commit,
+# the status is successful only when the two are. Close one of them to remove
+# its effect.
+#
+# A successful status stays on a commit that a push replaced as the head
+# commit of its pull request, and on the head commit of a merged pull request.
+# If that commit becomes a head commit again, for example in a new pull
+# request of another account, the branch rules accept it until the next run.
+# One approval is then sufficient for a merge.
+#
+# The author agrees to the head commit when the author pushes it. That
+# includes the commits of other accounts below it, for example after the
+# author updates the branch. If another account pushes the head commit, or
+# opens the pull request again, the pull request needs two approvals until the
+# author pushes or opens it again.
+#
+# An account with write access can set statuses that have the name of a status
+# of this workflow. GitHub accepts 1000 statuses of one name on a commit. After
+# that, the script cannot replace a successful status of the app, and that
+# status stays on the commit permanently.
+#
+# If this workflow cannot run, or cannot read the rosters or the rulesets, no
+# pull request can become successful. In that case, an administrator must
+# remove the status from the branch rules until the workflow runs again. While
+# the workflow cannot run, the successful statuses stay as they are. The job
+# also does not run, without a failure, when the repository variable is not
+# set. An account with write access can change that variable.
+#
+# An account with write access can start an old run of this workflow again.
+# That run uses the workflow file of its commit. After a security fix to this
+# file, delete the earlier runs of this workflow, or replace the key.
+name: Maintainer Approval
+
+"on":
+  # A run of the workflow in maintainer_approval_trigger.yml means that the
+  # result for a pull request can be different. This workflow does not use the
+  # results or the artifacts of that run.
+  workflow_run:  # zizmor: ignore[dangerous-triggers]
+    workflows: ["Pull Request Change"]
+    types: [completed]
+  # A change of the rosters or of the rule can change all results.
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/maintainer_approval.js
+      - governance/bots.yaml
+      - governance/maintainers.yaml
+  # GitHub does not run the workflow in maintainer_approval_trigger.yml for
+  # all pull requests, and a pull request can change it. The schedule makes
+  # sure that each status becomes correct. The minutes are not those at which
+  # GitHub has the highest load and can drop scheduled runs.
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+# Runs do not overlap, thus statuses are set in the order of the reads. A
+# waiting run replaces an older waiting run, which loses nothing because each
+# run evaluates all pull requests. A workflow that uses the same group name
+# delays or cancels the runs of this one, and the statuses stay as they are in
+# that time. Such a workflow can be in a pull request from a fork, which needs
+# no write access. In that case, cancel the runs of that workflow. The
+# repository setting that requires an approval for the workflow runs of all
+# outside contributors prevents this.
+concurrency:
+  group: maintainer-approval
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    if: github.repository == 'gvisor/gvisor' && vars.MAINTAINER_APPROVAL_CLIENT_ID != ''
+    # The script uses the yq of this image. GitHub updates the image without a
+    # change to this file. If its yq cannot read the rosters, no status stays
+    # successful.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: maintainer-approval
+      deployment: false
+    steps:
+    - name: Checkout the master branch
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # The commit of the event can be old, for example when a person starts
+        # an old run again.
+        ref: refs/heads/master
+        persist-credentials: false
+        sparse-checkout: |
+          .github/workflows
+          governance
+
+    - name: Create the app token
+      id: app-token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ vars.MAINTAINER_APPROVAL_CLIENT_ID }}
+        private-key: ${{ secrets.MAINTAINER_APPROVAL_PRIVATE_KEY }}
+        permission-contents: read
+        permission-pull-requests: read
+        permission-statuses: write
+
+    - name: Set the maintainer approval statuses
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        # The ID of the app. The branch rules must require the statuses from
+        # the app with this ID.
+        APP_ID: 5829279
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        retries: 3
+        script: |-
+            const maintainerApproval =
+                require('./.github/workflows/maintainer_approval.js');
+            await maintainerApproval({
+              github,
+              context,
+              core,
+              appSlug: process.env.APP_SLUG,
+              appID: Number(process.env.APP_ID),
+            });

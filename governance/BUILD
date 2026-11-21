@@ -10,4 +10,12 @@ exports_files(
     visibility = ["//tools/licensecheck:__pkg__"],
 )
 
+exports_files(
+    [
+        "bots.schema.json",
+        "bots.yaml",
+    ],
+    visibility = ["//:__pkg__"],
+)
+
 governance_files(name = "generated")
