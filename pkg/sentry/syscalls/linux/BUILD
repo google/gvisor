@@ -1,3 +1,4 @@
+load("//pkg/sentry/syscalls/linux/genlinuxsyscalls:defs.bzl", "go_library_srcs")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -133,6 +134,23 @@ go_library(
     ],
 )
 
+go_library_srcs(
+    name = "zsysnum_linux",
+    srcs = [
+        "zsysnum_linux_amd64.go",
+        "zsysnum_linux_arm64.go",
+    ],
+    library = "@org_golang_x_sys//unix:go_default_library",
+)
+
+genrule(
+    name = "linux_syscalls_test",
+    srcs = [":zsysnum_linux"],
+    outs = ["linux_syscalls_test.go"],
+    cmd = "$(location //pkg/sentry/syscalls/linux/genlinuxsyscalls) --package=linux --out=$@ $(SRCS)",
+    tools = ["//pkg/sentry/syscalls/linux/genlinuxsyscalls"],
+)
+
 go_test(
     name = "linux_test",
     size = "small",
@@ -140,12 +158,14 @@ go_test(
         "linux64_amd64_test.go",
         "linux64_arm64_test.go",
         "linux64_test.go",
+        "linux_syscalls_test.go",
         "sys_socket_test.go",
     ],
     embed = [":linux"],
     deps = [
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsimpl/testutil",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/vfs",
         "@org_golang_x_sys//unix:go_default_library",
