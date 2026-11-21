@@ -1175,8 +1175,9 @@ func (e *Endpoint) transitionToStateCloseLocked() {
 // tryDeliverSegmentFromClosedEndpoint attempts to deliver the parsed
 // segment to any other endpoint other than the current one. This is called
 // only when the endpoint is in StateClose and we want to deliver the segment
-// to any other listening endpoint. We reply with RST if we cannot find one.
-func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
+// to any other listening endpoint. If none exists, offer it to fallback before
+// sending a reset. Callers holding endpoint locks must pass nil.
+func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment, fallback func(stack.TransportEndpointID, *stack.PacketBuffer) bool) {
 	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.TransportEndpointInfo.ID, s.pkt.NICID)
 	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.LocalAddress.To4() != (tcpip.Address{}) {
 		// Dual-stack socket, try IPv4.
@@ -1188,6 +1189,9 @@ func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 		)
 	}
 	if ep == nil {
+		if fallback != nil && fallback(s.id, s.pkt) {
+			return
+		}
 		if !s.flags.Contains(header.TCPFlagRst) {
 			replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 		}
@@ -1209,13 +1213,21 @@ func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 //
 // +checklocksexclude:e.segmentQueue.mu
 func (e *Endpoint) drainClosingSegmentQueue() {
+	e.drainClosingSegmentQueueWithHandler(nil)
+}
+
+// Only the unlocked TIME_WAIT handoff supplies a fallback: it has already
+// accepted the opening SYN, but may not have registered an endpoint yet.
+//
+// +checklocksexclude:e.segmentQueue.mu
+func (e *Endpoint) drainClosingSegmentQueueWithHandler(fallback func(stack.TransportEndpointID, *stack.PacketBuffer) bool) {
 	for {
 		s := e.segmentQueue.dequeue()
 		if s == nil {
 			break
 		}
 
-		e.tryDeliverSegmentFromClosedEndpoint(s)
+		e.tryDeliverSegmentFromClosedEndpoint(s, fallback)
 		s.DecRef()
 	}
 }
@@ -1545,6 +1557,8 @@ func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 							// enqueueSegment takes its own reference on
 							// success, so drop ours regardless of outcome.
 							defer s.DecRef()
+							e.drainClosingSegmentQueue()
+							e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 							if !tcpEP.enqueueSegment(s) {
 								return
 							}
@@ -1555,6 +1569,33 @@ func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 						return false, reuseTW
 					}
 				}
+			}
+
+			// No bound listening endpoint claimed the new connection. The
+			// stack may still be accepting connections through a
+			// tcp.Forwarder registered as the protocol's default handler
+			// instead of a listening endpoint, so give it the same chance a
+			// listening endpoint would have had rather than dropping the SYN
+			// for the rest of the TIME-WAIT period.
+			if handler := e.stack.TransportProtocolDefaultHandler(info.TransProto); handler != nil {
+				reuseTW = func() {
+					e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+					if !handler(s.id, s.pkt) {
+						// Mirror the normal (non-TIME-WAIT) delivery path in
+						// nic.DeliverTransportPacket: a default handler that
+						// declines the segment is not itself an answer, so
+						// reply with a RST rather than dropping it silently.
+						if !s.flags.Contains(header.TCPFlagRst) {
+							replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+						}
+						handler = nil
+					}
+					s.DecRef()
+					e.drainClosingSegmentQueueWithHandler(handler)
+				}
+				// We explicitly do not DecRef the segment as it's still valid and
+				// being reflected to the default handler.
+				return false, reuseTW
 			}
 		}
 		if extTW {
