@@ -1735,13 +1735,8 @@ func checkpointNoRootContainer(t *testing.T, conf *config.Config, sb *Container,
 		t.Fatalf("error checkpointing sandbox: %v", err)
 	}
 	// The sandbox exits without waiting for `runsc delete`.
-	if err := testutil.Poll(func() error {
-		if sandboxRunning(t, sb) {
-			return fmt.Errorf("sandbox %q still running", sb.ID)
-		}
-		return nil
-	}, 10*time.Second); err != nil {
-		t.Fatalf("sandbox did not exit after checkpoint: %v", err)
+	if sandboxRunning(t, sb) {
+		t.Fatalf("sandbox %q still running after checkpoint", sb.ID)
 	}
 }
 
