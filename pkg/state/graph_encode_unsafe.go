@@ -189,14 +189,17 @@ func (es *graphEncodeState) addChunk(o *encObject, ch chunk) {
 
 // encTarget is the target of pointers: a location within an object.
 type encTarget struct {
-	obj int32
-	off uintptr
 	ti  *typeInfo
+	off uintptr
+	obj int32
 	// next is the next target with the same address, or -1.
 	next int32
-	// ptr keeps zero-sized pointees alive until save resolves addr.
-	ptr  unsafe.Pointer
-	addr uintptr
+}
+
+// zeroTarget keeps a zero-sized pointee alive until its target is resolved.
+type zeroTarget struct {
+	ptr unsafe.Pointer
+	id  int32
 }
 
 // work is an object, or a range of array elements, to encode.
@@ -266,7 +269,7 @@ type graphEncodeState struct {
 	queueHead int
 
 	// zeroTargets are targets of zero-sized types.
-	zeroTargets []int32
+	zeroTargets []zeroTarget
 
 	traversals map[traversalKey]bool
 
@@ -437,7 +440,8 @@ func (es *graphEncodeState) release() {
 	if cap(es.out.b)+cap(es.final.b)+cap(es.binaryBuf) > maxPooledBytes ||
 		len(es.byAddr.slots)+len(es.blocks.slots) > maxPooledSlots ||
 		cap(es.blockEntries)+cap(es.queue) > maxPooledSlots ||
-		cap(es.refs)+cap(es.segRefs) > maxPooledSlots {
+		cap(es.refs)+cap(es.segRefs) > maxPooledSlots ||
+		cap(es.zeroTargets) > maxPooledSlots {
 		return
 	}
 	es.ctx = nil
@@ -453,6 +457,7 @@ func (es *graphEncodeState) release() {
 	es.queryResult = es.queryResult[:0]
 	es.queue = es.queue[:0]
 	es.queueHead = 0
+	clear(es.zeroTargets)
 	es.zeroTargets = es.zeroTargets[:0]
 	// traversals caches pure static type-layout containment queries
 	// ((*typeInfo, *typeInfo, off, count) -> bool) that remain valid across
