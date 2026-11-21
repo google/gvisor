@@ -1162,6 +1162,36 @@ TEST(NetlinkRouteTest, LinkedToNetns) {
                                    /*prefixlen=*/24, &addr, sizeof(addr)));
 }
 
+// Netlink port IDs are unique per network namespace. A port ID that is in use
+// in one network namespace is available in another.
+TEST(NetlinkRouteTest, PortIDPerNetns) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  FileDescriptor root_netns_nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  const uint32_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(root_netns_nlsk.get()));
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  struct sockaddr_nl addr = {};
+  addr.nl_family = AF_NETLINK;
+  addr.nl_pid = port;
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+  EXPECT_THAT(NetlinkPortID(nlsk.get()), IsPosixErrorOkAndHolds(port));
+}
+
 // GetRouteDump tests a RTM_GETROUTE + NLM_F_DUMP request.
 TEST(NetlinkRouteTest, GetRouteDump) {
   FileDescriptor fd =

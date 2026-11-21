@@ -76,7 +76,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
@@ -319,9 +318,6 @@ type Kernel struct {
 	//
 	// +checkatomic
 	nextInotifyCookie atomicbitops.Uint32
-
-	// netlinkPorts manages allocation of netlink socket port IDs.
-	netlinkPorts *port.Manager
 
 	// saveStatus is nil if the sandbox has not been saved, errSaved or
 	// errAutoSaved if it has been saved successfully, or the error causing the
@@ -649,7 +645,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.vdso = args.Vdso
 	k.vdsoParams = args.VdsoParams
 	k.futexes = futex.NewManager()
-	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
 	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
 	k.userCountersMap = make(map[auth.KUID]*UserCounters)
@@ -2255,11 +2250,6 @@ func (k *Kernel) GenerateInotifyCookie() uint32 {
 		id = k.nextInotifyCookie.Add(1)
 	}
 	return id
-}
-
-// NetlinkPorts returns the netlink port manager.
-func (k *Kernel) NetlinkPorts() *port.Manager {
-	return k.netlinkPorts
 }
 
 var (

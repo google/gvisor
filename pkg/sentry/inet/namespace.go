@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 )
 
 // Namespace represents a network namespace. See network_namespaces(7).
@@ -49,6 +50,10 @@ type Namespace struct {
 
 	// netlinkMcastTable manages multicast group membership for netlink sockets.
 	netlinkMcastTable *McastTable
+
+	// netlinkPorts allocates the port IDs of netlink sockets in this
+	// namespace.
+	netlinkPorts *port.Manager
 }
 
 // NewRootNamespace creates the root network namespace, with creator
@@ -61,6 +66,7 @@ func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.Use
 		isRoot:            true,
 		userNS:            userNS,
 		netlinkMcastTable: NewNetlinkMcastTable(),
+		netlinkPorts:      port.New(),
 	}
 	if eventPublishingStack, ok := stack.(InterfaceEventPublisher); ok {
 		eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
@@ -90,6 +96,7 @@ func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
 		creator:           root.creator,
 		userNS:            userNS,
 		netlinkMcastTable: NewNetlinkMcastTable(),
+		netlinkPorts:      port.New(),
 	}
 	n.init(false /* restore */)
 	return n
@@ -185,6 +192,12 @@ func (n *Namespace) AbstractSockets() *AbstractSocketNamespace {
 // NetlinkMcastTable returns the netlink multicast group table.
 func (n *Namespace) NetlinkMcastTable() *McastTable {
 	return n.netlinkMcastTable
+}
+
+// NetlinkPorts returns the port ID allocator for netlink sockets in this
+// network namespace.
+func (n *Namespace) NetlinkPorts() *port.Manager {
+	return n.netlinkPorts
 }
 
 // HasCapability checks if ctx has the given capability with respect to the network namespace n.
