@@ -1380,7 +1380,8 @@ struct FileCapsExecutable {
 // Creates a FileCapsExecutable whose file permitted set is `permitted` and
 // whose file effective bit is set. A fresh tmpfs is used because the gofer
 // does not allow setting security.* xattrs.
-PosixErrorOr<FileCapsExecutable> CreateFileCapsExecutable(uint64_t permitted) {
+PosixErrorOr<FileCapsExecutable> CreateFileCapsExecutable(
+    uint64_t permitted, absl::optional<uint32_t> root_id = absl::nullopt) {
   std::string exec_blob;
   RETURN_IF_ERRNO(GetContents(RunfilePath(kCheckEuidProgram), &exec_blob));
 
@@ -1391,12 +1392,18 @@ PosixErrorOr<FileCapsExecutable> CreateFileCapsExecutable(uint64_t permitted) {
   ASSIGN_OR_RETURN_ERRNO(TempPath file,
                          TempPath::CreateFileWith(dir.path(), exec_blob, 0755));
 
-  struct vfs_cap_data cap_data = {};
+  struct vfs_ns_cap_data cap_data = {};
   cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
   cap_data.data[0].permitted = static_cast<uint32_t>(permitted);
   cap_data.data[1].permitted = static_cast<uint32_t>(permitted >> 32);
-  if (setxattr(file.path().c_str(), "security.capability", &cap_data,
-               sizeof(cap_data), 0) < 0) {
+  size_t size = XATTR_CAPS_SZ_2;
+  if (root_id.has_value()) {
+    cap_data.magic_etc = VFS_CAP_REVISION_3 | VFS_CAP_FLAGS_EFFECTIVE;
+    cap_data.rootid = *root_id;
+    size = XATTR_CAPS_SZ_3;
+  }
+  if (setxattr(file.path().c_str(), "security.capability", &cap_data, size,
+               /*flags=*/0) < 0) {
     return PosixError(errno, "setxattr(security.capability)");
   }
   return FileCapsExecutable{std::move(dir), std::move(mount), std::move(file)};
@@ -1487,6 +1494,126 @@ TEST(ExecTest, FileCapsNotGainedWithNoNewPrivs) {
   CheckFileCapsExec(
       /*caps=*/{}, /*ambient=*/0, /*no_new_privs=*/true,
       /*file_permitted=*/kNetBind, /*want=*/{}, /*want_ambient=*/0);
+}
+
+void CheckFileCapsExecInUserNamespace(uint32_t file_root_id, CapSet want,
+                                      absl::string_view extra_uid_map = "",
+                                      bool nested = false) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  constexpr uint64_t kNetBind = 1ULL << CAP_NET_BIND_SERVICE;
+  FileCapsExecutable exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateFileCapsExecutable(kNetBind, file_root_id));
+
+  const ExecveArray argv = {
+      exe.file.path(),
+      /*want_euid=*/"1",
+      /*want_egid=*/"0",
+      /*want_dumpability=*/absl::StrCat(SUID_DUMP_USER),
+      /*want_permitted=*/absl::StrCat(absl::Hex(want.permitted)),
+      /*want_effective=*/absl::StrCat(absl::Hex(want.effective)),
+      /*want_ambient=*/"0"};
+
+  int child_ready[2];
+  int maps_ready[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  FileDescriptor child_ready_read(child_ready[0]);
+  FileDescriptor child_ready_write(child_ready[1]);
+  ASSERT_THAT(pipe(maps_ready), SyscallSucceeds());
+  FileDescriptor maps_ready_read(maps_ready[0]);
+  FileDescriptor maps_ready_write(maps_ready[1]);
+  const pid_t child = fork();
+  if (child == 0) {
+    TEST_PCHECK(close(child_ready[0]) == 0);
+    TEST_PCHECK(close(maps_ready[1]) == 0);
+    TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+    char byte = 0;
+    TEST_PCHECK(write(child_ready[1], &byte, sizeof(byte)) == sizeof(byte));
+    TEST_PCHECK(read(maps_ready[0], &byte, sizeof(byte)) == sizeof(byte));
+
+    TEST_PCHECK(syscall(SYS_setresuid, 1, 1, 1) == 0);
+    if (nested) {
+      TEST_PCHECK(prctl(PR_SET_DUMPABLE, 1) == 0);
+      TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+      const std::pair<const char*, const char*> kMaps[] = {
+          {"/proc/self/uid_map", "1 1 1"},
+          {"/proc/self/setgroups", "deny"},
+          {"/proc/self/gid_map", "0 0 1"}};
+      for (const auto& [path, contents] : kMaps) {
+        const int fd = open(path, O_WRONLY);
+        TEST_PCHECK(fd >= 0);
+        const ssize_t len = strlen(contents);
+        TEST_PCHECK(write(fd, contents, len) == len);
+        TEST_PCHECK(close(fd) == 0);
+      }
+    }
+    struct __user_cap_header_struct header = {_LINUX_CAPABILITY_VERSION_3, 0};
+    struct __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {};
+    caps[0].permitted = kNetBind;
+    caps[0].effective = kNetBind;
+    TEST_PCHECK(syscall(SYS_capset, &header, caps) == 0);
+    execve(argv.get()[0], argv.get(), nullptr);
+    TEST_PCHECK_MSG(false, "execve failed");
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  Cleanup kill_child([child] {
+    kill(child, SIGKILL);
+    RetryEINTR(waitpid)(child, nullptr, 0);
+  });
+  child_ready_write.reset();
+  maps_ready_read.reset();
+  char byte = 0;
+  ASSERT_THAT(read(child_ready_read.get(), &byte, sizeof(byte)),
+              SyscallSucceedsWithValue(sizeof(byte)));
+  const std::string gid_map = absl::StrFormat("0 %d 1", getegid());
+  FileDescriptor gid_map_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(absl::StrFormat("/proc/%d/gid_map", child), O_WRONLY));
+  ASSERT_THAT(write(gid_map_fd.get(), gid_map.data(), gid_map.size()),
+              SyscallSucceedsWithValue(gid_map.size()));
+  const std::string uid_map = absl::StrCat(
+      absl::StrFormat("0 %d 2\n", kUnprivilegedUid), extra_uid_map);
+  FileDescriptor uid_map_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(absl::StrFormat("/proc/%d/uid_map", child), O_WRONLY));
+  ASSERT_THAT(write(uid_map_fd.get(), uid_map.data(), uid_map.size()),
+              SyscallSucceedsWithValue(uid_map.size()));
+  ASSERT_THAT(write(maps_ready_write.get(), &byte, sizeof(byte)),
+              SyscallSucceedsWithValue(sizeof(byte)));
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  kill_child.Release();
+  EXPECT_EQ(status, 0);
+}
+
+TEST(ExecTest, FileCapsRootIDOwnsUserNamespace) {
+  constexpr uint64_t kNetBind = 1ULL << CAP_NET_BIND_SERVICE;
+  CheckFileCapsExecInUserNamespace(
+      /*file_root_id=*/kUnprivilegedUid,
+      /*want=*/{.effective = kNetBind, .permitted = kNetBind});
+}
+
+TEST(ExecTest, FileCapsIgnoredIfRootIDDoesNotOwnUserNamespace) {
+  CheckFileCapsExecInUserNamespace(/*file_root_id=*/kUnprivilegedUid + 2,
+                                   /*want=*/{});
+}
+
+TEST(ExecTest, FileCapsRootIDOwnsAncestorUserNamespace) {
+  constexpr uint64_t kNetBind = 1ULL << CAP_NET_BIND_SERVICE;
+  CheckFileCapsExecInUserNamespace(
+      /*file_root_id=*/kUnprivilegedUid,
+      /*want=*/{.effective = kNetBind, .permitted = kNetBind},
+      /*extra_uid_map=*/"", /*nested=*/true);
+}
+
+TEST(ExecTest, FileCapsIgnoredIfRootIDMapsToNamespaceRootUID) {
+  CheckFileCapsExecInUserNamespace(
+      /*file_root_id=*/kUnprivilegedUid + 2, /*want=*/{},
+      /*extra_uid_map=*/
+      absl::StrFormat("%d %d 1\n", kUnprivilegedUid, kUnprivilegedUid + 2));
 }
 
 TEST(ExecTest, SUIDExecDoesntGainUIDForInterpreterScript) {
