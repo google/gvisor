@@ -399,7 +399,8 @@ func TestSetUserId(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
-		Image: "basic/sudo",
+		Image:        "basic/sudo",
+		SecurityOpts: []string{"seccomp=unconfined"},
 	}, "sleep", "infinity"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}

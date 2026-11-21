@@ -598,8 +598,9 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 
 	// Start the container which starts dockerd.
 	opts := dockerutil.RunOpts{
-		Image:  "basic/docker",
-		CapAdd: dockerInGvisorCapabilities(),
+		Image:        "basic/docker",
+		CapAdd:       dockerInGvisorCapabilities(),
+		SecurityOpts: []string{"seccomp=unconfined"},
 	}
 
 	var args []string
