@@ -154,6 +154,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		FSRestoreImagePaths: []string(r.fsRestoreImagePaths),
 		FSRestoreDirect:     r.fsRestoreDirect,
 		NoRootContainer:     r.noRootContainer,
+		GoferFiles:          r.goferFiles(),
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {
