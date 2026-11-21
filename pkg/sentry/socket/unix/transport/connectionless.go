@@ -143,11 +143,20 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 	}
 
 	e.Lock()
+	defer e.Unlock()
+	// A racing EventRegister must either contribute its mask when the host FD
+	// is registered or see the new peer when it updates the mask. Holding the
+	// endpoint lock also keeps a woken poller from checking the old peer.
+	if host, ok := peer.(*SCMSender); ok {
+		if err := host.attachWaitQueue(e.WaitQueue); err != nil {
+			peer.Release(ctx)
+			return syserr.FromError(err)
+		}
+	}
 	if e.peer != nil {
 		e.peer.Release(ctx)
 	}
 	e.peer = peer
-	e.Unlock()
 
 	return nil
 }

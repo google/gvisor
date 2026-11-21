@@ -456,6 +456,7 @@ func (c *HostSender) SetReceiveBufferSize(v int64) (newSz int64) {
 type SCMSender struct {
 	HostSender
 
+	// queue is nil for an unregistered, send-only datagram socket.
 	queue *waiter.Queue
 }
 
@@ -466,7 +467,9 @@ func (e *SCMSender) beforeSave() {
 	if e.fd < 0 {
 		return
 	}
-	fdnotifier.RemoveFD(int32(e.fd))
+	if e.queue != nil {
+		fdnotifier.RemoveFD(int32(e.fd))
+	}
 	e.closeRecvLocked()
 	e.closeSendLocked()
 	if err := unix.Close(e.fd); err != nil {
@@ -480,6 +483,16 @@ func (e *SCMSender) Init() error {
 	return fdnotifier.AddFD(int32(e.fd), e.queue)
 }
 
+// attachWaitQueue registers a private datagram sender before its endpoint
+// publishes it. On failure the caller may release it without unregistering.
+func (e *SCMSender) attachWaitQueue(q *waiter.Queue) error {
+	if err := fdnotifier.AddFD(int32(e.fd), q); err != nil {
+		return err
+	}
+	e.queue = q
+	return nil
+}
+
 // Release implements Sender.Release and Receiver.Release.
 func (e *SCMSender) Release(ctx context.Context) {
 	e.DecRef(func() {
@@ -490,7 +503,9 @@ func (e *SCMSender) Release(ctx context.Context) {
 			return
 		}
 
-		fdnotifier.RemoveFD(int32(e.fd))
+		if e.queue != nil {
+			fdnotifier.RemoveFD(int32(e.fd))
+		}
 		if err := unix.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", e.fd, err)
 		}
@@ -501,7 +516,7 @@ func (e *SCMSender) Release(ctx context.Context) {
 // NewSCMSender creates a new SCMSender backed by a host fd that
 // was passed through a Unix socket.
 //
-// The caller is responsible for calling Init(). Additionally, Release needs to
+// A caller supplying a queue must call Init(). Additionally, Release needs to
 // be called twice because Sender is both a Receiver and
 // Sender.
 func NewSCMSender(hostFD int, queue *waiter.Queue, addr string) (*SCMSender, *syserr.Error) {
