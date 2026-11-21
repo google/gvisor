@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -387,6 +388,48 @@ func TestRACKRetransmissionTimestampWrap(t *testing.T) {
 				t.Errorf("RACK RTT = %s, want %s", got, want)
 			}
 		})
+	}
+}
+
+func TestRACKReorderingWindowSaturation(t *testing.T) {
+	ctx := newRACKTestContext(faketime.NewManualClock(), 0)
+	defer ctx.cleanup()
+	ctx.snd.ep.mu.Lock()
+	defer ctx.snd.ep.mu.Unlock()
+
+	const rtt = 100 * time.Millisecond
+	ctx.snd.rc.minRTT = rtt
+	ctx.snd.rtt.Lock()
+	ctx.snd.rtt.TCPRTTState.SRTT = rtt
+	ctx.snd.rtt.Unlock()
+
+	// Report one DSACK per round, including two after reaching the
+	// largest representable multiplier. The SRTT-capped window must
+	// stay open when another DSACK arrives at that limit.
+	for round := 1; round <= math.MaxUint8+1; round++ {
+		ctx.snd.SndUna = ctx.snd.SndNxt
+		ctx.snd.SndNxt.UpdateForward(1)
+		ctx.snd.rc.DSACKSeen = true
+		ctx.snd.rc.updateRACKReorderWindow()
+
+		mult := min(round+1, math.MaxUint8)
+		window := min(time.Duration(mult)*(rtt/4), rtt)
+		if r := &ctx.snd.rc; int(r.ReoWndIncr) != mult || r.ReoWnd != window {
+			t.Fatalf("after %d DSACK rounds: multiplier=%d, window=%s; want %d, %s", round, r.ReoWndIncr, r.ReoWnd, mult, window)
+		}
+		if round == math.MaxUint8 {
+			// The next DSACK must refresh persistence even though its
+			// multiplier is already saturated.
+			ctx.snd.rc.DSACKSeen = false
+			ctx.snd.rc.exitRecovery()
+			ctx.snd.rc.updateRACKReorderWindow()
+		}
+	}
+	if got, want := ctx.snd.rc.RTTSeq, ctx.snd.SndNxt; got != want {
+		t.Errorf("DSACK round boundary = %d, want %d", got, want)
+	}
+	if got, want := ctx.snd.rc.ReoWndPersist, int8(tcpRACKRecoveryThreshold); got != want {
+		t.Errorf("reordering window persistence = %d, want %d", got, want)
 	}
 }
 
