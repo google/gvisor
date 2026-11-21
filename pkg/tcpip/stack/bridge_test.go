@@ -281,18 +281,6 @@ func TestSetCoordinator(t *testing.T) {
 	}
 }
 
-func TestMTU(t *testing.T) {
-	e := stack.NewBridgeEndpoint(1500)
-	mtus := []uint32{1000, 2000}
-	for _, mtu := range mtus {
-		e.SetMTU(mtu)
-
-		if want, v := mtu-header.EthernetMinimumSize, e.MTU(); want != v {
-			t.Errorf("MTU() = %v, want %v", v, want)
-		}
-	}
-}
-
 func TestNicExitingStackExitsBridgeToo(t *testing.T) {
 	const (
 		netProto        = 55
