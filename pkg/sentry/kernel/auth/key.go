@@ -64,11 +64,6 @@ const (
 	// MaxKeyDescSize is the maximum size of the "Description" field of keys.
 	// Corresponds to `KEY_MAX_DESC_SIZE` in Linux.
 	MaxKeyDescSize = 4096
-
-	// MaxSetSize is the default maximum number of keys in a `KeySet`.
-	// By default, Linux limits this number to 200 per non-root user.
-	// Here, we limit it to 200 per Set, which is stricter.
-	MaxSetSize = 200
 )
 
 // Key represents a key in the keyrings subsystem.
@@ -94,8 +89,8 @@ type Key struct {
 	// superset of this `Description`.
 	Description string
 
-	// kuid is the owner of the key in the root namespace.
-	// It is immutable.
+	// kuid is the owner of the key in the root namespace. The owner is charged
+	// for the key. It is immutable.
 	kuid KUID
 
 	// kgid is the group of the key in the root namespace.
@@ -370,18 +365,36 @@ func getNewID() (KeySerial, error) {
 	return KeySerial(newID), nil
 }
 
-// Add adds a new Key to the KeySet.
+// Add adds a new keyring to the KeySet, owned by the real user and group of
+// creds, and charges it to its owner in quotas. It returns EDQUOT if that
+// exceeds the owner's quota, unless quotaOverrun is set.
 //
 // +checklocksexclude:s.mu
-func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
+func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermissions, quotas *KeyQuotas, quotaOverrun bool) (*Key, error) {
 	if len(description) >= MaxKeyDescSize {
 		return nil, linuxerr.EINVAL
 	}
+	// Like key_alloc, the quota charge covers the description and its
+	// terminating NUL. Keyrings have no payload.
+	quotalen := uint32(len(description)) + 1
+	kuid := creds.RealKUID
+	if err := quotas.charge(kuid, quotalen, quotaOverrun); err != nil {
+		return nil, err
+	}
+	k, err := s.add(description, kuid, creds.RealKGID, perms)
+	if err != nil {
+		quotas.uncharge(kuid, quotalen)
+		return nil, err
+	}
+	return k, nil
+}
+
+// add inserts a new key with a fresh ID into s.
+//
+// +checklocksexclude:s.mu
+func (s *KeySet) add(description string, kuid KUID, kgid KGID, perms KeyPermissions) (*Key, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.keys) >= keySizeLimit {
-		return nil, linuxerr.EDQUOT
-	}
 	newID, err := getNewID()
 	if err != nil {
 		return nil, err
@@ -398,8 +411,8 @@ func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermission
 	k := &Key{
 		ID:          newID,
 		Description: description,
-		kuid:        creds.EffectiveKUID,
-		kgid:        creds.EffectiveKGID,
+		kuid:        kuid,
+		kgid:        kgid,
 		perms:       atomicbitops.FromUint64(uint64(perms)),
 	}
 	s.keys[newID] = k
