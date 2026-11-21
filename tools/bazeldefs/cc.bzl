@@ -25,6 +25,7 @@ cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
 cc_objcopy = "@llvm//tools:llvm-objcopy"
 cc_objdump = "@llvm//tools:llvm-objdump"
+cc_readelf = "@llvm//tools:llvm-readelf"
 gtest = "@com_google_googletest//:gtest"
 gbenchmark = "@com_google_benchmark//:benchmark"
 gbenchmark_internal = "@com_google_benchmark//:benchmark"
