@@ -136,19 +136,7 @@ func (fd *tunFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *tunFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	data, err := fd.device.Read()
-	if err != nil {
-		return 0, err
-	}
-	defer data.Release()
-
-	size := data.Size()
-	n, err := io.CopyN(dst.Writer(ctx), data, dst.NumBytes())
-	if n > 0 && n < int64(size) {
-		// Not an error for partial copying. Packet truncated.
-		err = nil
-	}
-	return int64(n), err
+	return fd.device.Read(dst.Writer(ctx), dst.NumBytes())
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
