@@ -119,6 +119,11 @@ func (e *endpoint) newSender(ctx context.Context, sockType linux.SockType, queue
 	return c, nil
 }
 
+// ConnectWaiters implements transport.BoundEndpoint.ConnectWaiters.
+func (e *endpoint) ConnectWaiters() *waiter.Queue {
+	return nil
+}
+
 // Release implements transport.BoundEndpoint.Release.
 func (e *endpoint) Release(ctx context.Context) {
 	e.dentry.DecRef(ctx)

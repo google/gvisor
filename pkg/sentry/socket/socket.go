@@ -222,8 +222,9 @@ func (c *ControlMessages) Release(ctx context.Context) {
 type Socket interface {
 	vfs.FileDescriptionImpl
 
-	// Connect implements the connect(2) linux unix.
-	Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error
+	// Connect implements the connect(2) linux unix. If haveDeadline is true,
+	// deadline is when SO_SNDTIMEO runs out for a blocking connect.
+	Connect(t *kernel.Task, sockaddr []byte, blocking, haveDeadline bool, deadline ktime.Time) *syserr.Error
 
 	// Accept implements the accept4(2) linux unix.
 	// Returns fd, real peer address length and error. Real peer address

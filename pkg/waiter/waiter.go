@@ -273,6 +273,27 @@ func (q *Queue) Notify(mask EventMask) {
 	q.mu.RUnlock()
 }
 
+// NotifyOne notifies the first waiter in the queue whose mask has at least one
+// bit in common with the notification mask, and moves it to the back so that
+// the next call notifies another waiter.
+//
+// Callbacks run with q.mu locked and must not call methods that acquire the
+// same mutex.
+//
+// +checklocksexclude:q.mu
+func (q *Queue) NotifyOne(mask EventMask) {
+	q.mu.Lock()
+	for e := q.list.Front(); e != nil; e = e.Next() {
+		if m := mask & e.mask; m != 0 {
+			q.list.Remove(e)
+			q.list.PushBack(e)
+			e.eventListener.NotifyEvent(m)
+			break
+		}
+	}
+	q.mu.Unlock()
+}
+
 // Events returns the set of events being waited on. It is the union of the
 // masks of all registered entries.
 //

@@ -617,19 +617,66 @@ func (s *Socket) extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.Bou
 	return ep, nil
 }
 
-// Connect implements the linux syscall connect(2) for unix sockets.
-func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
-	ep, err := s.extractEndpoint(t, sockaddr)
-	if err != nil {
-		return err
+// passOnWakeup wakes another connect waiting on q if ch got a wakeup that the
+// caller won't use, since Linux only wakes waiters that are still asleep.
+func passOnWakeup(q *waiter.Queue, ch <-chan struct{}) {
+	select {
+	case <-ch:
+		q.NotifyOne(waiter.WritableEvents)
+	default:
 	}
-	defer ep.Release(t)
+}
 
-	// Initialize the peer credentials of client endpoint.
-	s.ep.SetPeerCreds(control.MakeCreds(t))
+// Connect implements the linux syscall connect(2) for unix sockets.
+//
+// A blocking connect to a listener with a full accept queue waits for room
+// until deadline, like Linux's unix_stream_connect.
+func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking, haveDeadline bool, deadline ktime.Time) *syserr.Error {
+	// Like Linux, use the credentials of this call, even if another process
+	// connects the same socket while this one waits.
+	creds := control.MakeCreds(t)
+	var err *syserr.Error
+	for {
+		// Look the listener up again on every attempt, like Linux, but
+		// release it before blocking.
+		var ep transport.BoundEndpoint
+		ep, err = s.extractEndpoint(t, sockaddr)
+		if err != nil {
+			return err
+		}
 
-	// Connect the server endpoint.
-	err = s.ep.Connect(t, ep)
+		err = s.ep.Connect(t, ep, creds)
+		q := ep.ConnectWaiters()
+		if err != syserr.ErrTryAgain || !blocking || q == nil {
+			ep.Release(t)
+			break
+		}
+		// Try again after registering, so an accept in between isn't missed.
+		e, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+		q.EventRegister(&e)
+		err = s.ep.Connect(t, ep, creds)
+		ep.Release(t)
+		if err != syserr.ErrTryAgain {
+			q.EventUnregister(&e)
+			passOnWakeup(q, ch)
+			break
+		}
+		blockErr := t.BlockWithDeadline(ch, haveDeadline, deadline)
+		q.EventUnregister(&e)
+		passOnWakeup(q, ch)
+		if blockErr == nil && t.SignalPending() {
+			// Like Linux, a pending signal ends the wait even if there is now
+			// room. Pass the wakeup on so another waiter can use the room.
+			q.NotifyOne(waiter.WritableEvents)
+			blockErr = linuxerr.ErrInterrupted
+		}
+		if linuxerr.Equals(linuxerr.ETIMEDOUT, blockErr) {
+			// Like Linux, try once more after the timeout expires.
+			blocking = false
+		} else if blockErr != nil {
+			return syserr.FromError(blockErr)
+		}
+	}
 
 	if err == syserr.ErrWrongProtocolForSocket {
 		// Linux for abstract sockets returns ErrConnectionRefused
