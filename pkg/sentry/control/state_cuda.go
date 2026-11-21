@@ -95,10 +95,11 @@ func preSaveCuda(k *kernel.Kernel, o *state.SaveOpts) error {
 // any CUDA device.
 //
 // Callers must not hold any thread-group leader's Task.mu in k.
-// checklocks cannot name the leader mutexes selected by ForEachThreadGroup.
+// checklocks cannot name the leader mutexes selected by ThreadGroups.
 func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string, nvidiaDriverVersionMajor int) []*kernel.ThreadGroup {
 	var procs []*kernel.ThreadGroup
-	k.TaskSet().ForEachThreadGroup(func(tg *kernel.ThreadGroup, tgLeader *kernel.Task) {
+	for _, tg := range k.RootPIDNamespace().ThreadGroups() {
+		tgLeader := tg.Leader()
 		found := false
 		// Note that it is possible for tasks in a thread group to have various FD
 		// tables (via clone(2) with CLONE_THREAD set and CLONE_FILES *not* set).
@@ -117,7 +118,7 @@ func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string
 		if found {
 			procs = append(procs, tg)
 		}
-	})
+	}
 
 	// procs may contain NVML-only processes, which don't use CUDA. As of
 	// writing, calling cuda-checkpoint on them will fail for all tested drivers.
@@ -256,16 +257,11 @@ func filterCudaProcsUsingThreadName(sctx context.Context, cudaProcs []*kernel.Th
 	cudaThreadRegex := regexp.MustCompile(`^cuda[0-9a-f]{11}$`)
 	var res []*kernel.ThreadGroup
 	for _, cudaProc := range cudaProcs {
-		found := false
-		cudaProc.ForEachTask(func(t *kernel.Task) bool {
+		for _, t := range cudaProc.Tasks() {
 			if cudaThreadRegex.MatchString(t.Name()) {
-				found = true
-				return false
+				res = append(res, cudaProc)
+				break
 			}
-			return true
-		})
-		if found {
-			res = append(res, cudaProc)
 		}
 	}
 	return res
