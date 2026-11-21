@@ -66,8 +66,8 @@ func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 			ProfileEnable: true,
 		},
 		"host filesystem": {
-			Platform:       (&systrap.Systrap{}).SeccompInfo(),
-			HostFilesystem: true,
+			Platform: (&systrap.Systrap{}).SeccompInfo(),
+			HostFS:   HostFSReadWrite,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestOptionsConfigKey(t *testing.T) {
 		},
 		"HostNetwork":           func(opt *Options) { opt.HostNetwork = !opt.HostNetwork },
 		"HostNetworkRawSockets": func(opt *Options) { opt.HostNetworkRawSockets = !opt.HostNetworkRawSockets },
-		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
+		"HostFS":                func(opt *Options) { opt.HostFS = (opt.HostFS + 1) % (HostFSReadWrite + 1) },
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
 		"NVProxyCaps":           func(opt *Options) { opt.NVProxyCaps = ^opt.NVProxyCaps },
@@ -220,10 +220,10 @@ func TestPrecompiledProgramsDeterministic(t *testing.T) {
 func TestMknodat(t *testing.T) {
 	atFDCWD32 := int32(linux.AT_FDCWD)
 	atFDCWD64 := int64(linux.AT_FDCWD)
-	for _, hostFS := range []bool{false, true} {
+	for _, hostFS := range []HostFSAccess{HostFSNone, HostFSReadWrite} {
 		rules, denyRules := Rules(Options{
-			HostFilesystem: hostFS,
-			Platform:       (&systrap.Systrap{}).SeccompInfo(),
+			HostFS:   hostFS,
+			Platform: (&systrap.Systrap{}).SeccompInfo(),
 		})
 		program := seccomp.Program{
 			RuleSets: []seccomp.RuleSet{
@@ -240,15 +240,16 @@ func TestMknodat(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		canCreate := hostFS == HostFSReadWrite
 		for _, tc := range []struct {
 			name    string
 			args    [6]uint64
 			allowed bool
 		}{
-			{"regular file", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 0}, hostFS},
-			{"regular file setuid sticky", [6]uint64{0, 0x1000, unix.S_IFREG | 0o7777, 0}, hostFS},
-			{"whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR, 0}, hostFS},
-			{"whiteout char device with perms", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o644, 0}, hostFS},
+			{"regular file", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 0}, canCreate},
+			{"regular file setuid sticky", [6]uint64{0, 0x1000, unix.S_IFREG | 0o7777, 0}, canCreate},
+			{"whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR, 0}, canCreate},
+			{"whiteout char device with perms", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o644, 0}, canCreate},
 			{"non-whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o666, 0x0103}, false},
 			{"regular file nonzero dev", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 1}, false},
 			{"dev high bits set", [6]uint64{10, 0x1000, unix.S_IFCHR, 1 << 32}, false},
@@ -265,10 +266,10 @@ func TestMknodat(t *testing.T) {
 			data := linux.SeccompData{Nr: unix.SYS_MKNODAT, Arch: seccomp.LINUX_AUDIT_ARCH, Args: tc.args}
 			got, err := bpf.Exec[bpf.NativeEndian](compiled, seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes())))
 			if err != nil {
-				t.Fatalf("hostFS=%t %s: %v", hostFS, tc.name, err)
+				t.Fatalf("HostFS=%v %s: %v", hostFS, tc.name, err)
 			}
 			if allowed := got == uint32(linux.SECCOMP_RET_ALLOW); allowed != tc.allowed {
-				t.Errorf("hostFS=%t %s: action=%#x, want allowed=%t", hostFS, tc.name, got, tc.allowed)
+				t.Errorf("HostFS=%v %s: action=%#x, want allowed=%t", hostFS, tc.name, got, tc.allowed)
 			}
 		}
 	}
