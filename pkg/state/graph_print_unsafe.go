@@ -31,32 +31,26 @@ import (
 // Since streams don't describe the types of fields, they can only be printed
 // by the binary that saved them. Objects are decoded without running their
 // load callbacks.
-func PrintGraph(w io.Writer, data []byte, graph uint64, asHTML bool) error {
-	return safely(func() {
-		printGraph(w, data, int(graph), asHTML)
-	})
-}
-
-// printGraph prints a single object graph.
-func printGraph(w io.Writer, data []byte, graph int, asHTML bool) {
+func PrintGraph(w io.Writer, data []byte, graph uint64, asHTML bool) (err error) {
+	defer recoverState(&err)
 	ds := graphDecodeState{ctx: context.Background(), in: decBuf{b: data}, noCallbacks: true}
 	d := &ds.in
 	if magic := d.uint32(); magic != streamMagic {
-		Failf("invalid stream: bad magic %#x", magic)
+		return stateError(fmt.Errorf("invalid stream: bad magic %#x", magic))
 	}
 	if f := d.uint64(); f != schemaFingerprint() {
-		Failf("the state was saved by a binary with different types")
+		return stateError(fmt.Errorf("the state was saved by a binary with different types"))
 	}
 	ds.readTypes()
 	// Peek at the root type to allocate the root.
 	pos := d.pos
 	d.count(1)
 	if d.byte()&^objInexact != objKindValue {
-		Failf("invalid root object")
+		return stateError(fmt.Errorf("invalid root object"))
 	}
 	rootType := ds.typeAt(d.uvarint())
 	if uint64(rootType.size) > maxDecodeObjectBytes {
-		Failf("root object %v (%d bytes) exceeds limit", rootType.typ, rootType.size)
+		return stateError(fmt.Errorf("root object %v (%d bytes) exceeds limit", rootType.typ, rootType.size))
 	}
 	d.pos = pos
 	root := reflect.New(rootType.typ).UnsafePointer()
@@ -64,38 +58,29 @@ func printGraph(w io.Writer, data []byte, graph int, asHTML bool) {
 	ds.readTargets()
 	ds.decodeObjects()
 	if d.pos != len(d.b) {
-		Failf("%d bytes of trailing data", len(d.b)-d.pos)
+		return stateError(fmt.Errorf("%d bytes of trailing data", len(d.b)-d.pos))
 	}
 
-	p := printer{w: w, ds: &ds, graph: graph, html: asHTML}
+	p := printer{w: w, ds: &ds, graph: int(graph), html: asHTML}
 	p.index()
 	for i := range ds.objs {
-		o := &ds.objs[i]
 		name := p.objName(i)
 		if asHTML {
-			fmt.Fprintf(w, "<a name=\"%s\"></a>", name)
-		}
-		fmt.Fprintf(w, "%s = ", name)
-		ti := o.ti
-		if o.exact != nil {
-			ti = o.exact
-		}
-		switch o.kind {
-		case objKindValue:
-			p.value(reflect.NewAt(ti.typ, o.base).Elem(), 0)
-		case objKindArray:
-			n := int(o.size / ti.size)
-			p.value(reflect.NewAt(reflect.ArrayOf(n, ti.typ), o.base).Elem(), 0)
-		case objKindMap:
-			if o.mapType == nil {
-				fmt.Fprint(w, "map(unreferenced)")
-				break
+			if err := p.printf("<a name=\"%s\"></a>", name); err != nil {
+				return err
 			}
-			m := o.base
-			p.mapValue(reflect.NewAt(o.mapType.typ, unsafe.Pointer(&m)).Elem(), 0)
 		}
-		fmt.Fprint(w, "\n")
+		if err := p.printf("%s = ", name); err != nil {
+			return err
+		}
+		if err := p.object(&ds.objs[i]); err != nil {
+			return err
+		}
+		if err := p.write("\n"); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // printer prints decoded objects.
@@ -192,71 +177,100 @@ func (p *printer) indent(depth int) string {
 	return strings.Repeat("\t", depth)
 }
 
-func (p *printer) value(v reflect.Value, depth int) {
-	w := p.w
+func (p *printer) write(s string) error {
+	_, err := io.WriteString(p.w, s)
+	return err
+}
+
+func (p *printer) printf(format string, args ...any) error {
+	_, err := fmt.Fprintf(p.w, format, args...)
+	return err
+}
+
+func (p *printer) object(o *decObject) error {
+	ti := o.ti
+	if o.exact != nil {
+		ti = o.exact
+	}
+	switch o.kind {
+	case objKindValue:
+		return p.value(reflect.NewAt(ti.typ, o.base).Elem(), 0)
+	case objKindArray:
+		n := int(o.size / ti.size)
+		return p.value(reflect.NewAt(reflect.ArrayOf(n, ti.typ), o.base).Elem(), 0)
+	case objKindMap:
+		if o.mapType == nil {
+			return p.write("map(unreferenced)")
+		}
+		m := o.base
+		return p.mapValue(reflect.NewAt(o.mapType.typ, unsafe.Pointer(&m)).Elem(), 0)
+	}
+	return nil
+}
+
+func (p *printer) value(v reflect.Value, depth int) error {
 	switch v.Kind() {
 	case reflect.Bool:
-		fmt.Fprintf(w, "%v", v.Bool())
+		return p.printf("%v", v.Bool())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		fmt.Fprintf(w, "%d", v.Int())
+		return p.printf("%d", v.Int())
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		fmt.Fprintf(w, "%du", v.Uint())
+		return p.printf("%du", v.Uint())
 	case reflect.Float32, reflect.Float64:
-		fmt.Fprintf(w, "%v", v.Float())
+		return p.printf("%v", v.Float())
 	case reflect.Complex64, reflect.Complex128:
-		fmt.Fprintf(w, "%v", v.Complex())
+		return p.printf("%v", v.Complex())
 	case reflect.String:
-		fmt.Fprint(w, p.text(fmt.Sprintf("%q", v.String())))
+		return p.write(p.text(fmt.Sprintf("%q", v.String())))
 	case reflect.Pointer:
 		if v.IsNil() {
-			fmt.Fprint(w, "nil")
-			return
+			return p.write("nil")
 		}
-		fmt.Fprint(w, p.ref(v.Pointer(), v.Type().Elem()))
+		return p.write(p.ref(v.Pointer(), v.Type().Elem()))
 	case reflect.Slice:
 		if v.IsNil() {
-			fmt.Fprint(w, "nil")
-			return
+			return p.write("nil")
 		}
-		fmt.Fprintf(w, "%s[:%d:%d]", p.ref(v.Pointer(), v.Type().Elem()), v.Len(), v.Cap())
+		return p.printf("%s[:%d:%d]", p.ref(v.Pointer(), v.Type().Elem()), v.Len(), v.Cap())
 	case reflect.Array:
 		if v.Type().Elem().Kind() == reflect.Uint8 {
 			b := make([]byte, v.Len())
 			for i := range b {
 				b[i] = byte(v.Index(i).Uint())
 			}
-			fmt.Fprintf(w, "%x", b)
-			return
+			return p.printf("%x", b)
 		}
-		fmt.Fprint(w, "[")
+		if err := p.write("["); err != nil {
+			return err
+		}
 		for i := 0; i < v.Len(); i++ {
 			if i > 0 {
-				fmt.Fprint(w, ", ")
+				if err := p.write(", "); err != nil {
+					return err
+				}
 			}
-			p.value(v.Index(i), depth)
+			if err := p.value(v.Index(i), depth); err != nil {
+				return err
+			}
 		}
-		fmt.Fprint(w, "]")
+		return p.write("]")
 	case reflect.Map:
 		if v.IsNil() {
-			fmt.Fprint(w, "nil")
-			return
+			return p.write("nil")
 		}
 		m := v.UnsafePointer()
 		if i, ok := p.maps[m]; ok {
-			fmt.Fprint(w, p.link(i, p.objName(i)))
-			return
+			return p.write(p.link(i, p.objName(i)))
 		}
 		if _, ok := p.inlineMaps[m]; ok {
-			fmt.Fprint(w, p.text(fmt.Sprintf("%v{...}", v.Type())))
-			return
+			return p.write(p.text(fmt.Sprintf("%v{...}", v.Type())))
 		}
 		p.inlineMaps[m] = struct{}{}
-		p.mapValue(v, depth)
-		delete(p.inlineMaps, m)
+		defer delete(p.inlineMaps, m)
+		return p.mapValue(v, depth)
 	case reflect.Interface:
 		if v.IsNil() {
-			fmt.Fprint(w, "interface(nil)")
-			return
+			return p.write("interface(nil)")
 		}
 		if v.CanAddr() {
 			v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
@@ -267,14 +281,17 @@ func (p *printer) value(v reflect.Value, depth int) {
 			cp.Set(e)
 			e = cp
 		}
-		fmt.Fprint(w, p.text(fmt.Sprintf("interface(%v){", e.Type())))
-		p.value(e, depth)
-		fmt.Fprint(w, "}")
+		if err := p.write(p.text(fmt.Sprintf("interface(%v){", e.Type()))); err != nil {
+			return err
+		}
+		if err := p.value(e, depth); err != nil {
+			return err
+		}
+		return p.write("}")
 	case reflect.Struct:
 		t := v.Type()
 		if t == reflect.TypeFor[struct{}]() || t.NumField() == 0 {
-			fmt.Fprint(w, "struct{}")
-			return
+			return p.write("struct{}")
 		}
 		ti := typeInfoOf(t)
 		if ti.structKind == structBinary {
@@ -284,10 +301,11 @@ func (p *printer) value(v reflect.Value, depth int) {
 			} else if v.CanInterface() {
 				c.Elem().Set(v)
 			}
-			fmt.Fprint(w, p.text(fmt.Sprintf("%v", c.Elem().Interface())))
-			return
+			return p.write(p.text(fmt.Sprintf("%v", c.Elem().Interface())))
 		}
-		fmt.Fprint(w, p.text(t.String())+"{\n")
+		if err := p.write(p.text(t.String()) + "{\n"); err != nil {
+			return err
+		}
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
 			if f.Name == "_" {
@@ -297,23 +315,31 @@ func (p *printer) value(v reflect.Value, depth int) {
 			case "nosave", "manual", "ignore":
 				continue
 			}
-			fmt.Fprintf(w, "%s%s: ", p.indent(depth+1), f.Name)
+			if err := p.printf("%s%s: ", p.indent(depth+1), f.Name); err != nil {
+				return err
+			}
 			fv := v.Field(i)
 			switch fv.Kind() {
 			case reflect.Func, reflect.Chan, reflect.UnsafePointer:
-				fmt.Fprint(w, "(not printed)")
+				if err := p.write("(not printed)"); err != nil {
+					return err
+				}
 			default:
-				p.value(fv, depth+1)
+				if err := p.value(fv, depth+1); err != nil {
+					return err
+				}
 			}
-			fmt.Fprint(w, ",\n")
+			if err := p.write(",\n"); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintf(w, "%s}", p.indent(depth))
+		return p.printf("%s}", p.indent(depth))
 	default:
-		fmt.Fprint(w, p.text(fmt.Sprintf("(%v)", v.Type())))
+		return p.write(p.text(fmt.Sprintf("(%v)", v.Type())))
 	}
 }
 
-func (p *printer) mapValue(v reflect.Value, depth int) {
+func (p *printer) mapValue(v reflect.Value, depth int) error {
 	if !v.CanInterface() {
 		// Maps reached through unexported fields are read-only, and
 		// reflect does not permit copying their entries out. A map value
@@ -321,8 +347,9 @@ func (p *printer) mapValue(v reflect.Value, depth int) {
 		m := v.UnsafePointer()
 		v = reflect.NewAt(v.Type(), unsafe.Pointer(&m)).Elem()
 	}
-	w := p.w
-	fmt.Fprint(w, p.text(v.Type().String())+"{\n")
+	if err := p.write(p.text(v.Type().String()) + "{\n"); err != nil {
+		return err
+	}
 	type mapEntry struct {
 		key, val string
 	}
@@ -337,9 +364,13 @@ func (p *printer) mapValue(v reflect.Value, depth int) {
 		kb.Reset()
 		eb.Reset()
 		sub.w = &kb
-		sub.value(k, depth+1)
+		if err := sub.value(k, depth+1); err != nil {
+			return err
+		}
 		sub.w = &eb
-		sub.value(e, depth+1)
+		if err := sub.value(e, depth+1); err != nil {
+			return err
+		}
 		entries = append(entries, mapEntry{key: kb.String(), val: eb.String()})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -350,7 +381,9 @@ func (p *printer) mapValue(v reflect.Value, depth int) {
 	})
 	indent := p.indent(depth + 1)
 	for _, entry := range entries {
-		fmt.Fprintf(w, "%s%s: %s,\n", indent, entry.key, entry.val)
+		if err := p.printf("%s%s: %s,\n", indent, entry.key, entry.val); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(w, "%s}", p.indent(depth))
+	return p.printf("%s}", p.indent(depth))
 }
