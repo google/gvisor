@@ -70,7 +70,7 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
-		if err := cont.Restore(conf, imagePath, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		if err := cont.Restore(conf, imagePath, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */); err != nil {
 			return nil, nil, fmt.Errorf("error restoring container: %v", err)
 		}
 
@@ -1710,7 +1710,7 @@ func restoreSandbox(t *testing.T, conf *config.Config, imagePath string, sbSpec 
 			t.Fatalf("error creating container %q: %v", id, err)
 		}
 		t.Cleanup(func() { c.Destroy() })
-		if err := c.Restore(conf, imagePath, sandbox.DirectIOOff, background, nil /* networkArgs */); err != nil {
+		if err := c.Restore(conf, imagePath, sandbox.DirectIOOff, background, false /* deferCheckpoint */, nil /* networkArgs */); err != nil {
 			t.Fatalf("error restoring container %q: %v", id, err)
 		}
 		return c
@@ -1742,6 +1742,203 @@ func checkpointNoRootContainer(t *testing.T, conf *config.Config, sb *Container,
 		return nil
 	}, 10*time.Second); err != nil {
 		t.Fatalf("sandbox did not exit after checkpoint: %v", err)
+	}
+}
+
+func startDeferredNoRootContainerSandbox(t *testing.T, conf *config.Config, sbID string) *Container {
+	t.Helper()
+	spec := noRootContainerSandboxSpec()
+	bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox bundle: %v", err)
+	}
+	t.Cleanup(cleanupBundle)
+	sb, err := New(conf, Args{ID: sbID, Spec: spec, BundleDir: bundle, NoRootContainer: true})
+	if err != nil {
+		t.Fatalf("error creating sandbox: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sb.Destroy(); err != nil {
+			t.Errorf("error destroying sandbox: %v", err)
+		}
+	})
+	if err := sb.Restore(conf, "", sandbox.DirectIOOff, false /* background */, true /* deferCheckpoint */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error deferring checkpoint restore: %v", err)
+	}
+	return sb
+}
+
+func newDeferredRestoreSubcontainer(t *testing.T, conf *config.Config, sbID, imagePath string, args ...string) *Container {
+	t.Helper()
+	spec := noRootContainerSubSpec(sbID, args...)
+	bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+	if err != nil {
+		t.Fatalf("error setting up container bundle: %v", err)
+	}
+	t.Cleanup(cleanupBundle)
+	c, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundle, CheckpointDirPath: imagePath})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	t.Cleanup(func() { c.Destroy() })
+	return c
+}
+
+func waitForRestore(t *testing.T, c *Container) error {
+	t.Helper()
+	wait := make(chan error, 1)
+	go func() { wait <- c.WaitRestore() }()
+	select {
+	case err := <-wait:
+		return err
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("waiting for restore of %q timed out", c.ID)
+	}
+}
+
+func createNoRootContainerCheckpoint(t *testing.T, conf *config.Config) string {
+	t.Helper()
+	dir := checkpointDir(t)
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelNone})
+	return dir
+}
+
+// TestCheckpointRestoreNoRootContainerDeferredCheckpoint checks that a no-root
+// sandbox can start before its checkpoint is bound, then restore multiple
+// containers from the same checkpoint.
+func TestCheckpointRestoreNoRootContainerDeferredCheckpoint(t *testing.T) {
+	for platform, conf := range configs(t, true /* noOverlay */) {
+		t.Run(platform, func(t *testing.T) {
+			setupTestRootDir(t, conf)
+			dir := checkpointDir(t)
+			outputPath := filepath.Join(dir, "output")
+			outputFile, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile.Close()
+
+			script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath)
+			sbID := testutil.RandomContainerID()
+			sb := startNoRootContainerSandbox(t, conf, sbID)
+			startNoRootContainerSubWithArgs(t, conf, sbID, nil /* pidnsPath */, "bash", "-c", script)
+			sleeper := startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+			sleeperPID := onlyPID(t, sleeper)
+			if err := waitForFileNotEmpty(outputFile); err != nil {
+				t.Fatalf("failed to wait for output file: %v", err)
+			}
+			checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelNone})
+			lastNum, err := readOutputNum(outputPath, -1)
+			if err != nil {
+				t.Fatalf("error reading output file: %v", err)
+			}
+
+			for _, background := range []bool{false, true} {
+				name := "foreground"
+				if background {
+					name = "background"
+				}
+				t.Run(name, func(t *testing.T) {
+					if err := os.Remove(outputPath); err != nil {
+						t.Fatalf("error removing output file: %v", err)
+					}
+					outputFile, err := createWriteableOutputFile(outputPath)
+					if err != nil {
+						t.Fatalf("error creating output file: %v", err)
+					}
+					defer outputFile.Close()
+
+					newSbID := testutil.RandomContainerID()
+					restoredSB := startDeferredNoRootContainerSandbox(t, conf, newSbID)
+					imagePath := dir + "/."
+					// Create both child containers before either binds the checkpoint.
+					restoredCounter := newDeferredRestoreSubcontainer(t, conf, newSbID, dir, "bash", "-c", script)
+					restoredSleeper := newDeferredRestoreSubcontainer(t, conf, newSbID, imagePath, sleepCmd...)
+					if err := restoredCounter.Restore(conf, dir, sandbox.DirectIOOff, background, false /* deferCheckpoint */, nil /* networkArgs */); err != nil {
+						t.Fatalf("error restoring counter container: %v", err)
+					}
+					if err := restoredSleeper.Restore(conf, imagePath, sandbox.DirectIOOff, background, false /* deferCheckpoint */, nil /* networkArgs */); err != nil {
+						t.Fatalf("error restoring sleeper container: %v", err)
+					}
+					if err := waitForRestore(t, restoredSB); err != nil {
+						t.Fatalf("error waiting for restore: %v", err)
+					}
+					if err := waitForFileNotEmpty(outputFile); err != nil {
+						t.Fatalf("failed to wait for restored counter output: %v", err)
+					}
+					firstNum, err := readOutputNum(outputPath, 0)
+					if err != nil {
+						t.Fatalf("error reading restored output: %v", err)
+					}
+					if firstNum != lastNum+1 {
+						t.Errorf("counter resumed at %d, want %d", firstNum, lastNum+1)
+					}
+					if got := onlyPID(t, restoredSleeper); got != sleeperPID {
+						t.Errorf("sleeper has PID %d after restore, want %d", got, sleeperPID)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerDeferredCheckpointDirectoryMismatch
+// checks that all child restores in a deferred sandbox use the same checkpoint
+// directory.
+func TestCheckpointRestoreNoRootContainerDeferredCheckpointDirectoryMismatch(t *testing.T) {
+	for platform, conf := range configs(t, true /* noOverlay */) {
+		t.Run(platform, func(t *testing.T) {
+			setupTestRootDir(t, conf)
+			dirA := createNoRootContainerCheckpoint(t, conf)
+			dirB := copyCheckpointFiles(t, dirA, "deferred-checkpoint-copy", sentryCheckpointFiles)
+
+			sbID := testutil.RandomContainerID()
+			sb := startDeferredNoRootContainerSandbox(t, conf, sbID)
+			first := newDeferredRestoreSubcontainer(t, conf, sbID, dirA, sleepCmd...)
+			if err := first.Restore(conf, dirA, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */); err != nil {
+				t.Fatalf("error restoring first child: %v", err)
+			}
+			second := newDeferredRestoreSubcontainer(t, conf, sbID, dirB, sleepCmd...)
+			err := second.Restore(conf, dirB, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */)
+			if err == nil || !strings.Contains(err.Error(), "checkpoint directory differs") {
+				t.Errorf("restoring from a different checkpoint directory returned %v, want checkpoint directory mismatch", err)
+			}
+			if err := waitForRestore(t, sb); err == nil || !strings.Contains(err.Error(), "checkpoint directory differs") {
+				t.Errorf("WaitRestore() = %v, want checkpoint directory mismatch", err)
+			}
+		})
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerDeferredCheckpointCorruptState checks
+// that a readable but corrupt state file fails restore and wakes WaitRestore.
+func TestCheckpointRestoreNoRootContainerDeferredCheckpointCorruptState(t *testing.T) {
+	for platform, conf := range configs(t, true /* noOverlay */) {
+		t.Run(platform, func(t *testing.T) {
+			setupTestRootDir(t, conf)
+			dir := createNoRootContainerCheckpoint(t, conf)
+			if err := os.WriteFile(filepath.Join(dir, checkpointfiles.StateFileName), []byte("corrupt"), 0644); err != nil {
+				t.Fatalf("error corrupting checkpoint state file: %v", err)
+			}
+
+			sbID := testutil.RandomContainerID()
+			sb := startDeferredNoRootContainerSandbox(t, conf, sbID)
+			child := newDeferredRestoreSubcontainer(t, conf, sbID, dir, sleepCmd...)
+			err := child.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */)
+			const want = "initializing deferred checkpoint"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("Restore() = %v, want error containing %q", err, want)
+			}
+			if err := waitForRestore(t, sb); err == nil {
+				t.Errorf("WaitRestore() succeeded after restoring a corrupt state file")
+			} else if !strings.Contains(err.Error(), want) {
+				t.Errorf("WaitRestore() = %v, want error containing %q", err, want)
+			}
+		})
 	}
 }
 
@@ -1802,7 +1999,7 @@ func TestCheckpointRestoreNoRootContainer(t *testing.T) {
 		}
 		defer c.Destroy()
 		const want = "no-root-container=true cannot be restored with no-root-container=false"
-		if err := c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+		if err := c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Restore() = %v, want error containing %q", err, want)
 		}
 	})
@@ -1974,7 +2171,7 @@ func TestCheckpointRestoreRootContainerIntoNoRootContainer(t *testing.T) {
 	}
 	defer sb.Destroy()
 	const want = "no-root-container=false cannot be restored with no-root-container=true"
-	if err := sb.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+	if err := sb.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("Restore() = %v, want error containing %q", err, want)
 	}
 }
@@ -2006,7 +2203,7 @@ func TestCheckpointRestoreNoRootContainerFailedRestore(t *testing.T) {
 			t.Fatalf("error creating container %q: %v", id, err)
 		}
 		t.Cleanup(func() { c.Destroy() })
-		return c, c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */)
+		return c, c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, false /* deferCheckpoint */, nil /* networkArgs */)
 	}
 	newSbID := testutil.RandomContainerID()
 	sb2, err := restore(noRootContainerSandboxSpec(), newSbID, true /* noRootContainer */)
