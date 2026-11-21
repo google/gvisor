@@ -3751,6 +3751,132 @@ func TestOCISeccompErrnoRet(t *testing.T) {
 	}
 }
 
+// TestOCISeccompRestore checks that the OCI seccomp profile still
+// applies post-restore.
+func TestOCISeccompRestore(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "seccomp-restore")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding dir: %v", err)
+	}
+	imageDir := filepath.Join(dir, "image")
+	if err := os.Mkdir(imageDir, 0777); err != nil {
+		t.Fatalf("error creating image dir: %v", err)
+	}
+	outDir := filepath.Join(dir, "out")
+	if err := os.Mkdir(outDir, 0777); err != nil {
+		t.Fatalf("error creating output dir: %v", err)
+	}
+	script := fmt.Sprintf(`probe() {
+	{ %[1]s syscall --syscall=%[2]d; %[1]s syscall --syscall=%[3]d %[4]d 0 0; %[1]s syscall --syscall=%[3]d %[5]d 0 0; } > "$1.tmp"
+	mv "$1.tmp" "$1"
+}
+probe %[6]s/before
+while [ ! -e %[6]s/restored ]; do sleep 0.1; done
+probe %[6]s/after`, app, unix.SYS_GETSID, unix.SYS_GETPRIORITY, unix.PRIO_PGRP, unix.PRIO_PROCESS, outDir)
+	spec := testutil.NewSpecWithArgs("/bin/sh", "-c", script)
+	spec.Mounts = []specs.Mount{{
+		Type:        "bind",
+		Destination: outDir,
+		Source:      outDir,
+	}}
+	enosys := uint(unix.ENOSYS)
+	spec.Linux = &specs.Linux{
+		Seccomp: &specs.LinuxSeccomp{
+			DefaultAction: specs.ActAllow,
+			Syscalls: []specs.LinuxSyscall{
+				{
+					Names:    []string{"getsid"},
+					Action:   specs.ActErrno,
+					ErrnoRet: &enosys,
+				},
+				{
+					Names:    []string{"getpriority"},
+					Action:   specs.ActErrno,
+					ErrnoRet: &enosys,
+					Args:     []specs.LinuxSeccompArg{{Index: 0, Value: unix.PRIO_PGRP, Op: specs.OpEqualTo}},
+				},
+			},
+		},
+	}
+	conf := testutil.TestConfig(t)
+	conf.OCISeccomp = true
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	want := []string{
+		fmt.Sprintf("failed: %v", unix.ENOSYS),
+		fmt.Sprintf("failed: %v", unix.ENOSYS),
+		"success",
+	}
+	checkOutput := func(name string) {
+		t.Helper()
+		if err := testutil.Poll(func() error {
+			got, err := os.ReadFile(filepath.Join(outDir, name))
+			if err != nil {
+				return err
+			}
+			lines := strings.Split(strings.TrimSuffix(string(got), "\n"), "\n")
+			if len(lines) != len(want) {
+				return &backoff.PermanentError{Err: fmt.Errorf("%s: got %q, want %d lines", name, got, len(want))}
+			}
+			for i, line := range lines {
+				if !strings.HasSuffix(line, want[i]) {
+					return &backoff.PermanentError{Err: fmt.Errorf("%s line %d: got %q, want suffix %q", name, i, line, want[i])}
+				}
+			}
+			return nil
+		}, 30*time.Second); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cont, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	checkOutput("before")
+	if err := cont.Checkpoint(conf, imageDir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	cont.Destroy()
+
+	contRestore, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer contRestore.Destroy()
+	if err := contRestore.Restore(conf, imageDir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "restored"), nil, 0666); err != nil {
+		t.Fatalf("error creating restore marker: %v", err)
+	}
+	checkOutput("after")
+}
+
 func TestWaitOnExitedSandbox(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {

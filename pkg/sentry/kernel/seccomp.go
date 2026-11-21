@@ -188,7 +188,7 @@ func (f SyscallFilter) Evaluate(input bpf.Input) (uint32, error) {
 	return bpf.Exec[bpf.NativeEndian](f.program, input)
 }
 
-// taskSeccomp holds seccomp-related data for a `Task`.
+// Immutable once a task uses it.
 //
 // +stateify savable
 type taskSeccomp struct {
@@ -207,16 +207,6 @@ type taskSeccomp struct {
 	// cacheAuditNumber is the AUDIT_ARCH_* constant of the task image used
 	// at the time of computing `cache`.
 	cacheAuditNumber uint32
-}
-
-// copy returns a copy of this taskSeccomp, including its cache. Cache lookups
-// check cacheAuditNumber before using entries for the current architecture.
-func (ts *taskSeccomp) copy() *taskSeccomp {
-	return &taskSeccomp{
-		filters:          append(([]SyscallFilter)(nil), ts.filters...),
-		cacheAuditNumber: ts.cacheAuditNumber,
-		cache:            ts.cache,
-	}
 }
 
 // dataAsBPFInput returns a serialized BPF program, only valid on the current task
@@ -479,7 +469,7 @@ func (t *Task) AppendSyscallFilter(f SyscallFilter, syncAll bool) error {
 				if currentNoNewPrivs {
 					ot.SetNoNewPrivs()
 				}
-				ot.seccomp.Store(newSeccomp.copy())
+				ot.seccomp.Store(newSeccomp)
 			}
 		}
 	}

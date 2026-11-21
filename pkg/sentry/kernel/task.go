@@ -771,9 +771,6 @@ var (
 // afterLoad is invoked by stateify.
 func (t *Task) afterLoad(gocontext.Context) {
 	t.updateInfoLocked()
-	if ts := t.seccomp.Load(); ts != nil {
-		ts.populateCache(t)
-	}
 	t.interruptChan = make(chan struct{}, 1)
 	t.setGostate(TaskGoroutineNonexistent)
 	if t.stop != nil {
