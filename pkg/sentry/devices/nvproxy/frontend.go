@@ -1532,6 +1532,11 @@ func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMET
 	}
 	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, _ *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) {
 		client := newRootClient(fi.fd, ioctlParams, rightsRequested, allocParams)
+		// Record the root object under client.objsMu before publishing
+		// client in nvp.clients, so no concurrent lookup can observe an
+		// uninitialized client.handle or client.resources map.
+		client.objsMu.Lock()
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, client, nvgpu.Handle{Val: nvgpu.NV01_NULL_OBJECT} /* parentH */)
 		nvp := fi.fd.dev.nvp
 		nvp.clientsMu.Lock()
 		if _, ok := nvp.clients[ioctlParams.HObjectNew]; ok {
@@ -1543,9 +1548,6 @@ func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMET
 		}
 		fi.fd.clients[client] = struct{}{}
 		nvp.clientsMu.Unlock()
-
-		client.objsMu.Lock()
-		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, client, nvgpu.Handle{Val: nvgpu.NV01_NULL_OBJECT} /* parentH */)
 		client.objsMu.Unlock()
 	})
 }

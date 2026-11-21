@@ -382,12 +382,26 @@ func newRootClient[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64_PARAMET
 
 // Release implements objectImpl.Release.
 func (c *rootClient) Release(ctx context.Context) func() {
+	c.unregisterLocked()
+	return nil
+}
+
+// unregisterLocked marks c as released and removes it from the client
+// registries. It is idempotent.
+//
+// The driver allows a new client to take c's handle as soon as the driver
+// has freed c, which happens before c is released here, so nvp.clients may
+// already refer to c's successor; only remove the entry if it is still c.
+//
+// Precondition: c.objsMu must be locked.
+func (c *rootClient) unregisterLocked() {
 	c.released = true
 	c.nvp.clientsMu.Lock()
 	defer c.nvp.clientsMu.Unlock()
 	delete(c.params.fd.clients, c)
-	delete(c.nvp.clients, c.handle)
-	return nil
+	if c.nvp.clients[c.handle] == c {
+		delete(c.nvp.clients, c.handle)
+	}
 }
 
 // Precondition: c.objsMu must be locked.

@@ -86,6 +86,15 @@ func (mf *frontendFDMemmapFile) Close() error {
 		}
 		mf.mmapInternal = 0
 	}
+	// Closing the host FD frees the clients it owns in the driver, after
+	// which the driver may hand out their handles again. Unregister the
+	// clients first so that no thread can use a stale client, and no new
+	// client can be shadowed by one, once the handles are reusable.
+	for client := range mf.clients {
+		client.objsMu.Lock()
+		client.unregisterLocked()
+		client.objsMu.Unlock()
+	}
 	if mf.hostFD >= 0 {
 		if err := unix.Close(int(mf.hostFD)); err != nil {
 			closeErr = fmt.Errorf("close failed: %w", err)
