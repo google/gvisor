@@ -158,8 +158,7 @@ func gasketUnmapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, f
 	fd.device.mu.Lock()
 	defer fd.device.mu.Unlock()
 	s := &fd.device.devAddrSet
-	r := DevAddrRange{userIoctlParams.DeviceAddress, userIoctlParams.DeviceAddress + userIoctlParams.Size}
-	s.RemoveRangeWith(r, func(seg DevAddrIterator) {
+	s.RemoveRangeWith(devar, func(seg DevAddrIterator) {
 		mm.Unpin([]mm.PinnedRange{seg.ValuePtr().pinnedRange})
 	})
 	return n, nil
