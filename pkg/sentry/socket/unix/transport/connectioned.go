@@ -240,6 +240,7 @@ func (e *connectionedEndpoint) ListeningLocked() bool {
 func (e *connectionedEndpoint) Close(ctx context.Context) {
 	var acceptedChan chan *connectionedEndpoint
 	e.Lock()
+	e.resetBoundSocketFDLocked(ctx)
 	var (
 		c Sender
 		r Receiver
@@ -290,7 +291,6 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		c.NotifyStateChange()
 		c.Release(ctx)
 	}
-	e.ResetBoundSocketFD(ctx)
 	if r != nil {
 		r.NotifyStateChange()
 		r.Release(ctx)
@@ -459,17 +459,21 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 		}
 		return nil
 	}
-	if !e.isBound() {
+	if e.Connected() || !e.isBound() {
 		return syserr.ErrInvalidEndpointState
 	}
-
-	// Normal case.
-	e.acceptedChan = make(chan *connectionedEndpoint, backlog)
 	if e.boundSocketFD != nil {
+		// Until listen, the bound host socket does not supply readiness.
+		fd := e.boundSocketFD.NotificationFD()
+		if err := fdnotifier.AddFD(fd, e.WaitQueue); err != nil {
+			return syserr.FromError(err)
+		}
 		if err := e.boundSocketFD.Listen(ctx, int32(backlog)); err != nil {
+			fdnotifier.RemoveFD(fd)
 			return syserr.FromError(err)
 		}
 	}
+	e.acceptedChan = make(chan *connectionedEndpoint, backlog)
 
 	return nil
 }
@@ -664,7 +668,7 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 // WakeupWriters implements tcpip.SocketOptionsHandler.WakeupWriters.
 func (e *connectionedEndpoint) WakeupWriters() {}
 
-// SetBoundSocketFD implement HostBountEndpoint.SetBoundSocketFD.
+// SetBoundSocketFD implements HostBoundEndpoint.SetBoundSocketFD.
 func (e *connectionedEndpoint) SetBoundSocketFD(ctx context.Context, bsFD BoundSocketFD) error {
 	e.Lock()
 	defer e.Unlock()
@@ -673,47 +677,48 @@ func (e *connectionedEndpoint) SetBoundSocketFD(ctx context.Context, bsFD BoundS
 		return syserr.ErrAlreadyBound.ToError()
 	}
 	e.boundSocketFD = bsFD
-	fdnotifier.AddFD(bsFD.NotificationFD(), e.WaitQueue)
 	return nil
 }
 
-// SetBoundSocketFD implement HostBountEndpoint.ResetBoundSocketFD.
+// ResetBoundSocketFD implements HostBoundEndpoint.ResetBoundSocketFD.
 func (e *connectionedEndpoint) ResetBoundSocketFD(ctx context.Context) {
 	e.Lock()
 	defer e.Unlock()
+	e.resetBoundSocketFDLocked(ctx)
+}
+
+// +checklocks:e.endpointMutex
+func (e *connectionedEndpoint) resetBoundSocketFDLocked(ctx context.Context) {
 	if e.boundSocketFD == nil {
 		return
 	}
-	fdnotifier.RemoveFD(e.boundSocketFD.NotificationFD())
+	if e.ListeningLocked() {
+		fdnotifier.RemoveFD(e.boundSocketFD.NotificationFD())
+	}
 	e.boundSocketFD.Close(ctx)
 	e.boundSocketFD = nil
 }
 
+// +checklocks:e.endpointMutex
+func (e *connectionedEndpoint) hostListenerLocked() BoundSocketFD {
+	if !e.ListeningLocked() {
+		return nil
+	}
+	return e.boundSocketFD
+}
+
 // EventRegister implements waiter.Waitable.EventRegister.
 func (e *connectionedEndpoint) EventRegister(we *waiter.Entry) error {
-	if err := e.baseEndpoint.EventRegister(we); err != nil {
-		return err
-	}
-
 	e.Lock()
-	bsFD := e.boundSocketFD
-	e.Unlock()
-	if bsFD != nil {
-		fdnotifier.UpdateFD(bsFD.NotificationFD())
-	}
-	return nil
+	defer e.Unlock()
+	return e.eventRegisterLocked(we, e.hostListenerLocked())
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (e *connectionedEndpoint) EventUnregister(we *waiter.Entry) {
-	e.baseEndpoint.EventUnregister(we)
-
 	e.Lock()
-	bsFD := e.boundSocketFD
-	e.Unlock()
-	if bsFD != nil {
-		fdnotifier.UpdateFD(bsFD.NotificationFD())
-	}
+	defer e.Unlock()
+	e.eventUnregisterLocked(we, e.hostListenerLocked())
 }
 
 func (e *connectionedEndpoint) GetAcceptConn() bool {
