@@ -463,6 +463,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	t.cpu = atomicbitops.FromInt32(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
 
 	t.startTime = t.k.RealtimeClock().Now()
+	t.startTimeSinceBoot = t.k.BoottimeClock().Now()
 
 	// As a final step, initialize the platform context. This may require
 	// other pieces to be initialized as the task is used the context.
