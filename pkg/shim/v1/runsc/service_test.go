@@ -589,7 +589,10 @@ func TestCreateDoesNotBlockOtherContainers(t *testing.T) {
 	if err := os.MkdirAll(bundle, 0o755); err != nil {
 		t.Fatalf("MkdirAll(bundle): %v", err)
 	}
-	if err := utils.WriteSpec(bundle, &specs.Spec{}); err != nil {
+	if err := utils.WriteSpec(bundle, &specs.Spec{Annotations: map[string]string{
+		"io.kubernetes.cri.container-type": "container",
+		"io.kubernetes.cri.sandbox-id":     "existing",
+	}}); err != nil {
 		t.Fatalf("WriteSpec: %v", err)
 	}
 
@@ -681,5 +684,33 @@ func TestCreateDoesNotBlockOtherContainers(t *testing.T) {
 
 	if _, err := s.getContainer("creating"); err != nil {
 		t.Errorf("getContainer(creating) after Create: %v", err)
+	}
+}
+
+func TestNewInitSandboxClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		want        bool
+	}{
+		{"standalone", nil, true},
+		{"cri-root", map[string]string{specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox}, true},
+		{"cri-child", map[string]string{specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer}, false},
+		{"crio-root", map[string]string{specutils.CRIOContainerTypeAnnotation: specutils.CRIOContainerTypeSandbox}, true},
+		{"crio-child", map[string]string{specutils.CRIOContainerTypeAnnotation: specutils.CRIOContainerTypeContainer}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := t.TempDir()
+			if err := utils.WriteSpec(bundle, &specs.Spec{Annotations: tc.annotations}); err != nil {
+				t.Fatal(err)
+			}
+			p, err := newInit(bundle, "test", nopPlatform{}, &proc.CreateConfig{ID: "test", Bundle: bundle}, &Options{}, bundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Sandbox != tc.want {
+				t.Fatalf("Sandbox = %t, want %t", p.Sandbox, tc.want)
+			}
+		})
 	}
 }

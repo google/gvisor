@@ -285,6 +285,9 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 	if initProcess, ok := p.(*proc.Init); ok && initProcess.Sandbox {
 		command := initProcess.Runtime().Command
 		s.versionCommand.Store(&command)
+		// Publish early exits only after registration and OOM setup finish,
+		// including when OOM setup fails after the task has been registered.
+		defer func() { go s.waitSandboxExit(c, initProcess) }()
 	}
 
 	// Set up OOM notification on the sandbox's cgroup. This is done on
@@ -673,6 +676,25 @@ func (s *runscService) processExits(ctx context.Context) {
 	}
 }
 
+func (s *runscService) waitSandboxExit(c *Container, p *proc.Init) {
+	defer close(c.sandboxExitDone)
+	status, exited := p.WaitSandboxExit()
+	if !exited {
+		return
+	}
+	oom := oomNotKilled
+	if !p.SetExitedBeforeStart(func() int {
+		oom = s.oomPoller.isOOM(c.ID)
+		if oom.killed() && status == proc.InternalErrorCode {
+			status = 128 + int(unix.SIGKILL)
+		}
+		return status
+	}) {
+		return
+	}
+	s.sendExit(c.ID, p, status, oom)
+}
+
 // +checklocksexclude:s.mu
 func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	// Find the container whose process exited.
@@ -726,6 +748,10 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		e.Status = 128 + int(unix.SIGKILL)
 	}
 	p.SetExited(e.Status)
+	s.sendExit(containerID, p, e.Status, oom)
+}
+
+func (s *runscService) sendExit(containerID string, p process.Process, status int, oom oomStatus) {
 	if oom == oomKilledUnpublished {
 		s.send(&events.TaskOOM{ContainerID: containerID})
 	}
@@ -733,7 +759,7 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		ContainerID: containerID,
 		ID:          p.ID(),
 		Pid:         uint32(p.Pid()),
-		ExitStatus:  uint32(e.Status),
+		ExitStatus:  uint32(status),
 		ExitedAt:    protobuf.ToTimestamp(p.ExitedAt()),
 	})
 }
@@ -855,7 +881,7 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 	p.WorkDir = workDir
 	p.IoUID = int(options.IoUID)
 	p.IoGID = int(options.IoGID)
-	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
+	p.Sandbox = specutils.IsRootContainer(spec)
 	p.UserLog = utils.UserLogPath(spec)
 	if uid, err := utils.PodUID(spec, r.Bundle); err == nil {
 		p.K8sPodUID = uid
