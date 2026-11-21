@@ -260,6 +260,15 @@ type inotifyEvent struct {
 	Name string
 }
 
+func addInotifyWatch(t *testing.T, ino *vfs.Inotify, d *vfs.Dentry, mask uint32) int32 {
+	t.Helper()
+	wd, err := ino.AddWatch(d, mask)
+	if err != nil {
+		t.Fatalf("AddWatch: %v", err)
+	}
+	return wd
+}
+
 func readInotifyEvents(t *testing.T, ctx context.Context, fd *vfs.FileDescription) []inotifyEvent {
 	t.Helper()
 
@@ -496,8 +505,8 @@ func TestRmdirInotifyDeleteSelfBeforeParentDelete(t *testing.T) {
 	parentVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent"))
 	defer parentVD.DecRef(sys.Ctx)
 	childVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent/child"))
-	parentWD := ino.AddWatch(parentVD.Dentry(), linux.IN_ALL_EVENTS)
-	childWD := ino.AddWatch(childVD.Dentry(), linux.IN_ALL_EVENTS)
+	parentWD := addInotifyWatch(t, ino, parentVD.Dentry(), linux.IN_ALL_EVENTS)
+	childWD := addInotifyWatch(t, ino, childVD.Dentry(), linux.IN_ALL_EVENTS)
 	childVD.DecRef(sys.Ctx)
 
 	if err := sys.VFS.RmdirAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child")); err != nil {
@@ -536,8 +545,8 @@ func TestRmdirInotifyWithOpenFDDefersDeleteSelf(t *testing.T) {
 	parentVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent"))
 	defer parentVD.DecRef(sys.Ctx)
 	childVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent/child"))
-	parentWD := ino.AddWatch(parentVD.Dentry(), linux.IN_ALL_EVENTS)
-	childWD := ino.AddWatch(childVD.Dentry(), linux.IN_ALL_EVENTS)
+	parentWD := addInotifyWatch(t, ino, parentVD.Dentry(), linux.IN_ALL_EVENTS)
+	childWD := addInotifyWatch(t, ino, childVD.Dentry(), linux.IN_ALL_EVENTS)
 	childVD.DecRef(sys.Ctx)
 
 	childFD, err := sys.VFS.OpenAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child"), &vfs.OpenOptions{Flags: linux.O_RDONLY})
@@ -691,7 +700,7 @@ func TestEvictCachedDentriesPreservesWatched(t *testing.T) {
 	// Inotify watches don't hold a reference on their target, so both
 	// dentries are only kept alive by the dentry cache after this.
 	watched := sys.GetDentryOrDie(sys.PathOpAtRoot("dyn/watched"))
-	wd := ino.AddWatch(watched.Dentry(), linux.IN_OPEN)
+	wd := addInotifyWatch(t, ino, watched.Dentry(), linux.IN_OPEN)
 	watched.DecRef(sys.Ctx)
 	unwatched := sys.GetDentryOrDie(sys.PathOpAtRoot("unwatched"))
 	unwatched.DecRef(sys.Ctx)
