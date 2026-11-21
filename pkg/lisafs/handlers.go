@@ -94,14 +94,15 @@ func ErrorHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	return 0, unix.EINVAL
 }
 
-// MountHandler handles the Mount RPC. Note that there can not be concurrent
-// executions of MountHandler on a connection because the connection enforces
-// that Mount is the first message on the connection. Only after the connection
-// has been successfully mounted can other channels be created.
+// MountHandler handles the Mount RPC. A connection is only ever mounted once.
 //
 // +checklocksexclude:c.fdsMu
 // +checklocksexclude:c.server.renameMu
 func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	if !c.mounted.CompareAndSwap(false, true) {
+		log.Warningf("received Mount request on a connection which is mounted or is being mounted, mountPath = %q", c.mountPath)
+		return 0, unix.EBUSY
+	}
 	var (
 		mountPointFD     *ControlFD
 		mountPointHostFD = -1
@@ -154,6 +155,7 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 		mountPointFD, mountPointStat, mountPointHostFD, err = c.impl.Mount(c, mountNode)
 		return err
 	}); err != nil {
+		c.mounted.Store(false)
 		return 0, err
 	}
 
