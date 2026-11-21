@@ -90,6 +90,51 @@ type Namespace interface {
 	UserNamespace() *auth.UserNamespace
 }
 
+// NamespaceFilesystem is an optional extension to FilesystemImpl, for
+// filesystems whose Dentries represent namespaces (nsfs).
+type NamespaceFilesystem interface {
+	// DentryNamespace returns the Namespace that d represents. d must be a
+	// Dentry of this filesystem.
+	DentryNamespace(d *Dentry) Namespace
+}
+
+// isMountNSFile returns the MountNamespace that vd represents if vd is a mount
+// namespace file, or nil otherwise.
+func isMountNSFile(vd VirtualDentry) *MountNamespace {
+	nsfs, ok := vd.mount.fs.impl.(NamespaceFilesystem)
+	if !ok {
+		return nil
+	}
+	ns, _ := nsfs.DentryNamespace(vd.dentry).(*MountNamespace)
+	return ns
+}
+
+// mntNSLoop returns true if vd is a mount namespace file and its mount
+// namespace is not newer than ctx's mount namespace. A mount of such a file in
+// ctx's mount namespace could make mount namespaces hold references to each
+// other in a cycle.
+func mntNSLoop(ctx context.Context, vd VirtualDentry) bool {
+	ns := isMountNSFile(vd)
+	if ns == nil {
+		return false
+	}
+	mntns := MountNamespaceFromContext(ctx)
+	if mntns == nil {
+		return false
+	}
+	loop := !mntns.canMountNSFile(ns)
+	mntns.DecRef(ctx)
+	return loop
+}
+
+// canMountNSFile returns true if mntns can contain a mount of the mount
+// namespace file of ns. ns must be newer than mntns, so that mount namespaces
+// cannot hold references to each other in a cycle. Anonymous mount namespaces
+// are never newer than mntns.
+func (mntns *MountNamespace) canMountNSFile(ns *MountNamespace) bool {
+	return !ns.anon && mntns.ID < ns.ID
+}
+
 // newMountNamespace initializes a new mount namespace.
 // This method is not intended to be used directly; instead, use one of the
 // NewMountNamespace*() methods, which will set up the ns root as well.
@@ -285,7 +330,7 @@ func (vfs *VirtualFilesystem) CloneTreeToAnonNS(
 	var newRoot *Mount
 	var err error
 	if recursive {
-		newRoot, err = vfs.cloneMountTree(ctx, fromMnt, fromVd.dentry, 0, nil)
+		newRoot, err = vfs.cloneMountTree(ctx, fromMnt, fromVd.dentry, copyMntNSFile, nil)
 	} else {
 		newRoot, err = vfs.cloneMount(fromMnt, fromVd.dentry, nil, 0)
 	}

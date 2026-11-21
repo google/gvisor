@@ -1114,6 +1114,62 @@ TEST(MoveMountTest, MoveMountClonedProcFdFileOntoFile) {
   EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(dst.path())), "source");
 }
 
+// A mount of the caller's mount namespace file cannot be copied into the
+// caller's mount namespace.
+TEST(MoveMountTest, MoveMountOwnMountNamespaceFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Mounts of mount namespace files are not propagated, so the mount points
+  // are on a private mount.
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, "mode=0700"),
+              SyscallSucceeds());
+  auto cleanup_mnt =
+      Cleanup([&]() { umount2(dir.path().c_str(), MNT_DETACH); });
+  ASSERT_THAT(mount(nullptr, dir.path().c_str(), nullptr, MS_PRIVATE, nullptr),
+              SyscallSucceeds());
+  auto const src = JoinPath(dir.path(), "src");
+  auto const dst = JoinPath(dir.path(), "dst");
+  auto const file = JoinPath(src, "ns");
+  ASSERT_THAT(mkdir(src.c_str(), 0700), SyscallSucceeds());
+  ASSERT_THAT(mkdir(dst.c_str(), 0700), SyscallSucceeds());
+  ASSERT_NO_ERRNO(Open(file, O_CREAT | O_RDWR | O_CLOEXEC, 0600));
+
+  int treefd = open_tree(AT_FDCWD, "/proc/thread-self/ns/mnt",
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(
+        move_mount(treefd, "", AT_FDCWD, file.c_str(), MOVE_MOUNT_F_EMPTY_PATH),
+        SyscallFailsWithErrno(ELOOP));
+    return;
+  }
+  // TODO(gvisor.dev/issues/17778): expect ELOOP from move_mount(2) on gVisor.
+  // gVisor does not reject this move_mount(2). It rejects the copy of the
+  // mount instead.
+  ASSERT_THAT(
+      move_mount(treefd, "", AT_FDCWD, file.c_str(), MOVE_MOUNT_F_EMPTY_PATH),
+      SyscallSucceeds());
+  cleanup_tree.Release()();
+
+  EXPECT_THAT(
+      mount(src.c_str(), dst.c_str(), nullptr, MS_BIND | MS_REC, nullptr),
+      SyscallFailsWithErrno(EINVAL));
+  treefd = open_tree(AT_FDCWD, src.c_str(),
+                     OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_RECURSIVE);
+  EXPECT_THAT(treefd, SyscallFailsWithErrno(EINVAL));
+  if (treefd >= 0) {
+    close(treefd);
+  }
+
+  // A non-recursive bind mount does not copy the mount.
+  ASSERT_THAT(mount(src.c_str(), dst.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+  EXPECT_THAT(umount2(dst.c_str(), MNT_DETACH), SyscallSucceeds());
+}
+
 TEST(MoveMountTest, MoveMountAttachedFileOntoFile) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

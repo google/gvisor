@@ -34,6 +34,7 @@
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
@@ -420,6 +421,57 @@ TEST(NetworkNamespaceTest, BindMount) {
   ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
 
   ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
+}
+
+// Bind mount of an nsfs file with MS_REC and MS_SHARED, which pins the
+// namespace.
+TEST(NetworkNamespaceTest, RecursiveBindMount) {
+  // TODO(b/267210840): Fix this test for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  struct stat init_st;
+  ASSERT_THAT(stat("/proc/thread-self/ns/net", &init_st), SyscallSucceeds());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct stat ns_st = {};
+  bool mounted = false;
+  auto cleanup_mount = Cleanup([&] {
+    if (mounted) {
+      EXPECT_THAT(umount2(file.path().c_str(), MNT_DETACH),
+                  SyscallSucceedsWithValue(0));
+    }
+  });
+
+  ScopedThread([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+    ASSERT_THAT(stat("/proc/thread-self/ns/net", &ns_st), SyscallSucceeds());
+    EXPECT_NE(ns_st.st_ino, init_st.st_ino);
+    ASSERT_THAT(mount("/proc/thread-self/ns/net", file.path().c_str(), nullptr,
+                      MS_BIND | MS_REC | MS_SHARED, nullptr),
+                SyscallSucceedsWithValue(0));
+    mounted = true;
+  });
+  ASSERT_TRUE(mounted);
+
+  struct stat bind_st;
+  ASSERT_THAT(stat(file.path().c_str(), &bind_st), SyscallSucceeds());
+  EXPECT_EQ(bind_st.st_dev, ns_st.st_dev);
+  EXPECT_EQ(bind_st.st_ino, ns_st.st_ino);
+
+  const FileDescriptor nsfd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(file.path().c_str(), O_RDONLY | O_CLOEXEC));
+  cleanup_mount.Release()();
+
+  ScopedThread([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    struct stat st;
+    ASSERT_THAT(stat("/proc/thread-self/ns/net", &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_ino, ns_st.st_ino);
+  });
 }
 
 TEST(NetworkNamespaceTest, CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin) {

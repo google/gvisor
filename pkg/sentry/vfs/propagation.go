@@ -33,6 +33,9 @@ const (
 	makePrivateClone
 	// Analogous to CL_SHARED_TO_SLAVE in Linux.
 	sharedToFollowerClone
+	// copyMntNSFile allows cloneMountTree to copy mounts of mount namespace
+	// files that the caller's mount namespace can contain.
+	copyMntNSFile
 
 	propagationFlags = linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE | linux.MS_UNBINDABLE
 )
@@ -93,8 +96,11 @@ func (vfs *VirtualFilesystem) abortUncomittedChildren(ctx context.Context, mnt *
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) abortUncommitedMount(ctx context.Context, mnt *Mount) {
 	vfs.delayDecRef(mnt)
-	vfs.delayDecRef(mnt.getKey())
-	mnt.setKey(VirtualDentry{})
+	// The root of a cloned mount tree has no mount point.
+	if key := mnt.getKey(); key.Ok() {
+		vfs.delayDecRef(key)
+		mnt.setKey(VirtualDentry{})
+	}
 	vfs.setPropagation(mnt, linux.MS_PRIVATE)
 	vfs.abortUncomittedChildren(ctx, mnt)
 }

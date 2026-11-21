@@ -86,6 +86,18 @@
 #define SYS_move_mount 429
 #endif
 
+#ifndef SYS_open_tree
+#define SYS_open_tree 428
+#endif
+
+#ifndef OPEN_TREE_CLONE
+#define OPEN_TREE_CLONE 1
+#endif
+
+#ifndef AT_RECURSIVE
+#define AT_RECURSIVE 0x8000
+#endif
+
 #ifndef MOVE_MOUNT_F_EMPTY_PATH
 #define MOVE_MOUNT_F_EMPTY_PATH 0x4
 #endif
@@ -2676,6 +2688,253 @@ TEST(MountTest, MountNamespaceSetns) {
   int status;
   ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// A mount namespace file can be bind mounted only in an older mount namespace,
+// so that mount namespaces can't hold references to each other in a cycle.
+TEST(MountTest, BindMountNamespaceFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Mounts of mount namespace files are not propagated, so the mount point is
+  // on a private mount.
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
+  ASSERT_THAT(mount(nullptr, dir.path().c_str(), nullptr, MS_PRIVATE, nullptr),
+              SyscallSucceeds());
+  auto const file_path = JoinPath(dir.path(), "ns");
+  ASSERT_NO_ERRNO(Open(file_path, O_CREAT | O_RDWR | O_CLOEXEC, 0600));
+
+  auto const shared_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const shared_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", shared_dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
+  ASSERT_THAT(
+      mount(nullptr, shared_dir.path().c_str(), nullptr, MS_SHARED, nullptr),
+      SyscallSucceeds());
+  auto const shared_file_path = JoinPath(shared_dir.path(), "ns");
+  ASSERT_NO_ERRNO(Open(shared_file_path, O_CREAT | O_RDWR | O_CLOEXEC, 0600));
+
+  // The caller's mount namespace.
+  EXPECT_THAT(mount("/proc/thread-self/ns/mnt", file_path.c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount("/proc/thread-self/ns/mnt", file_path.c_str(), nullptr,
+                    MS_BIND | MS_REC, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount("/proc/thread-self/ns/mnt", dir.path().c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Non-mount namespace files are not rejected by the mount namespace loop
+  // check.
+  EXPECT_THAT(mount("/proc/thread-self/ns/uts", dir.path().c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_NO_ERRNO(Mount("/proc/thread-self/ns/uts", file_path, "", MS_BIND, "",
+                        MNT_DETACH));
+  EXPECT_NO_ERRNO(Mount("/proc/thread-self/ns/uts", file_path, "",
+                        MS_BIND | MS_REC, "", MNT_DETACH));
+
+  const FileDescriptor nsfd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/thread-self/ns/mnt", O_RDONLY | O_CLOEXEC));
+  const std::string parent_ns_path = absl::StrCat("/proc/self/fd/", nsfd.get());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_CLOEXEC), SyscallSucceeds());
+  FileDescriptor child_ready_rfd(pipe_fds[0]);
+  FileDescriptor child_ready_wfd(pipe_fds[1]);
+  ASSERT_THAT(pipe2(pipe_fds, O_CLOEXEC), SyscallSucceeds());
+  FileDescriptor child_exit_rfd(pipe_fds[0]);
+  FileDescriptor child_exit_wfd(pipe_fds[1]);
+
+  pid_t child = fork();
+  if (child == 0) {
+    child_ready_rfd.reset();
+    child_exit_wfd.reset();
+    TEST_CHECK_SUCCESS(unshare(CLONE_NEWNS));
+    // An older mount namespace.
+    TEST_CHECK_ERRNO(mount(parent_ns_path.c_str(), file_path.c_str(), nullptr,
+                           MS_BIND, nullptr),
+                     EINVAL);
+    TEST_CHECK_ERRNO(mount(parent_ns_path.c_str(), file_path.c_str(), nullptr,
+                           MS_BIND | MS_REC, nullptr),
+                     EINVAL);
+    char c = 0;
+    TEST_PCHECK(write(child_ready_wfd.get(), &c, 1) == 1);
+    // Stay in the new mount namespace until the parent is done.
+    TEST_PCHECK(read(child_exit_rfd.get(), &c, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  child_ready_wfd.reset();
+  child_exit_rfd.reset();
+  auto cleanup_child = Cleanup([&] {
+    child_exit_wfd.reset();
+    int status = 0;
+    EXPECT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  });
+
+  char c = 0;
+  ASSERT_THAT(read(child_ready_rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // A newer mount namespace.
+  const std::string child_ns_path = absl::StrCat("/proc/", child, "/ns/mnt");
+  struct stat child_ns_st;
+  ASSERT_THAT(stat(child_ns_path.c_str(), &child_ns_st), SyscallSucceeds());
+
+  EXPECT_THAT(mount(child_ns_path.c_str(), dir.path().c_str(), nullptr, MS_BIND,
+                    nullptr),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(mount(child_ns_path.c_str(), shared_file_path.c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+
+  for (const int flags : {static_cast<int>(MS_BIND), MS_BIND | MS_REC}) {
+    auto const bind_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+        Mount(child_ns_path, file_path, "", flags, "", MNT_DETACH));
+    struct stat bind_st;
+    ASSERT_THAT(stat(file_path.c_str(), &bind_st), SyscallSucceeds());
+    EXPECT_EQ(bind_st.st_dev, child_ns_st.st_dev);
+    EXPECT_EQ(bind_st.st_ino, child_ns_st.st_ino);
+  }
+}
+
+// A mount of a mount namespace file is copied by a recursive bind mount and by
+// a recursive open_tree(2) clone. It is not copied to a new mount namespace or
+// to the peers of the target mount.
+TEST(MountTest, BindMountNamespaceFileInTree) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // All mounts of this test are in the tree of mnt.
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
+  ASSERT_THAT(mount(nullptr, dir.path().c_str(), nullptr, MS_PRIVATE, nullptr),
+              SyscallSucceeds());
+  auto const src = JoinPath(dir.path(), "src");
+  auto const dst = JoinPath(dir.path(), "dst");
+  auto const shared = JoinPath(dir.path(), "shared");
+  auto const peer = JoinPath(dir.path(), "peer");
+  for (auto const& path : {src, dst, shared, peer}) {
+    ASSERT_THAT(mkdir(path.c_str(), 0700), SyscallSucceeds());
+  }
+  auto const src_file = JoinPath(src, "ns");
+  auto const dst_file = JoinPath(dst, "ns");
+  ASSERT_NO_ERRNO(Open(src_file, O_CREAT | O_RDWR | O_CLOEXEC, 0600));
+
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_CLOEXEC), SyscallSucceeds());
+  FileDescriptor child_ready_rfd(pipe_fds[0]);
+  FileDescriptor child_ready_wfd(pipe_fds[1]);
+  ASSERT_THAT(pipe2(pipe_fds, O_CLOEXEC), SyscallSucceeds());
+  FileDescriptor child_exit_rfd(pipe_fds[0]);
+  FileDescriptor child_exit_wfd(pipe_fds[1]);
+
+  pid_t child = fork();
+  if (child == 0) {
+    child_ready_rfd.reset();
+    child_exit_wfd.reset();
+    TEST_CHECK_SUCCESS(unshare(CLONE_NEWNS));
+    char c = 0;
+    TEST_PCHECK(write(child_ready_wfd.get(), &c, 1) == 1);
+    // Stay in the new mount namespace until the parent is done.
+    TEST_PCHECK(read(child_exit_rfd.get(), &c, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  child_ready_wfd.reset();
+  child_exit_rfd.reset();
+  auto cleanup_child = Cleanup([&] {
+    child_exit_wfd.reset();
+    int status = 0;
+    EXPECT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  });
+  char c = 0;
+  ASSERT_THAT(read(child_ready_rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // A newer mount namespace.
+  const std::string child_ns_path = absl::StrCat("/proc/", child, "/ns/mnt");
+  struct stat ns_st;
+  ASSERT_THAT(stat(child_ns_path.c_str(), &ns_st), SyscallSucceeds());
+  auto is_ns_file = [&ns_st](const struct stat& st) {
+    return st.st_dev == ns_st.st_dev && st.st_ino == ns_st.st_ino;
+  };
+  ASSERT_THAT(
+      mount(child_ns_path.c_str(), src_file.c_str(), nullptr, MS_BIND, nullptr),
+      SyscallSucceeds());
+
+  // A recursive bind mount copies the mount.
+  struct stat st;
+  ASSERT_THAT(
+      mount(src.c_str(), dst.c_str(), nullptr, MS_BIND | MS_REC, nullptr),
+      SyscallSucceeds());
+  ASSERT_THAT(stat(dst_file.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(is_ns_file(st));
+
+  // A recursive open_tree(2) clone copies the mount.
+  {
+    int raw_treefd = syscall(SYS_open_tree, AT_FDCWD, src.c_str(),
+                             OPEN_TREE_CLONE | O_CLOEXEC | AT_RECURSIVE);
+    ASSERT_THAT(raw_treefd, SyscallSucceeds());
+    FileDescriptor treefd(raw_treefd);
+    ASSERT_THAT(fstatat(treefd.get(), "ns", &st, 0), SyscallSucceeds());
+    EXPECT_TRUE(is_ns_file(st));
+  }
+
+  // A new mount namespace does not get the mounts.
+  pid_t unshare_child = fork();
+  if (unshare_child == 0) {
+    TEST_CHECK_SUCCESS(unshare(CLONE_NEWNS));
+    struct stat child_st;
+    TEST_CHECK_SUCCESS(stat(src_file.c_str(), &child_st));
+    TEST_CHECK(!is_ns_file(child_st));
+    TEST_CHECK_SUCCESS(stat(dst_file.c_str(), &child_st));
+    TEST_CHECK(!is_ns_file(child_st));
+    _exit(0);
+  }
+  ASSERT_THAT(unshare_child, SyscallSucceeds());
+  int status = 0;
+  ASSERT_THAT(waitpid(unshare_child, &status, 0),
+              SyscallSucceedsWithValue(unshare_child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // A recursive bind mount on a shared mount copies the mount. The copy of
+  // the tree that the peer receives does not have the mount.
+  ASSERT_THAT(mount("", shared.c_str(), kTmpfs, 0, "mode=0700"),
+              SyscallSucceeds());
+  ASSERT_THAT(mount(nullptr, shared.c_str(), nullptr, MS_SHARED, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(mount(shared.c_str(), peer.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+  auto const shared_tree = JoinPath(shared, "tree");
+  ASSERT_THAT(mkdir(shared_tree.c_str(), 0700), SyscallSucceeds());
+  ASSERT_THAT(mount(src.c_str(), shared_tree.c_str(), nullptr, MS_BIND | MS_REC,
+                    nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(stat(JoinPath(shared_tree, "ns").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_TRUE(is_ns_file(st));
+  ASSERT_THAT(stat(JoinPath(peer, "tree", "ns").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_FALSE(is_ns_file(st));
+
+  // The mount cannot move to a shared mount that has a peer.
+  auto const shared_file = JoinPath(shared, "ns");
+  ASSERT_NO_ERRNO(Open(shared_file, O_CREAT | O_RDWR | O_CLOEXEC, 0600));
+  EXPECT_THAT(
+      mount(src_file.c_str(), shared_file.c_str(), nullptr, MS_MOVE, nullptr),
+      SyscallFailsWithErrno(EINVAL));
+
+  // A mount of a file of a different namespace type is copied to the peer.
+  struct stat uts_st;
+  ASSERT_THAT(stat("/proc/thread-self/ns/uts", &uts_st), SyscallSucceeds());
+  ASSERT_THAT(mount("/proc/thread-self/ns/uts", shared_file.c_str(), nullptr,
+                    MS_BIND | MS_REC, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(stat(JoinPath(peer, "ns").c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_dev, uts_st.st_dev);
+  EXPECT_EQ(st.st_ino, uts_st.st_ino);
 }
 
 TEST(MountTest, MountNamespacePropagation) {

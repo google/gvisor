@@ -76,6 +76,19 @@ func (fs *filesystem) MountOptions() string {
 	return ""
 }
 
+// DentryNamespace implements vfs.NamespaceFilesystem.DentryNamespace.
+func (fs *filesystem) DentryNamespace(d *vfs.Dentry) vfs.Namespace {
+	kd, ok := d.Impl().(*kernfs.Dentry)
+	if !ok {
+		return nil
+	}
+	inode, ok := kd.Inode().(*Inode)
+	if !ok {
+		return nil
+	}
+	return inode.namespace
+}
+
 // Inode implements kernfs.Inode.
 //
 // +stateify savable
