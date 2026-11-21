@@ -224,6 +224,17 @@ func testBootPosture(t *testing.T, tc postureCase) {
 
 func checkGoferPosture(t *testing.T, pid int) {
 	t.Helper()
+	var statfs unix.Statfs_t
+	path := fmt.Sprintf("/proc/%d/root/..", pid)
+	if err := unix.Statfs(path, &statfs); err != nil {
+		t.Fatalf("Statfs(%q): %v", path, err)
+	}
+	if statfs.Type != unix.TMPFS_MAGIC {
+		t.Errorf("Parent of gofer root: filesystem type = %#x, want %#x (tmpfs)", statfs.Type, unix.TMPFS_MAGIC)
+	}
+	if want := int64(unix.ST_RDONLY | unix.ST_NOSUID | unix.ST_NODEV | unix.ST_NOEXEC); statfs.Flags&want != want {
+		t.Errorf("Parent of gofer root: mount flags = %#x, want all of %#x", statfs.Flags, want)
+	}
 	rawEnv, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
 	if err != nil {
 		t.Fatalf("Reading gofer environ: %v", err)
