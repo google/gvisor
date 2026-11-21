@@ -34,7 +34,7 @@ var viewPool = sync.Pool{
 // View is a window into a shared chunk. Views are held by Buffers in
 // viewLists to represent contiguous memory.
 //
-// A View must be created with NewView, NewViewWithData, or Clone. Owners are
+// A View must be created with a NewView function or Clone. Owners are
 // responsible for maintaining ownership over their views. When Views need to be
 // shared or copied, the owner should create a new View with Clone. Clone must
 // only ever be called on a owned View, not a borrowed one.
@@ -51,7 +51,7 @@ type View struct {
 	ViewEntry `state:"nosave"`
 	read      int
 	write     int
-	chunk     *chunk
+	chunk     *chunk `state:"wait"`
 }
 
 // NewView creates a new view with capacity at least as big as cap. It is
@@ -80,6 +80,23 @@ func NewViewWithData(data []byte) *View {
 	v := viewPool.Get().(*View)
 	*v = View{chunk: c}
 	v.Write(data)
+	return v
+}
+
+// NewViewWithExternalStorage creates a fully populated View without copying
+// storage's bytes. On success it takes ownership of storage, which must satisfy
+// the ExternalStorage contract. An invalid length panics without transferring
+// ownership. Each storage owner may be passed successfully to this function only
+// once; use Clone to share its chunk with another View.
+func NewViewWithExternalStorage(storage ExternalStorage) *View {
+	data := storage.Bytes()
+	if len(data) == 0 || len(data) > MaxChunkSize {
+		panic(fmt.Sprintf("external storage length %d is outside [1, %d]", len(data), MaxChunkSize))
+	}
+	c := &chunk{data: data, external: storage}
+	c.InitRefs()
+	v := viewPool.Get().(*View)
+	*v = View{write: len(data), chunk: c}
 	return v
 }
 
