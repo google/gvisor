@@ -1433,6 +1433,62 @@ func (o *OldRSeqCriticalRegion) StateLoad(ctx context.Context, stateSourceObject
 	stateSourceObject.Load(1, &o.Restart)
 }
 
+func (f *SyscallFilter) StateTypeName() string {
+	return "pkg/sentry/kernel.SyscallFilter"
+}
+
+func (f *SyscallFilter) StateFields() []string {
+	return []string{
+		"program",
+		"fixed",
+	}
+}
+
+func (f *SyscallFilter) beforeSave() {}
+
+// +checklocksignore
+func (f *SyscallFilter) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.program)
+	stateSinkObject.Save(1, &f.fixed)
+}
+
+func (f *SyscallFilter) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *SyscallFilter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.program)
+	stateSourceObject.Load(1, &f.fixed)
+}
+
+func (f *fixedSyscallActions) StateTypeName() string {
+	return "pkg/sentry/kernel.fixedSyscallActions"
+}
+
+func (f *fixedSyscallActions) StateFields() []string {
+	return []string{
+		"auditNumber",
+		"actions",
+	}
+}
+
+func (f *fixedSyscallActions) beforeSave() {}
+
+// +checklocksignore
+func (f *fixedSyscallActions) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.SaveUint32(0, &f.auditNumber)
+	stateSinkObject.Save(1, &f.actions)
+}
+
+func (f *fixedSyscallActions) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *fixedSyscallActions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.LoadUint32(0, &f.auditNumber)
+	stateSourceObject.Load(1, &f.actions)
+}
+
 func (ts *taskSeccomp) StateTypeName() string {
 	return "pkg/sentry/kernel.taskSeccomp"
 }
@@ -3332,6 +3388,8 @@ func init() {
 	state.RegisterNoHooks((*ptraceStop)(nil))
 	state.RegisterNoHooks((*runPtraceAfterExecveCredsLock)(nil))
 	state.RegisterNoHooks((*OldRSeqCriticalRegion)(nil))
+	state.RegisterNoHooks((*SyscallFilter)(nil))
+	state.RegisterNoHooks((*fixedSyscallActions)(nil))
 	state.RegisterNoHooks((*taskSeccomp)(nil))
 	state.RegisterNoHooks((*runSeccompAfterExecveCredsLock)(nil))
 	state.RegisterNoHooks((*sessionList)(nil))
