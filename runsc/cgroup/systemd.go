@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 
 	systemdDbus "github.com/coreos/go-systemd/v22/dbus"
 	dbus "github.com/godbus/dbus/v5"
+	"github.com/moby/sys/userns"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -62,6 +64,10 @@ type cgroupSystemd struct {
 	Parent string
 	// ScopePrefix is the prefix for the scope name.
 	ScopePrefix string
+	// UserManagerCgroup is the cgroup of the systemd user manager that owns
+	// the scope, e.g. /user.slice/user-1000.slice/user@1000.service. It is
+	// empty when the system manager owns the scope.
+	UserManagerCgroup string
 
 	// initialResources is retained from Install until a successful Join.
 	// It is not serialized; Update receives the current resources explicitly.
@@ -89,12 +95,22 @@ func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
 	if err := validSlice(cg.Parent); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidGroupPath, err)
 	}
-	// Rewrite Path so that it is compatible with cgroupv2 methods.
-	cg.Path = filepath.Join(expandSlice(cg.Parent), cg.unitName())
-	conn, err := systemdDbus.NewWithContext(ctx)
+	user := useUserManager()
+	conn, err := newDbusConn(ctx, user)
 	if err != nil {
 		return nil, err
 	}
+	if user {
+		mgr, err := conn.GetManagerProperty("ControlGroup")
+		if err != nil {
+			return nil, fmt.Errorf("reading systemd user manager cgroup: %w", err)
+		}
+		if cg.UserManagerCgroup, err = strconv.Unquote(mgr); err != nil {
+			return nil, fmt.Errorf("parsing systemd user manager cgroup %q: %w", mgr, err)
+		}
+	}
+	// Rewrite Path so that it is compatible with cgroupv2 methods.
+	cg.Path = filepath.Join(cg.UserManagerCgroup, expandSlice(cg.Parent), cg.unitName())
 	version, err := systemdVersion(conn)
 	if err != nil {
 		return nil, fmt.Errorf("reading systemd version: %w", err)
@@ -200,7 +216,7 @@ func (c *cgroupSystemd) Update(res *specs.LinuxResources) error {
 	}
 
 	ctx := context.Background()
-	conn, err := systemdDbus.NewWithContext(ctx)
+	conn, err := newDbusConn(ctx, c.UserManagerCgroup != "")
 	if err != nil {
 		return err
 	}
@@ -219,7 +235,7 @@ func (c *cgroupSystemd) unitName() string {
 // MakePath builds a path to the given controller.
 func (c *cgroupSystemd) MakePath(string) string {
 	fullSlicePath := expandSlice(c.Parent)
-	path := filepath.Join(c.Mountpoint, fullSlicePath, c.unitName())
+	path := filepath.Join(c.Mountpoint, c.UserManagerCgroup, fullSlicePath, c.unitName())
 	return path
 }
 
@@ -240,7 +256,7 @@ func (c *cgroupSystemd) Join() (func(), error) {
 	clean := cleanup.Make(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
-	conn, err := systemdDbus.NewWithContext(ctx)
+	conn, err := newDbusConn(ctx, c.UserManagerCgroup != "")
 	if err != nil {
 		return nil, err
 	}
@@ -271,14 +287,101 @@ func (c *cgroupSystemd) Join() (func(), error) {
 	} else {
 		return nil, fmt.Errorf("systemd error: %v", err)
 	}
-	if _, err = c.createCgroupPaths(); err != nil {
-		return nil, err
+	// A user manager has already enabled the controllers the scope needs, and
+	// the ancestors above its own cgroup aren't writable.
+	if c.UserManagerCgroup == "" {
+		if _, err = c.createCgroupPaths(); err != nil {
+			return nil, err
+		}
 	}
 	if err := (&io2{}).set(c.initialResources, c.MakePath("")); err != nil {
 		return nil, err
 	}
 	c.initialResources = nil
 	return clean.Release(), nil
+}
+
+// newDbusConn connects to the systemd system manager, or to the calling user's
+// manager if user is true.
+func newDbusConn(ctx context.Context, user bool) (*systemdDbus.Conn, error) {
+	if !user {
+		return systemdDbus.NewWithContext(ctx)
+	}
+	addr := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
+	if addr == "" {
+		dir := os.Getenv("XDG_RUNTIME_DIR")
+		if dir == "" {
+			return nil, errors.New("connecting to the systemd user manager: neither DBUS_SESSION_BUS_ADDRESS nor XDG_RUNTIME_DIR is set")
+		}
+		addr = "unix:path=" + dbus.EscapeBusAddressValue(filepath.Join(dir, "bus"))
+	}
+	uid, err := userBusUID()
+	if err != nil {
+		return nil, err
+	}
+	return systemdDbus.NewConnection(func() (*dbus.Conn, error) {
+		conn, err := dbus.Dial(addr)
+		if err != nil {
+			return nil, fmt.Errorf("dialing user bus %q: %w", addr, err)
+		}
+		// Inside a user namespace, authenticate with the UID the bus sees.
+		if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(uid))}); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("authenticating to user bus %q as UID %d: %w", addr, uid, err)
+		}
+		if err := conn.Hello(); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("sending Hello to user bus %q: %w", addr, err)
+		}
+		return conn, nil
+	})
+}
+
+// useUserManager reports whether the calling user's systemd manager owns the
+// container's scope, as runc decides for rootless containers: the system
+// manager refuses unprivileged callers, and their cgroups live in the subtree
+// delegated to their user manager. Root in a user namespace keeps using the
+// system manager when that namespace runs its own systemd.
+func useUserManager() bool {
+	if os.Geteuid() != 0 {
+		return true
+	}
+	if !userns.RunningInUserNS() {
+		return false
+	}
+	uid, err := userBusUID()
+	if err != nil {
+		log.Debugf("Using the systemd system manager: %v", err)
+		return false
+	}
+	return uid != 0
+}
+
+// userBusUID returns the UID that owns the caller's systemd user bus, i.e. the
+// caller's UID outside its user namespace.
+func userBusUID() (int, error) {
+	if !userns.RunningInUserNS() {
+		return os.Getuid(), nil
+	}
+	// RootlessKit, used by rootless Docker, sets this for its child process.
+	if env := os.Getenv("ROOTLESSKIT_PARENT_EUID"); env != "" {
+		return strconv.Atoi(env)
+	}
+	out, err := exec.Command("busctl", "--user", "--no-pager", "status").CombinedOutput()
+	if err != nil {
+		return -1, fmt.Errorf("running busctl --user status: %w: %s", err, out)
+	}
+	return parseOwnerUID(string(out))
+}
+
+// parseOwnerUID returns the OwnerUID field of `busctl status` output.
+func parseOwnerUID(status string) (int, error) {
+	for _, line := range strings.Split(status, "\n") {
+		if uid, ok := strings.CutPrefix(strings.TrimSpace(line), "OwnerUID="); ok {
+			return strconv.Atoi(uid)
+		}
+	}
+	return -1, errors.New("no OwnerUID in busctl status output")
 }
 
 // unitAlreadyExists returns true if the error is that a systemd unit already

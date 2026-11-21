@@ -24,9 +24,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/moby/sys/userns"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -170,6 +172,13 @@ func allowDevices(conf *config.Config, cg cgroup.Cgroup, spec *specs.Spec) error
 		return err
 	}
 	if err := cg.AllowDevices(rules); err != nil {
+		// As runc does, skip device rules in a user namespace: only the initial
+		// user namespace may load the BPF device filter, and device nodes can't
+		// be created from a user namespace anyway.
+		if errors.Is(err, os.ErrPermission) && userns.RunningInUserNS() {
+			log.Warningf("Skipping device cgroup configuration in a user namespace: %v", err)
+			return nil
+		}
 		return handleCgroupInstallErr(conf, "device cgroup", err)
 	}
 	return nil

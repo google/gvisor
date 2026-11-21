@@ -113,6 +113,7 @@ deps_test(
         "@com_github_gofrs_flock//",
         "@com_github_google_subcommands//",
         "@com_github_moby_sys_capability//",
+        "@com_github_moby_sys_userns//",
         "@com_github_mohae_deepcopy//",
         "@com_github_opencontainers_runtime_spec//",
         "@com_github_vishvananda_netlink//",

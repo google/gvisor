@@ -485,3 +485,27 @@ func filterProperties(got []systemdDbus.Property, want []systemdDbus.Property) [
 	}
 	return filtered
 }
+
+func TestParseOwnerUID(t *testing.T) {
+	status := "BusAddress=unix:path=/run/user/1000/bus\nOwnerUID=1000\nUniqueName=:1.42\n"
+	if got, err := parseOwnerUID(status); err != nil || got != 1000 {
+		t.Errorf("parseOwnerUID() = %d, %v, want 1000, nil", got, err)
+	}
+	if _, err := parseOwnerUID("UniqueName=:1.42\n"); err == nil {
+		t.Errorf("parseOwnerUID() without OwnerUID succeeded, want error")
+	}
+}
+
+func TestUserManagerMakePath(t *testing.T) {
+	cg := &cgroupSystemd{
+		cgroupV2:          cgroupV2{Mountpoint: "/sys/fs/cgroup"},
+		Parent:            "user.slice",
+		ScopePrefix:       "docker",
+		Name:              "abc",
+		UserManagerCgroup: "/user.slice/user-1000.slice/user@1000.service",
+	}
+	want := "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/docker-abc.scope"
+	if got := cg.MakePath(""); got != want {
+		t.Errorf("MakePath() = %q, want %q", got, want)
+	}
+}
