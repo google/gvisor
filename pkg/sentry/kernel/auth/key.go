@@ -73,8 +73,14 @@ const (
 
 // Key represents a key in the keyrings subsystem.
 //
+// Each task whose session keyring is the key holds a reference on it. Once
+// the last reference is dropped, the key is removed from its KeySet, and it
+// cannot be found again.
+//
 // +stateify savable
 type Key struct {
+	keyRefs
+
 	// ID is the ID of the key, also often referred to as "serial number".
 	// Note that key IDs passed in syscalls may be negative when they refer to
 	// "special keys", sometimes also referred to as "shortcut IDs".
@@ -112,6 +118,24 @@ type Key struct {
 	//
 	// +checkatomic
 	perms atomicbitops.Uint64 `state:".(KeyPermissions)"`
+
+	// set is the KeySet that contains the key. It is immutable.
+	set *KeySet
+}
+
+// DecRef implements refs.RefCounter.DecRef. Dropping the last reference
+// removes k from its KeySet, which locks KeySet.mu.
+func (k *Key) DecRef(ctx context.Context) {
+	k.keyRefs.DecRef(func() {
+		k.set.remove(k)
+	})
+}
+
+// alive returns true if k still has references. Like key_lookup in Linux,
+// keys whose last reference was dropped cannot be found again even before
+// they are removed from their KeySet.
+func (k *Key) alive() bool {
+	return k.ReadRefs() > 0
 }
 
 // savePerms is invoked by stateify.
@@ -318,11 +342,13 @@ type KeySet struct {
 
 	// keys maps key IDs to the underlying Key struct.
 	// It is initialized on the first successful Add.
+	// A key is removed when its last reference is dropped.
 	// +checklocks:mu
 	keys map[KeySerial]*Key
 }
 
-// Lookup looks up a key by ID.
+// Lookup looks up a key by ID. It does not return keys with no references
+// left.
 // Callers must exercise care to verify that the key can be accessed with
 // proper credentials.
 //
@@ -331,13 +357,13 @@ func (s *KeySet) Lookup(keyID KeySerial) (*Key, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	key, found := s.keys[keyID]
-	if !found {
+	if !found || !key.alive() {
 		return nil, linuxerr.ENOKEY
 	}
 	return key, nil
 }
 
-// ForEach iterates over all keys.
+// ForEach iterates over all keys that still have references.
 // If `fn` returns true, iteration stops immediately.
 // Callers must exercise care to only process keys to which they have access.
 //
@@ -348,10 +374,24 @@ func (s *KeySet) ForEach(fn func(*Key) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, key := range s.keys {
+		if !key.alive() {
+			continue
+		}
 		if fn(key) {
 			return
 		}
 	}
+}
+
+// remove removes k from s.
+//
+// Preconditions: k has no references left.
+//
+// +checklocksexclude:s.mu
+func (s *KeySet) remove(k *Key) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.keys, k.ID)
 }
 
 // getNewID returns a new random key ID strictly larger than zero.
@@ -370,7 +410,8 @@ func getNewID() (KeySerial, error) {
 	return KeySerial(newID), nil
 }
 
-// Add adds a new Key to the KeySet.
+// Add adds a new Key to the KeySet. The returned key has one reference, which
+// is owned by the caller.
 //
 // +checklocksexclude:s.mu
 func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
@@ -401,7 +442,9 @@ func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermission
 		kuid:        creds.EffectiveKUID,
 		kgid:        creds.EffectiveKGID,
 		perms:       atomicbitops.FromUint64(uint64(perms)),
+		set:         s,
 	}
+	k.InitRefs()
 	s.keys[newID] = k
 	return k, nil
 }

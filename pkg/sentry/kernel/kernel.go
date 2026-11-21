@@ -26,6 +26,7 @@
 //	        SignalHandlers.mu
 //	          Task.mu
 //	            FSContext.mu
+//	            auth.KeySet.mu
 //	      runningTasksMu
 //	        Timekeeper.updateMu
 //

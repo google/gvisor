@@ -217,8 +217,18 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// above Task.mu. So we copy t.image with t.mu held and call Fork() on the copy.
 	t.mu.Lock()
 	curImage := t.image
-	sessionKeyring := t.sessionKeyring
+	var sessionKeyring *auth.Key
+	// If the task is in a new user namespace, it cannot share keys.
+	if args.Flags&linux.CLONE_NEWUSER == 0 && t.sessionKeyring != nil {
+		sessionKeyring = t.sessionKeyring
+		sessionKeyring.IncRef()
+	}
 	t.mu.Unlock()
+	if sessionKeyring != nil {
+		cu.Add(func() {
+			sessionKeyring.DecRef(t)
+		})
+	}
 	image, err := curImage.Fork(t, t.k, args.Flags&linux.CLONE_VM != 0)
 	if err != nil {
 		return 0, nil, err
@@ -226,11 +236,6 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	cu.Add(func() {
 		image.release(t)
 	})
-
-	if args.Flags&linux.CLONE_NEWUSER != 0 {
-		// If the task is in a new user namespace, it cannot share keys.
-		sessionKeyring = nil
-	}
 
 	// clone() returns 0 in the child.
 	image.Arch.SetReturn(0)
