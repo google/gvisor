@@ -80,18 +80,23 @@ func TestTCPInfoOptions(t *testing.T) {
 	}
 }
 
-func TestTCPInfo(t *testing.T) {
-	// Create a socket, listen, TCP connect, and accept.
+func connect(t *testing.T) (testbench.DUT, testbench.TCPIPv4, int32) {
+	t.Helper()
 	dut := testbench.NewDUT(t)
 	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(t, listenFD)
+	t.Cleanup(func() { dut.Close(t, listenFD) })
 
 	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-	defer conn.Close(t)
+	t.Cleanup(func() { conn.Close(t) })
 	conn.Connect(t)
 
 	acceptFD, _ := dut.Accept(t, listenFD)
-	defer dut.Close(t, acceptFD)
+	t.Cleanup(func() { dut.Close(t, acceptFD) })
+	return dut, conn, acceptFD
+}
+
+func TestTCPInfo(t *testing.T) {
+	dut, conn, acceptFD := connect(t)
 
 	// Send and receive sample data.
 	sampleData := []byte("Sample Data")
@@ -149,5 +154,75 @@ func TestTCPInfo(t *testing.T) {
 	}
 	if info.SndCwnd != 1 {
 		t.Errorf("expected send congestion window to be 1, got: %d", info.SndCwnd)
+	}
+}
+
+// TestIdleRestart checks the congestion window when a sender resumes after
+// a data idle period, including when it has been acknowledging peer data.
+func TestIdleRestart(t *testing.T) {
+	for _, mode := range []string{"quiet", "reverse"} {
+		t.Run(mode, func(t *testing.T) {
+			dut, conn, fd := connect(t)
+			initial := dut.GetSockOptTCPInfo(t, fd)
+			iw, mss := initial.SndCwnd, initial.SndMss
+			send := func(n uint32) {
+				t.Helper()
+				if got := dut.Send(t, fd, make([]byte, n), 0); got != int32(n) {
+					t.Fatalf("Send = %d, want %d", got, n)
+				}
+			}
+			ack := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}
+			reverse := func() {
+				t.Helper()
+				seq := *conn.RemoteSeqNum(t)
+				conn.Send(t, ack, &testbench.Payload{Bytes: []byte{'r'}})
+				// Expect matches the current sequence and acknowledgement
+				// numbers; a pure ACK consumes no forward sequence space.
+				if _, err := conn.Expect(t, ack, time.Second); err != nil || *conn.RemoteSeqNum(t) != seq {
+					t.Fatalf("expected a pure ACK for the peer byte, sequence %v, want %v: %v", *conn.RemoteSeqNum(t), seq, err)
+				}
+			}
+
+			// Grow the window and drain every forward byte before going idle.
+			start := uint32(*conn.RemoteSeqNum(t))
+			warmBytes := 4 * iw * mss
+			send(warmBytes)
+			for uint32(*conn.RemoteSeqNum(t))-start < warmBytes {
+				if _, err := conn.Expect(t, testbench.TCP{}, time.Second); err != nil {
+					t.Fatalf("warmup: %v", err)
+				}
+				conn.Send(t, ack)
+			}
+			reverse() // The peer byte also carries the final warmup ACK.
+			warm := dut.GetSockOptTCPInfo(t, fd)
+			rto := time.Duration(warm.RTO) * time.Microsecond
+			if warm.SndCwnd <= iw || rto <= 0 {
+				t.Fatalf("warm cwnd = %d, initial = %d, RTO = %v", warm.SndCwnd, iw, rto)
+			}
+			// Allow for senders that halve cwnd once per idle RTO.
+			if mode == "quiet" {
+				time.Sleep(6 * rto)
+			} else {
+				last := time.Now()
+				for range 24 {
+					time.Sleep(rto / 4)
+					reverse()
+					if gap := time.Since(last); gap >= rto {
+						t.Fatalf("gap between reverse ACKs %v reached RTO %v", gap, rto)
+					}
+					last = time.Now()
+				}
+			}
+
+			// Observe data before reading TCP_INFO, without ACKing it.
+			seq := *conn.RemoteSeqNum(t)
+			send((iw + 1) * mss)
+			if _, err := conn.Expect(t, testbench.TCP{}, time.Second); err != nil || *conn.RemoteSeqNum(t) == seq {
+				t.Fatalf("expected resumed data: %v", err)
+			}
+			if got := dut.GetSockOptTCPInfo(t, fd).SndCwnd; got != iw {
+				t.Errorf("resumed congestion window = %d, want initial %d", got, iw)
+			}
+		})
 	}
 }
