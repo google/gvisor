@@ -354,7 +354,7 @@ I/O syscalls like `read(2)`, `write(2)` and `mmap(2)`.
 # References
 
 -   [fuse(4) Linux manual page](https://www.man7.org/linux/man-pages/man4/fuse.4.html)
--   [Linux kernel FUSE documentation](https://www.kernel.org/doc/html/latest/filesystems/fuse.html)
+-   [Linux kernel FUSE documentation](https://www.kernel.org/doc/html/latest/filesystems/fuse/fuse.html)
 -   [The reference implementation of the Linux FUSE (Filesystem in Userspace)
     interface](https://github.com/libfuse/libfuse)
 -   [The kernel interface of FUSE](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/fuse.h)
