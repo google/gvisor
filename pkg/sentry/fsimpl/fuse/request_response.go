@@ -237,20 +237,26 @@ type Response struct {
 	data   []byte
 }
 
-// Error returns the error of the FUSE call.
-func (r *Response) Error() error {
-	errno := r.hdr.Error
+// fuseErrno converts a negative FUSE error code to a Linux error.
+// Non-negative values return nil. Unrecognized negative values are logged and
+// mapped to EINVAL.
+func fuseErrno(errno int32) error {
 	if errno >= 0 {
 		return nil
 	}
 
 	// If we get a bad error in the response, warn and convert it to EINVAL.
-	sysErrNo := unix.Errno(-errno)
+	sysErrNo := unix.Errno(-int64(errno))
 	if !syserr.IsValid(sysErrNo) {
 		log.Warningf("fusefs: invalid response error %d does not correspond to a Linux error", sysErrNo)
-		sysErrNo = unix.EINVAL
+		return linuxerr.EINVAL
 	}
 	return linuxerr.ErrorFromUnix(sysErrNo)
+}
+
+// Error returns the error of the FUSE call.
+func (r *Response) Error() error {
+	return fuseErrno(r.hdr.Error)
 }
 
 // DataLen returns the size of the response without the header.

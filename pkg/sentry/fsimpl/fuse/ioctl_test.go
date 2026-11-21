@@ -17,6 +17,7 @@ package fuse
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -49,12 +50,13 @@ func TestFUSEIoctl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newTestConnection failed: %v", err)
 	}
+	defer fd.DecRef(s.Ctx)
 	fdNum, err := task.FDTable().NewFD(s.Ctx, 0, fd, kernel.FDFlags{})
 	if err != nil {
 		t.Fatalf("NewFD failed: %v", err)
 	}
 
-	ctx := context.WithValue(s.Ctx, kernel.CtxTask, task)
+	ctx := vfs.WithMountNamespace(context.WithValue(s.Ctx, kernel.CtxTask, task), s.MntNs)
 	mountPop := vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse("/fuse")}
 	if err := s.VFS.MkdirAt(ctx, task.Credentials(), &mountPop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
 		t.Fatalf("MkdirAt(/fuse) failed: %v", err)
@@ -67,6 +69,11 @@ func TestFUSEIoctl(t *testing.T) {
 	if _, err := s.VFS.MountAt(ctx, task.Credentials(), "", &mountPop, Name, mntOpts); err != nil {
 		t.Fatalf("MountAt(/fuse) failed: %v", err)
 	}
+	defer func() {
+		if err := s.VFS.UmountAt(ctx, task.Credentials(), &mountPop, &vfs.UmountOptions{}); err != nil {
+			t.Errorf("UmountAt(/fuse) failed: %v", err)
+		}
+	}()
 	conn.setInitialized()
 
 	const argAddr = 16
@@ -136,7 +143,7 @@ func TestFUSEIoctl(t *testing.T) {
 				var ioctlIn linux.FUSEIoctlIn
 				inData := ioctlIn.UnmarshalUnsafe(payloadBuf)
 				want, known := wantSizes[ioctlIn.Cmd]
-				if !known || ioctlIn.Fh != 42 || ioctlIn.Arg != argAddr || ioctlIn.Flags != 0 ||
+				if !known || ioctlIn.Fh != 42 || ioctlIn.Arg != 0 || ioctlIn.Flags != 0 ||
 					ioctlIn.InSize != want[0] || ioctlIn.OutSize != want[1] || uint32(len(inData)) != want[0] {
 					t.Errorf("unexpected FUSE_IOCTL: %+v payloadLen=%d", ioctlIn, len(inData))
 					sendErrorReply(s.Ctx, t, fd, hdr.Unique, -int32(unix.EINVAL))
@@ -175,19 +182,17 @@ func TestFUSEIoctl(t *testing.T) {
 			}
 		}
 	}()
+	defer func() {
+		killServer <- struct{}{}
+		<-serverDone
+	}()
 
 	filePop := vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse("/fuse/ttyfile")}
 	fileFD, err := s.VFS.OpenAt(ctx, task.Credentials(), &filePop, &vfs.OpenOptions{Flags: linux.O_RDONLY})
 	if err != nil {
 		t.Fatalf("OpenAt(/fuse/ttyfile) failed: %v", err)
 	}
-	defer func() {
-		if fileFD != nil {
-			fileFD.DecRef(ctx)
-		}
-		killServer <- struct{}{}
-		<-serverDone
-	}()
+	defer fileFD.DecRef(ctx)
 
 	mkTermios := func(lflag uint32) []byte {
 		tm := linux.Termios{LocalFlags: lflag}
@@ -291,6 +296,13 @@ func TestFUSEIoctl(t *testing.T) {
 			wantErrno: unix.EINVAL,
 		},
 		{
+			name: "MinInt32ResultErrnoIsEINVAL", callCtx: ctx, cmd: linux.TIOCGWINSZ, bufLen: 96,
+			override: func(u linux.FUSEOpID) {
+				sendSuccessReply(s.Ctx, t, fd, u, marshalIoctlOut(linux.FUSEIoctlOut{Result: math.MinInt32}, nil))
+			},
+			wantErrno: unix.EINVAL,
+		},
+		{
 			name: "NegativeResultPreservedWithPayload", callCtx: ctx, cmd: linux.TIOCGWINSZ, bufLen: 96,
 			override: func(u linux.FUSEOpID) {
 				sendSuccessReply(s.Ctx, t, fd, u, marshalIoctlOut(linux.FUSEIoctlOut{Result: -int32(unix.EPERM)}, []byte{0x99, 0, 0, 0}))
@@ -308,6 +320,13 @@ func TestFUSEIoctl(t *testing.T) {
 			name: "OversizedPayloadRejected", callCtx: ctx, cmd: linux.TIOCGWINSZ, bufLen: 96,
 			override: func(u linux.FUSEOpID) {
 				sendSuccessReply(s.Ctx, t, fd, u, marshalIoctlOut(linux.FUSEIoctlOut{}, bytes.Repeat([]byte{0x77}, int(wsSize)+1)))
+			},
+			wantErrno: unix.EIO,
+		},
+		{
+			name: "ShortPayloadRejected", callCtx: ctx, cmd: linux.TIOCGWINSZ, bufLen: 96,
+			override: func(u linux.FUSEOpID) {
+				sendSuccessReply(s.Ctx, t, fd, u, marshalIoctlOut(linux.FUSEIoctlOut{}, bytes.Repeat([]byte{0x77}, int(wsSize)-1)))
 			},
 			wantErrno: unix.EIO,
 		},
@@ -336,12 +355,13 @@ func TestFUSEIoctl(t *testing.T) {
 			if uio.Bytes[argAddr] != tc.wantFirstByte {
 				t.Errorf("Ioctl(%#x) byte at %d = %#x, want %#x", tc.cmd, argAddr, uio.Bytes[argAddr], tc.wantFirstByte)
 			}
-			if tc.wantNoServerOp && serverIoctls.Load() != before {
-				t.Errorf("server received %d ioctls, want %d (no FUSE_IOCTL)", serverIoctls.Load(), before)
+			wantServerIoctls := before + 1
+			if tc.wantNoServerOp {
+				wantServerIoctls = before
+			}
+			if got := serverIoctls.Load(); got != wantServerIoctls {
+				t.Errorf("server received %d ioctls, want %d", got, wantServerIoctls)
 			}
 		})
 	}
-
-	fileFD.DecRef(ctx)
-	fileFD = nil
 }
