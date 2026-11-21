@@ -196,6 +196,7 @@ func Start(opts Opts) func() {
 		file := os.NewFile(fd, "profile-heap")
 
 		onStopProfiling = append(onStopProfiling, func() {
+			runtime.GC()
 			if err := pprof.Lookup("heap").WriteTo(file, 0); err != nil {
 				log.Warningf("Error writing heap profile: %v", err)
 			}
