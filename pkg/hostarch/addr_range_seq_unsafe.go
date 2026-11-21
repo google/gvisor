@@ -18,8 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"unsafe"
-
-	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // An AddrRangeSeq represents a sequence of AddrRanges.
@@ -164,7 +162,7 @@ func (ars AddrRangeSeq) externalTail() AddrRangeSeq {
 	if ars.limit > headLen {
 		tailLimit = int64(ars.limit - headLen)
 	}
-	extSlice := gohacks.Slice(data, ars.length)
+	extSlice := unsafe.Slice(data, ars.length)
 	return addrRangeSeqFromSliceLimited(extSlice[1:], tailLimit)
 }
 

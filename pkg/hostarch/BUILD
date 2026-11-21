@@ -44,7 +44,6 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/gohacks",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

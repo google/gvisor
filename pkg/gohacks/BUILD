@@ -10,10 +10,7 @@ go_library(
     srcs = [
         "linkname_go113_unsafe.go",
         "noescape_unsafe.go",
-        "slice_go113_unsafe.go",
-        "slice_go120_unsafe.go",
-        "string_go113_unsafe.go",
-        "string_go120_unsafe.go",
+        "string_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/gohacks",
     stateify = False,

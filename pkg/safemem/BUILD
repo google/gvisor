@@ -16,7 +16,6 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/safemem",
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/gohacks",
         "//pkg/safecopy",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",

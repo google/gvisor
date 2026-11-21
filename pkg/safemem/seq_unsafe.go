@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // A BlockSeq represents a sequence of Blocks, each of which has non-zero
@@ -185,7 +184,7 @@ func (bs BlockSeq) Tail() BlockSeq {
 		// The head Block exhausts the limit, so the tail is empty.
 		return BlockSeq{}
 	}
-	extSlice := gohacks.Slice(data, bs.length)
+	extSlice := unsafe.Slice(data, bs.length)
 	tailSlice := skipEmpty(extSlice[1:])
 	tailLimit := bs.limit - headLen
 	return blockSeqFromSliceLimited(tailSlice, tailLimit)
