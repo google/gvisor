@@ -165,9 +165,21 @@ func TestTCPEstablishedUnreachable(t *testing.T) {
 // an ICMP destination unreachable message is sent in response to the initial
 // SYN.
 func TestTCPSynSentUnreachable6(t *testing.T) {
+	t.Run("net_unreachable", func(t *testing.T) {
+		testTCPSynSentUnreachable6(t, header.ICMPv6NetworkUnreachable, unix.ENETUNREACH)
+	})
+	t.Run("address_unreachable", func(t *testing.T) {
+		testTCPSynSentUnreachable6(t, header.ICMPv6AddressUnreachable, unix.EHOSTUNREACH)
+	})
+}
+
+func testTCPSynSentUnreachable6(t *testing.T, code header.ICMPv6Code, want unix.Errno) {
+	t.Helper()
+
 	// Create the DUT and connection.
 	dut := testbench.NewDUT(t)
 	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, dut.Net.RemoteIPv6)
+	defer dut.Close(t, clientFD)
 	conn := dut.Net.NewTCPIPv6(t, testbench.TCP{DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort})
 	defer conn.Close(t)
 
@@ -187,7 +199,7 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 		t.Fatalf("expected SYN: %s", err)
 	}
 
-	// Send a host unreachable message.
+	// Quote the SYN in an ICMPv6 Destination Unreachable message.
 	icmpPayload := testbench.Layers{tcp.Prev(), tcp}
 	bytes, err := icmpPayload.ToBytes()
 	if err != nil {
@@ -197,13 +209,13 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	layers := conn.CreateFrame(t, nil)
 	layers[len(layers)-1] = &testbench.ICMPv6{
 		Type:    testbench.ICMPv6Type(header.ICMPv6DstUnreachable),
-		Code:    testbench.ICMPv6Code(header.ICMPv6NetworkUnreachable),
+		Code:    testbench.ICMPv6Code(code),
 		Payload: bytes,
 	}
 	conn.SendFrameStateless(t, layers)
 
-	if err := getConnectError(t, &dut, clientFD); err != unix.ENETUNREACH {
-		t.Errorf("got connect() = %v, want EHOSTUNREACH", err)
+	if err := getConnectError(t, &dut, clientFD); err != want {
+		t.Errorf("got connect() = %v, want %v", err, want)
 	}
 }
 
