@@ -23,6 +23,7 @@ import (
 	"testing"
 	"unicode"
 
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 )
 
@@ -105,4 +106,40 @@ func TestSeccheckSyscalls(t *testing.T) {
 func TestMain(m *testing.M) {
 	seccheck.Initialize()
 	os.Exit(m.Run())
+}
+
+// TestSyscallTablesMatchLinux checks that each syscall table has an entry for
+// each Linux syscall.
+func TestSyscallTablesMatchLinux(t *testing.T) {
+	for _, tc := range []struct {
+		arch  string
+		table *kernel.SyscallTable
+		linux map[uintptr]string
+		// notSyscalls are consts from golang.org/x/sys that are not syscalls.
+		notSyscalls map[uintptr]bool
+	}{
+		{arch: "amd64", table: AMD64, linux: linuxSyscallsAMD64},
+		{arch: "arm64", table: ARM64, linux: linuxSyscallsARM64, notSyscalls: map[uintptr]bool{244: true}},
+	} {
+		t.Run(tc.arch, func(t *testing.T) {
+			for sysno, name := range tc.linux {
+				if tc.notSyscalls[sysno] {
+					continue
+				}
+				sc, ok := tc.table.Table[sysno]
+				if !ok {
+					t.Errorf("Linux syscall %d (%s) has no entry", sysno, name)
+					continue
+				}
+				if sc.Name != name {
+					t.Errorf("syscall %d: got name %q, want %q", sysno, sc.Name, name)
+				}
+			}
+			for sysno, sc := range tc.table.Table {
+				if _, ok := tc.linux[sysno]; !ok || tc.notSyscalls[sysno] {
+					t.Errorf("syscall %d (%s) is not a Linux syscall", sysno, sc.Name)
+				}
+			}
+		})
+	}
 }
