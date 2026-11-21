@@ -235,6 +235,7 @@ type Boot struct {
 	// here because nvconf.HostSettings.FabricIMEXManagementDevMinor in
 	// particular is uint32 and there is no flag.Uint32Var().
 	procDriverNvidiaParams             string
+	procDriverNvidiaVersion            string
 	nvidiaFabricIMEXManagementDevMinor int64
 	nvidiaMNCCManagementDevMinor       int64
 
@@ -328,6 +329,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	// Nvidia driver properties.
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver ABI version to use, or 'latest' for the newest supported one")
 	f.StringVar(&b.procDriverNvidiaParams, "nvidia-host-params", "", "value of /proc/driver/nvidia/params on the host")
+	f.StringVar(&b.procDriverNvidiaVersion, "nvidia-host-version", "", "value of /proc/driver/nvidia/version on the host, or empty if the host has none")
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
 	f.Int64Var(&b.nvidiaMNCCManagementDevMinor, "nvidia-mncc-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/mncc-mgmt on the host")
 }
@@ -464,6 +466,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			} else {
 				b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
 				argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
+				b.procDriverNvidiaVersion = nvhs.ProcDriverNvidiaVersion
+				argOverride["nvidia-host-version"] = nvhs.ProcDriverNvidiaVersion
 				if nvhs.HaveFabricIMEXManagement {
 					b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
 					argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
@@ -748,6 +752,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		NvidiaDriverVersion: nvidiaDriverVersion,
 		NvidiaHostSettings: &nvconf.HostSettings{
 			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
+			ProcDriverNvidiaVersion:      b.procDriverNvidiaVersion,
 			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 			FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
 			HaveMNCCManagement:           b.nvidiaMNCCManagementDevMinor >= 0,

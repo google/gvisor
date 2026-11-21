@@ -103,12 +103,17 @@ go_library(
 
 go_test(
     name = "nvproxy_test",
-    srcs = ["nvproxy_test.go"],
+    srcs = [
+        "nvproxy_test.go",
+        "procfs_test.go",
+    ],
     embed = [":nvproxy"],
     deps = [
         "//pkg/abi/nvgpu",
         "//pkg/seccomp",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/sentry/vfs",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
