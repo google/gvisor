@@ -13,7 +13,7 @@ bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "tar.bzl", version = "0.10.9")
 bazel_dep(name = "rules_img", version = "0.3.23")
 bazel_dep(name = "rules_cc", version = "0.2.25")
-bazel_dep(name = "llvm", version = "0.8.26")
+bazel_dep(name = "llvm", version = "0.8.27")
 bazel_dep(name = "libbpf", version = "1.7.0.bcr.1")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_qemu", version = "0.3.0")
@@ -54,17 +54,6 @@ single_version_override(
     module_name = "google_benchmark",
     patch_strip = 1,
     patches = ["//tools:benchmark-umbrella-exports.patch"],
-)
-
-# Drop these backports when the llvm module includes the header default and
-# requests only AArch64 and X86 for downstream builds.
-single_version_override(
-    module_name = "llvm",
-    patch_strip = 1,
-    patches = [
-        "//tools:llvm-linux-header-default.patch",
-        "//tools:llvm-dev-backends.patch",
-    ],
 )
 
 ### LLVM
