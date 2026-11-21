@@ -217,3 +217,71 @@ func TestDispatchMalformedIPv4(t *testing.T) {
 		})
 	}
 }
+
+// BenchmarkReceiveProcessor includes enqueueing, delivery and downstream packet
+// ownership after the link header has already been parsed.
+func BenchmarkReceiveProcessor(b *testing.B) {
+	for _, tc := range []struct {
+		name      string
+		proto     tcpip.NetworkProtocolNumber
+		ethernet  bool
+		extension bool
+	}{
+		{name: "IPv4", proto: header.IPv4ProtocolNumber, ethernet: true},
+		{name: "IPv6", proto: header.IPv6ProtocolNumber, ethernet: true},
+		{name: "IPv6Extension", proto: header.IPv6ProtocolNumber, ethernet: true, extension: true},
+		{name: "HeaderlessIPv4", proto: header.IPv4ProtocolNumber},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			const batch = 8
+			data := make([]byte, 1500)
+			if tc.proto == header.IPv4ProtocolNumber {
+				copy(data, ipv4TCPPacket(5))
+				binary.BigEndian.PutUint16(data[2:], uint16(len(data)))
+			} else {
+				next := header.TCPProtocolNumber
+				offset := header.IPv6MinimumSize
+				if tc.extension {
+					next = tcpip.TransportProtocolNumber(header.IPv6HopByHopOptionsExtHdrIdentifier)
+					data[offset] = byte(header.TCPProtocolNumber)
+					offset += 8
+				}
+				header.IPv6(data).Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(len(data) - header.IPv6MinimumSize),
+					TransportProtocol: next,
+					HopLimit:          64,
+					SrcAddr:           tcpip.AddrFrom16([16]byte{15: 1}),
+					DstAddr:           tcpip.AddrFrom16([16]byte{15: 2}),
+				})
+				header.TCP(data[offset:]).Encode(&header.TCPFields{
+					SrcPort: testSrcPort, DstPort: testDstPort, DataOffset: header.TCPMinimumSize,
+				})
+			}
+			sink := &fakeNetworkDispatcher{pkts: make([]*stack.PacketBuffer, 0, batch)}
+			m := newProcessorManager(&Options{ProcessorsPerChannel: 1}, &endpoint{dispatcher: sink})
+			defer m.processors[0].sleeper.Done()
+			var packets [batch]*stack.PacketBuffer
+			for i := range packets {
+				packets[i] = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(data)})
+				packets[i].NetworkProtocolNumber = tc.proto
+				defer packets[i].DecRef()
+			}
+			b.SetBytes(int64(len(data) * batch))
+			b.ReportAllocs()
+			for b.Loop() {
+				for _, pkt := range packets {
+					m.queuePacket(pkt, tc.ethernet)
+				}
+				m.wakeReady()
+				if len(sink.pkts) != batch {
+					b.Fatalf("delivered %d packets, want %d", len(sink.pkts), batch)
+				}
+				for i, pkt := range sink.pkts {
+					pkt.DecRef()
+					sink.pkts[i] = nil
+				}
+				sink.pkts = sink.pkts[:0]
+			}
+		})
+	}
+}
