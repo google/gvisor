@@ -15,6 +15,7 @@
 package tcp_rack_test
 
 import (
+	"bytes"
 	"flag"
 	"testing"
 	"time"
@@ -28,6 +29,150 @@ import (
 
 func init() {
 	testbench.Initialize(flag.CommandLine)
+}
+
+// TestCongestionControlSelection compares the sender's learned window on an
+// established connection before and after TCP_CONGESTION, without intervening
+// traffic. Use a real loss so reinitializing to the initial window is visible.
+func TestCongestionControlSelection(t *testing.T) {
+	for _, algorithm := range []string{"cubic", "reno"} {
+		for _, change := range []string{"none", "same", "other"} {
+			t.Run(algorithm+"_"+change, func(t *testing.T) {
+				congestionControlAfterLoss(t, algorithm, change, "")
+			})
+		}
+	}
+}
+
+// TestCongestionControlAfterPeerFIN distinguishes a change to the sender
+// from a change to the string returned by getsockopt. Each control measures
+// the selected algorithm's own response to the same loss on this DUT.
+func TestCongestionControlAfterPeerFIN(t *testing.T) {
+	threshold := make(map[string]uint32)
+	for _, test := range []struct{ initial, selected string }{
+		{"cubic", "cubic"}, {"reno", "reno"},
+		{"cubic", "reno"}, {"reno", "cubic"},
+	} {
+		t.Run(test.initial+"_to_"+test.selected, func(t *testing.T) {
+			got := congestionControlAfterLoss(t, test.initial, "none", test.selected)
+			if test.initial == test.selected {
+				threshold[test.selected] = got
+				return
+			}
+			if len(threshold) != 2 || threshold["cubic"] == threshold["reno"] {
+				t.Fatalf("controls did not distinguish algorithms: thresholds = %v", threshold)
+			}
+			if want := threshold[test.selected]; got != want {
+				t.Errorf("threshold after selecting %s in CLOSE_WAIT = %d, want its measured control %d", test.selected, got, want)
+			}
+		})
+	}
+}
+
+func congestionControlAfterLoss(t *testing.T, algorithm, change, afterFIN string) uint32 {
+	t.Helper()
+	dut, conn, fd, mss := createSACKConnection(t)
+	set := func(name string) { dut.SetSockOpt(t, fd, unix.IPPROTO_TCP, unix.TCP_CONGESTION, []byte(name)) }
+	get := func() string {
+		return string(bytes.TrimRight(dut.GetSockOpt(t, fd, unix.IPPROTO_TCP, unix.TCP_CONGESTION, 16), "\x00"))
+	}
+	info := func() linux.TCPInfo { return dut.GetSockOptTCPInfo(t, fd) }
+	set(algorithm)
+	if got := get(); got != algorithm {
+		t.Fatalf("TCP_CONGESTION = %q, want %q", got, algorithm)
+	}
+	dut.SetSockOptInt(t, fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+	ack := func(sn seqnum.Value, options []byte) {
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(sn)), WindowSize: testbench.Uint16(60000), Options: options})
+	}
+	payload := &testbench.Payload{Bytes: make([]byte, mss)}
+	send := func(sn seqnum.Value) {
+		t.Helper()
+		if n := dut.Send(t, fd, payload.Bytes, 0); int(n) != mss {
+			t.Fatalf("send = %d, want %d", n, mss)
+		}
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(uint32(sn))}, payload, time.Second); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head := *conn.RemoteSeqNum(t)
+	send(head)
+	head = head.Add(seqnum.Size(mss))
+	time.Sleep(10 * time.Millisecond)
+	ack(head, nil)
+	if afterFIN != "" {
+		// FIN consumes one sequence number; the DUT can still send data.
+		fin := *conn.LocalSeqNum(t)
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck), AckNum: testbench.Uint32(uint32(head)), WindowSize: testbench.Uint16(60000)})
+		if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(fin.Add(1)))}, time.Second); err != nil {
+			t.Fatalf("FIN acknowledgment: %v", err)
+		}
+		if got := info().State; got != uint8(linux.TCP_CLOSE_WAIT) {
+			t.Fatalf("TCP_INFO state after peer FIN = %d, want CLOSE_WAIT", got)
+		}
+		set(afterFIN)
+		if got := get(); got != afterFIN {
+			t.Fatalf("TCP_CONGESTION = %q, want %q", got, afterFIN)
+		}
+	}
+	initial := info()
+	for n := range 5 {
+		send(head.Add(seqnum.Size(n * mss)))
+	}
+	for n := 2; n <= 4; n++ {
+		var options [40]byte
+		l := header.EncodeNOP(options[:])
+		l += header.EncodeNOP(options[l:])
+		l += header.EncodeSACKBlocks([]header.SACKBlock{{Start: head.Add(seqnum.Size(mss)), End: head.Add(seqnum.Size(n * mss))}}, options[l:])
+		ack(head, options[:l])
+	}
+	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: testbench.Uint32(uint32(head))}, payload, time.Second); err != nil {
+		t.Fatalf("missing first segment retransmission: %v", err)
+	}
+	if got := info().CaState; got != linux.TCP_CA_Recovery {
+		t.Fatalf("retransmission state = %d, want fast recovery", got)
+	}
+	end := head.Add(seqnum.Size(5 * mss))
+	ack(end, nil)
+	before := info()
+	for deadline := time.Now().Add(time.Second); before.CaState != linux.TCP_CA_Open && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+		before = info()
+	}
+	if before.CaState != linux.TCP_CA_Open || before.SndCwnd < before.SndSsthresh || before.SndCwnd >= initial.SndCwnd || before.SndSsthresh == 0 {
+		t.Fatalf("not in post-loss congestion avoidance: cwnd=%d threshold=%d state=%d initial=%d", before.SndCwnd, before.SndSsthresh, before.CaState, initial.SndCwnd)
+	}
+	if afterFIN != "" {
+		t.Logf("CLOSE_SELECT from=%s to=%s state=%d initial=%d mss=%d window=%d threshold=%d", algorithm, afterFIN, before.State, initial.SndCwnd, mss, before.SndCwnd, before.SndSsthresh)
+		if before.State != uint8(linux.TCP_CLOSE_WAIT) {
+			t.Fatalf("TCP_INFO state after loss = %d, want CLOSE_WAIT", before.State)
+		}
+		return before.SndSsthresh
+	}
+	selected := algorithm
+	switch change {
+	case "same":
+		set(selected)
+	case "other":
+		if algorithm == "cubic" {
+			selected = "reno"
+		} else {
+			selected = "cubic"
+		}
+		set(selected)
+	}
+	if got := get(); got != selected {
+		t.Fatalf("TCP_CONGESTION = %q, want %q", got, selected)
+	}
+	after := info()
+	t.Logf("CCA_SELECT from=%s mode=%s to=%s mss=%d initial=%d before=%d/%d after=%d/%d state=%d/%d rto=%d/%d rtt=%d/%d", algorithm, change, selected, mss, initial.SndCwnd, before.SndCwnd, before.SndSsthresh, after.SndCwnd, after.SndSsthresh, before.CaState, after.CaState, before.RTO, after.RTO, before.RTT, after.RTT)
+	if before.SndCwnd != after.SndCwnd || before.SndSsthresh != after.SndSsthresh || before.CaState != after.CaState {
+		t.Errorf("TCP_CONGESTION changed the post-loss sender window")
+	}
+	// Ensure the socket remains usable with the selected algorithm.
+	send(end)
+	ack(end.Add(seqnum.Size(mss)), nil)
+	return before.SndSsthresh
 }
 
 const (
