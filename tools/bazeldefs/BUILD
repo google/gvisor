@@ -1,4 +1,5 @@
 load("//tools:defs.bzl", "bzl_library")
+load(":go.bzl", "go_cov_toolchain")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -87,4 +88,27 @@ genrule(
         "notap",
     ],
     visibility = ["//:sandbox"],
+)
+
+toolchain_type(
+    name = "go_cov_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+go_cov_toolchain(name = "go_cov_toolchain")
+
+toolchain(
+    name = "go_cov_amd64_toolchain",
+    exec_compatible_with = ["@platforms//cpu:x86_64"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
+    toolchain = ":go_cov_toolchain",
+    toolchain_type = ":go_cov_toolchain_type",
+)
+
+toolchain(
+    name = "go_cov_arm64_toolchain",
+    exec_compatible_with = ["@platforms//cpu:aarch64"],
+    target_compatible_with = ["@platforms//cpu:aarch64"],
+    toolchain = ":go_cov_toolchain",
+    toolchain_type = ":go_cov_toolchain_type",
 )

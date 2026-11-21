@@ -10,8 +10,19 @@ load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 gazelle = _gazelle
 
 go_reset_target = _go_reset_target
-go_cov = native.genrule
 cov_available = True
+
+def _go_cov_toolchain_impl(_ctx):
+    return [platform_common.ToolchainInfo(), platform_common.TemplateVariableInfo({})]
+
+go_cov_toolchain = rule(implementation = _go_cov_toolchain_impl)
+
+def go_cov(**kwargs):
+    """Defines a coverage build using a native target-architecture toolchain."""
+    native.genrule(
+        toolchains = ["//tools/bazeldefs:go_cov_toolchain_type"],
+        **kwargs
+    )
 
 def _go_source_export_config(_settings, _attr):
     return {"//tools:export_go_sources": True}
