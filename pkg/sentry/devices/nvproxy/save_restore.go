@@ -349,6 +349,16 @@ func (fd *uvmToolsFD) afterLoad(ctx goContext.Context) {
 	}
 }
 
+// beforeSave is invoked by stateify.
+func (fd *openOnlyFD) beforeSave() {
+	// no-op
+}
+
+// afterLoad is invoked by stateify.
+func (fd *openOnlyFD) afterLoad(ctx goContext.Context) {
+	fd.hostFD = openHostDevFileForRestore(ctx, fd.dev.relpath, fd.dev.nvp.useDevGofer, fd.containerName, fd.vfsfd.StatusFlags())
+}
+
 // openHostDevFileForRestore differs from openHostDevFile in the following ways:
 //   - The context passed to restore is not bound to a specific container, so
 //     devutil.CtxDevGoferClient is not set. Instead, a container name is passed by the
