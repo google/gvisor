@@ -16,11 +16,13 @@ package bridge_test
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -655,6 +657,389 @@ func TestBridgeARPRequests(t *testing.T) {
 					t.Errorf("got %d ARP replies, want %d", got, want)
 				}
 			})
+		}
+	}
+}
+
+// bridgePortTestEnv is a bridge with one channel-based port per link address.
+type bridgePortTestEnv struct {
+	s      *stack.Stack
+	bridge *stack.BridgeEndpoint
+	nicIDs []tcpip.NICID
+	chs    []*channel.Endpoint
+}
+
+const (
+	bridgePortTestBridgeID   = 20
+	bridgePortTestBridgeAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x20")
+)
+
+func newBridgePortTestEnv(t *testing.T, linkAddrs ...tcpip.LinkAddress) *bridgePortTestEnv {
+	t.Helper()
+	env := &bridgePortTestEnv{
+		s:      stack.New(stack.Options{}),
+		bridge: stack.NewBridgeEndpoint(1500),
+	}
+	env.bridge.SetLinkAddress(bridgePortTestBridgeAddr)
+	if err := env.s.CreateNIC(bridgePortTestBridgeID, env.bridge); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgePortTestBridgeID, err)
+	}
+	for i, addr := range linkAddrs {
+		id := tcpip.NICID(21 + i)
+		ch := channel.New(4, header.EthernetMinimumSize, addr)
+		if err := env.s.CreateNIC(id, ethernet.New(ch)); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", id, err)
+		}
+		if err := env.s.SetNICCoordinator(id, bridgePortTestBridgeID); err != nil {
+			t.Fatalf("s.SetNICCoordinator(%d, %d): %s", id, bridgePortTestBridgeID, err)
+		}
+		env.nicIDs = append(env.nicIDs, id)
+		env.chs = append(env.chs, ch)
+	}
+	t.Cleanup(func() {
+		drainChannels(env.chs...)
+		for _, ch := range env.chs {
+			ch.Close()
+		}
+		env.s.Destroy()
+	})
+	return env
+}
+
+// inject delivers a frame from src to dst on the port at index port.
+func (env *bridgePortTestEnv) inject(port int, src, dst tcpip.LinkAddress) {
+	pkt := makeEthernetFrame(src, dst, header.IPv4ProtocolNumber, nil)
+	env.chs[port].InjectInbound(header.IPv4ProtocolNumber, pkt)
+	pkt.DecRef()
+}
+
+// forwardedTo returns whether the port at index port sent out a frame, and
+// drains everything the port sent.
+func (env *bridgePortTestEnv) forwardedTo(port int) bool {
+	got := false
+	for pkt := env.chs[port].Read(); pkt != nil; pkt = env.chs[port].Read() {
+		got = true
+		pkt.DecRef()
+	}
+	return got
+}
+
+// TestBridgePortHairpin checks that a frame goes back out of the port it came
+// in on only when the port is in hairpin mode, both when it is flooded and
+// when its destination was learned on that port, and that a frame for a local
+// address never does.
+func TestBridgePortHairpin(t *testing.T) {
+	const (
+		portAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x30")
+		portAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x31")
+		hostA     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x32")
+		hostB     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x33")
+		unknown   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x34")
+	)
+	for _, hairpin := range []bool{false, true} {
+		name := "off"
+		if hairpin {
+			name = "on"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := newBridgePortTestEnv(t, portAddr1, portAddr2)
+			if hairpin {
+				if err := env.s.SetBridgePortFlags(env.nicIDs[0], stack.BridgePortHairpin, 0); err != nil {
+					t.Fatalf("SetBridgePortFlags: %s", err)
+				}
+			}
+
+			// hostA is not known yet, so the frame is flooded. It is learned on
+			// port 1 afterwards.
+			env.inject(0, hostA, unknown)
+			if got := env.forwardedTo(1); !got {
+				t.Errorf("flooded frame was not sent out of port 2")
+			}
+			if got := env.forwardedTo(0); got != hairpin {
+				t.Errorf("flooded frame sent back out of the ingress port = %t, want %t", got, hairpin)
+			}
+
+			// hostA is on the ingress port, so the frame is not flooded.
+			env.inject(0, hostB, hostA)
+			if got := env.forwardedTo(0); got != hairpin {
+				t.Errorf("frame for an address on the ingress port sent back out of it = %t, want %t", got, hairpin)
+			}
+			if got := env.forwardedTo(1); got {
+				t.Errorf("frame for an address on port 1 was sent out of port 2")
+			}
+
+			env.inject(0, hostA, header.EthernetBroadcastAddress)
+			if got := env.forwardedTo(1); !got {
+				t.Errorf("broadcast frame was not sent out of port 2")
+			}
+			if got := env.forwardedTo(0); got != hairpin {
+				t.Errorf("broadcast frame sent back out of the ingress port = %t, want %t", got, hairpin)
+			}
+
+			// As with BR_FDB_LOCAL entries in br_handle_frame_finish, a frame for
+			// the bridge or for one of its ports is passed up and not forwarded,
+			// in hairpin mode too.
+			for _, dst := range []tcpip.LinkAddress{bridgePortTestBridgeAddr, portAddr1, portAddr2} {
+				env.inject(0, hostA, dst)
+				if got := env.forwardedTo(0); got {
+					t.Errorf("frame for local address %q sent back out of the ingress port", dst)
+				}
+				if got := env.forwardedTo(1); got {
+					t.Errorf("frame for local address %q sent out of port 2", dst)
+				}
+			}
+		})
+	}
+}
+
+// TestBridgePortLearning checks that the source address of a frame is added to
+// the forwarding table only when the ingress port has learning enabled.
+func TestBridgePortLearning(t *testing.T) {
+	const (
+		portAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x40")
+		portAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x41")
+		portAddr3 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x42")
+		hostX     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x43")
+		hostY     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x44")
+	)
+	for _, learning := range []bool{true, false} {
+		name := "on"
+		if !learning {
+			name = "off"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := newBridgePortTestEnv(t, portAddr1, portAddr2, portAddr3)
+			if !learning {
+				if err := env.s.SetBridgePortFlags(env.nicIDs[1], 0, stack.BridgePortLearning); err != nil {
+					t.Fatalf("SetBridgePortFlags: %s", err)
+				}
+			}
+
+			// Port 2 sees a frame from hostX.
+			env.inject(1, hostX, hostY)
+			drainChannels(env.chs...)
+			entry := env.bridge.FindFDBEntry(hostX)
+			if got := entry.PortLinkAddress() == portAddr2; got != learning {
+				t.Errorf("hostX learned on port 2 = %t, want %t", got, learning)
+			}
+
+			// A frame for hostX is sent only to port 2 if it was learned, and
+			// flooded otherwise.
+			env.inject(0, hostY, hostX)
+			if got := env.forwardedTo(1); !got {
+				t.Errorf("frame for hostX was not sent out of port 2")
+			}
+			if got := env.forwardedTo(2); got == learning {
+				t.Errorf("frame for hostX sent out of port 3 = %t, want %t", got, !learning)
+			}
+
+			// Other ports keep learning.
+			if e := env.bridge.FindFDBEntry(hostY); e.PortLinkAddress() != portAddr1 {
+				t.Errorf("hostY learned on %q, want port 1 (%q)", e.PortLinkAddress(), portAddr1)
+			}
+		})
+	}
+}
+
+// funcNotification calls f when a packet is written.
+type funcNotification func()
+
+func (f funcNotification) WriteNotify() {
+	f()
+}
+
+// TestBridgeForwardsWithoutLock checks that a port sends out forwarded and
+// flooded frames without the bridge locked, so that its transmit path may
+// change the bridge.
+func TestBridgeForwardsWithoutLock(t *testing.T) {
+	const (
+		portAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x60")
+		portAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x61")
+		hostA     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x62")
+		hostB     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x63")
+		unknown   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x64")
+	)
+	env := newBridgePortTestEnv(t, portAddr1, portAddr2)
+	h := env.chs[1].AddNotify(funcNotification(func() {
+		if err := env.s.SetBridgePortFlags(env.nicIDs[1], 0, 0); err != nil {
+			t.Errorf("SetBridgePortFlags(%d, 0, 0): %s", env.nicIDs[1], err)
+		}
+	}))
+	defer env.chs[1].RemoveNotify(h)
+	env.inject(1, hostB, unknown)
+	drainChannels(env.chs...)
+
+	for _, dst := range []tcpip.LinkAddress{unknown, hostB} {
+		done := make(chan struct{})
+		go func() {
+			env.inject(0, hostA, dst)
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("frame for %s isn't sent out of port 2 within 10s", dst)
+		}
+		if !env.forwardedTo(1) {
+			t.Errorf("frame for %s was not sent out of port 2", dst)
+		}
+	}
+
+	// The bridge's own output is sent without the lock, too.
+	done := make(chan struct{})
+	go func() {
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: header.EthernetMinimumSize,
+			Payload:            buffer.MakeWithData([]byte{1, 2, 3, 4}),
+		})
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		env.bridge.WritePackets(pkts)
+		pkts.Reset()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("bridge output isn't sent out of port 2 within 10s")
+	}
+	if !env.forwardedTo(1) {
+		t.Errorf("bridge output was not sent out of port 2")
+	}
+}
+
+// TestBridgeFloodsNewestPortFirst checks that, as in Linux, a flooded frame
+// goes out of the most recently added port first.
+func TestBridgeFloodsNewestPortFirst(t *testing.T) {
+	const (
+		portAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x70")
+		portAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x71")
+		portAddr3 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x72")
+		hostA     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x73")
+		unknown   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x74")
+	)
+	env := newBridgePortTestEnv(t, portAddr1, portAddr2, portAddr3)
+	var order []int
+	for i := 1; i < 3; i++ {
+		h := env.chs[i].AddNotify(funcNotification(func() { order = append(order, i+1) }))
+		defer env.chs[i].RemoveNotify(h)
+	}
+	env.inject(0, hostA, unknown)
+	if want := []int{3, 2}; !slices.Equal(order, want) {
+		t.Errorf("flooded out of ports %v, want %v", order, want)
+	}
+}
+
+// noCloseEndpoint is a link endpoint that stays open when its NIC is removed,
+// so a frame sent to a removed port can be seen.
+type noCloseEndpoint struct {
+	stack.LinkEndpoint
+}
+
+// Close implements stack.LinkEndpoint.Close.
+func (noCloseEndpoint) Close() {}
+
+// TestBridgeRemovedPortNotFlooded checks that a frame being flooded isn't sent
+// out of a port that is removed from the bridge during the flood.
+func TestBridgeRemovedPortNotFlooded(t *testing.T) {
+	const (
+		bridgeID = 30
+		hostA    = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x83")
+		unknown  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x84")
+	)
+	s := stack.New(stack.Options{})
+	defer s.Destroy()
+	if err := s.CreateNIC(bridgeID, stack.NewBridgeEndpoint(1500)); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+	}
+	var chs []*channel.Endpoint
+	var ids []tcpip.NICID
+	for i := 0; i < 3; i++ {
+		id := tcpip.NICID(31 + i)
+		ch := channel.New(4, header.EthernetMinimumSize, tcpip.LinkAddress([]byte{2, 2, 3, 4, 5, byte(0x80 + i)}))
+		defer ch.Close()
+		if err := s.CreateNIC(id, noCloseEndpoint{ethernet.New(ch)}); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", id, err)
+		}
+		if err := s.SetNICCoordinator(id, bridgeID); err != nil {
+			t.Fatalf("s.SetNICCoordinator(%d, %d): %s", id, bridgeID, err)
+		}
+		chs = append(chs, ch)
+		ids = append(ids, id)
+	}
+	defer drainChannels(chs...)
+
+	// Whichever of ports 2 and 3 is sent the frame first removes the other.
+	var once sync.Once
+	for i := 1; i < 3; i++ {
+		other := ids[3-i]
+		h := chs[i].AddNotify(funcNotification(func() {
+			once.Do(func() {
+				if err := s.RemoveNIC(other); err != nil {
+					t.Errorf("s.RemoveNIC(%d): %s", other, err)
+				}
+			})
+		}))
+		defer chs[i].RemoveNotify(h)
+	}
+	pkt := makeEthernetFrame(hostA, unknown, header.IPv4ProtocolNumber, nil)
+	chs[0].InjectInbound(header.IPv4ProtocolNumber, pkt)
+	pkt.DecRef()
+
+	sent := 0
+	for _, ch := range chs[1:] {
+		for p := ch.Read(); p != nil; p = ch.Read() {
+			sent++
+			p.DecRef()
+		}
+	}
+	if sent != 1 {
+		t.Errorf("frame sent out of %d ports, want 1", sent)
+	}
+}
+
+func TestBridgePortFlagsAPI(t *testing.T) {
+	const portAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x50")
+	env := newBridgePortTestEnv(t, portAddr)
+	port := env.nicIDs[0]
+
+	flags, err := env.s.BridgePortFlags(port)
+	if err != nil {
+		t.Fatalf("BridgePortFlags(%d): %s", port, err)
+	}
+	if want := stack.BridgePortLearning; flags != want {
+		t.Errorf("new port flags = %#x, want %#x", flags, want)
+	}
+
+	// One call can set some flags and clear others.
+	if err := env.s.SetBridgePortFlags(port, stack.BridgePortHairpin, stack.BridgePortLearning); err != nil {
+		t.Fatalf("SetBridgePortFlags(%d): %s", port, err)
+	}
+	if flags, _ := env.s.BridgePortFlags(port); flags != stack.BridgePortHairpin {
+		t.Errorf("flags = %#x, want %#x", flags, stack.BridgePortHairpin)
+	}
+	// Empty masks change nothing.
+	if err := env.s.SetBridgePortFlags(port, 0, 0); err != nil {
+		t.Fatalf("SetBridgePortFlags(%d, 0, 0): %s", port, err)
+	}
+	if flags, _ := env.s.BridgePortFlags(port); flags != stack.BridgePortHairpin {
+		t.Errorf("flags = %#x, want %#x", flags, stack.BridgePortHairpin)
+	}
+
+	for _, test := range []struct {
+		name string
+		id   tcpip.NICID
+		want tcpip.Error
+	}{
+		{"unknown NIC", 99, &tcpip.ErrUnknownNICID{}},
+		{"the bridge itself", bridgePortTestBridgeID, &tcpip.ErrNotSupported{}},
+	} {
+		if _, err := env.s.BridgePortFlags(test.id); err == nil || err.String() != test.want.String() {
+			t.Errorf("%s: BridgePortFlags() = %v, want %v", test.name, err, test.want)
+		}
+		if err := env.s.SetBridgePortFlags(test.id, stack.BridgePortHairpin, 0); err == nil || err.String() != test.want.String() {
+			t.Errorf("%s: SetBridgePortFlags() = %v, want %v", test.name, err, test.want)
 		}
 	}
 }
