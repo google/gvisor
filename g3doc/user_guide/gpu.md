@@ -226,13 +226,19 @@ Vulkan requires `graphics` capability, CUDA requires `compute`, while
 NVENC/NVDEC requires `video`.
 
 `nvproxy` supports the following driver capabilities: `compute`, `utility`,
-`graphics` and `video`. By default, `nvproxy` only allows `compute` and
-`utility`. If additional capabilities are required, then please set runsc flag
-`--nvproxy-allowed-driver-capabilities` with a comma-separated list of
+`graphics`, `video` and `display`. By default, `nvproxy` only allows `compute`
+and `utility`. If additional capabilities are required, then please set runsc
+flag `--nvproxy-allowed-driver-capabilities` with a comma-separated list of
 capabilities to allow. Allowing additional capabilities broadens the host driver
 surface exposed to the sandbox, so provision this flag conservatively. Passing
-"all" will allow all supported capabilities. If `NVIDIA_DRIVER_CAPABILITIES=all`
-then all allowed capabilities will be used.
+"all" will allow all supported capabilities except privileged ones, such as
+`display` and `profiling`, which must be named. If
+`NVIDIA_DRIVER_CAPABILITIES=all` then all allowed capabilities will be used.
+
+The `display` capability is for workloads that present Vulkan to an X
+server, including a virtual one such as Xvfb, or that run an X server on the
+NVIDIA driver (`nvidia_drv.so`) in the sandbox. OpenGL presented to Xvfb
+through VirtualGL's EGL back end does not need it.
 
 ### Supported Device Files {#device-files}
 
