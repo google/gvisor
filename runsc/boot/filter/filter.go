@@ -36,6 +36,17 @@ const debugFilter = false
 // Options is a re-export of the config Options type under this package.
 type Options = config.Options
 
+// HostFSAccess is a re-export of the config HostFSAccess type under this
+// package.
+type HostFSAccess = config.HostFSAccess
+
+// Re-exports of the config HostFSAccess values under this package.
+const (
+	HostFSNone      = config.HostFSNone
+	HostFSReadOnly  = config.HostFSReadOnly
+	HostFSReadWrite = config.HostFSReadWrite
+)
+
 // HostVendorSyscalls returns the vendor-specific syscalls that may be used on
 // the current host.
 func HostVendorSyscalls() precompiledseccomp.VarSyscallNumbers {

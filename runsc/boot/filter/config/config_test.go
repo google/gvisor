@@ -66,8 +66,8 @@ func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 			ProfileEnable: true,
 		},
 		"host filesystem": {
-			Platform:       (&systrap.Systrap{}).SeccompInfo(),
-			HostFilesystem: true,
+			Platform: (&systrap.Systrap{}).SeccompInfo(),
+			HostFS:   HostFSReadWrite,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestOptionsConfigKey(t *testing.T) {
 		},
 		"HostNetwork":           func(opt *Options) { opt.HostNetwork = !opt.HostNetwork },
 		"HostNetworkRawSockets": func(opt *Options) { opt.HostNetworkRawSockets = !opt.HostNetworkRawSockets },
-		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
+		"HostFS":                func(opt *Options) { opt.HostFS = (opt.HostFS + 1) % (HostFSReadWrite + 1) },
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
 		"NVProxyCaps":           func(opt *Options) { opt.NVProxyCaps = ^opt.NVProxyCaps },
@@ -217,38 +217,58 @@ func TestPrecompiledProgramsDeterministic(t *testing.T) {
 	}
 }
 
+// compileFilter returns the compiled seccomp program for opt.
+func compileFilter(t *testing.T, opt Options) bpf.Program {
+	t.Helper()
+	rules, denyRules := Rules(opt)
+	program := seccomp.Program{
+		RuleSets: []seccomp.RuleSet{
+			{Rules: denyRules},
+			{Rules: rules, Action: seccomp.Allow},
+		},
+		Options: seccomp.ProgramOptions{DefaultAction: seccomp.KillProcess},
+	}
+	insns, _, err := program.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := bpf.Compile(insns, true /* optimize */)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled
+}
+
+// filterAllows returns true if the compiled seccomp program allows the
+// syscall.
+func filterAllows(t *testing.T, compiled bpf.Program, sysno uintptr, args [6]uint64) bool {
+	t.Helper()
+	data := linux.SeccompData{Nr: int32(sysno), Arch: seccomp.LINUX_AUDIT_ARCH, Args: args}
+	got, err := bpf.Exec[bpf.NativeEndian](compiled, seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes())))
+	if err != nil {
+		t.Fatalf("syscall %d with args %#x: %v", sysno, args, err)
+	}
+	return got == uint32(linux.SECCOMP_RET_ALLOW)
+}
+
 func TestMknodat(t *testing.T) {
 	atFDCWD32 := int32(linux.AT_FDCWD)
 	atFDCWD64 := int64(linux.AT_FDCWD)
-	for _, hostFS := range []bool{false, true} {
-		rules, denyRules := Rules(Options{
-			HostFilesystem: hostFS,
-			Platform:       (&systrap.Systrap{}).SeccompInfo(),
+	for _, hostFS := range []HostFSAccess{HostFSNone, HostFSReadOnly, HostFSReadWrite} {
+		compiled := compileFilter(t, Options{
+			HostFS:   hostFS,
+			Platform: (&systrap.Systrap{}).SeccompInfo(),
 		})
-		program := seccomp.Program{
-			RuleSets: []seccomp.RuleSet{
-				{Rules: denyRules},
-				{Rules: rules, Action: seccomp.Allow},
-			},
-			Options: seccomp.ProgramOptions{DefaultAction: seccomp.KillProcess},
-		}
-		insns, _, err := program.Build()
-		if err != nil {
-			t.Fatal(err)
-		}
-		compiled, err := bpf.Compile(insns, true /* optimize */)
-		if err != nil {
-			t.Fatal(err)
-		}
+		canCreate := hostFS == HostFSReadWrite
 		for _, tc := range []struct {
 			name    string
 			args    [6]uint64
 			allowed bool
 		}{
-			{"regular file", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 0}, hostFS},
-			{"regular file setuid sticky", [6]uint64{0, 0x1000, unix.S_IFREG | 0o7777, 0}, hostFS},
-			{"whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR, 0}, hostFS},
-			{"whiteout char device with perms", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o644, 0}, hostFS},
+			{"regular file", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 0}, canCreate},
+			{"regular file setuid sticky", [6]uint64{0, 0x1000, unix.S_IFREG | 0o7777, 0}, canCreate},
+			{"whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR, 0}, canCreate},
+			{"whiteout char device with perms", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o644, 0}, canCreate},
 			{"non-whiteout char device", [6]uint64{10, 0x1000, unix.S_IFCHR | 0o666, 0x0103}, false},
 			{"regular file nonzero dev", [6]uint64{10, 0x1000, unix.S_IFREG | 0o644, 1}, false},
 			{"dev high bits set", [6]uint64{10, 0x1000, unix.S_IFCHR, 1 << 32}, false},
@@ -262,13 +282,84 @@ func TestMknodat(t *testing.T) {
 			{"AT_FDCWD 64-bit", [6]uint64{uint64(atFDCWD64), 0x1000, unix.S_IFREG | 0o644, 0}, false},
 			{"negative FD", [6]uint64{^uint64(0), 0x1000, unix.S_IFREG | 0o644, 0}, false},
 		} {
-			data := linux.SeccompData{Nr: unix.SYS_MKNODAT, Arch: seccomp.LINUX_AUDIT_ARCH, Args: tc.args}
-			got, err := bpf.Exec[bpf.NativeEndian](compiled, seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes())))
-			if err != nil {
-				t.Fatalf("hostFS=%t %s: %v", hostFS, tc.name, err)
+			if allowed := filterAllows(t, compiled, unix.SYS_MKNODAT, tc.args); allowed != tc.allowed {
+				t.Errorf("HostFS=%v %s: allowed=%t, want %t", hostFS, tc.name, allowed, tc.allowed)
 			}
-			if allowed := got == uint32(linux.SECCOMP_RET_ALLOW); allowed != tc.allowed {
-				t.Errorf("hostFS=%t %s: action=%#x, want allowed=%t", hostFS, tc.name, got, tc.allowed)
+		}
+	}
+}
+
+// TestHostFSAccess verifies which host filesystem syscalls each level of
+// HostFSAccess allows.
+func TestHostFSAccess(t *testing.T) {
+	const (
+		dirFD      = 10
+		procSelfFD = 7
+		ptr        = 0x1000
+		// never is higher than every level.
+		never = HostFSReadWrite + 1
+		// openFlags are the flags that every open by directfs has.
+		openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_NOCTTY
+		// reopenFlags are the flags that every reopen by directfs has.
+		reopenFlags = unix.O_CLOEXEC | unix.O_NOCTTY
+	)
+	atFDCWD := int64(linux.AT_FDCWD)
+	compiled := make(map[HostFSAccess]bpf.Program)
+	for hostFS := HostFSNone; hostFS < never; hostFS++ {
+		compiled[hostFS] = compileFilter(t, Options{
+			HostFS:     hostFS,
+			ProcSelfFD: procSelfFD,
+			Platform:   (&systrap.Systrap{}).SeccompInfo(),
+		})
+	}
+	instrumentation := instrumentationFilters()
+	for _, tc := range []struct {
+		name  string
+		sysno uintptr
+		args  [6]uint64
+		// from is the lowest level that allows the syscall.
+		from HostFSAccess
+	}{
+		{"look up", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_RDONLY | unix.O_NONBLOCK | openFlags}, HostFSReadOnly},
+		{"look up with O_PATH", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_PATH | openFlags}, HostFSReadOnly},
+		{"look up directory", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_RDONLY | unix.O_NONBLOCK | unix.O_DIRECTORY | openFlags}, HostFSReadOnly},
+		{"look up and follow symlink", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_RDONLY | unix.O_CLOEXEC}, never},
+		{"look up from AT_FDCWD", unix.SYS_OPENAT, [6]uint64{uint64(atFDCWD), ptr, unix.O_RDONLY | openFlags}, never},
+		{"open child write-only", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_WRONLY | openFlags}, HostFSReadWrite},
+		{"open child read-write", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_RDWR | openFlags}, HostFSReadWrite},
+		{"open child and truncate", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_RDONLY | unix.O_TRUNC | openFlags}, HostFSReadWrite},
+		{"create child", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_CREAT | unix.O_EXCL | unix.O_RDWR | openFlags, 0o644}, HostFSReadWrite},
+		{"create unnamed child", unix.SYS_OPENAT, [6]uint64{dirFD, ptr, unix.O_TMPFILE | unix.O_RDWR | openFlags, 0o644}, HostFSReadWrite},
+		{"reopen read-only", unix.SYS_OPENAT, [6]uint64{procSelfFD, ptr, unix.O_RDONLY | reopenFlags}, HostFSReadOnly},
+		{"reopen read-write", unix.SYS_OPENAT, [6]uint64{procSelfFD, ptr, unix.O_RDWR | reopenFlags}, HostFSReadOnly},
+		{"reopen and truncate", unix.SYS_OPENAT, [6]uint64{procSelfFD, ptr, unix.O_WRONLY | unix.O_TRUNC | reopenFlags}, HostFSReadOnly},
+		{"reopen and create", unix.SYS_OPENAT, [6]uint64{procSelfFD, ptr, unix.O_RDWR | unix.O_CREAT | reopenFlags, 0o644}, never},
+		{"reopen as unnamed file", unix.SYS_OPENAT, [6]uint64{procSelfFD, ptr, unix.O_RDWR | unix.O_TMPFILE | reopenFlags, 0o644}, never},
+		{"getdents64", unix.SYS_GETDENTS64, [6]uint64{dirFD, ptr, 4096}, HostFSReadOnly},
+		{"readlinkat", unix.SYS_READLINKAT, [6]uint64{dirFD, ptr, ptr, 128}, HostFSReadOnly},
+		{"statx by name", unix.SYS_STATX, [6]uint64{dirFD, ptr, unix.AT_SYMLINK_NOFOLLOW | unix.AT_NO_AUTOMOUNT, unix.STATX_BASIC_STATS, ptr}, HostFSReadOnly},
+		{"fstatat", archFstatAtSysNo(), [6]uint64{dirFD, ptr, ptr, unix.AT_SYMLINK_NOFOLLOW}, HostFSReadOnly},
+		{"fgetxattr", unix.SYS_FGETXATTR, [6]uint64{dirFD, ptr, ptr, 128}, HostFSReadOnly},
+		{"flistxattr", unix.SYS_FLISTXATTR, [6]uint64{dirFD, ptr, 128}, HostFSReadOnly},
+		{"fsetxattr", unix.SYS_FSETXATTR, [6]uint64{dirFD, ptr, ptr, 8, 0}, HostFSReadOnly},
+		{"fremovexattr", unix.SYS_FREMOVEXATTR, [6]uint64{dirFD, ptr}, HostFSReadOnly},
+		{"fchmod", unix.SYS_FCHMOD, [6]uint64{dirFD, 0o644}, HostFSReadWrite},
+		{"fchmodat", unix.SYS_FCHMODAT, [6]uint64{procSelfFD, ptr, 0o644}, HostFSReadWrite},
+		{"fchownat", unix.SYS_FCHOWNAT, [6]uint64{dirFD, ptr, 1, 1, unix.AT_EMPTY_PATH | unix.AT_SYMLINK_NOFOLLOW}, HostFSReadWrite},
+		{"utimensat by name", unix.SYS_UTIMENSAT, [6]uint64{procSelfFD, ptr, ptr, 0}, HostFSReadWrite},
+		{"mkdirat", unix.SYS_MKDIRAT, [6]uint64{dirFD, ptr, 0o755}, HostFSReadWrite},
+		{"mknodat", unix.SYS_MKNODAT, [6]uint64{dirFD, ptr, unix.S_IFREG | 0o644, 0}, HostFSReadWrite},
+		{"symlinkat", unix.SYS_SYMLINKAT, [6]uint64{ptr, dirFD, ptr}, HostFSReadWrite},
+		{"linkat", unix.SYS_LINKAT, [6]uint64{procSelfFD, ptr, dirFD, ptr, unix.AT_SYMLINK_FOLLOW}, HostFSReadWrite},
+		{"renameat2", unix.SYS_RENAMEAT2, [6]uint64{dirFD, ptr, dirFD, ptr, 0}, HostFSReadWrite},
+		{"unlinkat", unix.SYS_UNLINKAT, [6]uint64{dirFD, ptr, 0}, HostFSReadWrite},
+	} {
+		// Instrumentation such as -race can allow a syscall for every
+		// configuration.
+		_, instrumented := instrumentation.Get(tc.sysno).(seccomp.MatchAll)
+		for hostFS, program := range compiled {
+			if allowed, want := filterAllows(t, program, tc.sysno, tc.args), instrumented || hostFS >= tc.from; allowed != want {
+				t.Errorf("HostFS=%v %s: allowed=%t, want %t", hostFS, tc.name, allowed, want)
 			}
 		}
 	}
