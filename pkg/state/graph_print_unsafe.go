@@ -76,10 +76,7 @@ func printGraph(w io.Writer, data []byte, graph int, asHTML bool) {
 			fmt.Fprintf(w, "<a name=\"%s\"></a>", name)
 		}
 		fmt.Fprintf(w, "%s = ", name)
-		ti := o.ti
-		if o.exact != nil {
-			ti = o.exact
-		}
+		ti := o.decodeType
 		switch o.kind {
 		case objKindValue:
 			p.value(reflect.NewAt(ti.typ, o.base).Elem(), 0)
@@ -87,12 +84,12 @@ func printGraph(w io.Writer, data []byte, graph int, asHTML bool) {
 			n := int(o.size / ti.size)
 			p.value(reflect.NewAt(reflect.ArrayOf(n, ti.typ), o.base).Elem(), 0)
 		case objKindMap:
-			if o.mapType == nil {
+			if ti == nil {
 				fmt.Fprint(w, "map(unreferenced)")
 				break
 			}
 			m := o.base
-			p.mapValue(reflect.NewAt(o.mapType.typ, unsafe.Pointer(&m)).Elem(), 0)
+			p.mapValue(reflect.NewAt(ti.typ, unsafe.Pointer(&m)).Elem(), 0)
 		}
 		fmt.Fprint(w, "\n")
 	}
@@ -127,10 +124,7 @@ func (p *printer) index() {
 			continue
 		}
 		if o.size == 0 {
-			ti := o.ti
-			if o.exact != nil {
-				ti = o.exact
-			}
+			ti := o.decodeType
 			if p.zeroObjs == nil {
 				p.zeroObjs = make(map[reflect.Type]int)
 			}

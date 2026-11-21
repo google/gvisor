@@ -321,13 +321,13 @@ func (ds *graphDecodeState) mapRef(ti *typeInfo, v uint64) unsafe.Pointer {
 		Failf("map %v is not a map object", ti.typ)
 	}
 	o := &ds.objs[obj]
-	if o.mapType == nil {
-		o.mapType = ti
+	if o.decodeType == nil {
+		o.decodeType = ti
 		// Limit the size hint of invalid streams by their length.
 		hint := min(int(o.size), len(ds.in.b))
 		o.base = reflect.MakeMapWithSize(ti.typ, hint).UnsafePointer()
-	} else if o.mapType != ti && (o.mapType.key != ti.key || o.mapType.elem != ti.elem) {
-		Failf("map is both %v and %v", o.mapType.typ, ti.typ)
+	} else if o.decodeType != ti && (o.decodeType.key != ti.key || o.decodeType.elem != ti.elem) {
+		Failf("map is both %v and %v", o.decodeType.typ, ti.typ)
 	}
 	ds.lastRef, ds.refs = obj, ds.refs+1
 	return o.base
