@@ -8,6 +8,7 @@ package(
 go_library(
     name = "wire",
     srcs = [
+        "array.go",
         "load.go",
         "wire.go",
     ],

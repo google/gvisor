@@ -182,7 +182,7 @@ func TestMapNilValues(t *testing.T) {
 				&wire.Slice{Length: 1, Capacity: 1, Ref: wire.Ref{Root: 2}},
 				&wire.Slice{},
 			},
-			backing: &wire.Array{Contents: []wire.Object{wire.Int(7)}},
+			backing: &wire.ObjectArray{Contents: []wire.Object{wire.Int(7)}},
 			want:    map[int][]int{1: {7}, 2: nil},
 		},
 		{
