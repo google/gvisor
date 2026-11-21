@@ -401,14 +401,14 @@ func (gd *graphStructDecoder) loadValueTo(slot int, typ any, l ValueLoader) {
 func (gd *graphStructDecoder) afterLoad(fn func()) {
 	ds := gd.ds
 	if !ds.noCallbacks {
-		ds.addCallback(ds.cur, decodeCallback{fn: fn, waiter: -1})
+		ds.appendCallback(&ds.afterHead, &ds.afterTail, decodeCallback{fn: fn, waiter: -1})
 	}
 }
 
 func (gd *graphStructDecoder) afterLoadTo(l AfterLoader) {
 	ds := gd.ds
 	if !ds.noCallbacks {
-		ds.addCallback(ds.cur, decodeCallback{afterLoader: l, waiter: -1})
+		ds.appendCallback(&ds.afterHead, &ds.afterTail, decodeCallback{afterLoader: l, waiter: -1})
 	}
 }
 
