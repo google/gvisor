@@ -19,9 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
-	"strconv"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -156,7 +154,7 @@ func collectContainerNvidiaRegularDevices(ctx context.Context, spec *specs.Spec,
 		}
 	}
 	if specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
-		goferMinors, err := nvidiaRegularDeviceMinorsFromGofer(ctx, devClient)
+		goferMinors, err := nvproxy.RegularDeviceMinorsFromGofer(ctx, devClient)
 		if err != nil {
 			return gotAny, err
 		}
@@ -166,35 +164,6 @@ func collectContainerNvidiaRegularDevices(ctx context.Context, spec *specs.Spec,
 		}
 	}
 	return gotAny, nil
-}
-
-// nvidiaRegularDeviceMinorsFromGofer returns the minor device numbers of the
-// nvidia regular devices (i.e. /dev/nvidia#) visible in devClient's directory.
-func nvidiaRegularDeviceMinorsFromGofer(ctx context.Context, devClient *devutil.GoferClient) ([]uint32, error) {
-	if devClient == nil {
-		return nil, fmt.Errorf("dev gofer client not found")
-	}
-	names, err := devClient.DirentNames(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get names of dirents from dev gofer: %w", err)
-	}
-	nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
-	var minors []uint32
-	for _, name := range names {
-		ms := nvidiaDeviceRegex.FindStringSubmatch(name)
-		if ms == nil {
-			continue
-		}
-		minor, err := strconv.ParseUint(ms[1], 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("invalid nvidia device name %q: %w", name, err)
-		}
-		if minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
-			return nil, fmt.Errorf("invalid nvidia regular minor device number %d", minor)
-		}
-		minors = append(minors, uint32(minor))
-	}
-	return minors, nil
 }
 
 // createNvproxyDeviceFilesAfterRestore creates device files for GPUs available

@@ -27,6 +27,8 @@ package nvproxy
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -265,6 +267,42 @@ func nvproxyFromVFS(vfsObj *vfs.VirtualFilesystem) *nvproxy {
 		return nil
 	}
 	return ctlDevice.nvp
+}
+
+// RegularDeviceMinorsFromGofer returns the minor device numbers of the
+// nvidia regular devices (i.e. /dev/nvidia#) visible in devClient's directory.
+func RegularDeviceMinorsFromGofer(ctx context.Context, devClient *devutil.GoferClient) ([]uint32, error) {
+	if devClient == nil {
+		return nil, fmt.Errorf("dev gofer client not found")
+	}
+	names, err := devClient.DirentNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get names of dirents from dev gofer: %w", err)
+	}
+	nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
+	var minors []uint32
+	for _, name := range names {
+		ms := nvidiaDeviceRegex.FindStringSubmatch(name)
+		if ms == nil {
+			continue
+		}
+		minor, err := strconv.ParseUint(ms[1], 10, 32)
+		if err != nil || minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
+			continue
+		}
+		stat, err := devClient.StatAt(ctx, name)
+		if err != nil {
+			if linuxerr.Equals(linuxerr.ENOENT, err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to stat nvidia device %q: %w", name, err)
+		}
+		if stat.Mode&unix.S_IFMT != unix.S_IFCHR || stat.RdevMajor != nvgpu.NV_MAJOR_DEVICE_NUMBER || stat.RdevMinor != uint32(minor) {
+			continue
+		}
+		minors = append(minors, uint32(minor))
+	}
+	return minors, nil
 }
 
 type marshalPtr[T any] interface {

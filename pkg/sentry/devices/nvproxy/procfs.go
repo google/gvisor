@@ -16,7 +16,12 @@ package nvproxy
 
 import (
 	"fmt"
+	"slices"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -61,4 +66,51 @@ func procfsCapability(devMinor, mode uint32) string {
 	// consistent with our treatment of ModifyDeviceFiles in
 	// /proc/driver/nvidia/params.
 	return fmt.Sprintf("DeviceFileMinor: %d\nDeviceFileMode: %d\nDeviceFileModify: 0\n", devMinor, mode)
+}
+
+// GPUProcDirNames returns the PCI-addressed procfs directory names of the GPUs
+// available through devClient.
+func GPUProcDirNames(ctx context.Context, vfsObj *vfs.VirtualFilesystem, devClient *devutil.GoferClient) ([]string, error) {
+	nvp := nvproxyFromVFS(vfsObj)
+	if nvp == nil || devClient == nil || nvp.capsEnabled&compUtil == 0 {
+		return nil, nil
+	}
+	minors, err := RegularDeviceMinorsFromGofer(ctx, devClient)
+	if err != nil {
+		return nil, err
+	}
+	if len(minors) == 0 {
+		return nil, nil
+	}
+	ctlFD, err := devClient.OpenAt(ctx, "nvidiactl", unix.O_RDONLY)
+	if err != nil {
+		return nil, fmt.Errorf("opening nvidiactl for procfs: %w", err)
+	}
+	defer unix.Close(ctlFD)
+	var cards [nvgpu.NV_MAX_DEVICES]nvgpu.IoctlCardInfo
+	if err := queryCardInfo(uintptr(ctlFD), &cards); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(minors))
+	for _, minor := range minors {
+		found := false
+		for _, card := range cards {
+			if card.Valid == 0 || card.MinorNumber != minor {
+				continue
+			}
+			pci := card.PCIInfo
+			domainWidth := 4
+			if pci.Domain > 0xffff {
+				domainWidth = 8
+			}
+			names = append(names, fmt.Sprintf("%0*x:%02x:%02x.%x", domainWidth, pci.Domain, pci.Bus, pci.Slot, pci.Function))
+			found = true
+			break
+		}
+		if !found {
+			return nil, fmt.Errorf("NV_ESC_CARD_INFO returned no info for assigned minor %d", minor)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names), nil
 }

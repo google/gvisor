@@ -102,7 +102,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	if len(internalData.Cgroups) == 0 {
 		contents["cgroups"] = fs.newInode(ctx, root, 0444, &cgroupsData{})
 	}
-	fs.addNvproxyFiles(ctx, root, k, contents)
+	fs.addNvproxyFiles(ctx, root, k, contents, internalData.ContainerName)
 
 	for _, name := range internalData.OverrideProcs {
 		contents[name] = fs.newInode(ctx, root, 0444, newStaticFile(""))

@@ -2736,8 +2736,8 @@ func (k *Kernel) AddDevGofer(contName string, goferFD int) error {
 	return nil
 }
 
-// RemoveDevGofer closes the dev gofer connection, if one exists, and stops
-// tracking it.
+// RemoveDevGofer stops tracking the device gofer for contName and drops the
+// kernel's reference.
 //
 // +checklocksexclude:k.devGofersMu
 func (k *Kernel) RemoveDevGofer(contName string) {
@@ -2747,7 +2747,7 @@ func (k *Kernel) RemoveDevGofer(contName string) {
 	if !ok {
 		return
 	}
-	client.Close()
+	client.DecRef(k.SupervisorContext())
 	delete(k.devGofers, contName)
 }
 
@@ -2761,12 +2761,27 @@ func (k *Kernel) GetDevGoferClient(contName string) *devutil.GoferClient {
 	return k.devGofers[contName]
 }
 
+// GetDevGoferClientWithRef returns the device gofer for contName with an
+// additional reference, or nil if none exists. The caller must release the
+// reference with DecRef.
+//
+// +checklocksexclude:k.devGofersMu
+func (k *Kernel) GetDevGoferClientWithRef(contName string) *devutil.GoferClient {
+	k.devGofersMu.Lock()
+	defer k.devGofersMu.Unlock()
+	client := k.devGofers[contName]
+	if client != nil {
+		client.IncRef()
+	}
+	return client
+}
+
 // +checklocksexclude:k.devGofersMu
 func (k *Kernel) cleanupDevGofers() {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
 	for _, client := range k.devGofers {
-		client.Close()
+		client.DecRef(k.SupervisorContext())
 	}
 	k.devGofers = nil
 }

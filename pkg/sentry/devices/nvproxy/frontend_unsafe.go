@@ -15,6 +15,7 @@
 package nvproxy
 
 import (
+	"fmt"
 	"runtime"
 	"unsafe"
 
@@ -687,4 +688,11 @@ func rmVidHeapControlAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgp
 	}
 
 	return n, nil
+}
+
+func queryCardInfo(ctlFD uintptr, cards *[nvgpu.NV_MAX_DEVICES]nvgpu.IoctlCardInfo) error {
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, ctlFD, frontendIoctlCmd(nvgpu.NV_ESC_CARD_INFO, uint32(unsafe.Sizeof(*cards))), uintptr(unsafe.Pointer(cards))); errno != 0 {
+		return fmt.Errorf("NV_ESC_CARD_INFO failed: %w", errno)
+	}
+	return nil
 }

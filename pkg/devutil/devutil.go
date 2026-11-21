@@ -25,18 +25,25 @@ import (
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // GoferClient is the lisafs client for the /dev gofer connection.
 type GoferClient struct {
+	goferClientRefs
+
+	// direntsMu protects the directory offset of hostFD.
+	direntsMu sync.Mutex
+
 	clientFD lisafs.ClientFD
 	hostFD   int
 	contName string
 }
 
 // NewGoferClient establishes the LISAFS connection to the dev gofer server.
-// It takes ownership of fd. contName is the owning container name.
+// It takes ownership of fd and returns a client with one reference.
+// contName is the owning container name.
 func NewGoferClient(ctx context.Context, contName string, fd int) (*GoferClient, error) {
 	ctx.UninterruptibleSleepStart()
 	defer ctx.UninterruptibleSleepFinish()
@@ -51,15 +58,21 @@ func NewGoferClient(ctx context.Context, contName string, fd int) (*GoferClient,
 		ctx.Warningf("failed to create dev gofer client: %v", err)
 		return nil, err
 	}
-	return &GoferClient{
+	g := &GoferClient{
 		clientFD: client.NewFD(devInode.ControlFD),
 		hostFD:   devHostFD,
 		contName: contName,
-	}, nil
+	}
+	g.InitRefs()
+	return g, nil
 }
 
-// Close closes the LISAFS connection.
-func (g *GoferClient) Close() {
+// DecRef implements refs.RefCounter.DecRef.
+func (g *GoferClient) DecRef(context.Context) {
+	g.goferClientRefs.DecRef(g.destroy)
+}
+
+func (g *GoferClient) destroy() {
 	// Close the connection to the server. This implicitly closes all FDs.
 	g.clientFD.Client().Close()
 	if g.hostFD >= 0 {
@@ -75,6 +88,8 @@ func (g *GoferClient) ContainerName() string {
 // DirentNames returns names of all the dirents for /dev on the gofer.
 func (g *GoferClient) DirentNames(ctx context.Context) ([]string, error) {
 	if g.hostFD >= 0 {
+		g.direntsMu.Lock()
+		defer g.direntsMu.Unlock()
 		return fsutil.DirentNames(g.hostFD)
 	}
 	client := g.clientFD.Client()
@@ -99,6 +114,35 @@ func (g *GoferClient) DirentNames(ctx context.Context) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// StatAt returns metadata for name, a single entry in /dev, without following
+// symlinks. With DirectFS, only Mode, RdevMajor and RdevMinor are populated.
+func (g *GoferClient) StatAt(ctx context.Context, name string) (lisafs.Statx, error) {
+	if g.hostFD >= 0 {
+		stat, err := fsutil.StatAt(g.hostFD, name)
+		if err != nil {
+			return lisafs.Statx{}, err
+		}
+		return lisafs.Statx{
+			Mode:      uint16(stat.Mode),
+			RdevMajor: unix.Major(stat.Rdev),
+			RdevMinor: unix.Minor(stat.Rdev),
+		}, nil
+	}
+
+	stats, err := g.clientFD.WalkStat(ctx, []string{name})
+	if err != nil {
+		return lisafs.Statx{}, err
+	}
+	switch len(stats) {
+	case 0:
+		return lisafs.Statx{}, linuxerr.ENOENT
+	case 1:
+		return stats[0], nil
+	default:
+		return lisafs.Statx{}, linuxerr.EIO
+	}
 }
 
 // OpenAt opens the device file at /dev/{relpath} on the gofer.

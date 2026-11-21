@@ -17,16 +17,20 @@ package proc
 import (
 	"fmt"
 	"path"
+	"slices"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credentials, k *kernel.Kernel, contents map[string]kernfs.Inode) {
+func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credentials, k *kernel.Kernel, contents map[string]kernfs.Inode, containerName string) {
 	procInfo := nvproxy.ProcfsInfoFromVFS(k.VFS())
 	if procInfo == nil {
 		return
@@ -39,7 +43,7 @@ func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credential
 	type dir struct {
 		parent   *dir
 		name     string
-		children map[string]any // *dir or string
+		children map[string]any // *dir, string, or kernfs.Inode
 	}
 	dirName := func(d *dir) string {
 		var b fspath.Builder
@@ -82,6 +86,13 @@ func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credential
 		d.children[pc] = data
 	}
 
+	if containerName == "" {
+		if task := kernel.TaskFromContext(ctx); task != nil {
+			containerName = k.ContainerName(task.ContainerID())
+		}
+	}
+	nvidiaDir.children["gpus"] = fs.newNvproxyGPUs(ctx, root, k, containerName)
+
 	// ... then convert the tree to inodes.
 	var inodeFromNode func(node any) kernfs.Inode
 	inodeFromNode = func(node any) kernfs.Inode {
@@ -92,6 +103,8 @@ func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credential
 				childInodes[childName] = inodeFromNode(child)
 			}
 			return fs.newStaticDir(ctx, root, childInodes)
+		case kernfs.Inode:
+			return node
 		case string:
 			// Real /proc/driver/nvidia/registry has mode 644, but we don't
 			// support writes.
@@ -103,4 +116,86 @@ func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credential
 	contents["driver"] = fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 		"nvidia": inodeFromNode(nvidiaDir),
 	})
+}
+
+// nvproxyGPUsInode lists the GPUs assigned to its procfs mount's container.
+// Directory leaves are empty; pinned leaves do not retain host GPU resources.
+//
+// +stateify savable
+type nvproxyGPUsInode struct {
+	kernfs.StaticDirectory
+	fs            *filesystem
+	k             *kernel.Kernel
+	containerName string
+	creds         *auth.Credentials
+}
+
+var _ kernfs.Inode = (*nvproxyGPUsInode)(nil)
+
+func (fs *filesystem) newNvproxyGPUs(ctx context.Context, creds *auth.Credentials, k *kernel.Kernel, containerName string) kernfs.Inode {
+	d := &nvproxyGPUsInode{fs: fs, k: k, containerName: containerName, creds: creds}
+	d.StaticDirectory.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0o555, kernfs.GenericDirectoryFDOptions{SeekEnd: kernfs.SeekEndZero})
+	d.InitRefs()
+	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	return d
+}
+
+func (i *nvproxyGPUsInode) names(ctx context.Context) ([]string, error) {
+	devClient := i.k.GetDevGoferClientWithRef(i.containerName)
+	if devClient != nil {
+		defer devClient.DecRef(ctx)
+	}
+	names, err := nvproxy.GPUProcDirNames(ctx, i.k.VFS(), devClient)
+	if err != nil {
+		ctx.Warningf("NVIDIA procfs discovery: %v", err)
+		return nil, linuxerr.EIO
+	}
+	return names, nil
+}
+
+// Lookup implements kernfs.Inode.Lookup.
+func (i *nvproxyGPUsInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
+	if len(name) != len("0000:00:00.0") && len(name) != len("00000000:00:00.0") {
+		return nil, linuxerr.ENOENT
+	}
+	names, err := i.names(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(names, name) {
+		return nil, linuxerr.ENOENT
+	}
+	return &nvproxyGPUInode{Inode: i.fs.newStaticDir(ctx, i.creds, nil)}, nil
+}
+
+// IterDirents implements kernfs.Inode.IterDirents.
+func (i *nvproxyGPUsInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+	names, err := i.names(ctx)
+	if err != nil {
+		return offset, err
+	}
+	if relOffset >= int64(len(names)) {
+		return offset, nil
+	}
+	for _, name := range names[relOffset:] {
+		if err := cb.Handle(vfs.Dirent{Name: name, Type: linux.DT_DIR, Ino: i.fs.NextIno(), NextOff: offset + 1}); err != nil {
+			return offset, err
+		}
+		offset++
+	}
+	return offset, nil
+}
+
+// nvproxyGPUInode revalidates cached GPU directory names against the current
+// devices after restore. Existing references keep their empty directory.
+//
+// +stateify savable
+type nvproxyGPUInode struct {
+	kernfs.Inode
+}
+
+// Valid implements kernfs.Inode.Valid.
+func (*nvproxyGPUInode) Valid(ctx context.Context, parent *kernfs.Dentry, name string) bool {
+	names, err := parent.Inode().(*nvproxyGPUsInode).names(ctx)
+	return err == nil && slices.Contains(names, name)
 }
