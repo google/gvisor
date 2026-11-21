@@ -256,8 +256,7 @@ type Sandbox struct {
 	// netgoferIsChild is set if the netgofer process is a child of the current process.
 	netgoferIsChild bool `nojson:"true"`
 
-	// netgoferStopped is closed when a child netgofer process has been reaped by
-	// reapNetgoferBackground.
+	// netgoferStopped is closed when the child netgofer process has been reaped.
 	netgoferStopped chan struct{} `nojson:"true"`
 
 	// statusMu protects status.
@@ -2066,37 +2065,34 @@ func (s *Sandbox) stopNetgofer() {
 	s.netgoferMu.Unlock()
 }
 
-func (s *Sandbox) reapNetgoferBackground(pid int, stopped chan struct{}) {
-	go func() {
-		defer close(stopped)
-		// Wait for the child to exit WITHOUT reaping it from the kernel process
-		// table (WNOWAIT), so the PID cannot be recycled before we clear NetgoferPid.
-		for {
-			err := unix.Waitid(unix.P_PID, pid, &unix.Siginfo{}, unix.WEXITED|unix.WNOWAIT, nil)
-			if errors.Is(err, unix.EINTR) {
-				continue
-			}
-			break
+func (s *Sandbox) reapNetgofer(pid int) (unix.WaitStatus, error) {
+	// Wait for the child to exit WITHOUT reaping it from the kernel process
+	// table (WNOWAIT), so the PID cannot be recycled before we clear NetgoferPid.
+	for {
+		err := unix.Waitid(unix.P_PID, pid, &unix.Siginfo{}, unix.WEXITED|unix.WNOWAIT, nil)
+		if errors.Is(err, unix.EINTR) {
+			continue
 		}
-		s.netgoferMu.Lock()
-		defer s.netgoferMu.Unlock()
-		if s.NetgoferPid.Load() == pid {
-			s.NetgoferPid.Store(0)
+		break
+	}
+	s.netgoferMu.Lock()
+	defer s.netgoferMu.Unlock()
+	if s.NetgoferPid.Load() == pid {
+		s.NetgoferPid.Store(0)
+	}
+	var status unix.WaitStatus
+	for {
+		_, err := unix.Wait4(pid, &status, 0, nil)
+		if errors.Is(err, unix.EINTR) {
+			continue
 		}
-		var status unix.WaitStatus
-		for {
-			_, err := unix.Wait4(pid, &status, 0, nil)
-			if errors.Is(err, unix.EINTR) {
-				continue
-			}
-			if err == nil {
-				log.Infof("Netgofer process (PID=%d) reaped: exit code = %v", pid, status.ExitStatus())
-			} else if !errors.Is(err, unix.ECHILD) {
-				log.Warningf("error reaping netgofer process (PID=%d) from background goroutine: %v", pid, err)
-			}
-			break
+		if err == nil {
+			log.Infof("Netgofer process (PID=%d) reaped: exit code = %v", pid, status.ExitStatus())
+		} else if !errors.Is(err, unix.ECHILD) {
+			log.Warningf("error reaping netgofer process (PID=%d) from background goroutine: %v", pid, err)
 		}
-	}()
+		return status, err
+	}
 }
 
 // SignalContainer sends the signal to a container in the sandbox. If all is
