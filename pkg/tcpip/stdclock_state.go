@@ -16,7 +16,6 @@ package tcpip
 
 import (
 	"context"
-	"time"
 )
 
 // saveMonotonicOffset returns the reading to resume from without changing
@@ -33,5 +32,5 @@ func (s *stdClock) loadMonotonicOffset(_ context.Context, offset MonotonicTime) 
 // afterLoad starts the restored clock after the checkpoint graph has been
 // decoded, so time spent decoding it does not advance the clock.
 func (s *stdClock) afterLoad(context.Context) {
-	s.baseTime = time.Now()
+	s.setBase()
 }
