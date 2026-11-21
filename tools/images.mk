@@ -53,6 +53,7 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_alpine=//images/basic:alpine_context \
   basic_busybox=//images/basic:busybox_context \
   basic_fsstress=//images/basic:fsstress_context \
+  basic_mysql=//images/basic:mysql_context \
   basic_nginx=//images/basic:nginx_context \
   basic_python=//images/basic:python_context \
   basic_redis=//images/basic:redis_context \
