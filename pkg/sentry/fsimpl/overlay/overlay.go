@@ -464,7 +464,9 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	rootTopVD := root.topLayer()
 	rootCleanup := cleanup.Make(func() {
-		root.destroyLocked(ctx)
+		// Drop the initial reference instead of calling destroyLocked()
+		// directly, which requires that root has no references.
+		root.DecRef(ctx)
 		fs.vfsfs.DecRef(ctx)
 	})
 	defer rootCleanup.Clean()

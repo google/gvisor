@@ -69,6 +69,7 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
+using ::testing::AnyOf;
 using ::testing::Ge;
 
 // Old versions of glibc do not define this flag.
@@ -534,6 +535,65 @@ TEST(FuseTest, AccessUnsupported) {
   // The cached capability applies to another inode and a different mask.
   const std::string file_path = JoinPath(mount_point.path(), "testfile");
   EXPECT_THAT(access(file_path.c_str(), W_OK), SyscallSucceeds());
+}
+
+// Serves FUSE_ACCESS and FUSE_STATFS, and fails FUSE_GETATTR with EIO.
+bool RespondFailingGetattr(int fd, const fuse_in_header& in) {
+  if (in.opcode == FUSE_ACCESS) {
+    FuseRespond(fd, in.unique);
+  } else if (in.opcode == FUSE_STATFS) {
+    fuse_statfs_out out = {};
+    out.st.bsize = 4096;
+    out.st.frsize = 4096;
+    out.st.namelen = 255;
+    FuseRespond(fd, in.unique, &out, sizeof(out));
+  } else if (in.opcode == FUSE_GETATTR) {
+    FuseRespond(fd, in.unique, nullptr, 0, -EIO);
+  } else {
+    FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+  }
+  return true;
+}
+
+// An overlay mount whose top layer is a FUSE filesystem that fails requests
+// made while setting up the overlay root must not crash the kernel.
+TEST(FuseTest, OverlayLowerRootGetattrFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningWithSaveRestore());
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto fuse_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount_opts =
+      absl::StrFormat("fd=%d,user_id=0,group_id=0,rootmode=40000", fd.get());
+  auto fuse_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("fuse", fuse_dir.path(), "fuse", MS_NODEV | MS_NOSUID, mount_opts,
+            0 /* umountflags */));
+  ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
+  const FileDescriptor stop_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(server_fd, stop_fd.get(), RespondFailingGetattr);
+  });
+  Cleanup stop_server([&] {
+    const uint64_t stop = 1;
+    EXPECT_THAT(RetryEINTR(write)(stop_fd.get(), &stop, sizeof(stop)),
+                SyscallSucceedsWithValue(sizeof(stop)));
+  });
+
+  auto bottom_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto overlay_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string overlay_opts =
+      absl::StrFormat("lowerdir=%s:%s", fuse_dir.path(), bottom_dir.path());
+  // Linux does not send FUSE_GETATTR for the root of a lower layer here, so
+  // the mount succeeds. gVisor stats the top layer's root and fails with the
+  // error returned by the FUSE server.
+  const int ret = mount("overlay", overlay_dir.path().c_str(), "overlay", 0,
+                        overlay_opts.c_str());
+  EXPECT_THAT(ret, AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EIO)));
+  if (ret == 0) {
+    EXPECT_THAT(umount(overlay_dir.path().c_str()), SyscallSucceeds());
+  }
 }
 
 TEST(FuseTest, FlushUnsupported) {
