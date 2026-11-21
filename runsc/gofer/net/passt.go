@@ -357,6 +357,7 @@ func (n *Netgofer) runPasstMode(conf *config.Config) subcommands.ExitStatus {
 		if err := netgoferfilter.Install(netgoferfilter.Options{
 			ProfileEnabled: conf.ProfileEnable || n.profileEnabled,
 			CgoEnabled:     config.CgoEnabled,
+			Mode:           netgoferfilter.PasstMode,
 		}); err != nil {
 			log.Warningf("Failed to install seccomp filters: %v", err)
 			return subcommands.ExitFailure

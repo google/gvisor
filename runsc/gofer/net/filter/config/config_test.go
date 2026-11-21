@@ -38,6 +38,13 @@ func TestOptionsConfigKey(t *testing.T) {
 	configFields := map[string]mutateFn{
 		"ProfileEnabled": func(opt *Options) { opt.ProfileEnabled = !opt.ProfileEnabled },
 		"CgoEnabled":     func(opt *Options) { opt.CgoEnabled = !opt.CgoEnabled },
+		"Mode": func(opt *Options) {
+			if opt.Mode == ProxyMode {
+				opt.Mode = PasstMode
+			} else {
+				opt.Mode = ProxyMode
+			}
+		},
 		"ExtraRules": func(opt *Options) {
 			if len(opt.ExtraRules) == 0 {
 				opt.ExtraRules = []seccomp.SyscallRules{
@@ -72,6 +79,33 @@ func TestOptionsConfigKey(t *testing.T) {
 	})
 }
 
+// TestPasstModeRules verifies that passt mode removes the proxy-only
+// syscalls and adds nothing that proxy mode does not have.
+func TestPasstModeRules(t *testing.T) {
+	for _, profile := range []bool{false, true} {
+		for _, cgo := range []bool{false, true} {
+			proxyRules, _ := Options{ProfileEnabled: profile, CgoEnabled: cgo, Mode: ProxyMode}.Rules()
+			passtRules, _ := Options{ProfileEnabled: profile, CgoEnabled: cgo, Mode: PasstMode}.Rules()
+			for _, sysno := range proxyOnlySyscalls {
+				if !proxyRules.Has(sysno) {
+					t.Errorf("ProfileEnabled=%t CgoEnabled=%t: proxy mode rules do not allow syscall %d, but proxyOnlySyscalls lists it", profile, cgo, sysno)
+				}
+				if passtRules.Has(sysno) {
+					t.Errorf("ProfileEnabled=%t CgoEnabled=%t: passt mode rules allow proxy-only syscall %d", profile, cgo, sysno)
+				}
+			}
+			for _, sysno := range passtRules.Sysnos() {
+				if !proxyRules.Has(sysno) {
+					t.Errorf("ProfileEnabled=%t CgoEnabled=%t: passt mode rules allow syscall %d, which proxy mode does not", profile, cgo, sysno)
+				}
+			}
+			if got, want := passtRules.Size()+len(proxyOnlySyscalls), proxyRules.Size(); got != want {
+				t.Errorf("ProfileEnabled=%t CgoEnabled=%t: passt mode allows %d syscalls, want %d (proxy mode minus %d proxy-only syscalls)", profile, cgo, passtRules.Size(), want-len(proxyOnlySyscalls), len(proxyOnlySyscalls))
+			}
+		}
+	}
+}
+
 // TestPrecompiledPrograms verifies that all option variants precompile
 // successfully, that their names are unique, and that each of them renders
 // with the variable values that this process would use at runtime.
@@ -86,6 +120,14 @@ func TestPrecompiledPrograms(t *testing.T) {
 			t.Errorf("programs %d and %d have the same name: %q", prev, i, program.Name)
 		}
 		byName[program.Name] = i
+	}
+	for _, cgo := range []bool{false, true} {
+		for _, mode := range []Mode{ProxyMode, PasstMode} {
+			key := (Options{CgoEnabled: cgo, Mode: mode}).ConfigKey()
+			if _, found := byName[key]; !found {
+				t.Errorf("no precompiled program for ConfigKey %q", key)
+			}
+		}
 	}
 	for _, opt := range optionsToPrecompile() {
 		i, found := byName[opt.ConfigKey()]
