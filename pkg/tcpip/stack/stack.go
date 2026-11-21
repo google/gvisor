@@ -1427,7 +1427,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 	return false, false
 }
 
-// precondition: s.mu is held.
+// +checklocksread:s.mu
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
 		Up:          !nic.adminDown.Load(),
@@ -1993,14 +1993,26 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 		return 0
 	}
 
-	// Go through all the NICs.
+	// Go through all the NICs. Prefer a NIC that owns the address over one with
+	// a temporary copy of it, e.g. loopback while routing local traffic.
+	var fallback tcpip.NICID
 	for _, nic := range s.nics {
-		if nic.CheckLocalAddress(protocol, addr) {
+		if nic.Spoofing() {
 			return nic.id
+		}
+		kind, ok := nic.localAddressKind(protocol, addr)
+		if !ok {
+			continue
+		}
+		if kind == Permanent {
+			return nic.id
+		}
+		if fallback == 0 {
+			fallback = nic.id
 		}
 	}
 
-	return 0
+	return fallback
 }
 
 // SetPromiscuousMode enables or disables promiscuous mode in the given NIC.
@@ -2816,6 +2828,10 @@ func isSubnetBroadcastOnNIC(nic *nic, protocol tcpip.NetworkProtocolNumber, addr
 //
 // If the NIC is not specified, the stack will check all NICs.
 func (s *Stack) IsSubnetBroadcast(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+	if addr.Len() != header.IPv4AddressSize {
+		return false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

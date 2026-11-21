@@ -43,6 +43,14 @@ go_library(
 go_test(
     name = "sandboxsetup_test",
     size = "small",
-    srcs = ["gofer_mount_test.go"],
+    srcs = [
+        "fs_test.go",
+        "gofer_mount_test.go",
+    ],
     embed = [":sandboxsetup"],
+    deps = [
+        "//runsc/config",
+        "//runsc/specutils",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

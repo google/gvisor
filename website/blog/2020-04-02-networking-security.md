@@ -16,7 +16,7 @@ Linux networking is complicated. The TCP protocol is over 40 years old, and has
 been repeatedly extended over the years to keep up with the rapid pace of
 network infrastructure improvements, all while maintaining compatibility. On top
 of that, Linux networking has a fairly large API surface. Linux supports
-[over 150 options](https://github.com/google/gvisor/blob/960f6a975b7e44c0efe8fd38c66b02017c4fe137/pkg/sentry/strace/socket.go#L476-L644)
+[over 150 options](https://github.com/gvisor/gvisor/blob/960f6a975b7e44c0efe8fd38c66b02017c4fe137/pkg/sentry/strace/socket.go#L476-L644)
 for the most common socket types alone. In fact, the net subsystem is one of the
 largest and fastest growing in Linux at approximately 1.1 million lines of code.
 For comparison, that is several times the size of the entire gVisor codebase.
@@ -60,7 +60,7 @@ sandbox which they must also break out of in order to compromise the Host OS.
 
 To enable networking functionality while preserving gVisor's security
 properties, we implemented a
-[userspace network stack](https://github.com/google/gvisor/tree/master/pkg/tcpip)
+[userspace network stack](https://github.com/gvisor/gvisor/tree/master/pkg/tcpip)
 in the Sentry, which we creatively named Netstack. Netstack is also written in
 Go, not only to avoid unsafe code in the network stack itself, but also to avoid
 a complicated and unsafe Foreign Function Interface. Having its own integrated
@@ -89,9 +89,9 @@ inevitable in an implementation of a complex system spanning many quickly
 evolving and ambiguous standards. However, we have invested heavily in this
 area, and the vast majority of applications have no issues using Netstack. For
 example,
-[we now support setting 34 different socket options](https://github.com/google/gvisor/blob/815df2959a76e4a19f5882e40402b9bbca9e70be/pkg/sentry/socket/netstack/netstack.go#L830-L1764)
+[we now support setting 34 different socket options](https://github.com/gvisor/gvisor/blob/815df2959a76e4a19f5882e40402b9bbca9e70be/pkg/sentry/socket/netstack/netstack.go#L830-L1764)
 versus
-[only 7 in our initial git commit](https://github.com/google/gvisor/blob/d02b74a5dcfed4bfc8f2f8e545bca4d2afabb296/pkg/sentry/socket/epsocket/epsocket.go#L445-L702).
+[only 7 in our initial git commit](https://github.com/gvisor/gvisor/blob/d02b74a5dcfed4bfc8f2f8e545bca4d2afabb296/pkg/sentry/socket/epsocket/epsocket.go#L445-L702).
 We are continuing to make good progress in this area.
 
 Performance issues typically come from TCP behavior and packet processing speed.
@@ -110,7 +110,7 @@ re-architecting the TCP implementation to use fewer goroutines. Performance
 today is good enough for most applications and we are making steady
 improvements. For example, since May of 2019, we have improved the Netstack
 runsc
-[iperf3 download benchmark](https://github.com/google/gvisor/tree/master/test/benchmarks/network)
+[iperf3 download benchmark](https://github.com/gvisor/gvisor/tree/master/test/benchmarks/network)
 score by roughly 15% and upload score by around 10,000X. Current numbers are
 about 17 Gbps download and about 8 Gbps upload versus about 42 Gbps and 43 Gbps
 for native (Linux) respectively.
@@ -121,7 +121,7 @@ We also offer an alternative network mode: passthrough. This name can be
 misleading as syscalls are never passed through from the app to the Host OS.
 Instead, the passthrough mode implements networking in gVisor using the Host
 OS's network stack. (This mode is called
-[hostinet](https://github.com/google/gvisor/tree/master/pkg/sentry/socket/hostinet)
+[hostinet](https://github.com/gvisor/gvisor/tree/master/pkg/sentry/socket/hostinet)
 in the codebase.) Passthrough mode can improve performance for some use cases as
 the Host OS's network stack has had an enormous number of person-years poured
 into making it highly performant. However, there is a rather large downside to
@@ -132,7 +132,7 @@ requires the Sentry to use the Host OS's
 Berkeley socket interface is a much larger API surface than the packet interface
 that our network stack uses. When passthrough mode is in use, the Sentry is
 allowed to use
-[15 additional syscalls](https://github.com/google/gvisor/blob/b1576e533223e98ebe4bd1b82b04e3dcda8c4bf1/runsc/boot/filter/config.go#L312-L517).
+[15 additional syscalls](https://github.com/gvisor/gvisor/blob/b1576e533223e98ebe4bd1b82b04e3dcda8c4bf1/runsc/boot/filter/config.go#L312-L517).
 Further, this set of syscalls includes some that allow the Sentry to create file
 descriptors, something that
 [we don't normally allow](https://gvisor.dev/blog/2019/11/18/gvisor-security-basics-part-1/#sentry-host-os-interface)
@@ -180,6 +180,6 @@ whether that be verbal feedback or code contributions, via our
 [Gitter channel](https://gitter.im/gvisor/community),
 [email list](https://groups.google.com/forum/#!forum/gvisor-users),
 [issue tracker](https://gvisor.dev/issue/new), and
-[Github repository](https://github.com/google/gvisor). Feel free to express
+[Github repository](https://github.com/gvisor/gvisor). Feel free to express
 interest in an [open issue](https://gvisor.dev/issue/), or reach out if you
 aren't sure where to start.

@@ -271,7 +271,7 @@ operations are less of an issue. The above figure shows the total time required
 for an `ffmpeg` container to start, load and transcode a 27MB input video.
 
 [ab]: https://en.wikipedia.org/wiki/ApacheBench
-[benchmark-tools]: https://github.com/google/gvisor/tree/master/test/benchmarks
+[benchmark-tools]: https://github.com/gvisor/gvisor/tree/master/test/benchmarks
 [gce]: https://cloud.google.com/compute/
 [cnn]: https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/3_NeuralNetworks/convolutional_network.py
 [docker]: https://docker.io

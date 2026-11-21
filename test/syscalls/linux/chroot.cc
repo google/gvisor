@@ -239,7 +239,8 @@ TEST(ChrootTest, ProcFdLinkResolutionInChroot) {
 
   const TempPath file_outside_chroot =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const std::string file_outside_chroot_path = file_outside_chroot.path();
+  [[maybe_unused]] const std::string file_outside_chroot_path =
+      file_outside_chroot.path();
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file_outside_chroot.path(), O_RDONLY));
 

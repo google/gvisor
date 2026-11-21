@@ -69,7 +69,7 @@ making restore fast.
 ## 2018: One big compressed file
 
 The first version of `runsc checkpoint`
-([2018](https://github.com/google/gvisor/commit/0c34b460f2)) wrote everything
+([2018](https://github.com/gvisor/gvisor/commit/0c34b460f2)) wrote everything
 into one file, `checkpoint.img`. Kernel objects and application memory were
 mixed together in one stream, and the whole stream was compressed with flate
 (DEFLATE, the same algorithm that zip and gzip use).
@@ -96,7 +96,7 @@ practice, the answer was often "no":
     milliseconds** of extra startup time.
 
 That user, Ivan Prisyazhnyy, sent a
-[community patch](https://github.com/google/gvisor/pull/9146) that made
+[community patch](https://github.com/gvisor/gvisor/pull/9146) that made
 compression optional with `--compression=none`. It was a small change, but it
 opened the door to every step below. An uncompressed file has a very useful
 property: you can read any part of it, at any time, in any order.
@@ -122,8 +122,8 @@ below, and those steps are where the big wins are.
 ## 2024: Split the snapshot
 
 Next, we split the single file by job
-([pages file](https://github.com/google/gvisor/commit/5e9207a966),
-[metadata file](https://github.com/google/gvisor/commit/a3ae7f25a0)):
+([pages file](https://github.com/gvisor/gvisor/commit/5e9207a966),
+[metadata file](https://github.com/gvisor/gvisor/commit/a3ae7f25a0)):
 
 <figure class="img-100pct">
 <img src="/assets/images/2026-10-14-checkpoint-restore/snapshot-anatomy.svg" alt="Left: the 2018 format, one compressed file with kernel objects and app memory mixed. Right: today's format with checkpoint.img for kernel objects (211 KB), pages_meta.img for the memory map (1.9 KB), pages.img for raw app memory (70.7 MB), and an optional fs directory for the filesystem.">
@@ -139,14 +139,14 @@ This split made three new things possible:
 
 **Parallel load.** Loading the kernel needs CPU time. Loading memory needs disk
 bandwidth. The two do not depend on each other. Now gVisor
-[does them at the same time](https://github.com/google/gvisor/commit/39730b714c),
+[does them at the same time](https://github.com/gvisor/gvisor/commit/39730b714c),
 so the restore takes `max(kernel, memory)` instead of `kernel + memory`. The
-save side [does the same](https://github.com/google/gvisor/commit/218f52a9f5).
+save side [does the same](https://github.com/gvisor/gvisor/commit/218f52a9f5).
 
 **Direct I/O.** With `runsc checkpoint --direct` and
 `runsc restore --direct-io=on`, gVisor writes and reads `pages.img` with
-`O_DIRECT` ([restore](https://github.com/google/gvisor/commit/f895b63b04),
-[checkpoint](https://github.com/google/gvisor/commit/032b103ec7)). The data
+`O_DIRECT` ([restore](https://github.com/gvisor/gvisor/commit/f895b63b04),
+[checkpoint](https://github.com/gvisor/gvisor/commit/032b103ec7)). The data
 skips the host page cache. Use it if you restore an image only one time. Then
 the restore does not fill the host page cache with data that nobody reads again.
 If you restore many sandboxes from the same image, leave direct I/O off: the
@@ -156,7 +156,7 @@ not as soon as it is in the page cache.
 
 **Many readers, but not too many.** Memory is read by a pool of parallel
 readers. In 2026 Shayon Mukherjee
-[tuned this pool](https://github.com/google/gvisor/commit/b23d3c7541), and found
+[tuned this pool](https://github.com/gvisor/gvisor/commit/b23d3c7541), and found
 that more readers is not always better. With 128 readers on a 64-CPU machine,
 77% of the Sentry's CPU time went to lock contention in the host kernel. With 12
 readers, warm restores became **31% to 49% faster** for Go, Python and Java
@@ -166,7 +166,7 @@ apps, and used **56% to 91% less CPU**.
 
 Real sandboxes often have more than one container, such as a Kubernetes pod with
 an app and a sidecar.
-[Multi-container restore](https://github.com/google/gvisor/commit/3d32050710)
+[Multi-container restore](https://github.com/gvisor/gvisor/commit/3d32050710)
 saves the whole pod in one checkpoint. You then restore each container by name,
 and gVisor connects the container IDs and host files again.
 
@@ -185,7 +185,7 @@ zeros into large buffers, such as ollama, can end up with gigabytes of these
 pages.
 
 `--exclude-committed-zero-pages`
-([commit](https://github.com/google/gvisor/commit/e882488ed7)) tells gVisor to
+([commit](https://github.com/gvisor/gvisor/commit/e882488ed7)) tells gVisor to
 also check these pages at save time, and to leave out the ones that are all
 zeros. Our test app had 512 MiB of data and 2 GiB of zeros:
 
@@ -206,7 +206,7 @@ not need all its memory at once. It needs the next instruction, the next few
 pages of heap, and the stack. Most of the other pages can wait.
 
 With `runsc restore --background`
-([commit](https://github.com/google/gvisor/commit/41f01d8f9c)), gVisor starts
+([commit](https://github.com/gvisor/gvisor/commit/41f01d8f9c)), gVisor starts
 the app as soon as the kernel objects are loaded. Memory keeps loading in the
 background, while the app runs:
 
@@ -225,17 +225,17 @@ The faster the kernel loads, the sooner `--background` can start the app. So we
 went looking for slow parts:
 
 -   **Start reading memory earlier.** gVisor now
-    [starts reading pages](https://github.com/google/gvisor/commit/7fb3b706c0)
+    [starts reading pages](https://github.com/gvisor/gvisor/commit/7fb3b706c0)
     as soon as the sandbox starts to restore, and in 2026
-    [even earlier](https://github.com/google/gvisor/commit/94b30bda9e), before
+    [even earlier](https://github.com/gvisor/gvisor/commit/94b30bda9e), before
     it reads the kernel state.
 -   **A faster decoder.** A checkpoint of an SGLang server that ran
     `gemma-3-27b` had 368,245 kernel objects. The decoder rescanned a long list
     of pending objects 238,102 times to find the next one to finish. One
-    [small data-structure change](https://github.com/google/gvisor/commit/aa52ddf3a1)
+    [small data-structure change](https://github.com/gvisor/gvisor/commit/aa52ddf3a1)
     (keep a separate list of the objects that are ready) cut the kernel load
     time from **2 minutes 30 seconds to 12 seconds**. In 2026, a
-    [new state engine](https://github.com/google/gvisor/commit/6e6276344d) went
+    [new state engine](https://github.com/gvisor/gvisor/commit/6e6276344d) went
     further. On our test machine, a kernel state of a similar size (369,055
     objects) now loads in **522 ms**, against 1,895 ms with the previous engine.
     The objects of a real server take longer to decode than the ones in this
@@ -248,7 +248,7 @@ Two features made checkpoints easier to move around:
 
 **Restore straight from Google Cloud Storage.** If the `--image-path` directory
 has a `gcs_opts.json` file, gVisor
-[reads and writes the checkpoint in a GCS bucket](https://github.com/google/gvisor/commit/7ea8dc5e5f).
+[reads and writes the checkpoint in a GCS bucket](https://github.com/gvisor/gvisor/commit/7ea8dc5e5f).
 A separate helper process, the checkpoint gofer, talks to GCS and reads the data
 directly into the sandbox memory. The image does not need to be copied to the
 local disk first. The helper is a separate binary, so the HTTP and cloud code
@@ -257,15 +257,15 @@ stays out of `runsc` and out of the sandbox.
 **Filesystem snapshots.** A container is more than memory: it also has files
 that it wrote. gVisor can save its in-memory root filesystem overlay and tmpfs
 mounts as part of the checkpoint. With
-[`runsc fscheckpoint`](https://github.com/google/gvisor/commit/9ca1678bc6) and
+[`runsc fscheckpoint`](https://github.com/gvisor/gvisor/commit/9ca1678bc6) and
 `--fs-checkpoint-paths`, you can also save **only** the filesystem, and restore
 it into a brand new container with `runsc create --fs-restore-image-path`.
 
 And in 2026 `--compression=none` became
-[the default](https://github.com/google/gvisor/commit/79b7318d6d), so every user
+[the default](https://github.com/gvisor/gvisor/commit/79b7318d6d), so every user
 gets the 2024 and 2025 improvements without extra flags. In release-20261102.0,
 background page loading and zero-page exclusion
-[became defaults too](https://github.com/google/gvisor/commit/d0f7ca8899).
+[became defaults too](https://github.com/gvisor/gvisor/commit/d0f7ca8899).
 
 ## 2026: GPU checkpoint/restore
 
@@ -275,7 +275,7 @@ memory snapshot of the sandbox does not include it.
 
 NVIDIA's [`cuda-checkpoint`](https://github.com/NVIDIA/cuda-checkpoint) tool can
 move the GPU state of a CUDA process into host memory, and back again. gVisor
-now [runs it automatically](https://github.com/google/gvisor/commit/b3c184ce6b)
+now [runs it automatically](https://github.com/gvisor/gvisor/commit/b3c184ce6b)
 when you pass `runsc checkpoint --cuda-checkpoint-path`, with the path of the
 tool inside the container:
 
@@ -297,7 +297,7 @@ Some newer additions:
 -   **TPUs.** Checkpoint/restore works with TPU devices through TPUproxy.
 -   **The app can save itself.** The app often knows the best time for a
     checkpoint, for example immediately after it loads its model. With
-    [app-driven checkpointing](https://github.com/google/gvisor/commit/1e693aa6e4),
+    [app-driven checkpointing](https://github.com/gvisor/gvisor/commit/1e693aa6e4),
     the app starts the checkpoint itself through a special file,
     `/proc/gvisor/checkpoint`. The same file tells the app when the checkpoint
     is complete, and whether it is the original copy or a restored copy. Then
@@ -306,10 +306,10 @@ Some newer additions:
     annotations.
 -   **Integrity checks.** If a checkpoint has a hash key, gVisor verifies each
     chunk of up to 1 MiB before it uses the data, and
-    [fails closed](https://github.com/google/gvisor/commit/28878b9b20) if the
+    [fails closed](https://github.com/gvisor/gvisor/commit/28878b9b20) if the
     data does not match.
 -   **More devices.** Sandboxes with
-    [host networking](https://github.com/google/gvisor/commit/9d2d13b051) (apps
+    [host networking](https://github.com/gvisor/gvisor/commit/9d2d13b051) (apps
     reconnect after restore) and TUN devices can be saved and restored too.
 
 ## The results
@@ -416,5 +416,5 @@ We are not done. Some ideas we are looking at:
 
 If gVisor checkpoint/restore was "the slow one" in your head, we hope this post
 updates that picture. Give it a try, and tell us how it goes on
-[GitHub](https://github.com/google/gvisor) or the
+[GitHub](https://github.com/gvisor/gvisor) or the
 [mailing list](https://groups.google.com/forum/#!forum/gvisor-users).

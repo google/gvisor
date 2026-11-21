@@ -70,6 +70,7 @@ var (
 	addHostUDS       = flag.Bool("add-host-uds", false, "expose a tree of UDS to test communication with the host")
 	addHostConnector = flag.Bool("add-host-connector", false, "create goroutines that connect to bound UDS that will be created by sandbox")
 	addHostFIFO      = flag.Bool("add-host-fifo", false, "expose a tree of FIFO to test communication with the host")
+	addHostRandom    = flag.Bool("add-host-random", false, "bind the host /dev/random at its usual path")
 	addHostTTY       = flag.Bool("add-host-tty", false, "expose the host's TTY at /dev/tty")
 	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	leakCheck        = flag.Bool("leak-check", false, "check for reference leaks")
@@ -458,6 +459,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *addHostFIFO {
 		args = append(args, "-host-fifo=open")
+	}
+	if *addHostRandom {
+		args = append(args, "-character-device-policy=passthrough")
 	}
 	if *leakCheck {
 		args = append(args, "-ref-leak-mode=log-names")
@@ -855,10 +859,6 @@ func isWarning(line string) bool {
 	// Caused by properties of the host that runsc doesn't necessarily control.
 	case strings.Contains(line, "Host limit is lower than recommended"):
 
-	// TODO(gvisor.dev/issue/11649): Systrap needs to roll back created
-	// patches for traced procs.
-	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
-
 	// TODO(gvisor.dev/issue/13542): Disabling arm64 PAC fails and generates a warning on kernels
 	// before 5.13.
 	case strings.Contains(line, "Unable to disable pointer authentication"):
@@ -1111,6 +1111,14 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 			t.Fatalf("error creating FIFO tree: %v", err)
 		}
 		defer cleanup()
+	}
+
+	if *addHostRandom {
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: "/dev/random",
+			Source:      "/dev/random",
+			Type:        "bind",
+		})
 	}
 
 	// Add cgroup mount to enable cgroups for all tests.

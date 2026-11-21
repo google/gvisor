@@ -1,0 +1,45 @@
+# This workflow removes the "ready to test" label as soon as it is added.
+# 
+# The reason for this is because Buildkite triggers a build when the label is
+# added, but for security reasons does not re-run once a new push is made to
+# the PR; re-running requires adding the label again. There's no *functional*
+# reason to instantly remove the label, but doing so improves the UX by making
+# it more obvious that the label needs to be re-added for further pushes to be
+# tested.
+name: Remove "ready to test" label
+
+"on":
+  # `pull_request_target` is needed because PRs from forks only get a
+  # read-only token under `pull_request`. This workflow never checks out or
+  # runs any PR content, and never interpolates it into an expression, so the
+  # usual `pull_request_target` risks do not apply.
+  pull_request_target:  # zizmor: ignore[dangerous-triggers]
+    types: [labeled]
+
+jobs:
+  remove:
+    if: github.repository == 'gvisor/gvisor' && github.event.label.name == 'ready to test'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # remove the label from the PR
+    steps:
+    - name: Remove the label
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        script: |-
+            const label = context.payload.label.name;
+            const prNum = context.payload.pull_request.number;
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                name: label,
+              });
+            } catch (error) {
+              // Someone may have removed it already.
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+            core.info(`Removed "${label}" from PR #${prNum}.`);

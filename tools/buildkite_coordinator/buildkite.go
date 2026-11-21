@@ -26,6 +26,7 @@ import (
 	"time"
 
 	compute "google.golang.org/api/compute/v1"
+
 	"gvisor.dev/gvisor/tools/buildkite_coordinator/buildkite"
 )
 
@@ -83,7 +84,7 @@ const (
 )
 
 // BuildMetadata stores metadata about a build on Buildkite, in particular
-// information about its author.
+// information about its authorship and approval status.
 type BuildMetadata struct {
 	// source stores the BUILDKITE_SOURCE variable from this build.
 	source string
@@ -108,6 +109,23 @@ type BuildMetadata struct {
 	//
 	// author is only valid if authorKnown is true.
 	author authorID
+
+	// commit stores the commit being built (BUILDKITE_COMMIT), if it is a full
+	// commit SHA. Otherwise, commit is "".
+	//
+	// commit is only valid if prNumber is non-zero.
+	commit string
+
+	// approversKnown indicates whether the approvers of the active commit for
+	// this build are known.
+	// It can be false if an error was encountered while fetching them.
+	approversKnown bool
+
+	// approvers stores the set of IDs of the GitHub accounts that have
+	// approved commit on GitHub.
+	//
+	// approvers is only valid if approversKnown is true.
+	approvers map[authorID]struct{}
 }
 
 // Build represents a Buildkite build as part of a JobPool.
@@ -124,14 +142,14 @@ type Build struct {
 
 // Queue represents a Buildkite queue as part of a JobPool.
 //
-// Data is split across trusted and untrusted builds. Note that if fetching
-// a build's author fails once and succeeds on a subsequent retry, a build
-// may end up in both maps.
+// Data is split across trusted and untrusted builds (see JobPool.trusted).
+// Note that if fetching a build's author or approvals fails once and succeeds
+// on a subsequent retry, a build may end up in both maps.
 type Queue struct {
-	// untrustedBuilds stores all builds with untrusted or unknown authors
+	// untrustedBuilds stores all untrusted builds.
 	untrustedBuilds map[BuildUUID]Build
 
-	// trustedBuilds stores all builds with trusted authors
+	// trustedBuilds stores all trusted builds.
 	trustedBuilds map[BuildUUID]Build
 }
 
@@ -276,13 +294,22 @@ func (p *JobPool) trustedLocked(metadata BuildMetadata) bool {
 			// Trust builds that do not originate from PRs
 			return true
 		}
-		if !metadata.authorKnown {
-			// If the PR author is unknown, treat as untrusted
-			return false
+		if metadata.authorKnown {
+			// Trust PR builds whose author is known to be a trusted author
+			if _, ok := p.trustedAuthors[metadata.author]; ok {
+				return true
+			}
 		}
-		// Otherwise, check if the author is in the trusted authors set
-		_, ok := p.trustedAuthors[metadata.author]
-		return ok
+		if metadata.approversKnown {
+			// Trust builds that have been approved by a trusted author
+			for approver := range metadata.approvers {
+				if _, ok := p.trustedAuthors[approver]; ok {
+					return true
+				}
+			}
+		}
+		// Otherwise, treat the build as untrusted.
+		return false
 
 	default:
 		return false
@@ -586,8 +613,8 @@ func (s *BuildkiteStack) Replenish(ctx context.Context, pool *JobPool, listLimit
 // GetBuildMetadata returns the metadata of the given build, of which jobID must
 // be one of the jobs.
 //
-// If the returned error is non-nil, the returned BuildMetadata will be treated as
-// untrusted.
+// If the returned error is non-nil, the returned BuildMetadata will contain the
+// information that was successfully fetched.
 func (s *BuildkiteStack) GetBuildMetadata(ctx context.Context, uuid BuildUUID, jobID JobUUID) (BuildMetadata, error) {
 	s.mu.Lock()
 	metadata, ok := s.metadataCache[uuid]
@@ -630,6 +657,23 @@ func (s *BuildkiteStack) GetBuildMetadata(ctx context.Context, uuid BuildUUID, j
 			authorKnown: true,
 			author:      author,
 		}
+
+		// Which commit is being built?
+		commit := env["BUILDKITE_COMMIT"]
+		if !isFullCommitSHA(commit) {
+			// For tag, HEAD, etc builds, we can't determine a specific
+			// commit or approver set.
+			break
+		}
+		metadata.commit = commit
+		// Who has approved this commit, if anyone?
+		approvers, err := s.gh.prApprovers(ctx, prNumber, commit)
+		if err != nil {
+			// Return without caching to cause a retry next time
+			return metadata, err
+		}
+		metadata.approvers = approvers
+		metadata.approversKnown = true
 
 	default:
 		// Other sources treated as author-unknown (for now)

@@ -54,7 +54,7 @@ The `systrap` platform relies on `seccomp`'s `SECCOMP_RET_TRAP` feature in order
 to intercept system calls. This makes the kernel send `SIGSYS` to the triggering
 thread, which hands over control to gVisor to handle the system call. For more
 details, please see
-[the systrap `README` file](https://github.com/google/gvisor/blob/master/pkg/sentry/platform/systrap/README.md).
+[the systrap `README` file](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/platform/systrap/README.md).
 
 `systrap` replaced `ptrace` as the default gVisor platform in mid-2023. If you
 depend on `ptrace`, and `systrap` doesn't fulfill your needs, please

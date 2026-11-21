@@ -415,14 +415,14 @@ PTY, and system call semantics. Some representative PRs are listed below:
 
 | PR | Fix Content | Typical Agentic-RL Scenario |
 | --- | --- | --- |
-| [#12851](https://github.com/google/gvisor/pull/12851) | poll: Only write back `revents` | tmux, libevent poll backend |
-| [#12911](https://github.com/google/gvisor/pull/12911) | proc: Add `/proc/sys/fs/pipe-max-size` | Python libraries like wurlitzer |
-| [#12915](https://github.com/google/gvisor/pull/12915) | pty: Implement `TCSBRK` / `TCFLSH` | pyserial, interactive PTY programs |
-| [#12814](https://github.com/google/gvisor/pull/12814) | proc: Add `randomize_va_space` | Performance and security inspection tools |
-| [#12813](https://github.com/google/gvisor/pull/12813) | sysfs: Add `/sys/dev/block` and `/sys/dev/char` | lsblk, device-related tools |
-| [#12819](https://github.com/google/gvisor/pull/12819) | proc: Fill in `fdinfo` fields | lsof, fuser, diagnostic tools |
-| [#12786](https://github.com/google/gvisor/pull/12786) | devpts: Fix `ISIG` check | Interactive shells / terminal-based agents |
-| [#12853](https://github.com/google/gvisor/pull/12853) | vfs: `FICLONE*` returns `EOPNOTSUPP` | file copying tools |
+| [#12851](https://github.com/gvisor/gvisor/pull/12851) | poll: Only write back `revents` | tmux, libevent poll backend |
+| [#12911](https://github.com/gvisor/gvisor/pull/12911) | proc: Add `/proc/sys/fs/pipe-max-size` | Python libraries like wurlitzer |
+| [#12915](https://github.com/gvisor/gvisor/pull/12915) | pty: Implement `TCSBRK` / `TCFLSH` | pyserial, interactive PTY programs |
+| [#12814](https://github.com/gvisor/gvisor/pull/12814) | proc: Add `randomize_va_space` | Performance and security inspection tools |
+| [#12813](https://github.com/gvisor/gvisor/pull/12813) | sysfs: Add `/sys/dev/block` and `/sys/dev/char` | lsblk, device-related tools |
+| [#12819](https://github.com/gvisor/gvisor/pull/12819) | proc: Fill in `fdinfo` fields | lsof, fuser, diagnostic tools |
+| [#12786](https://github.com/gvisor/gvisor/pull/12786) | devpts: Fix `ISIG` check | Interactive shells / terminal-based agents |
+| [#12853](https://github.com/gvisor/gvisor/pull/12853) | vfs: `FICLONE*` returns `EOPNOTSUPP` | file copying tools |
 
 <!-- mdformat on -->
 

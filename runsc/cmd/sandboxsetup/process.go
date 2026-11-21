@@ -166,29 +166,39 @@ func ExecProcUmounter(umounter *os.File) (*exec.Cmd, *os.File) {
 // UmountProc writes to syncFD signalling the process started by
 // ExecProcUmounter() to umount /proc.
 func UmountProc(syncFD int) {
-	UmountProcFile(os.NewFile(uintptr(syncFD), "procfs umount sync FD"))
+	UmountProcFile(os.NewFile(uintptr(syncFD), "procfs umount sync FD"), waitForProcUmounter)
 }
 
-// UmountProcFile is like `UmountProc`, but takes the pipe's write end as an
-// `os.File`. This must be used when the caller already holds a `os.File`
-// (e.g. when the boot process continues without re-exec'ing).
-func UmountProcFile(syncFile *os.File) {
+// UmountProcFile signals the helper and waits for it to finish before
+// verifying that /proc is gone.
+//
+// Callers that already own the pipe as an *os.File must pass that file here.
+// Wrapping the same descriptor twice lets either owner close it.
+func UmountProcFile(syncFile *os.File, wait func() error) {
 	buf := make([]byte, 1)
 	if w, err := syncFile.Write(buf); err != nil || w != 1 {
 		util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
 	}
 	syncFile.Close()
 
-	var waitStatus unix.WaitStatus
-	if _, err := unix.Wait4(0, &waitStatus, 0, nil); err != nil {
-		util.Fatalf("error waiting for the proc umounter process: %v", err)
-	}
-	if !waitStatus.Exited() || waitStatus.ExitStatus() != 0 {
-		util.Fatalf("the proc umounter process failed: %v", waitStatus)
+	if err := wait(); err != nil {
+		util.Fatalf("waiting for the proc umounter: %v", err)
 	}
 	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
 		util.Fatalf("/proc is still accessible")
 	}
+}
+
+// After an exec the synchronization FD is inherited but the exec.Cmd is gone.
+func waitForProcUmounter() error {
+	var status unix.WaitStatus
+	if _, err := unix.Wait4(0, &status, 0, nil); err != nil {
+		return err
+	}
+	if !status.Exited() || status.ExitStatus() != 0 {
+		return fmt.Errorf("proc umounter exited with %v", status)
+	}
+	return nil
 }
 
 // UmountProcInProcess umounts /proc directly from the calling process.

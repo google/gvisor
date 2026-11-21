@@ -310,7 +310,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 	s.state = tcpip.Open
 	// This ACK can also report out-of-order data beyond the repaired hole.
 	// The scoreboard still includes blocks covered by the cumulative ACK.
-	if last, ok := s.ep.scoreboard.ranges.Max(); ok && ack.LessThan(last.End) {
+	if end, ok := s.ep.scoreboard.maxEnd(); ok && ack.LessThan(end) {
 		s.state = tcpip.Disorder
 	}
 	s.ep.stack.Stats().TCP.TLPRecovery.Increment()
@@ -469,29 +469,37 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 	// retransmits and recovery on a path with little or no real loss
 	// (gvisor#9707/#9778). detectLoss arms the timer from rcvdTime-derived
 	// values, so evaluating it at the timer target keeps the two consistent.
-	numLost := rc.detectLoss(rc.snd.reorderTimer.target)
-	if numLost == 0 {
-		return nil
+	if rc.detectLoss(rc.snd.reorderTimer.target) > 0 {
+		rc.recover(false /* retransmitHead */)
 	}
-
-	fastRetransmit := false
-	if !rc.snd.FastRecovery.Active {
-		rc.snd.cc.HandleLossDetected()
-		rc.snd.enterRecovery()
-		fastRetransmit = true
-	}
-
-	rc.DoRecovery(nil, fastRetransmit)
 	return nil
 }
 
-// DoRecovery implements lossRecovery.DoRecovery.
+// recover runs when RACK has found a loss or the sender is already in recovery.
 //
 // +checklocks:rc.snd.ep.mu
 // +checklocksexclude:rc.snd.rtt.rttMutex
-func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
+func (rc *rackControl) recover(retransmitHead bool) {
 	snd := rc.snd
-	if fastRetransmit {
+	if !snd.FastRecovery.Active {
+		// An RTO rewinds writeNext to replay outstanding data. RACK
+		// selects individual repairs from that flight. Leave sendData
+		// at the first unsent segment when RACK takes over.
+		next := snd.writeNext
+		for next != nil && next.xmitCount != 0 {
+			next = next.Next()
+		}
+		if next != snd.writeNext {
+			snd.updateWriteNext(next)
+		}
+		snd.cc.HandleLossDetected()
+		snd.enterRecovery()
+		// Unlike three duplicate ACKs, a RACK loss can be anywhere in the
+		// flight. For example, an RTO may already have repaired the head
+		// before a SACK reveals a later hole.
+		retransmitHead = snd.writeList.Front().lost
+	}
+	if retransmitHead {
 		// Recovery has just started, and its first step is to retransmit the
 		// first unacknowledged segment. Skip that step if the segment has
 		// been retransmitted already and RACK has not marked that

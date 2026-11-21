@@ -19,8 +19,8 @@ sandboxes.
 
 You can use the following links to learn more:
 
-*   [Overview](https://github.com/google/gvisor/blob/master/pkg/sentry/seccheck/README.md)
-*   [How to implement a monitoring process](https://github.com/google/gvisor/blob/master/pkg/sentry/seccheck/sinks/remote/README.md)
+*   [Overview](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/seccheck/README.md)
+*   [How to implement a monitoring process](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/seccheck/sinks/remote/README.md)
 *   [Design document](https://docs.google.com/document/d/1RQQKzeFpO-zOoBHZLA-tr5Ed_bvAOLDqgGgKhqUff2A)
 *   [Configuring Falco with gVisor](https://gvisor.dev/docs/tutorials/falco/)
-*   [Tracereplay tool for testing](https://github.com/google/gvisor/blob/master/tools/tracereplay/README.md)
+*   [Tracereplay tool for testing](https://github.com/gvisor/gvisor/blob/master/tools/tracereplay/README.md)

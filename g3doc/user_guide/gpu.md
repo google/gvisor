@@ -120,7 +120,7 @@ generative models like LLMs. Check out
 [this blog post about running Stable Diffusion with gVisor](/blog/2023/06/20/gpu-pytorch-stable-diffusion/).
 gVisor also supports Vulkan and NVENC/NVDEC workloads. gVisor undergoes
 continuous tests to ensure this functionality remains robust.
-[Real-world usage](https://github.com/google/gvisor/issues?q=is%3Aissue+label%3A%22area%3A+gpu%22+)
+[Real-world usage](https://github.com/gvisor/gvisor/issues?q=is%3Aissue+label%3A%22area%3A+gpu%22+)
 of gVisor across different GPU workloads helps discover and address potential
 compatibility or performance issues in `nvproxy`.
 
@@ -174,7 +174,7 @@ Therefore, if you encounter an incompatible workload on a GPU on one of the
 above microarchitectures, even if on an unsupported GPU, chances are that this
 workload is also incompatible in the same manner on one of the officially
 supported GPUs. Please
-[open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
+[open a GitHub issue](https://github.com/gvisor/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
 with reproduction instructions so that it can be tested against an officially
 supported GPU.
 
@@ -258,7 +258,7 @@ Currently, `nvproxy` focuses on supporting compute, graphics and video workloads
 (like CUDA, Vulkan and NVENC/NVDEC). If your GPU compute workload fails with
 gVisor, it might be because some `ioctl` commands are still be unimplemented.
 Please
-[open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+bug,area%3A+gpu&template=bug_report.yml)
+[open a GitHub issue](https://github.com/gvisor/gvisor/issues/new?labels=type%3A+bug,area%3A+gpu&template=bug_report.yml)
 to describe about your use case. If a missing `ioctl` implementation is the
 problem, then the [debug logs](/docs/user_guide/debugging/) will contain
 warnings with prefix `nvproxy: handler is undefined *`. See below on how to run
@@ -268,14 +268,14 @@ the `ioctl_sniffer` tool.
 
 All nvproxy functionality is supported on systrap and ptrace platforms.
 [cudaMallocManaged() is currently flaky on the KVM platform due to limitations
-regarding virtual memory layout](https://github.com/google/gvisor/issues/11436);
+regarding virtual memory layout](https://github.com/gvisor/gvisor/issues/11436);
 all other nvproxy functionality is supported on the KVM platform.
 
 ### Debugging
 
 There are a few methods to try when debugging GPU workloads. The first step to
 try should be gVisor's
-[ioctl_sniffer](https://github.com/google/gvisor/tree/master/tools/ioctl_sniffer)
+[ioctl_sniffer](https://github.com/gvisor/gvisor/tree/master/tools/ioctl_sniffer)
 tool; if your GPU workload fails due to unimplemented `ioctl` commands in
 gVisor, this tool will provide a list of the specific ones.
 
@@ -364,7 +364,7 @@ In addition, seccomp-bpf filters can filter by argument names allowing us to
 allowlist granularly by `ioctl(2)` arguments. `ioctl(2)` is a source of many
 bugs in any kernel due to the complexity of its implementation. As of writing,
 gVisor does
-[allowlist some `ioctl`s](https://github.com/google/gvisor/blob/ccc3c2cbd26d3514885bd665b0a110150a6e8c53/runsc/boot/filter/config/config_main.go#L111)
+[allowlist some `ioctl`s](https://github.com/gvisor/gvisor/blob/master/runsc/boot/filter/config/config_main.go)
 by argument for things like terminal support.
 
 For example, [CVE-2024-21626](https://nvd.nist.gov/vuln/detail/CVE-2024-21626)
@@ -382,9 +382,9 @@ ioctls defined in the NVIDIA driver.
 
 gVisor's seccomp filter rules are modified such that `ioctl(2)` calls can be
 made
-[*only for supported ioctls*](https://github.com/google/gvisor/blob/be9169a6ce095a08b99940a97db3f58e5c5bd2ce/pkg/sentry/devices/nvproxy/seccomp_filters.go#L1).
+[*only for supported ioctls*](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/devices/nvproxy/seccomp_filters.go).
 The allowlisted rules aligned with each
-[driver version](https://github.com/google/gvisor/blob/c087777e37a186e38206209c41178e92ef1bbe81/pkg/sentry/devices/nvproxy/version.go#L152).
+[driver version](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/devices/nvproxy/version.go).
 This approach is similar to the allowlisted ioctls for terminal support
 described above. This allows gVisor to retain the vast majority of its
 protection for the host while allowing access to GPUs. All of the above CVEs
@@ -398,7 +398,7 @@ also be vulnerable. If the vulnerability is in an unimplemented feature, gVisor
 will block the required calls with seccomp filters.
 
 In addition, gVisor doesn't introduce any additional hardware-level isolation
-beyond that which is configured by by the NVIDIA kernel-mode driver. There is no
+beyond that which is configured by the NVIDIA kernel-mode driver. There is no
 validation of things like DMA buffers. The only checks are done in seccomp-bpf
 rules to ensure `ioctl(2)` calls are made on supported and allowlisted `ioctl`s.
 
@@ -411,7 +411,7 @@ $ runsc nvproxy list-supported-drivers
 ```
 
 Alternatively you can view the
-[source code](https://github.com/google/gvisor/blob/be9169a6ce095a08b99940a97db3f58e5c5bd2ce/pkg/sentry/devices/nvproxy/version.go#L1)
+[source code](https://github.com/gvisor/gvisor/blob/master/pkg/sentry/devices/nvproxy/version.go)
 or download it and run:
 
 ```

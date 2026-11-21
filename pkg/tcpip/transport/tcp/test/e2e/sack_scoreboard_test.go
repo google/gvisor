@@ -27,6 +27,21 @@ import (
 
 const smss = 1500
 
+var scoreboardSink *tcp.SACKScoreboard
+
+func TestSACKScoreboardAllocations(t *testing.T) {
+	t.Cleanup(func() { scoreboardSink = nil })
+	if got := testing.AllocsPerRun(100, func() {
+		scoreboardSink = tcp.NewSACKScoreboard(smss, 100)
+	}); got > 1 {
+		t.Errorf("NewSACKScoreboard allocations = %g, want at most 1", got)
+	}
+	s := tcp.NewSACKScoreboard(smss, 100)
+	if got := testing.AllocsPerRun(100, s.Reset); got != 0 {
+		t.Errorf("Reset allocations = %g, want 0", got)
+	}
+}
+
 func initScoreboard(blocks []header.SACKBlock, iss seqnum.Value) *tcp.SACKScoreboard {
 	s := tcp.NewSACKScoreboard(smss, iss)
 	for _, blk := range blocks {

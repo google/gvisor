@@ -49,7 +49,7 @@ gVisor currently supports TPU models:
 *   V6p
 *   TPU7x
 
-[open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
+[open a GitHub issue](https://github.com/gvisor/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
 if you want support for another TPU model. gVisor only supports "1VM" TPU
 shapes.
 
@@ -98,7 +98,7 @@ In addition, seccomp-bpf filters can filter by argument names allowing us to
 allowlist granularly by `ioctl(2)` arguments. `ioctl(2)` is a source of many
 bugs in any kernel due to the complexity of its implementation. As of writing,
 gVisor does
-[allowlist some `ioctl`s](https://github.com/google/gvisor/blob/ccc3c2cbd26d3514885bd665b0a110150a6e8c53/runsc/boot/filter/config/config_main.go#L111)
+[allowlist some `ioctl`s](https://github.com/gvisor/gvisor/blob/ccc3c2cbd26d3514885bd665b0a110150a6e8c53/runsc/boot/filter/config/config_main.go#L111)
 by argument for things like terminal support.
 
 For example, [CVE-2024-21626](https://nvd.nist.gov/vuln/detail/CVE-2024-21626)
@@ -116,7 +116,7 @@ ioctls used by the TPU driver.
 
 gVisor's seccomp filter rules are modified such that `ioctl(2)` calls can be
 made
-[*only for supported ioctls*](https://github.com/google/gvisor/blob/be9169a6ce095a08b99940a97db3f58e5c5bd2ce/pkg/sentry/devices/accel/seccomp_filters.go).
+[*only for supported ioctls*](https://github.com/gvisor/gvisor/blob/be9169a6ce095a08b99940a97db3f58e5c5bd2ce/pkg/sentry/devices/accel/seccomp_filters.go).
 This approach is similar to the allowlisted ioctls for terminal support
 described above. This allows gVisor to retain the vast majority of its
 protection for the host while allowing access to TPUs. All of the above CVEs

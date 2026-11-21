@@ -280,8 +280,9 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 	r, ok := hostarch.Addr(stackSize.Cur).RoundUp()
 	sz := uint64(r)
 	if !ok {
-		// RLIM_INFINITY rounds up to 0.
-		sz = linux.DefaultStackSoftLimit
+		// RLIM_INFINITY rounds up to 0. On Linux, an unlimited stack can grow
+		// until it reaches another mapping, so use the largest supported size.
+		sz = maxStackSize
 	} else if sz > maxStackSize {
 		ctx.Warningf("Capping stack size from RLIMIT_STACK of %v down to %v.", sz, maxStackSize)
 		sz = maxStackSize
@@ -486,6 +487,8 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		}
 		// "Grow" the existing vma by creating a new mergeable one.
 		vma := vseg.ValuePtr()
+		dontfork := vma.dontfork
+		dontdump := vma.dontdump
 		var newOffset uint64
 		if vma.mappable != nil {
 			newOffset = vseg.mappableRange().End
@@ -512,6 +515,14 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 			NameMut:         vma.nameMut,
 		}, droppedIDs)
 		if err == nil {
+			if dontfork || dontdump {
+				// Insert may have merged this range into the next vma.
+				vseg = mm.vmas.Isolate(vseg, ar)
+				grown := vseg.ValuePtr()
+				grown.dontfork = dontfork
+				grown.dontdump = dontdump
+				vseg = mm.vmas.Unisolate(vseg)
+			}
 			if mlockMode == memmap.MLockEager {
 				mm.populateVMA(ctx, vseg, ar, memmap.PlatformEffectCommit)
 			}
@@ -592,8 +603,11 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 	oldAR := hostarch.AddrRange{oldAddr, oldEnd}
 
-	// Check that oldEnd maps to the same vma as oldAddr.
-	if vseg.End() < oldEnd {
+	// Check that a vma still exists at oldAddr and that oldEnd maps to it. An
+	// empty source range (oldSize == 0) doesn't overlap newAR, so unmapping
+	// the destination may have removed the source vma; Linux's
+	// mm/mremap.c:mremap_to() returns EFAULT when vma_lookup() then fails.
+	if !vseg.Ok() || vseg.End() < oldEnd {
 		return 0, linuxerr.EFAULT
 	}
 
@@ -1400,6 +1414,20 @@ func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork
 	addr = hostarch.UntaggedUserAddr(addr)
 	return mm.madviseMutateVMAs(addr, length, func(vseg vmaIterator) error {
 		vseg.ValuePtr().dontfork = dontfork
+		return nil
+	})
+}
+
+// SetDontDump implements the semantics of madvise MADV_DONTDUMP and
+// MADV_DODUMP.
+//
+// TODO(b/72045799): Core dumps are not implemented; this only affects smaps.
+//
+// +checklocksexclude:mm.mappingMu
+func (mm *MemoryManager) SetDontDump(addr hostarch.Addr, length uint64, dontdump bool) error {
+	addr = hostarch.UntaggedUserAddr(addr)
+	return mm.madviseMutateVMAs(addr, length, func(vseg vmaIterator) error {
+		vseg.ValuePtr().dontdump = dontdump
 		return nil
 	})
 }

@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Run 4x HOST_CPUS worth of parallel jobs.
+build --jobs=HOST_CPUS*4
+
 # Ensure a strong hash function.
 startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
 

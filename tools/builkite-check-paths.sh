@@ -33,7 +33,7 @@ if [[ "$BUILDKITE_BRANCH" == master ]]; then
   baseid='HEAD~1'
 else
   git fetch origin master
-  baseid="$(git merge-base origin/master "origin/${BUILDKITE_BRANCH}")"
+  baseid="$(git merge-base origin/master HEAD)"
 fi
 
 git diff --stat "${baseid}" --exit-code "$@"

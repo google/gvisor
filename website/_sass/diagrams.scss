@@ -1,0 +1,141 @@
+// Inline SVG diagrams.
+.diagram {
+  --mono: 'Source Code Pro', monospace;
+  --kicker: 'Source Code Pro', monospace;
+  --text: #{$text-color};
+  --strong: #{$text-color};
+  --head: #{$primary};
+  --accent: #{$primary};
+  --muted: #{$text-color-secondary};
+  --d-fill: #fff;
+  --d-stroke: #ccc;
+  --d-cell: #eee;
+  --d-cell-stroke: #ccc;
+  --d-line: #888;
+  --d-pulse: #fff;
+  margin: 24px 0;
+
+  .diagram-frame {
+    padding: 16px 8px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    background: #f7f7f7;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  figcaption {
+    padding-top: 8px;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.diagram text {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  fill: var(--text);
+}
+
+.diagram .d-name {
+  font-size: 13px;
+  font-weight: 500;
+  fill: var(--strong);
+}
+
+.diagram .d-note {
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+.diagram .d-tag {
+  font-family: var(--kicker);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  fill: var(--head);
+}
+
+.diagram .d-hot {
+  fill: var(--accent);
+}
+
+.diagram .d-box {
+  fill: var(--d-fill);
+  stroke: var(--d-stroke);
+  stroke-width: 1;
+}
+
+.diagram .d-box-hot {
+  fill: color-mix(in srgb, var(--accent) 9%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.diagram .d-zone {
+  fill: color-mix(in srgb, var(--accent) 4%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke-width: 1;
+}
+
+.diagram .d-ghost {
+  fill: none;
+  stroke: var(--d-stroke);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.diagram .d-cell {
+  fill: var(--d-cell);
+  stroke: var(--d-cell-stroke);
+  stroke-width: 0.75;
+}
+
+.diagram .d-cell-hot {
+  fill: color-mix(in srgb, var(--accent) 20%, transparent);
+  stroke: var(--accent);
+  stroke-width: 0.75;
+}
+
+.diagram .d-line {
+  fill: none;
+  stroke: var(--d-line);
+  stroke-width: 1;
+}
+
+.diagram .d-line-hot {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+}
+
+.diagram .d-dash {
+  stroke-dasharray: 3 4;
+}
+
+.diagram .d-head {
+  fill: var(--d-line);
+}
+
+.diagram .d-head-hot {
+  fill: var(--accent);
+}
+
+.diagram .d-pulse {
+  fill: var(--d-pulse);
+  stroke: var(--accent);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagram .d-moving {
+    display: none;
+  }
+}

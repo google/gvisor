@@ -15,9 +15,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -35,11 +37,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/flags/flag.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -48,10 +51,6 @@
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
-
-ABSL_FLAG(int32_t, signalfd_test_execve_count, -1,
-          "If non-negative, execve this binary this many more times and then "
-          "exit. Used by Signalfd.ReadDuringExecveInOtherProcess.");
 
 using ::testing::KilledBySignal;
 
@@ -63,6 +62,11 @@ namespace {
 constexpr int kSigno = SIGUSR1;
 constexpr int kSignoMax = 64;  // SIGRTMAX
 constexpr int kSignoAlt = SIGUSR2;
+
+// Passed as argv[1], followed by a count and a file descriptor (or -1), to
+// make this binary run RunExecveChild instead of the tests. It is not an absl
+// flag, so that main() can handle it before TestInit.
+constexpr char kExecveChildArg[] = "--signalfd_test_execve_child";
 
 class SignalfdTest : public ::testing::TestWithParam<int> {};
 
@@ -278,11 +282,20 @@ TEST_P(SignalfdTest, SetMask) {
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallFailsWithErrno(EWOULDBLOCK));
 
+  // The pending signal is not yet readable through the signalfd.
+  FileDescriptor epfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd.get(), fd.get(), EPOLLIN, 0));
+  struct epoll_event event = {};
+  EXPECT_THAT(epoll_wait(epfd.get(), &event, 1, 0),
+              SyscallSucceedsWithValue(0));
+
   // Change the signal mask.
   sigaddset(&mask, signo);
   ASSERT_THAT(signalfd(fd.get(), &mask, 0), SyscallSucceeds());
 
-  // We should now have the signal.
+  // The mask change alone must wake the existing epoll interest.
+  EXPECT_THAT(epoll_wait(epfd.get(), &event, 1, 0),
+              SyscallSucceedsWithValue(1));
   ASSERT_THAT(read(fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
   EXPECT_EQ(rbuf.ssi_signo, signo);
@@ -452,15 +465,17 @@ TEST(Signalfd, ReadDuringExecveInOtherProcess) {
   FileDescriptor sock(sockets[0]);
   FileDescriptor child_sock(sockets[1]);
 
-  // The child creates a signalfd and sends it to us before its first execve,
-  // then calls execve before exiting.
-  const std::string flag =
-      absl::StrCat("--signalfd_test_execve_count=", kExecveCount - 1);
+  // The child creates a signalfd and sends it to us before its first execve.
+  // After that execve, the child waits for a byte on child_sock, then calls
+  // execve kExecveCount - 1 more times before it exits.
   const int child_sock_fd = child_sock.get();
+  const std::string count_arg = absl::StrCat(kExecveCount - 1);
+  const std::string sync_fd_arg = absl::StrCat(child_sock_fd);
   pid_t child_pid = -1;
   int execve_errno = 0;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
-      "/proc/self/exe", {"/proc/self/exe", flag}, {},
+      "/proc/self/exe",
+      {"/proc/self/exe", kExecveChildArg, count_arg, sync_fd_arg}, {},
       [child_sock_fd] {
         sigset_t mask;
         sigemptyset(&mask);
@@ -468,6 +483,8 @@ TEST(Signalfd, ReadDuringExecveInOtherProcess) {
         const int sfd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
         TEST_PCHECK(sfd >= 0);
         TEST_PCHECK(SendFDSignalSafe(child_sock_fd, sfd));
+        // Keep child_sock open across execve.
+        TEST_PCHECK(fcntl(child_sock_fd, F_SETFD, 0) == 0);
       },
       &child_pid, &execve_errno));
   ASSERT_EQ(execve_errno, 0);
@@ -478,16 +495,37 @@ TEST(Signalfd, ReadDuringExecveInOtherProcess) {
   // Read the signalfd from several threads until the child exits. No signal is
   // ever sent, so every read fails with EWOULDBLOCK.
   std::atomic<bool> done(false);
+  std::atomic<int> started(0);
   std::vector<std::unique_ptr<ScopedThread>> readers;
   readers.reserve(kReaders);
   for (int i = 0; i < kReaders; i++) {
     readers.push_back(std::make_unique<ScopedThread>([&] {
+      bool counted = false;
       while (!done.load()) {
         struct signalfd_siginfo info;
-        ASSERT_THAT(read(sfd.get(), &info, sizeof(info)),
-                    SyscallFailsWithErrno(EWOULDBLOCK));
+        const ssize_t n = read(sfd.get(), &info, sizeof(info));
+        // Count the read before checking it, so that the main thread does not
+        // wait forever if the read fails.
+        if (!counted) {
+          started.fetch_add(1);
+          counted = true;
+        }
+        ASSERT_THAT(n, SyscallFailsWithErrno(EWOULDBLOCK));
       }
     }));
+  }
+
+  // Let the child continue its execve calls only after each reader has done
+  // at least one read.
+  while (started.load() < kReaders) {
+    sched_yield();
+  }
+  constexpr char kContinue = 0;
+  const ssize_t sent = send(sock.get(), &kContinue, 1, MSG_NOSIGNAL);
+  EXPECT_THAT(sent, SyscallSucceedsWithValue(1));
+  if (sent != 1) {
+    // If the child still runs, closing our end makes it read EOF and abort.
+    sock.reset();
   }
 
   int status;
@@ -499,17 +537,23 @@ TEST(Signalfd, ReadDuringExecveInOtherProcess) {
       << "status " << status;
 }
 
-// Executes this binary count more times, then exits successfully. Used by
-// Signalfd.ReadDuringExecveInOtherProcess.
-void RunExecveChild(int count) {
-  if (count == 0) {
+// If sync_fd is not -1, waits for one byte on sync_fd and closes it. Then
+// executes this binary count more times and exits successfully.
+[[noreturn]] void RunExecveChild(int count, int sync_fd) {
+  if (sync_fd != -1) {
+    char c;
+    TEST_PCHECK(ReadFd(sync_fd, &c, 1) == 1);
+    TEST_PCHECK(close(sync_fd) == 0);
+  }
+  if (count <= 0) {
     _exit(0);
   }
-  const std::string flag =
-      absl::StrCat("--signalfd_test_execve_count=", count - 1);
-  char* const argv[] = {const_cast<char*>("/proc/self/exe"),
-                        const_cast<char*>(flag.c_str()), nullptr};
+  const std::string next = absl::StrCat(count - 1);
+  char* const argv[] = {
+      const_cast<char*>("/proc/self/exe"), const_cast<char*>(kExecveChildArg),
+      const_cast<char*>(next.c_str()), const_cast<char*>("-1"), nullptr};
   TEST_PCHECK(execv("/proc/self/exe", argv) == 0);
+  _exit(1);
 }
 
 }  // namespace
@@ -518,6 +562,16 @@ void RunExecveChild(int count) {
 }  // namespace gvisor
 
 int main(int argc, char** argv) {
+  // Handle kExecveChildArg before TestInit, so that the time each execve
+  // child takes does not depend on the work that TestInit does.
+  if (argc == 4 && strcmp(argv[1], gvisor::testing::kExecveChildArg) == 0) {
+    int count;
+    int sync_fd;
+    TEST_CHECK(absl::SimpleAtoi(argv[2], &count));
+    TEST_CHECK(absl::SimpleAtoi(argv[3], &sync_fd));
+    gvisor::testing::RunExecveChild(count, sync_fd);
+  }
+
   // These tests depend on delivering signals. Block them up front so that all
   // other threads created by TestInit will also have them blocked, and they
   // will not interface with the rest of the test.
@@ -529,11 +583,6 @@ int main(int argc, char** argv) {
   TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
 
   gvisor::testing::TestInit(&argc, &argv);
-
-  const int execve_count = absl::GetFlag(FLAGS_signalfd_test_execve_count);
-  if (execve_count >= 0) {
-    gvisor::testing::RunExecveChild(execve_count);
-  }
 
   return gvisor::testing::RunAllTests();
 }

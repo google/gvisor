@@ -23,6 +23,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
 
@@ -362,6 +363,27 @@ TEST(MadviseDontforkTest, DontforkAnonPrivate) {
   ExpectAllMappingBytes(mp1, 1);
   ExpectAllMappingBytes(mp2, 2);
   ExpectAllMappingBytes(mp3, 3);
+}
+
+// The grown page is not mapped in the child. The page after the hole is.
+TEST(MadviseDontforkTest, InPlaceMremap) {
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  void* addr = m.ptr();
+  m.release();
+  ASSERT_THAT(munmap(reinterpret_cast<char*>(addr) + kPageSize, kPageSize),
+              SyscallSucceeds());
+  ASSERT_THAT(madvise(addr, kPageSize, MADV_DONTFORK), SyscallSucceeds());
+  void* grown = ASSERT_NO_ERRNO_AND_VALUE(
+      Mremap(addr, kPageSize, kPageSize * 2, 0, nullptr));
+  ASSERT_EQ(grown, addr);
+
+  const auto rest = [&] {
+    TEST_CHECK(!IsMapped(reinterpret_cast<uintptr_t>(addr)));
+    TEST_CHECK(!IsMapped(reinterpret_cast<uintptr_t>(addr) + kPageSize));
+    TEST_CHECK(IsMapped(reinterpret_cast<uintptr_t>(addr) + 2 * kPageSize));
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 }  // namespace

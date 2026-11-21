@@ -4339,7 +4339,7 @@ TEST(NetlinkNetfilterTest, AddRuleToEndOfRuleList) {
 
 TEST(NetlinkNetfilterTest, AddDropRuleBeforeAcceptRule) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
+  [[maybe_unused]] std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string table_name = GetUniqueTestTableName();
@@ -4394,7 +4394,7 @@ TEST(NetlinkNetfilterTest, AddDropRuleBeforeAcceptRule) {
 
 TEST(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
+  [[maybe_unused]] std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string table_name = GetUniqueTestTableName();
@@ -4449,7 +4449,7 @@ TEST(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
 
 TEST(NetlinkNetfilterTest, GetRule) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
+  [[maybe_unused]] std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string table_name = GetUniqueTestTableName();

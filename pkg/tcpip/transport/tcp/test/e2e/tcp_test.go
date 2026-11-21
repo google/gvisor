@@ -383,11 +383,11 @@ func TestConnectICMPError(t *testing.T) {
 	defer syn.Release()
 	checker.IPv4(t, syn, checker.TCP(checker.TCPFlags(header.TCPFlagSyn)))
 
-	wep := ep.(interface {
-		LastErrorLocked() tcpip.Error
-	})
-
-	if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, wep.LastErrorLocked()); d != "" {
+	tcpEP := ep.(*tcp.Endpoint)
+	tcpEP.LockUser()
+	softError := tcpEP.LastErrorLocked()
+	tcpEP.UnlockUser()
+	if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, softError); d != "" {
 		t.Errorf("ep.LastErrorLocked() mismatch (-want +got):\n%s", d)
 	}
 

@@ -1,0 +1,56 @@
+<svg viewBox="0 0 720 382" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="su-h" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head"/>
+    </marker>
+    <marker id="su-hh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" class="d-head-hot"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="26" class="d-tag">NO STARTUP LIST YET</text>
+  <rect x="24" y="48" width="166" height="64" rx="8" class="d-box"/>
+  <text x="38" y="74" class="d-name">program</text>
+  <text x="38" y="94" class="d-note">reads and faults</text>
+
+  <rect x="244" y="48" width="208" height="64" rx="8" class="d-box"/>
+  <text x="258" y="74" class="d-name">gateway</text>
+  <text x="258" y="94" class="d-note">records distinct ranges</text>
+
+  <rect x="536" y="48" width="160" height="64" rx="8" class="d-box"/>
+  <text x="550" y="74" class="d-name">startup list</text>
+  <text x="550" y="94" class="d-note">per image digest</text>
+
+  <path d="M190 80 H242" class="d-line" marker-end="url(#su-h)"/>
+  <path d="M452 80 H534" class="d-line" marker-end="url(#su-h)"/>
+  <text x="494" y="70" text-anchor="middle" class="d-note">clean close</text>
+
+  <text x="24" y="170" class="d-tag">LATER COLD ATTACHMENT</text>
+  <rect x="24" y="192" width="166" height="56" rx="8" class="d-box"/>
+  <text x="38" y="215" class="d-name">saved ranges</text>
+  <text x="38" y="234" class="d-note">same image digest</text>
+
+  <rect x="266" y="192" width="188" height="56" rx="8" class="d-box-hot"/>
+  <text x="280" y="215" class="d-name">gateway fills</text>
+  <text x="280" y="234" class="d-note">bounded concurrency</text>
+
+  <rect x="526" y="192" width="170" height="138" rx="8" class="d-zone"/>
+  <text x="540" y="215" class="d-name">verified chunks</text>
+  <text x="540" y="234" class="d-note">worker backing files</text>
+
+  <rect x="24" y="282" width="166" height="56" rx="8" class="d-box"/>
+  <text x="38" y="305" class="d-name">program starts</text>
+  <text x="38" y="324" class="d-note">alongside prefetch</text>
+
+  <path d="M190 220 H264" class="d-line" marker-end="url(#su-h)"/>
+  <text x="228" y="210" text-anchor="middle" class="d-note">replay</text>
+  <path d="M454 220 H524" class="d-line-hot" marker-end="url(#su-hh)"/>
+  <text x="490" y="210" text-anchor="middle" class="d-note">verify</text>
+
+  <path d="M190 310 H224 V240 H264" class="d-line d-dash" marker-end="url(#su-h)"/>
+  <text x="234" y="273" class="d-note">missing range</text>
+  <path d="M190 310 H524" class="d-line-hot" marker-end="url(#su-hh)"/>
+  <text x="360" y="300" text-anchor="middle" class="d-note">reads ready ranges</text>
+
+  <text x="24" y="368" class="d-note">A range missing from the list, or still being fetched, can make the program wait.</text>
+</svg>

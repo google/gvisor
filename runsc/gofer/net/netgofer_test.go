@@ -550,6 +550,7 @@ func TestRunProxyModeAllowLoopback(t *testing.T) {
 func TestRunProxyModeWithSeccomp(t *testing.T) {
 	if os.Getenv("NETGOFER_SECCOMP_CHILD") == "1" {
 		log.SetLevel(log.Info)
+		waitForStartupGoroutines()
 		n := &Netgofer{
 			udsFD:          3,
 			mtu:            DefaultMTU,

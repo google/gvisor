@@ -162,6 +162,9 @@ type Config struct {
 	// GVisorGRO enables gVisor's generic receive offload.
 	GVisorGRO bool `flag:"gvisor-gro"`
 
+	// TCPDelayedACK controls whether netstack TCP delays ACKs.
+	TCPDelayedACK TCPDelayedACK `flag:"tcp-delayed-ack"`
+
 	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
 	TXChecksumOffload bool `flag:"tx-checksum-offload"`
 
@@ -610,6 +613,9 @@ func (c *Config) Validate() error {
 	}
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
+	}
+	if c.RDMAProxy && c.UseNetworkProxy() {
+		return fmt.Errorf("rdmaproxy flag is incompatible with netgofer and network-proxy-path flags")
 	}
 	if c.NetworkProxyPath != "" {
 		if !filepath.IsAbs(c.NetworkProxyPath) {
@@ -1305,6 +1311,54 @@ func (n InodeNumbers) String() string {
 		return "virtual"
 	default:
 		panic(fmt.Sprintf("Invalid inode numbers mode %d", n))
+	}
+}
+
+// TCPDelayedACK controls whether netstack TCP delays ACKs.
+//
+// TODO: Remove this flag once delayed ACKs have run in production without
+// issues.
+type TCPDelayedACK int
+
+const (
+	// TCPDelayedACKEnabled delays ACKs like Linux.
+	TCPDelayedACKEnabled TCPDelayedACK = iota
+
+	// TCPDelayedACKDisabled sends every ACK immediately.
+	TCPDelayedACKDisabled
+)
+
+func tcpDelayedACKPtr(v TCPDelayedACK) *TCPDelayedACK {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (d *TCPDelayedACK) Set(v string) error {
+	switch v {
+	case "enabled":
+		*d = TCPDelayedACKEnabled
+	case "disabled":
+		*d = TCPDelayedACKDisabled
+	default:
+		return fmt.Errorf("invalid TCP delayed ACK mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (d *TCPDelayedACK) Get() any {
+	return *d
+}
+
+// String implements flag.Value.
+func (d TCPDelayedACK) String() string {
+	switch d {
+	case TCPDelayedACKEnabled:
+		return "enabled"
+	case TCPDelayedACKDisabled:
+		return "disabled"
+	default:
+		panic(fmt.Sprintf("Invalid TCP delayed ACK mode %d", d))
 	}
 }
 

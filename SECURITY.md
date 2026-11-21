@@ -281,7 +281,7 @@ Policies for security list access, vulnerability embargo, and vulnerability
 disclosure are outlined in the [governance policy](GOVERNANCE.md).
 
 [gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
-[gvisor-security-advisories]: https://github.com/google/gvisor/security/advisories
+[gvisor-security-advisories]: https://github.com/gvisor/gvisor/security/advisories
 
 ## Information you must send as part of security vulnerability reports
 

@@ -30,8 +30,8 @@
 namespace gvisor {
 namespace testing {
 
-#define __NR_io_uring_setup 425
-#define __NR_io_uring_enter 426
+constexpr int kIOUringSetupSyscall = 425;
+constexpr int kIOUringEnterSyscall = 426;
 
 // io_uring_setup(2) flags.
 #define IORING_SETUP_SQPOLL (1U << 1)
@@ -206,14 +206,14 @@ class IOUring {
 
 // This is a wrapper for the io_uring_setup(2) system call.
 inline int IOUringSetup(uint32_t entries, IOUringParams* params) {
-  return syscall(__NR_io_uring_setup, entries, params);
+  return syscall(kIOUringSetupSyscall, entries, params);
 }
 
 // This is a wrapper for the io_uring_enter(2) system call.
 inline int IOUringEnter(unsigned int fd, unsigned int to_submit,
                         unsigned int min_complete, unsigned int flags,
                         sigset_t* sig) {
-  return syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sig);
+  return syscall(kIOUringEnterSyscall, fd, to_submit, min_complete, flags, sig);
 }
 
 // Returns a new iouringfd with the given number of entries.

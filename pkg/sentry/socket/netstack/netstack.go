@@ -336,6 +336,7 @@ var Metrics = tcpip.Stats{
 		SegmentsAckedWithDSACK:             mustCreateMetric("/netstack/tcp/segments_acked_with_dsack", "Number of segments for which DSACK was received."),
 		SpuriousRecovery:                   mustCreateMetric("/netstack/tcp/spurious_recovery", "Number of times the connection entered loss recovery spuriously."),
 		SpuriousRTORecovery:                mustCreateMetric("/netstack/tcp/spurious_rto_recovery", "Number of times the connection entered RTO spuriously."),
+		DelayedACKs:                        mustCreateMetric("/netstack/tcp/delayed_acks", "Number of ACKs sent by the delayed ACK timer."),
 		ForwardMaxInFlightDrop:             mustCreateMetric("/netstack/tcp/forward_max_in_flight_drop", "Number of connection requests dropped due to exceeding in-flight limit."),
 	},
 	UDP: tcpip.UDPStats{
@@ -3338,9 +3339,8 @@ func (s *sock) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDe
 	// Don't overwrite any data we received.
 	dst = dst.DropFirst(n)
 
-	// We'll have to block. Register for notifications and keep trying to
-	// send all the data.
-	e, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	// A connected UDP socket can receive an ICMP error without receiving data.
+	e, ch := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventErr)
 	s.EventRegister(&e)
 	defer s.EventUnregister(&e)
 

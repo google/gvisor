@@ -7,17 +7,24 @@ in the CNCF Slack workspace. Before you can join the channel, get an invitation
 from the self-service page at [slack.cncf.io][cncf-slack-invite] and accept it
 in your email.
 
-## Contributor License Agreement
+## Developer Certificate of Origin
 
-Contributions to this project must be accompanied by a Contributor License
-Agreement. You (or your employer) retain the copyright to your contribution;
-this simply gives us permission to use and redistribute your contributions as
-part of the project. Head over to <https://cla.developers.google.com/> to see
-your current agreements on file or to sign a new one.
+Contributions to this project must be signed off under the
+[Developer Certificate of Origin][dco] (DCO). You retain the copyright to your
+contribution. The sign-off certifies that you wrote the contribution, or that
+you otherwise have the right to submit it under the project's open source
+license.
 
-You generally only need to submit a CLA once, so if you've already submitted one
-(even if it was for a different project), you probably don't need to do it
-again.
+To sign off, add a `Signed-off-by` line to each commit message. The line must
+use your real name, and the same email address as the commit author:
+
+```
+Signed-off-by: Jane Doe <jane.doe@example.com>
+```
+
+Git adds this line for you when you use `git commit -s`. To sign off on your
+last commit after you made it, use `git commit --amend -s`. To sign off on your
+last N commits, use `git rebase --signoff HEAD~N`.
 
 ## AI tool Use
 
@@ -37,7 +44,8 @@ quality, and maintainability. **AI should augment your abilities, not replace
 your critical judgment.** Contributors should ensure their work meets a high
 standard before seeking review, respecting maintainers' time, and must be
 **prepared to discuss and justify their contributions** during the review
-process.
+process. AI tools must not add `Signed-off-by` lines: only a human can certify
+the [Developer Certificate of Origin](#developer-certificate-of-origin).
 
 ## Editor Setup
 
@@ -171,14 +179,12 @@ Before sending code reviews, run `bazel test ...` to ensure tests are passing.
 
 Code changes are accepted via [pull request][github].
 
-When iterating on a pull request, please amend your commit rather than creating
-new commits on the same branch. Our merge bot applies all commits from the
-branch to master and does not yet support squash merging. If you'd like to
-submit a pull request with multiple commits, please ensure they are independent,
-logical units of work that can be applied separately.
+A pull request can contain multiple commits. To update a pull request, push new
+commits to its branch. You do not need to amend or squash them.
 
-When approved, the change will be submitted by a team member and automatically
-merged into the repository.
+When the pull request is approved, a maintainer merges it into master with
+"Squash and merge". The pull request title and description are the default
+commit message, so keep the title and description accurate.
 
 ## Presubmit checks
 
@@ -224,15 +230,8 @@ git checkout origin/master
 bazel run //:gazelle -- update-repos -from_file=go.mod
 ```
 
-## The small print
-
-Contributions made by corporations are covered by a different agreement than the
-one above, the
-[Software Grant and Corporate Contributor License Agreement][gccla].
-
-[gcla]: https://cla.developers.google.com/about/google-individual
-[gccla]: https://cla.developers.google.com/about/google-corporate
-[github]: https://github.com/google/gvisor/compare
+[dco]: https://developercertificate.org/
+[github]: https://github.com/gvisor/gvisor/compare
 [cncf-slack-invite]: https://slack.cncf.io/
 [slack-gvisor-dev]: https://cloud-native.slack.com/archives/C0CCZ4S4V62
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev

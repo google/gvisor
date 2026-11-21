@@ -31,7 +31,7 @@ func init() {
 	// For all other operating systems, use Go's x/sys/cpu package
 	// to get the one bit we care about here.
 	//
-	// See https://github.com/google/gvisor/issues/7849.
+	// See https://github.com/gvisor/gvisor/issues/7849.
 	if runtime.GOOS == "linux" {
 		arm64HasATOMICS = cpuid.HostFeatureSet().HasFeature(cpuid.ARM64FeatureATOMICS)
 	} else {

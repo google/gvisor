@@ -1220,6 +1220,7 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
   // Send a packet from each socket_pair.
   for (auto& sockets : socket_pairs) {
     char send_buf[200];
+    RandomizeBuffer(send_buf, sizeof(send_buf));
     ASSERT_THAT(
         RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
                            AsSockAddr(&send_addr.addr), send_addr.addr_len),
@@ -1922,6 +1923,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPPKTINFO) {
   msghdr sent_msg = {};
   iovec sent_iov = {};
   char sent_data[kDataLength];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
   sent_iov.iov_base = sent_data;
   sent_iov.iov_len = kDataLength;
   sent_msg.msg_iov = &sent_iov;
@@ -2004,6 +2006,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPReceiveOrigDstAddr) {
   msghdr sent_msg = {};
   iovec sent_iov = {};
   char sent_data[kDataLength];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
   sent_iov.iov_base = sent_data;
   sent_iov.iov_len = kDataLength;
   sent_msg.msg_iov = &sent_iov;

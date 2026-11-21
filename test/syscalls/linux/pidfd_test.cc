@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
+#include <linux/futex.h>
 #include <linux/prctl.h>
 #include <linux/sched.h>
 #include <poll.h>
@@ -39,10 +40,11 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/flags/flag.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -120,95 +122,243 @@
 #define PIDFD_SIGNAL_THREAD (1UL << 0)
 #endif
 
-ABSL_FLAG(std::string, pidfd_helper, "",
-          "The name of the helper logic to run.");
-ABSL_FLAG(int, pidfd_pipe_fd, -1, "The FD of a pipe for coordination.");
-ABSL_FLAG(int, pidfd_tid_pipe_fd, -1, "Another pipe FD for TID reporting.");
-
 namespace gvisor {
 namespace testing {
 
-// RunLeaderDelayedHelper implements the helper logic for the test
-// PidfdThreadLeaderDelayedNotification. Threadgroup leader creates a subthread
-// that waits on a pipe, and then exits immediately. The subthread sticks around
-// until signalled.
-void RunLeaderDelayedHelper() {
-  int rfd = absl::GetFlag(FLAGS_pidfd_pipe_fd);
-  // Use raw pthread_create instead of ScopedThread to avoid dependency on the
-  // (shortly exiting) leader.
-  pthread_t pt;
-  TEST_PCHECK(pthread_create(
-                  &pt, nullptr,
-                  [](void* arg) -> void* {
-                    int fd = static_cast<int>(reinterpret_cast<intptr_t>(arg));
-                    char buf;
-                    (void)read(fd, &buf, 1);  // Wait to be signaled.
-                    close(fd);
-                    _exit(0);
-                    return nullptr;
-                  },
-                  reinterpret_cast<void*>(static_cast<intptr_t>(rfd))) == 0);
-  syscall(SYS_exit, 0);  // Leader (just the thread) exits.
-}
-
-// RunSubthreadNotificationHelper implements the helper logic for
-// PidfdThreadSubthreadNotification. The thread-group leader creates a subthread
-// that reports its TID on a pipe and then waits on another pipe. The leader
-// then pauses.
-void RunSubthreadNotificationHelper() {
-  int rfd = absl::GetFlag(FLAGS_pidfd_pipe_fd);
-  int wfd = absl::GetFlag(FLAGS_pidfd_tid_pipe_fd);
-  ScopedThread thread([rfd, wfd] {
-    pid_t tid = gettid();
-    (void)write(wfd, &tid, sizeof(tid));  // Report TID.
-    char buf;
-    (void)read(rfd, &buf, 1);  // Wait to be signaled.
-    close(rfd);
-    close(wfd);
-  });
-  pause();  // Leader pauses.
-}
-
-// RunExecRevivalHelper implements the child process for the
-// PidfdThreadExecRevival test. The leader spawns a subthread and then pauses.
-// The subthread reports its TID, and then execve()s to a program that pauses.
-void RunExecRevivalHelper() {
-  int rfd = absl::GetFlag(FLAGS_pidfd_pipe_fd);
-  int wfd = absl::GetFlag(FLAGS_pidfd_tid_pipe_fd);
-
-  ScopedThread t([rfd, wfd] {
-    pid_t tid = gettid();
-    (void)write(wfd, &tid, sizeof(tid));  // Report TID.
-
-    char buf;
-    (void)read(rfd, &buf, 1);  // Wait to be signaled.
-    close(rfd);
-    close(wfd);
-    char* const argv[] = {const_cast<char*>("/proc/self/exe"),
-                          const_cast<char*>("--pidfd_helper=RunPauseHelper"),
-                          nullptr};
-    execve(argv[0], argv, nullptr);  // execve() to become leader.
-    _exit(errno);
-  });
-  pause();  // Leader pauses.
-}
-
-// RunPauseHelper implements a simple helper that pauses indefinitely.
-void RunPauseHelper() { pause(); }
-
-void RunSubthreadTracedHelper() {
-  int rfd = absl::GetFlag(FLAGS_pidfd_pipe_fd);
-  int tid_wfd = absl::GetFlag(FLAGS_pidfd_tid_pipe_fd);
-
-  ScopedThread t([rfd, tid_wfd] {
-    pid_t tid = gettid();
-    TEST_PCHECK(write(tid_wfd, &tid, sizeof(tid)) == sizeof(tid));
-    char buf;
-    (void)read(rfd, &buf, 1);  // Wait to exit.
-  });
-}
-
 namespace {
+
+// Passed as argv[1], followed by a helper name and the helper's arguments, to
+// make this binary run a helper instead of the tests. It is not an absl flag,
+// because main() handles it before TestInit. Thus a helper's thread group
+// contains only the threads that the helper creates, whatever TestInit does.
+constexpr char kHelperArg[] = "--pidfd_test_helper";
+
+// Helper names. Except for kPauseHelper, each helper takes two more
+// arguments: ctl_fd, which it reads to wait for the parent, and status_fd,
+// which it uses to report progress to the parent.
+constexpr char kLeaderExitsFirstHelper[] = "leader_exits_first";
+constexpr char kSubthreadExitsHelper[] = "subthread_exits";
+constexpr char kSubthreadExecsHelper[] = "subthread_execs";
+constexpr char kPauseHelper[] = "pause";
+
+// How long to check that a pidfd does not become readable.
+constexpr int kNoNotifyTimeoutMs = 1000;
+
+// The maximum time to wait for a pidfd that must become readable. This is
+// large because the test environment can be very slow (for example, a
+// race-enabled runsc); the wait ends as soon as the pidfd becomes readable.
+constexpr int kNotifyTimeoutMs = 60 * 1000;
+
+[[noreturn]] void PauseForever() {
+  while (true) {
+    pause();
+  }
+}
+
+// The leader thread of RunLeaderExitsFirstHelper gives the address of
+// leader_tid_word to set_tid_address(2) just before it exits. When the leader
+// exits, the kernel sets leader_tid_word to 0 and does a futex wake on it.
+pid_t leader_tid_word = 1;
+
+// WaitForLeaderTidClear blocks until the kernel has cleared leader_tid_word.
+void WaitForLeaderTidClear() {
+  while (true) {
+    const pid_t v = __atomic_load_n(&leader_tid_word, __ATOMIC_ACQUIRE);
+    if (v == 0) {
+      return;
+    }
+    // On EAGAIN (the value changed) or EINTR, check the value again.
+    syscall(SYS_futex, &leader_tid_word, FUTEX_WAIT, v, nullptr, nullptr, 0);
+  }
+}
+
+// RunLeaderExitsFirstHelper creates a subthread and then writes a byte to
+// status_fd. When the leader thread reads a byte from ctl_fd, it exits (the
+// thread only). The subthread waits until the exiting leader has cleared
+// leader_tid_word, and then exits the thread group when it reads a byte from
+// ctl_fd. Thus the first byte on ctl_fd makes the leader exit, and the second
+// byte makes the thread group exit.
+[[noreturn]] void RunLeaderExitsFirstHelper(int ctl_fd, int status_fd) {
+  // Use pthread_create instead of ScopedThread, because ScopedThread joins
+  // the thread from the leader, which exits first.
+  pthread_t thread;
+  TEST_CHECK(pthread_create(
+                 &thread, nullptr,
+                 [](void* arg) -> void* {
+                   const int ctl_fd =
+                       static_cast<int>(reinterpret_cast<intptr_t>(arg));
+                   WaitForLeaderTidClear();
+                   char c;
+                   TEST_PCHECK(ReadFd(ctl_fd, &c, 1) == 1);
+                   _exit(0);
+                 },
+                 reinterpret_cast<void*>(static_cast<intptr_t>(ctl_fd))) == 0);
+  char c = 0;
+  TEST_PCHECK(WriteFd(status_fd, &c, 1) == 1);
+  TEST_PCHECK(ReadFd(ctl_fd, &c, 1) == 1);
+  syscall(SYS_set_tid_address, &leader_tid_word);
+  syscall(SYS_exit, 0);
+  _exit(1);  // Not reached.
+}
+
+// RunSubthreadExitsHelper creates a subthread that writes its TID to
+// status_fd, and that exits (the thread only) when it reads a byte from
+// ctl_fd. The leader pauses.
+[[noreturn]] void RunSubthreadExitsHelper(int ctl_fd, int status_fd) {
+  ScopedThread thread([ctl_fd, status_fd] {
+    const pid_t tid = gettid();
+    TEST_PCHECK(WriteFd(status_fd, &tid, sizeof(tid)) == sizeof(tid));
+    char c;
+    TEST_PCHECK(ReadFd(ctl_fd, &c, 1) == 1);
+  });
+  PauseForever();
+}
+
+// RunSubthreadExecsHelper creates a subthread that writes its TID to
+// status_fd, and that calls execve(2) to run kPauseHelper when it reads a byte
+// from ctl_fd. The leader pauses.
+[[noreturn]] void RunSubthreadExecsHelper(int ctl_fd, int status_fd) {
+  ScopedThread thread([ctl_fd, status_fd] {
+    const pid_t tid = gettid();
+    TEST_PCHECK(WriteFd(status_fd, &tid, sizeof(tid)) == sizeof(tid));
+    char c;
+    TEST_PCHECK(ReadFd(ctl_fd, &c, 1) == 1);
+    TEST_PCHECK(close(ctl_fd) == 0);
+    TEST_PCHECK(close(status_fd) == 0);
+    char* const argv[] = {const_cast<char*>("/proc/self/exe"),
+                          const_cast<char*>(kHelperArg),
+                          const_cast<char*>(kPauseHelper), nullptr};
+    TEST_PCHECK(execv(argv[0], argv) == 0);
+  });
+  PauseForever();
+}
+
+// RunHelper runs the helper named by argv[0], with the arguments that follow
+// it in argv.
+[[noreturn]] void RunHelper(int argc, char** argv) {
+  if (argc == 1 && strcmp(argv[0], kPauseHelper) == 0) {
+    PauseForever();
+  }
+  TEST_CHECK(argc == 3);
+  int ctl_fd;
+  int status_fd;
+  TEST_CHECK(absl::SimpleAtoi(argv[1], &ctl_fd));
+  TEST_CHECK(absl::SimpleAtoi(argv[2], &status_fd));
+  if (strcmp(argv[0], kLeaderExitsFirstHelper) == 0) {
+    RunLeaderExitsFirstHelper(ctl_fd, status_fd);
+  }
+  if (strcmp(argv[0], kSubthreadExitsHelper) == 0) {
+    RunSubthreadExitsHelper(ctl_fd, status_fd);
+  }
+  if (strcmp(argv[0], kSubthreadExecsHelper) == 0) {
+    RunSubthreadExecsHelper(ctl_fd, status_fd);
+  }
+  TEST_CHECK_MSG(false, "unknown helper");
+  _exit(1);  // Not reached.
+}
+
+// PidfdHelper holds a child process that runs a helper, and the parent's ends
+// of the helper's pipes.
+struct PidfdHelper {
+  pid_t pid = -1;
+  // ctl is the write end of the helper's ctl_fd.
+  FileDescriptor ctl;
+  // status is the read end of the helper's status_fd.
+  FileDescriptor status;
+  // cleanup kills and reaps the child.
+  Cleanup cleanup;
+};
+
+// StartPidfdHelper starts a child process that runs the helper named by name.
+PosixErrorOr<PidfdHelper> StartPidfdHelper(const char* name) {
+  int ctl_fds[2];
+  RETURN_ERROR_IF_SYSCALL_FAIL(pipe2(ctl_fds, O_CLOEXEC));
+  FileDescriptor ctl_read(ctl_fds[0]);
+  FileDescriptor ctl_write(ctl_fds[1]);
+  int status_fds[2];
+  RETURN_ERROR_IF_SYSCALL_FAIL(pipe2(status_fds, O_CLOEXEC));
+  FileDescriptor status_read(status_fds[0]);
+  FileDescriptor status_write(status_fds[1]);
+
+  const int child_ctl_fd = ctl_read.get();
+  const int child_status_fd = status_write.get();
+  PidfdHelper helper;
+  int execve_errno = 0;
+  ASSIGN_OR_RETURN_ERRNO(
+      helper.cleanup,
+      ForkAndExec(
+          "/proc/self/exe",
+          {"/proc/self/exe", kHelperArg, name, absl::StrCat(child_ctl_fd),
+           absl::StrCat(child_status_fd)},
+          {},
+          [child_ctl_fd, child_status_fd] {
+            // Keep only the helper's ends of the pipes open across
+            // execve, so that each side reads EOF if the other side
+            // exits.
+            TEST_PCHECK(fcntl(child_ctl_fd, F_SETFD, 0) == 0);
+            TEST_PCHECK(fcntl(child_status_fd, F_SETFD, 0) == 0);
+          },
+          &helper.pid, &execve_errno));
+  if (execve_errno != 0) {
+    return PosixError(execve_errno, "execve failed");
+  }
+  helper.ctl = std::move(ctl_write);
+  helper.status = std::move(status_read);
+  return helper;
+}
+
+// WaitForZombie blocks until /proc/[pid]/stat reports that the thread with
+// TID pid is a zombie. It fails with ETIMEDOUT after kNotifyTimeoutMs.
+PosixError WaitForZombie(pid_t pid) {
+  const std::string path = absl::StrCat("/proc/", pid, "/stat");
+  const absl::Time deadline =
+      absl::Now() + absl::Milliseconds(kNotifyTimeoutMs);
+  while (true) {
+    ASSIGN_OR_RETURN_ERRNO(FileDescriptor stat_fd,
+                           Open(path, O_RDONLY | O_CLOEXEC));
+    char buf[1024];
+    const ssize_t n = ReadFd(stat_fd.get(), buf, sizeof(buf));
+    if (n < 0) {
+      return PosixError(errno, absl::StrCat("read ", path));
+    }
+    // The state follows the command name, which is in parentheses.
+    const std::string stat(buf, n);
+    const size_t paren = stat.rfind(')');
+    if (paren == std::string::npos || paren + 2 >= stat.size()) {
+      return PosixError(EINVAL, absl::StrCat("unexpected ", path, ": ", stat));
+    }
+    if (stat[paren + 2] == 'Z') {
+      return NoError();
+    }
+    if (absl::Now() > deadline) {
+      return PosixError(ETIMEDOUT,
+                        absl::StrCat(path, " does not show a zombie: ", stat));
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+}
+
+// KillAndReap sends SIGKILL to the thread group of pid, and then waits until
+// the thread tid has exited and the caller has reaped it. The caller must be
+// the parent or the tracer of tid. KillAndReap uses WNOHANG waits, so it does
+// not depend on a wakeup from the kernel, and it gives up after
+// kNotifyTimeoutMs.
+void KillAndReap(pid_t pid, pid_t tid) {
+  kill(pid, SIGKILL);
+  const absl::Time deadline =
+      absl::Now() + absl::Milliseconds(kNotifyTimeoutMs);
+  while (absl::Now() < deadline) {
+    int status;
+    const pid_t ret = waitpid(tid, &status, __WALL | WNOHANG);
+    if (ret < 0 && errno != EINTR) {
+      return;
+    }
+    if (ret == tid && (WIFEXITED(status) || WIFSIGNALED(status))) {
+      return;
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+}
 
 class ScopedChildReaper {
  public:
@@ -906,7 +1056,8 @@ TEST(PidfdTest, PidfdThreadTracksSingleThread) {
   t.reset();
   cleanup.Release();
   pfd.revents = 0;
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 1000), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(pfd.revents & POLLIN);
 }
 
@@ -922,37 +1073,29 @@ TEST(PidfdTest, PidfdThreadLeaderDelayedNotification) {
       GTEST_SKIP() << "PIDFD_THREAD behavior requires kernel 6.15+";
     }
   }
+  auto helper =
+      ASSERT_NO_ERRNO_AND_VALUE(StartPidfdHelper(kLeaderExitsFirstHelper));
+  // Wait until the helper has created its subthread.
+  char c = 0;
+  ASSERT_THAT(ReadFd(helper.status.get(), &c, 1), SyscallSucceedsWithValue(1));
+  auto leader_pidfd =
+      ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(helper.pid, PIDFD_THREAD));
 
-  int pipe_fds[2];
-  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
-  FileDescriptor read_pipe(pipe_fds[0]);
-  FileDescriptor write_pipe(pipe_fds[1]);
+  // Let the leader exit, and wait until it is a zombie.
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_NO_ERRNO(WaitForZombie(helper.pid));
 
-  pid_t child;
-  int exec_errno;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      ForkAndExec("/proc/self/exe",
-                  {"/proc/self/exe", "--pidfd_helper=RunLeaderDelayedHelper",
-                   absl::StrCat("--pidfd_pipe_fd=", read_pipe.get())},
-                  {}, &child, &exec_errno));
-  ASSERT_EQ(exec_errno, 0);
-  ASSERT_THAT(child, SyscallSucceeds());
-  read_pipe.reset();
-  auto leader_pidfd = ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(child, PIDFD_THREAD));
-
-  // Poll should timeout on the leader thread pidfd as long as the subthread is
-  // alive.
+  // The pidfd must not notify while the subthread is alive.
   struct pollfd pfd = {
       .fd = leader_pidfd.get(),
       .events = POLLIN,
   };
-  EXPECT_THAT(poll(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(poll(&pfd, 1, kNoNotifyTimeoutMs), SyscallSucceedsWithValue(0));
 
-  // Let the subthread exit.
-  ASSERT_THAT(write(write_pipe.get(), "a", 1), SyscallSucceedsWithValue(1));
-  write_pipe.reset();
-  // Now poll should succeed.
-  EXPECT_THAT(poll(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+  // Let the subthread exit. Now the pidfd must notify.
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(pfd.revents & POLLIN);
 }
 
@@ -968,48 +1111,28 @@ TEST(PidfdTest, PidfdThreadSubthreadNotification) {
       GTEST_SKIP() << "PIDFD_THREAD behavior requires kernel 6.15+";
     }
   }
-
-  int pipe_fds[2];
-  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
-  FileDescriptor read_pipe(pipe_fds[0]);
-  FileDescriptor write_pipe(pipe_fds[1]);
-
-  int tid_pipe_fds[2];
-  ASSERT_THAT(pipe(tid_pipe_fds), SyscallSucceeds());
-  FileDescriptor tid_read_pipe(tid_pipe_fds[0]);
-  FileDescriptor tid_write_pipe(tid_pipe_fds[1]);
-
-  pid_t child;
-  int exec_errno;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
-      "/proc/self/exe",
-      {"/proc/self/exe", "--pidfd_helper=RunSubthreadNotificationHelper",
-       absl::StrCat("--pidfd_pipe_fd=", read_pipe.get()),
-       absl::StrCat("--pidfd_tid_pipe_fd=", tid_write_pipe.get())},
-      {}, &child, &exec_errno));
-  ASSERT_EQ(exec_errno, 0);
-  ASSERT_THAT(child, SyscallSucceeds());
-  tid_write_pipe.reset();
-  read_pipe.reset();
-
+  auto helper =
+      ASSERT_NO_ERRNO_AND_VALUE(StartPidfdHelper(kSubthreadExitsHelper));
   pid_t subthread_tid;
-  ASSERT_THAT(read(tid_read_pipe.get(), &subthread_tid, sizeof(subthread_tid)),
-              SyscallSucceedsWithValue(sizeof(subthread_tid)));
+  ASSERT_THAT(
+      ReadFd(helper.status.get(), &subthread_tid, sizeof(subthread_tid)),
+      SyscallSucceedsWithValue(sizeof(subthread_tid)));
   auto subthread_pidfd =
       ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(subthread_tid, PIDFD_THREAD));
 
-  // Poll should timeout on the subthread pidfd as long as the subthread is
-  // alive.
+  // The pidfd must not notify while the subthread is alive.
   struct pollfd pfd = {
       .fd = subthread_pidfd.get(),
       .events = POLLIN,
   };
-  EXPECT_THAT(poll(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
-  // Let subthread exit.
-  ASSERT_THAT(write(write_pipe.get(), "a", 1), SyscallSucceedsWithValue(1));
-  write_pipe.reset();
-  // Poll on subthread pidfd should succeed even while leader is alive.
-  EXPECT_THAT(poll(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(poll(&pfd, 1, kNoNotifyTimeoutMs), SyscallSucceedsWithValue(0));
+
+  // Let the subthread exit. The pidfd must notify, even though the leader is
+  // alive.
+  char c = 0;
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(pfd.revents & POLLIN);
 }
 
@@ -1025,61 +1148,49 @@ TEST(PidfdTest, PidfdThreadExecRevival) {
       GTEST_SKIP() << "PIDFD_THREAD behavior requires kernel 6.15+";
     }
   }
-
-  int pipe_fds[2];
-  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
-  FileDescriptor read_pipe(pipe_fds[0]);
-  FileDescriptor write_pipe(pipe_fds[1]);
-
-  int tid_pipe_fds[2];
-  ASSERT_THAT(pipe(tid_pipe_fds), SyscallSucceeds());
-  FileDescriptor tid_read_pipe(tid_pipe_fds[0]);
-  FileDescriptor tid_write_pipe(tid_pipe_fds[1]);
-
-  pid_t child;
-  int exec_errno;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      ForkAndExec("/proc/self/exe",
-                  {"/proc/self/exe", "--pidfd_helper=RunExecRevivalHelper",
-                   absl::StrCat("--pidfd_pipe_fd=", read_pipe.get()),
-                   absl::StrCat("--pidfd_tid_pipe_fd=", tid_write_pipe.get())},
-                  {}, &child, &exec_errno));
-  ASSERT_EQ(exec_errno, 0);
-  ASSERT_THAT(child, SyscallSucceeds());
-  tid_write_pipe.reset();
-  read_pipe.reset();
-
+  auto helper =
+      ASSERT_NO_ERRNO_AND_VALUE(StartPidfdHelper(kSubthreadExecsHelper));
   pid_t subthread_tid;
-  ASSERT_THAT(read(tid_read_pipe.get(), &subthread_tid, sizeof(subthread_tid)),
-              SyscallSucceedsWithValue(sizeof(subthread_tid)));
-  auto leader_pidfd = ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(child, PIDFD_THREAD));
+  ASSERT_THAT(
+      ReadFd(helper.status.get(), &subthread_tid, sizeof(subthread_tid)),
+      SyscallSucceedsWithValue(sizeof(subthread_tid)));
+  auto leader_pidfd =
+      ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(helper.pid, PIDFD_THREAD));
   auto subthread_pidfd =
       ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(subthread_tid, PIDFD_THREAD));
 
-  // Signal subthread to exec.
-  ASSERT_THAT(write(write_pipe.get(), "a", 1), SyscallSucceedsWithValue(1));
-  write_pipe.reset();
-  // The subthread should notify because it is killed by the above exec.
+  // Let the subthread call execve.
+  char c = 0;
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
+  // The subthread pidfd must notify, because the subthread's TID goes away
+  // when the execve makes it the leader.
   struct pollfd sub_pfd = {
       .fd = subthread_pidfd.get(),
       .events = POLLIN,
   };
-  EXPECT_THAT(poll(&sub_pfd, 1, 5000), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&sub_pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(sub_pfd.revents & POLLIN);
 
-  // The leader pidfd should NOT notify because it is "revived" by the exec.
+  // The leader pidfd must not notify, because the execve "revived" the thread
+  // group.
   struct pollfd leader_pfd = {
       .fd = leader_pidfd.get(),
       .events = POLLIN,
   };
-  EXPECT_THAT(poll(&leader_pfd, 1, 1000), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(poll(&leader_pfd, 1, kNoNotifyTimeoutMs),
+              SyscallSucceedsWithValue(0));
 
-  // Now kill the revived process and verify the leader pidfd finally notifies.
-  EXPECT_THAT(kill(child, SIGKILL), SyscallSucceeds());
-  EXPECT_THAT(poll(&leader_pfd, 1, 5000), SyscallSucceedsWithValue(1));
+  // Kill the revived process. Now the leader pidfd must notify.
+  EXPECT_THAT(kill(helper.pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(poll)(&leader_pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(leader_pfd.revents & POLLIN);
 }
 
+// PidfdThreadTracedSubthreadNotification verifies that a PIDFD_THREAD pidfd
+// for a traced non-leader thread notifies when the thread exits, before the
+// tracer reaps the thread.
 TEST(PidfdTest, PidfdThreadTracedSubthreadNotification) {
   if (!IsRunningOnGvisor()) {
     // Test only on kernels bearing this patch:
@@ -1089,40 +1200,22 @@ TEST(PidfdTest, PidfdThreadTracedSubthreadNotification) {
       GTEST_SKIP() << "PIDFD_THREAD behavior requires kernel 6.15+";
     }
   }
-
-  int pipe_fds[2];
-  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
-  FileDescriptor read_pipe(pipe_fds[0]);
-  FileDescriptor write_pipe(pipe_fds[1]);
-
-  int tid_pipe_fds[2];
-  ASSERT_THAT(pipe(tid_pipe_fds), SyscallSucceeds());
-  FileDescriptor tid_read_pipe(tid_pipe_fds[0]);
-  FileDescriptor tid_write_pipe(tid_pipe_fds[1]);
-
-  pid_t child;
-  int exec_errno;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      ForkAndExec("/proc/self/exe",
-                  {"/proc/self/exe", "--pidfd_helper=RunSubthreadTracedHelper",
-                   absl::StrCat("--pidfd_pipe_fd=", read_pipe.get()),
-                   absl::StrCat("--pidfd_tid_pipe_fd=", tid_write_pipe.get())},
-                  {}, &child, &exec_errno));
-  ASSERT_EQ(exec_errno, 0);
-  ASSERT_THAT(child, SyscallSucceeds());
-  tid_write_pipe.reset();
-  read_pipe.reset();
-
-  // Wait for the TID of the subthread and open a pidfd.
+  auto helper =
+      ASSERT_NO_ERRNO_AND_VALUE(StartPidfdHelper(kSubthreadExitsHelper));
   pid_t subthread_tid;
-  ASSERT_THAT(read(tid_read_pipe.get(), &subthread_tid, sizeof(subthread_tid)),
-              SyscallSucceedsWithValue(sizeof(subthread_tid)));
+  ASSERT_THAT(
+      ReadFd(helper.status.get(), &subthread_tid, sizeof(subthread_tid)),
+      SyscallSucceedsWithValue(sizeof(subthread_tid)));
   auto subthread_pidfd =
       ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(subthread_tid, PIDFD_THREAD));
 
   // Start tracing the subthread.
   ASSERT_THAT(ptrace(PTRACE_ATTACH, subthread_tid, nullptr, nullptr),
               SyscallSucceeds());
+  // If the test fails, reap the traced subthread before helper.cleanup reaps
+  // the leader. The leader cannot be reaped while the subthread is not.
+  Cleanup reap_subthread(
+      [&helper, subthread_tid] { KillAndReap(helper.pid, subthread_tid); });
   int status;
   ASSERT_THAT(waitpid(subthread_tid, &status, 0),
               SyscallSucceedsWithValue(subthread_tid));
@@ -1130,20 +1223,24 @@ TEST(PidfdTest, PidfdThreadTracedSubthreadNotification) {
   ASSERT_THAT(ptrace(PTRACE_CONT, subthread_tid, nullptr, nullptr),
               SyscallSucceeds());
 
-  // Tell the thread to exit.
-  ASSERT_THAT(write(write_pipe.get(), "a", 1), SyscallSucceedsWithValue(1));
+  // Let the subthread exit.
+  char c = 0;
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
 
-  // The pidfd should notify even though the tracer has not yet acked the exit.
+  // The pidfd must notify even though the tracer has not yet reaped the
+  // subthread.
   struct pollfd pfd = {
       .fd = subthread_pidfd.get(),
       .events = POLLIN,
   };
-  EXPECT_THAT(poll(&pfd, 1, 1000), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(pfd.revents & POLLIN);
 
-  // Tracer's ack of the exit.
+  // Reap the subthread as its tracer.
   ASSERT_THAT(waitpid(subthread_tid, &status, 0),
               SyscallSucceedsWithValue(subthread_tid));
+  reap_subthread.Release();
   ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1159,53 +1256,55 @@ TEST(PidfdTest, PidfdThreadTracedLeaderNotification) {
       GTEST_SKIP() << "PIDFD_THREAD behavior requires kernel 6.15+";
     }
   }
+  auto helper =
+      ASSERT_NO_ERRNO_AND_VALUE(StartPidfdHelper(kLeaderExitsFirstHelper));
+  // Wait until the helper has created its subthread.
+  char c = 0;
+  ASSERT_THAT(ReadFd(helper.status.get(), &c, 1), SyscallSucceedsWithValue(1));
+  auto leader_pidfd =
+      ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(helper.pid, PIDFD_THREAD));
 
-  int pipe_fds[2];
-  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
-  FileDescriptor read_pipe(pipe_fds[0]);
-  FileDescriptor write_pipe(pipe_fds[1]);
-
-  pid_t child;
-  int exec_errno;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      ForkAndExec("/proc/self/exe",
-                  {"/proc/self/exe", "--pidfd_helper=RunLeaderDelayedHelper",
-                   absl::StrCat("--pidfd_pipe_fd=", read_pipe.get())},
-                  {}, &child, &exec_errno));
-  ASSERT_EQ(exec_errno, 0);
-  ASSERT_THAT(child, SyscallSucceeds());
-  read_pipe.reset();
-
-  auto leader_pidfd = ASSERT_NO_ERRNO_AND_VALUE(PidfdOpen(child, PIDFD_THREAD));
-
-  // Start tracing the leader.
-  ASSERT_THAT(ptrace(PTRACE_ATTACH, child, nullptr, nullptr),
+  // Start tracing the leader while it is still alive.
+  ASSERT_THAT(ptrace(PTRACE_ATTACH, helper.pid, nullptr, nullptr),
               SyscallSucceeds());
+  // If the test fails, reap the traced leader without a blocking waitpid,
+  // instead of with helper.cleanup.
+  Cleanup reap_leader([&helper] {
+    KillAndReap(helper.pid, helper.pid);
+    helper.cleanup.Release();
+  });
   int status;
-  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  ASSERT_THAT(waitpid(helper.pid, &status, 0),
+              SyscallSucceedsWithValue(helper.pid));
   ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
-  ASSERT_THAT(ptrace(PTRACE_CONT, child, nullptr, nullptr), SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, helper.pid, nullptr, nullptr),
+              SyscallSucceeds());
 
-  // The leader should exit quickly as it calls syscall(SYS_exit).
-  // Poll should timeout as long as the subthread is alive, confirming the
-  // delay is preserved even for traced leaders.
+  // Let the leader exit, and wait until it is a zombie.
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_NO_ERRNO(WaitForZombie(helper.pid));
+
+  // The pidfd must not notify while the subthread is alive, even though the
+  // leader is traced.
   struct pollfd pfd = {
       .fd = leader_pidfd.get(),
       .events = POLLIN,
   };
-  EXPECT_THAT(poll(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(poll(&pfd, 1, kNoNotifyTimeoutMs), SyscallSucceedsWithValue(0));
 
-  // Now let the subthread exit.
-  ASSERT_THAT(write(write_pipe.get(), "a", 1), SyscallSucceedsWithValue(1));
-  write_pipe.reset();
-
-  // Now the leader's pidfd should notify, even though the tracer has not yet
-  // acked the exit.
-  EXPECT_THAT(poll(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+  // Let the subthread exit. Now the pidfd must notify, even though the tracer
+  // has not yet reaped the leader.
+  ASSERT_THAT(WriteFd(helper.ctl.get(), &c, 1), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kNotifyTimeoutMs),
+              SyscallSucceedsWithValue(1));
   EXPECT_TRUE(pfd.revents & POLLIN);
 
-  // Tracer's ack of the exit.
-  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  // Reap the leader as its tracer and parent. The pidfd has notified, so the
+  // thread group has exited and the leader can be reaped at once.
+  ASSERT_THAT(waitpid(helper.pid, &status, 0),
+              SyscallSucceedsWithValue(helper.pid));
+  reap_leader.Release();
+  helper.cleanup.Release();
   ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1344,23 +1443,11 @@ TEST(PidfdTest, PidfdGetfdNonDumpableExitingRace) {
 }  // namespace gvisor
 
 int main(int argc, char** argv) {
-  gvisor::testing::TestInit(&argc, &argv);
-
-  std::string helper = absl::GetFlag(FLAGS_pidfd_helper);
-  if (!helper.empty()) {
-    if (helper == "RunLeaderDelayedHelper") {
-      gvisor::testing::RunLeaderDelayedHelper();
-    } else if (helper == "RunSubthreadNotificationHelper") {
-      gvisor::testing::RunSubthreadNotificationHelper();
-    } else if (helper == "RunExecRevivalHelper") {
-      gvisor::testing::RunExecRevivalHelper();
-    } else if (helper == "RunSubthreadTracedHelper") {
-      gvisor::testing::RunSubthreadTracedHelper();
-    } else if (helper == "RunPauseHelper") {
-      gvisor::testing::RunPauseHelper();
-    }
-    return 0;
+  // Handle kHelperArg before TestInit; see kHelperArg.
+  if (argc >= 3 && strcmp(argv[1], gvisor::testing::kHelperArg) == 0) {
+    gvisor::testing::RunHelper(argc - 2, argv + 2);
   }
 
+  gvisor::testing::TestInit(&argc, &argv);
   return gvisor::testing::RunAllTests();
 }

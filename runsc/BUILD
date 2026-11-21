@@ -19,7 +19,6 @@ go_binary(
     visibility = ["//:__subpackages__"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
-        "//runsc/cgoextras",
         "//runsc/cli/maincli",
         "//runsc/coretagprime",
         "//runsc/version",
@@ -40,7 +39,6 @@ go_binary(
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/sentry/socket/plugin/cgo",
-        "//runsc/cgoextras",
         "//runsc/cli/maincli",
         "//runsc/coretagprime",
         "//runsc/sandbox",
@@ -72,7 +70,6 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
-        "//runsc/cgoextras",
         "//runsc/cli/maincli",
         "//runsc/coretagprime",
         "//runsc/version",
@@ -179,6 +176,7 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"false\" ",
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )
 
@@ -202,5 +200,6 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"true\" ",
+    tags = ["manual"],
     visibility = ["//debian:__pkg__"],
 )

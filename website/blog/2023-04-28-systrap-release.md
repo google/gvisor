@@ -21,7 +21,7 @@ system calls, signals, memory management, and more. For example, when a
 sandboxed application calls
 [`read(2)`](https://man7.org/linux/man-pages/man2/read.2.html), it actually
 transparently calls into
-[gVisor's implementation of this system call](https://github.com/google/gvisor/blob/44e2d0fcfeb641f3b8013c3f93cacdae447cc0f1/pkg/sentry/syscalls/linux/sys_read_write.go#L36)
+[gVisor's implementation of this system call](https://github.com/gvisor/gvisor/blob/44e2d0fcfeb641f3b8013c3f93cacdae447cc0f1/pkg/sentry/syscalls/linux/sys_read_write.go#L36)
 This minimizes the attack surface of the host kernel, because sandboxed programs
 simply can’t make system calls directly to the host in the first place[^1]. This
 interception happens through an internal layer called the Platform interface,
@@ -47,7 +47,7 @@ encounters a system call. This is a clean method to achieve system call
 interception in any environment, virtualized or not, except that it’s quite
 slow. To see how slow, an unrealistic but highly illustrative benchmark to use
 is the
-[`getpid` benchmark](https://github.com/google/gvisor/blob/108410638aa8480e82933870ba8279133f543d2b/test/perf/linux/getpid_benchmark.cc)[^2].
+[`getpid` benchmark](https://github.com/gvisor/gvisor/blob/108410638aa8480e82933870ba8279133f543d2b/test/perf/linux/getpid_benchmark.cc)[^2].
 This benchmark runs the
 [`getpid(2)`](https://man7.org/linux/man-pages/man2/getpid.2.html) system call
 in a tight `while` loop. No useful application has this behavior, so it is not a
@@ -102,7 +102,7 @@ performance. To get a better picture of the magnitude of improvement, here are
 some real-world workloads:
 
 *   The
-    [Build ABSL benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/fs/bazel_test.go)
+    [Build ABSL benchmark](https://github.com/gvisor/gvisor/blob/master/blob/master/test/benchmarks/fs/bazel_test.go)
     measures compilation performance by compiling
     [abseil.io](https://abseil.io/); this is a highly system call dependent
     workload due to needing to do a lot of I/O filesystem operations (gVisor’s
@@ -110,12 +110,12 @@ some real-world workloads:
     implements, which is something you can learn about
     [here](https://gvisor.dev/docs/user_guide/filesystem/)).
 *   The
-    [ffmpeg benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/media/ffmpeg_test.go)
+    [ffmpeg benchmark](https://github.com/gvisor/gvisor/blob/master/blob/master/test/benchmarks/media/ffmpeg_test.go)
     runs a multimedia processing tool, to perform video stream encoding/decoding
     for example; this workload does not require a significant amount of system
     calls and there are very few userspace to kernel mode switches.
 *   The
-    [Tensorflow benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/ml/tensorflow_test.go)
+    [Tensorflow benchmark](https://github.com/gvisor/gvisor/blob/master/blob/master/test/benchmarks/ml/tensorflow_test.go)
     trains a variety of machine learning models on CPU; the system-call usage of
     this workload is in between compilation and ffmpeg, due to needing to
     retrieve training and validation data, but the majority of time is still
@@ -139,7 +139,7 @@ or not specifying the `--platform` flag at all), or you use the KVM platform wit
 nested virtualization, switching to Systrap should be a drop-in performance
 upgrade. All you have to do is specify `--platform systrap` to runsc. If you
 encounter any issues, please let us know at
-[gvisor.dev/issues](https://github.com/google/gvisor/issues).
+[gvisor.dev/issues](https://github.com/gvisor/gvisor/issues).
 <br>
 <br>
 

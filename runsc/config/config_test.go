@@ -150,6 +150,19 @@ func TestFromFlags(t *testing.T) {
 	if c.Netgofer != NetgoferModeProxyLoopback || !c.Netgofer.Enabled() || !c.Netgofer.AllowLoopback() {
 		t.Errorf("Netgofer=%v Enabled()=%v AllowLoopback()=%v, want NetgoferModeProxyLoopback, true, true", c.Netgofer, c.Netgofer.Enabled(), c.Netgofer.AllowLoopback())
 	}
+	if err := testFlags.Lookup("netgofer").Value.Set("off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := testFlags.Lookup("rdmaproxy").Value.Set("true"); err != nil {
+		t.Fatal(err)
+	}
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RDMAProxy || c.UseNetworkProxy() {
+		t.Errorf("RDMAProxy=%v UseNetworkProxy()=%v, want true and false", c.RDMAProxy, c.UseNetworkProxy())
+	}
 }
 
 func TestToFlagsFromFlags(t *testing.T) {
@@ -430,6 +443,22 @@ func TestValidationFail(t *testing.T) {
 				"overlay2": "all:memory",
 			},
 			error: "overlay flag has been replaced with overlay2 flag",
+		},
+		{
+			name: "rdmaproxy+network-proxy-path",
+			flags: map[string]string{
+				"rdmaproxy":          "true",
+				"network-proxy-path": "/run/netproxy.sock",
+			},
+			error: "rdmaproxy flag is incompatible with netgofer and network-proxy-path flags",
+		},
+		{
+			name: "rdmaproxy+netgofer",
+			flags: map[string]string{
+				"rdmaproxy": "true",
+				"netgofer":  "proxy",
+			},
+			error: "rdmaproxy flag is incompatible with netgofer and network-proxy-path flags",
 		},
 		{
 			name: "network-proxy-path+network:none",
@@ -1152,7 +1181,7 @@ func TestBundleValidate(t *testing.T) {
 			bundle: Bundle(map[string]string{"debug": "invalid"}),
 			verify: func(err error) error {
 				// Error differs in open-source version, and internally at Google
-				// https://github.com/google/gvisor/pull/11722#issuecomment-2877847616
+				// https://github.com/gvisor/gvisor/pull/11722#issuecomment-2877847616
 				wantOss := "parse error"
 				wantInternal := `parsing "invalid": invalid syntax`
 				if !strings.Contains(err.Error(), wantOss) && !strings.Contains(err.Error(), wantInternal) {

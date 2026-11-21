@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-declare -r repo_url='https://github.com/google/gvisor.git'
+declare -r repo_url='https://github.com/gvisor/gvisor.git'
 
 # Holds the tag object between the two modes. Outside refs/tags, so it reaches
 # neither `git describe` nor tools/make_release.sh.

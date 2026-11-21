@@ -36,9 +36,9 @@ $ bazel test //test/packetimpact/tests:fin_wait2_timeout_netstack_test
 
 There are a few ways to write networking tests for gVisor currently:
 
-*   [Go unit tests](https://github.com/google/gvisor/tree/master/pkg/tcpip)
-*   [syscall tests](https://github.com/google/gvisor/tree/master/test/syscalls/linux)
-*   [packetdrill tests](https://github.com/google/gvisor/tree/master/test/packetdrill)
+*   [Go unit tests](https://github.com/gvisor/gvisor/tree/master/pkg/tcpip)
+*   [syscall tests](https://github.com/gvisor/gvisor/tree/master/test/syscalls/linux)
+*   [packetdrill tests](https://github.com/gvisor/gvisor/tree/master/test/packetdrill)
 *   packetimpact tests
 
 The right choice depends on the needs of the test.
@@ -273,7 +273,7 @@ type Ether struct {
 ```
 
 Each struct has the same fields as those in the
-[gVisor headers](https://github.com/google/gvisor/tree/master/pkg/tcpip/header)
+[gVisor headers](https://github.com/gvisor/gvisor/tree/master/pkg/tcpip/header)
 but with a pointer for each field that may be `nil`.
 
 ##### Alternatives considered
