@@ -132,7 +132,10 @@ func (s *hostInetConn) Read(ctx context.Context, buf []byte, cancel <-chan struc
 func (s *hostInetConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var ch chan struct{}
 	var e waiter.Entry
-	n, err := s.fd.Write(buf)
+	// fd.Write can write part of buf and then fail with EAGAIN, so keep track
+	// of what has been written and only retry the remainder. Retrying with the
+	// full buffer would send the already-written prefix twice.
+	written, err := s.fd.Write(buf)
 	for ctx.Err() == nil && linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 		if ch == nil {
 			e, ch = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
@@ -144,13 +147,15 @@ func (s *hostInetConn) Write(ctx context.Context, buf []byte, cancel <-chan stru
 		select {
 		case <-ch:
 		case <-cancel:
-			return 0, io.EOF
+			return written, io.EOF
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return written, ctx.Err()
 		}
-		n, err = s.fd.Write(buf)
+		var n int
+		n, err = s.fd.Write(buf[written:])
+		written += n
 	}
-	return n, err
+	return written, err
 }
 
 func (s *hostInetConn) eventRegister(e *waiter.Entry) {
