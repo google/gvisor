@@ -215,8 +215,12 @@ type Endpoint interface {
 	// This should be called on the client endpoint, and the (bound)
 	// endpoint passed in as a parameter.
 	//
+	// clientCreds are the credentials of the connecting task. They become the
+	// peer credentials of the accepted endpoint only if the connection is
+	// established; a failed Connect doesn't change any peer credentials.
+	//
 	// The error codes are the same as Connect.
-	Connect(ctx context.Context, server BoundEndpoint) *syserr.Error
+	Connect(ctx context.Context, server BoundEndpoint, clientCreds CredentialsControlMessage) *syserr.Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
@@ -307,9 +311,14 @@ type BoundEndpoint interface {
 	// be unconnected and not listening and the BoundEndpoint whose
 	// BidirectionalConnect method is being called must be listening.
 	//
+	// clientCreds are the credentials of the connecting task. On a successful
+	// connect, the accepted endpoint gets them as its peer credentials, and
+	// the ConnectingEndpoint gets the peer credentials of this endpoint. They
+	// must not change if the connect fails.
+	//
 	// This method will return syserr.ErrConnectionRefused on endpoints with a
 	// type that isn't SockStream or SockSeqpacket.
-	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error
+	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, clientCreds CredentialsControlMessage, returnConnect func(Receiver, Sender)) *syserr.Error
 
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.
