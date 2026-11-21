@@ -763,3 +763,17 @@ func (t *Task) Children() map[*Task]struct{} {
 
 	return children
 }
+
+// ChildProcesses returns a snapshot of this task's child process leaders.
+func (t *Task) ChildProcesses() []*Task {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
+
+	processes := make([]*Task, 0, len(t.children))
+	for child := range t.children {
+		if child == child.tg.leader {
+			processes = append(processes, child)
+		}
+	}
+	return processes
+}

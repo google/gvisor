@@ -1747,9 +1747,9 @@ type childrenData struct {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *childrenData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	children := d.task.Children()
+	children := d.task.ChildProcesses()
 	var childrenTIDs []int
-	for childTask := range children {
+	for _, childTask := range children {
 		tid := d.pidns.IDOfTask(childTask)
 		if tid == 0 {
 			// Reaped children have tid 0. Linux never reports 0 here.

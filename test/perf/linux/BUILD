@@ -418,3 +418,18 @@ cc_binary(
         "//test/util:test_main",
     ],
 )
+
+cc_binary(
+    name = "proc_children_benchmark",
+    testonly = 1,
+    srcs = ["proc_children_benchmark.cc"],
+    deps = select_gtest() + [
+        gbenchmark,
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:logging",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
