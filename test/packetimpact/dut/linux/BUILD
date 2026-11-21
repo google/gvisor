@@ -14,5 +14,6 @@ go_library(
         "//test/packetimpact/dut",
         "//test/packetimpact/netdevs/netlink",
         "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
