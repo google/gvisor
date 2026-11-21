@@ -198,7 +198,7 @@ func initSeccompNotify() {
 		// seccomp unotify is supported.
 		seccompNotifyIsSupported = true
 	case unix.EINVAL:
-		log.Warningf("Seccomp user-space notification mechanism isn't " +
+		log.Warningf("PERF: Seccomp user-space notification mechanism isn't " +
 			"supported by the kernel (available since Linux 5.0).")
 	default:
 		panic(fmt.Sprintf("seccomp returns unexpected code: %d", errno))
@@ -311,7 +311,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			arch.SyscallArgument{Value: 0})
 		if err != nil {
 			if errors.Is(err, unix.EINVAL) {
-				t.Debugf("PR_SET_SYSCALL_USER_DISPATCH isn't supported. User syscalls will be trapped by seccomp.")
+				t.Debugf("PERF: PR_SET_SYSCALL_USER_DISPATCH isn't supported. User syscalls will be trapped by seccomp.")
 			} else {
 				handlePtraceSyscallRequestError(req, "prctl: %v", err)
 				return

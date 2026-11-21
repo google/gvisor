@@ -2082,7 +2082,7 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 		// The gofer was started in a new empty network namespace.
 		// Pin it, future gofers will join it instead of creating a new one.
 		if err := pinNullNetNS(conf, cmd.Process.Pid); err != nil {
-			log.Warningf("Unable to pin the gofer's network namespace at %q (%v); future gofers will create new network namespaces. This slows down gVisor startup.", nullNetNSPath(conf), err)
+			log.Warningf("PERF: Unable to pin the gofer's network namespace at %q (%v); future gofers will create new network namespaces. This slows down gVisor startup.", nullNetNSPath(conf), err)
 		} else {
 			log.Infof("Pinned null network namespace at %q", nullNetNSPath(conf))
 		}
@@ -2130,14 +2130,14 @@ func goferNetworkNamespace(conf *config.Config) (ns *specs.LinuxNamespace, nsFil
 		if err != nil {
 			if !os.IsNotExist(err) {
 				// Unexpected error.
-				log.Warningf("No usable null network namespace at %q (%v); creating a new one. This issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err)
+				log.Warningf("PERF: No usable null network namespace at %q (%v); creating a new one. This issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err)
 			} else if conf.SharedRootDir == "" && conf.RootDir != config.DefaultRootDir() {
 				// User has customized `--root` but not `--shared-root`, so they are likely missing out on
 				// the performance benefits of a shared root directory.
-				log.Warningf("gVisor startup is slower if `--root` (or `--shared-root`) is not reused across multiple sandboxes. You can speed up sandbox startup by setting `--shared-root` to a shared system-wide directory so that the null gofer network namespace is reused across sandboxes.")
+				log.Warningf("PERF: gVisor startup is slower if `--root` (or `--shared-root`) is not reused across multiple sandboxes. You can speed up sandbox startup by setting `--shared-root` to a shared system-wide directory so that the null gofer network namespace is reused across sandboxes.")
 			} else {
 				// Informational-only as this is expected on first sandbox creation.
-				log.Infof("No usable null network namespace at %q (%v); creating a new one. This is expected if this sandbox is the first sandbox to start with this `--shared-root` directory (%v). If this is not the first sandbox, this issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err, conf.SharedRoot())
+				log.Infof("PERF: No usable null network namespace at %q (%v); creating a new one. This is expected if this sandbox is the first sandbox to start with this `--shared-root` directory (%v). If this is not the first sandbox, this issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err, conf.SharedRoot())
 			}
 			return &specs.LinuxNamespace{Type: specs.NetworkNamespace}, nil, true
 		}
@@ -2464,7 +2464,7 @@ func logCPUPoliciesNotApplied(conf *config.Config, reason string) {
 	if !conf.SandboxCreationCPUPolicy.Implicit() || !conf.SandboxLifecycleCPUPolicy.Implicit() {
 		logf = log.Warningf
 	}
-	logf("[Lifecycle CPU] Not applying --sandbox-creation-cpu-policy=%v and --sandbox-lifecycle-cpu-policy=%v: %s.", conf.SandboxCreationCPUPolicy, conf.SandboxLifecycleCPUPolicy, reason)
+	logf("PERF: [Lifecycle CPU] Not applying --sandbox-creation-cpu-policy=%v and --sandbox-lifecycle-cpu-policy=%v: %s.", conf.SandboxCreationCPUPolicy, conf.SandboxLifecycleCPUPolicy, reason)
 }
 
 // cgroupResources returns `res` as the sandbox cgroup should have it now:

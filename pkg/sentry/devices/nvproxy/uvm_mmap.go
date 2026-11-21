@@ -56,7 +56,7 @@ type uvmFDMemmapFile struct {
 func (mf *uvmFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	bs, err := mf.MmapPreciseFile.MapInternal(fr, at)
 	if err != nil {
-		log.Warningf("uvmFDMemmapFile.MapInternal(%v) failed: %v; falling back to buffered I/O", fr, err)
+		log.Warningf("PERF: uvmFDMemmapFile.MapInternal(%v) failed: %v; falling back to buffered I/O", fr, err)
 		return safemem.BlockSeq{}, memmap.BufferedIOFallbackErr{}
 	}
 	return bs, nil

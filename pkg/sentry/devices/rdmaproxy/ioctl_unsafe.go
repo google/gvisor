@@ -195,7 +195,7 @@ func MirrorAppPages(t *kernel.Task, addr, length uint64) (*MirroredPages, uintpt
 	if !madvPopulateWriteDisabled.Load() {
 		if _, _, errno := unix.Syscall(unix.SYS_MADVISE, m, uintptr(alignedLen), unix.MADV_POPULATE_WRITE); errno != 0 {
 			if !madvPopulateWriteDisabled.Swap(true) {
-				log.Infof("rdmaproxy: disabling MADV_POPULATE_WRITE pre-fault: %s", errno)
+				log.Infof("PERF: rdmaproxy: disabling MADV_POPULATE_WRITE pre-fault: %s", errno)
 			}
 		}
 	}

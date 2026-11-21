@@ -638,7 +638,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	// TODO(fvoznika): Once `runsc create --for-restore` exists, this should
 	// become a no-op and no longer be needed:
 	if err := s.switchCPULimit(cpuPhaseCreation, cpuPhaseLifecycle); err != nil {
-		log.Warningf("[Lifecycle CPU] Restore will run under the creation CPU limit: %v. This affects gVisor restore speed.", err)
+		log.Warningf("PERF: [Lifecycle CPU] Restore will run under the creation CPU limit: %v. This affects gVisor restore speed.", err)
 	}
 
 	if !s.FSRestore && HasFSCheckpointManifest(imagePath) {
@@ -796,7 +796,7 @@ func openPagesFile(dirFD int, imagePath string, directIO DirectIO) (*os.File, er
 			return pf, err
 		}
 		// EINVAL means that the filesystem does not support O_DIRECT.
-		log.Infof("Reading pages file %q through the page cache: O_DIRECT is not supported", path.Join(imagePath, checkpointfiles.PagesFileName))
+		log.Infof("PERF: Reading pages file %q through the page cache: O_DIRECT is not supported", path.Join(imagePath, checkpointfiles.PagesFileName))
 	}
 	return openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, unix.O_RDONLY)
 }
@@ -1266,9 +1266,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
 	var pinRing *os.File
 	if _, err := gvisorbinaries.FDParking.Path(); err != nil {
-		log.Warningf("Sidecar %q not found or usable (%v). This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
+		log.Warningf("PERF: Sidecar %q not found or usable (%v). This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
 	} else if ring, err := pinring.NewDisabledIOURing(); err != nil {
-		log.Warningf("Cannot create disabled io_uring ring: %v. This slows down gVisor sandbox teardown.", err)
+		log.Warningf("PERF: Cannot create disabled io_uring ring: %v. This slows down gVisor sandbox teardown.", err)
 	} else {
 		pinRing = ring
 		defer pinRing.Close()
@@ -1669,7 +1669,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 
 	if pinRing != nil {
 		if err := spawnFDParking(pinRing, cmd.Process.Pid); err != nil {
-			log.Warningf("Cannot spawn sidecar %q: %v. This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
+			log.Warningf("PERF: Cannot spawn sidecar %q: %v. This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
 		}
 	}
 	return nil
@@ -1857,7 +1857,7 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		if err == nil {
 			if s.IsRootContainer(cid) {
 				if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
-					log.Warningf("[Lifecycle CPU] Sandbox teardown after root container exit will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+					log.Warningf("PERF: [Lifecycle CPU] Sandbox teardown after root container exit will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
 				}
 				if err := s.waitForStopped(); err != nil {
 					return unix.WaitStatus(0), err
@@ -1959,7 +1959,7 @@ func (s *Sandbox) destroy() error {
 	if pid != 0 {
 		if running, _ := s.IsRunning(); running {
 			if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
-				log.Warningf("[Lifecycle CPU] Sandbox destruction will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+				log.Warningf("PERF: [Lifecycle CPU] Sandbox destruction will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
 			}
 		}
 		log.Debugf("Killing sandbox %q", s.ID)
@@ -2107,7 +2107,7 @@ func (s *Sandbox) SignalContainer(cid string, sig unix.Signal, all bool) error {
 	if sig == unix.SIGKILL && s.IsRootContainer(cid) {
 		// This stops the application.
 		if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
-			log.Warningf("[Lifecycle CPU] Sandbox teardown after SIGKILL of the root container will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+			log.Warningf("PERF: [Lifecycle CPU] Sandbox teardown after SIGKILL of the root container will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
 		}
 	}
 	mode := sentryapi.DeliverToProcess
@@ -2232,7 +2232,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	}
 
 	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
-		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
+		log.Warningf("PERF: [Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
 	}
 	if err := s.call(sentryapi.ContMgrCheckpoint, &opt, nil); err != nil {
 		// The application may still be running.

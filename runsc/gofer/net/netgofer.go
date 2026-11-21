@@ -170,7 +170,7 @@ func (n *Netgofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 
 	if n.applyCaps {
 		if config.CgoEnabled {
-			log.Warningf("Need to re-exec in order to drop capabilities, due to cgo build. Use a pure-Go gVisor build to avoid this.")
+			log.Warningf("PERF: Need to re-exec in order to drop capabilities, due to cgo build. This slows down gVisor startup. Use a pure-Go gVisor build for faster startup.")
 			// Clear FD_CLOEXEC so udsFD and passtFD survive re-exec.
 			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(n.udsFD), unix.F_SETFD, 0); errno != 0 {
 				n.closeFDs()

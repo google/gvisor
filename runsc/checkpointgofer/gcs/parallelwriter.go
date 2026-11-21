@@ -526,7 +526,7 @@ func (w *ParallelWriter) Finalize() error {
 			}
 			return nil
 		}
-		log.Infof("Renaming %s from %s failed: %v; falling back to copying", w.obj.ObjectName(), src.ObjectName(), err)
+		log.Infof("PERF: Renaming %s from %s failed: %v; falling back to copying", w.obj.ObjectName(), src.ObjectName(), err)
 		c := w.obj.CopierFrom(src)
 		// It's not clear if attributes are copied automatically, so set them
 		// explicitly:

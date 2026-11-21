@@ -281,7 +281,7 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 
 		trapAddr, err := s.addTrapLocked(ctx, ac, mm, uint32(sysno))
 		if trapAddr == 0 || err != nil {
-			ctx.Warningf("Failed to add a new trap: %v", err)
+			ctx.Warningf("PERF: Failed to add a new trap: %v", err)
 			return nil
 		}
 

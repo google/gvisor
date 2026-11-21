@@ -833,7 +833,7 @@ func New(args Args) (*Loader, error) {
 		if l.pinRing.Exists() {
 			l.pinRing.Add(args.CPUDMALatencyFD)
 		} else {
-			log.Infof("No pin ring to hold /dev/cpu_dma_latency; not capping host CPU idle states")
+			log.Infof("PERF: No pin ring to hold /dev/cpu_dma_latency; not capping host CPU idle states")
 		}
 		unix.Close(args.CPUDMALatencyFD)
 	}
@@ -1294,13 +1294,13 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 	if appHugePages {
 		switch hostTHP.ShmemEnabled {
 		case "":
-			log.Infof("Disabling application huge pages: host shmem_enabled is unknown")
+			log.Infof("PERF: Disabling application huge pages: host shmem_enabled is unknown")
 		case "never", "deny":
-			log.Infof("Disabling application huge pages: host shmem_enabled is %q", hostTHP.ShmemEnabled)
+			log.Infof("PERF: Disabling application huge pages: host shmem_enabled is %q", hostTHP.ShmemEnabled)
 		case "advise":
 			switch hostTHP.Defrag {
 			case "":
-				log.Infof("Disabling application huge pages: host shmem_enabled is %q, host defrag is unknown", hostTHP.ShmemEnabled)
+				log.Infof("PERF: Disabling application huge pages: host shmem_enabled is %q, host defrag is unknown", hostTHP.ShmemEnabled)
 			case "always", "defer", "never":
 				// Allocations on MADV_HUGEPAGE pages will invoke direct
 				// compaction ("always"), wake kcompactd ("defer"), or do
@@ -1315,9 +1315,9 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 				// compaction whereas allocations on host private anonymous
 				// memory mappings will not, so using MADV_HUGEPAGE may degrade
 				// performance.
-				log.Infof("Disabling application huge pages: host shmem_enabled is %q, host defrag is %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
+				log.Infof("PERF: Disabling application huge pages: host shmem_enabled is %q, host defrag is %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
 			default:
-				log.Warningf("Disabling application huge pages: host shmem_enabled is %q, host defrag is unknown value %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
+				log.Warningf("PERF: Disabling application huge pages: host shmem_enabled is %q, host defrag is unknown value %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
 			}
 		case "always", "within_size":
 			log.Infof("Enabling application huge pages: host shmem_enabled is %q", hostTHP.ShmemEnabled)
@@ -1330,7 +1330,7 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 			// The kernel will ignore MADV_NOHUGEPAGE, so don't bother.
 			mfopts.ExpectHugepages = true
 		default:
-			log.Warningf("Disabling application huge pages: host shmem_enabled is unknown value %q", hostTHP.ShmemEnabled)
+			log.Warningf("PERF: Disabling application huge pages: host shmem_enabled is unknown value %q", hostTHP.ShmemEnabled)
 		}
 	}
 
@@ -1464,7 +1464,7 @@ func (l *Loader) run() error {
 		}
 
 		if err := l.pinRing.Finalize(); err != nil {
-			log.Warningf("Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
+			log.Warningf("PERF: Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
 		}
 
 		// Finally done with all configuration. Setup filters before user code

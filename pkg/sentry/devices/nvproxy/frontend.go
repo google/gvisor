@@ -812,7 +812,7 @@ func mirrorAppRange(ctx context.Context, t *kernel.Task, ar hostarch.AddrRange, 
 		}
 		if _, _, errno := unix.Syscall(unix.SYS_MADVISE, m, uintptr(ar.Length()), uintptr(advice)); errno != 0 {
 			if !madvPopulateDisabled.Swap(true) {
-				log.Infof("nvproxy: disabling MADV_POPULATE_READ/WRITE before host driver pinning: %s", errno)
+				log.Infof("PERF: nvproxy: disabling MADV_POPULATE_READ/WRITE before host driver pinning: %s", errno)
 			}
 		}
 	}

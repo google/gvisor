@@ -91,7 +91,7 @@ func NewFDWriter(fd int32, maxWriteBytes uint64, maxRanges, maxParallel int) *FD
 
 	direct := false
 	if statusFlags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0); err != nil {
-		log.Warningf("stateio.FDWriter: failed to get file status flags for FD %d: %v", fd, err)
+		log.Warningf("PERF: stateio.FDWriter: failed to get file status flags for FD %d: %v; falling back to serial aio.GoQueue", fd, err)
 		// leave direct false
 	} else {
 		direct = (statusFlags & unix.O_DIRECT) != 0
@@ -116,7 +116,7 @@ func NewFDWriter(fd int32, maxWriteBytes uint64, maxRanges, maxParallel int) *FD
 			preextend = true
 			break
 		}
-		log.Warningf("stateio.FDWriter: failed to create aio.LinuxQueue with capacity %d: %v; falling back to serial aio.GoQueue", maxParallel, err)
+		log.Warningf("PERF: stateio.FDWriter: failed to create aio.LinuxQueue with capacity %d: %v; falling back to serial aio.GoQueue", maxParallel, err)
 		fallthrough
 	case false:
 		// Don't use parallel aio.GoQueue for writing since most filesystems
@@ -194,7 +194,7 @@ func (w *FDWriter) Wait(cs []Completion, minCompletions int) ([]Completion, erro
 		if err := unix.Ftruncate(int(w.fd.Load()), newSize); err != nil {
 			// This can occur if e.g. the file is FUSE-backed, and the FUSE
 			// server doesn't support file extension.
-			log.Infof("stateio.FDWriter: ftruncate(%d, %d) failed: %v", w.fd.Load(), newSize, err)
+			log.Infof("PERF: stateio.FDWriter: ftruncate(%d, %d) failed: %v; disabling file pre-extension", w.fd.Load(), newSize, err)
 			w.preextend = false
 			// Update w.fileSize assuming that all writes complete
 			// successfully, as below.

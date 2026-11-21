@@ -460,7 +460,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	if err := l.pinRing.Finalize(); err != nil {
-		log.Warningf("Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
+		log.Warningf("PERF: Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
 	}
 
 	// Seccomp filters have to be applied before vfs restore and before parsing
