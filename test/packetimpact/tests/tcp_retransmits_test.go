@@ -81,6 +81,50 @@ func getRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rto time.Duration)
 	return time.Duration(info.RTO) * time.Microsecond
 }
 
+func TestLimitedTransmit(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listenFd, port := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFd)
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &port}, testbench.TCP{SrcPort: &port})
+	defer conn.Close(t)
+	conn.Connect(t)
+	fd, _ := dut.Accept(t, listenFd)
+	defer dut.Close(t, fd)
+
+	info := dut.GetSockOptTCPInfo(t, fd)
+	base := uint32(*conn.RemoteSeqNum(t))
+	payload := &testbench.Payload{Bytes: make([]byte, info.SndMss)}
+	expect := func(i uint32) {
+		t.Helper()
+		seq := base + i*info.SndMss
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: &seq}, payload, time.Second); err != nil {
+			t.Fatalf("packet %d: %v", i, err)
+		}
+	}
+	// Fill the congestion window, then queue two more full segments.
+	for i := uint32(0); i < info.SndCwnd; i++ {
+		dut.Send(t, fd, payload.Bytes, 0)
+		expect(i)
+	}
+	dut.Send(t, fd, make([]byte, 2*info.SndMss), 0)
+
+	// Treat the first segment as lost. The next two segments each
+	// elicit a duplicate ACK; each must clock out one new segment.
+	for i := uint32(0); i < 2; i++ {
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: &base})
+		expect(info.SndCwnd + i)
+		if i == 0 {
+			next := base + (info.SndCwnd+1)*info.SndMss
+			if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: &next}, payload, 20*time.Millisecond); err == nil {
+				t.Fatal("first duplicate ACK sent both queued packets")
+			}
+		}
+		if got := dut.GetSockOptTCPInfo(t, fd).SndCwnd; got != info.SndCwnd {
+			t.Fatalf("cwnd after duplicate ACK %d = %d, want %d", i+1, got, info.SndCwnd)
+		}
+	}
+}
+
 // TestRetransmits tests retransmits occur at exponentially increasing
 // time intervals.
 func TestRetransmits(t *testing.T) {
