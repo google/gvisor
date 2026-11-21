@@ -269,3 +269,24 @@ func TestConnectionCallInterruptedByPause(t *testing.T) {
 		t.Errorf("conn.write() for abandoned request = %v, want ENOENT", err)
 	}
 }
+
+func TestResponseError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		errno int32
+		want  error
+	}{
+		{name: "zero", errno: 0, want: nil},
+		{name: "positive", errno: 1, want: nil},
+		{name: "EPERM", errno: -int32(unix.EPERM), want: linuxerr.EPERM},
+		{name: "ENONET", errno: -int32(unix.ENONET), want: linuxerr.ENONET},
+		{name: "invalid", errno: -4096, want: linuxerr.EINVAL},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := Response{hdr: linux.FUSEHeaderOut{Error: tc.errno}}
+			if got := res.Error(); got != tc.want {
+				t.Errorf("Response{Error: %d}.Error() = %v, want %v", tc.errno, got, tc.want)
+			}
+		})
+	}
+}

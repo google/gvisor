@@ -307,3 +307,9 @@ func TestConvertIntr(t *testing.T) {
 		})
 	}
 }
+
+func TestENONET(t *testing.T) {
+	if got := linuxerr.ErrorFromUnix(unix.ENONET); got != linuxerr.ENONET {
+		t.Fatalf("ErrorFromUnix(ENONET) = %v, want %v", got, linuxerr.ENONET)
+	}
+}
