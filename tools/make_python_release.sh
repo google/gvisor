@@ -106,32 +106,45 @@ build_wheel_sdist() {
   echo "=== [Build] Building Python SandboxExec Wheel & SDist ==="
   mkdir -p "${dest_dir}"
   local -r abs_dest_dir="$(cd "${dest_dir}" && pwd)"
-  cd "$(dirname "$0")/../sandboxexec/sandbox/python"
-  echo "Working directory: $(pwd)"
-  echo "Target destination directory: ${abs_dest_dir}"
+  (
+    local workdir
+    workdir=$(mktemp -d)
+    trap 'rm -rf -- "$workdir"' EXIT
+    cp -R "$(dirname "$0")/../sandboxexec/sandbox/python" "$workdir/project"
+    cd "$workdir/project"
+    # An older setuptools source list may name obsolete release files.
+    rm -f gvisor.egg-info/SOURCES.txt
+    echo "Working directory: $(pwd)"
+    echo "Target destination directory: ${abs_dest_dir}"
 
-  update_version "${release_name}"
+    update_version "${release_name}"
 
-  # Build wheel and sdist (with fallback to --no-isolation or uv build)
-  echo "Building distribution packages..."
-  if python3 -m build 2>/dev/null; then
-    echo "Successfully built wheel and sdist with python3 -m build."
-  elif python3 -m build --no-isolation 2>/dev/null; then
-    echo "Successfully built wheel and sdist with python3 -m build --no-isolation."
-  elif command -v uv >/dev/null 2>&1; then
-    echo "python3 -m build not available, building with uv build..."
-    uv build
-  else
-    echo "ERROR: Neither python3 -m build nor uv build found to build Python artifacts." >&2
-    return 1
-  fi
+    # Build wheel and sdist (with fallback to --no-isolation or uv build)
+    echo "Building distribution packages..."
+    if python3 -m build --outdir ../dist 2>/dev/null; then
+      echo "Successfully built wheel and sdist with python3 -m build."
+    elif python3 -m build --no-isolation --outdir ../dist 2>/dev/null; then
+      echo "Successfully built wheel and sdist with python3 -m build --no-isolation."
+    elif command -v uv >/dev/null 2>&1; then
+      echo "python3 -m build not available, building with uv build..."
+      uv build --out-dir ../dist
+    else
+      echo "ERROR: Neither python3 -m build nor uv build found to build Python artifacts." >&2
+      return 1
+    fi
 
-  echo "Generated artifacts in dist/:"
-  ls -lh dist/
-
-  echo "Copying artifacts to ${abs_dest_dir}..."
-  cp -f dist/*.whl "${abs_dest_dir}/"
-  cp -f dist/*.tar.gz "${abs_dest_dir}/"
+    # make release collects every staged archive. Keep only this build's
+    # gvisor distributions, even if two builds finish together.
+    local dest_lock archive
+    exec {dest_lock}<"${abs_dest_dir}"
+    flock "${dest_lock}"
+    cp ../dist/*.whl ../dist/*.tar.gz "${abs_dest_dir}/"
+    for archive in "${abs_dest_dir}/${PACKAGE_NAME}-"[0-9]*.{whl,tar.gz}; do
+      if [[ -f "${archive}" && ! -f "../dist/${archive##*/}" ]]; then
+        rm -f -- "${archive}"
+      fi
+    done
+  )
 
   echo "Staged Python artifacts in ${abs_dest_dir}:"
   ls -lh "${abs_dest_dir}"
