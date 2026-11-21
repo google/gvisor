@@ -160,6 +160,12 @@ type runscService struct {
 	// A nil pointer or empty command selects the default.
 	versionCommand atomic.Pointer[string]
 
+	// sandbox is set if the sandbox was created through the sandbox API. It is
+	// not a task, so it is kept out of containers.
+	//
+	// +checklocks:mu
+	sandbox *sandboxState
+
 	shutdown shutdown.Service
 }
 
@@ -258,11 +264,20 @@ func hasPodCgroupParent(bundle, cgPath string) bool {
 //
 // +checklocksexclude:s.mu
 func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error) {
+	// A container in a sandbox API sandbox's shim resolves its options like
+	// the sandbox does.
+	s.mu.Lock()
+	sandboxAPI := s.sandbox != nil
+	s.mu.Unlock()
+	opts, err := resolveOptions(rfs.Create.Options, sandboxAPI)
+	if err != nil {
+		return nil, err
+	}
 	c, err := NewContainer(ctx, s.platform, &ContainerConfig{
 		ID:                 rfs.Create.ID,
 		Bundle:             rfs.Create.Bundle,
 		Rootfs:             rfs.Create.Rootfs,
-		Options:            rfs.Create.Options,
+		Options:            opts,
 		Terminal:           rfs.Create.Terminal,
 		Stdin:              rfs.Create.Stdin,
 		Stdout:             rfs.Create.Stdout,
@@ -369,7 +384,8 @@ func (s *runscService) Delete(ctx context.Context, r *task.DeleteRequest) (*task
 	if len(r.ExecID) == 0 {
 		s.mu.Lock()
 		delete(s.containers, r.ID)
-		hasCont := len(s.containers) > 0
+		// A sandbox API sandbox outlives its containers and may get more.
+		hasCont := len(s.containers) > 0 || s.sandbox != nil
 		s.mu.Unlock()
 
 		if !hasCont && s.platform != nil {
@@ -610,6 +626,10 @@ func (s *runscService) Shutdown(ctx context.Context, r *task.ShutdownRequest) (*
 	if len(s.containers) > 0 {
 		return nil, fmt.Errorf("shim still servicing %d containers", len(s.containers))
 	}
+	if s.sandbox != nil {
+		// Only ShutdownSandbox ends a sandbox's shim.
+		return nil, fmt.Errorf("shim still servicing sandbox %q", s.sandbox.id)
+	}
 
 	return empty, nil
 }
@@ -681,6 +701,13 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		containerID string
 		exitingP    process.Process
 	)
+	if sb := s.sandbox; sb != nil && sb.id == e.ID {
+		s.mu.Unlock()
+		// No TaskExit event: containerd learns of the exit from WaitSandbox.
+		log.L.Debugf("Sandbox %q exited with status %d", sb.id, e.Status)
+		sb.task().SetExited(e.Status)
+		return
+	}
 	for cid, c := range s.containers {
 		for _, p := range c.All() {
 			if p.ID() == e.ID {
@@ -824,17 +851,19 @@ func getTopic(e any) string {
 	return runtime.TaskUnknownTopic
 }
 
-func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, error) {
+func newInit(ctx context.Context, workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, error) {
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
 		return nil, fmt.Errorf("read oci spec: %w", err)
 	}
+	runtime := proc.NewRunsc(options.Root, r.Bundle, namespace, options.BinaryName, options.RunscConfig, spec)
 
 	updated, err := utils.UpdateVolumeAnnotations(spec)
 	if err != nil {
 		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
 	updated = setPodCgroup(spec) || updated
+	updated = mountSandboxFiles(ctx, runtime, spec) || updated
 
 	if updated {
 		if err := utils.WriteSpec(r.Bundle, spec); err != nil {
@@ -842,7 +871,6 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 		}
 	}
 
-	runtime := proc.NewRunsc(options.Root, r.Bundle, namespace, options.BinaryName, options.RunscConfig, spec)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
 		Stdin:    r.Stdin,
 		Stdout:   r.Stdout,

@@ -212,6 +212,12 @@ func (cc *Crictl) StopPod(podID string) error {
 	return err
 }
 
+// InspectPod returns the raw output of `crictl inspectp`, which is the pod
+// sandbox status plus, for runtimes that supply it, a verbose "info" map.
+func (cc *Crictl) InspectPod(podID string) (string, error) {
+	return cc.run("inspectp", podID)
+}
+
 // containsConfig is a minimal copy of
 // https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto
 // It only contains fields needed for testing.
@@ -458,11 +464,21 @@ func (cc *Crictl) runCTR(args ...string) (string, error) {
 	return string(out), err
 }
 
+// crictlTimeout bounds each crictl RPC. crictl's own default is 2 seconds,
+// which is not enough: a `crictl stop` of a runsc container takes ~0.25s
+// normally but over a second for the slowest cases even on an idle machine,
+// and the tests run runsc with strace and debug logging on. Exceeding it
+// surfaces as a DeadlineExceeded from the CRI call, i.e. a flake. Test-level
+// timeouts still bound a genuine hang.
+const crictlTimeout = 30 * time.Second
+
+// run runs crictl with the given args.
 func (cc *Crictl) run(args ...string) (string, error) {
 	defaultArgs := []string{
 		ResolvePath("crictl"),
 		"--image-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 		"--runtime-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
+		fmt.Sprintf("--timeout=%s", crictlTimeout),
 	}
 	fullArgs := append(defaultArgs, args...)
 	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
