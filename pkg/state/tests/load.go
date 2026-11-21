@@ -16,6 +16,7 @@ package tests
 
 import (
 	"context"
+	clock "time"
 
 	"gvisor.dev/gvisor/pkg/state"
 )
@@ -34,17 +35,12 @@ func (a *afterLoadStruct) afterLoad(context.Context) {
 	a.v++
 }
 
-// +stateify savable
-type valueLoadStruct struct {
-	v int `state:".(int64)"`
+func (v *valueLoadStruct) saveV() clock.Duration {
+	return clock.Duration(v.v)
 }
 
-func (v *valueLoadStruct) saveV() int64 {
-	return int64(v.v) // Save as int64.
-}
-
-func (v *valueLoadStruct) loadV(_ context.Context, value int64) {
-	v.v = int(value) // Load as int.
+func (v *valueLoadStruct) loadV(_ context.Context, value clock.Duration) {
+	v.v = int(value)
 }
 
 // +stateify savable

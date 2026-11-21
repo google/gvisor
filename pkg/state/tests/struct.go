@@ -25,6 +25,14 @@ type timeContainer struct {
 	pointer   *time.Time
 }
 
+// valueLoadStruct saves an int as an int64-based type. The import alias
+// used by the conversion tag is declared with the hooks in load.go.
+//
+// +stateify savable
+type valueLoadStruct struct {
+	v int `state:".(clock.Duration)"`
+}
+
 type unregisteredEmptyStruct struct{}
 
 // typeOnlyEmptyStruct just implements the state.Type interface.
