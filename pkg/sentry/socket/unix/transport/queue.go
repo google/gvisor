@@ -62,7 +62,7 @@ func (q *queue) isClosed() bool {
 
 // Reset empties the queue and Releases all of the Entries.
 //
-// Both the read and write queues must be notified after resetting:
+// If q is still open, notify both wait queues after resetting:
 // q.readerWaiters.Notify(waiter.ReadableEvents)
 // q.writerWaiters.Notify(waiter.WritableEvents)
 func (q *queue) Reset(ctx context.Context) {

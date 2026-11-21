@@ -51,6 +51,30 @@ func (m *mockRights) Release(ctx context.Context) {
 	m.refs = nil
 }
 
+func TestReceiverReleaseDiscardsUnreadRights(t *testing.T) {
+	ctx := context.Background()
+	q := &queue{limit: 8}
+	q.InitRefs()
+	q.IncRef() // The sender still holds the queue.
+	defer q.DecRef(ctx)
+
+	refcount := 1
+	rights := &mockRights{refs: []*int{&refcount}}
+	if _, _, err := q.Enqueue(ctx, [][]byte{{42}}, ControlMessages{Rights: rights}, Address{}, false, false); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	receiver := &queueReceiver{readQueue: q}
+	receiver.CloseRecv()
+	if refcount != 1 {
+		t.Fatalf("Closed queue has %d references to unread rights, want 1", refcount)
+	}
+	receiver.Release(ctx)
+	if refcount != 0 {
+		t.Errorf("Released receiver has %d references to unread rights, want 0", refcount)
+	}
+}
+
 // TestEnqueueRightsOwnership verifies ownership of SCM rights as a function
 // of the success/error paths of the Enqueue call.
 func TestEnqueueRightsOwnership(t *testing.T) {
