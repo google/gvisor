@@ -1986,6 +1986,12 @@ func (m mopt) String() string {
 	return fmt.Sprintf("%s=%v", m.key, m.value)
 }
 
+// OverlayOriginPathOptions reports whether the Gofer has exclusive access to
+// its backing filesystem and whether it assigns virtual inode numbers.
+func (fs *filesystem) OverlayOriginPathOptions() (exclusive, virtualInodes bool) {
+	return fs.opts.interop == InteropModeExclusive, fs.opts.virtualInodeNumbers
+}
+
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
 	optsKV := []mopt{

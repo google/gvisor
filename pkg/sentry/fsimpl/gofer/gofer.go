@@ -1477,7 +1477,7 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS
 	stat.Blksize = d.inode.blockSize.Load()
 	stat.Nlink = d.inode.nlink.Load()
-	if stat.Nlink == 0 {
+	if stat.Nlink == 0 && !d.isDeleted() {
 		// The remote filesystem doesn't support link count; just make
 		// something up. This is consistent with Linux, where
 		// fs/inode.c:inode_init_always() initializes link count to 1, and
