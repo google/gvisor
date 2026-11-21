@@ -228,6 +228,13 @@ func handlePacket(pkt *PacketBuffer, opts *handlePacketOpts) bool {
 	return true
 }
 
+// bridgedTXTransportChecksum returns whether pkt is a frame that a bridge
+// forwards, whose transport checksum must be kept valid by NAT as nothing
+// computes it on transmit.
+func bridgedTXTransportChecksum(pkt *PacketBuffer) bool {
+	return pkt.bridge.physOut != 0
+}
+
 // IPTHandlePacket handles and applies NAT to the packet if required.
 func IPTHandlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	opts := handlePacketOpts{
@@ -235,7 +242,7 @@ func IPTHandlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		updatePseudoHeader: false,
 		natType:            SNAT,
 	}
-	requiresTXTransportChecksum := false
+	requiresTXTransportChecksum := bridgedTXTransportChecksum(pkt)
 	if r != nil {
 		requiresTXTransportChecksum = r.RequiresTXTransportChecksum()
 	}
@@ -456,7 +463,7 @@ func IPTMaybePerformNoopNAT(pkt *PacketBuffer, hook Hook, r *Route, dnat bool) {
 // NFTApplyNAT applies NAT to the packet and updates the connection.
 // Similar to IPTHandlePacket but for NFTables hooks.
 func NFTApplyNAT(pkt *PacketBuffer, hook NFHook, rt *Route) bool {
-	requiresTXTransportChecksum := false
+	requiresTXTransportChecksum := bridgedTXTransportChecksum(pkt)
 	if rt != nil {
 		requiresTXTransportChecksum = rt.RequiresTXTransportChecksum()
 	}

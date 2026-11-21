@@ -51,6 +51,11 @@ type Stack interface {
 	// SetInterface modifies or adds a new interface.
 	SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Error
 
+	// SetBridgePort applies cfg to the bridge port with index idx. It fails
+	// with ENODEV if there is no such interface and with EOPNOTSUPP if the
+	// interface is not a bridge port.
+	SetBridgePort(ctx context.Context, idx int32, cfg BridgePortConfig) *syserr.Error
+
 	// RemoveInterfaceAddr removes an address from the network interface
 	// identified by idx.
 	RemoveInterfaceAddr(ctx context.Context, idx int32, addr InterfaceAddr) error
@@ -141,6 +146,14 @@ type Stack interface {
 	// loopback packets (Linux net.ipv4.conf.*.route_localnet) for the protocol.
 	SetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber, enable bool) error
 
+	// BridgeNetfilterCall returns whether the bridged frames that c selects go
+	// through netfilter (Linux net.bridge.bridge-nf-call-*).
+	BridgeNetfilterCall(c stack.BridgeNetfilterCall) (bool, error)
+
+	// SetBridgeNetfilterCall sets whether the bridged frames that c selects go
+	// through netfilter.
+	SetBridgeNetfilterCall(c stack.BridgeNetfilterCall, enable bool) error
+
 	// PortRange returns the UDP and TCP inclusive range of ephemeral ports
 	// used in both IPv4 and IPv6.
 	PortRange() (uint16, uint16)
@@ -186,6 +199,18 @@ type Interface struct {
 
 	// Kind is the link kind (e.g. "veth", "bridge").
 	Kind string
+}
+
+// BridgePortConfig is a change to the options of a bridge port. A nil field
+// leaves the option unchanged.
+type BridgePortConfig struct {
+	// Hairpin is IFLA_BRPORT_MODE: whether the bridge may send a frame back
+	// out of the port it was received on.
+	Hairpin *bool
+
+	// Learning is IFLA_BRPORT_LEARNING: whether the bridge learns source
+	// addresses seen on the port.
+	Learning *bool
 }
 
 // InterfaceAddr contains information about a network interface address.

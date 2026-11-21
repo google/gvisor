@@ -115,6 +115,13 @@ func (it *IPTables) Modified() bool {
 	return it.modified
 }
 
+// isModified returns whether iptables has been modified.
+func (it *IPTables) isModified() bool {
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	return it.modified
+}
+
 // VisitTargets traverses all the targets of all tables and replaces each with
 // transform(target).
 func (it *IPTables) VisitTargets(transform func(Target) Target) {

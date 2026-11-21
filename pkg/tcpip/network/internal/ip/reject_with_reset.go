@@ -277,6 +277,30 @@ func RejectWithTCPReset(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolN
 		v = buildResetPayloadV6(ttl, src, dst, tcpHdr, seq, ack, flags)
 	}
 
+	// The reset for a bridged packet is sent straight out of the bridge port
+	// the packet was received on, from the link address the packet was sent
+	// to.
+	if physIn := pkt.BridgePhysIn(); physIn != 0 {
+		origEth := header.Ethernet(pkt.LinkHeader().Slice())
+		if len(origEth) < header.EthernetMinimumSize {
+			v.Release()
+			return nil
+		}
+		if netProto == header.IPv4ProtocolNumber {
+			ipHdr := header.IPv4(v.AsSlice())
+			ipHdr.SetChecksum(^ipHdr.CalculateChecksum())
+		}
+		eth := buffer.NewViewSize(header.EthernetMinimumSize)
+		header.Ethernet(eth.AsSlice()).Encode(&header.EthernetFields{
+			SrcAddr: origEth.DestinationAddress(),
+			DstAddr: origEth.SourceAddress(),
+			Type:    netProto,
+		})
+		frame := buffer.MakeWithView(eth)
+		frame.Append(v)
+		return stk.WriteRawPacket(physIn, netProto, frame)
+	}
+
 	rstPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(route.MaxHeaderLength()),
 		Payload:            buffer.MakeWithView(v),

@@ -148,6 +148,12 @@ type Stack struct {
 	// least one rule on a chain at a network hook.
 	nftablesConfigured atomicbitops.Bool
 
+	// bridgeNFCallIPTables, bridgeNFCallIP6Tables and bridgeNFCallARPTables
+	// are the fields of BridgeNetfilter.
+	bridgeNFCallIPTables  atomicbitops.Bool
+	bridgeNFCallIP6Tables atomicbitops.Bool
+	bridgeNFCallARPTables atomicbitops.Bool
+
 	// restoredEndpoints is a list of endpoints that need to be restored if the
 	// stack is being restored.
 	restoredEndpoints []RestoredEndpoint
@@ -484,6 +490,11 @@ func New(opts Options) *Stack {
 		allowLiveTCPMigration: opts.AllowLiveTCPMigration,
 	}
 	s.SetNFTables(opts.NFTables)
+	s.SetBridgeNetfilter(BridgeNetfilter{
+		CallIPTables:  true,
+		CallIP6Tables: true,
+		CallARPTables: true,
+	})
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {
@@ -2657,6 +2668,77 @@ func (s *Stack) IsNFTablesConfigured() bool {
 // SetNFTablesConfigured sets whether the stack has nftables configured.
 func (s *Stack) SetNFTablesConfigured(configured bool) {
 	s.nftablesConfigured.Store(configured)
+}
+
+// BridgeNetfilter is which bridged frames go through netfilter, as set by
+// Linux's net.bridge.bridge-nf-call-* sysctls. Linux enables all three by
+// default.
+type BridgeNetfilter struct {
+	// CallIPTables is whether bridged IPv4 frames go through the IPv4 hooks.
+	CallIPTables bool
+
+	// CallIP6Tables is whether bridged IPv6 frames go through the IPv6 hooks.
+	CallIP6Tables bool
+
+	// CallARPTables is whether forwarded ARP frames go through the ARP
+	// netfilter hook. There is no ARP netfilter, so the only effect is that
+	// forwarded ARP frames too short for an ARP header are dropped, as
+	// br_nf_forward_arp does.
+	CallARPTables bool
+}
+
+// BridgeNetfilter returns which bridged frames go through netfilter.
+func (s *Stack) BridgeNetfilter() BridgeNetfilter {
+	return BridgeNetfilter{
+		CallIPTables:  s.bridgeNFCallIPTables.Load(),
+		CallIP6Tables: s.bridgeNFCallIP6Tables.Load(),
+		CallARPTables: s.bridgeNFCallARPTables.Load(),
+	}
+}
+
+// SetBridgeNetfilter sets which bridged frames go through netfilter.
+func (s *Stack) SetBridgeNetfilter(nf BridgeNetfilter) {
+	s.bridgeNFCallIPTables.Store(nf.CallIPTables)
+	s.bridgeNFCallIP6Tables.Store(nf.CallIP6Tables)
+	s.bridgeNFCallARPTables.Store(nf.CallARPTables)
+}
+
+// BridgeNetfilterCall is one of the fields of BridgeNetfilter.
+type BridgeNetfilterCall int
+
+const (
+	// BridgeNetfilterCallIPTables is BridgeNetfilter.CallIPTables.
+	BridgeNetfilterCallIPTables BridgeNetfilterCall = iota
+
+	// BridgeNetfilterCallIP6Tables is BridgeNetfilter.CallIP6Tables.
+	BridgeNetfilterCallIP6Tables
+
+	// BridgeNetfilterCallARPTables is BridgeNetfilter.CallARPTables.
+	BridgeNetfilterCallARPTables
+)
+
+func (s *Stack) bridgeNetfilterCall(c BridgeNetfilterCall) *atomicbitops.Bool {
+	switch c {
+	case BridgeNetfilterCallIPTables:
+		return &s.bridgeNFCallIPTables
+	case BridgeNetfilterCallIP6Tables:
+		return &s.bridgeNFCallIP6Tables
+	case BridgeNetfilterCallARPTables:
+		return &s.bridgeNFCallARPTables
+	default:
+		panic(fmt.Sprintf("unknown BridgeNetfilterCall %d", c))
+	}
+}
+
+// BridgeNetfilterCall returns the field c of BridgeNetfilter.
+func (s *Stack) BridgeNetfilterCall(c BridgeNetfilterCall) bool {
+	return s.bridgeNetfilterCall(c).Load()
+}
+
+// SetBridgeNetfilterCall sets the field c of BridgeNetfilter, leaving the
+// others alone.
+func (s *Stack) SetBridgeNetfilterCall(c BridgeNetfilterCall, enable bool) {
+	s.bridgeNetfilterCall(c).Store(enable)
 }
 
 // ICMPLimit returns the maximum number of ICMP messages that can be sent

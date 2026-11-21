@@ -18,6 +18,7 @@
 #include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -43,7 +44,10 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -52,6 +56,7 @@
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
@@ -137,6 +142,30 @@ PosixError SetLinkAttr(const FileDescriptor& fd, uint32_t seq, int index,
   req.hdr.nlmsg_seq = seq;
   req.ifm.ifi_index = index;
   AddAttr(&req, type, data, len);
+  return NetlinkRequestAckOrError(fd, seq, &req, req.hdr.nlmsg_len);
+}
+
+// Creates the bridge name if index is 0, or changes the bridge with that
+// index otherwise, with the bridge attribute type set to data.
+PosixError SetBridgeAttr(const FileDescriptor& fd, uint32_t seq, int index,
+                         const char* name, int type, const void* data,
+                         int len) {
+  LinkRequest req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.ifm));
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = seq;
+  if (index == 0) {
+    req.hdr.nlmsg_flags |= NLM_F_CREATE | NLM_F_EXCL;
+    AddAttr(&req, IFLA_IFNAME, name, strlen(name));
+  }
+  req.ifm.ifi_index = index;
+  struct rtattr* linkinfo = AddAttr(&req, IFLA_LINKINFO, nullptr, 0);
+  AddAttr(&req, IFLA_INFO_KIND, "bridge", strlen("bridge"));
+  struct rtattr* data_attr = AddAttr(&req, IFLA_INFO_DATA, nullptr, 0);
+  AddAttr(&req, type, data, len);
+  EndNest(&req, data_attr);
+  EndNest(&req, linkinfo);
   return NetlinkRequestAckOrError(fd, seq, &req, req.hdr.nlmsg_len);
 }
 
@@ -470,6 +499,227 @@ TEST_F(BridgeLocalDeliveryTest, PortAddressChangeIsTracked) {
   ASSERT_NO_FATAL_FAILURE(Deliver(port_b_mac_, &delivered, &forwarded));
   EXPECT_FALSE(delivered) << "old other-port address";
   EXPECT_TRUE(forwarded) << "old other-port address";
+}
+
+// br0 is a bridge in a new network namespace, created without options.
+class BridgeNfCallTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    SKIP_IF(IsRunningWithHostinet());
+
+    netns_ =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+
+    nl_ = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    PosixError err = NewLink(nl_, kSeq, "bridge", "br0", nullptr);
+    // Native Linux kernels may not be built with CONFIG_BRIDGE.
+    SKIP_IF(!IsRunningOnGvisor() && err.errno_value() == EOPNOTSUPP);
+    ASSERT_NO_ERRNO(err);
+    br_ = if_nametoindex("br0");
+    ASSERT_NE(br_, 0);
+  }
+
+  void TearDown() override {
+    if (netns_.get() >= 0) {
+      EXPECT_THAT(setns(netns_.get(), CLONE_NEWNET), SyscallSucceeds());
+    }
+  }
+
+  // Don't do cooperative save/restore because netstack state is not restored.
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds_;
+  FileDescriptor netns_;
+  FileDescriptor nl_;
+  int br_ = 0;
+};
+
+constexpr int kNfCallAttrs[] = {IFLA_BR_NF_CALL_IPTABLES,
+                                IFLA_BR_NF_CALL_IP6TABLES,
+                                IFLA_BR_NF_CALL_ARPTABLES};
+
+TEST_F(BridgeNfCallTest, ZeroIsAccepted) {
+  const char* names[] = {"br1", "br2", "br3"};
+  for (size_t i = 0; i < std::size(kNfCallAttrs); i++) {
+    SCOPED_TRACE(kNfCallAttrs[i]);
+    const uint8_t off = 0;
+    EXPECT_NO_ERRNO(
+        SetBridgeAttr(nl_, kSeq + 1, 0, names[i], kNfCallAttrs[i], &off, 1));
+    EXPECT_NE(if_nametoindex(names[i]), 0);
+    EXPECT_NO_ERRNO(
+        SetBridgeAttr(nl_, kSeq + 2, br_, nullptr, kNfCallAttrs[i], &off, 1));
+  }
+}
+
+// Linux: br_policy has the attributes as NLA_U8, so validate_nla rejects an
+// empty one with ERANGE.
+TEST_F(BridgeNfCallTest, EmptyIsOutOfRange) {
+  for (int attr : kNfCallAttrs) {
+    SCOPED_TRACE(attr);
+    EXPECT_THAT(SetBridgeAttr(nl_, kSeq + 1, 0, "br1", attr, nullptr, 0),
+                PosixErrorIs(ERANGE, ::testing::_));
+    EXPECT_EQ(if_nametoindex("br1"), 0);
+    EXPECT_THAT(SetBridgeAttr(nl_, kSeq + 2, br_, nullptr, attr, nullptr, 0),
+                PosixErrorIs(ERANGE, ::testing::_));
+  }
+}
+
+// gVisor passes bridged frames through netfilter as the
+// net.bridge.bridge-nf-call-* sysctls say, without per-bridge options, so it
+// doesn't accept enabling them.
+TEST_F(BridgeNfCallTest, NonzeroIsNotSupported) {
+  SKIP_IF(!IsRunningOnGvisor());
+  for (int attr : kNfCallAttrs) {
+    SCOPED_TRACE(attr);
+    const uint8_t on = 1;
+    EXPECT_THAT(SetBridgeAttr(nl_, kSeq + 1, 0, "br1", attr, &on, 1),
+                PosixErrorIs(EOPNOTSUPP, ::testing::_));
+    EXPECT_EQ(if_nametoindex("br1"), 0);
+    EXPECT_THAT(SetBridgeAttr(nl_, kSeq + 2, br_, nullptr, attr, &on, 1),
+                PosixErrorIs(EOPNOTSUPP, ::testing::_));
+  }
+}
+
+constexpr char kBridgeSysctlDir[] = "/proc/sys/net/bridge/";
+constexpr const char* kCallFiles[] = {"bridge-nf-call-arptables",
+                                      "bridge-nf-call-iptables",
+                                      "bridge-nf-call-ip6tables"};
+constexpr const char* kTaggedFiles[] = {"bridge-nf-filter-vlan-tagged",
+                                        "bridge-nf-filter-pppoe-tagged",
+                                        "bridge-nf-pass-vlan-input-dev"};
+
+std::string BridgeSysctl(const char* name) {
+  return std::string(kBridgeSysctlDir) + name;
+}
+
+// Writes value to the sysctl file name in a single write.
+PosixError WriteBridgeSysctl(const char* name, const std::string& value) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(BridgeSysctl(name), O_WRONLY));
+  RETURN_ERROR_IF_SYSCALL_FAIL(write(fd.get(), value.data(), value.size()));
+  return NoError();
+}
+
+// The /proc/sys/net/bridge files of br_netfilter, in a new network namespace.
+// gVisor shows the files of the root network namespace
+// (gvisor.dev/issue/1833), so the test restores the values it changes.
+// Natively, the files exist only when br_netfilter is loaded, which the test
+// doesn't do.
+class BridgeNetfilterSysctlTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    SKIP_IF(IsRunningWithHostinet());
+
+    netns_ =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+    struct stat st;
+    int ret = stat(kBridgeSysctlDir, &st);
+    SKIP_IF(!IsRunningOnGvisor() && ret < 0 && errno == ENOENT);
+    ASSERT_THAT(ret, SyscallSucceeds());
+    for (const char* name : kCallFiles) {
+      saved_.push_back(
+          ASSERT_NO_ERRNO_AND_VALUE(GetContents(BridgeSysctl(name))));
+    }
+  }
+
+  void TearDown() override {
+    for (size_t i = 0; i < saved_.size(); i++) {
+      EXPECT_NO_ERRNO(WriteBridgeSysctl(kCallFiles[i], saved_[i]));
+    }
+    if (netns_.get() >= 0) {
+      EXPECT_THAT(setns(netns_.get(), CLONE_NEWNET), SyscallSucceeds());
+    }
+  }
+
+  FileDescriptor netns_;
+  std::vector<std::string> saved_;
+};
+
+// Linux: brnf_net_init enables the call-* settings in every network namespace
+// and leaves the others off.
+TEST_F(BridgeNetfilterSysctlTest, Defaults) {
+  for (const char* name : kCallFiles) {
+    EXPECT_THAT(GetContents(BridgeSysctl(name)), IsPosixErrorOkAndHolds("1\n"))
+        << name;
+  }
+  for (const char* name : kTaggedFiles) {
+    EXPECT_THAT(GetContents(BridgeSysctl(name)), IsPosixErrorOkAndHolds("0\n"))
+        << name;
+  }
+}
+
+// Linux: brnf_sysctl_call_tables stores any nonzero value as 1.
+TEST_F(BridgeNetfilterSysctlTest, CallStoresNonzeroAsOne) {
+  for (const char* name : kCallFiles) {
+    SCOPED_TRACE(name);
+    for (const auto& [value, want] :
+         std::vector<std::pair<std::string, std::string>>{
+             {"0\n", "0\n"},
+             {"1\n", "1\n"},
+             {" 0 ", "0\n"},
+             {"7", "1\n"},
+             {"0", "0\n"},
+             {"-1\n", "1\n"},
+         }) {
+      SCOPED_TRACE(value);
+      ASSERT_NO_ERRNO(WriteBridgeSysctl(name, value));
+      EXPECT_THAT(GetContents(BridgeSysctl(name)),
+                  IsPosixErrorOkAndHolds(want));
+    }
+  }
+}
+
+// Linux: proc_dointvec rejects a write without a number, and leaves the value
+// alone.
+TEST_F(BridgeNetfilterSysctlTest, CallRejectsGarbage) {
+  for (const char* name : kCallFiles) {
+    SCOPED_TRACE(name);
+    ASSERT_NO_ERRNO(WriteBridgeSysctl(name, "0"));
+    for (const char* value : {"on\n", "\n", "x1"}) {
+      SCOPED_TRACE(value);
+      EXPECT_THAT(WriteBridgeSysctl(name, value),
+                  PosixErrorIs(EINVAL, ::testing::_));
+      EXPECT_THAT(GetContents(BridgeSysctl(name)),
+                  IsPosixErrorOkAndHolds("0\n"));
+    }
+  }
+}
+
+TEST_F(BridgeNetfilterSysctlTest, CallSurvivesSaveRestore) {
+  ASSERT_NO_ERRNO(WriteBridgeSysctl("bridge-nf-call-iptables", "0"));
+  ASSERT_NO_ERRNO(WriteBridgeSysctl("bridge-nf-call-arptables", "0"));
+  MaybeSave();
+  EXPECT_THAT(GetContents(BridgeSysctl("bridge-nf-call-iptables")),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(GetContents(BridgeSysctl("bridge-nf-call-ip6tables")),
+              IsPosixErrorOkAndHolds("1\n"));
+  EXPECT_THAT(GetContents(BridgeSysctl("bridge-nf-call-arptables")),
+              IsPosixErrorOkAndHolds("0\n"));
+}
+
+TEST_F(BridgeNetfilterSysctlTest, TaggedAcceptZeroAndRejectGarbage) {
+  for (const char* name : kTaggedFiles) {
+    SCOPED_TRACE(name);
+    EXPECT_NO_ERRNO(WriteBridgeSysctl(name, "0\n"));
+    EXPECT_THAT(WriteBridgeSysctl(name, "on\n"),
+                PosixErrorIs(EINVAL, ::testing::_));
+    EXPECT_THAT(GetContents(BridgeSysctl(name)), IsPosixErrorOkAndHolds("0\n"));
+  }
+}
+
+// gVisor never passes VLAN or PPPoE tagged frames through netfilter, so it
+// doesn't accept enabling it.
+TEST_F(BridgeNetfilterSysctlTest, TaggedRejectNonzero) {
+  SKIP_IF(!IsRunningOnGvisor());
+  for (const char* name : kTaggedFiles) {
+    SCOPED_TRACE(name);
+    EXPECT_THAT(WriteBridgeSysctl(name, "1\n"),
+                PosixErrorIs(EINVAL, ::testing::_));
+    EXPECT_THAT(GetContents(BridgeSysctl(name)), IsPosixErrorOkAndHolds("0\n"));
+  }
 }
 
 }  // namespace

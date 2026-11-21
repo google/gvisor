@@ -1004,18 +1004,22 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 		nicID := e.nic.ID()
 		// Loopback traffic skips the prerouting chain.
-		inNicName := stk.FindNICNameFromID(nicID)
 		pkt.InputNICID = nicID
-		if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
-			// iptables is telling us to drop the packet.
-			stats.IPTablesPreroutingDropped.Increment()
-			return
-		}
-
-		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			if !nft.CheckPrerouting(pkt, nil /* route */, stack.IP) {
-				// nftables is telling us to drop the packet.
+		// As in ip_sabotage_in, a packet that went through the Prerouting hook
+		// of a bridge does not go through it again.
+		if pkt.BridgePhysIn() == 0 {
+			inNicName := stk.FindNICNameFromID(nicID)
+			if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
+				// iptables is telling us to drop the packet.
+				stats.IPTablesPreroutingDropped.Increment()
 				return
+			}
+
+			if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
+				if !nft.CheckPrerouting(pkt, nil /* route */, stack.IP) {
+					// nftables is telling us to drop the packet.
+					return
+				}
 			}
 		}
 	}

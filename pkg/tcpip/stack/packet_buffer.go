@@ -178,9 +178,45 @@ type PacketBuffer struct {
 
 	tuple *tuple
 
+	// bridge is the state of a frame that went through the IPv4 or IPv6
+	// hooks of a bridge.
+	bridge bridgeInfo
+
 	// onRelease is a function to be run when the packet buffer is no longer
 	// referenced (released back to the pool).
 	onRelease func() `state:"nosave"`
+}
+
+// bridgeInfo is the state of a frame that went through the IPv4 or IPv6
+// hooks of a bridge, like Linux's struct nf_bridge_info.
+//
+// +stateify savable
+type bridgeInfo struct {
+	// physIn is the bridge port the frame was received on. It is set once the
+	// frame went through the bridge's Prerouting hook.
+	physIn tcpip.NICID
+
+	// physOut is the bridge port the frame is sent out of.
+	physOut tcpip.NICID
+
+	// pktType is the packet type of the frame. The hooks see a frame for
+	// another host as PacketHost.
+	pktType tcpip.PacketType
+
+	// dnat is whether the frame was DNATed to a host on the bridge and waits
+	// for the link address of that host.
+	dnat bool
+
+	// srcMAC is the source link address of a frame that waits for link
+	// resolution, which is sent from the bridge's address until then.
+	srcMAC tcpip.LinkAddress
+}
+
+// BridgePhysIn returns the bridge port the packet was received on if it went
+// through the IPv4 or IPv6 hooks of a bridge, and 0 otherwise. It is Linux's
+// nf_bridge_get_physindev.
+func (pk *PacketBuffer) BridgePhysIn() tcpip.NICID {
+	return pk.bridge.physIn
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -410,6 +446,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.GROSegmentSize = pk.GROSegmentSize
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
+	newPk.bridge = pk.bridge
 	newPk.InitRefs()
 	return newPk
 }

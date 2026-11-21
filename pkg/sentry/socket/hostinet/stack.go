@@ -244,6 +244,11 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 	return addrs
 }
 
+// SetBridgePort implements inet.Stack.SetBridgePort.
+func (s *Stack) SetBridgePort(ctx context.Context, idx int32, cfg inet.BridgePortConfig) *syserr.Error {
+	return syserr.ErrNotSupported
+}
+
 // SetInterface implements inet.Stack.SetInterface.
 func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
 	var ifinfomsg linux.InterfaceInfoMessage
@@ -537,6 +542,16 @@ func (*Stack) GetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber) (bool
 
 // SetAllowExternalLoopbackTraffic implements inet.Stack.SetAllowExternalLoopbackTraffic.
 func (*Stack) SetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber, bool) error {
+	return linuxerr.EACCES
+}
+
+// BridgeNetfilterCall implements inet.Stack.BridgeNetfilterCall.
+func (*Stack) BridgeNetfilterCall(stack.BridgeNetfilterCall) (bool, error) {
+	return false, linuxerr.ENOENT
+}
+
+// SetBridgeNetfilterCall implements inet.Stack.SetBridgeNetfilterCall.
+func (*Stack) SetBridgeNetfilterCall(stack.BridgeNetfilterCall, bool) error {
 	return linuxerr.EACCES
 }
 

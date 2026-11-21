@@ -28,6 +28,15 @@ syscall_test(
     container = True,
     overlay = True,
     save = False,
+    test = "//test/rtnetlink/linux:bridge_netfilter_test",
+    use_tmpfs = True,
+)
+
+syscall_test(
+    size = "small",
+    container = True,
+    overlay = True,
+    save = False,
     test = "//test/rtnetlink/linux:setlink_test",
     use_tmpfs = True,
 )

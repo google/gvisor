@@ -15,6 +15,9 @@
 // tcp_serv creates a TCP server socket, reads data from stdin, and sends that
 // data to the socket. The same thing can be done with the nc tool, but
 // tcp_serv can signal when a tcp socket is created.
+//
+// With --udp, tcp_serv creates a UDP socket instead, waits for a datagram and
+// replies to its sender with the data read from stdin.
 package main
 
 import (
@@ -28,11 +31,40 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func serveUDP(address string, syncFD int) {
+	conn, err := net.ListenPacket("udp", address)
+	if err != nil {
+		log.Fatalf("Error creating socket: %s", err)
+	}
+	defer conn.Close()
+	if syncFD >= 0 {
+		unix.Close(syncFD)
+	}
+
+	buf := make([]byte, 1024)
+	_, peer, err := conn.ReadFrom(buf)
+	if err != nil {
+		log.Fatalf("Error receiving data: %s", err)
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		log.Fatalf("Error reading stdin: %s", err)
+	}
+	if _, err := conn.WriteTo(data, peer); err != nil {
+		log.Fatalf("Error sending data: %s", err)
+	}
+}
+
 func main() {
 	port := flag.Int("port", 8888, "port to listen on")
 	syncFD := flag.Int("sync-fd", -1, "file descriptor that will be closed after creating a socket")
+	udp := flag.Bool("udp", false, "use a UDP socket")
 	flag.Parse()
 	address := fmt.Sprintf(":%d", *port)
+	if *udp {
+		serveUDP(address, *syncFD)
+		return
+	}
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
