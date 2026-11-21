@@ -435,90 +435,65 @@ func (m *Manager) Fork() *Manager {
 	}
 }
 
+// bucketForKey returns the bucket for k and its position in the lock order.
+// Private buckets are ordered by index and precede the shared bucket.
+func (m *Manager) bucketForKey(k *Key) (*bucket, uintptr) {
+	if k.Kind == KindSharedMappable {
+		return m.sharedBucket, bucketCount
+	}
+	i := bucketIndexForAddr(k.addr())
+	return &m.privateBuckets[i], i
+}
+
 // lockBucket returns a locked bucket for the given key.
 //
 // +checklocksacquire:b.mu
 // +checklocksexclude:m.sharedBucket.mu
 func (m *Manager) lockBucket(k *Key) (b *bucket) {
-	if k.Kind == KindSharedMappable {
-		b = m.sharedBucket
-	} else {
-		b = &m.privateBuckets[bucketIndexForAddr(k.addr())]
-	}
+	b, _ = m.bucketForKey(k)
 	b.mu.Lock()
 	return b
 }
 
-// lockBuckets returns the buckets for k1 and k2 with their mutexes held.
-// If both keys map to the same bucket, its mutex is locked only once.
+// lockBuckets returns the locked buckets for k1 and k2 in argument order.
+// The mutex at the lower index is acquired first. reversed tells unlockBuckets
+// that b2 was locked before b1. Keys in the same bucket share one lock.
 //
-// lockedFirst and lockedSecond identify the buckets in lock order.
-// lockedFirst is always non-nil. lockedSecond is nil if and only if b1 == b2.
-// Pass these ordered values to unlockBuckets to release the locks.
-//
-// checklocks cannot express the aliases between b1/b2 and the ordered return
-// values.
-//
-// +checklocksacquire:lockedFirst.mu
-// +checklocksacquire:lockedSecond.mu
+// +checklocksacquire:b1.mu
+// +checklocksacquire:b2.mu
 // +checklocksexclude:m.sharedBucket.mu
-func (m *Manager) lockBuckets(k1, k2 *Key) (b1, b2, lockedFirst, lockedSecond *bucket) {
-	// Buckets must be consistently ordered to avoid circular lock
-	// dependencies. We order buckets in m.privateBuckets by index (lowest
-	// index first), and all buckets in m.privateBuckets precede
-	// m.sharedBucket.
-
-	// Handle the common case first:
-	if k1.Kind != KindSharedMappable && k2.Kind != KindSharedMappable {
-		i1 := bucketIndexForAddr(k1.addr())
-		i2 := bucketIndexForAddr(k2.addr())
-		b1 = &m.privateBuckets[i1]
-		b2 = &m.privateBuckets[i2]
-		switch {
-		case i1 < i2:
-			b1.mu.Lock()
-			b2.mu.NestedLock(futexBucketLockB)
-			return b1, b2, b1, b2
-		case i2 < i1:
-			b2.mu.Lock()
-			b1.mu.NestedLock(futexBucketLockB)
-			return b1, b2, b2, b1
-		default:
-			b1.mu.Lock()
-			return b1, b2, b1, nil // +checklocksforce
-		}
-	}
-
-	// At least one of b1 or b2 should be m.sharedBucket.
-	b1 = m.sharedBucket
-	b2 = m.sharedBucket
-	if k1.Kind != KindSharedMappable {
-		b1 = m.lockBucket(k1)
-		b2.mu.NestedLock(futexBucketLockB)
-		return b1, b2, b1, b2
-	}
-	if k2.Kind != KindSharedMappable {
-		b2 = m.lockBucket(k2)
+func (m *Manager) lockBuckets(k1, k2 *Key) (b1, b2 *bucket, reversed bool) {
+	b1, i1 := m.bucketForKey(k1)
+	b2, i2 := m.bucketForKey(k2)
+	if i2 < i1 {
+		b2.mu.Lock()
 		b1.mu.NestedLock(futexBucketLockB)
-		return b1, b2, b2, b1
+		return b1, b2, true
 	}
 	b1.mu.Lock()
-	return b1, b2, b1, nil // +checklocksforce
+	if i1 == i2 {
+		return b1, b1, false
+	}
+	b2.mu.NestedLock(futexBucketLockB)
+	return b1, b2, false
 }
 
-// unlockBuckets releases the locks acquired by lockBuckets in reverse order.
+// unlockBuckets releases the mutexes in reverse acquisition order.
 //
-// Preconditions: lockedFirst and lockedSecond must be the ordered return
-// values from the same call to lockBuckets, and the caller must still hold
-// those locks.
-//
-// +checklocksrelease:lockedFirst.mu
-// +checklocksrelease:lockedSecond.mu
-func (m *Manager) unlockBuckets(lockedFirst, lockedSecond *bucket) {
-	if lockedSecond != nil {
-		lockedSecond.mu.NestedUnlock(futexBucketLockB)
+// +checklocksrelease:b1.mu
+// +checklocksrelease:b2.mu
+func unlockBuckets(b1, b2 *bucket, reversed bool) {
+	if reversed {
+		b1.mu.NestedUnlock(futexBucketLockB)
+		b2.mu.Unlock()
+		return
 	}
-	lockedFirst.mu.Unlock()
+	if b1 == b2 {
+		b1.mu.Unlock()
+		return
+	}
+	b2.mu.NestedUnlock(futexBucketLockB)
+	b1.mu.Unlock()
 }
 
 // Wake wakes up to n waiters matching the bitmask on the given addr.
@@ -553,8 +528,8 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 	}
 	defer k2.release(t)
 
-	b1, b2, lockedFirst, lockedSecond := m.lockBuckets(&k1, &k2)
-	defer m.unlockBuckets(lockedFirst, lockedSecond)
+	b1, b2, reversed := m.lockBuckets(&k1, &k2)
+	defer unlockBuckets(b1, b2, reversed)
 
 	if checkval {
 		if err := check(t, addr, val); err != nil {
@@ -562,16 +537,14 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 		}
 	}
 
-	// Wake the number required. lockBuckets holds b1.mu and b2.mu through
-	// the ordered handles until unlockBuckets; checklocks cannot relate
-	// those handles to the logical buckets.
-	done, err := b1.wakeLocked(&k1, ^uint32(0), nwake) // +checklocksignore
+	// Wake the number required.
+	done, err := b1.wakeLocked(&k1, ^uint32(0), nwake)
 	if err != nil {
 		return 0, err
 	}
 
 	// Requeue the number required.
-	err = b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
+	err = b1.requeueLocked(t, b2, &k1, &k2, nreq)
 	return done, err
 }
 
@@ -610,18 +583,16 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 	}
 	defer k2.release(t)
 
-	b1, b2, lockedFirst, lockedSecond := m.lockBuckets(&k1, &k2)
-	defer m.unlockBuckets(lockedFirst, lockedSecond)
+	b1, b2, reversed := m.lockBuckets(&k1, &k2)
+	defer unlockBuckets(b1, b2, reversed)
 
 	cond, err := atomicOp(t, addr2, op)
 	if err != nil {
 		return 0, err
 	}
 
-	// Wake up to nwake1 entries from the first bucket. lockBuckets holds
-	// both logical buckets through the ordered handles until unlockBuckets;
-	// checklocks cannot relate those handles to b1 and b2.
-	done, err := b1.wakeLocked(&k1, ^uint32(0), nwake1) // +checklocksignore
+	// Wake up to nwake1 entries from the first bucket.
+	done, err := b1.wakeLocked(&k1, ^uint32(0), nwake1)
 	if err != nil {
 		return 0, err
 	}
@@ -629,7 +600,7 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 	// Wake up up to nwake2 entries from the second bucket if the
 	// operation yielded true.
 	if cond {
-		n, err := b2.wakeLocked(&k2, ^uint32(0), nwake2) // +checklocksignore
+		n, err := b2.wakeLocked(&k2, ^uint32(0), nwake2)
 		if err != nil {
 			return 0, err
 		}
