@@ -43,6 +43,9 @@ def _sources(database, workspace):
       relative = path.relative_to(workspace)
     except ValueError:
       continue
+    # Bazel also emits CppCompile actions for assembly.
+    if relative.suffix in (".s", ".S"):
+      continue
     if relative in seen:
       continue
     seen.add(relative)
