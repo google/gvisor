@@ -495,6 +495,26 @@ func (i *inode) unlink(ctx context.Context, name string, flags uint32) error {
 	}
 }
 
+// rebindHostFDs is called after the host name represented by removed has been
+// unlinked or replaced by a rename, or when removed is destroyed while its
+// name holds the inode's host FDs. See directfsInode.rebindHostFDs().
+//
+// Preconditions:
+//   - i.fs.renameMu is locked.
+//   - removed.inode == i.
+//   - removed is not a directory and !i.isSynthetic().
+func (i *inode) rebindHostFDs(ctx context.Context, removed *dentry) {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		// Not implemented: the gofer owns the control FD, and rebinding it
+		// would require walking the surviving name via the gofer.
+	case *directfsInode:
+		it.rebindHostFDs(ctx, removed)
+	default:
+		panic("unknown inode implementation")
+	}
+}
+
 // Precondition: !d.isSynthetic().
 func (i *inode) rename(ctx context.Context, oldName string, newParent *dentry, newName string, flags uint32) error {
 	switch it := i.impl.(type) {
@@ -541,6 +561,8 @@ func (fs *filesystem) restoreRoot(ctx context.Context, opts *vfs.CompleteRestore
 //   - !d.isSynthetic().
 //   - d.parent != nil and has been restored.
 func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
+	// inode.aliases is not saved; rebuild it as each dentry is restored.
+	d.addAlias(false /* ownsHostFDs */)
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
 		// With inode sharing, we may have multiple references to the same inode.
@@ -572,6 +594,8 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 		if it.controlFD >= 0 {
 			return nil
 		}
+		// The inode's host FDs are reopened via d's name.
+		d.addAlias(true /* ownsHostFDs */)
 		controlFD := d.parent.Load().inode.impl.(*directfsInode).controlFD
 		childFD, err := tryOpen(func(flags int) (int, error) {
 			n, err := unix.Openat(controlFD, d.name, flags, 0)

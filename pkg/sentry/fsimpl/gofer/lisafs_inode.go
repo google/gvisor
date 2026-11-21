@@ -213,6 +213,7 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	}
 
 	temp.d.init()
+	temp.d.addAlias(false /* ownsHostFDs */)
 	// If this dentry adopted a cached inode that already carries a bound-socket
 	// endpoint (a hard link to, or re-walk of, an existing bound socket), hold
 	// the extra reference that dentry.refs keeps for endpoint-bearing dentries.

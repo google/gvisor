@@ -16,10 +16,13 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <sched.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <cstdint>
@@ -29,6 +32,7 @@
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/strings/strip.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
@@ -560,6 +564,178 @@ TEST(LinkTest, LinkAtWithEmptyPathNeedsNoCapForAtFcwd) {
         TEST_CHECK_SUCCESS(res);
       }),
       IsPosixErrorOkAndHolds(0));
+}
+
+// Removing one name of a hard-linked file must not leave the file pinned
+// under the removed name. For example, an NFS client renames a file that is
+// unlinked while it has an open file description for that name to .nfsXXXX in
+// the same directory, and keeps it until that file description is closed;
+// meanwhile, rmdir(2) of the directory fails with ENOTEMPTY.
+TEST(LinkTest, RmdirAfterUnlinkingHardLink) {
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir1 = JoinPath(parent.path(), "dir1");
+  const std::string dir2 = JoinPath(parent.path(), "dir2");
+  const std::string name1 = JoinPath(dir1, "file");
+  const std::string name2 = JoinPath(dir2, "file");
+  ASSERT_NO_ERRNO(Mkdir(dir1));
+  ASSERT_NO_ERRNO(Mkdir(dir2));
+  ASSERT_NO_ERRNO(CreateWithContents(name1, "data"));
+  // Instantiate the file via name1 and read it, so that any cached host state
+  // for the file was obtained via name1.
+  EXPECT_THAT(GetContents(name1), IsPosixErrorOkAndHolds("data"));
+  ASSERT_THAT(link(name1.c_str(), name2.c_str()), SyscallSucceeds());
+  EXPECT_THAT(GetContents(name2), IsPosixErrorOkAndHolds("data"));
+
+  ASSERT_THAT(unlink(name1.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir1.c_str()), SyscallSucceeds());
+  EXPECT_THAT(GetContents(name2), IsPosixErrorOkAndHolds("data"));
+
+  ASSERT_THAT(unlink(name2.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir2.c_str()), SyscallSucceeds());
+}
+
+// As above, but the removed name's dentry is evicted from the sentry's dentry
+// cache before the name is removed, while the other name stays in use. The
+// file's host state must not stay pinned to the evicted name.
+TEST(LinkTest, RmdirAfterUnlinkingEvictedHardLink) {
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir1 = JoinPath(parent.path(), "dir1");
+  const std::string dir2 = JoinPath(parent.path(), "dir2");
+  const std::string dir3 = JoinPath(parent.path(), "dir3");
+  const std::string name1 = JoinPath(dir1, "file");
+  const std::string name2 = JoinPath(dir2, "file");
+  ASSERT_NO_ERRNO(Mkdir(dir1));
+  ASSERT_NO_ERRNO(Mkdir(dir2));
+  ASSERT_NO_ERRNO(Mkdir(dir3));
+  ASSERT_NO_ERRNO(CreateWithContents(name1, "data"));
+  EXPECT_THAT(GetContents(name1), IsPosixErrorOkAndHolds("data"));
+  ASSERT_THAT(link(name1.c_str(), name2.c_str()), SyscallSucceeds());
+  // Keep name2 in use, so that only name1 can be evicted.
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name2, O_RDONLY));
+
+  // Look up more files than gofer mounts cache by default (1000), so that
+  // name1 is evicted where such a cache exists.
+  {
+    const DisableSave ds;
+    for (int i = 0; i < 1500; i++) {
+      const std::string name = JoinPath(dir3, absl::StrCat(i));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(name, O_CREAT | O_RDONLY, 0644));
+    }
+  }
+
+  ASSERT_THAT(unlink(name1.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir1.c_str()), SyscallSucceeds());
+  char buf[4];
+  ASSERT_THAT(PreadFd(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(absl::string_view(buf, sizeof(buf)), "data");
+  EXPECT_THAT(GetContents(name2), IsPosixErrorOkAndHolds("data"));
+}
+
+// As above, but the file remains open via the removed name. The open file
+// description must keep working, and refer to the same file as the surviving
+// name.
+//
+// We need to disable S/R because gofer-backed filesystems restore a file that
+// is open but unlinked by copying its data into a new file, which is no longer
+// a link of the surviving name.
+TEST(LinkTest, UnlinkHardLinkWhileOpen) {
+  const DisableSave ds;
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir1 = JoinPath(parent.path(), "dir1");
+  const std::string dir2 = JoinPath(parent.path(), "dir2");
+  const std::string name1 = JoinPath(dir1, "file");
+  const std::string name2 = JoinPath(dir2, "file");
+  ASSERT_NO_ERRNO(Mkdir(dir1));
+  ASSERT_NO_ERRNO(Mkdir(dir2));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(name1, O_CREAT | O_RDWR, 0644));
+  ASSERT_THAT(WriteFd(fd.get(), "data", 4), SyscallSucceedsWithValue(4));
+  ASSERT_THAT(link(name1.c_str(), name2.c_str()), SyscallSucceeds());
+
+  ASSERT_THAT(unlink(name1.c_str()), SyscallSucceeds());
+  ASSERT_THAT(PwriteFd(fd.get(), "DATA", 4, 0), SyscallSucceedsWithValue(4));
+  EXPECT_THAT(GetContents(name2), IsPosixErrorOkAndHolds("DATA"));
+  ASSERT_NO_ERRNO(SetContents(name2, "more"));
+  char buf[4];
+  ASSERT_THAT(PreadFd(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(absl::string_view(buf, sizeof(buf)), "more");
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, 1u);
+
+  // Removing the last name leaves the open file usable.
+  ASSERT_THAT(unlink(name2.c_str()), SyscallSucceeds());
+  ASSERT_THAT(PreadFd(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(absl::string_view(buf, sizeof(buf)), "more");
+  fd.reset();
+  EXPECT_THAT(rmdir(dir1.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir2.c_str()), SyscallSucceeds());
+}
+
+// Replacing one name of a hard-linked file by rename(2) must leave the file
+// reachable via its other name.
+TEST(LinkTest, RenameOverHardLink) {
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string name1 = JoinPath(parent.path(), "file1");
+  const std::string name2 = JoinPath(parent.path(), "file2");
+  const std::string other = JoinPath(parent.path(), "other");
+  ASSERT_NO_ERRNO(CreateWithContents(name1, "data"));
+  EXPECT_THAT(GetContents(name1), IsPosixErrorOkAndHolds("data"));
+  ASSERT_THAT(link(name1.c_str(), name2.c_str()), SyscallSucceeds());
+  ASSERT_NO_ERRNO(CreateWithContents(other, "other"));
+
+  ASSERT_THAT(rename(other.c_str(), name1.c_str()), SyscallSucceeds());
+  EXPECT_THAT(GetContents(name1), IsPosixErrorOkAndHolds("other"));
+  EXPECT_THAT(GetContents(name2), IsPosixErrorOkAndHolds("data"));
+}
+
+// A synthetic file (here, a bound Unix socket) replacing one name of a
+// hard-linked file by rename(2) must leave the file reachable via its other
+// name, and its former directory removable.
+TEST(LinkTest, RenameSocketOverHardLink) {
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir1 = JoinPath(parent.path(), "dir1");
+  const std::string dir2 = JoinPath(parent.path(), "dir2");
+  const std::string name1 = JoinPath(dir1, "file");
+  const std::string name2 = JoinPath(dir2, "file");
+  const std::string sock_path = JoinPath(parent.path(), "sock");
+  ASSERT_NO_ERRNO(Mkdir(dir1));
+  ASSERT_NO_ERRNO(Mkdir(dir2));
+  ASSERT_NO_ERRNO(CreateWithContents(name1, "data"));
+  EXPECT_THAT(GetContents(name1), IsPosixErrorOkAndHolds("data"));
+  ASSERT_THAT(link(name1.c_str(), name2.c_str()), SyscallSucceeds());
+
+  const int sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_THAT(sock_fd, SyscallSucceeds());
+  FileDescriptor sock(sock_fd);
+  {
+    // The test temporary directory path may be too long for sun_path, so bind
+    // the socket by a name relative to parent.
+    const std::string old_cwd = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
+    ASSERT_THAT(chdir(parent.path().c_str()), SyscallSucceeds());
+    const auto restore_cwd = Cleanup(
+        [&] { EXPECT_THAT(chdir(old_cwd.c_str()), SyscallSucceeds()); });
+    struct sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, "sock", sizeof(addr.sun_path) - 1);
+    ASSERT_THAT(bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                     sizeof(addr)),
+                SyscallSucceeds());
+  }
+
+  ASSERT_THAT(rename(sock_path.c_str(), name1.c_str()), SyscallSucceeds());
+  struct stat st;
+  ASSERT_THAT(lstat(name1.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISSOCK(st.st_mode));
+  EXPECT_THAT(GetContents(name2), IsPosixErrorOkAndHolds("data"));
+
+  ASSERT_THAT(unlink(name1.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir1.c_str()), SyscallSucceeds());
+  ASSERT_THAT(unlink(name2.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir2.c_str()), SyscallSucceeds());
 }
 
 }  // namespace
