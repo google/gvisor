@@ -15,13 +15,19 @@
 package pgalloc
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 // existingSegment represents a range of pages in a test MemoryFile that is not
@@ -731,4 +737,227 @@ func TestZeroDiskBackedPanicsOnNonzeroUnwritablePage(t *testing.T) {
 		}
 	}()
 	zeroDiskBacked(fd, 0, m)
+}
+
+// newInitializerTestMemoryFile has no background releaser, so a freed range
+// remains available for deterministic tests of dirty-page reuse.
+func newInitializerTestMemoryFile(t *testing.T) *MemoryFile {
+	t.Helper()
+	f := &MemoryFile{
+		file: openSaveTestFile(t, ""),
+		opts: MemoryFileOpts{DisableMemoryAccounting: true},
+	}
+	f.initFields()
+	t.Cleanup(func() {
+		f.mu.Lock()
+		f.destroyed = true
+		f.releaserDestroyLocked()
+		f.mu.Unlock()
+	})
+	return f
+}
+
+func TestAllocateInitializerPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		initialized uint64
+		err         error
+	}{
+		{name: "complete", initialized: 3 * page},
+		{name: "partial page", initialized: page + 17, err: io.EOF},
+		{name: "no complete page", initialized: 17, err: io.ErrUnexpectedEOF},
+		{name: "complete page with error", initialized: page, err: io.ErrUnexpectedEOF},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newInitializerTestMemoryFile(t)
+			const length = 3 * page
+			old, err := f.Allocate(length, AllocOpts{Mode: AllocateAndWritePopulate})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.forEachMappingSlice(old, func(bs []byte) {
+				for i := range bs {
+					bs[i] = 0xa5
+				}
+			})
+			f.DecRef(old)
+			payload := bytes.Repeat([]byte{0x37}, int(tc.initialized))
+			var done uint64
+			fr, err := f.Allocate(length, AllocOpts{
+				Mode: AllocateAndWritePopulate,
+				ReaderFunc: func(dsts safemem.BlockSeq) (uint64, error) {
+					// Exercise repeated successful partial initialization too.
+					next := min(tc.initialized-done, uint64(791))
+					n, copyErr := safemem.CopySeq(dsts.TakeFirst64(next), safemem.BlockSeqOf(safemem.BlockFromSafeSlice(payload[done:done+next])))
+					done += n
+					if copyErr != nil {
+						return n, copyErr
+					}
+					if done == tc.initialized {
+						return n, tc.err
+					}
+					return n, nil
+				},
+			})
+			if err != tc.err {
+				t.Fatalf("Allocate error = %v, want %v", err, tc.err)
+			}
+			if want := uint64(hostarch.Addr(tc.initialized).RoundDown()); fr.Length() != want {
+				t.Fatalf("returned length = %d, want %d", fr.Length(), want)
+			}
+			if fr.Length() != 0 {
+				if fr.Start != old.Start {
+					t.Fatal("test did not exercise dirty-range recycling")
+				}
+				f.forEachMappingSlice(fr, func(bs []byte) {
+					if !bytes.Equal(bs, bytes.Repeat([]byte{0x37}, len(bs))) {
+						t.Error("returned prefix contains uninitialized bytes")
+					}
+				})
+				f.DecRef(fr)
+			}
+			// A subsequent ordinary allocation must clear both an initialized
+			// prefix and any discarded, partially written dirty suffix.
+			zeroed, err := f.Allocate(length, AllocOpts{Mode: AllocateAndWritePopulate})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.forEachMappingSlice(zeroed, func(bs []byte) {
+				if !bytes.Equal(bs, make([]byte, len(bs))) {
+					t.Error("ordinary allocation exposed dirty bytes")
+				}
+			})
+			f.DecRef(zeroed)
+		})
+	}
+}
+
+func TestAllocateInitializerInvalidProgress(t *testing.T) {
+	for _, tooLarge := range []bool{false, true} {
+		f := newInitializerTestMemoryFile(t)
+		fr, err := f.Allocate(page, AllocOpts{
+			Mode: AllocateAndWritePopulate,
+			ReaderFunc: func(dsts safemem.BlockSeq) (uint64, error) {
+				if tooLarge {
+					return dsts.NumBytes() + 1, nil
+				}
+				return 0, nil
+			},
+		})
+		if err == nil || fr.Length() != 0 {
+			t.Fatalf("invalid initializer returned (%v, %v), want empty range and error", fr, err)
+		}
+		if !tooLarge && err != io.ErrNoProgress {
+			t.Errorf("zero-progress error = %v, want %v", err, io.ErrNoProgress)
+		}
+	}
+}
+
+func BenchmarkMemoryFilePrivateInitialization(b *testing.B) {
+	const (
+		readBytes   = 80 << 20
+		extentBytes = 2 << 20
+		windowBytes = 1 << 20
+	)
+	for _, policy := range []string{"uncommitted", "zeroed", "initialized"} {
+		b.Run(policy, func(b *testing.B) {
+			file := openSaveTestFile(b, "")
+			f, err := NewMemoryFile(file, MemoryFileOpts{
+				DelayedEviction:         DelayedEvictionDisabled,
+				DisableMemoryAccounting: true,
+				ExpectHugepages:         true,
+				AdviseHugepage:          true,
+			})
+			if err != nil {
+				file.Close()
+				b.Fatal(err)
+			}
+			b.Cleanup(f.Destroy)
+			sourceFR, err := f.Allocate(readBytes, AllocOpts{Mode: AllocateAndWritePopulate})
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.Cleanup(func() { f.DecRef(sourceFR) })
+			f.forEachMappingSlice(sourceFR, func(bs []byte) {
+				for i := range bs {
+					bs[i] = 1
+				}
+			})
+			source, err := f.MapInternal(sourceFR, hostarch.Read)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.SetBytes(readBytes)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				remaining := source
+				var held [readBytes / extentBytes]memmap.FileRange
+				heldCount := 0
+				failed := false
+				for !remaining.IsEmpty() {
+					reader := safemem.BlockSeqReader{Blocks: remaining.TakeFirst64(extentBytes)}
+					initialize := func(dsts safemem.BlockSeq) (uint64, error) {
+						return reader.ReadToBlocks(dsts.TakeFirst64(windowBytes))
+					}
+					opts := AllocOpts{Mode: AllocateUncommitted, Huge: true}
+					if policy != "uncommitted" {
+						opts.Mode = AllocateAndWritePopulate
+					}
+					if policy == "initialized" {
+						opts.ReaderFunc = initialize
+					}
+					fr, err := f.Allocate(extentBytes, opts)
+					if fr.Length() != 0 {
+						held[heldCount] = fr
+						heldCount++
+					}
+					if err != nil {
+						b.Errorf("Allocate: %v", err)
+						failed = true
+						break
+					}
+					if fr.Length() != extentBytes {
+						b.Errorf("Allocate returned %d bytes, want %d", fr.Length(), extentBytes)
+						failed = true
+						break
+					}
+					if policy != "initialized" {
+						dsts, err := f.MapInternal(fr, hostarch.Write)
+						if err == nil {
+							var n uint64
+							n, err = safemem.ReadFullToBlocks(initialize, dsts)
+							if n != extentBytes && err == nil {
+								err = io.ErrUnexpectedEOF
+							}
+						}
+						if err != nil {
+							b.Errorf("copy: %v", err)
+							failed = true
+							break
+						}
+					}
+					remaining = remaining.DropFirst64(extentBytes)
+				}
+				for _, fr := range held[:heldCount] {
+					f.DecRef(fr)
+				}
+				if failed {
+					break
+				}
+			}
+			b.StopTimer()
+			// Include pending destination reclamation in process CPU measurements.
+			if err := testutil.Poll(func() error {
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				if f.haveWaste {
+					return fmt.Errorf("destination reclamation remains pending")
+				}
+				return nil
+			}, time.Minute); err != nil {
+				b.Error(err)
+			}
+		})
+	}
 }
