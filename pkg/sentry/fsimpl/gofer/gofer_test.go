@@ -15,12 +15,14 @@
 package gofer
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/lisafs"
@@ -480,5 +482,105 @@ func TestOpenAtRecycledInoTypeChange(t *testing.T) {
 	}
 	if got := regInode.size.Load(); got != 256 {
 		t.Fatalf("regInode.size = %d, want 256", got)
+	}
+}
+
+func TestValidateRestoredFileType(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		savedMode    uint32
+		savedRdev    [2]uint32 // major, minor
+		restoredMode uint32
+		restoredRdev [2]uint32 // major, minor
+		wantErr      bool
+	}{
+		{
+			name:         "RegularFile",
+			savedMode:    linux.S_IFREG | 0644,
+			restoredMode: linux.S_IFREG | 0600,
+		},
+		{
+			name:         "Directory",
+			savedMode:    linux.S_IFDIR | 0755,
+			restoredMode: linux.S_IFDIR | 0755,
+		},
+		{
+			name:         "CharDevice",
+			savedMode:    linux.S_IFCHR | 0666,
+			savedRdev:    [2]uint32{1, 3},
+			restoredMode: linux.S_IFCHR | 0666,
+			restoredRdev: [2]uint32{1, 3},
+		},
+		{
+			name:         "RegularFileReplacedByDirectory",
+			savedMode:    linux.S_IFREG | 0644,
+			restoredMode: linux.S_IFDIR | 0755,
+			wantErr:      true,
+		},
+		{
+			name:         "DirectoryReplacedBySymlink",
+			savedMode:    linux.S_IFDIR | 0755,
+			restoredMode: linux.S_IFLNK | 0777,
+			wantErr:      true,
+		},
+		{
+			name:         "FIFOReplacedByCharDevice",
+			savedMode:    linux.S_IFIFO | 0644,
+			restoredMode: linux.S_IFCHR | 0666,
+			restoredRdev: [2]uint32{1, 3},
+			wantErr:      true,
+		},
+		{
+			name:         "RegularFileReplacedByBlockDevice",
+			savedMode:    linux.S_IFREG | 0644,
+			restoredMode: linux.S_IFBLK | 0660,
+			restoredRdev: [2]uint32{8, 0},
+			wantErr:      true,
+		},
+		{
+			name:         "BlockDevice",
+			savedMode:    linux.S_IFBLK | 0660,
+			savedRdev:    [2]uint32{8, 0},
+			restoredMode: linux.S_IFBLK | 0660,
+			restoredRdev: [2]uint32{8, 0},
+			wantErr:      true,
+		},
+		{
+			name:         "CharDeviceMajorChanged",
+			savedMode:    linux.S_IFCHR | 0666,
+			savedRdev:    [2]uint32{1, 3},
+			restoredMode: linux.S_IFCHR | 0666,
+			restoredRdev: [2]uint32{4, 3},
+			wantErr:      true,
+		},
+		{
+			name:         "CharDeviceMinorChanged",
+			savedMode:    linux.S_IFCHR | 0666,
+			savedRdev:    [2]uint32{1, 3},
+			restoredMode: linux.S_IFCHR | 0666,
+			restoredRdev: [2]uint32{1, 5},
+			wantErr:      true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			i := &inode{
+				fs:        &filesystem{},
+				mode:      atomicbitops.FromUint32(test.savedMode),
+				rdevMajor: test.savedRdev[0],
+				rdevMinor: test.savedRdev[1],
+			}
+			d := &dentry{inode: i}
+			err := i.validateRestoredFileType(test.restoredMode, test.restoredRdev[0], test.restoredRdev[1], d)
+			if !test.wantErr {
+				if err != nil {
+					t.Errorf("validateRestoredFileType(%#o, %d, %d) = %v, want nil", test.restoredMode, test.restoredRdev[0], test.restoredRdev[1], err)
+				}
+				return
+			}
+			var corruption vfs.ErrCorruption
+			if !errors.As(err, &corruption) {
+				t.Errorf("validateRestoredFileType(%#o, %d, %d) = %v, want vfs.ErrCorruption", test.restoredMode, test.restoredRdev[0], test.restoredRdev[1], err)
+			}
+		})
 	}
 }
