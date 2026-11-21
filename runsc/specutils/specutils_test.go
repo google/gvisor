@@ -521,6 +521,19 @@ func TestSpecInvalid(t *testing.T) {
 			error: "rootfs tar upper path is set but rootfs is readonly",
 		},
 		{
+			name: "empty product name",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Annotations: map[string]string{
+					AnnotationProductName: "",
+				},
+			},
+			error: "annotation dev.gvisor.dmi.product-name must not be empty",
+		},
+		{
 			name: "sandbox spec",
 			spec: specs.Spec{
 				Hostname: "pod",
@@ -936,6 +949,57 @@ func TestRootfsUpperTarPath(t *testing.T) {
 				t.Errorf("RootfsUpperTarFD() got: %v, want: %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestProductName(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name: "unset",
+		},
+		{
+			name:        "set",
+			annotations: map[string]string{AnnotationProductName: "Test Product"},
+			want:        "Test Product",
+		},
+		{
+			name:        "surrounding spaces kept",
+			annotations: map[string]string{AnnotationProductName: " Test Product "},
+			want:        " Test Product ",
+		},
+		{
+			name:        "empty",
+			annotations: map[string]string{AnnotationProductName: ""},
+			wantErr:     true,
+		},
+		{
+			name:        "only spaces",
+			annotations: map[string]string{AnnotationProductName: "   "},
+			wantErr:     true,
+		},
+		{
+			name:        "NUL",
+			annotations: map[string]string{AnnotationProductName: "Test\x00Product"},
+			wantErr:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ProductName(&specs.Spec{Annotations: tc.annotations})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ProductName() error = %v, wantErr = %t", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("ProductName() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if got, err := ProductName(nil); got != "" || err != nil {
+		t.Errorf("ProductName(nil) = %q, %v, want \"\", nil", got, err)
 	}
 }
 

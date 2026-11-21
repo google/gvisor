@@ -73,6 +73,15 @@ const (
 	//	"dev.gvisor.tar.rootfs.upper.<container-name>": "<path>"
 	AnnotationRootfsUpperTar = "dev.gvisor.tar.rootfs.upper"
 
+	// AnnotationProductName sets the value shown in
+	// /sys/devices/virtual/dmi/id/product_name. It applies to the whole
+	// sandbox and is read from the spec that creates the sandbox. Without it,
+	// the host's value is shown.
+	//
+	// Usage:
+	//	"dev.gvisor.dmi.product-name": "<name>"
+	AnnotationProductName = "dev.gvisor.dmi.product-name"
+
 	// annotationSeccomp indicates what seccomp rules was set to a given container.
 	//
 	// Usage:
@@ -208,6 +217,10 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config, noRootContainer bool) e
 		if spec.Root.Readonly {
 			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
 		}
+	}
+
+	if _, err := ProductName(spec); err != nil {
+		return err
 	}
 
 	// CRI specifies whether a container should start a new sandbox, or run
@@ -1093,6 +1106,29 @@ func RootfsTarUpperPath(spec *specs.Spec) string {
 	return spec.Annotations[AnnotationRootfsUpperTar]
 }
 
+// ProductName returns the value of the AnnotationProductName annotation, or
+// "" if the spec doesn't set it.
+func ProductName(spec *specs.Spec) (string, error) {
+	if spec == nil {
+		return "", nil
+	}
+	name, ok := spec.Annotations[AnnotationProductName]
+	if !ok {
+		return "", nil
+	}
+	// Linux reports an SMBIOS string of only spaces as empty
+	// (dmi_string_nosave), and sysfs has no DMI directory without a product
+	// name, so such a value cannot be shown.
+	if strings.Trim(name, " ") == "" {
+		return "", fmt.Errorf("annotation %s must not be empty", AnnotationProductName)
+	}
+	// SMBIOS strings are NUL-terminated.
+	if strings.ContainsRune(name, 0) {
+		return "", fmt.Errorf("annotation %s must not contain a NUL byte", AnnotationProductName)
+	}
+	return name, nil
+}
+
 // IsProcFDPath returns true if the path is a numeric procfs/devfd magic link
 // (e.g. /proc/self/fd/3, /proc/thread-self/fd/4, /dev/fd/5).
 func IsProcFDPath(path string) bool {
@@ -1185,6 +1221,7 @@ func Features() *features.Features {
 		// LINT.IfChange
 		annotations["dev.gvisor.container-name-remap."] = ""
 		annotations[AnnotationRootfsUpperTar] = ""
+		annotations[AnnotationProductName] = ""
 		annotations["dev.gvisor.internal.seccomp."] = ""
 		annotations["dev.gvisor.internal.seccomp.cont"] = "RuntimeDefault"
 		annotations[AnnotationTPU] = ""
