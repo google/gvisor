@@ -80,7 +80,7 @@ func BenchmarkIperfOneConnection(b *testing.B) {
 			port := 5001
 
 			// Start the server.
-			if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/iperf"}, "iperf", "-s"); err != nil {
+			if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/iperf", CpusetCpus: harness.ServerCPUSet()}, "iperf", "-s"); err != nil {
 				b.Fatalf("failed to start server with: %v", err)
 			}
 			if out, err := server.WaitForOutput(ctx, fmt.Sprintf("Server listening on TCP port %d", port), 10*time.Second); err != nil {
@@ -94,8 +94,9 @@ func BenchmarkIperfOneConnection(b *testing.B) {
 			// Run the client.
 			b.ResetTimer()
 			out, err := client.Run(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/iperf",
-				Links: []string{server.MakeLink("iperfsrv")},
+				Image:      "benchmarks/iperf",
+				CpusetCpus: harness.ClientCPUSet(),
+				Links:      []string{server.MakeLink("iperfsrv")},
 			}, iperf.MakeCmd("iperfsrv", port)...)
 			if err != nil {
 				b.Fatalf("failed to run client: %v", err)
@@ -196,7 +197,7 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 			port := 5001
 
 			// Start the server.
-			if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/iperf"}, "iperf", "-s"); err != nil {
+			if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/iperf", CpusetCpus: harness.ServerCPUSet()}, "iperf", "-s"); err != nil {
 				b.Fatalf("failed to start server with: %v", err)
 			}
 			if out, err := server.WaitForOutput(ctx, fmt.Sprintf("Server listening on TCP port %d", port), 10*time.Second); err != nil {
@@ -211,8 +212,9 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 			// Run the client.
 			b.ResetTimer()
 			out, err := client.Run(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/iperf",
-				Links: []string{server.MakeLink("iperfsrv")},
+				Image:      "benchmarks/iperf",
+				CpusetCpus: harness.ClientCPUSet(),
+				Links:      []string{server.MakeLink("iperfsrv")},
 			}, iperf.MakeCmd("iperfsrv", port)...)
 			if err != nil {
 				b.Fatalf("failed to run client: %v (output: %q)", err, out)
