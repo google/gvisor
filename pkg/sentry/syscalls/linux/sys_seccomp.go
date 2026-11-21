@@ -85,7 +85,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) (*kernel.Sy
 	}
 
 	if !tsync {
-		return nil, t.AppendSyscallFilter(compiledFilter, false)
+		return nil, t.AppendSyscallFilter(kernel.NewSyscallFilter(compiledFilter), false)
 	}
 	return t.AppendSyscallFilterAndTsync(compiledFilter), nil
 }

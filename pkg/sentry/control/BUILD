@@ -44,7 +44,6 @@ go_library(
         ":control_api_go_proto",
         ":tpu_control_proto_go_proto",
         "//pkg/abi/linux",
-        "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/control/api",

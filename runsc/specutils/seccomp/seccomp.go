@@ -22,7 +22,9 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/sentry"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -45,20 +47,71 @@ var (
 	logAction   = seccomp.Log
 )
 
-// BuildProgram generates a bpf program based on the given OCI seccomp
+// BuildFilter generates a seccomp filter based on the given OCI seccomp
 // config.
-func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
+func BuildFilter(s *specs.LinuxSeccomp) (kernel.SyscallFilter, error) {
 	defaultAction, err := convertAction(s.DefaultAction, s.DefaultErrnoRet)
 	if err != nil {
-		return bpf.Program{}, fmt.Errorf("seccomp default action: %w", err)
+		return kernel.SyscallFilter{}, fmt.Errorf("seccomp default action: %w", err)
 	}
-	ruleset, err := convertRules(s)
+	rules, err := convertRules(s)
 	if err != nil {
-		return bpf.Program{}, fmt.Errorf("invalid seccomp rules: %w", err)
+		return kernel.SyscallFilter{}, fmt.Errorf("invalid seccomp rules: %w", err)
+	}
+	return buildFilter(rules, defaultAction)
+}
+
+// buildFilter generates a seccomp filter from the rules.
+func buildFilter(rules []ociRule, defaultAction seccomp.Action) (kernel.SyscallFilter, error) {
+	defaultBPFAction := defaultAction.BPF(linux.SECCOMP_RET_KILL_PROCESS)
+	actions := syscallActions(rules, defaultBPFAction)
+	// fixedAction returns the action that the filter holds for a syscall
+	// number, if there is one.
+	fixedAction := func(sysno uintptr) (linux.BPFAction, bool) {
+		if sysno > sentry.MaxSyscallNum {
+			return 0, false
+		}
+		sa, ok := actions[sysno]
+		if !ok {
+			return defaultBPFAction, true
+		}
+		return sa.action, sa.fixed
+	}
+	// The program only has the syscalls for which the filter evaluates it.
+	program, err := buildProgram(rules, defaultAction, func(sysno uintptr) bool {
+		_, fixed := fixedAction(sysno)
+		return !fixed
+	})
+	if err != nil {
+		return kernel.SyscallFilter{}, err
+	}
+	return kernel.NewSyscallFilterWithFixedActions(nativeArchAuditNo, program, func(sysno int32) (linux.BPFAction, bool) {
+		return fixedAction(uintptr(sysno))
+	}), nil
+}
+
+// buildProgram generates a BPF program from the rules for the syscall numbers
+// that `include` selects.
+func buildProgram(rules []ociRule, defaultAction seccomp.Action, include func(sysno uintptr) bool) (bpf.Program, error) {
+	ruleSets := make([]seccomp.RuleSet, 0, len(rules))
+	for _, r := range rules {
+		sysRules := seccomp.NewSyscallRules()
+		for _, sysno := range r.sysnos {
+			if include(sysno) {
+				sysRules.Add(sysno, r.rule)
+			}
+		}
+		if sysRules.Size() == 0 {
+			continue
+		}
+		ruleSets = append(ruleSets, seccomp.RuleSet{
+			Rules:  sysRules,
+			Action: r.action,
+		})
 	}
 
 	prog := &seccomp.Program{
-		RuleSets: ruleset,
+		RuleSets: ruleSets,
 		Options: seccomp.ProgramOptions{
 			DefaultAction: defaultAction,
 			BadArchAction: killThreadAction,
@@ -75,6 +128,55 @@ func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
 	}
 
 	return program, nil
+}
+
+// syscallAction is the action of the rules for one syscall number.
+type syscallAction struct {
+	// action is the action of the first rule for the syscall.
+	action linux.BPFAction
+
+	// fixed is true if the result of the filter is independent of
+	// syscall arguments.
+	fixed bool
+
+	// final is true if a rule matches all arguments. The rules after it
+	// never match.
+	final bool
+}
+
+// syscallActions returns the action of each syscall number in `rules`.
+// The first matching rule gives the action of a syscall. `defaultAction`
+// applies when no rule matches. `seccomp.Program` applies its `RuleSets` in
+// the same way.
+func syscallActions(rules []ociRule, defaultAction linux.BPFAction) map[uintptr]syscallAction {
+	numSysnos := 0
+	for _, r := range rules {
+		numSysnos += len(r.sysnos)
+	}
+	actions := make(map[uintptr]syscallAction, numSysnos)
+	for _, r := range rules {
+		action := r.action.BPF(defaultAction)
+		for _, sysno := range r.sysnos {
+			sa, ok := actions[sysno]
+			switch {
+			case !ok:
+				sa = syscallAction{action: action, fixed: true}
+			case sa.final:
+				continue
+			case sa.action != action:
+				sa.fixed = false
+			}
+			_, sa.final = r.rule.(seccomp.MatchAll)
+			actions[sysno] = sa
+		}
+	}
+	for sysno, sa := range actions {
+		if !sa.final && sa.action != defaultAction {
+			sa.fixed = false
+			actions[sysno] = sa
+		}
+	}
+	return actions
 }
 
 // lookupSyscallNo gets the syscall number for the syscall with the given name
@@ -143,29 +245,43 @@ func withErrnoRet(act seccomp.Action, errnoRet *uint) (seccomp.Action, error) {
 	return act.Code(uint16(*errnoRet)), nil
 }
 
-// convertRules converts OCI linux seccomp rules into RuleSets that can be used by
-// the seccomp package to build a seccomp program.
-func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
+// ociRule is one entry of `specs.LinuxSeccomp.Syscalls`.
+type ociRule struct {
+	// sysnos are the syscall numbers that the rule applies to.
+	sysnos []uintptr
+
+	// rule matches the syscall arguments.
+	// It is `seccomp.MatchAll` if the entry has no argument conditions.
+	rule seccomp.SyscallRule
+
+	// action applies when `rule` matches.
+	action seccomp.Action
+}
+
+// convertRules converts the OCI seccomp rules of `s` to `ociRule`s. It keeps
+// the order of the rules.
+func convertRules(s *specs.LinuxSeccomp) ([]ociRule, error) {
 	// NOTE: Architectures are only really relevant when calling 32bit syscalls
 	// on a 64bit system. Since we don't support that in gVisor anyway, we
 	// ignore Architectures and only test against the native architecture.
 
-	var rulesets []seccomp.RuleSet
+	rules := make([]ociRule, 0, len(s.Syscalls))
 
 	for _, syscall := range s.Syscalls {
-		sysRules := seccomp.NewSyscallRules()
-
 		action, err := convertAction(syscall.Action, syscall.ErrnoRet)
 		if err != nil {
 			return nil, err
 		}
 
 		// Args
-		rule, err := convertArgs(syscall.Args)
-		if err != nil {
-			return nil, err
+		var rule seccomp.SyscallRule = seccomp.MatchAll{}
+		if len(syscall.Args) > 0 {
+			if rule, err = convertArgs(syscall.Args); err != nil {
+				return nil, err
+			}
 		}
 
+		sysnos := make([]uintptr, 0, len(syscall.Names))
 		for _, name := range syscall.Names {
 			syscallNo, err := lookupSyscallNo(nativeArchAuditNo, name)
 			if err != nil {
@@ -176,16 +292,17 @@ func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
 				continue
 			}
 
-			sysRules.Add(uintptr(syscallNo), rule)
+			sysnos = append(sysnos, uintptr(syscallNo))
 		}
 
-		rulesets = append(rulesets, seccomp.RuleSet{
-			Rules:  sysRules,
-			Action: action,
+		rules = append(rules, ociRule{
+			sysnos: sysnos,
+			rule:   rule,
+			action: action,
 		})
 	}
 
-	return rulesets, nil
+	return rules, nil
 }
 
 // convertArgs converts an OCI seccomp argument rule to a list of seccomp.Rule.
