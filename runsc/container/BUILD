@@ -81,6 +81,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/control/client",
         "//pkg/cpuid",
         "//pkg/hostos",
         "//pkg/log",
