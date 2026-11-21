@@ -832,6 +832,12 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 		return 0, syserr.ErrInvalidArgument
 	}
 
+	// The host gets no UDP_SEGMENT control message, so refuse one instead of
+	// sending the whole write as one datagram.
+	if controlMessages.IP.HasGSOSize {
+		return 0, syserr.ErrInvalidArgument
+	}
+
 	if s.fd < 0 {
 		if s.stype == linux.SOCK_STREAM || s.stype == linux.SOCK_SEQPACKET {
 			t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGPIPE, t, t))

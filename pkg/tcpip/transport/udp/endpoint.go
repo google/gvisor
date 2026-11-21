@@ -509,12 +509,84 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 	dataSz := p.Len()
 	pktInfo := udpInfo.ctx.PacketInfo()
+	if gsoSize := int(opts.ControlMessages.GSOSize); gsoSize > 0 {
+		if err := e.checkGSO(udpInfo.ctx, pktInfo, dataSz, gsoSize); err != nil {
+			return 0, err
+		}
+		if dataSz > gsoSize {
+			return e.writeSegments(udpInfo, pktInfo, p, gsoSize)
+		}
+	}
 	pkt, err := udpInfo.ctx.TryNewPacketBufferFromPayloader(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), p)
 	if err != nil {
 		return 0, err
 	}
 	defer pkt.DecRef()
+	if err := e.sendPacket(udpInfo, pktInfo, pkt); err != nil {
+		return 0, err
+	}
+	return int64(dataSz), nil
+}
 
+// checkGSO checks a UDP_SEGMENT write of dataSz bytes in gsoSize segments as
+// Linux does. It returns ErrMessageTooLong when the write with its UDP header
+// would not fit in one IP packet, or when a segment with its UDP header
+// exceeds the route MTU, which already leaves out the IP header. It returns
+// ErrInvalidOptionValue when the write needs more than maxGSOSegments
+// segments or, over IPv4, SO_NO_CHECK is set.
+func (e *endpoint) checkGSO(ctx network.WriteContext, pktInfo network.WritePacketInfo, dataSz, gsoSize int) tcpip.Error {
+	// An IPv4 packet's total length counts its header, and an IPv6 packet's
+	// payload length does not.
+	maxDataSz := header.UDPMaximumSize - header.UDPMinimumSize
+	if pktInfo.NetProto == header.IPv4ProtocolNumber {
+		maxDataSz -= header.IPv4MinimumSize
+	}
+	if dataSz > maxDataSz {
+		return &tcpip.ErrMessageTooLong{}
+	}
+	if header.UDPMinimumSize+min(dataSz, gsoSize) > int(ctx.MTU()) {
+		return &tcpip.ErrMessageTooLong{}
+	}
+	if dataSz > gsoSize*maxGSOSegments {
+		return &tcpip.ErrInvalidOptionValue{}
+	}
+	if pktInfo.NetProto == header.IPv4ProtocolNumber && e.ops.GetNoChecksum() {
+		return &tcpip.ErrInvalidOptionValue{}
+	}
+	return nil
+}
+
+// writeSegments sends the payload as datagrams of gsoSize bytes, the last
+// holding what remains, and returns the payload size. It stops at the first
+// datagram the network layer refuses and returns that error, after the
+// datagrams before it have left. It returns ErrNoBufferSpace in place of
+// ErrWouldBlock, since the payload is already read and a retry would send
+// nothing.
+func (e *endpoint) writeSegments(udpInfo udpPacketInfo, pktInfo network.WritePacketInfo, p tcpip.Payloader, gsoSize int) (int64, tcpip.Error) {
+	dataSz := p.Len()
+	pkts, err := udpInfo.ctx.TryNewPacketBuffersFromPayloader(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), p, gsoSize)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		for _, pkt := range pkts {
+			pkt.DecRef()
+		}
+	}()
+	for _, pkt := range pkts {
+		if err := e.sendPacket(udpInfo, pktInfo, pkt); err != nil {
+			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+				return 0, &tcpip.ErrNoBufferSpace{}
+			}
+			return 0, err
+		}
+	}
+	return int64(dataSz), nil
+}
+
+// sendPacket adds the UDP header to a packet holding one datagram's payload
+// and writes it to the network layer.
+func (e *endpoint) sendPacket(udpInfo udpPacketInfo, pktInfo network.WritePacketInfo, pkt *stack.PacketBuffer) tcpip.Error {
 	// Initialize the UDP header.
 	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
 	pkt.TransportProtocolNumber = ProtocolNumber
@@ -562,12 +634,12 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 	if err := udpInfo.ctx.WritePacket(pkt, false /* headerIncluded */); err != nil {
 		e.stack.Stats().UDP.PacketSendErrors.Increment()
-		return 0, err
+		return err
 	}
 
 	// Track count of packets sent.
 	e.stack.Stats().UDP.PacketsSent.Increment()
-	return int64(dataSz), nil
+	return nil
 }
 
 // OnReuseAddressSet implements tcpip.SocketOptionsHandler.
@@ -629,6 +701,10 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	return e.net.GetSockOpt(opt)
 }
+
+// maxGSOSegments is the most datagrams one UDP_SEGMENT write may be split
+// into, Linux's UDP_MAX_SEGMENTS.
+const maxGSOSegments = 128
 
 // udpPacketInfo holds information needed to send a UDP packet.
 type udpPacketInfo struct {

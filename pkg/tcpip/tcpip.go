@@ -625,6 +625,10 @@ type SendableControlMessages struct {
 
 	// IPv6PacketInfo holds interface and address data on an incoming packet.
 	IPv6PacketInfo IPv6PacketInfo
+
+	// GSOSize is the payload size of each datagram a UDP write is split
+	// into, as UDP_SEGMENT sets it. Zero sends the write as one datagram.
+	GSOSize uint16
 }
 
 // ReceivableControlMessages contains socket control messages that can be

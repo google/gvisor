@@ -106,6 +106,11 @@ const (
 	SOL_TLS     = 282
 )
 
+// UDP socket options, from uapi/linux/udp.h.
+const (
+	UDP_SEGMENT = 103
+)
+
 // A SockType is a type (as opposed to family) of sockets. These are enumerated
 // below as SOCK_* constants.
 type SockType int

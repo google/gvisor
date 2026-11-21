@@ -210,6 +210,12 @@ type IPControlMessages struct {
 
 	// SockErr is the dequeued socket error on recvmsg(MSG_ERRQUEUE).
 	SockErr linux.SockErrCMsg
+
+	// HasGSOSize indicates whether GSOSize is set.
+	HasGSOSize bool
+
+	// GSOSize is the UDP_SEGMENT size of a UDP write.
+	GSOSize uint16
 }
 
 // Release releases Unix domain socket credentials and rights.

@@ -242,6 +242,14 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 			return nil
 		}
 	}
+	// UDP_SEGMENT is unavailable, as on a kernel without UDP GSO, because
+	// SendMsg refuses its control message.
+	if level == linux.SOL_UDP && name == linux.UDP_SEGMENT {
+		if len(opt) < sizeofInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.ErrProtocolNotAvailable
+	}
 	sockOpt, ok := sockOptMap[levelName{uint64(level), uint64(name)}]
 	if !ok {
 		// Pretend to accept socket options we don't understand. This
