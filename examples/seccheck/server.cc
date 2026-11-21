@@ -19,6 +19,7 @@
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -27,8 +28,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"
@@ -45,6 +48,10 @@ namespace {
 typedef std::function<void(absl::string_view buf)> Callback;
 
 constexpr size_t kMaxEventSize = 300 * 1024;
+
+// kHandshakeTimeoutSeconds is how long a new client has to send the
+// handshake before the connection is dropped.
+constexpr time_t kHandshakeTimeoutSeconds = 5;
 
 bool quiet = false;
 
@@ -298,6 +305,36 @@ bool Handshake(int client_fd) {
   }
   return true;
 }
+
+// SetRecvTimeout sets the receive timeout on fd. A zero timeout blocks
+// indefinitely.
+bool SetRecvTimeout(int fd, time_t seconds) {
+  struct timeval tv = {};
+  tv.tv_sec = seconds;
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+    printf("Error setting SO_RCVTIMEO: %d\n", errno);
+    return false;
+  }
+  return true;
+}
+
+// HandleNewClient performs the handshake and adds the client to epoll_fd. It
+// runs on its own thread so that a client that never sends the handshake can't
+// block the accept loop, and it gives up after kHandshakeTimeoutSeconds.
+void HandleNewClient(int epoll_fd, int client) {
+  if (!SetRecvTimeout(client, kHandshakeTimeoutSeconds) || !Handshake(client) ||
+      !SetRecvTimeout(client, 0)) {
+    close(client);
+    return;
+  }
+
+  struct epoll_event evt;
+  evt.data.fd = client;
+  evt.events = EPOLLIN;
+  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client, &evt) < 0) {
+    err(1, "epoll_ctl(ADD)");
+  }
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -357,17 +394,6 @@ int main(int argc, char** argv) {
       err(1, "accept");
     }
     printf("Connection accepted\n");
-
-    if (!Handshake(client)) {
-      close(client);
-      continue;
-    }
-
-    struct epoll_event evt;
-    evt.data.fd = client;
-    evt.events = EPOLLIN;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client, &evt) < 0) {
-      err(1, "epoll_ctl(ADD)");
-    }
+    std::thread(HandleNewClient, epoll_fd, client).detach();
   }
 }
