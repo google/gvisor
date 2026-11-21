@@ -188,6 +188,15 @@ func LoadSandbox(rootDir, id string, opts LoadOpts) ([]*Container, error) {
 }
 
 func findContainerID(rootDir, partialID string) (FullID, error) {
+	// A full root container ID names its state file directly, which spares
+	// a glob through every file in rootDir.
+	root := FullID{SandboxID: partialID, ContainerID: partialID}
+	if root.validate() == nil {
+		if _, err := os.Stat(buildPath(rootDir, root, stateFileExtension)); err == nil {
+			return root, nil
+		}
+	}
+
 	// Check whether the id fully specifies an existing container.
 	pattern := buildPath(rootDir, FullID{SandboxID: "*", ContainerID: partialID + "*"}, stateFileExtension)
 	list, err := filepath.Glob(pattern)
