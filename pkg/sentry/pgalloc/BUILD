@@ -207,6 +207,7 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = [
+        "memacct_test.go",
         "pagesize_amd64_test.go",
         "pagesize_arm64_test.go",
         "pgalloc_64k_test.go",
@@ -220,6 +221,7 @@ go_test(
         "//pkg/memutil",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
+        "//pkg/sentry/usage",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

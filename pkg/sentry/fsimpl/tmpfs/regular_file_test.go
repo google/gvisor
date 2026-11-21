@@ -341,9 +341,9 @@ func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescripti
 		tb.Fatalf("os.CreateTemp failed: %v", err)
 	}
 	mf, err := pgalloc.NewMemoryFile(file, pgalloc.MemoryFileOpts{
-		DelayedEviction:         pgalloc.DelayedEvictionDisabled,
-		DisableMemoryAccounting: true,
-		DiskBackedFile:          true,
+		DelayedEviction:  pgalloc.DelayedEvictionDisabled,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
+		DiskBackedFile:   true,
 	})
 	if err != nil {
 		file.Close()

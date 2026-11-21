@@ -49,7 +49,7 @@ var (
 
 func testMemoryManagerWithMmapDirection(ctx context.Context, t *testing.T, mmapDirection arch.MmapDirection) *MemoryManager {
 	p := platform.FromContext(ctx)
-	mm, err := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx))
+	mm, err := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx), MemoryManagerOpts{})
 	if err != nil {
 		t.Fatalf("failed to create MemoryManager: %s", err)
 	}
@@ -740,7 +740,7 @@ func testMemoryManagerWithExhaustibleMemory(ctx context.Context, t *testing.T) (
 	}
 	memfile := os.NewFile(uintptr(memfd), name)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
-		DisableMemoryAccounting: true,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
 	})
 	if err != nil {
 		memfile.Close()
@@ -1152,7 +1152,7 @@ func newTestMemoryFile(t *testing.T) *pgalloc.MemoryFile {
 	}
 	memfile := os.NewFile(uintptr(memfd), "mm-test-memory")
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
-		DisableMemoryAccounting: true,
+		MemoryAccounting: pgalloc.MemoryAccountingDisabled,
 	})
 	if err != nil {
 		memfile.Close()

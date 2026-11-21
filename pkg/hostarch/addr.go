@@ -33,10 +33,10 @@ type Addr uintptr
 // expected to ever come up in practice.
 func (v Addr) AddLength(length uint64) (end Addr, ok bool) {
 	end = v + Addr(length)
-	// As of this writing (Go 1.21), addrAtLeast64b is required to prevent the
-	// compiler from generating a tautological `length <= MaxUint64` check on
-	// 64-bit architectures.
-	ok = end >= v && (addrAtLeast64b || length <= uint64(^Addr(0)))
+	// As of this writing (Go 1.21), the AddrBits check is required to prevent
+	// the compiler from generating a tautological `length <= MaxUint64` check
+	// on 64-bit architectures.
+	ok = end >= v && (AddrBits >= 64 || length <= uint64(^Addr(0)))
 	return
 }
 

@@ -334,14 +334,14 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 				ma.knownCommitted = true
 				ma.commitSeq = 0
 				f.knownCommittedBytes += amount
-				if !f.opts.DisableMemoryAccounting {
+				if f.opts.MemoryAccounting == MemoryAccountingCommitted {
 					usage.MemoryAccounting.Inc(amount, ma.kind, ma.memCgID)
 				}
 			} else {
 				ma.knownCommitted = false
 				ma.commitSeq = f.commitSeq
 				f.knownCommittedBytes -= amount
-				if !f.opts.DisableMemoryAccounting {
+				if f.opts.MemoryAccounting == MemoryAccountingCommitted {
 					usage.MemoryAccounting.Dec(amount, ma.kind, ma.memCgID)
 				}
 			}
@@ -1271,6 +1271,9 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	minUnloadedInit := false
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
+			if f.opts.MemoryAccounting == MemoryAccountingAllocated {
+				usage.MemoryAccounting.Inc(maseg.Range().Length(), maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
+			}
 			continue
 		}
 		maFR := maseg.Range()
@@ -1323,7 +1326,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
 		f.knownCommittedBytes += amount
-		if !f.opts.DisableMemoryAccounting {
+		if f.opts.MemoryAccounting != MemoryAccountingDisabled {
 			usage.MemoryAccounting.Inc(amount, maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
 		}
 	}

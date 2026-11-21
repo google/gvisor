@@ -55,9 +55,9 @@ func newSaveTestMemoryFile(t *testing.T, dir string, diskBacked bool) *MemoryFil
 	t.Helper()
 	file := openSaveTestFile(t, dir)
 	f, err := NewMemoryFile(file, MemoryFileOpts{
-		DelayedEviction:         DelayedEvictionDisabled,
-		DisableMemoryAccounting: true,
-		DiskBackedFile:          diskBacked,
+		DelayedEviction:  DelayedEvictionDisabled,
+		MemoryAccounting: MemoryAccountingDisabled,
+		DiskBackedFile:   diskBacked,
 	})
 	if err != nil {
 		file.Close()
@@ -143,7 +143,17 @@ func TestHostFileDataSeeker(t *testing.T) {
 }
 
 func TestUnaccountedUsage(t *testing.T) {
-	f := newSaveTestMemoryFile(t, "", false)
+	requireUsageInit(t)
+	file := openSaveTestFile(t, "")
+	f, err := NewMemoryFile(file, MemoryFileOpts{
+		DelayedEviction:  DelayedEvictionDisabled,
+		MemoryAccounting: MemoryAccountingCommitted,
+	})
+	if err != nil {
+		file.Close()
+		t.Fatalf("NewMemoryFile: %v", err)
+	}
+	t.Cleanup(f.Destroy)
 
 	// Wait for the releaser goroutine to release a waste page and go to sleep
 	// (it holds f.mu from clearing f.haveWaste until it waits), then set
@@ -396,8 +406,8 @@ func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
 					b.Fatalf("CreateMemFD: %v", err)
 				}
 				f, err := NewMemoryFile(os.NewFile(uintptr(fd), "pgalloc-save-bench"), MemoryFileOpts{
-					DelayedEviction:         DelayedEvictionDisabled,
-					DisableMemoryAccounting: true,
+					DelayedEviction:  DelayedEvictionDisabled,
+					MemoryAccounting: MemoryAccountingDisabled,
 				})
 				if err != nil {
 					b.Fatalf("NewMemoryFile: %v", err)
@@ -450,10 +460,10 @@ func BenchmarkSaveToDiskBacked(b *testing.B) {
 				b.StopTimer()
 				file := openSaveTestFile(b, bc.dir)
 				f, err := NewMemoryFile(file, MemoryFileOpts{
-					DelayedEviction:         DelayedEvictionDisabled,
-					DisableMemoryAccounting: true,
-					DiskBackedFile:          true,
-					DecommitOnDestroy:       true,
+					DelayedEviction:   DelayedEvictionDisabled,
+					MemoryAccounting:  MemoryAccountingDisabled,
+					DiskBackedFile:    true,
+					DecommitOnDestroy: true,
 				})
 				if err != nil {
 					b.Fatalf("NewMemoryFile: %v", err)
