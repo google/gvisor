@@ -25,9 +25,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
-// TestCopiedSeccompCacheArchitecture checks that an inherited cache cannot
-// allow a syscall denied by the filters for a different architecture.
-func TestCopiedSeccompCacheArchitecture(t *testing.T) {
+// TestSharedSeccompCacheArchitecture checks that a shared cache cannot allow
+// a syscall denied by the filters for a different architecture.
+func TestSharedSeccompCacheArchitecture(t *testing.T) {
 	const denied = linux.SECCOMP_RET_ERRNO | 42
 	program, err := bpf.Compile([]bpf.Instruction{
 		bpf.Stmt(bpf.Ld|bpf.Abs|bpf.W, 4),
@@ -42,7 +42,7 @@ func TestCopiedSeccompCacheArchitecture(t *testing.T) {
 	filters := taskSeccomp{filters: []SyscallFilter{NewSyscallFilter(program)}}
 	filters.populateCache(parent)
 	child := &Task{image: TaskImage{st: &SyscallTable{AuditNumber: linux.AUDIT_ARCH_AARCH64}}}
-	child.seccomp.Store(filters.copy())
+	child.seccomp.Store(&filters)
 	if got := child.evaluateSyscallFilters(0, arch.SyscallArguments{}, 0); got != uint32(denied) {
 		t.Fatalf("different architecture: got %#x, want %#x", got, uint32(denied))
 	}
