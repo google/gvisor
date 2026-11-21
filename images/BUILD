@@ -81,11 +81,17 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-image_outputs(
-    name = "benchmark_alpine",
-    image = select({
+alias(
+    name = "alpine_base",
+    actual = select({
         "@platforms//cpu:aarch64": "@benchmark_alpine_arm64",
         "@platforms//cpu:x86_64": "@benchmark_alpine_amd64",
     }),
+    visibility = ["//images:__subpackages__"],
+)
+
+image_outputs(
+    name = "benchmark_alpine",
+    image = ":alpine_base",
     image_name = "benchmarks/alpine",
 )
