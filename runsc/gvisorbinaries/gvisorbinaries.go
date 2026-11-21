@@ -74,6 +74,9 @@ const (
 	procUmounterName            = "gvisor-proc-umounter"
 )
 
+// SandboxProcessName is the argv[0] of a sandbox process.
+const SandboxProcessName = "runsc-sandbox"
+
 // binDirName is the name of the directory holding sidecar binaries.
 // Lives next to the runsc binary.
 const binDirName = "gvisor-bin"

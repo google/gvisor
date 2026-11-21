@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -527,7 +528,7 @@ func sandboxPid(pid int) (int, error) {
 			return 0, fmt.Errorf("malformed cmdline file: %q", cmdline)
 		}
 		// The sandbox process has the first argument set to "runsc-sandbox".
-		if args[0] == "runsc-sandbox" {
+		if args[0] == gvisorbinaries.SandboxProcessName {
 			return child, nil
 		}
 

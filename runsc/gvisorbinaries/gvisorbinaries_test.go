@@ -20,6 +20,12 @@ import (
 	"testing"
 )
 
+func TestSandboxProcessName(t *testing.T) {
+	if SandboxProcessName != "runsc-sandbox" {
+		t.Errorf("SandboxProcessName = %q, want runsc-sandbox", SandboxProcessName)
+	}
+}
+
 func TestDirForExecutable(t *testing.T) {
 	for _, name := range []string{"Adjacent", "LinkTarget", "LinkNeighbor", "Override", "Missing"} {
 		t.Run(name, func(t *testing.T) {
