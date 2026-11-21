@@ -15,9 +15,11 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -52,6 +54,43 @@ void BM_Read(benchmark::State& state) {
 }
 
 BENCHMARK(BM_Read)->Range(1, 1 << 26)->UseRealTime();
+
+void BM_Preadv(benchmark::State& state) {
+  const int count = state.range(0);
+  const int size = state.range(1);
+  const int stride = state.range(2);
+  const int length = size / count;
+  const std::string contents(size, 'x');
+  auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), contents, TempPath::kDefaultFileMode));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_RDONLY));
+
+  std::vector<char> buf(static_cast<size_t>(count) * stride);
+  std::vector<iovec> iovecs(count);
+  for (int i = 0; i < count; i++) {
+    iovecs[i] = {buf.data() + i * stride, static_cast<size_t>(length)};
+  }
+  TEST_CHECK(preadv(fd.get(), iovecs.data(), count, 0) == size);
+  for (int i = 0; i < count; i++) {
+    TEST_CHECK(std::memcmp(buf.data() + i * stride,
+                           contents.data() + i * length, length) == 0);
+  }
+  for (auto _ : state) {
+    TEST_CHECK(preadv(fd.get(), iovecs.data(), count, 0) == size);
+  }
+
+  state.SetBytesProcessed(static_cast<int64_t>(size) *
+                          static_cast<int64_t>(state.iterations()));
+}
+
+BENCHMARK(BM_Preadv)
+    ->ArgNames({"count", "bytes", "stride"})
+    ->Args({1, 1 << 20, 1 << 20})
+    ->Args({16, 1 << 20, 64 << 10})
+    ->Args({1024, 1 << 20, 1024})
+    ->Args({16, 4096, 256})
+    ->Args({1024, 1 << 20, 4096})
+    ->UseRealTime();
 
 }  // namespace
 

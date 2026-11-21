@@ -204,15 +204,48 @@ func copyInIovecs(ctx marshal.CopyContext, t *Task, addr hostarch.Addr, numIovec
 		return nil, linuxerr.EFAULT
 	}
 
-	b := ctx.CopyScratchBuffer(iovecLength)
-	for i := 0; i < numIovecs; i++ {
-		ar, err := makeIovec(ctx, t, addr, b)
-		if err != nil {
-			return []hostarch.AddrRange{}, err
+	b := ctx.CopyScratchBuffer(min(copyScratchBufferLen, numIovecs*iovecLength))
+	for remaining := numIovecs; remaining > 0; {
+		// Validate complete entries before touching the next metadata page.
+		// A straddling entry still requires one exact descriptor-sized copy.
+		pageBytes := hostarch.PageSize - hostarch.PageOffset(addr)
+		count := min(remaining, int(pageBytes)/iovecLength, len(b)/iovecLength)
+		if count == 0 {
+			count = 1
 		}
-		dst = append(dst, ar)
-
-		addr += iovecLength
+		batch := b[:count*iovecLength]
+		n, copyErr := ctx.CopyInBytes(addr, batch)
+		if count == 1 && copyErr != nil {
+			return []hostarch.AddrRange{}, copyErr
+		}
+		if copyErr == nil && n != len(batch) {
+			return []hostarch.AddrRange{}, linuxerr.EFAULT
+		}
+		if copyErr != nil {
+			// A batch error does not identify which entry failed. Import
+			// entries separately to preserve validation error precedence.
+			for offset := 0; offset < len(batch); offset += iovecLength {
+				ar, err := makeIovec(ctx, t, addr+hostarch.Addr(offset), b[:iovecLength])
+				if err != nil {
+					return []hostarch.AddrRange{}, err
+				}
+				dst = append(dst, ar)
+			}
+		} else {
+			for offset := 0; offset < len(batch); offset += iovecLength {
+				base, length, ok := parseIovec(batch[offset : offset+iovecLength])
+				if !ok {
+					return []hostarch.AddrRange{}, linuxerr.EINVAL
+				}
+				ar, ok := t.MemoryManager().CheckIORange(base, length)
+				if !ok {
+					return []hostarch.AddrRange{}, linuxerr.EFAULT
+				}
+				dst = append(dst, ar)
+			}
+		}
+		remaining -= count
+		addr += hostarch.Addr(len(batch))
 	}
 	// Truncate to MAX_RW_COUNT.
 	var total uint64
@@ -239,17 +272,24 @@ func makeIovec(ctx marshal.CopyContext, t *Task, addr hostarch.Addr, b []byte) (
 	if _, err := ctx.CopyInBytes(addr, b); err != nil {
 		return hostarch.AddrRange{}, err
 	}
-
-	base := hostarch.Addr(hostarch.ByteOrder.Uint64(b[0:8]))
-	length := hostarch.ByteOrder.Uint64(b[8:16])
-	if length > math.MaxInt64 {
+	base, length, ok := parseIovec(b)
+	if !ok {
 		return hostarch.AddrRange{}, linuxerr.EINVAL
 	}
-	ar, ok := t.MemoryManager().CheckIORange(base, int64(length))
+	ar, ok := t.MemoryManager().CheckIORange(base, length)
 	if !ok {
 		return hostarch.AddrRange{}, linuxerr.EFAULT
 	}
 	return ar, nil
+}
+
+func parseIovec(b []byte) (hostarch.Addr, int64, bool) {
+	base := hostarch.Addr(hostarch.ByteOrder.Uint64(b[0:8]))
+	length := hostarch.ByteOrder.Uint64(b[8:16])
+	if length > math.MaxInt64 {
+		return 0, 0, false
+	}
+	return base, int64(length), true
 }
 
 // SingleIOSequence returns a usermem.IOSequence representing [addr,
