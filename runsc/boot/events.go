@@ -130,22 +130,29 @@ func (cm *containerManager) Event(cid *string, out *sentryapi.EventOut) error {
 
 func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) {
 	usage := make(map[string]uint64)
+	sentryUsage := control.ContainerUsage(cm.l.k)
 
 	cm.l.mu.Lock()
 	defer cm.l.mu.Unlock()
 
 	isV2 := cm.l.k.Cgroup2FS().EverMounted()
 	for name, cid := range cm.l.containerIDs {
-		// Before the introduction of cgroup v2, the container name, not the ID, was incorrectly used in
-		// the cgroup path. For avoiding behavior changes when cgroup v1 is in use, we use the container
-		// ID only for cgroup v2.
-		id := name
-		if isV2 {
-			id = cid
+		// Destroyed containers stay in containerIDs, and with cgroup v2 their
+		// cgroup is removed.
+		if _, ok := cm.l.processes[execID{cid: cid}]; !ok {
+			continue
+		}
+		// Containers that do not mount cgroups, e.g. the CRI pause container,
+		// have no cgroup. Use sentry accounting for them.
+		if !specHasCgroupMount(cm.l.containerSpecs[name]) {
+			if u, ok := sentryUsage[cid]; ok {
+				usage[cid] = u
+			}
+			continue
 		}
 		file := controlapi.CgroupControlFile{
 			Controller: "cpuacct",
-			Path:       "/" + id,
+			Path:       "/" + cid,
 			Name:       "cpuacct.usage",
 		}
 		if isV2 {
@@ -175,7 +182,7 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 				return nil, err
 			}
 		}
-		usage[id] = cpuUsage
+		usage[cid] = cpuUsage
 	}
 	return usage, nil
 }
