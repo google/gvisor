@@ -49,15 +49,15 @@ func TestConstantFrequency(t *testing.T) {
 		c.Update(false)
 	}
 
-	c.mu.RLock()
+	c.mu.Lock()
 	if !c.ready {
-		c.mu.RUnlock()
+		c.mu.Unlock()
 		t.Fatalf("clock not ready")
 		return // For checklocks consistency.
 	}
 	// A bit after the last sample.
 	now, ok := c.params.ComputeTime(750000)
-	c.mu.RUnlock()
+	c.mu.Unlock()
 	if !ok {
 		t.Fatalf("ComputeTime ok got %v want true", ok)
 	}
@@ -74,24 +74,26 @@ func TestConstantFrequency(t *testing.T) {
 func TestGetTimeOverflow(t *testing.T) {
 	c := newTestCalibratedClock([]sample{{ref: 123}}, []TSCValue{math.MaxInt64})
 	c.mu.Lock()
+	c.seq.BeginWrite()
 	c.ready = true
 	c.params = Parameters{Frequency: 1}
+	c.seq.EndWrite()
 	c.mu.Unlock()
 
-	// Shared reader locks do not order the old reset's write with this read.
-	// An exclusive reset instead waits for this reader to unlock.
-	c.mu.RLock()
+	// GetTime must hold c.mu to reset the clock, so the reset cannot happen
+	// while the test holds it.
+	c.mu.Lock()
 	var got int64
 	var err error
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		got, err = c.GetTime()
 	})
-	readyWhileReadLocked := c.ready
-	c.mu.RUnlock()
+	readyWhileLocked := c.ready
+	c.mu.Unlock()
 	wg.Wait()
-	if !readyWhileReadLocked {
-		t.Error("clock reset while a reader held the mutex")
+	if !readyWhileLocked {
+		t.Error("clock reset while the test held the mutex")
 	}
 	if err != nil {
 		t.Fatalf("GetTime: %v", err)
@@ -99,11 +101,66 @@ func TestGetTimeOverflow(t *testing.T) {
 	if got != 123 {
 		t.Errorf("GetTime = %d, want 123 from reference clock", got)
 	}
-	c.mu.RLock()
+	c.mu.Lock()
 	ready := c.ready
-	c.mu.RUnlock()
+	c.mu.Unlock()
 	if ready {
 		t.Error("clock remains ready after time computation overflow")
+	}
+}
+
+// updatingReferenceClocks is a testReferenceClocks whose Cycles first runs an
+// Update of c if update is set, and then returns now.
+type updatingReferenceClocks struct {
+	testReferenceClocks
+	c      *CalibratedClock
+	update bool
+	now    TSCValue
+}
+
+// Cycles implements referenceClocks.Cycles.
+func (r *updatingReferenceClocks) Cycles() TSCValue {
+	if r.update {
+		r.update = false
+		r.c.Update(false)
+	}
+	return r.now
+}
+
+// TestGetTimeConcurrentUpdate tests that GetTime does not combine parameters
+// with a TSC value read after an Update replaced them.
+func TestGetTimeConcurrentUpdate(t *testing.T) {
+	r := &updatingReferenceClocks{
+		testReferenceClocks: testReferenceClocks{
+			samples: []sample{
+				{before: 1000000, after: 1000001, ref: ReferenceNS(1 * ApproxUpdateInterval.Nanoseconds())},
+				{before: 2000000, after: 2000001, ref: ReferenceNS(2 * ApproxUpdateInterval.Nanoseconds())},
+				// The reference clock slows down, so the old parameters run
+				// ahead of the new ones after this sample.
+				{before: 3010000, after: 3010001, ref: ReferenceNS(3 * ApproxUpdateInterval.Nanoseconds())},
+			},
+		},
+		now: 3500000,
+	}
+	c := &CalibratedClock{ref: &sampler{clocks: r, overhead: defaultOverheadCycles}}
+	r.c = c
+	c.Update(false)
+	if _, ready := c.Update(false); !ready {
+		t.Fatalf("clock not ready")
+	}
+
+	r.update = true
+	got, err := c.GetTime()
+	if err != nil {
+		t.Fatalf("GetTime: %v", err)
+	}
+	params, _ := c.Params()
+	want, ok := params.ComputeTime(r.now)
+	if !ok {
+		t.Fatalf("ComputeTime(%v) overflowed", r.now)
+	}
+	if got != want {
+		t.Errorf("GetTime = %d, want %d from the updated parameters", got, want)
 	}
 }
 
@@ -125,9 +182,9 @@ func TestUpdateReportsCalibrationReset(t *testing.T) {
 		t.Fatalf("second Update ready = %t, want %t", got, want)
 	}
 	_, ready = c.Update(false)
-	c.mu.RLock()
+	c.mu.Lock()
 	clockReady := c.ready
-	c.mu.RUnlock()
+	c.mu.Unlock()
 	if got, want := clockReady, false; got != want {
 		t.Fatalf("clock ready after rejected calibration = %t, want %t", got, want)
 	}
@@ -230,18 +287,18 @@ func TestErrorCorrection(t *testing.T) {
 
 			// As the reference clock stabilizes, ensure that the clock error
 			// decreases.
-			c.mu.RLock()
+			c.mu.Lock()
 			initialErr := c.errorNS
-			c.mu.RUnlock()
+			c.mu.Unlock()
 			t.Logf("initial error: %v ns", initialErr)
 
 			_, ok = c.Update(false)
 			if !ok {
 				t.Fatalf("Update not ready")
 			}
-			c.mu.RLock()
+			c.mu.Lock()
 			currentErr := c.errorNS
-			c.mu.RUnlock()
+			c.mu.Unlock()
 			if currentErr.Magnitude() > initialErr.Magnitude() {
 				t.Errorf("errorNS increased, got %v want |%v| <= |%v|", currentErr, currentErr, initialErr)
 			}
@@ -250,9 +307,9 @@ func TestErrorCorrection(t *testing.T) {
 			if !ok {
 				t.Fatalf("Update not ready")
 			}
-			c.mu.RLock()
+			c.mu.Lock()
 			currentErr = c.errorNS
-			c.mu.RUnlock()
+			c.mu.Unlock()
 			if currentErr.Magnitude() > initialErr.Magnitude() {
 				t.Errorf("errorNS increased, got %v want |%v| <= |%v|", currentErr, currentErr, initialErr)
 			}
@@ -260,4 +317,24 @@ func TestErrorCorrection(t *testing.T) {
 			t.Logf("final error: %v ns", currentErr)
 		})
 	}
+}
+
+func BenchmarkCalibratedClockGetTime(b *testing.B) {
+	c := NewCalibratedClock(Monotonic)
+	for i := 0; ; i++ {
+		if _, ready := c.Update(false); ready {
+			break
+		}
+		if i == 100 {
+			b.Fatalf("clock not calibrated")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if _, err := c.GetTime(); err != nil {
+				b.Fatalf("GetTime: %v", err)
+			}
+		}
+	})
 }
