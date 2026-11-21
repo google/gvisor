@@ -1366,11 +1366,15 @@ func (l *Loader) installSeccompFilters() error {
 				return fmt.Errorf("NVIDIA capabilities: %w", err)
 			}
 		}
+		hostFS := filter.HostFSNone
+		if l.root.conf.DirectFS {
+			hostFS = filter.HostFSReadWrite
+		}
 		opts := filter.Options{
 			Platform:              l.k.Platform.SeccompInfo(),
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
-			HostFilesystem:        l.root.conf.DirectFS,
+			HostFS:                hostFS,
 			ProcSelfFD:            uint32(l.procSelfFD),
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               nvproxyEnabled,

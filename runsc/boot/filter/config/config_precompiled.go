@@ -92,9 +92,9 @@ func optionsToPrecompile() ([]Options, error) {
 		// Precompile options with DirectFS enabled & disabled.
 		func(opt Options) ([]Options, error) {
 			directfs := opt
-			directfs.HostFilesystem = true
+			directfs.HostFS = HostFSReadWrite
 			noDirectfs := opt
-			noDirectfs.HostFilesystem = false
+			noDirectfs.HostFS = HostFSNone
 			return []Options{directfs, noDirectfs}, nil
 		},
 
