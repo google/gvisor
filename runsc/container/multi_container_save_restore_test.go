@@ -1298,8 +1298,63 @@ func TestMultiContainerSharedVolumeCheckpointRestore(t *testing.T) {
 		t.Fatalf("Error verifying shared volume from sub-container 2 before checkpoint, ws: %v, err: %v", ws, err)
 	}
 
-	if err := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
-		t.Fatalf("error checkpointing container: %v", err)
+	// Establish a non-zero CPU history before saving it. Each exec exits
+	// before the Event snapshot, so its charge must survive reaping.
+	for i := 0; i < 16; i++ {
+		if ws, err := execute(conf, conts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+			t.Fatalf("CPU warmup exec %d before checkpoint: status=%v, err=%v", i, ws, err)
+		}
+	}
+	beforeCPU, err := conts[1].Event()
+	if err != nil {
+		t.Fatalf("Event before checkpoint: %v", err)
+	}
+	beforeGuest := beforeCPU.ContainerUsage[conts[1].ID]
+	beforeExposed := beforeCPU.Event.Data.CPU.Usage.Total
+	if beforeGuest == 0 || beforeExposed == 0 {
+		t.Fatalf("CPU before checkpoint is zero: guest=%d exposed=%d", beforeGuest, beforeExposed)
+	}
+
+	// Exercise Event RPC while the real kernel checkpoint serializes CPU
+	// accounting. The RPC can run in a different client goroutine from SaveTo.
+	ready := make(chan error, 1)
+	stopEvents := make(chan struct{})
+	type eventResults struct{ attempts, successes, errors int }
+	eventsDone := make(chan eventResults, 1)
+	go func() {
+		_, err := conts[1].Event()
+		ready <- err
+		var results eventResults
+		for {
+			select {
+			case <-stopEvents:
+				eventsDone <- results
+				return
+			default:
+			}
+			results.attempts++
+			if _, err := conts[1].Event(); err != nil {
+				// Checkpoint may briefly reject an Event RPC.
+				results.errors++
+			} else {
+				results.successes++
+			}
+		}
+	}()
+	if err := <-ready; err != nil {
+		close(stopEvents)
+		<-eventsDone
+		t.Fatalf("initial Event before checkpoint: %v", err)
+	}
+	checkpointErr := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression})
+	close(stopEvents)
+	results := <-eventsDone
+	if results.attempts == 0 {
+		t.Error("no Event RPC attempted during checkpoint")
+	}
+	t.Logf("Event RPCs during checkpoint: %d attempted, %d succeeded, %d rejected", results.attempts, results.successes, results.errors)
+	if checkpointErr != nil {
+		t.Fatalf("error checkpointing container: %v", checkpointErr)
 	}
 
 	newIds := make([]string, 0, len(ids))
@@ -1345,6 +1400,33 @@ func TestMultiContainerSharedVolumeCheckpointRestore(t *testing.T) {
 	}
 	if ws, err := execute(conf, newConts[2], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
 		t.Fatalf("Error verifying shared volume sub-dir from sub-container 2 after restore, ws: %v, err: %v", ws, err)
+	}
+
+	// Without a sandbox host cgroup, the first restored Event must retain
+	// guest CPU accrued since Kernel.Start, including this warmup.
+	for i := 0; i < 16; i++ {
+		if ws, err := execute(conf, newConts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+			t.Fatalf("CPU warmup exec %d after restore: status=%v, err=%v", i, ws, err)
+		}
+	}
+	afterCPU, err := newConts[1].Event()
+	if err != nil {
+		t.Fatalf("Event after restore: %v", err)
+	}
+	afterGuest, ok := afterCPU.ContainerUsage[newConts[1].ID]
+	if !ok {
+		t.Fatalf("restored guest usage missing new ID %q: %v", newConts[1].ID, afterCPU.ContainerUsage)
+	}
+	if _, old := afterCPU.ContainerUsage[conts[1].ID]; old {
+		t.Fatalf("restored guest usage retained old ID %q: %v", conts[1].ID, afterCPU.ContainerUsage)
+	}
+	afterExposed := afterCPU.Event.Data.CPU.Usage.Total
+	if afterGuest <= beforeGuest || afterExposed <= beforeExposed {
+		t.Fatalf("restore lost saved or new CPU: guest %d -> %d, exposed %d -> %d", beforeGuest, afterGuest, beforeExposed, afterExposed)
+	}
+	idleCPU, err := newConts[1].Event()
+	if err != nil || idleCPU.Event.Data.CPU.Usage.Total < afterExposed {
+		t.Fatalf("idle Event after restore lost CPU: event=%+v, err=%v", idleCPU, err)
 	}
 
 	for _, c := range newConts {

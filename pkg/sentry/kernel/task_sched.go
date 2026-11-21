@@ -314,6 +314,7 @@ func (k *Kernel) runCPUClockTicker() {
 		// These mirror the per-task appCPUClock and appSysCPUClock increments
 		// below and feed the kernel-wide CPU time accumulators.
 		var userTickInc, userSysTickInc int64
+		k.containerCPUMu.Lock()
 		for _, t := range incTasks[:numIncTasks] {
 			switch t.TaskGoroutineState() {
 			case TaskGoroutineRunningApp:
@@ -329,9 +330,14 @@ func (k *Kernel) runCPUClockTicker() {
 				t.appSysCPUClock.Add(linux.ClockTick)
 				t.tg.appSysCPUClockLast.Store(t)
 				t.tg.appSysCPUClock.Add(linux.ClockTick)
+				if k.containerCPU.lifetime == nil {
+					k.containerCPU.lifetime = make(map[string]uint64)
+				}
+				k.containerCPU.lifetime[t.containerID] += uint64(linux.ClockTick.Nanoseconds())
 				userSysTickInc++
 			}
 		}
+		k.containerCPUMu.Unlock()
 		if userTickInc != 0 {
 			k.userCPUClock.Add(userTickInc * linux.ClockTick.Nanoseconds())
 		}

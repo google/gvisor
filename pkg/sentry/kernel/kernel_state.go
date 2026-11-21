@@ -21,6 +21,14 @@ import (
 )
 
 // afterLoad is invoked by stateify.
+func (k *Kernel) afterLoad(_ context.Context) {
+	// A restored sandbox starts a new host observation epoch. Preserve
+	// allocations, but establish a new host baseline on its first event.
+	k.containerCPU.hostSeen = false
+	k.containerCPU.epochReset = true
+}
+
+// afterLoad is invoked by stateify.
 func (ts *TaskSet) afterLoad(_ context.Context) {
 	ts.zeroLiveTasksCond.L = &ts.mu
 }

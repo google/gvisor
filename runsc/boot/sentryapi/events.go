@@ -31,6 +31,14 @@ type NetworkInterface struct {
 // ContMgrEvent gets stats about the container used by "runsc events".
 const ContMgrEvent = "containerManager.Event"
 
+// EventArgs supplies the host cgroup observation made by the runsc client.
+type EventArgs struct {
+	CID            string
+	HostCPU        uint64
+	HostValid      bool
+	HostConfigured bool
+}
+
 // EventOut is the return type of the Event command.
 type EventOut struct {
 	Event Event `json:"event"`
