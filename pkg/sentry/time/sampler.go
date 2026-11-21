@@ -127,6 +127,13 @@ func (s *sampler) Reset() {
 	s.samples = []sample{}
 }
 
+// KeepNewest discards all clock samples except the newest.
+func (s *sampler) KeepNewest() {
+	if len(s.samples) > 1 {
+		s.samples = s.samples[len(s.samples)-1:]
+	}
+}
+
 // lowOverheadSample returns a reference clock sample with minimized syscall overhead.
 func (s *sampler) lowOverheadSample() (sample, error) {
 	for {
