@@ -49,6 +49,11 @@ func createParserRunner(t *testing.T) *parser.Runner {
 	if err != nil {
 		t.Fatalf("Failed to create parser runner: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := runner.Cleanup(); err != nil {
+			t.Errorf("Failed to clean up parser runner: %v", err)
+		}
+	})
 
 	return runner
 }

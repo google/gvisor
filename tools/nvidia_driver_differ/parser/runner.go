@@ -16,22 +16,30 @@ package parser
 
 import (
 	"bytes"
+	_ "embed" // Necessary to use go:embed.
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/zip"
 )
+
+//go:embed builtin_headers.zip
+var builtinHeaders []byte
 
 // Runner is a helper for running the driver_ast_parser on a given set of structs.
 type Runner struct {
 	// Working directory for the runner.
-	dir        string
-	parserPath string
-	inputPath  string
+	dir         string
+	parserPath  string
+	inputPath   string
+	resourceDir string
 
 	nonUVMIoctls []nvproxy.IoctlName
 	uvmIoctls    []nvproxy.IoctlName
@@ -40,15 +48,25 @@ type Runner struct {
 
 // NewRunner creates a new Runner around a given parser file and a temporary working directory.
 func NewRunner(parserPath string) (*Runner, error) {
+	headers, err := zip.NewReader(bytes.NewReader(builtinHeaders), int64(len(builtinHeaders)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read builtin headers: %w", err)
+	}
+
 	// Create a temp directory for the runner.
 	dir, err := os.MkdirTemp(os.TempDir(), "run_differ_*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
+	resourceDir := filepath.Join(dir, "clang")
+	if err := os.CopyFS(resourceDir, headers); err != nil {
+		return nil, errors.Join(fmt.Errorf("failed to extract builtin headers: %w", err), os.RemoveAll(dir))
+	}
 
 	return &Runner{
-		dir:        dir,
-		parserPath: parserPath,
+		dir:         dir,
+		parserPath:  parserPath,
+		resourceDir: resourceDir,
 	}, nil
 }
 
@@ -123,7 +141,9 @@ func (r *Runner) parseSourceFile(sourcePath string) (*OutputJSON, error) {
 	}
 
 	// Run driver_ast_parser on the source file.
-	cmd := exec.Command(r.parserPath, "--input", r.inputPath, sourcePath)
+	cmd := exec.Command(r.parserPath, "--input", r.inputPath, sourcePath,
+		"--extra-arg=-resource-dir="+r.resourceDir,
+		"--extra-arg=-nostdlibinc", "--extra-arg=-nostdinc++")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
